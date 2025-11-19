@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -109,38 +109,34 @@ contract BondingCurveSale is Ownable, ReentrancyGuard, Pausable {
     /// @notice Event emitted when the sale passes the audit
     event SaleAudited();
 
-    constructor() {
-        // disable default constructor logic; initialization occurs via initialize()
-    }
+    constructor() Ownable(address(this)) {
+    // implementation contract is its own owner
+}
 
     /// @notice Initializes the sale with the given parameters. Can only be called once.
     function initialize(InitParams memory params) external {
-        require(address(token) == address(0), "Already initialized");
-        require(params.token != address(0), "Token zero");
-        require(params.tierSize > 0, "Tier size zero");
-        require(params.maxTiersPerTx > 0, "maxTiersPerTx zero");
-        require(params.platformFeeBps <= 1000, "Fee too high");
-        require(params.lpPercent <= 9000, "LP percent too high");
-        require(params.treasury != address(0), "Treasury zero");
-        require(params.payout != address(0), "Payout zero");
+    require(address(token) == address(0), "Already initialized");
+    require(params.token != address(0), "Token zero");
 
-        token = IERC20(params.token);
-        router = IPancakeRouter02(params.router);
-        tierSize = params.tierSize;
-        startPrice = params.startPrice;
-        priceStep = params.priceStep;
-        maxTiersPerTx = params.maxTiersPerTx;
-        platformFeeBps = params.platformFeeBps;
-        endTime = params.endTime;
-        hardCapBNB = params.hardCapBNB;
-        lpPercent = params.lpPercent;
-        treasury = params.treasury;
-        payout = params.payout;
-        mode = params.mode;
+    // Factory becomes owner (for audit + setup)
+    _transferOwnership(msg.sender);
 
-        // pause sale until owner unpauses manually after self-test
-        _pause();
-    }
+    token = IERC20(params.token);
+    router = IPancakeRouter02(params.router);
+    tierSize = params.tierSize;
+    startPrice = params.startPrice;
+    priceStep = params.priceStep;
+    maxTiersPerTx = params.maxTiersPerTx;
+    platformFeeBps = params.platformFeeBps;
+    endTime = params.endTime;
+    hardCapBNB = params.hardCapBNB;
+    lpPercent = params.lpPercent;
+    treasury = params.treasury;
+    payout = params.payout;
+    mode = params.mode;
+
+    _pause();
+}
 
     /**
      * @notice Runs an on-chain audit of the sale configuration. Can only be executed

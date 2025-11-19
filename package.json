@@ -1,21 +1,42 @@
 {
   "name": "launchit",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "hardhat test"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
+  "Dependencies": {
+    "@openzeppelin/contracts": "^4.9.3",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.17.0",
+    "chai": "^6.2.1",
+    "dotenv": "^17.2.3",
+    "mocha": "^11.7.5"
+  },
   "dependencies": {
-    "hardhat": "^2.17.0"
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.2.3",
+    "hardhat": "^3.0.15"
   },
   "devDependencies": {
-    "@nomiclabs/hardhat-ethers": "^2.2.3",
-    "@openzeppelin/contracts": "^4.9.3",
-    "dotenv": "^17.2.3",
-    "ethers": "^5.8.0"
+    "@nomicfoundation/hardhat-ethers": "^4.0.3",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.2",
+    "@nomicfoundation/hardhat-ignition": "^3.0.5",
+    "@nomicfoundation/hardhat-ignition-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-keystore": "^3.0.3",
+    "@nomicfoundation/hardhat-mocha": "^3.0.7",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.3",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.1",
+    "@nomicfoundation/hardhat-typechain": "^3.0.1",
+    "@nomicfoundation/hardhat-verify": "^3.0.7",
+    "chai": "^6.2.1",
+    "mocha": "^11.7.5",
+    "tsx": "^4.20.6",
+    "vitest": "^4.0.10"
   }
 }
