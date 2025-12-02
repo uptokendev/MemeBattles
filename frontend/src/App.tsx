@@ -405,6 +405,7 @@ function App() {
         graduationTarget: "",
         lpReceiver: "",
       });
+      await loadCampaigns();
       if (logoPreview) {
         URL.revokeObjectURL(logoPreview);
       }
