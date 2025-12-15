@@ -94,6 +94,7 @@ export interface LaunchCampaignInterface extends Interface {
     nameOrSignature:
       | "basePrice"
       | "buyExactTokens"
+      | "buyersCount"
       | "creatorReserve"
       | "currentPrice"
       | "curveSupply"
@@ -103,6 +104,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "finalize"
       | "finalizedAt"
       | "graduationTarget"
+      | "hasBought"
       | "launched"
       | "liquidityBps"
       | "liquiditySupply"
@@ -118,6 +120,8 @@ export interface LaunchCampaignInterface extends Interface {
       | "sellExactTokens"
       | "sold"
       | "token"
+      | "totalBuyVolumeWei"
+      | "totalSellVolumeWei"
       | "totalSupply"
       | "transferOwnership"
       | "website"
@@ -136,6 +140,10 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "buyExactTokens",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "buyersCount",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "creatorReserve",
@@ -166,6 +174,10 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "graduationTarget",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "hasBought",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(functionFragment: "launched", values?: undefined): string;
   encodeFunctionData(
@@ -210,6 +222,14 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(functionFragment: "sold", values?: undefined): string;
   encodeFunctionData(functionFragment: "token", values?: undefined): string;
   encodeFunctionData(
+    functionFragment: "totalBuyVolumeWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "totalSellVolumeWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "totalSupply",
     values?: undefined
   ): string;
@@ -223,6 +243,10 @@ export interface LaunchCampaignInterface extends Interface {
   decodeFunctionResult(functionFragment: "basePrice", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "buyExactTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "buyersCount",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -252,6 +276,7 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "graduationTarget",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "hasBought", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "launched", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "liquidityBps",
@@ -288,6 +313,14 @@ export interface LaunchCampaignInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "sold", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "totalBuyVolumeWei",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "totalSellVolumeWei",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "totalSupply",
     data: BytesLike
@@ -428,6 +461,8 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
 
+  buyersCount: TypedContractMethod<[], [bigint], "view">;
+
   creatorReserve: TypedContractMethod<[], [bigint], "view">;
 
   currentPrice: TypedContractMethod<[], [bigint], "view">;
@@ -449,6 +484,8 @@ export interface LaunchCampaign extends BaseContract {
   finalizedAt: TypedContractMethod<[], [bigint], "view">;
 
   graduationTarget: TypedContractMethod<[], [bigint], "view">;
+
+  hasBought: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
 
   launched: TypedContractMethod<[], [boolean], "view">;
 
@@ -492,6 +529,10 @@ export interface LaunchCampaign extends BaseContract {
 
   token: TypedContractMethod<[], [string], "view">;
 
+  totalBuyVolumeWei: TypedContractMethod<[], [bigint], "view">;
+
+  totalSellVolumeWei: TypedContractMethod<[], [bigint], "view">;
+
   totalSupply: TypedContractMethod<[], [bigint], "view">;
 
   transferOwnership: TypedContractMethod<
@@ -518,6 +559,9 @@ export interface LaunchCampaign extends BaseContract {
     [bigint],
     "payable"
   >;
+  getFunction(
+    nameOrSignature: "buyersCount"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "creatorReserve"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -549,6 +593,9 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "graduationTarget"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "hasBought"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
   getFunction(
     nameOrSignature: "launched"
   ): TypedContractMethod<[], [boolean], "view">;
@@ -598,6 +645,12 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "token"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "totalBuyVolumeWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "totalSellVolumeWei"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "totalSupply"
   ): TypedContractMethod<[], [bigint], "view">;

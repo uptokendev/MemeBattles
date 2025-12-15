@@ -299,8 +299,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\LaunchIt\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1765406426664,
-      "contentHash": "7da71e040fb19eeea48fe92a24350f60",
+      "lastModificationDate": 1765753390693,
+      "contentHash": "ed76540a7a515d4c524fb4eb94b387b9",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",

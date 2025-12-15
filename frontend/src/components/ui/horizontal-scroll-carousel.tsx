@@ -79,7 +79,7 @@ const Example = () => {
   const { width: CARD_WIDTH, totalWidth: TOTAL_CARD_WIDTH } = cardSize;
 
   // Blockchain campaigns -> cards
-  const { fetchCampaigns } = useLaunchpad();
+  const { fetchCampaigns, fetchCampaignCardStats } = useLaunchpad();
   const [cards, setCards] = useState<CarouselCard[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [campaignError, setCampaignError] = useState<string | null>(null);
@@ -101,22 +101,29 @@ const Example = () => {
 
         const campaigns: CampaignInfo[] = await fetchCampaigns();
 
-        const mapped: CarouselCard[] = campaigns.map((c) => ({
-          id: c.id,
-          image: c.logoURI || "/placeholder.svg",
-          ticker: c.symbol,
-          tokenName: c.name,
-          contractAddress: c.token,
-          description: c.extraLink || "",
-          // For now we don’t have on-chain analytics here, so use placeholders:
-          marketCap: "0",
-          holders: "0",
-          volume: "0",
-          links: {
-            website: c.website || undefined,
-            twitter: c.xAccount || undefined,
-          },
-        }));
+        const mapped: CarouselCard[] = await Promise.all(
+          campaigns.map(async (c) => {
+            const stats = await fetchCampaignCardStats(c);
+
+            return {
+              id: c.id,
+              image: c.logoURI || "/placeholder.svg",
+              ticker: c.symbol,
+              tokenName: c.name,
+              contractAddress: c.token,
+              description: c.extraLink || "",
+              marketCap: stats.marketCap,
+              holders: stats.holders,
+              volume: stats.volume,
+              links: {
+                website: c.website || undefined,
+                twitter: c.xAccount || undefined,
+                telegram: (c as any).telegram || undefined,
+                discord: (c as any).discord || undefined,
+              },
+            };
+          })
+        );
 
         setCards(mapped);
       } catch (err) {
@@ -534,7 +541,7 @@ const Card = ({
                 <span>{card.holders}</span>
               </div>
               <div className="flex items-center gap-1 text-accent">
-                <span>Vol ${card.volume}</span>
+                <span>Vol {card.volume}</span>
               </div>
             </div>
           </div>

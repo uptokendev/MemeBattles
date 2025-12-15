@@ -6,6 +6,7 @@
   "scripts": {
     "clean": "hardhat clean",
     "build": "hardhat compile",
+    "compile": "hardhat compile && node scripts/sync-abis.mjs",
     "test": "hardhat test",
     "frontend": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build"

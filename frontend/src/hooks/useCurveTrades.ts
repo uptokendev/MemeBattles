@@ -14,6 +14,7 @@ export type CurveTradePoint = {
   pricePerToken: number;      // in native token (BNB) per token
   cumulativeTokensWei: bigint;
   txHash: string;
+  trader?: string;
 };
 
 type UseCurveTradesState = {
@@ -92,6 +93,11 @@ export function useCurveTrades(
           // and TokensSold(address seller, uint256 tokenAmount, uint256 bnbAmount);
           const tokenAmountWei: bigint = log.args?.tokenAmount ?? 0n;
           const nativeAmountWei: bigint = log.args?.bnbAmount ?? 0n;
+          const trader: string | undefined =
+            log.args?.buyer ??
+            log.args?.seller ??
+            log.args?.trader ??
+            log.args?.[0];
 
           if (tokenAmountWei === 0n) continue;
 
@@ -106,6 +112,7 @@ export function useCurveTrades(
             pricePerToken,
             cumulativeTokensWei,
             txHash: log.transactionHash,
+            trader,
           });
         }
 

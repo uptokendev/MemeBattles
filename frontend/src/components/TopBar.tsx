@@ -3,25 +3,45 @@
  * Responsive header with search, actions, and ticker feed
  */
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Menu } from "lucide-react";
 import { GlowingButton } from "./ui/glowing-button";
 import { SearchBar } from "./ui/search-bar";
 import { GlassButton } from "./ui/glass-button";
 import { useNavigate } from "react-router-dom";
-import { tickerItems } from "@/constants/mockData";
 import { useWallet, WalletType } from "@/hooks/useWallet";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
+import { ethers } from "ethers";
 
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
 }
 
+type TickerItem = {
+  key: string; // campaign address (or unique)
+  symbol: string;
+  logoURI?: string;
+  subtitle: string; // e.g. "Price 0.0123 BNB" or "Live"
+  hot: boolean;
+  route: string; // where to navigate on click
+};
+
 export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
   const wallet = useWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+
+  const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
+
+  // Ticker feed state (mock OR live depending on your switch inside useLaunchpad)
+  const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
+  const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<
+    Record<string, CampaignMetrics | null>
+  >({});
+  const [tickerLoading, setTickerLoading] = useState(true);
 
   const shortAddress =
     wallet.account && wallet.account.length > 8
@@ -43,6 +63,111 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     }
   };
 
+  // Load campaigns for ticker (mock/live handled by your launchpadClient)
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setTickerLoading(true);
+
+        const campaigns = await fetchCampaigns();
+        const top = (campaigns ?? []).slice(0, 12);
+
+        if (cancelled) return;
+        setTickerCampaigns(top);
+
+        // Best-effort metrics per campaign (don’t block UI if some fail)
+        const results = await Promise.allSettled(
+          top.map((c) => fetchCampaignMetrics(c.campaign))
+        );
+
+        if (cancelled) return;
+
+        const next: Record<string, CampaignMetrics | null> = {};
+        top.forEach((c, idx) => {
+          const r = results[idx];
+          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
+        });
+
+        setTickerMetricsByCampaign(next);
+      } catch (err) {
+        console.error("[TopBar ticker] Failed to load campaigns", err);
+        if (!cancelled) {
+          setTickerCampaigns([]);
+          setTickerMetricsByCampaign({});
+        }
+      } finally {
+        if (!cancelled) setTickerLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchCampaigns, fetchCampaignMetrics]);
+
+  // Build ticker items from campaigns + metrics
+  const tickerItems: TickerItem[] = useMemo(() => {
+    const formatPrice = (m: CampaignMetrics | null | undefined) => {
+      if (!m) return "Live";
+      try {
+        // Assumes currentPrice is 18-decimals BNB price in your metrics
+        const raw = ethers.formatUnits((m as any).currentPrice ?? 0n, 18);
+        const n = Number(raw);
+        if (!Number.isFinite(n)) return `Price ${raw} BNB`;
+
+        const pretty =
+          n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6);
+
+        return `Price ${pretty} BNB`;
+      } catch {
+        return "Live";
+      }
+    };
+
+    return (tickerCampaigns ?? [])
+      .filter((c) => c && typeof c.symbol === "string" && c.symbol.length > 0)
+      .map((c) => {
+        const metrics = tickerMetricsByCampaign[c.campaign.toLowerCase()] ?? null;
+
+        const sold = (() => {
+          try {
+            const v = (metrics as any)?.sold;
+            if (typeof v === "bigint") return v;
+            if (typeof v === "number") return BigInt(v);
+            if (typeof v === "string") return BigInt(v);
+            return 0n;
+          } catch {
+            return 0n;
+          }
+        })();
+
+        return {
+          key: c.campaign,
+          symbol: c.symbol,
+          logoURI: (c as any).logoURI,
+          subtitle: formatPrice(metrics),
+          hot: sold > 0n,
+          route: `/token/${c.symbol.toLowerCase()}`,
+        };
+      });
+  }, [tickerCampaigns, tickerMetricsByCampaign]);
+
+  // Ensure the scrolling band is always long enough, even if we only have a few campaigns.
+  const tickerBaseLoop: TickerItem[] = useMemo(() => {
+    if (!tickerItems || tickerItems.length === 0) return [];
+
+    const MIN_ITEMS = 18; // tweak if you want more density on desktop
+    const target = Math.max(MIN_ITEMS, tickerItems.length);
+
+    const out: TickerItem[] = [];
+    while (out.length < target) out.push(...tickerItems);
+
+    return out.slice(0, target);
+  }, [tickerItems]);
+
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent border-b border-border/30">
       <div className="flex items-center justify-between px-4 md:px-6 py-3 lg:pl-72">
@@ -56,9 +181,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </button>
 
         {/* Search */}
-        <div className="flex-1 max-w-xs md:max-w-md mx-2 md:mx-0">
-          <SearchBar placeholder="Search tokens..." />
-        </div>
+        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0">
+  <SearchBar placeholder="Search tokens..." />
+</div>
 
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
@@ -74,72 +199,103 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
           {/* Connect wallet button with SAME style, but now opens modal */}
           <div
-  className="relative"
-  onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
-  onMouseLeave={() => setDisconnectOpen(false)}
->
-  <GlowingButton
-    glowColor="#a3e635"
-    className="text-xs md:text-sm px-3 md:px-4 py-2"
-    onClick={() => {
-      // Only open modal if NOT connected
-      if (!wallet.isConnected) {
-        openWalletModal();
-      }
-    }}
-  >
-    <span className="hidden sm:inline">
-      {wallet.isConnected ? shortAddress : "Connect wallet"}
-    </span>
-    <span className="sm:hidden">
-      {wallet.isConnected ? "Wallet" : "Connect"}
-    </span>
-  </GlowingButton>
+            className="relative"
+            onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
+            onMouseLeave={() => setDisconnectOpen(false)}
+          >
+            <GlowingButton
+              glowColor="#a3e635"
+              className="text-xs md:text-sm px-3 md:px-4 py-2"
+              onClick={() => {
+                // Only open modal if NOT connected
+                if (!wallet.isConnected) {
+                  openWalletModal();
+                }
+              }}
+            >
+              <span className="hidden sm:inline">
+                {wallet.isConnected ? shortAddress : "Connect wallet"}
+              </span>
+              <span className="sm:hidden">
+                {wallet.isConnected ? "Wallet" : "Connect"}
+              </span>
+            </GlowingButton>
 
-  {/* Disconnect dropdown */}
-  {wallet.isConnected && disconnectOpen && (
-    <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
-      <button
-        className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
-        onClick={() => {
-          wallet.disconnect();
-          setDisconnectOpen(false);
-        }}
-      >
-        Disconnect
-      </button>
-    </div>
-  )}
-</div>
-
+            {/* Disconnect dropdown */}
+            {wallet.isConnected && disconnectOpen && (
+              <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
+                <button
+                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
+                  onClick={() => {
+                    wallet.disconnect();
+                    setDisconnectOpen(false);
+                  }}
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Ticker row (unchanged) */}
+      {/* Ticker row (now campaigns; mock/live depends on useLaunchpad switch) */}
       <div className="overflow-hidden py-3 bg-transparent">
-        <div className="flex gap-3 animate-[scroll_30s_linear_infinite] hover:[animation-play-state:paused] px-4">
-          {[...tickerItems, ...tickerItems].map((item, i) => (
+        <div className="flex w-max gap-3 animate-[scroll_60s_linear_infinite] hover:[animation-play-state:paused] px-4">
+          {tickerLoading && tickerItems.length === 0 ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <GlassButton
+                key={`loading-${i}`}
+                size="sm"
+                contentClassName="flex items-center gap-2 whitespace-nowrap"
+                onClick={() => navigate("/create")}
+              >
+                <div className="w-4 h-4 rounded-full bg-muted" />
+                <span className="font-semibold text-xs">Loading campaigns…</span>
+              </GlassButton>
+            ))
+          ) : tickerItems.length === 0 ? (
             <GlassButton
-              key={i}
               size="sm"
               contentClassName="flex items-center gap-2 whitespace-nowrap"
-              onClick={() => navigate("/token/1")}
+              onClick={() => navigate("/create")}
             >
               <div className="w-4 h-4 rounded-full bg-muted" />
-              <span className="font-semibold text-xs">{item.name}</span>
-              <span
-                className={
-                  item.positive ? "text-success" : "text-destructive"
-                }
-              >
-                {item.positive ? "🔥" : "🔻"}
-              </span>
-              <span className="text-xs">{item.price}</span>
-              <span className="text-xs text-muted-foreground">
-                {item.change}
-              </span>
+              <span className="font-semibold text-xs">No campaigns yet</span>
+              <span className="text-xs text-muted-foreground">Launch one</span>
             </GlassButton>
-          ))}
+          ) : (
+            tickerBaseLoop.concat(tickerBaseLoop).map((item, i) => (
+              <GlassButton
+                key={`${item.key}-${i}`}
+                size="sm"
+                contentClassName="flex items-center gap-2 whitespace-nowrap"
+                onClick={() => navigate(item.route)}
+              >
+                {item.logoURI ? (
+                  <img
+                    src={item.logoURI}
+                    alt={item.symbol}
+                    className="w-4 h-4 rounded-full object-cover"
+                    onError={(e) => {
+                      // fallback to placeholder if image fails
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-muted" />
+                )}
+
+                <span className="font-semibold text-xs">{item.symbol}</span>
+
+                <span className={item.hot ? "text-success" : "text-muted-foreground"}>
+                  {item.hot ? "🔥" : "•"}
+                </span>
+
+                <span className="text-xs text-muted-foreground">{item.subtitle}</span>
+              </GlassButton>
+            ))
+          )}
         </div>
       </div>
 
@@ -148,9 +304,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-2xl shadow-xl w-[90%] max-w-sm p-4 md:p-6 space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm md:text-base font-retro">
-                Connect a wallet
-              </h2>
+              <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
               <button
                 onClick={() => setWalletModalOpen(false)}
                 className="text-xs text-muted-foreground hover:text-foreground"
@@ -160,8 +314,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             </div>
 
             <p className="text-xs text-muted-foreground mb-2">
-              Select a BSC-compatible EVM wallet. You can switch between
-              testnet and mainnet from your wallet settings.
+              Select a BSC-compatible EVM wallet. You can switch between testnet and
+              mainnet from your wallet settings.
             </p>
 
             <div className="space-y-2">
@@ -212,8 +366,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             </div>
 
             <p className="text-[10px] text-muted-foreground mt-2">
-              Make sure your selected wallet is configured for Binance Smart
-              Chain (BSC mainnet or testnet, depending on your setup).
+              Make sure your selected wallet is configured for Binance Smart Chain
+              (BSC mainnet or testnet, depending on your setup).
             </p>
           </div>
         </div>

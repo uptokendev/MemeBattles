@@ -1,19 +1,27 @@
 /**
  * UpNow Page
- * Displays three categories of tokens based on their market cap stages
+ * Displays three categories of campaigns.
+ *
+ * IMPORTANT:
+ * - Uses the same data source as the carousel: useLaunchpad().fetchCampaigns()
+ * - In mock mode: returns populated mock campaigns
+ * - In live mode: returns on-chain/live campaigns
  */
 
-import { useState } from "react";
-import { Sparkles, TrendingUp, Target, Globe } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Sparkles, TrendingUp, Target, Globe, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { inceptionTokens, higherTokens, migratedTokens } from "@/constants/mockData";
-import { Token } from "@/types/token";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignInfo, CampaignMetrics, CampaignSummary } from "@/lib/launchpadClient";
+import type { Token } from "@/types/token";
+
+type Tab = "up" | "higher" | "moon";
 
 const TokenCard = ({ token }: { token: Token }) => {
   const navigate = useNavigate();
-  
+
   return (
-    <div 
+    <div
       className="bg-card/40 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-border hover:border-accent/50 transition-all cursor-pointer"
       onClick={() => navigate(`/token/${token.ticker.toLowerCase()}`)}
     >
@@ -23,6 +31,7 @@ const TokenCard = ({ token }: { token: Token }) => {
           alt={token.ticker}
           className="w-12 h-12 md:w-14 md:h-14 rounded-full border-2 border-border object-cover"
         />
+
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
@@ -33,18 +42,22 @@ const TokenCard = ({ token }: { token: Token }) => {
                 {token.name}
               </p>
             </div>
+
             <div className="text-right shrink-0">
-              <div className="flex items-center gap-1 text-xs font-retro text-muted-foreground">
-                <span>👥 {token.holders}</span>
+              <div className="flex items-center justify-end gap-1 text-xs font-retro text-muted-foreground">
+                <Users className="h-3 w-3" />
+                <span>{token.holders}</span>
               </div>
-              <p className="text-xs font-retro text-accent mt-1">Vol {token.volume}</p>
+              <p className="text-xs font-retro text-accent mt-1">
+                Vol {token.volume}
+              </p>
             </div>
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               {token.hasWebsite && (
-                <button 
+                <button
                   className="w-6 h-6 rounded-md border border-border bg-muted flex items-center justify-center hover:border-accent transition-colors"
                   onClick={(e) => e.stopPropagation()}
                 >
@@ -52,52 +65,185 @@ const TokenCard = ({ token }: { token: Token }) => {
                 </button>
               )}
               {token.hasTwitter && (
-                <button 
+                <button
                   className="w-6 h-6 rounded-md border border-border bg-muted flex items-center justify-center hover:border-accent transition-colors"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <svg className="h-3 w-3 text-muted-foreground" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  <svg
+                    className="h-3 w-3 text-muted-foreground"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                   </svg>
                 </button>
               )}
             </div>
             <p className="text-xs font-retro text-accent">MC {token.marketCap}</p>
           </div>
-          
-          <p className="text-[10px] font-retro text-muted-foreground mt-2">{token.timeAgo}</p>
+
+          <p className="text-[10px] font-retro text-muted-foreground mt-2">
+            {token.timeAgo}
+          </p>
         </div>
       </div>
     </div>
   );
 };
 
-const UpNow = () => {
-  const [activeTab, setActiveTab] = useState<"up" | "higher" | "moon">("up");
-  const isMobile = window.innerWidth < 768;
+const formatTimeAgo = (createdAt?: number): string => {
+  if (!createdAt) return "";
+  const now = Math.floor(Date.now() / 1000);
+  const diff = Math.max(0, now - createdAt);
+  if (diff < 60) return "now";
+  const mins = Math.floor(diff / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w`;
+};
 
-  const renderSection = (type: "up" | "higher" | "moon") => {
-    const config = {
+const toTokenFromSummary = (s: CampaignSummary, fallbackId: number): Token => {
+  const c = s.campaign;
+  const anyC = c as any;
+
+  return {
+    id: typeof c.id === "number" ? c.id : fallbackId,
+    image: c.logoURI || "/placeholder.svg",
+    ticker: c.symbol,
+    name: c.name,
+    holders: s.stats.holders ?? anyC.holders ?? "—",
+    volume: s.stats.volume ?? anyC.volume ?? "—",
+    marketCap: s.stats.marketCap ?? anyC.marketCap ?? "—",
+    timeAgo: anyC.timeAgo || formatTimeAgo(c.createdAt),
+    hasWebsite: Boolean(c.website && c.website.length > 0),
+    hasTwitter: Boolean(c.xAccount && c.xAccount.length > 0),
+  };
+};
+
+const classifyTab = (m: CampaignMetrics | null): Tab => {
+  // Live data currently doesn't have market-cap stages in the UI.
+  // We classify by bonding progress (sold / graduationTarget) so the
+  // page remains fully compatible once mock data is disabled.
+  if (!m) return "up";
+
+  try {
+    if (m.graduationTarget <= 0n) return "up";
+    const bps = (m.sold * 10_000n) / m.graduationTarget; // 0..10000
+
+    if (bps < 3333n) return "up";
+    if (bps < 6666n) return "higher";
+    return "moon";
+  } catch {
+    return "up";
+  }
+};
+
+const UpNow = () => {
+  const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
+
+  const [activeTab, setActiveTab] = useState<Tab>("up");
+  const [loading, setLoading] = useState(true);
+
+  const [upTokens, setUpTokens] = useState<Token[]>([]);
+  const [higherTokens, setHigherTokens] = useState<Token[]>([]);
+  const [moonTokens, setMoonTokens] = useState<Token[]>([]);
+
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth < 768 : false;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+
+        const campaigns = (await fetchCampaigns()) ?? [];
+        const results = await Promise.allSettled(
+          campaigns.map((c) => fetchCampaignSummary(c))
+        );
+
+        if (cancelled) return;
+
+        const nextUp: Token[] = [];
+        const nextHigher: Token[] = [];
+        const nextMoon: Token[] = [];
+
+        campaigns.forEach((c, idx) => {
+          const r = results[idx];
+          const summary = r.status === "fulfilled" ? r.value : null;
+          const token = summary
+            ? toTokenFromSummary(summary, idx + 1)
+            : {
+                id: typeof c.id === "number" ? c.id : idx + 1,
+                image: c.logoURI || "/placeholder.svg",
+                ticker: c.symbol,
+                name: c.name,
+                holders: "—",
+                volume: "—",
+                marketCap: "—",
+                timeAgo: (c as any).timeAgo || formatTimeAgo(c.createdAt),
+                hasWebsite: Boolean(c.website && c.website.length > 0),
+                hasTwitter: Boolean(c.xAccount && c.xAccount.length > 0),
+              };
+
+          const tab = classifyTab(summary?.metrics ?? null);
+
+          if (tab === "up") nextUp.push(token);
+          else if (tab === "higher") nextHigher.push(token);
+          else nextMoon.push(token);
+        });
+
+        setUpTokens(nextUp);
+        setHigherTokens(nextHigher);
+        setMoonTokens(nextMoon);
+      } catch (e) {
+        console.error("[UpNow] Failed to load campaigns", e);
+        if (!cancelled) {
+          setUpTokens([]);
+          setHigherTokens([]);
+          setMoonTokens([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchCampaigns, fetchCampaignSummary]);
+
+  const sections = useMemo(() => {
+    return {
       up: {
         icon: Sparkles,
         title: "up?",
-        tokens: inceptionTokens,
-        subtitle: null
+        tokens: upTokens,
+        subtitle: null as string | null,
       },
       higher: {
         icon: TrendingUp,
         title: "higher",
         tokens: higherTokens,
-        subtitle: "Below $60k"
+        subtitle: "Close to bonding",
       },
       moon: {
         icon: Target,
         title: "to the moon",
-        tokens: migratedTokens,
-        subtitle: "Above $60k"
-      }
-    }[type];
+        tokens: moonTokens,
+        subtitle: "Near graduation",
+      },
+    };
+  }, [upTokens, higherTokens, moonTokens]);
 
+  const renderSection = (type: Tab) => {
+    const config = sections[type];
     const Icon = config.icon;
 
     return (
@@ -107,21 +253,33 @@ const UpNow = () => {
             <div className="bg-accent/20 p-2 md:p-3 rounded-xl">
               <Icon className="h-5 w-5 md:h-6 md:w-6 text-accent" />
             </div>
-            <h2 className="text-xl md:text-2xl font-retro text-foreground">{config.title}</h2>
+            <h2 className="text-xl md:text-2xl font-retro text-foreground">
+              {config.title}
+            </h2>
           </div>
           {config.subtitle && (
-            <span className="text-xs md:text-sm font-retro text-muted-foreground">{config.subtitle}</span>
+            <span className="text-xs md:text-sm font-retro text-muted-foreground">
+              {config.subtitle}
+            </span>
           )}
         </div>
-        
+
         <div className="flex-1 overflow-y-auto px-4 md:px-6 pb-4 md:pb-6 space-y-3 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
-          {config.tokens.length > 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="font-retro text-muted-foreground text-sm">
+                Loading tokens...
+              </p>
+            </div>
+          ) : config.tokens.length > 0 ? (
             config.tokens.map((token) => (
               <TokenCard key={token.id} token={token} />
             ))
           ) : (
             <div className="text-center py-12">
-              <p className="font-retro text-muted-foreground text-sm">No tokens found</p>
+              <p className="font-retro text-muted-foreground text-sm">
+                No tokens found
+              </p>
             </div>
           )}
         </div>
@@ -131,19 +289,19 @@ const UpNow = () => {
 
   return (
     <div className="fixed inset-0 pt-28 lg:pt-28 pl-0 lg:pl-72">
-      <div className={`h-full ${isMobile ? 'pb-20' : ''} p-4 md:p-6 ${isMobile ? 'flex flex-col' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'} gap-4`}>
-        {/* Mobile: Show only active tab, Desktop: Show all sections */}
+      <div
+        className={`h-full ${isMobile ? "pb-20" : ""} p-4 md:p-6 ${
+          isMobile
+            ? "flex flex-col"
+            : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+        } gap-4`}
+      >
         {isMobile ? (
           renderSection(activeTab)
         ) : (
           <>
-            {/* Section 1: up? (Inception) */}
             {renderSection("up")}
-
-            {/* Section 2: higher (Close to bonding) */}
             {renderSection("higher")}
-
-            {/* Section 3: UP only (Migrated) */}
             <div className="md:col-span-2 lg:col-span-1">
               {renderSection("moon")}
             </div>
@@ -151,31 +309,38 @@ const UpNow = () => {
         )}
       </div>
 
-      {/* Mobile Bottom Tab Menu */}
       {isMobile && (
         <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border p-2 flex justify-around items-center z-50">
           <button
             onClick={() => setActiveTab("up")}
             className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all ${
-              activeTab === "up" ? "bg-accent/20 text-accent" : "text-muted-foreground"
+              activeTab === "up"
+                ? "bg-accent/20 text-accent"
+                : "text-muted-foreground"
             }`}
           >
             <Sparkles className="h-5 w-5" />
             <span className="text-xs font-retro">up?</span>
           </button>
+
           <button
             onClick={() => setActiveTab("higher")}
             className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all ${
-              activeTab === "higher" ? "bg-accent/20 text-accent" : "text-muted-foreground"
+              activeTab === "higher"
+                ? "bg-accent/20 text-accent"
+                : "text-muted-foreground"
             }`}
           >
             <TrendingUp className="h-5 w-5" />
             <span className="text-xs font-retro">higher</span>
           </button>
+
           <button
             onClick={() => setActiveTab("moon")}
             className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-all ${
-              activeTab === "moon" ? "bg-accent/20 text-accent" : "text-muted-foreground"
+              activeTab === "moon"
+                ? "bg-accent/20 text-accent"
+                : "text-muted-foreground"
             }`}
           >
             <Target className="h-5 w-5" />

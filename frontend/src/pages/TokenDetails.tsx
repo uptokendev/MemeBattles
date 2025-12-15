@@ -11,14 +11,17 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { mockTokenData, mockTransactions } from "@/constants/mockData";
+import type { Transaction } from "@/types/token";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
+import type { CampaignInfo, CampaignMetrics, CampaignSummary } from "@/lib/launchpadClient";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
+import { useWallet } from "@/hooks/useWallet";
+import { useCurveTrades } from "@/hooks/useCurveTrades";
+import { ethers } from "ethers";
 
 const TokenDetails = () => {
   // URL param: /token/:id  (we currently use ticker in the URL)
@@ -37,9 +40,13 @@ const TokenDetails = () => {
   const isMobile = window.innerWidth < 768;
 
   // Launchpad hooks + state for the on-chain data
-  const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
+  const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics } = useLaunchpad();
+  const wallet = useWallet();
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
+  const [summary, setSummary] = useState<CampaignSummary | null>(null);
+  const [curveReserveWei, setCurveReserveWei] = useState<bigint | null>(null);
+  const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +65,7 @@ const TokenDetails = () => {
           setError("No token data");
           setCampaign(null);
           setMetrics(null);
+          setSummary(null);
           return;
         }
 
@@ -70,14 +78,16 @@ const TokenDetails = () => {
           setError("Token not found");
           setCampaign(null);
           setMetrics(null);
+          setSummary(null);
           return;
         }
 
         setCampaign(match);
 
-        // Optional: basic metrics from campaign contract
-        const m = await fetchCampaignMetrics(match.campaign);
-        if (m) setMetrics(m);
+        // Unified token stats + metrics (same source as carousel / UpNow)
+        const s = await fetchCampaignSummary(match);
+        setSummary(s);
+        setMetrics(s.metrics ?? null);
       } catch (err) {
         console.error(err);
         setError("Failed to load token data");
@@ -87,25 +97,158 @@ const TokenDetails = () => {
     };
 
     load();
-  }, [id, fetchCampaigns, fetchCampaignMetrics]);
+  }, [id, fetchCampaigns, fetchCampaignSummary]);
 
-  // Merge mock UI data with real on-chain campaign info
+  const formatPriceFromWei = (wei?: bigint | null): string => {
+    if (wei == null) return "—";
+    try {
+      const raw = ethers.formatUnits(wei, 18);
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return `${raw} BNB`;
+      const pretty = n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6);
+      return `${pretty} BNB`;
+    } catch {
+      return "—";
+    }
+  };
+
+  const formatBnbFromWei = (wei?: bigint | null): string => {
+    if (wei == null) return "—";
+    try {
+      const raw = ethers.formatEther(wei);
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return `${raw} BNB`;
+      const pretty = n >= 1 ? n.toFixed(2) : n >= 0.01 ? n.toFixed(4) : n.toFixed(6);
+      return `${pretty} BNB`;
+    } catch {
+      return "—";
+    }
+  };
+
+  // Token view-model used throughout the page (mock + live)
   const tokenData = useMemo(() => {
-    // Start with mock values so the UI always has something to show
-    const base = mockTokenData;
+    const ticker = campaign?.symbol ?? (id ? id.toUpperCase() : "");
+    const name = campaign?.name ?? "Token";
 
-    if (!campaign) return base;
+    const stats = summary?.stats;
 
     return {
-      ...base,
-      ticker: campaign.symbol,
-      name: campaign.name,
-      image: campaign.logoURI || base.image,
-      // if you ever want to add contractAddress here, also extend the type of mockTokenData
-      // contractAddress: campaign.token,
-      // price: metrics ? Number(metrics.currentPrice) / 1e18 : base.price,
+      image: campaign?.logoURI || "/placeholder.svg",
+      ticker,
+      name,
+      hasWebsite: Boolean(campaign?.website && campaign.website.length > 0),
+      hasTwitter: Boolean(campaign?.xAccount && campaign.xAccount.length > 0),
+
+      // Unified headline stats
+      marketCap: stats?.marketCap ?? "—",
+      volume: stats?.volume ?? "—",
+      holders: stats?.holders ?? "—",
+      price: formatPriceFromWei(metrics?.currentPrice ?? null),
+      liquidity: formatBnbFromWei(curveReserveWei),
+
+      // Timeframe tiles (best-effort; until we have proper analytics)
+      metrics: {
+        "5m": { change: 0, volume: 0 },
+        "1h": { change: 0, volume: 0 },
+        "4h": { change: 0, volume: 0 },
+        "24h": { change: 0, volume: 0 },
+      },
     };
-  }, [campaign, metrics]);
+  }, [campaign, curveReserveWei, id, metrics, summary]);
+
+  // Read curve trades for the transactions table (live mode)
+  const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign);
+
+  const shorten = (addr?: string): string => {
+    if (!addr) return "—";
+    return addr.length > 10 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
+  };
+
+  const formatCompact = (n: number): string => {
+    if (!Number.isFinite(n)) return "—";
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}b`;
+    if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}m`;
+    if (abs >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
+    return n.toFixed(2);
+  };
+
+  const formatAgo = (timestampSecs?: number): string => {
+    if (!timestampSecs) return "";
+    const now = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, now - timestampSecs);
+    if (diff < 60) return "now";
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d`;
+    const weeks = Math.floor(days / 7);
+    return `${weeks}w`;
+  };
+
+  // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadReserve = async () => {
+      try {
+        if (USE_MOCK_DATA) {
+          setCurveReserveWei(null);
+          return;
+        }
+        if (!wallet.provider || !campaign?.campaign) {
+          setCurveReserveWei(null);
+          return;
+        }
+        const bal = await wallet.provider.getBalance(campaign.campaign);
+        if (!cancelled) setCurveReserveWei(bal);
+      } catch (e) {
+        console.warn("[TokenDetails] Failed to load campaign reserve", e);
+        if (!cancelled) setCurveReserveWei(null);
+      }
+    };
+
+    loadReserve();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.provider, campaign?.campaign]);
+
+  // Build transactions table from curve events (live). In mock mode we keep it empty unless you add mock trade data.
+  useEffect(() => {
+    if (!campaign) {
+      setTxs([]);
+      return;
+    }
+
+    if (USE_MOCK_DATA) {
+      setTxs([]);
+      return;
+    }
+
+    const next: Transaction[] = [...liveCurvePoints]
+      .slice(-50)
+      .reverse()
+      .map((p) => {
+        const tokenAmount = Number(ethers.formatUnits(p.tokensWei, 18));
+        const bnb = Number(ethers.formatEther(p.nativeWei));
+
+        return {
+          time: formatAgo(p.timestamp),
+          type: p.side,
+          usd: Number.isFinite(bnb) ? Number(bnb.toFixed(4)) : 0,
+          amount: formatCompact(tokenAmount),
+          sol: Number.isFinite(bnb) ? Number(bnb.toFixed(4)) : 0,
+          mcap: summary?.stats.marketCap ?? "—",
+          trader: shorten(p.trader),
+          tx: p.txHash,
+        };
+      });
+
+    setTxs(next);
+  }, [USE_MOCK_DATA, campaign, liveCurvePoints, summary]);
 
   // 🔹 Dexscreener chart-only URL (mock or live) based on the token contract
   // In mock mode we still want to be able to test the internal bonding-curve chart.
@@ -194,6 +337,10 @@ const TokenDetails = () => {
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 md:h-7 md:w-7 p-0 hover:bg-muted/50"
+                        onClick={() => {
+                          const url = campaign?.website;
+                          if (url) window.open(url, "_blank", "noopener,noreferrer");
+                        }}
                       >
                         <Globe className="h-3 w-3 md:h-3.5 md:w-3.5" />
                       </Button>
@@ -203,6 +350,14 @@ const TokenDetails = () => {
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 md:h-7 md:w-7 p-0 hover:bg-muted/50"
+                        onClick={() => {
+                          const handle = campaign?.xAccount;
+                          if (!handle) return;
+                          const url = handle.startsWith("http")
+                            ? handle
+                            : `https://x.com/${handle.replace(/^@/, "")}`;
+                          window.open(url, "_blank", "noopener,noreferrer");
+                        }}
                       >
                         <img
                           src={twitterIcon}
@@ -230,18 +385,8 @@ const TokenDetails = () => {
                 <p className="text-xs text-muted-foreground">Market cap</p>
                 <div className="flex items-center gap-2 md:gap-3">
                   <h2 className="text-lg md:text-2xl font-retro text-foreground">
-                    ${tokenData.marketCap}k
+                    {tokenData.marketCap}
                   </h2>
-                  <span
-                    className={`text-xs md:text-sm font-mono ${
-                      tokenData.marketCapChange < 0
-                        ? "text-red-500"
-                        : "text-green-500"
-                    }`}
-                  >
-                    {tokenData.marketCapChange > 0 ? "▲" : "▼"}{" "}
-                    {Math.abs(tokenData.marketCapChange)}%
-                  </span>
                 </div>
               </div>
 
@@ -291,8 +436,11 @@ const TokenDetails = () => {
                                     : "text-green-500"
                                 }`}
                               >
-                                {(data as any).change > 0 ? "▲" : "▼"}{" "}
-                                {Math.abs((data as any).change)}%
+                              {(data as any).change === 0
+                                ? "—"
+                                : `${(data as any).change > 0 ? "▲" : "▼"} ${Math.abs(
+                                    (data as any).change
+                                  )}%`}
                               </span>
                             </div>
                           )
@@ -306,15 +454,15 @@ const TokenDetails = () => {
                             Price
                           </span>
                           <span className="font-mono text-foreground">
-                            ${tokenData.price}
+                            {tokenData.price}
                           </span>
                         </div>
                         <div className="text-xs">
                           <span className="text-muted-foreground block">
-                            Liq.
+                            Reserve
                           </span>
                           <span className="font-mono text-foreground">
-                            ${tokenData.liquidity}k
+                            {tokenData.liquidity}
                           </span>
                         </div>
                         <div className="text-xs">
@@ -368,8 +516,11 @@ const TokenDetails = () => {
                             : "text-green-500"
                         }`}
                       >
-                        {(data as any).change > 0 ? "▲" : "▼"}{" "}
-                        {Math.abs((data as any).change)}%
+                        {(data as any).change === 0
+                          ? "—"
+                          : `${(data as any).change > 0 ? "▲" : "▼"} ${Math.abs(
+                              (data as any).change
+                            )}%`}
                       </span>
                     </div>
                   ))}
@@ -380,13 +531,13 @@ const TokenDetails = () => {
                   <div className="text-xs">
                     <span className="text-muted-foreground">Price</span>
                     <span className="ml-2 font-mono text-foreground">
-                      ${tokenData.price}
+                      {tokenData.price}
                     </span>
                   </div>
                   <div className="text-xs">
-                    <span className="text-muted-foreground">Liq.</span>
+                    <span className="text-muted-foreground">Reserve</span>
                     <span className="ml-2 font-mono text-foreground">
-                      ${tokenData.liquidity}k
+                      {tokenData.liquidity}
                     </span>
                   </div>
                   <div className="text-xs">
@@ -469,7 +620,17 @@ const TokenDetails = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockTransactions.map((tx, i) => (
+                  {txs.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="py-6 text-center text-muted-foreground"
+                      >
+                        No trades yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    txs.map((tx, i) => (
                     <tr
                       key={i}
                       className="border-b border-border/50 hover:bg-muted/20"
@@ -494,12 +655,20 @@ const TokenDetails = () => {
                           variant="ghost"
                           size="icon"
                           className="h-5 w-5"
+                          onClick={() => {
+                            if (!tx.tx) return;
+                            const base = wallet.chainId === 97
+                              ? "https://testnet.bscscan.com/tx/"
+                              : "https://bscscan.com/tx/";
+                            window.open(`${base}${tx.tx}`, "_blank", "noopener,noreferrer");
+                          }}
                         >
                           <ExternalLink className="h-3 w-3" />
                         </Button>
                       </td>
                     </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

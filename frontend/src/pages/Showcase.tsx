@@ -18,7 +18,7 @@ const Showcase = () => {
         <Example />
       </div>
       
-      <div className="absolute bottom-8 md:bottom-32 left-0 right-0 flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-6 z-20 pointer-events-none px-4">
+      <div className="absolute bottom-8 left-0 right-0 flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-6 z-20 pointer-events-none px-4 md:static md:mt-6 md:pb-6">
         <div className="pointer-events-auto w-full sm:w-auto">
           <GlowingButton 
             glowColor="#ec4899" 

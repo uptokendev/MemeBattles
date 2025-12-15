@@ -1,20 +1,105 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ProfileTab } from "@/types/profile";
-import { mockCoins } from "@/constants/mockData";
+import { useWallet } from "@/hooks/useWallet";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignSummary } from "@/lib/launchpadClient";
 
 const Profile = () => {
   const navigate = useNavigate();
+  const wallet = useWallet();
+  const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
-  const walletAddress = "GcBVq...iaR5";
+  const [created, setCreated] = useState<
+    Array<{
+      id: number;
+      image: string;
+      name: string;
+      ticker: string;
+      marketCap: string;
+      timeAgo: string;
+    }>
+  >([]);
+
+  const walletAddress = wallet.account
+    ? wallet.account.length > 10
+      ? `${wallet.account.slice(0, 6)}...${wallet.account.slice(-4)}`
+      : wallet.account
+    : "Not connected";
+
+  const formatTimeAgo = (createdAt?: number): string => {
+    if (!createdAt) return "";
+    const now = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, now - createdAt);
+    if (diff < 60) return "now";
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d`;
+    const weeks = Math.floor(days / 7);
+    return `${weeks}w`;
+  };
 
   const handleCopyAddress = () => {
-    navigator.clipboard.writeText("GcBVqiaR5");
+    if (!wallet.account) return;
+    navigator.clipboard.writeText(wallet.account);
     toast.success("Address copied!");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCreated = async () => {
+      try {
+        if (!wallet.account) {
+          setCreated([]);
+          return;
+        }
+
+        const campaigns = (await fetchCampaigns()) ?? [];
+        const mine = campaigns.filter(
+          (c) => (c.creator ?? "").toLowerCase() === wallet.account!.toLowerCase()
+        );
+
+        const results = await Promise.allSettled(
+          mine.map((c) => fetchCampaignSummary(c))
+        );
+
+        if (cancelled) return;
+
+        const next = results
+          .filter(
+            (r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled"
+          )
+          .map((r, idx) => {
+            const s = r.value;
+            return {
+              id: typeof s.campaign.id === "number" ? s.campaign.id : idx + 1,
+              image: s.campaign.logoURI || "/placeholder.svg",
+              name: s.campaign.name,
+              ticker: s.campaign.symbol,
+              marketCap: s.stats.marketCap,
+              timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
+            };
+          });
+
+        setCreated(next);
+      } catch (e) {
+        console.error("[Profile] Failed to load created campaigns", e);
+        if (!cancelled) setCreated([]);
+      }
+    };
+
+    loadCreated();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.account, fetchCampaigns, fetchCampaignSummary]);
 
   return (
     <div className="fixed inset-0 pt-28 lg:pt-28 pl-0 lg:pl-72">
@@ -34,7 +119,9 @@ const Profile = () => {
 
               {/* Profile Info */}
               <div className="flex-1 text-center sm:text-left">
-                <h1 className="text-2xl md:text-3xl font-retro text-foreground mb-3">GcBVqP</h1>
+                <h1 className="text-2xl md:text-3xl font-retro text-foreground mb-3">
+                  {wallet.account ? walletAddress : "Profile"}
+                </h1>
                 
                 <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 sm:gap-3 mb-4">
                   <span className="text-xs md:text-sm font-retro text-muted-foreground">{walletAddress}</span>
@@ -49,7 +136,7 @@ const Profile = () => {
                       href="#"
                       className="flex items-center gap-1 text-xs md:text-sm font-retro text-accent hover:text-accent/80 transition-colors"
                     >
-                      View on solscan
+                      View on explorer
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -66,7 +153,7 @@ const Profile = () => {
                     <div className="text-xs font-retro text-muted-foreground">Following</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-xl md:text-2xl font-retro text-foreground">12</div>
+                    <div className="text-xl md:text-2xl font-retro text-foreground">{created.length}</div>
                     <div className="text-xs font-retro text-muted-foreground">Created coins</div>
                   </div>
                 </div>
@@ -137,7 +224,7 @@ const Profile = () => {
             <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
               <div className="flex items-center justify-between mb-4 md:mb-6">
                 <h3 className="text-xs md:text-sm font-retro text-foreground">
-                  created coins <span className="text-muted-foreground">(12)</span>
+                  created coins <span className="text-muted-foreground">({created.length})</span>
                 </h3>
                 <button className="text-xs md:text-sm font-retro text-accent hover:text-accent/80 transition-colors">
                   see all
@@ -145,7 +232,7 @@ const Profile = () => {
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
-                {mockCoins.map((coin) => (
+                {created.map((coin) => (
                   <div
                     key={coin.id}
                     className="flex items-center justify-between p-3 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"

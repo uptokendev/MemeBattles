@@ -63,8 +63,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public immutable creatorReserve;
 
     uint256 public sold;
-    bool public launched;
-    uint256 public finalizedAt;
+bool public launched;
+uint256 public finalizedAt;
+
+// ---- Phase 2 cheap counters (no backend / no log scanning) ----
+uint256 public totalBuyVolumeWei;
+uint256 public totalSellVolumeWei;
+uint256 public buyersCount;
+mapping(address => bool) public hasBought;
 
     event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost);
     event TokensSold(address indexed seller, uint256 amountIn, uint256 payout);
@@ -153,12 +159,19 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         require(!launched, "campaign launched");
         cost = quoteBuyExactTokens(amountOut);
         require(cost <= maxCost, "slippage");
-        if (msg.value < cost) {
-            revert("insufficient value");
-        }
+       if (msg.value < cost) {
+    revert("insufficient value");
+}
 
-        sold += amountOut;
-        tokenInterface.safeTransfer(msg.sender, amountOut);
+// Phase 2 counters
+totalBuyVolumeWei += cost;
+if (!hasBought[msg.sender]) {
+    hasBought[msg.sender] = true;
+    buyersCount += 1;
+}
+
+sold += amountOut;
+tokenInterface.safeTransfer(msg.sender, amountOut);
         if (msg.value > cost) {
             _sendNative(msg.sender, msg.value - cost);
         }
@@ -176,10 +189,13 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         require(payout >= minPayout, "slippage");
 
         sold -= amountIn;
-        tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
-        _sendNative(msg.sender, payout);
+tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
+_sendNative(msg.sender, payout);
 
-        emit TokensSold(msg.sender, amountIn, payout);
+// Phase 2 counters
+totalSellVolumeWei += payout;
+
+emit TokensSold(msg.sender, amountIn, payout);
     }
 
     function finalize(uint256 minTokens, uint256 minBnb)
