@@ -23,7 +23,16 @@ import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
 import { getMockDexLiquidityBnbForSymbol } from "@/constants/mockDexTrades";
 import { useWallet } from "@/hooks/useWallet";
 import { useCurveTrades } from "@/hooks/useCurveTrades";
-import { ethers } from "ethers";
+import { Contract, ethers } from "ethers";
+import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
+import LaunchTokenArtifact from "@/abi/LaunchToken.json";
+
+
+const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
+const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
+const TOKEN_DECIMALS = 18;
+const SLIPPAGE_PCT = 5;
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 const TokenDetails = () => {
   // URL param: /token/:id  (we currently use ticker in the URL)
@@ -42,7 +51,7 @@ const TokenDetails = () => {
   const isMobile = window.innerWidth < 768;
 
   // Launchpad hooks + state for the on-chain data
-  const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics } = useLaunchpad();
+  const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
@@ -51,6 +60,15 @@ const TokenDetails = () => {
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Trading (quote + balances)
+  const [quoteWei, setQuoteWei] = useState<bigint | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [tradePending, setTradePending] = useState(false);
+  const [approvePending, setApprovePending] = useState(false);
+  const [bnbBalanceWei, setBnbBalanceWei] = useState<bigint | null>(null);
+  const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
 
   // Load campaign + metrics based on :id (ticker)
   useEffect(() => {
@@ -124,6 +142,33 @@ const TokenDetails = () => {
       return `${pretty} BNB`;
     } catch {
       return "—";
+    }
+  };
+
+  const formatTokenFromWei = (wei?: bigint | null): string => {
+    if (wei == null) return "—";
+    try {
+      const raw = ethers.formatUnits(wei, TOKEN_DECIMALS);
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return raw;
+      const pretty = n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(6) : n.toFixed(8);
+      return pretty;
+    } catch {
+      return "—";
+    }
+  };
+
+  const parseTokenAmountWei = (value: string): bigint => {
+    const v = (value ?? "").trim();
+    if (!v || v === "." || v === "-") return 0n;
+    // Only allow digits + a single decimal separator
+    const cleaned = v.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+    const parts = cleaned.split(".");
+    const normalized = parts.length <= 2 ? cleaned : parts[0] + "." + parts.slice(1).join("");
+    try {
+      return ethers.parseUnits(normalized || "0", TOKEN_DECIMALS);
+    } catch {
+      return 0n;
     }
   };
 
@@ -330,6 +375,52 @@ const TokenDetails = () => {
     };
   }, [wallet.provider, campaign?.campaign]);
 
+  // Wallet balances (for the trading panel)
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBalances = async () => {
+      try {
+        if (!wallet.provider || !wallet.account) {
+          setBnbBalanceWei(null);
+          setTokenBalanceWei(null);
+          return;
+        }
+
+        const [bnbBal, tokenBal] = await Promise.all([
+          wallet.provider.getBalance(wallet.account),
+          (async () => {
+            try {
+              if (!campaign?.token) return 0n;
+              const t = new Contract(campaign.token, TOKEN_ABI, wallet.provider) as any;
+              return (await t.balanceOf(wallet.account)) as bigint;
+            } catch {
+              return 0n;
+            }
+          })(),
+        ]);
+
+        if (!cancelled) {
+          setBnbBalanceWei(bnbBal);
+          setTokenBalanceWei(tokenBal);
+        }
+      } catch (e) {
+        console.warn('[TokenDetails] Failed to load balances', e);
+        if (!cancelled) {
+          setBnbBalanceWei(null);
+          setTokenBalanceWei(null);
+        }
+      }
+    };
+
+    // In MOCK mode the trading panel can still show balances if the wallet is connected.
+    loadBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.provider, wallet.account, campaign?.token]);
+
   // Build transactions table from curve events (live). In mock mode we keep it empty unless you add mock trade data.
   useEffect(() => {
     if (!campaign) {
@@ -527,6 +618,252 @@ const TokenDetails = () => {
 
   const chartTitle = isDexStage ? "DEX chart" : "Bonding curve";
   const stagePill = isDexStage ? "Graduated" : "Bonding";
+
+
+
+  // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadQuote = async () => {
+      try {
+        setQuoteError(null);
+
+        if (isDexStage) {
+          setQuoteWei(null);
+          return;
+        }
+        if (!campaign?.campaign) {
+          setQuoteWei(null);
+          return;
+        }
+
+        const amountWei = parseTokenAmountWei(tradeAmount);
+        if (amountWei <= 0n) {
+          setQuoteWei(null);
+          return;
+        }
+
+        setQuoteLoading(true);
+
+        if (USE_MOCK_DATA) {
+          const priceWei = metrics?.currentPrice ?? 0n;
+          const gross = (amountWei * priceWei) / 10n ** 18n;
+          const q = tradeTab === "buy" ? gross : (gross * 95n) / 100n;
+          if (!cancelled) setQuoteWei(q);
+          return;
+        }
+
+        if (!wallet.provider) {
+          if (!cancelled) {
+            setQuoteWei(null);
+            setQuoteError("Wallet provider not available");
+          }
+          return;
+        }
+
+        const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider) as any;
+        const q: bigint = tradeTab === "buy"
+          ? await c.quoteBuyExactTokens(amountWei)
+          : await c.quoteSellExactTokens(amountWei);
+
+        if (!cancelled) setQuoteWei(q);
+      } catch (e: any) {
+        console.warn("[TokenDetails] Quote failed", e);
+        if (!cancelled) {
+          setQuoteWei(null);
+          setQuoteError(e?.message ?? "Failed to fetch quote");
+        }
+      } finally {
+        if (!cancelled) setQuoteLoading(false);
+      }
+    };
+
+    const t = setTimeout(loadQuote, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [wallet.provider, campaign?.campaign, metrics?.currentPrice, tradeTab, tradeAmount, isDexStage]);
+
+  const handlePlaceTrade = async () => {
+    if (!campaign?.campaign) return;
+
+    if (isDexStage) {
+      toast({
+        title: "Token is graduated",
+        description: "This token is trading on DEX now. Use DexScreener / PancakeSwap.",
+      });
+      if (dexBaseUrl) window.open(dexBaseUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const amountWei = parseTokenAmountWei(tradeAmount);
+    if (amountWei <= 0n) {
+      toast({
+        title: "Invalid amount",
+        description: `Enter a ${tokenData.ticker} amount greater than 0.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Balance sanity checks (best-effort)
+      if (!isDexStage && tradeTab === "sell" && tokenBalanceWei != null && amountWei > tokenBalanceWei) {
+        toast({
+          title: "Insufficient token balance",
+          description: `You do not have enough ${tokenData.ticker} to sell that amount.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!isDexStage && tradeTab === "buy" && bnbBalanceWei != null && quoteWei != null) {
+        const maxCostWei = (quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+        if (maxCostWei > bnbBalanceWei) {
+          toast({
+            title: "Insufficient BNB",
+            description: `You need ~${formatBnbFromWei(maxCostWei)} to place this buy.`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      // Ensure wallet is connected for writes (live mode)
+      if (!USE_MOCK_DATA) {
+        if (!wallet.signer || !wallet.account) {
+          toast({
+            title: "Connect wallet",
+            description: "Please connect your wallet to trade.",
+          });
+          await wallet.connect();
+        }
+        if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
+      }
+
+      setTradePending(true);
+
+      if (tradeTab === "buy") {
+        let costWei = quoteWei;
+        if (costWei == null) {
+          if (USE_MOCK_DATA) {
+            const priceWei = metrics?.currentPrice ?? 0n;
+            costWei = (amountWei * priceWei) / 10n ** 18n;
+          } else {
+            const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
+            costWei = await c.quoteBuyExactTokens(amountWei);
+          }
+        }
+
+        const maxCostWei = (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+
+        toast({
+          title: "Submitting buy",
+          description: `Buying ${ethers.formatUnits(amountWei, TOKEN_DECIMALS)} ${tokenData.ticker} (max ${formatBnbFromWei(maxCostWei)}).`,
+        });
+
+        const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
+
+        toast({
+          title: "Buy confirmed",
+          description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
+        });
+      } else {
+        let payoutWei = quoteWei;
+        if (payoutWei == null) {
+          if (USE_MOCK_DATA) {
+            const priceWei = metrics?.currentPrice ?? 0n;
+            const gross = (amountWei * priceWei) / 10n ** 18n;
+            payoutWei = (gross * 95n) / 100n;
+          } else {
+            const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
+            payoutWei = await c.quoteSellExactTokens(amountWei);
+          }
+        }
+
+        const minPayoutWei = (payoutWei * BigInt(100 - SLIPPAGE_PCT)) / 100n;
+
+        if (!USE_MOCK_DATA && campaign?.token) {
+          const token = new Contract(campaign.token, TOKEN_ABI, wallet.signer) as any;
+          const allowance: bigint = await token.allowance(wallet.account, campaign.campaign);
+          if (allowance < amountWei) {
+            setApprovePending(true);
+            toast({
+              title: "Approval required",
+              description: `Approving ${tokenData.ticker} for selling...`,
+            });
+            const tx = await token.approve(campaign.campaign, MAX_UINT256);
+            await tx.wait();
+            setApprovePending(false);
+          }
+        }
+
+        toast({
+          title: "Submitting sell",
+          description: `Selling ${ethers.formatUnits(amountWei, TOKEN_DECIMALS)} ${tokenData.ticker} (min ${formatBnbFromWei(minPayoutWei)}).`,
+        });
+
+        const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
+
+        toast({
+          title: "Sell confirmed",
+          description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
+        });
+      }
+
+      // Refresh headline stats + balances
+      try {
+        const s = await fetchCampaignSummary(campaign);
+        setSummary(s);
+        setMetrics(s.metrics ?? null);
+      } catch {
+        // ignore
+      }
+
+      try {
+        if (!USE_MOCK_DATA && wallet.provider && campaign?.campaign) {
+          const bal = await wallet.provider.getBalance(campaign.campaign);
+          setCurveReserveWei(bal);
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        if (wallet.provider && wallet.account && campaign?.token) {
+          const [bnbBal, tokenBal] = await Promise.all([
+            wallet.provider.getBalance(wallet.account),
+            (async () => {
+              try {
+                const t = new Contract(campaign.token, TOKEN_ABI, wallet.provider) as any;
+                return (await t.balanceOf(wallet.account)) as bigint;
+              } catch {
+                return 0n;
+              }
+            })(),
+          ]);
+          setBnbBalanceWei(bnbBal);
+          setTokenBalanceWei(tokenBal);
+        }
+      } catch {
+        // ignore
+      }
+
+      setTradeAmount("0");
+    } catch (e: any) {
+      console.error('[TokenDetails] Trade failed', e);
+      toast({
+        title: "Trade failed",
+        description: e?.reason || e?.message || "Transaction failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setApprovePending(false);
+      setTradePending(false);
+    }
+  };
 
   const copyAddress = () => {
     const address = campaign?.token ?? "";
@@ -1003,10 +1340,10 @@ const TokenDetails = () => {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-muted-foreground">
-                      Amount
+                      Amount ({tokenData.ticker})
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Slippage: 5%
+                      Slippage: {SLIPPAGE_PCT}%
                     </span>
                   </div>
                   <div className="relative">
@@ -1014,54 +1351,58 @@ const TokenDetails = () => {
                       type="text"
                       value={tradeAmount}
                       onChange={(e) => setTradeAmount(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-14 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="0"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                       <span className="text-xs font-mono text-muted-foreground">
-                        BNB
+                        {tokenData.ticker}
                       </span>
                     </div>
                   </div>
-                  <div className="flex gap-1 mt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                    >
-                      25%
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                    >
-                      50%
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                    >
-                      100%
-                    </Button>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-muted-foreground">
+                      Wallet: {formatBnbFromWei(bnbBalanceWei)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Cost: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
+                    </span>
                   </div>
+                  {quoteError ? (
+                    <p className="mt-2 text-center text-xs text-destructive">
+                      {quoteError}
+                    </p>
+                  ) : null}
                 </div>
+
                 <div className="text-center text-xs text-muted-foreground">
-                  <p>You will receive 0 {tokenData.ticker}</p>
+                  {isDexStage ? (
+                    <p>Token is graduated. Trade on DEX.</p>
+                  ) : quoteWei != null ? (
+                    <p>
+                      You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                    </p>
+                  ) : (
+                    <p>Enter an amount to see the buy quote.</p>
+                  )}
                 </div>
-                <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5">
-                  Place Trade
+
+                <Button
+                  onClick={handlePlaceTrade}
+                  disabled={tradePending || approvePending || (!isDexStage && parseTokenAmountWei(tradeAmount) <= 0n)}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5"
+                >
+                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Place Trade"}
                 </Button>
               </TabsContent>
               <TabsContent value="sell" className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-muted-foreground">
-                      Amount
+                      Amount ({tokenData.ticker})
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Slippage: 5%
+                      Slippage: {SLIPPAGE_PCT}%
                     </span>
                   </div>
                   <div className="relative">
@@ -1069,12 +1410,12 @@ const TokenDetails = () => {
                       type="text"
                       value={tradeAmount}
                       onChange={(e) => setTradeAmount(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-14 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="0"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                       <span className="text-xs font-mono text-muted-foreground">
-                        BNB
+                        {tokenData.ticker}
                       </span>
                     </div>
                   </div>
@@ -1083,6 +1424,11 @@ const TokenDetails = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs h-7"
+                      onClick={() => {
+                        if (tokenBalanceWei == null) return;
+                        const amt = (tokenBalanceWei * 25n) / 100n;
+                        setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                      }}
                     >
                       25%
                     </Button>
@@ -1090,6 +1436,11 @@ const TokenDetails = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs h-7"
+                      onClick={() => {
+                        if (tokenBalanceWei == null) return;
+                        const amt = (tokenBalanceWei * 50n) / 100n;
+                        setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                      }}
                     >
                       50%
                     </Button>
@@ -1097,16 +1448,54 @@ const TokenDetails = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs h-7"
+                      onClick={() => {
+                        if (tokenBalanceWei == null) return;
+                        setTradeAmount(ethers.formatUnits(tokenBalanceWei, TOKEN_DECIMALS));
+                      }}
                     >
                       100%
                     </Button>
                   </div>
+
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-muted-foreground">
+                      Balance: {formatTokenFromWei(tokenBalanceWei)} {tokenData.ticker}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Payout: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
+                    </span>
+                  </div>
+
+                  {approvePending ? (
+                    <p className="mt-2 text-center text-xs text-muted-foreground">
+                      Approval in progress...
+                    </p>
+                  ) : null}
+                  {quoteError ? (
+                    <p className="mt-2 text-center text-xs text-destructive">
+                      {quoteError}
+                    </p>
+                  ) : null}
                 </div>
+
                 <div className="text-center text-xs text-muted-foreground">
-                  <p>You will receive 0 {tokenData.ticker}</p>
+                  {isDexStage ? (
+                    <p>Token is graduated. Trade on DEX.</p>
+                  ) : quoteWei != null ? (
+                    <p>
+                      You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})
+                    </p>
+                  ) : (
+                    <p>Enter an amount to see the sell quote.</p>
+                  )}
                 </div>
-                <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5">
-                  Place Trade
+
+                <Button
+                  onClick={handlePlaceTrade}
+                  disabled={tradePending || approvePending || (!isDexStage && parseTokenAmountWei(tradeAmount) <= 0n)}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5"
+                >
+                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Place Trade"}
                 </Button>
               </TabsContent>
             </Tabs>
