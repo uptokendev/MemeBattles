@@ -481,19 +481,19 @@ const Card = ({
   };
 
   const handleClick = () => {
-		const targetCampaign = (card.campaignAddress || "").toLowerCase();
-		const isDummy =
-			targetCampaign === "" ||
-			targetCampaign === "0x0000000000000000000000000000000000000000";
+  const campaign = (card.campaignAddress || "").toLowerCase();
+  const isDummy =
+    !campaign ||
+    campaign === "0x0000000000000000000000000000000000000000";
 
-		if (isCentered && !isDummy) {
-			// Navigate to token details if centered/highlighted AND not a dummy address
-			navigate(`/token/${targetCampaign}`);
-    } else if (!isCentered) {
-      // Otherwise just center the card
-      onClick();
-    }
-  };
+  if (!isDummy) {
+    navigate(`/token/${campaign}`);
+    return;
+  }
+
+  if (!isCentered) onClick();
+  toast.info("This token is not live yet.");
+};
 
   return (
     <div
