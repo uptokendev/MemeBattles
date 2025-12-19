@@ -134,7 +134,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
-              background: "linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.9) 100%)",
+              background: "linear-gradient(90deg, hsl(var(--muted)) 0%, hsl(var(--success)) 100%)",
               transition: "width 350ms ease",
             }}
           />
@@ -144,7 +144,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
             className="absolute top-0 bottom-0 w-10"
             style={{
               left: `calc(${Math.max(0, Math.min(100, ratio * 100))}% - 20px)`,
-              background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)",
+              background: "linear-gradient(90deg, transparent, hsl(var(--success) / 0.22), transparent)",
               filter: "blur(0.2px)",
               animation: "athGlowPulse 1.4s ease-in-out infinite",
               pointerEvents: "none",
@@ -172,16 +172,14 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
                     key={i}
                     className="absolute block h-[2px] w-[8px] rounded-full"
                     style={{
-                      background: "rgba(180, 255, 210, 0.95)",
-                      boxShadow: "0 0 10px rgba(120, 255, 190, 0.75)",
-                      transform: "translate(0,0)",
-                      opacity: 0.9,
-                      animation: `athSparkUp 520ms ease-out ${delay}ms forwards`,
-                      // ts-expect-error CSS vars
-                      "--dx": `${dx}px`,
-                      // ts-expect-error CSS vars
-                      "--dy": `${dy}px`,
-                    } as any}
+  background: "hsl(var(--success) / 0.95)",
+  boxShadow: "0 0 10px hsl(var(--success) / 0.75)",
+  transform: "translate(0,0)",
+  opacity: 0.9,
+  animation: `athSparkUp 520ms ease-out ${delay}ms forwards`,
+  "--dx": `${dx}px`,
+  "--dy": `${dy}px`,
+} as any}
                   />
                 );
               })}

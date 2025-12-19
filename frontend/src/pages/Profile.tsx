@@ -315,7 +315,7 @@ const Profile = () => {
   }, [created]);
 
   return (
-    <div className="fixed inset-0 pt-28 lg:pt-28 pl-0 lg:pl-72 relative">
+     <div className="h-full w-full relative">
       {/* Disconnect Overlay */}
       {!isConnected && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
@@ -427,7 +427,7 @@ const Profile = () => {
             {[
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
-              { id: "replies" as ProfileTab, label: "Replies", badge: null },
+              { id: "Replies" as ProfileTab, label: "Replies", badge: null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
             ].map((tab) => (

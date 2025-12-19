@@ -9,7 +9,8 @@
     "compile": "hardhat compile && node scripts/sync-abis.mjs",
     "test": "hardhat test",
     "frontend": "npm --prefix frontend run dev",
-    "frontend:build": "npm --prefix frontend run build"
+    "frontend:build": "npm --prefix frontend run build",
+    "indexer": "node scripts/indexer/run.js"
   },
   "repository": {
     "type": "git",

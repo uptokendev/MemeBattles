@@ -349,6 +349,32 @@ useEffect(() => {
     const dir = ch >= 0 ? "▲" : "▼";
     return `${dir} ${abs.toFixed(2)}%`;
   };
+const [bnbUsd, setBnbUsd] = useState<number | null>(null);
+
+useEffect(() => {
+  let cancelled = false;
+
+  const loadBnbUsd = async () => {
+    try {
+      const res = await fetch(
+        "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd"
+      );
+      if (!res.ok) throw new Error(`BNB/USD HTTP ${res.status}`);
+
+      const data = await res.json();
+      const usd = Number(data?.binancecoin?.usd);
+
+      if (!cancelled) setBnbUsd(Number.isFinite(usd) ? usd : null);
+    } catch {
+      if (!cancelled) setBnbUsd(null);
+    }
+  };
+
+  loadBnbUsd();
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
   useEffect(() => {
@@ -620,6 +646,64 @@ useEffect(() => {
   })();
   const stagePill = isDexStage ? "Graduated" : "Bonding";
 
+const graduationTargetWei = metrics?.graduationTarget ?? null;
+
+const {
+  curvePct,
+  curvePctLabel,
+  curveReserveLabel,
+  curveToGraduateLabel,
+} = useMemo(() => {
+  const reserveWei = curveReserveWei ?? null;
+
+  const clamp = (x: number, a = 0, b = 100) => Math.min(b, Math.max(a, x));
+  const toBnb = (wei: bigint) => Number(ethers.formatEther(wei));
+
+  // Graduated: always show 100% + message
+  if (isDexStage) {
+    return {
+      curvePct: 100,
+      curvePctLabel: "100.0%",
+      curveReserveLabel: "Coin has graduated!",
+      curveToGraduateLabel: "",
+    };
+  }
+
+  const reserveBnb = reserveWei ? toBnb(reserveWei) : 0;
+
+  const reserveLabel = reserveWei
+    ? `${reserveBnb.toFixed(3)} BNB in bonding curve`
+    : "— in bonding curve";
+
+  // If no target, still show the bar at 0% but keep labels sensible
+  if (!metrics?.graduationTarget || metrics.graduationTarget <= 0n) {
+    return {
+      curvePct: 0,
+      curvePctLabel: "0.0%",
+      curveReserveLabel: reserveLabel,
+      curveToGraduateLabel: "— to graduate",
+    };
+  }
+
+  const targetBnb = toBnb(metrics.graduationTarget);
+  const pctRaw = targetBnb > 0 ? (reserveBnb / targetBnb) * 100 : 0;
+  const pct = Number.isFinite(pctRaw) ? Math.min(100, Math.max(0, pctRaw)) : 0;
+
+  const remainingBnb = Math.max(targetBnb - reserveBnb, 0);
+  const remainingUsd = bnbUsd != null ? remainingBnb * bnbUsd : null;
+
+  const toGraduateLabel =
+    remainingUsd == null
+      ? "— to graduate"
+      : `$${Math.round(remainingUsd).toLocaleString()} to graduate`;
+
+  return {
+    curvePct: pct,
+    curvePctLabel: `${pct.toFixed(1)}%`,
+    curveReserveLabel: reserveLabel,
+    curveToGraduateLabel: toGraduateLabel,
+  };
+}, [curveReserveWei, metrics?.graduationTarget, bnbUsd, isDexStage]);
 
 
   // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
@@ -971,13 +1055,6 @@ useEffect(() => {
                         />
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
-                    >
-                      Community
-                    </Button>
                   </div>
                 </div>
               </div>
@@ -1485,7 +1562,34 @@ useEffect(() => {
               </TabsContent>
             </Tabs>
           </Card>
+          {/* Bonding Curve Progress */}
+<Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
+  <div className="flex items-center justify-between mb-3">
+    <span className="text-sm font-retro text-foreground">
+      Bonding Curve Progress
+    </span>
+    <span className="text-sm font-mono text-foreground">{curvePctLabel}</span>
+  </div>
 
+  <div className="relative h-[10px] w-full rounded-full bg-muted/40 overflow-hidden border border-border/40">
+    <div
+  className="absolute inset-y-0 left-0 rounded-full"
+  style={{
+    width: `${isDexStage ? 100 : curvePct}%`,
+    backgroundColor: "hsl(var(--success))",
+boxShadow: "0 0 12px hsl(var(--success) / 0.35)",
+    transition: "width 350ms ease",
+    // optional: makes tiny % still visible on bonding coins
+    minWidth: curvePct > 0 ? "2px" : undefined,
+  }}
+/>
+  </div>
+
+  <div className="mt-3 flex items-center justify-between text-xs">
+    <span className="text-muted-foreground font-mono">{curveReserveLabel}</span>
+    <span className="text-muted-foreground font-mono">{curveToGraduateLabel}</span>
+  </div>
+</Card>
           {/* User Statistics - 2/5 height */}
           <Card
             className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4"
