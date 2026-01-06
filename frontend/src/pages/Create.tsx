@@ -8,12 +8,13 @@ import ProcessingCard from "@/components/ui/processing-card";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
-import { TokenCategory } from "@/types/token";
 
 // NEW: import wallet + launchpad client
 import { useWallet } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
+
+
 
 const Create = () => {
   const {
@@ -88,9 +89,7 @@ const Create = () => {
       // Show nice processing overlay
       startProcessing();
 
-      // For now we use 0 for pricing params.
-      // We can later extend the form to include basePrice / slope / target.
-      await createCampaign({
+      const result = await createCampaign({
         name: formData.name,
         symbol: formData.ticker.toUpperCase(),
         logoURI: formData.imagePreview,
@@ -100,12 +99,29 @@ const Create = () => {
         basePriceWei: 0n,
         priceSlopeWei: 0n,
         graduationTargetWei: 0n,
-        lpReceiver: "", // lets factory use msg.sender logic
+        lpReceiver: "",
       });
 
       toast.success("Campaign created on-chain!");
 
-      // Best-effort: resolve the created campaign address so we can redirect using campaignAddress-only routes.
+      // Prefer deterministic campaign address from receipt logs
+      const campaignAddress = (result as any)?.campaignAddress;
+
+      if (campaignAddress) {
+        const nextUrl = `/token/${campaignAddress}`;
+
+        // Tell your processing overlay where to go (if you use it)
+        setProcessingRedirectTo(nextUrl);
+
+        // Optional: small buffer for subgraph/indexer/UI cache convergence
+        await new Promise((r) => setTimeout(r, 1500));
+
+        // HARD reload navigation (guarantees a fresh TokenDetails load)
+        window.location.assign(nextUrl);
+        return; // prevent any fallback redirect logic below
+      }
+
+      // Fallback: your existing best-effort poll (kept as backup)
       try {
         const symbol = formData.ticker.toUpperCase();
         const creator = (wallet.account ?? "").toLowerCase();
@@ -128,15 +144,18 @@ const Create = () => {
             });
             const newest = matches[0];
             if (newest?.campaign) {
-              setProcessingRedirectTo(`/token/${newest.campaign}`);
-              break;
+              const nextUrl = `/token/${newest.campaign}`;
+              setProcessingRedirectTo(nextUrl);
+
+              await new Promise((r) => setTimeout(r, 1500));
+              window.location.assign(nextUrl);
+              return;
             }
           }
 
           await new Promise((r) => setTimeout(r, delayMs));
         }
       } catch (e) {
-        // If this fails, the processing hook will fall back to /up-now
         console.warn("[Create] Failed to resolve created campaign address", e);
       }
 

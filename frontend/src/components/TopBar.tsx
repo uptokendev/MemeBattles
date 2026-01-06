@@ -33,7 +33,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
   const wallet = useWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -48,21 +47,27 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   >({});
   const [tickerLoading, setTickerLoading] = useState(true);
 
-  const { results: searchResults, loading: searchLoading, error: searchError } = useTokenSearch(
-    searchQuery,
-    allCampaigns,
-    { limit: 10, debounceMs: 250 }
-  );
+  const {
+    results: searchResults,
+    loading: searchLoading,
+    error: searchError,
+  } = useTokenSearch(searchQuery, allCampaigns, { limit: 10, debounceMs: 250 });
 
   const shortAddress =
     wallet.account && wallet.account.length > 8
       ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}`
       : wallet.account;
 
-  const openWalletModal = () => {
-    // You can decide: allow switching wallet even when connected or not
-    setWalletModalOpen(true);
-  };
+  const showSwitch = wallet.isConnected && wallet.isWrongNetwork;
+
+  const targetLabel =
+    wallet.targetChainId === 56
+      ? "BSC"
+      : wallet.targetChainId === 97
+      ? "BSC Testnet"
+      : "BSC";
+
+  const openWalletModal = () => setWalletModalOpen(true);
 
   const handleWalletSelect = async (type: WalletType) => {
     try {
@@ -70,7 +75,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       setWalletModalOpen(false);
     } catch (e) {
       console.error(e);
-      // Optional: add toast here if you want feedback
     }
   };
 
@@ -87,6 +91,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         const top = all.slice(0, 12);
 
         if (cancelled) return;
+
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
@@ -183,6 +188,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent border-b border-border/30">
+      {/* Header row */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 lg:pl-72">
         {/* Mobile Menu Button */}
         <button
@@ -211,7 +217,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
-          {/* Launch token button (unchanged) */}
+          {/* Launch token button */}
           <GlowingButton
             glowColor="#ec4899"
             onClick={() => navigate("/create")}
@@ -221,21 +227,12 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             <span className="sm:hidden">Launch</span>
           </GlowingButton>
 
-          {/* Connect wallet button with SAME style, but now opens modal */}
-          <div
-            className="relative"
-            onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
-            onMouseLeave={() => setDisconnectOpen(false)}
-          >
+          {/* Wallet actions */}
+          <div className="flex items-center gap-2">
             <GlowingButton
               glowColor="#a3e635"
               className="text-xs md:text-sm px-3 md:px-4 py-2"
-              onClick={() => {
-                // Only open modal if NOT connected
-                if (!wallet.isConnected) {
-                  openWalletModal();
-                }
-              }}
+              onClick={openWalletModal}
             >
               <span className="hidden sm:inline">
                 {wallet.isConnected ? shortAddress : "Connect wallet"}
@@ -245,25 +242,22 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </span>
             </GlowingButton>
 
-            {/* Disconnect dropdown */}
-            {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
-                <button
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
-                  onClick={() => {
-                    wallet.disconnect();
-                    setDisconnectOpen(false);
-                  }}
-                >
-                  Disconnect
-                </button>
-              </div>
+            {/* Optional: keep the switch button in the topbar as well */}
+            {showSwitch && (
+              <GlowingButton
+                glowColor="#ef4444"
+                className="text-xs md:text-sm px-3 md:px-4 py-2"
+                onClick={() => wallet.switchToTargetChain()}
+              >
+                <span className="hidden sm:inline">Switch to {targetLabel}</span>
+                <span className="sm:hidden">Switch</span>
+              </GlowingButton>
             )}
           </div>
         </div>
       </div>
 
-      {/* Ticker row (now campaigns; mock/live depends on useLaunchpad switch) */}
+      {/* Ticker row */}
       <div className="overflow-hidden py-3 bg-transparent">
         <div className="flex w-max gap-3 animate-[scroll_60s_linear_infinite] hover:[animation-play-state:paused] px-4">
           {tickerLoading && tickerItems.length === 0 ? (
@@ -302,7 +296,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                     alt={item.symbol}
                     className="w-4 h-4 rounded-full object-cover"
                     onError={(e) => {
-                      // fallback to placeholder if image fails
                       (e.currentTarget as HTMLImageElement).style.display = "none";
                     }}
                   />
@@ -323,12 +316,20 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
       </div>
 
-      {/* Wallet selection modal */}
+      {/* Wallet selection / wallet status modal */}
       {walletModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-2xl shadow-xl w-[90%] max-w-sm p-4 md:p-6 space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setWalletModalOpen(false)}
+        >
+          <div
+            className="bg-background border border-border rounded-2xl shadow-xl w-[90%] max-w-sm p-4 md:p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
+              <h2 className="text-sm md:text-base font-retro">
+                {wallet.isConnected ? "Wallet" : "Connect a wallet"}
+              </h2>
               <button
                 onClick={() => setWalletModalOpen(false)}
                 className="text-xs text-muted-foreground hover:text-foreground"
@@ -337,62 +338,177 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </button>
             </div>
 
-            <p className="text-xs text-muted-foreground mb-2">
-              Select a BSC-compatible EVM wallet. You can switch between testnet and
-              mainnet from your wallet settings.
-            </p>
+            {wallet.isConnected ? (
+              <>
+                <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">Connected address</p>
+                    <p className="text-xs font-medium">{shortAddress}</p>
+                  </div>
 
-            <div className="space-y-2">
-              {/* MetaMask / Rabby / browser wallet */}
-              <button
-                onClick={() => handleWalletSelect("metamask")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">MetaMask</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Browser wallet (Rabby etc.) on BSC
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">Network</p>
+                    <p className="text-xs font-medium">
+                      {wallet.chainId
+                        ? wallet.chainId === 56
+                          ? "BSC Mainnet"
+                          : wallet.chainId === 97
+                          ? "BSC Testnet"
+                          : `Chain ${wallet.chainId}`
+                        : "—"}
+                    </p>
+                  </div>
+
+                  {showSwitch && (
+                    <p className="text-[11px] text-destructive/90">
+                      Wrong network detected. Switch to {targetLabel} to use LaunchIt.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  {showSwitch && (
+                    <button
+                      onClick={async () => {
+                        await wallet.switchToTargetChain();
+                      }}
+                      className="flex-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                    >
+                      <p className="text-xs md:text-sm font-medium">
+                        Switch to {targetLabel}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Recommended for trading
+                      </p>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      wallet.disconnect();
+                      setWalletModalOpen(false);
+                    }}
+                    className="flex-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                  >
+                    <p className="text-xs md:text-sm font-medium">Disconnect</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Disconnect from LaunchIt
+                    </p>
+                  </button>
+                </div>
+
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Use a different wallet:
                   </p>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span>EVM</span>
-                </div>
-              </button>
 
-              {/* Binance Wallet */}
-              <button
-                onClick={() => handleWalletSelect("binance")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Official Binance extension for BSC
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span>BSC</span>
-                </div>
-              </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => handleWalletSelect("metamask")}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                    >
+                      <div>
+                        <p className="text-xs md:text-sm font-medium">MetaMask</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Browser wallet (Rabby etc.) on BSC
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>EVM</span>
+                      </div>
+                    </button>
 
-              {/* Generic injected fallback */}
-              <button
-                onClick={() => handleWalletSelect("injected")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Any injected BSC-compatible wallet
-                  </p>
-                </div>
-              </button>
-            </div>
+                    <button
+                      onClick={() => handleWalletSelect("binance")}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                    >
+                      <div>
+                        <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Official Binance extension for BSC
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>BSC</span>
+                      </div>
+                    </button>
 
-            <p className="text-[10px] text-muted-foreground mt-2">
-              Make sure your selected wallet is configured for Binance Smart Chain
-              (BSC mainnet or testnet, depending on your setup).
-            </p>
+                    <button
+                      onClick={() => handleWalletSelect("injected")}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                    >
+                      <div>
+                        <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Any injected BSC-compatible wallet
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Note: “Disconnect” only disconnects LaunchIt. To revoke access, remove
+                  this site in your wallet settings.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select a BSC-compatible EVM wallet. You can switch between testnet and
+                  mainnet from your wallet settings.
+                </p>
+
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleWalletSelect("metamask")}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                  >
+                    <div>
+                      <p className="text-xs md:text-sm font-medium">MetaMask</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Browser wallet (Rabby etc.) on BSC
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>EVM</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleWalletSelect("binance")}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                  >
+                    <div>
+                      <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Official Binance extension for BSC
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>BSC</span>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleWalletSelect("injected")}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                  >
+                    <div>
+                      <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Any injected BSC-compatible wallet
+                      </p>
+                    </div>
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Make sure your selected wallet is configured for Binance Smart Chain
+                  (BSC mainnet or testnet, depending on your setup).
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

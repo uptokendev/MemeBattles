@@ -86,6 +86,14 @@ export type CampaignSummary = {
   stats: CampaignCardStats;
 };
 
+export type CreateCampaignResult = {
+  status: number;
+  txHash?: string;
+  receipt?: any;
+  campaignAddress?: string;
+  tokenAddress?: string;
+};
+
 // ---------------- Formatting helpers ----------------
 const formatBnbFromWei = (wei: bigint): string => {
   try {
@@ -799,46 +807,138 @@ export function useLaunchpad() {
   // --- WRITES ---
 
     const createCampaign = useCallback(
-    async (params: {
-      name: string;
-      symbol: string;
-      logoURI: string;
-      xAccount: string;
-      website: string;
-      extraLink: string;
-      basePriceWei?: bigint;
-      priceSlopeWei?: bigint;
-      graduationTargetWei?: bigint;
-      lpReceiver?: string;
-    }) => {
-      if (USE_MOCK_DATA) {
-        console.log("[MOCK] createCampaign", params);
-        // Option: simulate a short delay
-        await new Promise((res) => setTimeout(res, 500));
-        return { status: 1 }; // minimal "success" shape
+  async (params: {
+    name: string;
+    symbol: string;
+    logoURI: string;
+    xAccount: string;
+    website: string;
+    extraLink: string;
+    basePriceWei?: bigint;
+    priceSlopeWei?: bigint;
+    graduationTargetWei?: bigint;
+    lpReceiver?: string;
+    confirmations?: number; // NEW (optional)
+  }): Promise<CreateCampaignResult> => {
+    // --- MOCK MODE ---
+    if (USE_MOCK_DATA) {
+      console.log("[MOCK] createCampaign", params);
+      await new Promise((res) => setTimeout(res, 500));
+      return {
+        status: 1,
+        txHash: "0xmock",
+        // optionally provide a deterministic mock campaign address
+        campaignAddress: "0x1111111111111111111111111111111111111111",
+        tokenAddress: "0x2222222222222222222222222222222222222222",
+      };
+    }
+
+    const factory = getFactory();
+    if (!factory || !signer) throw new Error("Wallet not connected");
+
+    const confirmations = Math.max(1, Number(params.confirmations ?? 2));
+
+    const writer = factory.connect(signer) as any;
+
+    // NOTE: you are calling createCampaign with a struct-like object.
+    // Keep as-is, since this matches your current contract call shape.
+    const tx = await writer.createCampaign({
+      name: params.name,
+      symbol: params.symbol,
+      logoURI: params.logoURI,
+      xAccount: params.xAccount,
+      website: params.website,
+      extraLink: params.extraLink,
+      basePrice: params.basePriceWei ?? 0n,
+      priceSlope: params.priceSlopeWei ?? 0n,
+      graduationTarget: params.graduationTargetWei ?? 0n,
+      lpReceiver: params.lpReceiver || ethers.ZeroAddress,
+    });
+
+    // Wait for confirmations (finality buffer)
+    const receipt = await tx.wait(confirmations);
+
+    // Try to resolve created addresses from factory event logs
+    let campaignAddress: string | undefined;
+    let tokenAddress: string | undefined;
+
+    try {
+      const iface = factory.interface;
+
+      // Your file already references factory.filters.CampaignCreated(...)
+      // so this event should exist in the ABI.
+      const createdEvent = iface.getEvent("CampaignCreated");
+      const createdTopic = createdEvent?.topicHash;
+
+      const logs = (receipt?.logs ?? []) as any[];
+
+      // Prefer matching by topic (fast + deterministic)
+      const createdLogs = createdTopic
+        ? logs.filter(
+            (l) =>
+              (l?.address ?? "").toLowerCase() === FACTORY_ADDRESS.toLowerCase() &&
+              Array.isArray(l?.topics) &&
+              l.topics.length > 0 &&
+              l.topics[0].toLowerCase() === createdTopic.toLowerCase()
+          )
+        : [];
+
+      // If no logs matched by topic, fall back to parsing all factory logs
+      const candidateLogs = createdLogs.length
+        ? createdLogs
+        : logs.filter(
+            (l) => (l?.address ?? "").toLowerCase() === FACTORY_ADDRESS.toLowerCase()
+          );
+
+      for (const log of candidateLogs) {
+        try {
+          const parsed = iface.parseLog(log);
+          if (!parsed) continue;
+
+          // If we used the fallback path, enforce the event name
+          if (parsed.name !== "CampaignCreated") continue;
+
+          const args: any = parsed.args;
+
+          // Common patterns:
+          // - args.campaign / args.token
+          // - or positional: [creator, campaign, token] / [id, campaign, token], etc.
+          if (args?.campaign && ethers.isAddress(args.campaign)) {
+            campaignAddress = args.campaign;
+          } else {
+            // Find the first address-like arg that is NOT the creator (best effort)
+            const addrArgs = Array.from(args ?? []).filter((v) => ethers.isAddress(v));
+            // Heuristic: creator is often first; campaign often second; token often third
+            campaignAddress = addrArgs[1] ?? addrArgs[0];
+          }
+
+          if (args?.token && ethers.isAddress(args.token)) {
+            tokenAddress = args.token;
+          } else {
+            const addrArgs = Array.from(args ?? []).filter((v) => ethers.isAddress(v));
+            tokenAddress = addrArgs[2];
+          }
+
+          if (campaignAddress) break;
+        } catch {
+          // ignore non-matching log
+        }
       }
+    } catch (e) {
+      console.warn("[createCampaign] Failed to parse CampaignCreated log", e);
+    }
 
-            const factory = getFactory();
-      if (!factory || !signer) throw new Error("Wallet not connected");
+    return {
+      status: Number(receipt?.status ?? 0),
+      txHash: tx?.hash,
+      receipt,
+      campaignAddress,
+      tokenAddress,
+    };
+  },
+  [getFactory, signer]
+);
 
-      const writer = factory.connect(signer) as any;
-      const tx = await writer.createCampaign({
-        name: params.name,
-        symbol: params.symbol,
-        logoURI: params.logoURI,
-        xAccount: params.xAccount,
-        website: params.website,
-        extraLink: params.extraLink,
-        basePrice: params.basePriceWei ?? 0n,
-        priceSlope: params.priceSlopeWei ?? 0n,
-        graduationTarget: params.graduationTargetWei ?? 0n,
-        lpReceiver: params.lpReceiver || ethers.ZeroAddress,
-      });
-
-      return tx.wait();
-    },
-    [getFactory, signer]
-  );
 
   const buyTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
