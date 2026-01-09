@@ -77,6 +77,7 @@ export default async function handler(req, res) {
       if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
       if (!nonce) return json(res, 400, { error: "Nonce missing" });
       if (!signature) return json(res, 400, { error: "Signature missing" });
+      if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 
       await consumeNonce(chainId, address, nonce);
       const msg = buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl: avatarUrl ?? "" });

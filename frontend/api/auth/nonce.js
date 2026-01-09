@@ -15,6 +15,7 @@ export default async function handler(req, res) {
     const address = String(q.address ?? "").toLowerCase();
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
     if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+    if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 
     const nonce = makeNonce();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
