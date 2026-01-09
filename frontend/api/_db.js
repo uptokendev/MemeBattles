@@ -7,54 +7,67 @@ const { Pool } = pg;
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
-function loadCa() {
-  // 1) Best for Vercel: base64 env var (no whitespace issues)
+function loadCaPem() {
+  // 1) Base64 env var (best on Vercel)
   const b64 = process.env.PG_CA_CERT_B64;
   if (b64) {
-    try {
-      return Buffer.from(b64, "base64").toString("utf8");
-    } catch {
-      // ignore
-    }
+    const pem = Buffer.from(b64, "base64").toString("utf8");
+    if (pem.includes("BEGIN CERTIFICATE")) return pem;
+    throw new Error("PG_CA_CERT_B64 does not decode to a PEM certificate");
   }
 
-  // 2) Optional: multiline PEM stored as \n
+  // 2) Optional plain PEM env var (with \n)
   const pem = process.env.PG_CA_CERT;
   if (pem) return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
 
-  // 3) Fallback: repo file (requires bundling)
+  // 3) Optional repo file fallback
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const caPath = path.join(__dirname, "certs", "aiven-ca.pem");
-    return fs.readFileSync(caPath, "utf8");
+    return fs.readFileSync(path.join(__dirname, "certs", "aiven-ca.pem"), "utf8");
   } catch {
     return null;
   }
 }
 
+function parseDbUrl(url) {
+  const u = new URL(url);
+  return {
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 5432,
+    user: decodeURIComponent(u.username || ""),
+    password: decodeURIComponent(u.password || ""),
+    database: (u.pathname || "").replace(/^\//, "") || "postgres",
+  };
+}
+
+// Reuse pool across invocations
 let _pool = globalThis.__upmeme_pool;
 
 if (!_pool) {
   if (!DATABASE_URL) throw new Error("DATABASE_URL missing");
 
-  const ca = loadCa();
+  const { host, port, user, password, database } = parseDbUrl(DATABASE_URL);
+  const ca = loadCaPem();
 
-  // Log enough to confirm what happened
-  let host = "unknown";
-  try {
-    host = new URL(DATABASE_URL).hostname;
-  } catch {}
-  console.log("[api/_db] PG host:", host, "CA loaded:", Boolean(ca), "CA bytes:", ca ? ca.length : 0);
+  console.log("[api/_db] PG host:", host, "port:", port, "db:", database);
+  console.log("[api/_db] CA loaded:", Boolean(ca), "CA bytes:", ca ? ca.length : 0);
 
   _pool = new Pool({
-    connectionString: DATABASE_URL,
+    host,
+    port,
+    user,
+    password,
+    database,
+
+    // IMPORTANT: explicitly provide CA to TLS.
     ssl: ca
-      ? { ca, rejectUnauthorized: true }
-      : { rejectUnauthorized: false }, // keeps you unblocked if CA missing
+      ? { ca, rejectUnauthorized: true, servername: host }
+      : { rejectUnauthorized: false },
+
     max: 2,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 10_000
+    connectionTimeoutMillis: 10_000,
   });
 
   globalThis.__upmeme_pool = _pool;
