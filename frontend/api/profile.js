@@ -92,7 +92,7 @@ export default async function handler(req, res) {
       );
 
       return json(res, 200, { ok: true });
-    } catch (e: any) {
+    } catch (e) {
       const msg = String(e?.message ?? "");
       const isAuth = /nonce|signature/i.test(msg);
       console.error("[api/profile POST]", e);
