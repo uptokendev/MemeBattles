@@ -185,10 +185,11 @@ const Profile = () => {
     return `${base}/address/${account}`;
   }, [account, chainId]);
 
-  // Avatar upload
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [profile, setProfile] = useState<UserProfileRow | null>(null);
-  const [savingProfile, setSavingProfile] = useState(false);
+ // Avatar upload
+const fileInputRef = useRef<HTMLInputElement | null>(null);
+const [profile, setProfile] = useState<UserProfileRow | null>(null);
+const [savingProfile, setSavingProfile] = useState(false);
+const [awaitingWallet, setAwaitingWallet] = useState(false);
 
   const formatTimeAgo = (createdAt?: number): string => {
     if (!createdAt) return "";
@@ -262,18 +263,40 @@ const Profile = () => {
       const nonce = await getNonce(effectiveChainId, address);
 
       // 3) sign message
-      const displayName = String(profile?.displayName ?? "").trim();
-      const bio = profile?.bio ?? null;
+const displayName = String(profile?.displayName ?? "").trim();
+const bio = profile?.bio ?? null;
 
-      const msg = buildProfileMessage({
-        chainId: effectiveChainId,
-        address,
-        nonce,
-        displayName,
-        avatarUrl,
-      });
+const msg = buildProfileMessage({
+  chainId: effectiveChainId,
+  address,
+  nonce,
+  displayName,
+  avatarUrl,
+});
 
-      const signature = await wallet.signer.signMessage(msg);
+// IMPORTANT UX: wallet confirmation prompt
+setAwaitingWallet(true);
+const toastId = toast.loading("Confirm the signature in your wallet…");
+
+let signature: string;
+try {
+  signature = await wallet.signer.signMessage(msg);
+} catch (err: any) {
+  const code = err?.code ?? err?.info?.error?.code;
+  const message = String(err?.message ?? "");
+
+  if (code === 4001 || /rejected|denied|user rejected|ACTION_REJECTED/i.test(message)) {
+    toast.error("Signature was rejected in your wallet.");
+    return;
+  }
+
+  toast.error("Signature failed. Please try again.");
+  console.error("[Profile] signMessage failed", err);
+  return;
+} finally {
+  setAwaitingWallet(false);
+  toast.dismiss(toastId);
+}
 
       // 4) persist
       const res = await fetch("/api/profile", {
@@ -516,7 +539,7 @@ const Profile = () => {
                 {/* Avatar */}
                 <div
                   className="w-20 h-20 md:w-28 md:h-28 rounded-full bg-accent/20 border-4 border-accent/30 overflow-hidden mx-auto sm:mx-0 cursor-pointer hover:opacity-90 transition"
-                  onClick={handlePickAvatar}
+                  onClick={() => !savingProfile && handlePickAvatar()}
                   title="Change avatar"
                 >
                   <img
@@ -539,7 +562,7 @@ const Profile = () => {
                   disabled={!account || savingProfile}
                   className="bg-muted hover:bg-muted/80 text-foreground font-retro w-full sm:w-auto"
                 >
-                  {savingProfile ? "uploading..." : "change avatar"}
+                  {savingProfile ? (awaitingWallet ? "confirm in wallet..." : "uploading...") : "change avatar"}
                 </Button>
               </div>
 

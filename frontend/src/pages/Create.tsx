@@ -78,6 +78,8 @@ const Create = () => {
 const anyWallet: any = wallet as any;
 const chainId: number = Number(anyWallet?.chainId ?? anyWallet?.network?.chainId ?? 97);
 
+
+
 const { createCampaign, fetchCampaigns } = useLaunchpad();
 const [logoFile, setLogoFile] = useState<File | null>(null);
   // UPDATED: async and actually calls the contract
