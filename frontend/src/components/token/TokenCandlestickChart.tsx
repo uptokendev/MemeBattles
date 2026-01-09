@@ -17,8 +17,9 @@ import {
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
 import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
-import { useCurveTrades } from "@/hooks/useCurveTrades";
+import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useDexPairTrades } from "@/hooks/useDexPairTrades";
+import { useWallet } from "@/hooks/useWallet";
 
 type ChartStage = "curve" | "dex";
 
@@ -119,9 +120,13 @@ export function TokenCandlestickChart(props: {
   campaignAddress?: string;
   tokenAddress?: string;
   dexPairAddress?: string;
+  chainId?: number;
+  curvePointsOverride?: CurveTradePoint[];
   className?: string;
 }) {
-  const { stage, symbol, campaignAddress, tokenAddress, dexPairAddress, className } = props;
+  const { stage, symbol, campaignAddress, tokenAddress, dexPairAddress, chainId: chainIdProp, curvePointsOverride, className } = props;
+  const { activeChainId } = useWallet();
+  const chainId = chainIdProp ?? activeChainId;
 
   const [tf, setTf] = useState<TimeframeKey>("15m");
   const tfSeconds = useMemo(() => TIMEFRAMES.find((x) => x.key === tf)?.seconds ?? 900, [tf]);
@@ -131,10 +136,12 @@ export function TokenCandlestickChart(props: {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 
   // Data sources
-  const curve = useCurveTrades(stage === "curve" ? campaignAddress : undefined);
+  const curve = useCurveTrades(stage === "curve" ? campaignAddress : undefined, { enabled: stage === "curve" && !curvePointsOverride, chainId });
   const dex = useDexPairTrades({
     tokenAddress: stage === "dex" ? tokenAddress : undefined,
     pairAddress: stage === "dex" ? dexPairAddress : undefined,
+    enabled: stage === "dex",
+    chainId,
   });
 
   const points: PricePoint[] = useMemo(() => {
@@ -151,8 +158,8 @@ export function TokenCandlestickChart(props: {
       return (dex.points ?? []).map((p) => ({ timestamp: p.timestamp, price: p.pricePerToken }));
     }
 
-    return (curve.points ?? []).map((p) => ({ timestamp: p.timestamp, price: p.pricePerToken }));
-  }, [stage, symbol, curve.points, dex.points]);
+    return (curvePointsOverride ?? curve.points ?? []).map((p) => ({ timestamp: p.timestamp, price: p.pricePerToken }));
+  }, [stage, symbol, curve.points, dex.points, curvePointsOverride]);
 
   const candles = useMemo(() => buildCandles(points, tfSeconds), [points, tfSeconds]);
 

@@ -3,6 +3,7 @@ import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/hooks/useWallet";
+import { getFactoryAddress } from "@/lib/chainConfig";
 import { useCallback } from "react";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 
@@ -12,8 +13,6 @@ const LOG_CHUNK_SIZE = 900;
 // For UI (holders/volume and timeframe analytics), we only need recent history.
 // 50k blocks is ~1–2 days on BSC (approx), which safely covers 24h windows.
 const DEFAULT_ACTIVITY_LOOKBACK_BLOCKS = 50_000;
-
-const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS ?? "";
 
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
 
@@ -115,7 +114,7 @@ const formatCount = (n: number): string => {
 
 // ---------------- Log helpers (chunked) ----------------
 async function getLogsChunked(
-  provider: any,
+  readProvider: any,
   params: { address: string; topics?: (string | string[] | null)[] },
   fromBlock: number,
   toBlock: number
@@ -123,7 +122,7 @@ async function getLogsChunked(
   const logs: any[] = [];
   for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
     const end = Math.min(toBlock, start + LOG_CHUNK_SIZE - 1);
-    const chunk = await provider.getLogs({ ...params, fromBlock: start, toBlock: end });
+    const chunk = await readProvider.getLogs({ ...params, fromBlock: start, toBlock: end });
     logs.push(...chunk);
   }
   return logs;
@@ -480,27 +479,29 @@ const MOCK_METRICS_BY_CAMPAIGN: Record<string, CampaignMetrics> = {
 
 
 export function useLaunchpad() {
-  const { provider, signer } = useWallet();
+  const { signer, readProvider, activeChainId } = useWallet();
+
+  const FACTORY_ADDRESS = getFactoryAddress(activeChainId);
 
   const getFactory = useCallback(() => {
-    if (!provider || !FACTORY_ADDRESS) return null;
+    if (!readProvider || !FACTORY_ADDRESS) return null;
     return new Contract(
       FACTORY_ADDRESS,
       FACTORY_ABI,
-      signer ?? provider
+      signer ?? readProvider
     ) as any;
-  }, [provider, signer]);
+  }, [readProvider, signer, FACTORY_ADDRESS]);
 
   const getCampaign = useCallback(
     (address: string) => {
-      if (!provider) return null;
+      if (!readProvider) return null;
       return new Contract(
         address,
         CAMPAIGN_ABI,
-        signer ?? provider
+        signer ?? readProvider
       ) as any;
     },
-    [provider, signer]
+    [readProvider, signer]
   );
 
   // --- READS ---
@@ -618,14 +619,14 @@ export function useLaunchpad() {
 
   const getCampaignCreatedBlock = useCallback(
     async (campaignAddress: string): Promise<number | null> => {
-      if (!provider) return null;
+      if (!readProvider) return null;
 
       const factory = getFactory();
       if (!factory) return null;
 
       try {
         const filter = factory.filters.CampaignCreated(null, campaignAddress, null);
-        const latest = await provider.getBlockNumber();
+        const latest = await readProvider.getBlockNumber();
         const fromBlock = Math.max(0, latest - DEFAULT_ACTIVITY_LOOKBACK_BLOCKS);
         const events = await queryFilterChunked(factory, filter, fromBlock, latest);
         const ev = events && events.length ? events[0] : null;
@@ -635,18 +636,18 @@ export function useLaunchpad() {
         return null;
       }
     },
-    [getFactory, provider]
+    [getFactory, readProvider]
   );
 
   const fetchCampaignActivity = useCallback(
     async (campaignAddress: string): Promise<CampaignActivity | null> => {
       if (USE_MOCK_DATA) return null;
-      if (!provider) return null;
+      if (!readProvider) return null;
 
-      const latest = await provider.getBlockNumber();
+      const latest = await readProvider.getBlockNumber();
       // Prefer the actual creation block when we can find it, otherwise
       // fall back to a bounded lookback window. This prevents huge log scans
-      // and avoids provider max-range errors.
+      // and avoids readProvider max-range errors.
       const createdBlock =
         (await getCampaignCreatedBlock(campaignAddress)) ??
         Math.max(0, latest - DEFAULT_ACTIVITY_LOOKBACK_BLOCKS);
@@ -691,7 +692,7 @@ export function useLaunchpad() {
 
       try {
         const buyLogs = await getLogsChunked(
-          provider,
+          readProvider,
           { address: campaignAddress, topics: [buyTopic] },
           createdBlock,
           latest
@@ -706,7 +707,7 @@ export function useLaunchpad() {
         }
 
         const sellLogs = await getLogsChunked(
-          provider,
+          readProvider,
           { address: campaignAddress, topics: [sellTopic] },
           createdBlock,
           latest
@@ -740,7 +741,7 @@ export function useLaunchpad() {
         };
       }
     },
-    [provider, getCampaignCreatedBlock]
+    [readProvider, getCampaignCreatedBlock]
   );
 
   const fetchCampaignSummary = useCallback(
@@ -778,8 +779,8 @@ export function useLaunchpad() {
 
       // Market cap (derived): currentPrice * totalSupply
       try {
-        if (provider && metrics) {
-          const token = new Contract(campaign.token, TOKEN_ABI, provider) as any;
+        if (readProvider && metrics) {
+          const token = new Contract(campaign.token, TOKEN_ABI, readProvider) as any;
           const totalSupply: bigint = await token.totalSupply();
 
           const mcWei = (metrics.currentPrice * totalSupply) / 10n ** 18n;
@@ -791,7 +792,7 @@ export function useLaunchpad() {
 
       return { campaign, metrics, stats: { holders, volume, marketCap } };
     },
-    [fetchCampaignActivity, fetchCampaignMetrics, provider]
+    [fetchCampaignActivity, fetchCampaignMetrics, readProvider]
   );
 
   const fetchCampaignCardStats = useCallback(

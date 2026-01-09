@@ -27,7 +27,6 @@ import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { AthBar } from "@/components/token/AthBar";
-import { TokenComments } from "@/components/token/TokenComments";
 
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
@@ -55,7 +54,6 @@ const { campaignAddress } = useParams<{ campaignAddress: string }>();
   // Launchpad hooks + state for the on-chain data
   const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
-  const chainId = wallet.chainId ?? 97;
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
@@ -110,26 +108,6 @@ useEffect(() => {
 
       setCampaign(match);
 
-      // Best-effort: register campaign metadata (creator -> campaign) in Postgres so
-      // profile pages can show replies/comments on campaigns a user created.
-      // This is safe to fail silently in local dev (when /api isn't available).
-      try {
-        void fetch("/api/campaigns/upsert", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            chainId,
-            campaignAddress: match.campaign,
-            tokenAddress: match.token,
-            creatorAddress: match.creator,
-            name: match.name,
-            symbol: match.symbol,
-          }),
-        });
-      } catch {
-        // ignore
-      }
-
       // Unified token stats + metrics (same source as carousel / UpNow)
       const s = await fetchCampaignSummary(match);
       setSummary(s);
@@ -143,7 +121,7 @@ useEffect(() => {
   };
 
   load();
-}, [campaignAddress, fetchCampaigns, fetchCampaignSummary, chainId]);
+}, [campaignAddress, fetchCampaigns, fetchCampaignSummary]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
@@ -213,8 +191,7 @@ useEffect(() => {
   };
 
   // Read curve trades for transactions + analytics (live mode)
-  const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign);
-
+  const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign, { enabled: Boolean(campaign?.campaign), chainId: wallet.activeChainId });
   type TimeframeKey = "5m" | "1h" | "4h" | "24h";
   const timeframeTiles = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -1304,126 +1281,105 @@ const {
 
             <div className="flex-1 min-h-0">
               <TokenCandlestickChart
-                stage={isDexStage ? "dex" : "curve"}
-                symbol={campaign?.symbol}
-                campaignAddress={campaign?.campaign}
-                tokenAddress={campaign?.token}
-                dexPairAddress={dexPairAddress}
-              />
+  stage={isDexStage ? "dex" : "curve"}
+  symbol={campaign?.symbol}
+  campaignAddress={campaign?.campaign}
+  tokenAddress={campaign?.token}
+  dexPairAddress={dexPairAddress}
+  chainId={wallet.activeChainId}
+  curvePointsOverride={!isDexStage ? liveCurvePoints : undefined}
+/>
             </div>
           </Card>
 
-          {/* Trades + Comments */}
+          {/* Transactions Table */}
           <Card
             className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0"
             style={{ flex: "1" }}
           >
-            <Tabs defaultValue="trades" className="flex flex-col min-h-0">
-              <TabsList className="grid w-full grid-cols-2 mb-3">
-                <TabsTrigger value="trades" className="text-sm">
-                  Trades
-                </TabsTrigger>
-                <TabsTrigger value="comments" className="text-sm">
-                  Comments
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="trades" className="min-h-0 flex-1">
-                <div className="overflow-auto flex-1">
-                  <table className="w-full text-[11px]">
-                    <thead className="sticky top-0 bg-card/95 backdrop-blur">
-                      <tr className="border-b border-border/50">
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          Time
-                        </th>
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          Type
-                        </th>
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          {tokenData.ticker}
-                        </th>
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          BNB
-                        </th>
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          Price
-                        </th>
-                        <th className="hidden lg:table-cell text-left py-1.5 text-muted-foreground font-normal">
-                          MCap
-                        </th>
-                        <th className="hidden md:table-cell text-left py-1.5 text-muted-foreground font-normal">
-                          Trader
-                        </th>
-                        <th className="text-left py-1.5 text-muted-foreground font-normal">
-                          TX
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {txs.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={8}
-                            className="py-6 text-center text-muted-foreground"
-                          >
-                            No trades yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        txs.map((tx, i) => (
-                          <tr
-                            key={i}
-                            className="border-b border-border/50 hover:bg-muted/20"
-                          >
-                            <td className="py-1.5 text-muted-foreground">{tx.time}</td>
-                            <td
-                              className={`py-1.5 ${
-                                tx.type === "buy"
-                                  ? "text-green-500"
-                                  : "text-red-500"
-                              }`}
-                            >
-                              {tx.type.toUpperCase()}
-                            </td>
-                            <td className="py-1.5 font-mono">{tx.amount}</td>
-                            <td className="py-1.5 font-mono">{tx.bnb}</td>
-                            <td className="py-1.5 font-mono">{tx.price}</td>
-                            <td className="hidden lg:table-cell py-1.5 font-mono">{tx.mcap}</td>
-                            <td className="hidden md:table-cell py-1.5 font-mono">{tx.trader}</td>
-                            <td className="py-1.5">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5"
-                                onClick={() => {
-                                  if (!tx.tx) return;
-                                  const base = wallet.chainId === 97
-                                    ? "https://testnet.bscscan.com/tx/"
-                                    : "https://bscscan.com/tx/";
-                                  window.open(`${base}${tx.tx}`, "_blank", "noopener,noreferrer");
-                                }}
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="comments" className="min-h-0 flex-1">
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <TokenComments
-                    chainId={chainId}
-                    campaignAddress={(campaign?.campaign ?? campaignAddress ?? "").toLowerCase()}
-                    tokenAddress={(campaign?.token ?? "").toLowerCase() || undefined}
-                  />
-                </div>
-              </TabsContent>
-            </Tabs>
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-[11px]">
+                <thead className="sticky top-0 bg-card/95 backdrop-blur">
+                  <tr className="border-b border-border/50">
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      Time
+                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      Type
+                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      {tokenData.ticker}
+                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      BNB
+                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      Price
+                    </th>
+                    <th className="hidden lg:table-cell text-left py-1.5 text-muted-foreground font-normal">
+                      MCap
+                    </th>
+                    <th className="hidden md:table-cell text-left py-1.5 text-muted-foreground font-normal">
+                      Trader
+                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">
+                      TX
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txs.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="py-6 text-center text-muted-foreground"
+                      >
+                        No trades yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    txs.map((tx, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-border/50 hover:bg-muted/20"
+                    >
+                      <td className="py-1.5 text-muted-foreground">{tx.time}</td>
+                      <td
+                        className={`py-1.5 ${
+                          tx.type === "buy"
+                            ? "text-green-500"
+                            : "text-red-500"
+                        }`}
+                      >
+                        {tx.type.toUpperCase()}
+                      </td>
+                      <td className="py-1.5 font-mono">{tx.amount}</td>
+                      <td className="py-1.5 font-mono">{tx.bnb}</td>
+                      <td className="py-1.5 font-mono">{tx.price}</td>
+                      <td className="hidden lg:table-cell py-1.5 font-mono">{tx.mcap}</td>
+                      <td className="hidden md:table-cell py-1.5 font-mono">{tx.trader}</td>
+                      <td className="py-1.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => {
+                            if (!tx.tx) return;
+                            const base = wallet.chainId === 97
+                              ? "https://testnet.bscscan.com/tx/"
+                              : "https://bscscan.com/tx/";
+                            window.open(`${base}${tx.tx}`, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                      </td>
+                    </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </Card>
         </div>
 

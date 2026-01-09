@@ -1,18 +1,37 @@
-import { BrowserProvider, JsonRpcSigner } from "ethers";
+import { BrowserProvider, JsonRpcProvider, JsonRpcSigner } from "ethers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  getActiveChainId,
+  getAllowedChainIds,
+  getDefaultChainId,
+  getChainParams,
+  isAllowedChainId,
+  type SupportedChainId,
+} from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 
 export type WalletType = "metamask" | "binance" | "injected";
 
 type WalletHook = {
+  // MetaMask/injected provider used for signing (writes)
   provider: BrowserProvider | null;
   signer: JsonRpcSigner | null;
+
+  // Read-only provider (JsonRpcProvider) that follows wallet chain (if allowed)
+  readProvider: JsonRpcProvider;
+  activeChainId: SupportedChainId;
+  allowedChainIds: SupportedChainId[];
+  defaultChainId: SupportedChainId;
+
   account: string;
   chainId?: number;
   connecting: boolean;
 
   hasProvider: boolean;
   isWrongNetwork: boolean;
+
+  // Backward-compat: used by some UI
   targetChainId?: number;
 
   connect: (wallet?: WalletType) => Promise<void>;
@@ -24,35 +43,6 @@ type WalletHook = {
 const STORAGE_CONNECTED = "launchit_wallet_connected";
 const STORAGE_WALLET_TYPE = "launchit_wallet_type";
 
-const readTargetChainId = (): number | undefined => {
-  const raw = import.meta.env.VITE_TARGET_CHAIN_ID;
-  if (!raw) return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : undefined;
-};
-
-const getChainParams = (chainId: number) => {
-  if (chainId === 56) {
-    return {
-      chainId: "0x38",
-      chainName: "BNB Smart Chain",
-      nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-      rpcUrls: ["https://bsc-dataseed.binance.org/"],
-      blockExplorerUrls: ["https://bscscan.com/"],
-    };
-  }
-  if (chainId === 97) {
-    return {
-      chainId: "0x61",
-      chainName: "BNB Smart Chain Testnet",
-      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-      rpcUrls: ["https://data-seed-prebsc-1-s1.binance.org:8545/"],
-      blockExplorerUrls: ["https://testnet.bscscan.com/"],
-    };
-  }
-  return null;
-};
-
 const getStoredConnected = () => {
   try {
     return localStorage.getItem(STORAGE_CONNECTED) === "1";
@@ -61,304 +51,229 @@ const getStoredConnected = () => {
   }
 };
 
-const setStoredConnected = (on: boolean, walletType?: WalletType) => {
+const setStoredConnected = (v: boolean) => {
   try {
-    if (on) {
-      localStorage.setItem(STORAGE_CONNECTED, "1");
-      if (walletType) localStorage.setItem(STORAGE_WALLET_TYPE, walletType);
-    } else {
-      localStorage.removeItem(STORAGE_CONNECTED);
-      localStorage.removeItem(STORAGE_WALLET_TYPE);
-    }
+    localStorage.setItem(STORAGE_CONNECTED, v ? "1" : "0");
   } catch {
-    // ignore storage failures
+    // ignore
   }
 };
 
 const getStoredWalletType = (): WalletType | undefined => {
   try {
-    const v = localStorage.getItem(STORAGE_WALLET_TYPE);
-    if (v === "metamask" || v === "binance" || v === "injected") return v;
-    return undefined;
+    const raw = localStorage.getItem(STORAGE_WALLET_TYPE) as WalletType | null;
+    return raw ?? undefined;
   } catch {
     return undefined;
   }
 };
 
+const setStoredWalletType = (t?: WalletType) => {
+  try {
+    if (!t) localStorage.removeItem(STORAGE_WALLET_TYPE);
+    else localStorage.setItem(STORAGE_WALLET_TYPE, t);
+  } catch {
+    // ignore
+  }
+};
+
+const getInjectedProvider = () => {
+  const eth = (globalThis as any)?.ethereum;
+  return eth ?? null;
+};
+
 export function useWallet(): WalletHook {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
-  const [account, setAccount] = useState("");
-  const [chainId, setChainId] = useState<number>();
+  const [account, setAccount] = useState<string>("");
+  const [chainId, setChainId] = useState<number | undefined>(undefined);
   const [connecting, setConnecting] = useState(false);
-  const [hasProvider, setHasProvider] = useState(false);
 
-  const accountRef = useRef("");
-  useEffect(() => {
-    accountRef.current = account;
-  }, [account]);
+  const hasProvider = useMemo(() => Boolean(getInjectedProvider()), []);
 
-  const targetChainId = useMemo(() => readTargetChainId(), []);
-  const isWrongNetwork = useMemo(() => {
-    if (!targetChainId) return false;
-    if (!chainId) return false;
-    return Number(chainId) !== Number(targetChainId);
-  }, [chainId, targetChainId]);
-
-  const pickInjected = (wallet: WalletType | undefined) => {
-    const anyWindow = window as any;
-    const ethereum = anyWindow.ethereum;
-    if (!ethereum) return null;
-
-    const providers = ethereum.providers || [ethereum];
-
-    if (wallet === "metamask") {
-      return providers.find((p: any) => p.isMetaMask) || providers[0];
-    }
-    if (wallet === "binance") {
-      return providers.find((p: any) => p.isBinance) || providers[0];
-    }
-    return providers[0];
-  };
-
-  const ensureTargetChain = useCallback(
-    async (selected: any) => {
-      if (!targetChainId) return;
-
-      try {
-        const bp = new BrowserProvider(selected);
-        const net = await bp.getNetwork();
-        if (Number(net.chainId) === Number(targetChainId)) return;
-      } catch {
-        // ignore
-      }
-
-      const params = getChainParams(targetChainId);
-      const chainIdHex = "0x" + Number(targetChainId).toString(16);
-
-      try {
-        await selected.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: chainIdHex }],
-        });
-      } catch (e: any) {
-        if (e?.code === 4902 && params) {
-          await selected.request({
-            method: "wallet_addEthereumChain",
-            params: [params],
-          });
-          await selected.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: chainIdHex }],
-          });
-          return;
-        }
-        throw e;
-      }
-    },
-    [targetChainId]
+  const allowedChainIds = useMemo(() => getAllowedChainIds(), []);
+  const defaultChainId = useMemo(() => getDefaultChainId(), []);
+  const activeChainId = useMemo(
+    () => getActiveChainId(chainId),
+    [chainId, defaultChainId, allowedChainIds]
   );
 
-  // Mount: set provider + chainId always; restore accounts only if user previously connected.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  // Always available read provider (uses active chain id).
+  const readProvider = useMemo(() => getReadProvider(activeChainId), [activeChainId]);
 
-    const anyWindow = window as any;
-    const ethereum = anyWindow.ethereum;
+  const targetChainId = defaultChainId; // backward-compat
 
-    setHasProvider(Boolean(ethereum));
-    if (!ethereum) return;
+  const isWrongNetwork = useMemo(() => {
+    if (!account) return false;
+    if (!chainId) return false;
+    return !isAllowedChainId(chainId);
+  }, [account, chainId]);
 
-    const storedWallet = getStoredWalletType();
-    const injected = pickInjected(storedWallet) || (ethereum.providers?.find?.((p: any) => p.isMetaMask) || ethereum);
+  const teardown = useCallback(() => {
+    setProvider(null);
+    setSigner(null);
+    setAccount("");
+    setChainId(undefined);
+  }, []);
 
-    const browserProvider = new BrowserProvider(injected);
-    setProvider(browserProvider);
-
-    const handleAccountsChanged = (accounts: string[]) => {
-      // Accept updates if we are connected in-app OR we have a stored "connected" flag.
-      if (!accountRef.current && !getStoredConnected()) return;
-
-      const primary = accounts[0] ?? "";
-      setAccount(primary);
-
-      if (!primary) {
-        setSigner(null);
-        // If wallet now has no accounts, clear our stored connected flag
-        setStoredConnected(false);
-        return;
-      }
-
-      browserProvider
-        .getSigner()
-        .then((s) => setSigner(s))
-        .catch(() => setSigner(null));
-    };
-
-    const handleChainChanged = (hexChainId: string) => {
-      try {
-        setChainId(Number(BigInt(hexChainId)));
-      } catch {
-        setChainId(undefined);
-      }
-    };
-
-    // Always init chain id
-    browserProvider
-      .getNetwork()
-      .then((network) => setChainId(Number(network.chainId)))
-      .catch(() => {});
-
-    // Restore accounts ONLY if user previously connected and has not disconnected.
-    if (getStoredConnected()) {
-      browserProvider
-        .send("eth_accounts", [])
-        .then((accounts: string[]) => {
-          const primary = accounts?.[0] ?? "";
-          if (!primary) {
-            // No authorized account anymore -> clear stored session
-            setStoredConnected(false);
-            setAccount("");
-            setSigner(null);
-            return;
-          }
-          setAccount(primary);
-          browserProvider.getSigner().then(setSigner).catch(() => setSigner(null));
-        })
-        .catch(() => {
-          // If we can’t read accounts, treat as disconnected
-          setStoredConnected(false);
-          setAccount("");
-          setSigner(null);
-        });
+  const refreshState = useCallback(async (p: BrowserProvider) => {
+    const [accounts, net] = await Promise.all([p.listAccounts(), p.getNetwork()]);
+    const addr = accounts?.[0]?.address ?? "";
+    setAccount(addr);
+    setChainId(Number(net?.chainId));
+    if (addr) {
+      const s = await p.getSigner();
+      setSigner(s);
     } else {
-      // Ensure app stays disconnected after explicit disconnect + reload
-      setAccount("");
       setSigner(null);
     }
-
-    injected?.on?.("accountsChanged", handleAccountsChanged);
-    injected?.on?.("chainChanged", handleChainChanged);
-
-    return () => {
-      injected?.removeListener?.("accountsChanged", handleAccountsChanged);
-      injected?.removeListener?.("chainChanged", handleChainChanged);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally mount-only
+  }, []);
 
   const connect = useCallback(
     async (wallet?: WalletType) => {
-      if (typeof window === "undefined") {
-        toast.error("No browser environment detected.");
+      const injected = getInjectedProvider();
+      if (!injected) {
+        toast.error("No wallet provider found. Please install MetaMask.");
         return;
       }
 
-      const selected = pickInjected(wallet);
-      if (!selected) {
-        toast.error("No wallet found. Install MetaMask (or a BSC-capable wallet) to continue.");
-        return;
-      }
+      const chosen: WalletType = wallet ?? getStoredWalletType() ?? "injected";
 
-      setConnecting(true);
       try {
-        const accounts: string[] = await selected.request({
-          method: "eth_requestAccounts",
-        });
+        setConnecting(true);
 
-        if (!accounts || accounts.length === 0) {
-          toast.error("No accounts returned from wallet.");
-          return;
-        }
+        // Request accounts
+        await injected.request?.({ method: "eth_requestAccounts" });
 
-        // Persist “connected” across reloads, and remember the chosen wallet type.
-        setStoredConnected(true, wallet ?? "injected");
+        const p = new BrowserProvider(injected, "any");
+        setProvider(p);
 
-        if (targetChainId) {
-          try {
-            await ensureTargetChain(selected);
-          } catch {
-            toast.error(
-              `Please switch your wallet network to ${
-                targetChainId === 56
-                  ? "BSC Mainnet"
-                  : targetChainId === 97
-                  ? "BSC Testnet"
-                  : `Chain ${targetChainId}`
-              }.`
-            );
-          }
-        }
+        // Ensure state is correct
+        await refreshState(p);
 
-        const browserProvider = new BrowserProvider(selected);
-        setProvider(browserProvider);
-        setAccount(accounts[0]);
-
-        const s = await browserProvider.getSigner();
-        setSigner(s);
-
-        const network = await browserProvider.getNetwork();
-        setChainId(Number(network.chainId));
+        setStoredConnected(true);
+        setStoredWalletType(chosen);
       } catch (e: any) {
-        // If user rejected or connect failed, do not persist “connected”.
+        console.warn("[useWallet] connect failed", e);
+        toast.error(e?.message ?? "Failed to connect wallet");
+        teardown();
         setStoredConnected(false);
-        const msg = e?.shortMessage || e?.reason || e?.message || "Failed to connect wallet.";
-        toast.error(msg);
       } finally {
         setConnecting(false);
       }
     },
-    [ensureTargetChain, targetChainId]
+    [refreshState, teardown]
   );
 
   const switchToTargetChain = useCallback(async () => {
-    if (typeof window === "undefined") return;
+    const injected = getInjectedProvider();
+    if (!injected) return;
 
-    const anyWindow = window as any;
-    const ethereum = anyWindow.ethereum;
-    if (!ethereum) {
-      toast.error("No wallet found. Install MetaMask to switch networks.");
-      return;
-    }
-    if (!targetChainId) {
-      toast.error("Target chain not configured. Set VITE_TARGET_CHAIN_ID.");
-      return;
-    }
-
-    const selected =
-      ethereum.providers?.find?.((p: any) => p.isMetaMask) || ethereum;
+    const desired = targetChainId;
+    if (!desired) return;
 
     try {
-      await ensureTargetChain(selected);
+      const current = chainId;
+      if (current && Number(current) === Number(desired)) return;
 
-      const bp = new BrowserProvider(selected);
-      const net = await bp.getNetwork();
-      setChainId(Number(net.chainId));
-
-      toast.success("Network switched.");
+      const chainHex = "0x" + Number(desired).toString(16);
+      await injected.request?.({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainHex }],
+      });
     } catch (e: any) {
-      const msg = e?.shortMessage || e?.reason || e?.message || "Failed to switch network.";
-      toast.error(msg);
+      // Chain not added yet?
+      if (e?.code === 4902) {
+        try {
+          const params = getChainParams(desired as SupportedChainId);
+          await injected.request?.({
+            method: "wallet_addEthereumChain",
+            params: [params],
+          });
+          return;
+        } catch (addErr: any) {
+          toast.error(addErr?.message ?? "Failed to add chain to wallet");
+          return;
+        }
+      }
+
+      toast.error(e?.message ?? "Failed to switch network");
     }
-  }, [ensureTargetChain, targetChainId]);
+  }, [chainId, targetChainId]);
 
   const disconnect = useCallback(() => {
-    // App-level disconnect (cannot revoke wallet authorization; just clears LaunchIt state)
+    teardown();
     setStoredConnected(false);
-    setAccount("");
-    setSigner(null);
-  }, []);
+    setStoredWalletType(undefined);
+  }, [teardown]);
+
+  // Subscribe to injected events
+  const listenersAttached = useRef(false);
+  useEffect(() => {
+    const injected = getInjectedProvider();
+    if (!injected || listenersAttached.current) return;
+
+    const onAccountsChanged = (accs: string[]) => {
+      const next = accs?.[0] ?? "";
+      setAccount(next);
+      if (!next) setSigner(null);
+    };
+
+    const onChainChanged = (_: string) => {
+      // MetaMask recommends reloading on chainChanged for dapps with complex state.
+      // We do a lighter refresh: update chainId + signer state.
+      if (provider) refreshState(provider).catch(() => undefined);
+      else {
+        const c = Number(parseInt(String(_), 16));
+        setChainId(Number.isFinite(c) ? c : undefined);
+      }
+    };
+
+    injected.on?.("accountsChanged", onAccountsChanged);
+    injected.on?.("chainChanged", onChainChanged);
+
+    listenersAttached.current = true;
+
+    return () => {
+      try {
+        injected.removeListener?.("accountsChanged", onAccountsChanged);
+        injected.removeListener?.("chainChanged", onChainChanged);
+      } catch {
+        // ignore
+      }
+      listenersAttached.current = false;
+    };
+  }, [provider, refreshState]);
+
+  // Auto-reconnect if the user previously connected
+  useEffect(() => {
+    if (!hasProvider) return;
+    if (!getStoredConnected()) return;
+
+    // Avoid reconnect loops
+    if (account || connecting) return;
+
+    connect(getStoredWalletType()).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasProvider]);
 
   return useMemo(
     () => ({
       provider,
       signer,
+
+      readProvider,
+      activeChainId,
+      allowedChainIds,
+      defaultChainId,
+
       account,
       chainId,
       connecting,
       hasProvider,
       isWrongNetwork,
       targetChainId,
+
       connect,
       switchToTargetChain,
       disconnect,
@@ -367,6 +282,10 @@ export function useWallet(): WalletHook {
     [
       provider,
       signer,
+      readProvider,
+      activeChainId,
+      allowedChainIds,
+      defaultChainId,
       account,
       chainId,
       connecting,
