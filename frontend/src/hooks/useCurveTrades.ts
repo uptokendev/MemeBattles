@@ -1,158 +1,177 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+// src/hooks/useCurveTrades.ts
+import { useEffect, useState } from "react";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
-import { USE_MOCK_DATA } from "@/config/mockConfig";
-import { getReadProvider } from "@/lib/readProvider";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { useWallet } from "@/hooks/useWallet";
+
+export type CurveTradeSide = "buy" | "sell";
+
+export type CurveTradePoint = {
+  timestamp: number;          // unix seconds
+  side: CurveTradeSide;       // "buy" | "sell"
+  tokensWei: bigint;          // amount of tokens in wei
+  nativeWei: bigint;          // amount of BNB in wei
+  pricePerToken: number;      // in native token (BNB) per token
+  cumulativeTokensWei: bigint;
+  txHash: string;
+  trader?: string;
+};
+
+type UseCurveTradesState = {
+  points: CurveTradePoint[];
+  loading: boolean;
+  error?: string;
+};
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 
-export type CurveTradePoint = {
-  timestamp: number; // seconds
-  side: "buy" | "sell";
-  trader: string;
-  tokensWei: bigint;
-  nativeWei: bigint; // cost/payout in BNB wei
-  pricePerToken: number; // BNB per token
-  txHash: string;
-  blockNumber: number;
-};
+// Many public RPCs (including some BSC endpoints) enforce a max block range for eth_getLogs.
+// We therefore:
+//  1) Avoid querying from genesis by default (too expensive)
+//  2) Chunk log queries into small block ranges to stay under provider limits.
+//
+// NOTE: Timeframe analytics only needs recent history; a longer lookback can be implemented
+// via an indexer/subgraph later.
+const DEFAULT_LOOKBACK_BLOCKS = 50_000; // ~1–2 days on BSC (approx), safe for charts + 24h analytics
+const LOG_CHUNK_SIZE = 900; // keep comfortably under common 1000-block eth_getLogs limits
 
-type Options = {
-  enabled?: boolean;
-  chainId?: number;
-  lookbackBlocks?: number;
-  pollIntervalMs?: number;
-};
+async function queryFilterChunked(
+  contract: Contract,
+  filter: any,
+  fromBlock: number,
+  toBlock: number
+) {
+  const logs: any[] = [];
+  for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
+    const end = Math.min(toBlock, start + LOG_CHUNK_SIZE - 1);
+    // ethers v6: queryFilter(filter, fromBlock, toBlock)
+    const chunk = await contract.queryFilter(filter, start, end);
+    logs.push(...chunk);
+  }
+  return logs;
+}
 
-const isAddress = (a?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(String(a ?? ""));
-
-export function useCurveTrades(campaignAddress?: string, opts?: Options) {
-  const enabled = opts?.enabled ?? true;
-  const chainId = getActiveChainId(opts?.chainId ?? null) as SupportedChainId;
-  const lookbackBlocks = Math.max(1_000, Number(opts?.lookbackBlocks ?? 25_000)); // conservative default
-  const pollIntervalMs = Math.max(5_000, Number(opts?.pollIntervalMs ?? 15_000));
-
+/**
+ * Reads buy/sell events from the bonding-curve campaign contract
+ * and converts them into chart points.
+ *
+ * IMPORTANT:
+ *   - Replace "TokensPurchased" / "TokensSold" and argument names
+ *     with your actual event names & positions from LaunchCampaign.sol.
+ */
+export function useCurveTrades(
+  campaignAddress?: string
+): UseCurveTradesState {
+  const { provider } = useWallet();
   const [points, setPoints] = useState<CurveTradePoint[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const addr = useMemo(() => (campaignAddress ?? "").trim(), [campaignAddress]);
-
-  // Keep a tiny in-memory cache of block timestamps to reduce RPC calls.
-  const tsCacheRef = useRef<Map<number, number>>(new Map());
+  const [error, setError] = useState<string | undefined>();
 
   useEffect(() => {
-    if (!enabled) return;
-    if (USE_MOCK_DATA) {
+    if (!provider || !campaignAddress) {
       setPoints([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    if (!isAddress(addr)) {
-      setPoints([]);
-      setLoading(false);
-      setError(null);
       return;
     }
 
+    const contract = new Contract(
+      campaignAddress,
+      CAMPAIGN_ABI,
+      provider
+    );
+
     let cancelled = false;
-    const provider = getReadProvider(chainId);
 
     const load = async () => {
       try {
         setLoading(true);
-        setError(null);
+        setError(undefined);
 
-        const latest = await provider.getBlockNumber();
-        const fromBlock = Math.max(0, latest - lookbackBlocks);
+        // 1) Query past events (bounded + chunked)
+        // Public RPCs may reject large eth_getLogs ranges; we avoid querying from genesis.
+        const latestBlock = await provider.getBlockNumber();
+        const fromBlock = Math.max(0, latestBlock - DEFAULT_LOOKBACK_BLOCKS);
 
-        const c = new Contract(addr, CAMPAIGN_ABI, provider) as any;
-
-        const buyTopic = c.filters.TokensPurchased().topicHash;
-        const sellTopic = c.filters.TokensSold().topicHash;
-
-        const fetchLogsChunked = async (topic: string) => {
-          const out: any[] = [];
-          const step = 2_000; // avoid provider limits
-          for (let start = fromBlock; start <= latest; start += step) {
-            const end = Math.min(latest, start + step - 1);
-            const logs = await provider.getLogs({
-              address: addr,
-              fromBlock: start,
-              toBlock: end,
-              topics: [topic],
-            });
-            out.push(...logs);
-          }
-          return out;
-        };
+        const buyFilter = contract.filters.TokensPurchased?.();
+        const sellFilter = contract.filters.TokensSold?.();
 
         const [buyLogs, sellLogs] = await Promise.all([
-          fetchLogsChunked(buyTopic),
-          fetchLogsChunked(sellTopic),
+          buyFilter
+            ? queryFilterChunked(contract, buyFilter, fromBlock, latestBlock)
+            : [],
+          sellFilter
+            ? queryFilterChunked(contract, sellFilter, fromBlock, latestBlock)
+            : [],
         ]);
 
-        const all = [...buyLogs, ...sellLogs].sort((a, b) => (a.blockNumber - b.blockNumber) || (a.logIndex - b.logIndex));
-
-        // Resolve timestamps with caching
-        const uniqueBlocks = Array.from(new Set(all.map((l) => Number(l.blockNumber)))).filter((n) => Number.isFinite(n));
-        const missing = uniqueBlocks.filter((bn) => !tsCacheRef.current.has(bn));
-        for (const bn of missing) {
-          const b = await provider.getBlock(bn);
-          const ts = Number(b?.timestamp ?? 0);
-          if (ts) tsCacheRef.current.set(bn, ts);
-        }
-
-        const next: CurveTradePoint[] = all.map((log) => {
-          const parsed = c.interface.parseLog(log);
-          const name = parsed?.name;
-          const args = parsed?.args as any;
-
-          const bn = Number(log.blockNumber);
-          const ts = tsCacheRef.current.get(bn) ?? 0;
-
-          if (name === "TokensPurchased") {
-            const buyer = String(args?.buyer ?? "");
-            const tokensWei = BigInt(args?.amountOut ?? 0n);
-            const costWei = BigInt(args?.cost ?? 0n);
-            const pricePerToken = tokensWei > 0n ? Number(ethers.formatEther(costWei)) / Number(ethers.formatUnits(tokensWei, 18)) : 0;
-
-            return {
-              timestamp: ts,
-              side: "buy",
-              trader: buyer,
-              tokensWei,
-              nativeWei: costWei,
-              pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
-              txHash: String(log.transactionHash),
-              blockNumber: bn,
-            };
+        const allLogs = [
+          ...buyLogs.map((log) => ({ side: "buy" as const, log })),
+          ...sellLogs.map((log) => ({ side: "sell" as const, log })),
+        ].sort((a, b) => {
+          if (a.log.blockNumber === b.log.blockNumber) {
+            return a.log.transactionIndex - b.log.transactionIndex;
           }
-
-          // TokensSold
-          const seller = String(args?.seller ?? "");
-          const tokensWei = BigInt(args?.amountIn ?? 0n);
-          const payoutWei = BigInt(args?.payout ?? 0n);
-          const pricePerToken = tokensWei > 0n ? Number(ethers.formatEther(payoutWei)) / Number(ethers.formatUnits(tokensWei, 18)) : 0;
-
-          return {
-            timestamp: ts,
-            side: "sell",
-            trader: seller,
-            tokensWei,
-            nativeWei: payoutWei,
-            pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
-            txHash: String(log.transactionHash),
-            blockNumber: bn,
-          };
+          return a.log.blockNumber - b.log.blockNumber;
         });
 
-        if (!cancelled) setPoints(next);
+        const newPoints: CurveTradePoint[] = [];
+        let cumulativeTokensWei = 0n;
+
+        // Cache timestamps per block to reduce RPC calls.
+        const blockTs = new Map<number, number>();
+
+        for (const { side, log } of allLogs) {
+          // Get block timestamp
+          let ts = blockTs.get(log.blockNumber);
+          if (!ts) {
+            const block = await provider.getBlock(log.blockNumber);
+            ts = block?.timestamp ?? Math.floor(Date.now() / 1000);
+            blockTs.set(log.blockNumber, ts);
+          }
+
+          // LaunchCampaign.sol events:
+          //   TokensPurchased(address buyer, uint256 amountOut, uint256 cost)
+          //   TokensSold(address seller, uint256 amountIn, uint256 payout)
+          const tokenAmountWei: bigint =
+            side === "buy"
+              ? (log.args?.amountOut ?? log.args?.[1] ?? 0n)
+              : (log.args?.amountIn ?? log.args?.[1] ?? 0n);
+
+          const nativeAmountWei: bigint =
+            side === "buy"
+              ? (log.args?.cost ?? log.args?.[2] ?? 0n)
+              : (log.args?.payout ?? log.args?.[2] ?? 0n);
+
+          const trader: string | undefined =
+            side === "buy"
+              ? (log.args?.buyer ?? log.args?.[0])
+              : (log.args?.seller ?? log.args?.[0]);
+
+          if (tokenAmountWei === 0n) continue;
+
+          cumulativeTokensWei += tokenAmountWei;
+          const pricePerToken = Number(nativeAmountWei) / Number(tokenAmountWei);
+
+          newPoints.push({
+            timestamp: ts,
+            side,
+            tokensWei: tokenAmountWei,
+            nativeWei: nativeAmountWei,
+            pricePerToken,
+            cumulativeTokensWei,
+            txHash: log.transactionHash,
+            trader,
+          });
+        }
+
+        if (!cancelled) {
+          setPoints(newPoints);
+        }
       } catch (e: any) {
-        console.warn("[useCurveTrades] failed", e);
-        if (!cancelled) setError(e?.message ?? "Failed to load curve trades");
+        console.error("Failed to load curve trades", e);
+        if (!cancelled) {
+          setError(e?.message || "Failed to load curve trades");
+          setPoints([]);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -160,12 +179,94 @@ export function useCurveTrades(campaignAddress?: string, opts?: Options) {
 
     load();
 
-    const t = setInterval(load, pollIntervalMs);
+    // 2) Subscribe to live events
+    // TODO: adjust event names & arg mapping
+    const handleBuy = async (
+      buyer: string,
+      amountOut: bigint,
+      cost: bigint
+    ) => {
+      try {
+        const latestBlock = await provider.getBlock("latest");
+        const ts = latestBlock?.timestamp ?? Math.floor(Date.now() / 1000);
+        const pricePerToken = Number(cost) / Number(amountOut || 1n);
+
+        setPoints((prev) => {
+          const cumulativeTokensWei =
+            (prev[prev.length - 1]?.cumulativeTokensWei ?? 0n) +
+            amountOut;
+
+          return [
+            ...prev,
+            {
+              timestamp: ts,
+              side: "buy",
+              tokensWei: amountOut,
+              nativeWei: cost,
+              pricePerToken,
+              cumulativeTokensWei,
+              txHash: "", // you can fill via log.transactionHash if you wire listener differently
+              trader: buyer,
+            },
+          ];
+        });
+      } catch {
+        // ignore live update failures
+      }
+    };
+
+    const handleSell = async (
+      seller: string,
+      amountIn: bigint,
+      payout: bigint
+    ) => {
+      try {
+        const latestBlock = await provider.getBlock("latest");
+        const ts = latestBlock?.timestamp ?? Math.floor(Date.now() / 1000);
+        const pricePerToken = Number(payout) / Number(amountIn || 1n);
+
+        setPoints((prev) => {
+          const cumulativeTokensWei =
+            (prev[prev.length - 1]?.cumulativeTokensWei ?? 0n) +
+            amountIn;
+
+          return [
+            ...prev,
+            {
+              timestamp: ts,
+              side: "sell",
+              tokensWei: amountIn,
+              nativeWei: payout,
+              pricePerToken,
+              cumulativeTokensWei,
+              txHash: "",
+              trader: seller,
+            },
+          ];
+        });
+      } catch {
+        // ignore live update failures
+      }
+    };
+
+    // Wire up listeners (adjust names to your events)
+    if (contract.on && contract.off) {
+      // ts-expect-error – adjust to your exact event signature
+      contract.on("TokensPurchased", handleBuy);
+      // ts-expect-error – adjust to your exact event signature
+      contract.on("TokensSold", handleSell);
+    }
+
     return () => {
       cancelled = true;
-      clearInterval(t);
+      if (contract.off) {
+        // ts-expect-error – same as above
+        contract.off("TokensPurchased", handleBuy);
+        // ts-expect-error – same as above
+        contract.off("TokensSold", handleSell);
+      }
     };
-  }, [addr, enabled, chainId, lookbackBlocks, pollIntervalMs]);
+  }, [provider, campaignAddress]);
 
   return { points, loading, error };
 }

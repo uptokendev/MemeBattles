@@ -16,7 +16,7 @@ import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary } from "@/lib/launchpadClient";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
-import { TokenCandlestickChart } from "@/components/token/TokenCandlestickChart";
+import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
 import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
@@ -26,7 +26,6 @@ import { useCurveTrades } from "@/hooks/useCurveTrades";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
-import { AthBar } from "@/components/token/AthBar";
 
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
@@ -191,7 +190,8 @@ useEffect(() => {
   };
 
   // Read curve trades for transactions + analytics (live mode)
-  const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign, { enabled: Boolean(campaign?.campaign), chainId: wallet.activeChainId });
+  const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign);
+
   type TimeframeKey = "5m" | "1h" | "4h" | "24h";
   const timeframeTiles = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -348,32 +348,6 @@ useEffect(() => {
     const dir = ch >= 0 ? "▲" : "▼";
     return `${dir} ${abs.toFixed(2)}%`;
   };
-const [bnbUsd, setBnbUsd] = useState<number | null>(null);
-
-useEffect(() => {
-  let cancelled = false;
-
-  const loadBnbUsd = async () => {
-    try {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd"
-      );
-      if (!res.ok) throw new Error(`BNB/USD HTTP ${res.status}`);
-
-      const data = await res.json();
-      const usd = Number(data?.binancecoin?.usd);
-
-      if (!cancelled) setBnbUsd(Number.isFinite(usd) ? usd : null);
-    } catch {
-      if (!cancelled) setBnbUsd(null);
-    }
-  };
-
-  loadBnbUsd();
-  return () => {
-    cancelled = true;
-  };
-}, []);
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
   useEffect(() => {
@@ -625,7 +599,7 @@ useEffect(() => {
 
   const dexTokenAddress = (!isCurveTestToken && isGraduated) ? (campaign?.token ?? "") : "";
 
-  const { url: chartUrl, baseUrl: dexBaseUrl, pairAddress: dexPairAddress, liquidityBnb: dexLiquidityBnb } =
+  const { url: chartUrl, baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
     useDexScreenerChart(dexTokenAddress);
   const hasDexChart = !!chartUrl && !isCurveTestToken && isGraduated;
   const isDexStage = !isCurveTestToken && isGraduated;
@@ -643,66 +617,10 @@ useEffect(() => {
     // LIVE: best-effort liquidity (BNB-equivalent) from DexScreener.
     return formatBnb(dexLiquidityBnb ?? null);
   })();
+
+  const chartTitle = isDexStage ? "DEX chart" : "Bonding curve";
   const stagePill = isDexStage ? "Graduated" : "Bonding";
 
-const graduationTargetWei = metrics?.graduationTarget ?? null;
-
-const {
-  curvePct,
-  curvePctLabel,
-  curveReserveLabel,
-  curveToGraduateLabel,
-} = useMemo(() => {
-  const reserveWei = curveReserveWei ?? null;
-
-  const clamp = (x: number, a = 0, b = 100) => Math.min(b, Math.max(a, x));
-  const toBnb = (wei: bigint) => Number(ethers.formatEther(wei));
-
-  // Graduated: always show 100% + message
-  if (isDexStage) {
-    return {
-      curvePct: 100,
-      curvePctLabel: "100.0%",
-      curveReserveLabel: "Coin has graduated!",
-      curveToGraduateLabel: "",
-    };
-  }
-
-  const reserveBnb = reserveWei ? toBnb(reserveWei) : 0;
-
-  const reserveLabel = reserveWei
-    ? `${reserveBnb.toFixed(3)} BNB in bonding curve`
-    : "— in bonding curve";
-
-  // If no target, still show the bar at 0% but keep labels sensible
-  if (!metrics?.graduationTarget || metrics.graduationTarget <= 0n) {
-    return {
-      curvePct: 0,
-      curvePctLabel: "0.0%",
-      curveReserveLabel: reserveLabel,
-      curveToGraduateLabel: "— to graduate",
-    };
-  }
-
-  const targetBnb = toBnb(metrics.graduationTarget);
-  const pctRaw = targetBnb > 0 ? (reserveBnb / targetBnb) * 100 : 0;
-  const pct = Number.isFinite(pctRaw) ? Math.min(100, Math.max(0, pctRaw)) : 0;
-
-  const remainingBnb = Math.max(targetBnb - reserveBnb, 0);
-  const remainingUsd = bnbUsd != null ? remainingBnb * bnbUsd : null;
-
-  const toGraduateLabel =
-    remainingUsd == null
-      ? "— to graduate"
-      : `$${Math.round(remainingUsd).toLocaleString()} to graduate`;
-
-  return {
-    curvePct: pct,
-    curvePctLabel: `${pct.toFixed(1)}%`,
-    curveReserveLabel: reserveLabel,
-    curveToGraduateLabel: toGraduateLabel,
-  };
-}, [curveReserveWei, metrics?.graduationTarget, bnbUsd, isDexStage]);
 
 
   // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
@@ -1054,6 +972,13 @@ const {
                         />
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
+                    >
+                      Community
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -1255,40 +1180,54 @@ const {
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-border/40 bg-card/20">
               <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs text-muted-foreground">{chartTitle}</span>
                 <span
-  className={[
-    "inline-flex items-center justify-center",
-    "h-7 px-3 rounded-full text-[11px] font-semibold",
-    "border shadow-sm select-none",
-    "tracking-wide",
-    isDexStage
-      ? "bg-green-500/15 text-green-400 border-green-500/30 shadow-green-500/10 backdrop-blur-md ring-1 ring-white/5"
-      : "bg-yellow-500/15 text-yellow-300 border-yellow-500/30 shadow-yellow-500/10",
-  ].join(" ")}
->
-  {stagePill}
-</span>
+                  className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                    isDexStage
+                      ? "bg-green-500/10 text-green-400 border-green-500/20"
+                      : "bg-accent/10 text-accent-foreground border-border/40"
+                  }`}
+                >
+                  {stagePill}
+                </span>
               </div>
 
-              <div className="flex items-center gap-3">
-                <AthBar
-                  currentLabel={tokenData.marketCap}
-                  storageKey={`ath:${campaign?.campaign ?? campaignAddress ?? "unknown"}`}
-                  className="hidden sm:block"
-                />
-              </div>
+              {isDexStage && dexBaseUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    window.open(dexBaseUrl, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  DexScreener
+                </Button>
+              )}
             </div>
 
             <div className="flex-1 min-h-0">
-              <TokenCandlestickChart
-  stage={isDexStage ? "dex" : "curve"}
-  symbol={campaign?.symbol}
-  campaignAddress={campaign?.campaign}
-  tokenAddress={campaign?.token}
-  dexPairAddress={dexPairAddress}
-  chainId={wallet.activeChainId}
-  curvePointsOverride={!isDexStage ? liveCurvePoints : undefined}
-/>
+              {isDexStage ? (
+                chartUrl ? (
+                  <iframe
+                    src={chartUrl}
+                    title={`${tokenData.ticker} chart`}
+                    className="w-full h-full min-h-[260px] border-0"
+                    allow="clipboard-write; clipboard-read; encrypted-media;"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full min-h-[260px] text-xs text-muted-foreground p-4">
+                    DexScreener data is not available yet.
+                  </div>
+                )
+              ) : (
+                <CurvePriceChart
+                  campaignAddress={campaign?.campaign}
+                  mockMode={USE_MOCK_DATA}
+                  mockEvents={USE_MOCK_DATA ? getMockCurveEventsForSymbol(campaign?.symbol) : []}
+                />
+              )}
             </div>
           </Card>
 
@@ -1563,34 +1502,7 @@ const {
               </TabsContent>
             </Tabs>
           </Card>
-          {/* Bonding Curve Progress */}
-<Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-  <div className="flex items-center justify-between mb-3">
-    <span className="text-sm font-retro text-foreground">
-      Bonding Curve Progress
-    </span>
-    <span className="text-sm font-mono text-foreground">{curvePctLabel}</span>
-  </div>
 
-  <div className="relative h-[10px] w-full rounded-full bg-muted/40 overflow-hidden border border-border/40">
-    <div
-  className="absolute inset-y-0 left-0 rounded-full"
-  style={{
-    width: `${isDexStage ? 100 : curvePct}%`,
-    backgroundColor: "hsl(var(--success))",
-boxShadow: "0 0 12px hsl(var(--success) / 0.35)",
-    transition: "width 350ms ease",
-    // optional: makes tiny % still visible on bonding coins
-    minWidth: curvePct > 0 ? "2px" : undefined,
-  }}
-/>
-  </div>
-
-  <div className="mt-3 flex items-center justify-between text-xs">
-    <span className="text-muted-foreground font-mono">{curveReserveLabel}</span>
-    <span className="text-muted-foreground font-mono">{curveToGraduateLabel}</span>
-  </div>
-</Card>
           {/* User Statistics - 2/5 height */}
           <Card
             className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4"

@@ -3,16 +3,17 @@ import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/hooks/useWallet";
-import { getFactoryAddress } from "@/lib/chainConfig";
 import { useCallback } from "react";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 
 // Public RPC endpoints often enforce a max eth_getLogs block-range (commonly 1,000 blocks).
-// Keep our scans bounded and chunked so UPMEME works reliably even on public endpoints.
+// Keep our scans bounded and chunked so LaunchIt works reliably even on public endpoints.
 const LOG_CHUNK_SIZE = 900;
 // For UI (holders/volume and timeframe analytics), we only need recent history.
 // 50k blocks is ~1–2 days on BSC (approx), which safely covers 24h windows.
 const DEFAULT_ACTIVITY_LOOKBACK_BLOCKS = 50_000;
+
+const FACTORY_ADDRESS = import.meta.env.VITE_FACTORY_ADDRESS ?? "";
 
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
 
@@ -85,14 +86,6 @@ export type CampaignSummary = {
   stats: CampaignCardStats;
 };
 
-export type CreateCampaignResult = {
-  status: number;
-  txHash?: string;
-  receipt?: any;
-  campaignAddress?: string;
-  tokenAddress?: string;
-};
-
 // ---------------- Formatting helpers ----------------
 const formatBnbFromWei = (wei: bigint): string => {
   try {
@@ -114,7 +107,7 @@ const formatCount = (n: number): string => {
 
 // ---------------- Log helpers (chunked) ----------------
 async function getLogsChunked(
-  readProvider: any,
+  provider: any,
   params: { address: string; topics?: (string | string[] | null)[] },
   fromBlock: number,
   toBlock: number
@@ -122,7 +115,7 @@ async function getLogsChunked(
   const logs: any[] = [];
   for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
     const end = Math.min(toBlock, start + LOG_CHUNK_SIZE - 1);
-    const chunk = await readProvider.getLogs({ ...params, fromBlock: start, toBlock: end });
+    const chunk = await provider.getLogs({ ...params, fromBlock: start, toBlock: end });
     logs.push(...chunk);
   }
   return logs;
@@ -152,11 +145,11 @@ const MOCK_CAMPAIGNS: CampaignInfo[] = [
     campaign: "0x1111111111111111111111111111111111111111",
     token: "0x2222222222222222222222222222222222222222",
     creator: "0x9999999999999999999999999999999999999999",
-    name: "UPMEME Mock Token",
+    name: "LaunchIT Mock Token",
     symbol: "LIT",
     logoURI: "/placeholder.svg",
-    xAccount: "https://x.com/UPMEME_mock",
-    website: "https://UPMEME.mock",
+    xAccount: "https://x.com/launchit_mock",
+    website: "https://launchit.mock",
     extraLink: "The first mock campaign for testing the UI.",
     holders: "1.2k",
     volume: "12.4k BNB",
@@ -479,29 +472,27 @@ const MOCK_METRICS_BY_CAMPAIGN: Record<string, CampaignMetrics> = {
 
 
 export function useLaunchpad() {
-  const { signer, readProvider, activeChainId } = useWallet();
-
-  const FACTORY_ADDRESS = getFactoryAddress(activeChainId);
+  const { provider, signer } = useWallet();
 
   const getFactory = useCallback(() => {
-    if (!readProvider || !FACTORY_ADDRESS) return null;
+    if (!provider || !FACTORY_ADDRESS) return null;
     return new Contract(
       FACTORY_ADDRESS,
       FACTORY_ABI,
-      signer ?? readProvider
+      signer ?? provider
     ) as any;
-  }, [readProvider, signer, FACTORY_ADDRESS]);
+  }, [provider, signer]);
 
   const getCampaign = useCallback(
     (address: string) => {
-      if (!readProvider) return null;
+      if (!provider) return null;
       return new Contract(
         address,
         CAMPAIGN_ABI,
-        signer ?? readProvider
+        signer ?? provider
       ) as any;
     },
-    [readProvider, signer]
+    [provider, signer]
   );
 
   // --- READS ---
@@ -619,14 +610,14 @@ export function useLaunchpad() {
 
   const getCampaignCreatedBlock = useCallback(
     async (campaignAddress: string): Promise<number | null> => {
-      if (!readProvider) return null;
+      if (!provider) return null;
 
       const factory = getFactory();
       if (!factory) return null;
 
       try {
         const filter = factory.filters.CampaignCreated(null, campaignAddress, null);
-        const latest = await readProvider.getBlockNumber();
+        const latest = await provider.getBlockNumber();
         const fromBlock = Math.max(0, latest - DEFAULT_ACTIVITY_LOOKBACK_BLOCKS);
         const events = await queryFilterChunked(factory, filter, fromBlock, latest);
         const ev = events && events.length ? events[0] : null;
@@ -636,18 +627,18 @@ export function useLaunchpad() {
         return null;
       }
     },
-    [getFactory, readProvider]
+    [getFactory, provider]
   );
 
   const fetchCampaignActivity = useCallback(
     async (campaignAddress: string): Promise<CampaignActivity | null> => {
       if (USE_MOCK_DATA) return null;
-      if (!readProvider) return null;
+      if (!provider) return null;
 
-      const latest = await readProvider.getBlockNumber();
+      const latest = await provider.getBlockNumber();
       // Prefer the actual creation block when we can find it, otherwise
       // fall back to a bounded lookback window. This prevents huge log scans
-      // and avoids readProvider max-range errors.
+      // and avoids provider max-range errors.
       const createdBlock =
         (await getCampaignCreatedBlock(campaignAddress)) ??
         Math.max(0, latest - DEFAULT_ACTIVITY_LOOKBACK_BLOCKS);
@@ -692,7 +683,7 @@ export function useLaunchpad() {
 
       try {
         const buyLogs = await getLogsChunked(
-          readProvider,
+          provider,
           { address: campaignAddress, topics: [buyTopic] },
           createdBlock,
           latest
@@ -707,7 +698,7 @@ export function useLaunchpad() {
         }
 
         const sellLogs = await getLogsChunked(
-          readProvider,
+          provider,
           { address: campaignAddress, topics: [sellTopic] },
           createdBlock,
           latest
@@ -741,7 +732,7 @@ export function useLaunchpad() {
         };
       }
     },
-    [readProvider, getCampaignCreatedBlock]
+    [provider, getCampaignCreatedBlock]
   );
 
   const fetchCampaignSummary = useCallback(
@@ -779,8 +770,8 @@ export function useLaunchpad() {
 
       // Market cap (derived): currentPrice * totalSupply
       try {
-        if (readProvider && metrics) {
-          const token = new Contract(campaign.token, TOKEN_ABI, readProvider) as any;
+        if (provider && metrics) {
+          const token = new Contract(campaign.token, TOKEN_ABI, provider) as any;
           const totalSupply: bigint = await token.totalSupply();
 
           const mcWei = (metrics.currentPrice * totalSupply) / 10n ** 18n;
@@ -792,7 +783,7 @@ export function useLaunchpad() {
 
       return { campaign, metrics, stats: { holders, volume, marketCap } };
     },
-    [fetchCampaignActivity, fetchCampaignMetrics, readProvider]
+    [fetchCampaignActivity, fetchCampaignMetrics, provider]
   );
 
   const fetchCampaignCardStats = useCallback(
@@ -808,138 +799,46 @@ export function useLaunchpad() {
   // --- WRITES ---
 
     const createCampaign = useCallback(
-  async (params: {
-    name: string;
-    symbol: string;
-    logoURI: string;
-    xAccount: string;
-    website: string;
-    extraLink: string;
-    basePriceWei?: bigint;
-    priceSlopeWei?: bigint;
-    graduationTargetWei?: bigint;
-    lpReceiver?: string;
-    confirmations?: number; // NEW (optional)
-  }): Promise<CreateCampaignResult> => {
-    // --- MOCK MODE ---
-    if (USE_MOCK_DATA) {
-      console.log("[MOCK] createCampaign", params);
-      await new Promise((res) => setTimeout(res, 500));
-      return {
-        status: 1,
-        txHash: "0xmock",
-        // optionally provide a deterministic mock campaign address
-        campaignAddress: "0x1111111111111111111111111111111111111111",
-        tokenAddress: "0x2222222222222222222222222222222222222222",
-      };
-    }
-
-    const factory = getFactory();
-    if (!factory || !signer) throw new Error("Wallet not connected");
-
-    const confirmations = Math.max(1, Number(params.confirmations ?? 2));
-
-    const writer = factory.connect(signer) as any;
-
-    // NOTE: you are calling createCampaign with a struct-like object.
-    // Keep as-is, since this matches your current contract call shape.
-    const tx = await writer.createCampaign({
-      name: params.name,
-      symbol: params.symbol,
-      logoURI: params.logoURI,
-      xAccount: params.xAccount,
-      website: params.website,
-      extraLink: params.extraLink,
-      basePrice: params.basePriceWei ?? 0n,
-      priceSlope: params.priceSlopeWei ?? 0n,
-      graduationTarget: params.graduationTargetWei ?? 0n,
-      lpReceiver: params.lpReceiver || ethers.ZeroAddress,
-    });
-
-    // Wait for confirmations (finality buffer)
-    const receipt = await tx.wait(confirmations);
-
-    // Try to resolve created addresses from factory event logs
-    let campaignAddress: string | undefined;
-    let tokenAddress: string | undefined;
-
-    try {
-      const iface = factory.interface;
-
-      // Your file already references factory.filters.CampaignCreated(...)
-      // so this event should exist in the ABI.
-      const createdEvent = iface.getEvent("CampaignCreated");
-      const createdTopic = createdEvent?.topicHash;
-
-      const logs = (receipt?.logs ?? []) as any[];
-
-      // Prefer matching by topic (fast + deterministic)
-      const createdLogs = createdTopic
-        ? logs.filter(
-            (l) =>
-              (l?.address ?? "").toLowerCase() === FACTORY_ADDRESS.toLowerCase() &&
-              Array.isArray(l?.topics) &&
-              l.topics.length > 0 &&
-              l.topics[0].toLowerCase() === createdTopic.toLowerCase()
-          )
-        : [];
-
-      // If no logs matched by topic, fall back to parsing all factory logs
-      const candidateLogs = createdLogs.length
-        ? createdLogs
-        : logs.filter(
-            (l) => (l?.address ?? "").toLowerCase() === FACTORY_ADDRESS.toLowerCase()
-          );
-
-      for (const log of candidateLogs) {
-        try {
-          const parsed = iface.parseLog(log);
-          if (!parsed) continue;
-
-          // If we used the fallback path, enforce the event name
-          if (parsed.name !== "CampaignCreated") continue;
-
-          const args: any = parsed.args;
-
-          // Common patterns:
-          // - args.campaign / args.token
-          // - or positional: [creator, campaign, token] / [id, campaign, token], etc.
-          if (args?.campaign && ethers.isAddress(args.campaign)) {
-            campaignAddress = args.campaign;
-          } else {
-            // Find the first address-like arg that is NOT the creator (best effort)
-            const addrArgs = Array.from(args ?? []).filter((v) => ethers.isAddress(v));
-            // Heuristic: creator is often first; campaign often second; token often third
-            campaignAddress = addrArgs[1] ?? addrArgs[0];
-          }
-
-          if (args?.token && ethers.isAddress(args.token)) {
-            tokenAddress = args.token;
-          } else {
-            const addrArgs = Array.from(args ?? []).filter((v) => ethers.isAddress(v));
-            tokenAddress = addrArgs[2];
-          }
-
-          if (campaignAddress) break;
-        } catch {
-          // ignore non-matching log
-        }
+    async (params: {
+      name: string;
+      symbol: string;
+      logoURI: string;
+      xAccount: string;
+      website: string;
+      extraLink: string;
+      basePriceWei?: bigint;
+      priceSlopeWei?: bigint;
+      graduationTargetWei?: bigint;
+      lpReceiver?: string;
+    }) => {
+      if (USE_MOCK_DATA) {
+        console.log("[MOCK] createCampaign", params);
+        // Option: simulate a short delay
+        await new Promise((res) => setTimeout(res, 500));
+        return { status: 1 }; // minimal "success" shape
       }
-    } catch (e) {
-      console.warn("[createCampaign] Failed to parse CampaignCreated log", e);
-    }
 
-    return {
-      status: Number(receipt?.status ?? 0),
-      txHash: tx?.hash,
-      receipt,
-      campaignAddress,
-      tokenAddress,
-    };
-  },
-  [getFactory, signer]
-);
+            const factory = getFactory();
+      if (!factory || !signer) throw new Error("Wallet not connected");
 
+      const writer = factory.connect(signer) as any;
+      const tx = await writer.createCampaign({
+        name: params.name,
+        symbol: params.symbol,
+        logoURI: params.logoURI,
+        xAccount: params.xAccount,
+        website: params.website,
+        extraLink: params.extraLink,
+        basePrice: params.basePriceWei ?? 0n,
+        priceSlope: params.priceSlopeWei ?? 0n,
+        graduationTarget: params.graduationTargetWei ?? 0n,
+        lpReceiver: params.lpReceiver || ethers.ZeroAddress,
+      });
+
+      return tx.wait();
+    },
+    [getFactory, signer]
+  );
 
   const buyTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {

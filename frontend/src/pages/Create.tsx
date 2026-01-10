@@ -8,39 +8,12 @@ import ProcessingCard from "@/components/ui/processing-card";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
+import { TokenCategory } from "@/types/token";
 
 // NEW: import wallet + launchpad client
 import { useWallet } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
-import { useState } from "react";
-
-async function safeReadJson(res: Response) {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-async function uploadTokenLogo(file: File, chainId: number, address: string): Promise<string> {
-  const fd = new FormData();
-  fd.append("file", file);
-
-  const res = await fetch(
-    `/api/upload?kind=logo&chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(
-      address.toLowerCase()
-    )}`,
-    { method: "POST", body: fd }
-  );
-
-  const j = await safeReadJson(res);
-  if (!res.ok) throw new Error(j?.error || `Logo upload failed (${res.status})`);
-  if (!j?.url) throw new Error("Logo upload did not return url");
-  return String(j.url);
-}
 
 const Create = () => {
   const {
@@ -59,12 +32,6 @@ const Create = () => {
     clearSocialLinks,
   } = useTokenForm();
 
-  const onLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0] ?? null;
-  setLogoFile(file);
-  handleImageChange(e); // keep your existing preview behavior
-};
-
   const {
     isProcessing,
     processingStatus,
@@ -75,13 +42,8 @@ const Create = () => {
 
   // NEW: hooks for wallet + contracts
   const wallet = useWallet();
-const anyWallet: any = wallet as any;
-const chainId: number = Number(anyWallet?.chainId ?? anyWallet?.network?.chainId ?? 97);
+  const { createCampaign, fetchCampaigns } = useLaunchpad();
 
-
-
-const { createCampaign, fetchCampaigns } = useLaunchpad();
-const [logoFile, setLogoFile] = useState<File | null>(null);
   // UPDATED: async and actually calls the contract
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -126,55 +88,24 @@ const [logoFile, setLogoFile] = useState<File | null>(null);
       // Show nice processing overlay
       startProcessing();
 
-      // Must have a real File (imagePreview is just a data URL)
-if (!logoFile) {
-  toast.error("Please upload a token image file");
-  return;
-}
-
-const address = String(wallet.account ?? "").toLowerCase();
-if (!address) {
-  toast.error("Wallet address missing");
-  return;
-}
-
-// 1) Upload logo -> get public URL
-const uploadedLogoUrl = await uploadTokenLogo(logoFile, chainId, address);
-
-// 2) Send URL on-chain
-const result = await createCampaign({
-  name: formData.name,
-  symbol: formData.ticker.toUpperCase(),
-  logoURI: uploadedLogoUrl,
-  xAccount: formData.twitter || "",
-  website: formData.website || "",
-  extraLink: formData.otherLink || "",
-  basePriceWei: 0n,
-  priceSlopeWei: 0n,
-  graduationTargetWei: 0n,
-  lpReceiver: "",
-});
+      // For now we use 0 for pricing params.
+      // We can later extend the form to include basePrice / slope / target.
+      await createCampaign({
+        name: formData.name,
+        symbol: formData.ticker.toUpperCase(),
+        logoURI: formData.imagePreview,
+        xAccount: formData.twitter || "",
+        website: formData.website || "",
+        extraLink: formData.otherLink || "",
+        basePriceWei: 0n,
+        priceSlopeWei: 0n,
+        graduationTargetWei: 0n,
+        lpReceiver: "", // lets factory use msg.sender logic
+      });
 
       toast.success("Campaign created on-chain!");
 
-      // Prefer deterministic campaign address from receipt logs
-      const campaignAddress = (result as any)?.campaignAddress;
-
-      if (campaignAddress) {
-        const nextUrl = `/token/${campaignAddress}`;
-
-        // Tell your processing overlay where to go (if you use it)
-        setProcessingRedirectTo(nextUrl);
-
-        // Optional: small buffer for subgraph/indexer/UI cache convergence
-        await new Promise((r) => setTimeout(r, 1500));
-
-        // HARD reload navigation (guarantees a fresh TokenDetails load)
-        window.location.assign(nextUrl);
-        return; // prevent any fallback redirect logic below
-      }
-
-      // Fallback: your existing best-effort poll (kept as backup)
+      // Best-effort: resolve the created campaign address so we can redirect using campaignAddress-only routes.
       try {
         const symbol = formData.ticker.toUpperCase();
         const creator = (wallet.account ?? "").toLowerCase();
@@ -197,18 +128,15 @@ const result = await createCampaign({
             });
             const newest = matches[0];
             if (newest?.campaign) {
-              const nextUrl = `/token/${newest.campaign}`;
-              setProcessingRedirectTo(nextUrl);
-
-              await new Promise((r) => setTimeout(r, 1500));
-              window.location.assign(nextUrl);
-              return;
+              setProcessingRedirectTo(`/token/${newest.campaign}`);
+              break;
             }
           }
 
           await new Promise((r) => setTimeout(r, delayMs));
         }
       } catch (e) {
+        // If this fails, the processing hook will fall back to /up-now
         console.warn("[Create] Failed to resolve created campaign address", e);
       }
 
@@ -271,10 +199,7 @@ const result = await createCampaign({
           {/* Main Form Card */}
           <div className="bg-card/50 backdrop-blur-md rounded-2xl p-4 md:p-8 shadow-2xl border border-border relative">
             <button
-              onClick={() => {
-  setLogoFile(null);
-  handleReset();
-}}
+              onClick={handleReset}
               className="absolute top-4 right-4 md:top-6 md:right-6 text-accent hover:text-accent/80 font-retro text-xs md:text-sm transition-colors"
             >
               Reset all
@@ -303,10 +228,7 @@ const result = await createCampaign({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-  setLogoFile(null);
-  handleRemoveImage();
-}}
+                        onClick={handleRemoveImage}
                         className="absolute -top-2 -right-2 bg-accent hover:bg-accent/90 rounded-full p-1 transition-colors"
                       >
                         <X className="h-4 w-4 text-accent-foreground" />
@@ -314,13 +236,13 @@ const result = await createCampaign({
                     </div>
                   )}
                   <input
-  id="image-upload"
-  type="file"
-  accept="image/*"
-  onChange={onLogoChange}
-  className="hidden"
-  disabled={isProjectDisabled}
-/>
+                    id="image-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    disabled={isProjectDisabled}
+                  />
                 </div>
               </div>
 

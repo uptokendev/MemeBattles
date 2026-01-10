@@ -12,12 +12,7 @@ type CarouselCard = {
   image: string;
   ticker: string;
   tokenName: string;
-  /** Token contract address (copy-friendly) */
   contractAddress: string;
-  /** LaunchCampaign address (used for routing to /token/:campaignAddress) */
-  campaignAddress?: string;
-  /** Token contract address (explicit, optional) */
-  tokenAddress?: string;
   description: string;
   marketCap: string;
   holders: string;
@@ -31,10 +26,8 @@ const PLACEHOLDER_CARDS: CarouselCard[] = [
     id: 1,
     image: "https://images.unsplash.com/photo-1621504450181-5d356f61d307?w=400&h=400&fit=crop",
     ticker: "LAUNCH",
-    tokenName: "UPMEME Preview",
+    tokenName: "LaunchIt Preview",
     contractAddress: "0x0000000000000000000000000000000000000000",
-    campaignAddress: "0x0000000000000000000000000000000000000000",
-    tokenAddress: "0x0000000000000000000000000000000000000000",
     description: "Your first bonding curve token will appear here once deployed.",
     marketCap: "0",
     holders: "0",
@@ -47,8 +40,6 @@ const PLACEHOLDER_CARDS: CarouselCard[] = [
     ticker: "COMING",
     tokenName: "Coming Soon",
     contractAddress: "0x0000000000000000000000000000000000000000",
-    campaignAddress: "0x0000000000000000000000000000000000000000",
-    tokenAddress: "0x0000000000000000000000000000000000000000",
     description: "Create a campaign to turn this placeholder into a live token.",
     marketCap: "0",
     holders: "0",
@@ -61,8 +52,6 @@ const PLACEHOLDER_CARDS: CarouselCard[] = [
     ticker: "UPONLY",
     tokenName: "Sample Token",
     contractAddress: "0x0000000000000000000000000000000000000000",
-    campaignAddress: "0x0000000000000000000000000000000000000000",
-    tokenAddress: "0x0000000000000000000000000000000000000000",
     description: "This is demo data while we wait for the first launch.",
     marketCap: "0",
     holders: "0",
@@ -121,11 +110,7 @@ const Example = () => {
               image: c.logoURI || "/placeholder.svg",
               ticker: c.symbol,
               tokenName: c.name,
-              // Contract address shown on the card (what users typically want to copy)
               contractAddress: c.token,
-              // Route target (TokenDetails expects LaunchCampaign address)
-              campaignAddress: c.campaign,
-              tokenAddress: c.token,
               description: c.extraLink || "",
               marketCap: stats.marketCap,
               holders: stats.holders,
@@ -481,19 +466,14 @@ const Card = ({
   };
 
   const handleClick = () => {
-  const campaign = (card.campaignAddress || "").toLowerCase();
-  const isDummy =
-    !campaign ||
-    campaign === "0x0000000000000000000000000000000000000000";
-
-  if (!isDummy) {
-    navigate(`/token/${campaign}`);
-    return;
-  }
-
-  if (!isCentered) onClick();
-  toast.info("This token is not live yet.");
-};
+    if (isCentered && card.campaignAddress !== "0x0000000000000000000000000000000000000000") {
+      // Navigate to token details if centered/highlighted AND not a dummy address
+      navigate(`/token/${card.campaignAddress.toLowerCase()}`);
+    } else if (!isCentered) {
+      // Otherwise just center the card
+      onClick();
+    }
+  };
 
   return (
     <div
