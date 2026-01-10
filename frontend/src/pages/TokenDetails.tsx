@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import type { Transaction } from "@/types/token";
+import type { Transaction as CurveTrade } from "@/types/token";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary } from "@/lib/launchpadClient";
@@ -27,16 +27,27 @@ import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 
-
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_DECIMALS = 18;
 const SLIPPAGE_PCT = 5;
 const MAX_UINT256 = (1n << 256n) - 1n;
 
+// This is the UI table row shape (NOT the on-chain CurveTrade shape)
+type TxRow = {
+  time: string;
+  type: "buy" | "sell";
+  amount: string;
+  bnb: string;
+  price: string;
+  mcap: string;
+  trader: string;
+  tx: string;
+};
+
 const TokenDetails = () => {
   // URL param: /token/:campaignAddress  (address-based)
-const { campaignAddress } = useParams<{ campaignAddress: string }>();
+  const { campaignAddress } = useParams<{ campaignAddress: string }>();
 
   const { toast } = useToast();
   const [tradeAmount, setTradeAmount] = useState("0");
@@ -57,7 +68,10 @@ const { campaignAddress } = useParams<{ campaignAddress: string }>();
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [curveReserveWei, setCurveReserveWei] = useState<bigint | null>(null);
-  const [txs, setTxs] = useState<Transaction[]>([]);
+
+  // UI rows for the transactions table
+  const [txs, setTxs] = useState<TxRow[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,56 +85,56 @@ const { campaignAddress } = useParams<{ campaignAddress: string }>();
   const [tokenBalanceWei, setTokenBalanceWei] = useState<bigint | null>(null);
 
   // Load campaign + metrics based on :campaignAddress (preferred).
-// Backward-compatible fallback: if param is not a 0x address, treat it as symbol.
-useEffect(() => {
-  const load = async () => {
-    if (!campaignAddress) return;
+  // Backward-compatible fallback: if param is not a 0x address, treat it as symbol.
+  useEffect(() => {
+    const load = async () => {
+      if (!campaignAddress) return;
 
-    try {
-      setLoading(true);
-      setError(null);
+      try {
+        setLoading(true);
+        setError(null);
 
-      const campaigns = await fetchCampaigns();
+        const campaigns = await fetchCampaigns();
 
-      if (!campaigns || campaigns.length === 0) {
-        setError("No token data");
-        setCampaign(null);
-        setMetrics(null);
-        setSummary(null);
-        return;
+        if (!campaigns || campaigns.length === 0) {
+          setError("No token data");
+          setCampaign(null);
+          setMetrics(null);
+          setSummary(null);
+          return;
+        }
+
+        const param = campaignAddress.trim();
+        const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
+
+        const match = isAddress
+          ? campaigns.find((c) => (c.campaign ?? "").toLowerCase() === param.toLowerCase())
+          : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
+
+        if (!match) {
+          setError("Token not found");
+          setCampaign(null);
+          setMetrics(null);
+          setSummary(null);
+          return;
+        }
+
+        setCampaign(match);
+
+        // Unified token stats + metrics (same source as carousel / UpNow)
+        const s = await fetchCampaignSummary(match);
+        setSummary(s);
+        setMetrics(s.metrics ?? null);
+      } catch (err) {
+        console.error(err);
+        setError("Failed to load token data");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const param = campaignAddress.trim();
-      const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
-
-      const match = isAddress
-        ? campaigns.find((c) => (c.campaign ?? "").toLowerCase() === param.toLowerCase())
-        : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
-
-      if (!match) {
-        setError("Token not found");
-        setCampaign(null);
-        setMetrics(null);
-        setSummary(null);
-        return;
-      }
-
-      setCampaign(match);
-
-      // Unified token stats + metrics (same source as carousel / UpNow)
-      const s = await fetchCampaignSummary(match);
-      setSummary(s);
-      setMetrics(s.metrics ?? null);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load token data");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  load();
-}, [campaignAddress, fetchCampaigns, fetchCampaignSummary]);
+    load();
+  }, [campaignAddress, fetchCampaigns, fetchCampaignSummary]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
@@ -189,8 +203,39 @@ useEffect(() => {
     return `${pretty} BNB`;
   };
 
+  const shorten = (addr?: string): string => {
+    if (!addr) return "—";
+    return addr.length > 10 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
+  };
+
+  const formatCompact = (n: number): string => {
+    if (!Number.isFinite(n)) return "—";
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}b`;
+    if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}m`;
+    if (abs >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
+    return n.toFixed(2);
+  };
+
+  const formatAgo = (timestampSecs?: number): string => {
+    if (!timestampSecs) return "";
+    const now = Math.floor(Date.now() / 1000);
+    const diff = Math.max(0, now - timestampSecs);
+    if (diff < 60) return "now";
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d`;
+    const weeks = Math.floor(days / 7);
+    return `${weeks}w`;
+  };
+
   // Read curve trades for transactions + analytics (live mode)
+  // Hook returns CurveTrade[] (your "@/types/token" Transaction type)
   const { points: liveCurvePoints } = useCurveTrades(campaign?.campaign);
+  const liveCurvePointsSafe: CurveTrade[] = Array.isArray(liveCurvePoints) ? (liveCurvePoints as CurveTrade[]) : [];
 
   type TimeframeKey = "5m" | "1h" | "4h" | "24h";
   const timeframeTiles = useMemo(() => {
@@ -239,8 +284,17 @@ useEffect(() => {
       !isCurveTest &&
       Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
 
+    // IMPORTANT:
+    // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
+    // - Do NOT ethers.formatEther(pricePerToken) here.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-      USE_MOCK_DATA ? (mockGraduated ? mockDexPoints : mockCurvePoints) : (liveCurvePoints as any);
+      USE_MOCK_DATA
+        ? (mockGraduated ? mockDexPoints : mockCurvePoints)
+        : liveCurvePointsSafe.map((p: any) => ({
+            timestamp: Number(p.timestamp ?? 0),
+            pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
+            nativeWei: p.nativeWei,
+          }));
 
     if (!points.length && endPrice == null) {
       return {
@@ -286,16 +340,16 @@ useEffect(() => {
     }
 
     return out;
-  }, [USE_MOCK_DATA, campaign?.symbol, liveCurvePoints, metrics]);
+  }, [USE_MOCK_DATA, campaign?.symbol, liveCurvePointsSafe, metrics]);
 
   // Token view-model used throughout the page (mock + live)
   const tokenData = useMemo(() => {
-  const ticker = campaign?.symbol ?? "";
-  const name = campaign?.name ?? "Token";
-  const stats = summary?.stats;
+    const ticker = campaign?.symbol ?? "";
+    const name = campaign?.name ?? "Token";
+    const stats = summary?.stats;
 
-  return {
-    image: campaign?.logoURI || "/placeholder.svg",
+    return {
+      image: campaign?.logoURI || "/placeholder.svg",
       ticker,
       name,
       hasWebsite: Boolean(campaign?.website && campaign.website.length > 0),
@@ -312,42 +366,6 @@ useEffect(() => {
       metrics: timeframeTiles,
     };
   }, [campaign, curveReserveWei, metrics, summary, timeframeTiles]);
-
-  const shorten = (addr?: string): string => {
-    if (!addr) return "—";
-    return addr.length > 10 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
-  };
-
-  const formatCompact = (n: number): string => {
-    if (!Number.isFinite(n)) return "—";
-    const abs = Math.abs(n);
-    if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}b`;
-    if (abs >= 1e6) return `${(n / 1e6).toFixed(2)}m`;
-    if (abs >= 1e3) return `${(n / 1e3).toFixed(2)}k`;
-    return n.toFixed(2);
-  };
-
-  const formatAgo = (timestampSecs?: number): string => {
-    if (!timestampSecs) return "";
-    const now = Math.floor(Date.now() / 1000);
-    const diff = Math.max(0, now - timestampSecs);
-    if (diff < 60) return "now";
-    const mins = Math.floor(diff / 60);
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
-    const weeks = Math.floor(days / 7);
-    return `${weeks}w`;
-  };
-
-  const formatChange = (ch: number | null): string => {
-    if (ch == null || !Number.isFinite(ch)) return "—";
-    const abs = Math.abs(ch);
-    const dir = ch >= 0 ? "▲" : "▼";
-    return `${dir} ${abs.toFixed(2)}%`;
-  };
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
   useEffect(() => {
@@ -407,7 +425,7 @@ useEffect(() => {
           setTokenBalanceWei(tokenBal);
         }
       } catch (e) {
-        console.warn('[TokenDetails] Failed to load balances', e);
+        console.warn("[TokenDetails] Failed to load balances", e);
         if (!cancelled) {
           setBnbBalanceWei(null);
           setTokenBalanceWei(null);
@@ -423,23 +441,20 @@ useEffect(() => {
     };
   }, [wallet.provider, wallet.account, campaign?.token]);
 
-  // Build transactions table from curve events (live). In mock mode we keep it empty unless you add mock trade data.
+  // Build transactions table rows.
   useEffect(() => {
     if (!campaign) {
       setTxs([]);
       return;
     }
 
+    // MOCK MODE
     if (USE_MOCK_DATA) {
       const sym = campaign?.symbol ?? "";
       const isCurveTest = sym.toUpperCase() === "MOCK2";
       const graduated =
         !isCurveTest &&
-        Boolean(
-          metrics &&
-            metrics.graduationTarget > 0n &&
-            metrics.sold >= metrics.graduationTarget
-        );
+        Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
 
       const nowTs = Math.floor(Date.now() / 1000);
       const addrs = [
@@ -462,6 +477,7 @@ useEffect(() => {
 
       const mcap = summary?.stats.marketCap ?? "—";
 
+      // MOCK: Graduated -> mock DEX trades
       if (graduated) {
         const dex = getMockDexTradesForSymbol(sym);
         if (!dex.length) {
@@ -472,23 +488,26 @@ useEffect(() => {
         const lastTs = dex[dex.length - 1].timestamp;
         const shift = nowTs - lastTs;
 
-        const next: Transaction[] = [...dex]
-          .map((t, i) => ({
-            timestamp: t.timestamp + shift,
-            side: t.side,
-            tokensWei: t.tokensWei,
-            nativeWei: t.nativeWei,
-            pricePerToken: t.pricePerToken,
-            trader: t.trader || addrs[i % addrs.length],
-            txHash: t.txHash || pseudoTx(`dex-${sym}`, i),
-          }))
+        const raw = [...dex].map((t, i) => ({
+          timestamp: t.timestamp + shift,
+          side: t.side as "buy" | "sell",
+          tokensWei: t.tokensWei,
+          nativeWei: t.nativeWei,
+          pricePerToken: t.pricePerToken, // number
+          trader: t.trader || addrs[i % addrs.length],
+          txHash: t.txHash || pseudoTx(`dex-${sym}`, i),
+        }));
+
+        const next: TxRow[] = raw
           .slice(-50)
           .reverse()
           .map((p) => {
-            const tokenAmount = Number(ethers.formatUnits(p.tokensWei, 18));
-            const bnb = Number(ethers.formatEther(p.nativeWei));
+            const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
+            const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
+
             const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
-            const priceStr = formatPriceBnb(p.pricePerToken);
+            const priceStr = formatPriceBnb(typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken));
+
             return {
               time: formatAgo(p.timestamp),
               type: p.side,
@@ -505,7 +524,7 @@ useEffect(() => {
         return;
       }
 
-      // Pre-LP: derive mock curve transactions from mock curve events
+      // MOCK: Pre-LP -> derive mock curve txs from mock curve events
       const curve = getMockCurveEventsForSymbol(sym);
       if (!curve.length) {
         setTxs([]);
@@ -518,31 +537,33 @@ useEffect(() => {
       const perTradeBnb = 0.05;
       const perTradeWei = 50_000_000_000_000_000n; // 0.05 BNB
 
-      const next: Transaction[] = [...curve]
-        .map((e, i) => {
-          const ts = e.timestamp + shift;
-          const side: "buy" | "sell" = i % 4 === 0 ? "sell" : "buy";
-          const tokens = e.pricePerToken > 0 ? perTradeBnb / e.pricePerToken : 0;
-          const tokensWei = BigInt(Math.floor(tokens * 1e18));
-          const trader = addrs[i % addrs.length];
-          const txHash = pseudoTx(`curve-${sym}`, i);
-          return {
-            timestamp: ts,
-            side,
-            tokensWei,
-            nativeWei: perTradeWei,
-            pricePerToken: e.pricePerToken,
-            trader,
-            txHash,
-          };
-        })
+      const raw = [...curve].map((e, i) => {
+        const ts = e.timestamp + shift;
+        const side: "buy" | "sell" = i % 4 === 0 ? "sell" : "buy";
+        const tokens = e.pricePerToken > 0 ? perTradeBnb / e.pricePerToken : 0;
+        const tokensWei = BigInt(Math.floor(tokens * 1e18));
+        const trader = addrs[i % addrs.length];
+        const txHash = pseudoTx(`curve-${sym}`, i);
+        return {
+          timestamp: ts,
+          side,
+          tokensWei,
+          nativeWei: perTradeWei,
+          pricePerToken: e.pricePerToken, // number
+          trader,
+          txHash,
+        };
+      });
+
+      const next: TxRow[] = raw
         .slice(-50)
         .reverse()
         .map((p) => {
-          const tokenAmount = Number(ethers.formatUnits(p.tokensWei, 18));
+          const tokenAmount = Number(ethers.formatUnits(p.tokensWei, TOKEN_DECIMALS));
           const bnb = Number(ethers.formatEther(p.nativeWei));
           const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
           const priceStr = formatPriceBnb(p.pricePerToken);
+
           return {
             time: formatAgo(p.timestamp),
             type: p.side,
@@ -559,30 +580,34 @@ useEffect(() => {
       return;
     }
 
-    const next: Transaction[] = [...liveCurvePoints]
+    // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
+    const mcap = summary?.stats.marketCap ?? "—";
+
+    const next: TxRow[] = [...liveCurvePointsSafe]
       .slice(-50)
       .reverse()
-      .map((p) => {
-        const tokenAmount = Number(ethers.formatUnits(p.tokensWei, 18));
-        const bnb = Number(ethers.formatEther(p.nativeWei));
-
+      .map((p: any) => {
+        const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
+        const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
         const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
-        const priceStr = formatPriceBnb(p.pricePerToken);
+
+        const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
+        const priceStr = formatPriceBnb(priceNum);
 
         return {
-          time: formatAgo(p.timestamp),
-          type: p.side,
+          time: formatAgo(Number(p.timestamp ?? 0)),
+          type: (p.type ?? "buy") as "buy" | "sell",
           amount: formatCompact(tokenAmount),
           bnb: bnbStr,
           price: priceStr,
-          mcap: summary?.stats.marketCap ?? "—",
-          trader: shorten(p.trader),
-          tx: p.txHash,
+          mcap,
+          trader: shorten(p.from),
+          tx: String(p.txHash ?? ""),
         };
       });
 
     setTxs(next);
-  }, [USE_MOCK_DATA, campaign, liveCurvePoints, summary, metrics]);
+  }, [USE_MOCK_DATA, campaign, liveCurvePointsSafe, summary?.stats.marketCap, metrics]);
 
   // 🔹 Dexscreener chart-only URL (mock or live) based on the token contract
   // In mock mode we still want to be able to test the internal bonding-curve chart.
@@ -601,7 +626,6 @@ useEffect(() => {
 
   const { url: chartUrl, baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
     useDexScreenerChart(dexTokenAddress);
-  const hasDexChart = !!chartUrl && !isCurveTestToken && isGraduated;
   const isDexStage = !isCurveTestToken && isGraduated;
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
@@ -620,8 +644,6 @@ useEffect(() => {
 
   const chartTitle = isDexStage ? "DEX chart" : "Bonding curve";
   const stagePill = isDexStage ? "Graduated" : "Bonding";
-
-
 
   // Quote (buy: BNB cost; sell: BNB payout) for the entered token amount
   useEffect(() => {
@@ -855,7 +877,7 @@ useEffect(() => {
 
       setTradeAmount("0");
     } catch (e: any) {
-      console.error('[TokenDetails] Trade failed', e);
+      console.error("[TokenDetails] Trade failed", e);
       toast({
         title: "Trade failed",
         description: e?.reason || e?.message || "Transaction failed.",
@@ -882,9 +904,7 @@ useEffect(() => {
     return (
       <div className="h-full w-full flex items-center justify-center px-4">
         <Card className="p-4 md:p-6 bg-card/40 border border-border/40 max-w-md w-full text-center">
-          <h2 className="text-sm md:text-base font-semibold mb-2">
-            {error}
-          </h2>
+          <h2 className="text-sm md:text-base font-semibold mb-2">{error}</h2>
           <p className="text-xs md:text-sm text-muted-foreground">
             {error === "No token data"
               ? "There are no campaigns available yet."
@@ -1003,9 +1023,7 @@ useEffect(() => {
                     onClick={() => setMetricsExpanded(!metricsExpanded)}
                     className="w-full flex items-center justify-between py-2 px-3 bg-muted/30 rounded-lg"
                   >
-                    <span className="text-xs text-muted-foreground">
-                      More metrics
-                    </span>
+                    <span className="text-xs text-muted-foreground">More metrics</span>
                     <ChevronDown
                       className={`h-4 w-4 transition-transform ${
                         metricsExpanded ? "rotate-180" : ""
@@ -1017,80 +1035,58 @@ useEffect(() => {
                     <div className="mt-2 space-y-3 p-3 bg-muted/20 rounded-lg">
                       {/* Time-based percentage changes */}
                       <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(tokenData.metrics).map(
-                          ([key, data]) => (
-                            <div
-                              key={key}
-                              onClick={() =>
-                                setSelectedTimeframe(
-                                  key as "5m" | "1h" | "4h" | "24h"
-                                )
-                              }
-                              className={`cursor-pointer transition-all text-xs p-2 rounded-md ${
-                                selectedTimeframe === key
-                                  ? "bg-accent/20"
-                                  : "hover:bg-muted/50"
-                              }`}
-                            >
-                              <span className="text-muted-foreground">
-                                {key}
-                              </span>
-                              {(() => {
-                                const ch = (data as any).change as number | null;
-                                return (
-                                  <span
-                                    className={`ml-2 font-mono ${
-                                      ch == null
-                                        ? "text-muted-foreground"
-                                        : ch < 0
-                                        ? "text-red-500"
-                                        : "text-green-500"
-                                    }`}
-                                  >
-                                    {ch == null
-                                      ? "—"
-                                      : `${ch > 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%`}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                          )
-                        )}
+                        {Object.entries(tokenData.metrics).map(([key, data]) => (
+                          <div
+                            key={key}
+                            onClick={() =>
+                              setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")
+                            }
+                            className={`cursor-pointer transition-all text-xs p-2 rounded-md ${
+                              selectedTimeframe === key
+                                ? "bg-accent/20"
+                                : "hover:bg-muted/50"
+                            }`}
+                          >
+                            <span className="text-muted-foreground">{key}</span>
+                            {(() => {
+                              const ch = (data as any).change as number | null;
+                              return (
+                                <span
+                                  className={`ml-2 font-mono ${
+                                    ch == null
+                                      ? "text-muted-foreground"
+                                      : ch < 0
+                                      ? "text-red-500"
+                                      : "text-green-500"
+                                  }`}
+                                >
+                                  {ch == null ? "—" : `${ch > 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%`}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        ))}
                       </div>
 
                       {/* Additional metrics */}
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/30">
                         <div className="text-xs">
-                          <span className="text-muted-foreground block">
-                            Price
-                          </span>
-                          <span className="font-mono text-foreground">
-                            {tokenData.price}
-                          </span>
+                          <span className="text-muted-foreground block">Price</span>
+                          <span className="font-mono text-foreground">{tokenData.price}</span>
                         </div>
                         <div className="text-xs">
-                          <span className="text-muted-foreground block">
-                            {liquidityLabel}
-                          </span>
-                          <span className="font-mono text-foreground">
-                            {liquidityValue}
-                          </span>
+                          <span className="text-muted-foreground block">{liquidityLabel}</span>
+                          <span className="font-mono text-foreground">{liquidityValue}</span>
                         </div>
                         <div className="text-xs">
-                          <span className="text-muted-foreground block">
-                            Volume
-                          </span>
+                          <span className="text-muted-foreground block">Volume</span>
                           <span className="font-mono text-foreground">
                             {tokenData.metrics[selectedTimeframe].volume}
                           </span>
                         </div>
                         <div className="text-xs">
-                          <span className="text-muted-foreground block">
-                            Holders
-                          </span>
-                          <span className="font-mono text-foreground">
-                            {tokenData.holders}
-                          </span>
+                          <span className="text-muted-foreground block">Holders</span>
+                          <span className="font-mono text-foreground">{tokenData.holders}</span>
                         </div>
                       </div>
                     </div>
@@ -1108,11 +1104,7 @@ useEffect(() => {
                   {Object.entries(tokenData.metrics).map(([key, data]) => (
                     <div
                       key={key}
-                      onClick={() =>
-                        setSelectedTimeframe(
-                          key as "5m" | "1h" | "4h" | "24h"
-                        )
-                      }
+                      onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
                       className={`cursor-pointer transition-all text-xs ${
                         selectedTimeframe === key
                           ? "opacity-100"
@@ -1132,9 +1124,7 @@ useEffect(() => {
                                 : "text-green-500"
                             }`}
                           >
-                            {ch == null
-                              ? "—"
-                              : `${ch > 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%`}
+                            {ch == null ? "—" : `${ch > 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%`}
                           </span>
                         );
                       })()}
@@ -1146,15 +1136,11 @@ useEffect(() => {
                 <div className="flex items-center justify-between gap-4">
                   <div className="text-xs">
                     <span className="text-muted-foreground">Price</span>
-                    <span className="ml-2 font-mono text-foreground">
-                      {tokenData.price}
-                    </span>
+                    <span className="ml-2 font-mono text-foreground">{tokenData.price}</span>
                   </div>
                   <div className="text-xs">
                     <span className="text-muted-foreground">{liquidityLabel}</span>
-                    <span className="ml-2 font-mono text-foreground">
-                      {liquidityValue}
-                    </span>
+                    <span className="ml-2 font-mono text-foreground">{liquidityValue}</span>
                   </div>
                   <div className="text-xs">
                     <span className="text-muted-foreground">Volume</span>
@@ -1164,9 +1150,7 @@ useEffect(() => {
                   </div>
                   <div className="text-xs">
                     <span className="text-muted-foreground">Holders</span>
-                    <span className="ml-2 font-mono text-foreground">
-                      {tokenData.holders}
-                    </span>
+                    <span className="ml-2 font-mono text-foreground">{tokenData.holders}</span>
                   </div>
                 </div>
               </div>
@@ -1197,9 +1181,7 @@ useEffect(() => {
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={() =>
-                    window.open(dexBaseUrl, "_blank", "noopener,noreferrer")
-                  }
+                  onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
                 >
                   <ExternalLink className="h-3 w-3 mr-1" />
                   DexScreener
@@ -1232,88 +1214,57 @@ useEffect(() => {
           </Card>
 
           {/* Transactions Table */}
-          <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0"
-            style={{ flex: "1" }}
-          >
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0" style={{ flex: "1" }}>
             <div className="overflow-auto flex-1">
               <table className="w-full text-[11px]">
                 <thead className="sticky top-0 bg-card/95 backdrop-blur">
                   <tr className="border-b border-border/50">
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      Time
-                    </th>
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      Type
-                    </th>
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      {tokenData.ticker}
-                    </th>
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      BNB
-                    </th>
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      Price
-                    </th>
-                    <th className="hidden lg:table-cell text-left py-1.5 text-muted-foreground font-normal">
-                      MCap
-                    </th>
-                    <th className="hidden md:table-cell text-left py-1.5 text-muted-foreground font-normal">
-                      Trader
-                    </th>
-                    <th className="text-left py-1.5 text-muted-foreground font-normal">
-                      TX
-                    </th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">Time</th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">Type</th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">{tokenData.ticker}</th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">BNB</th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">Price</th>
+                    <th className="hidden lg:table-cell text-left py-1.5 text-muted-foreground font-normal">MCap</th>
+                    <th className="hidden md:table-cell text-left py-1.5 text-muted-foreground font-normal">Trader</th>
+                    <th className="text-left py-1.5 text-muted-foreground font-normal">TX</th>
                   </tr>
                 </thead>
                 <tbody>
                   {txs.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={8}
-                        className="py-6 text-center text-muted-foreground"
-                      >
+                      <td colSpan={8} className="py-6 text-center text-muted-foreground">
                         No trades yet.
                       </td>
                     </tr>
                   ) : (
                     txs.map((tx, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-border/50 hover:bg-muted/20"
-                    >
-                      <td className="py-1.5 text-muted-foreground">{tx.time}</td>
-                      <td
-                        className={`py-1.5 ${
-                          tx.type === "buy"
-                            ? "text-green-500"
-                            : "text-red-500"
-                        }`}
-                      >
-                        {tx.type.toUpperCase()}
-                      </td>
-                      <td className="py-1.5 font-mono">{tx.amount}</td>
-                      <td className="py-1.5 font-mono">{tx.bnb}</td>
-                      <td className="py-1.5 font-mono">{tx.price}</td>
-                      <td className="hidden lg:table-cell py-1.5 font-mono">{tx.mcap}</td>
-                      <td className="hidden md:table-cell py-1.5 font-mono">{tx.trader}</td>
-                      <td className="py-1.5">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5"
-                          onClick={() => {
-                            if (!tx.tx) return;
-                            const base = wallet.chainId === 97
-                              ? "https://testnet.bscscan.com/tx/"
-                              : "https://bscscan.com/tx/";
-                            window.open(`${base}${tx.tx}`, "_blank", "noopener,noreferrer");
-                          }}
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                        </Button>
-                      </td>
-                    </tr>
+                      <tr key={i} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="py-1.5 text-muted-foreground">{tx.time}</td>
+                        <td className={`py-1.5 ${tx.type === "buy" ? "text-green-500" : "text-red-500"}`}>
+                          {tx.type.toUpperCase()}
+                        </td>
+                        <td className="py-1.5 font-mono">{tx.amount}</td>
+                        <td className="py-1.5 font-mono">{tx.bnb}</td>
+                        <td className="py-1.5 font-mono">{tx.price}</td>
+                        <td className="hidden lg:table-cell py-1.5 font-mono">{tx.mcap}</td>
+                        <td className="hidden md:table-cell py-1.5 font-mono">{tx.trader}</td>
+                        <td className="py-1.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={() => {
+                              if (!tx.tx) return;
+                              const base = wallet.chainId === 97
+                                ? "https://testnet.bscscan.com/tx/"
+                                : "https://bscscan.com/tx/";
+                              window.open(`${base}${tx.tx}`, "_blank", "noopener,noreferrer");
+                            }}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        </td>
+                      </tr>
                     ))
                   )}
                 </tbody>
@@ -1325,28 +1276,18 @@ useEffect(() => {
         {/* Right Column - Trading Panel & Stats (1/3 width) */}
         <div className="lg:col-span-1 flex flex-col gap-4 min-h-0">
           {/* Trading Panel - 2/5 height */}
-          <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4"
-            style={{ flex: "2" }}
-          >
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4" style={{ flex: "2" }}>
             <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
               <TabsList className="grid w-full grid-cols-2 mb-3">
-                <TabsTrigger value="buy" className="text-sm">
-                  Buy
-                </TabsTrigger>
-                <TabsTrigger value="sell" className="text-sm">
-                  Sell
-                </TabsTrigger>
+                <TabsTrigger value="buy" className="text-sm">Buy</TabsTrigger>
+                <TabsTrigger value="sell" className="text-sm">Sell</TabsTrigger>
               </TabsList>
+
               <TabsContent value="buy" className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-muted-foreground">
-                      Amount ({tokenData.ticker})
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Slippage: {SLIPPAGE_PCT}%
-                    </span>
+                    <span className="text-xs text-muted-foreground">Amount ({tokenData.ticker})</span>
+                    <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
                   </div>
                   <div className="relative">
                     <input
@@ -1357,23 +1298,17 @@ useEffect(() => {
                       placeholder="0"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {tokenData.ticker}
-                      </span>
+                      <span className="text-xs font-mono text-muted-foreground">{tokenData.ticker}</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">
-                      Wallet: {formatBnbFromWei(bnbBalanceWei)}
-                    </span>
+                    <span className="text-xs text-muted-foreground">Wallet: {formatBnbFromWei(bnbBalanceWei)}</span>
                     <span className="text-xs text-muted-foreground">
                       Cost: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
                     </span>
                   </div>
                   {quoteError ? (
-                    <p className="mt-2 text-center text-xs text-destructive">
-                      {quoteError}
-                    </p>
+                    <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
                   ) : null}
                 </div>
 
@@ -1397,15 +1332,12 @@ useEffect(() => {
                   {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Place Trade"}
                 </Button>
               </TabsContent>
+
               <TabsContent value="sell" className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-muted-foreground">
-                      Amount ({tokenData.ticker})
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Slippage: {SLIPPAGE_PCT}%
-                    </span>
+                    <span className="text-xs text-muted-foreground">Amount ({tokenData.ticker})</span>
+                    <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
                   </div>
                   <div className="relative">
                     <input
@@ -1416,11 +1348,10 @@ useEffect(() => {
                       placeholder="0"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {tokenData.ticker}
-                      </span>
+                      <span className="text-xs font-mono text-muted-foreground">{tokenData.ticker}</span>
                     </div>
                   </div>
+
                   <div className="flex gap-1 mt-2">
                     <Button
                       variant="outline"
@@ -1469,14 +1400,10 @@ useEffect(() => {
                   </div>
 
                   {approvePending ? (
-                    <p className="mt-2 text-center text-xs text-muted-foreground">
-                      Approval in progress...
-                    </p>
+                    <p className="mt-2 text-center text-xs text-muted-foreground">Approval in progress...</p>
                   ) : null}
                   {quoteError ? (
-                    <p className="mt-2 text-center text-xs text-destructive">
-                      {quoteError}
-                    </p>
+                    <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
                   ) : null}
                 </div>
 
@@ -1504,22 +1431,12 @@ useEffect(() => {
           </Card>
 
           {/* User Statistics - 2/5 height */}
-          <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4"
-            style={{ flex: "2" }}
-          >
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4" style={{ flex: "2" }}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-retro text-foreground">
-                Flywheel statistics
-              </h3>
+              <h3 className="text-sm font-retro text-foreground">Flywheel statistics</h3>
               <div className="flex gap-2">
                 <Button variant="ghost" size="icon" className="h-6 w-6">
-                  <svg
-                    className="h-3 w-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                  >
+                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                     <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     <path d="M9 12l2 2 4-4" />
                   </svg>
@@ -1534,20 +1451,14 @@ useEffect(() => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Invested
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-1">Invested</p>
                   <p className="text-xl font-retro text-foreground">$0</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Tokens burned
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-1">Tokens burned</p>
                   <p className="text-xl font-retro text-foreground flex items-center gap-1">
                     0.000%
-                    <span className="text-xs text-muted-foreground">
-                      ${tokenData.ticker}
-                    </span>
+                    <span className="text-xs text-muted-foreground">${tokenData.ticker}</span>
                   </p>
                 </div>
               </div>
@@ -1555,25 +1466,16 @@ useEffect(() => {
           </Card>
 
           {/* Holder Distribution - 1/5 height */}
-          <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0"
-            style={{ flex: "1" }}
-          >
-            <h3 className="text-sm font-retro text-foreground mb-3 flex-shrink-0">
-              Holder Distribution
-            </h3>
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0" style={{ flex: "1" }}>
+            <h3 className="text-sm font-retro text-foreground mb-3 flex-shrink-0">Holder Distribution</h3>
             <div className="space-y-2 overflow-auto flex-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-mono">1. 42me...</span>
-                <span className="font-mono text-muted-foreground">
-                  100.000%
-                </span>
+                <span className="font-mono text-muted-foreground">100.000%</span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="font-mono">2. Bzdb... 🔥 (DEV)</span>
-                <span className="font-mono text-muted-foreground">
-                  0.000%
-                </span>
+                <span className="font-mono text-muted-foreground">0.000%</span>
               </div>
             </div>
           </Card>
