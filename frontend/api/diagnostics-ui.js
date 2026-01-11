@@ -101,6 +101,37 @@ export default async function handler(req, res) {
     </header>
 
     <div class="grid">
+    <div class="card" style="grid-column: 1 / -1;">
+  <h2>Readiness</h2>
+  <div class="body">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <span id="corePill" class="pill"><span class="dot info"></span><span>Core: —</span></span>
+      <span id="goLivePill" class="pill"><span class="dot info"></span><span>Go-live: —</span></span>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="card" style="box-shadow:none;">
+        <h2 style="padding-top:0;">Core gates</h2>
+        <div class="body" style="padding:0;">
+          <table>
+            <thead><tr><th>Gate</th><th>Status</th></tr></thead>
+            <tbody id="coreGateRows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="box-shadow:none;">
+        <h2 style="padding-top:0;">Go-live gates</h2>
+        <div class="body" style="padding:0;">
+          <table>
+            <thead><tr><th>Gate</th><th>Status</th></tr></thead>
+            <tbody id="goLiveGateRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
       <div class="card">
   <h2>Vercel Runtime</h2>
   <div class="body">
@@ -182,6 +213,37 @@ export default async function handler(req, res) {
     const TOKEN = ${JSON.stringify(token)};
     let lastJson = null;
 
+    function setReadiness(j) {
+  const status = j?.status || {};
+  const coreReady = !!status.coreReady;
+  const goLiveReady = !!status.goLiveReady;
+
+  const corePill = document.getElementById("corePill");
+  const goLivePill = document.getElementById("goLivePill");
+
+  if (corePill) corePill.innerHTML = coreReady
+    ? '<span class="dot ok"></span><span>Core: READY</span>'
+    : '<span class="dot bad"></span><span>Core: NOT READY</span>';
+
+  if (goLivePill) goLivePill.innerHTML = goLiveReady
+    ? '<span class="dot ok"></span><span>Go-live: READY</span>'
+    : '<span class="dot warn"></span><span>Go-live: NOT READY</span>';
+
+  const coreRows = document.getElementById("coreGateRows");
+  const goRows = document.getElementById("goLiveGateRows");
+
+  const core = status.gates?.core || [];
+  const go = status.gates?.goLive || [];
+
+  if (coreRows) coreRows.innerHTML = core.map(g =>
+    '<tr><td class="k">' + g.name + '</td><td>' + (g.ok ? badge("ok","PASS") : badge("bad","FAIL")) + '</td></tr>'
+  ).join("");
+
+  if (goRows) goRows.innerHTML = go.map(g =>
+    '<tr><td class="k">' + g.name + '</td><td>' + (g.ok ? badge("ok","PASS") : badge("warn","FAIL")) + '</td></tr>'
+  ).join("");
+}
+
     function badge(status, label) {
       const cls = status === "ok" ? "ok" : status === "bad" ? "bad" : status === "warn" ? "warn" : "info";
       return '<span class="badge ' + cls + '"><span class="dot ' + cls + '"></span>' + label + '</span>';
@@ -246,22 +308,77 @@ function setAivenRows(j) {
 
 function setSupabaseRows(j) {
   const tbody = document.getElementById("supabaseRows");
-  const s = j?.checks?.supabase;
-  if (!s) {
-    tbody.innerHTML = "<tr><td class='k'>Reachability</td><td>" + badge("bad","No data") + "</td><td class='muted'>—</td></tr>";
-    return;
-  }
+  const s = j?.checks?.supabase;                 // reachability-only
+  const sr = j?.checks?.supabase_service_role;   // service-role storage check
+
   const rows = [];
-  if (!s.ok) {
-    rows.push(["Reachability", badge("bad","FAIL"), (s.error?.message || "Unknown error")]);
+
+  // --- Section: Reachability (public) ---
+  rows.push([
+    "<span class='mono'>Reachability (public)</span>",
+    badge("info", "Section"),
+    "Checks if Supabase is reachable from Vercel runtime (no secrets)."
+  ]);
+
+  if (!s) {
+    rows.push(["Reachability", badge("bad", "No data"), "No response from diagnostics."]);
+  } else if (!s.ok) {
+    rows.push(["Reachability", badge("bad", "FAIL"), (s.error?.message || "Unknown error")]);
   } else {
-    rows.push(["Reachability", badge("ok","OK"), "Latency: <span class='mono'>" + (s.latencyMs ?? "—") + "ms</span>, HTTP: <span class='mono'>" + (s.httpStatus ?? "—") + "</span>"]);
+    rows.push([
+      "Reachability",
+      badge("ok", "OK"),
+      "Latency: <span class='mono'>" + (s.latencyMs ?? "—") + "ms</span>, HTTP: <span class='mono'>" + (s.httpStatus ?? "—") + "</span>"
+    ]);
     rows.push(["Host", badge("info", s.urlHost || "—"), "<span class='mono'>" + (s.pingUrl || "—") + "</span>"]);
-    rows.push(["Note", badge("info","Info"), s.note || "—"]);
+    rows.push(["Note", badge("info", "Info"), s.note || "—"]);
   }
-  tbody.innerHTML = rows.map(([k,st,d]) =>
-    "<tr><td class='k'>" + k + "</td><td>" + st + "</td><td class='muted'>" + d + "</td></tr>"
-  ).join("");
+
+  // spacer row
+  rows.push(["", "", ""]);
+
+  // --- Section: Service Role / Storage (server-side) ---
+  rows.push([
+    "<span class='mono'>Service role / Storage</span>",
+    badge("info", "Section"),
+    "Validates SUPABASE_SERVICE_ROLE_KEY and checks bucket access (used by /api/upload)."
+  ]);
+
+  if (!sr) {
+    rows.push(["Service role", badge("warn", "Not checked"), "supabase_service_role check not present in /api/diagnostics yet."]);
+  } else if (!sr.ok) {
+    const msg =
+      sr.error?.message ||
+      sr.error?.detail?.message ||
+      sr.note ||
+      "Missing or invalid SUPABASE_SERVICE_ROLE_KEY.";
+
+    // If diagnostics marks it skipped, show WARN instead of FAIL
+    const level = sr.skipped ? "warn" : "bad";
+    rows.push(["Service role", badge(level, sr.skipped ? "Missing" : "FAIL"), msg]);
+
+    if (sr.bucket) {
+      rows.push(["Bucket", badge("info", "Info"), "Expected bucket: <span class='mono'>" + sr.bucket + "</span>"]);
+    }
+  } else {
+    rows.push([
+      "Service role",
+      badge("ok", "OK"),
+      "Latency: <span class='mono'>" + (sr.latencyMs ?? "—") + "ms</span>"
+    ]);
+
+    if (sr.bucket) {
+      rows.push([
+        "Bucket",
+        sr.bucket.exists ? badge("ok", "Exists") : badge("warn", "Missing"),
+        "Name: <span class='mono'>" + sr.bucket.name + "</span>, buckets: <span class='mono'>" + (sr.bucket.total ?? "—") + "</span>"
+      ]);
+    }
+  }
+
+  tbody.innerHTML = rows
+    .map(([k, st, d]) => "<tr><td class='k'>" + k + "</td><td>" + st + "</td><td class='muted'>" + d + "</td></tr>")
+    .join("");
 }
 
 function setRailwayRows(j) {
@@ -354,6 +471,7 @@ function setAblyRows(j) {
     }
 
     async function load() {
+    
       setOverall(false);
       const rawEl = document.getElementById("raw");
       rawEl.textContent = "Loading…";
@@ -363,6 +481,7 @@ function setAblyRows(j) {
       lastJson = j;
 
       setHeaderMeta(j);
+      setReadiness(j);
       setVercelRows(j);
 setAivenRows(j);
 setSupabaseRows(j);

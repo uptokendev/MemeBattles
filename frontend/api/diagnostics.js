@@ -69,6 +69,12 @@ function parseDbUrl(url) {
   };
 }
 
+function normalizeHttpUrl(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  return "https://" + s;
+}
 
 async function pgCheck() {
   const DATABASE_URL = process.env.DATABASE_URL || "";
@@ -155,15 +161,20 @@ async function fetchJson(url, opts = {}) {
 }
 
 async function checkRailway() {
-  const base = process.env.RAILWAY_INDEXER_URL || "";
-  if (!base) {
+  const baseRaw = process.env.RAILWAY_INDEXER_URL || "";
+  if (!baseRaw) {
     return { ok: false, error: { message: "Missing RAILWAY_INDEXER_URL" } };
   }
-  // Expected: base like https://<service>.up.railway.app
-  const url = base.replace(/\/+$/, "") + "/health";
+
+  // Accept either:
+  // - https://service.up.railway.app
+  // - service.up.railway.app
+  // - https://service.up.railway.app/health
+  const base = normalizeHttpUrl(baseRaw).replace(/\/+$/, "");
+  const url = base.endsWith("/health") ? base : base + "/health";
+
   try {
     const r = await fetchJson(url);
-    // Your health returns { ok: boolean, error?: string }
     const appOk = Boolean(r.json?.ok);
     return {
       ok: r.ok && appOk,
@@ -171,6 +182,7 @@ async function checkRailway() {
       url,
       httpStatus: r.status,
       body: r.json || r.text,
+      note: baseRaw.startsWith("http") ? "" : "Tip: include https:// in RAILWAY_INDEXER_URL",
     };
   } catch (e) {
     return { ok: false, error: safeError(e), url };
@@ -200,6 +212,43 @@ async function checkSupabasePublic() {
     };
   } catch (e) {
     return { ok: false, error: safeError(e), pingUrl };
+  }
+}
+
+async function checkSupabaseServiceRole() {
+  const url = process.env.SUPABASE_URL || "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const bucket = process.env.SUPABASE_BUCKET || "upmeme";
+
+  if (!url || !key) {
+    return {
+      ok: false,
+      skipped: true,
+      error: { message: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (required for /api/upload)" },
+      bucket,
+    };
+  }
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const supabase = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const t0 = Date.now();
+    const { data, error } = await supabase.storage.listBuckets();
+    const latencyMs = Date.now() - t0;
+
+    if (error) return { ok: false, latencyMs, error: safeError(error), bucket };
+
+    const bucketExists = Array.isArray(data) && data.some((b) => b?.name === bucket);
+    return {
+      ok: true,
+      latencyMs,
+      bucket: { name: bucket, exists: bucketExists, total: data?.length ?? 0 },
+    };
+  } catch (e) {
+    return { ok: false, error: safeError(e), bucket };
   }
 }
 
@@ -269,6 +318,14 @@ out.checks.railway = await checkRailway();
 // Supabase (reachability only; token data lives here)
 out.checks.supabase = await checkSupabasePublic();
 
+out.checks.supabase_service_role = await checkSupabaseServiceRole();
+
+if (!out.checks.supabase_service_role?.ok) {
+  out.recommendations.push(
+    "Supabase service role key is missing/invalid. This will break /api/upload. Set SUPABASE_SERVICE_ROLE_KEY on Vercel."
+  );
+}
+
 // Ably (server key presence/format only)
 out.checks.ably = await checkAblyServerKey();
 
@@ -314,6 +371,28 @@ if (!out.checks.ably?.ok) {
   Boolean(out.checks.railway?.ok || !process.env.RAILWAY_INDEXER_URL) && // don't fail overall if you haven't configured it yet
   Boolean(out.checks.supabase?.ok) &&
   Boolean(out.checks.ably?.ok || true); // keep overall green even if Ably isn't configured yet
+  const gates = {
+  core: [
+    { name: "Aiven (profiles/comments)", ok: Boolean(out.checks.aiven_postgres?.ok) },
+    { name: "Supabase reachability (token data)", ok: Boolean(out.checks.supabase?.ok) },
+  ],
+  goLive: [
+    { name: "Aiven (profiles/comments)", ok: Boolean(out.checks.aiven_postgres?.ok) },
+    { name: "Railway indexer /health", ok: Boolean(out.checks.railway?.ok) },
+    { name: "Supabase reachability", ok: Boolean(out.checks.supabase?.ok) },
+    { name: "Supabase service role (uploads)", ok: Boolean(out.checks.supabase_service_role?.ok) },
+    { name: "Ably server key", ok: Boolean(out.checks.ably?.ok) },
+  ],
+};
+
+out.status = {
+  coreReady: gates.core.every((g) => g.ok),
+  goLiveReady: gates.goLive.every((g) => g.ok),
+  gates,
+};
+
+out.ok = out.status.coreReady;
+
     return res.status(200).json(out);
   } catch (e) {
     console.error("[api/diagnostics] crashed", e);
