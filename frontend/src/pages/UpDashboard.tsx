@@ -17,6 +17,8 @@ import type { Token } from "@/types/token";
 
 type Tab = "up" | "higher" | "moon";
 
+const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test((s ?? "").trim());
+
 const TokenCard = ({ token, className }: { token: Token; className?: string }) => {
   const navigate = useNavigate();
 
@@ -25,7 +27,11 @@ const TokenCard = ({ token, className }: { token: Token; className?: string }) =
       className={`bg-card/40 backdrop-blur-sm rounded-xl p-3 md:p-4 border border-border hover:border-accent/50 transition-all cursor-pointer ${
         className ?? ""
       }`}
-      onClick={() => token.campaignAddress && navigate(`/token/${token.campaignAddress.toLowerCase()}`)}
+      onClick={() => {
+        const addr = (token.campaignAddress ?? "").trim();
+        if (!addr || !isAddress(addr)) return;
+        navigate(`/token/${addr.toLowerCase()}`);
+      }}
     >
       <div className="flex items-start gap-3">
         <img
@@ -112,11 +118,19 @@ const toTokenFromSummary = (s: CampaignSummary, fallbackId: number): Token => {
   const c = s.campaign;
   const anyC = c as any;
 
+  const campaignAddress = String(anyC.campaign ?? "").trim();
+  const tokenAddress = String(anyC.token ?? "").trim();
+
   return {
     id: typeof c.id === "number" ? c.id : fallbackId,
     image: c.logoURI || "/placeholder.svg",
     ticker: c.symbol,
     name: c.name,
+
+    // Address-first routing (TokenDetails expects campaign address)
+    campaignAddress: isAddress(campaignAddress) ? campaignAddress : undefined,
+    tokenAddress: isAddress(tokenAddress) ? tokenAddress : undefined,
+
     holders: s.stats.holders ?? anyC.holders ?? "—",
     volume: s.stats.volume ?? anyC.volume ?? "—",
     marketCap: s.stats.marketCap ?? anyC.marketCap ?? "—",
@@ -216,6 +230,15 @@ const UpDashboard = () => {
                 image: c.logoURI || "/placeholder.svg",
                 ticker: c.symbol,
                 name: c.name,
+
+                // Address-first routing (TokenDetails expects campaign address)
+                campaignAddress: isAddress(String((c as any).campaign ?? ""))
+                  ? String((c as any).campaign).trim()
+                  : undefined,
+                tokenAddress: isAddress(String((c as any).token ?? ""))
+                  ? String((c as any).token).trim()
+                  : undefined,
+
                 holders: "—",
                 volume: "—",
                 marketCap: "—",
