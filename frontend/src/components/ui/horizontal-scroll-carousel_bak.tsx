@@ -96,31 +96,13 @@ function normalizeTwitterUrl(input?: string): string | undefined {
   return `https://x.com/${handle}`;
 }
 
-// ---------- Responsive card sizing ----------
+// Responsive card sizing
+const getCardWidth = () => (typeof window !== "undefined" && window.innerWidth < 768 ? 280 : 450);
 const CARD_GAP = 16;
-
-const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
-
-function computeCardWidth(containerWidth: number): number {
-  // We size cards based on the *actual* carousel container width (not the full window)
-  // so the layout stays correct next to the sidebar.
-  const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
-  const cw = containerWidth > 0 ? containerWidth : vw;
-  const mobile = vw < 768;
-
-  if (mobile) {
-    // One prominent card + peeks
-    return Math.round(clamp(cw * 0.78, 240, 320));
-  }
-
-  // Desktop/tablet: two cards visible, centered card slightly larger
-  return Math.round(clamp(cw * 0.36, 300, 420));
-}
-
-function getCardSize(containerWidth: number) {
-  const width = computeCardWidth(containerWidth);
+const getCardSize = () => {
+  const width = getCardWidth();
   return { width, totalWidth: width + CARD_GAP };
-}
+};
 
 const Example = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -128,25 +110,9 @@ const Example = () => {
   const lastDeltaRef = useRef(0);
   const [isSnapping, setIsSnapping] = useState(false);
   const hasInitialized = useRef(false);
-  const hasMeasured = useRef(false);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== "undefined" ? window.innerWidth < 768 : false
-  );
-  const [cardSize, setCardSize] = useState(() =>
-    getCardSize(typeof window !== "undefined" ? window.innerWidth : 1200)
-  );
+  const isMobile = typeof window !== "undefined" ? window.innerWidth < 768 : false;
+  const [cardSize, setCardSize] = useState(getCardSize());
   const { width: CARD_WIDTH, totalWidth: TOTAL_CARD_WIDTH } = cardSize;
-
-  // Ensure we size cards based on the actual container width (accounts for the sidebar).
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const next = getCardSize(container.offsetWidth);
-    setCardSize(next);
-    if (typeof window !== "undefined") setIsMobile(window.innerWidth < 768);
-    hasMeasured.current = true;
-  }, []);
 
   // Blockchain campaigns -> cards
   const { fetchCampaigns, fetchCampaignCardStats } = useLaunchpad();
@@ -245,7 +211,6 @@ const Example = () => {
   useEffect(() => {
     if (!scrollContainerRef.current) return;
     if (!displayCards.length) return;
-    if (!hasMeasured.current) return;
 
     const stored = sessionStorage.getItem("carousel-position");
 
@@ -297,30 +262,27 @@ const Example = () => {
     if (!container) return;
     if (!displayCards.length) return;
 
-    const snapToNearestCard = (overrides?: { cardWidth?: number; totalCardWidth?: number }) => {
+    const snapToNearestCard = () => {
       if (!displayCards.length) return;
 
-      const cw = overrides?.cardWidth ?? CARD_WIDTH;
-      const tw = overrides?.totalCardWidth ?? TOTAL_CARD_WIDTH;
-
       const containerWidth = container.offsetWidth;
-      const singleSetWidth = tw * displayCards.length;
+      const singleSetWidth = TOTAL_CARD_WIDTH * displayCards.length;
 
       setScrollPosition((currentPos) => {
         if (!singleSetWidth) return currentPos;
 
         const viewportCenter = currentPos + containerWidth / 2;
-        const fIndex = (viewportCenter - cw / 2) / tw;
+        const fIndex = (viewportCenter - CARD_WIDTH / 2) / TOTAL_CARD_WIDTH;
         let baseIndex = Math.round(fIndex);
-        if (lastDeltaRef.current > 0 && baseIndex * tw + cw / 2 < viewportCenter) {
+        if (lastDeltaRef.current > 0 && baseIndex * TOTAL_CARD_WIDTH + CARD_WIDTH / 2 < viewportCenter) {
           baseIndex += 1;
         } else if (
           lastDeltaRef.current < 0 &&
-          baseIndex * tw + cw / 2 > viewportCenter
+          baseIndex * TOTAL_CARD_WIDTH + CARD_WIDTH / 2 > viewportCenter
         ) {
           baseIndex -= 1;
         }
-        const cardCenter = baseIndex * tw + cw / 2;
+        const cardCenter = baseIndex * TOTAL_CARD_WIDTH + CARD_WIDTH / 2;
         const rawTarget = cardCenter - containerWidth / 2;
         const W = singleSetWidth;
         const candidateShifts = [-2, -1, 0, 1, 2];
@@ -379,12 +341,8 @@ const Example = () => {
 
     // Handle window resize
     const handleResize = () => {
-      const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
-      setIsMobile(vw < 768);
-
-      const next = getCardSize(container.offsetWidth);
-      setCardSize(next);
-      snapToNearestCard({ cardWidth: next.width, totalCardWidth: next.totalWidth });
+      setCardSize(getCardSize());
+      snapToNearestCard();
     };
 
     // Handle touch events for mobile swipe
@@ -488,7 +446,7 @@ const Example = () => {
   return (
     <div
       ref={scrollContainerRef}
-      className="h-full w-full flex items-center overflow-hidden relative touch-pan-x scrollbar-hidden py-8 md:py-12"
+      className="h-full w-full flex items-center overflow-hidden relative touch-pan-x scrollbar-hidden"
       style={{
         maskImage: isMobile
           ? "none"
@@ -518,8 +476,6 @@ const Example = () => {
               card={card}
               key={`${card.id}-${index}`}
               isCentered={isCentered}
-              cardWidth={CARD_WIDTH}
-              isMobile={isMobile}
               onClick={() => handleCardClick(index)}
             />
           );
@@ -543,18 +499,16 @@ const Example = () => {
 const CardView = ({
   card,
   isCentered,
-  cardWidth,
-  isMobile,
   onClick,
 }: {
   card: CarouselCard;
   isCentered: boolean;
-  cardWidth: number;
-  isMobile: boolean;
   onClick: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
+  const isMobile = typeof window !== "undefined" ? window.innerWidth < 768 : false;
+  const cardWidth = isMobile ? 280 : 450;
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -587,38 +541,33 @@ const CardView = ({
 
   return (
     <div
-      className="relative cursor-pointer transition-transform duration-500 ease-out will-change-transform"
+      className="relative transition-all duration-500 ease-out cursor-pointer"
       style={{
-        // Keep the "featured" card prominent, but avoid blowing up the layout.
-        transform: isCentered ? (isMobile ? "scale(1.10)" : "scale(1.22)") : "scale(1)",
+        transform: isCentered ? (isMobile ? "scale(1.15)" : "scale(1.5)") : "scale(1)",
         transformOrigin: "center",
         minWidth: `${cardWidth}px`,
         minHeight: `${cardWidth}px`,
         zIndex: isCentered ? 10 : 1,
-        opacity: isMobile ? 1 : isCentered ? 1 : 0.9,
+        opacity: isMobile ? 1 : isCentered ? 1 : 0.85,
       }}
       onClick={handleClick}
     >
       <div
-        className={`relative rounded-[1.25rem] p-[1px] ${
-          isCentered
-            ? "ring-2 ring-accent/60 shadow-xl shadow-accent/10"
-            : "border border-border/40"
-        }`}
+        className="relative rounded-[1.25rem] border-[0.75px] border-border p-2"
         style={{
           height: `${cardWidth}px`,
           width: `${cardWidth}px`,
         }}
       >
         <GlowingEffect
-          spread={32}
+          spread={40}
           glow={false}
           disabled={false}
-          proximity={80}
+          proximity={64}
           inactiveZone={0.01}
-          borderWidth={2}
+          borderWidth={3}
         />
-        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[1.15rem] border border-border/40 bg-card/80 backdrop-blur p-6 shadow-sm">
+        <div className="relative flex h-full flex-col overflow-hidden rounded-xl border-[0.75px] bg-card p-6 shadow-sm">
           {/* Top Section: Links and Stats */}
           <div className="flex items-start justify-between mb-4">
             {/* Social Links - Top Left */}
