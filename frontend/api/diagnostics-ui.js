@@ -102,19 +102,54 @@ export default async function handler(req, res) {
 
     <div class="grid">
       <div class="card">
-        <h2>Core status</h2>
-        <div class="body">
-          <table>
-            <thead>
-              <tr><th>Component</th><th>Status</th><th>Details</th></tr>
-            </thead>
-            <tbody id="coreRows">
-              <tr><td class="k">Aiven Postgres</td><td>Loading…</td><td class="muted">Checking connectivity + schema…</td></tr>
-              <tr><td class="k">Environment presence</td><td>Loading…</td><td class="muted">Checking key vars exist (no secrets)…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+  <h2>Vercel Runtime</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th>Item</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody id="vercelRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Aiven (Social DB)</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody id="aivenRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Supabase (Token Data)</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody id="supabaseRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Railway (Indexer)</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody id="railwayRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Ably (Realtime)</h2>
+  <div class="body">
+    <table>
+      <thead><tr><th>Check</th><th>Status</th><th>Details</th></tr></thead>
+      <tbody id="ablyRows"></tbody>
+    </table>
+  </div>
+</div>
 
       <div class="card">
         <h2>Recommendations</h2>
@@ -162,29 +197,121 @@ export default async function handler(req, res) {
         : '<span class="dot bad"></span><span>Overall: Issues detected</span>';
     }
 
-    function setCoreRows(j) {
-      const tbody = document.getElementById("coreRows");
-      const aiven = j?.checks?.aiven_postgres;
+    function setVercelRows(j) {
+  const tbody = document.getElementById("vercelRows");
+  const env = j?.env_presence || {};
+  const host = j?.redacted?.DATABASE_URL_host || "—";
 
-      const aivenStatus = aiven?.ok ? badge("ok","OK") : badge("bad","FAIL");
-      const aivenDetails = aiven?.ok
-        ? ('Latency: <span class="mono">' + (aiven.latencyMs ?? "—") + 'ms</span>, SSL: <span class="mono">' +
-           (aiven.ssl?.rejectUnauthorized ? "verified" : "unverified") + '</span>')
-        : ('<span class="mono">' + (aiven?.error?.code || "") + '</span> ' + (aiven?.error?.message || "Unknown error"));
+  const rows = [
+    ["NODE_ENV", badge("info", j?.runtime?.nodeEnv || "—"), "<span class='mono'>runtime</span>"],
+    ["DATABASE_URL", env.DATABASE_URL ? badge("ok", "Present") : badge("bad", "Missing"), "host: <span class='mono'>" + host + "</span>"],
+    ["Aiven CA file", env.repo_aiven_ca_pem?.exists ? badge("ok","Present") : badge("bad","Missing"),
+      env.repo_aiven_ca_pem?.exists ? ("bytes: <span class='mono'>" + env.repo_aiven_ca_pem.bytes + "</span>") : "—"
+    ],
+    ["RAILWAY_INDEXER_URL", env.RAILWAY_INDEXER_URL ? badge("ok","Present") : badge("warn","Missing"),
+      env.RAILWAY_INDEXER_URL ? "used for /health checks" : "optional until you wire it"
+    ],
+  ];
 
-      const envPresence = j?.env_presence || {};
-      const required = ["DATABASE_URL","repo_aiven_ca_pem"];
-      const missing = required.filter(k => {
-        if (k === "repo_aiven_ca_pem") return !envPresence.repo_aiven_ca_pem?.exists;
-        return !envPresence[k];
-      });
-      const envStatus = missing.length === 0 ? badge("ok","OK") : badge("warn","Missing");
-      const envDetails = missing.length === 0 ? "Required env present." : ("Missing: <span class='mono'>" + missing.join(", ") + "</span>");
+  tbody.innerHTML = rows.map(([k,s,d]) =>
+    "<tr><td class='k'>" + k + "</td><td>" + s + "</td><td class='muted'>" + d + "</td></tr>"
+  ).join("");
+}
 
-      tbody.innerHTML = ''
-        + '<tr><td class="k">Aiven Postgres</td><td>' + aivenStatus + '</td><td>' + aivenDetails + '</td></tr>'
-        + '<tr><td class="k">Environment presence</td><td>' + envStatus + '</td><td>' + envDetails + '</td></tr>';
-    }
+function setAivenRows(j) {
+  const tbody = document.getElementById("aivenRows");
+  const a = j?.checks?.aiven_postgres;
+
+  const rows = [];
+
+  if (!a) {
+    rows.push(["Connectivity", badge("bad","No data"), "—"]);
+  } else if (!a.ok) {
+    rows.push(["Connectivity", badge("bad","FAIL"), "<span class='mono'>" + (a.error?.code || "") + "</span> " + (a.error?.message || "Unknown")]);
+  } else {
+    rows.push(["Connectivity", badge("ok","OK"), "Latency: <span class='mono'>" + (a.latencyMs ?? "—") + "ms</span>"]);
+    rows.push(["SSL verification", badge("ok", a.ssl?.rejectUnauthorized ? "verified" : "unverified"), "hasCa: <span class='mono'>" + String(!!a.ssl?.hasCa) + "</span>"]);
+    const c = a.checks || {};
+    rows.push(["Table: user_profiles", c.user_profiles ? badge("ok","Present") : badge("bad","Missing"), "—"]);
+    rows.push(["Table: token_comments", c.token_comments ? badge("ok","Present") : badge("bad","Missing"), "—"]);
+    rows.push(["Table: auth_nonces", c.auth_nonces ? badge("ok","Present") : badge("bad","Missing"), "—"]);
+    rows.push(["Column: auth_nonces.used_at", c.auth_nonces_used_at ? badge("ok","Present") : badge("warn","Missing"), "—"]);
+    rows.push(["Column: auth_nonces.expires_at", c.auth_nonces_expires_at ? badge("ok","Present") : badge("warn","Missing"), "—"]);
+  }
+
+  tbody.innerHTML = rows.map(([k,s,d]) =>
+    "<tr><td class='k'>" + k + "</td><td>" + s + "</td><td class='muted'>" + d + "</td></tr>"
+  ).join("");
+}
+
+function setSupabaseRows(j) {
+  const tbody = document.getElementById("supabaseRows");
+  const s = j?.checks?.supabase;
+  if (!s) {
+    tbody.innerHTML = "<tr><td class='k'>Reachability</td><td>" + badge("bad","No data") + "</td><td class='muted'>—</td></tr>";
+    return;
+  }
+  const rows = [];
+  if (!s.ok) {
+    rows.push(["Reachability", badge("bad","FAIL"), (s.error?.message || "Unknown error")]);
+  } else {
+    rows.push(["Reachability", badge("ok","OK"), "Latency: <span class='mono'>" + (s.latencyMs ?? "—") + "ms</span>, HTTP: <span class='mono'>" + (s.httpStatus ?? "—") + "</span>"]);
+    rows.push(["Host", badge("info", s.urlHost || "—"), "<span class='mono'>" + (s.pingUrl || "—") + "</span>"]);
+    rows.push(["Note", badge("info","Info"), s.note || "—"]);
+  }
+  tbody.innerHTML = rows.map(([k,st,d]) =>
+    "<tr><td class='k'>" + k + "</td><td>" + st + "</td><td class='muted'>" + d + "</td></tr>"
+  ).join("");
+}
+
+function setRailwayRows(j) {
+  const tbody = document.getElementById("railwayRows");
+  const r = j?.checks?.railway;
+
+  if (!r) {
+    tbody.innerHTML = "<tr><td class='k'>/health</td><td>" + badge("warn","Not configured") + "</td><td class='muted'>Set RAILWAY_INDEXER_URL</td></tr>";
+    return;
+  }
+
+  const rows = [];
+  if (!r.ok) {
+    rows.push(["/health", badge("bad","FAIL"), "HTTP: <span class='mono'>" + (r.httpStatus ?? "—") + "</span> " + (typeof r.body === "string" ? r.body : JSON.stringify(r.body))]);
+  } else {
+    rows.push(["/health", badge("ok","OK"), "Latency: <span class='mono'>" + (r.latencyMs ?? "—") + "ms</span>, HTTP: <span class='mono'>" + (r.httpStatus ?? "—") + "</span>"]);
+    rows.push(["URL", badge("info","Info"), "<span class='mono'>" + (r.url || "—") + "</span>"]);
+  }
+
+  tbody.innerHTML = rows.map(([k,st,d]) =>
+    "<tr><td class='k'>" + k + "</td><td>" + st + "</td><td class='muted'>" + d + "</td></tr>"
+  ).join("");
+}
+
+function setAblyRows(j) {
+  const tbody = document.getElementById("ablyRows");
+  const a = j?.checks?.ably;
+  const env = j?.env_presence || {};
+
+  const rows = [];
+  if (!a) {
+    rows.push(["Server key", badge("warn","No data"), "—"]);
+  } else if (!a.ok) {
+    rows.push(["Server key", badge("bad","Missing/Invalid"), a.error?.message || a.note || "—"]);
+  } else {
+    rows.push(["Server key", badge("ok","OK"), "Preview: <span class='mono'>" + (a.preview || "—") + "</span>"]);
+    rows.push(["Note", badge("info","Info"), a.note || "—"]);
+  }
+
+  // Client build-time key presence check (helps debug your “invalid key parameter” issue)
+  rows.push([
+    "Client key present (server visibility)",
+    env.VITE_ABLY_CLIENT_KEY_on_server ? badge("warn","Present") : badge("info","Unknown"),
+    "Client key is a Vite build-time var; ensure it is a valid Ably key or switch to authUrl-only."
+  ]);
+
+  tbody.innerHTML = rows.map(([k,st,d]) =>
+    "<tr><td class='k'>" + k + "</td><td>" + st + "</td><td class='muted'>" + d + "</td></tr>"
+  ).join("");
+}
 
     function setEnvRows(j) {
       const tbody = document.getElementById("envRows");
@@ -236,9 +363,12 @@ export default async function handler(req, res) {
       lastJson = j;
 
       setHeaderMeta(j);
-      setOverall(!!j.ok);
-      setCoreRows(j);
-      setEnvRows(j);
+      setVercelRows(j);
+setAivenRows(j);
+setSupabaseRows(j);
+setRailwayRows(j);
+setAblyRows(j);
+setEnvRows(j); // keep the global env table too (optional)
       setRecommendations(j);
 
       rawEl.textContent = JSON.stringify(j, null, 2);
