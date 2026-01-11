@@ -602,8 +602,8 @@ const CardView = ({
       <div
         className={`relative rounded-[1.25rem] p-[1px] ${
           isCentered
-            ? "ring-2 ring-accent/60 shadow-xl shadow-accent/10"
-            : "border border-border/40"
+            //? "ring-2 ring-accent/60 shadow-xl shadow-accent/10"
+            //: "border border-border/40"
         }`}
         style={{
           height: `${cardWidth}px`,
