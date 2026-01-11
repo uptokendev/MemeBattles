@@ -1,14 +1,11 @@
-import { pool } from "./_db.js";
+import pg from "pg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createClient } from "@supabase/supabase-js";
 
-function nowMs() {
-  return Date.now();
-}
+const { Pool } = pg;
 
-function redact(value, keepStart = 4, keepEnd = 4) {
+function redact(value, keepStart = 6, keepEnd = 4) {
   const s = String(value ?? "");
   if (!s) return "";
   if (s.length <= keepStart + keepEnd) return "*".repeat(s.length);
@@ -20,170 +17,193 @@ function safeError(e) {
     name: e?.name || "Error",
     message: String(e?.message || e),
     code: e?.code,
+    detail: e?.detail,
+    where: e?.where,
+    hint: e?.hint,
   };
 }
 
-function getRepoCaInfo() {
+function getRepoAivenCaInfo() {
   try {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const p = path.join(__dirname, "certs", "aiven-ca.pem");
     const exists = fs.existsSync(p);
     const bytes = exists ? fs.statSync(p).size : 0;
-    return { exists, bytes };
+    return { exists, bytes, path: exists ? "frontend/api/certs/aiven-ca.pem" : null };
   } catch {
-    return { exists: false, bytes: 0 };
+    return { exists: false, bytes: 0, path: null };
   }
 }
 
-function parseDbUrlRedacted(url) {
+function loadCaPem() {
+  // 1) Base64 env var (recommended for Vercel)
+  const b64 = process.env.PG_CA_CERT_B64;
+  if (b64) {
+    const pem = Buffer.from(b64, "base64").toString("utf8");
+    if (pem.includes("BEGIN CERTIFICATE")) return pem;
+    throw new Error("PG_CA_CERT_B64 does not decode to a PEM certificate");
+  }
+
+  // 2) Plain PEM env var (with \n)
+  const pem = process.env.PG_CA_CERT;
+  if (pem) return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
+
+  // 3) Repo fallback (Aiven)
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const p = path.join(__dirname, "certs", "aiven-ca.pem");
+  if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
+
+  return null;
+}
+
+function parseDbUrl(url) {
+  const u = new URL(url);
+  return {
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 5432,
+    user: u.username,
+    password: u.password,
+    database: (u.pathname || "").replace(/^\//, "") || "postgres",
+  };
+}
+
+async function pgCheck() {
+  const DATABASE_URL = process.env.DATABASE_URL || "";
+  if (!DATABASE_URL) {
+    return { ok: false, error: { message: "DATABASE_URL is missing on this deployment" } };
+  }
+
+  let host = "";
   try {
-    const u = new URL(url);
-    return {
-      host: u.hostname,
-      port: u.port ? Number(u.port) : 5432,
-      database: (u.pathname || "").replace(/^\//, "") || "postgres",
-      user: u.username ? redact(decodeURIComponent(u.username)) : "",
-      // do NOT expose password
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function checkAivenDb() {
-  const t0 = nowMs();
-  // 1) basic connectivity
-  await pool.query("select 1 as ok");
-  const latencyMs = nowMs() - t0;
-
-  // 2) schema sanity (tables/columns your API expects)
-  const checks = {};
-
-  // user_profiles table exists?
-  const up = await pool.query(`select to_regclass('public.user_profiles') as reg`);
-  checks.user_profiles = Boolean(up.rows?.[0]?.reg);
-
-  // auth_nonces table exists?
-  const an = await pool.query(`select to_regclass('public.auth_nonces') as reg`);
-  checks.auth_nonces = Boolean(an.rows?.[0]?.reg);
-
-  // used_at column exists? (your profile API SELECTs used_at)
-  if (checks.auth_nonces) {
-    const cols = await pool.query(
-      `select column_name
-       from information_schema.columns
-       where table_schema='public' and table_name='auth_nonces'`
-    );
-    const names = new Set((cols.rows || []).map((r) => String(r.column_name)));
-    checks.auth_nonces_used_at = names.has("used_at");
-    checks.auth_nonces_expires_at = names.has("expires_at");
-    checks.auth_nonces_nonce = names.has("nonce");
+    host = parseDbUrl(DATABASE_URL).host;
+  } catch (e) {
+    return { ok: false, error: { message: "DATABASE_URL is not a valid URL", detail: safeError(e) } };
   }
 
-  return { ok: true, latencyMs, checks };
-}
-
-async function checkSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const bucket = process.env.SUPABASE_BUCKET || "upmeme";
-
-  if (!url || !key) {
-    return {
-      ok: false,
-      error: { message: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY" },
-    };
+  let ca = null;
+  try {
+    ca = loadCaPem();
+  } catch (e) {
+    return { ok: false, error: { message: "Failed to load CA cert", detail: safeError(e) } };
   }
 
-  const supabase = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+  const ssl =
+    ca
+      ? { ca, rejectUnauthorized: true, servername: host }
+      : { rejectUnauthorized: false, servername: host };
+
+  const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl,
+    max: 1,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
   });
 
-  // Try a lightweight storage call
-  const t0 = nowMs();
-  const { data, error } = await supabase.storage.listBuckets();
-  const latencyMs = nowMs() - t0;
+  try {
+    const t0 = Date.now();
+    await pool.query("select 1 as ok");
+    const latencyMs = Date.now() - t0;
 
-  if (error) return { ok: false, latencyMs, error: safeError(error) };
+    // minimal schema checks (these are what your profile/comments features rely on)
+    const checks = {};
+    const reg1 = await pool.query(`select to_regclass('public.user_profiles') as reg`);
+    checks.user_profiles = Boolean(reg1.rows?.[0]?.reg);
 
-  const bucketExists = Array.isArray(data) && data.some((b) => b?.name === bucket);
-  return { ok: true, latencyMs, bucket: { name: bucket, exists: bucketExists, total: data?.length ?? 0 } };
+    const reg2 = await pool.query(`select to_regclass('public.token_comments') as reg`);
+    checks.token_comments = Boolean(reg2.rows?.[0]?.reg);
+
+    const reg3 = await pool.query(`select to_regclass('public.auth_nonces') as reg`);
+    checks.auth_nonces = Boolean(reg3.rows?.[0]?.reg);
+
+    if (checks.auth_nonces) {
+      const cols = await pool.query(
+        `select column_name
+         from information_schema.columns
+         where table_schema='public' and table_name='auth_nonces'`
+      );
+      const names = new Set((cols.rows || []).map((r) => String(r.column_name)));
+      checks.auth_nonces_used_at = names.has("used_at");
+      checks.auth_nonces_expires_at = names.has("expires_at");
+      checks.auth_nonces_nonce = names.has("nonce");
+    }
+
+    return { ok: true, latencyMs, ssl: { hasCa: Boolean(ca), rejectUnauthorized: Boolean(ca) }, checks };
+  } catch (e) {
+    return { ok: false, error: safeError(e), ssl: { hasCa: Boolean(ca) } };
+  } finally {
+    try { await pool.end(); } catch {}
+  }
 }
 
 export default async function handler(req, res) {
   try {
-    // Simple protection: require a token so this isn’t public
     const want = String(process.env.DIAGNOSTICS_TOKEN || "");
     const got = String(req.query?.token || "");
 
-    // Return 404 on failure to avoid advertising the endpoint
+    // Hide endpoint if not authorized
     if (!want || got !== want) {
       return res.status(404).json({ error: "Not found" });
     }
 
-    const repoCa = getRepoCaInfo();
-    const dbUrl = process.env.DATABASE_URL || "";
-    const dbInfo = dbUrl ? parseDbUrlRedacted(dbUrl) : null;
+    const repoCa = getRepoAivenCaInfo();
 
     const out = {
       ok: false,
       runtime: {
         nodeEnv: process.env.NODE_ENV || "",
       },
-      env: {
-        DATABASE_URL: Boolean(dbUrl),
-        DATABASE_URL_info: dbInfo,
+      env_presence: {
+        DATABASE_URL: Boolean(process.env.DATABASE_URL),
         PG_CA_CERT_B64: Boolean(process.env.PG_CA_CERT_B64),
         PG_CA_CERT: Boolean(process.env.PG_CA_CERT),
         repo_aiven_ca_pem: repoCa,
         SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
         SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-        SUPABASE_BUCKET: process.env.SUPABASE_BUCKET || "upmeme",
-        // Ably client key is a Vite build-time var; may not exist on server runtime
+        // Ably: server side should have ABLY_API_KEY (do not expose it)
+        ABLY_API_KEY: Boolean(process.env.ABLY_API_KEY),
+        // Client side uses VITE_ABLY_CLIENT_KEY at build time; may be absent here
         VITE_ABLY_CLIENT_KEY_on_server: Boolean(process.env.VITE_ABLY_CLIENT_KEY),
+      },
+      redacted: {
+        // helpful to verify you're pointing to Aiven without leaking secrets
+        DATABASE_URL_host: process.env.DATABASE_URL ? (() => {
+          try { return parseDbUrl(process.env.DATABASE_URL).host; } catch { return "invalid"; }
+        })() : "",
+        ABLY_API_KEY_preview: process.env.ABLY_API_KEY ? redact(process.env.ABLY_API_KEY, 10, 6) : "",
       },
       checks: {},
       recommendations: [],
     };
 
-    // Aiven DB check
-    try {
-      out.checks.aivenDb = await checkAivenDb();
-    } catch (e) {
-      out.checks.aivenDb = { ok: false, error: safeError(e) };
-      out.recommendations.push(
-        "Aiven DB connection failed from Vercel. Verify DATABASE_URL points to Aiven, and the Aiven CA cert used by frontend/api/_db.js matches your Aiven instance."
-      );
-    }
+    out.checks.aiven_postgres = await pgCheck();
 
-    // If schema mismatch is detected, point to it explicitly
-    if (out.checks.aivenDb?.ok) {
-      const c = out.checks.aivenDb.checks || {};
-      if (!c.user_profiles) {
-        out.recommendations.push("Table user_profiles is missing. Apply db/migrations/002_social.sql to Aiven.");
-      }
-      if (!c.auth_nonces) {
-        out.recommendations.push("Table auth_nonces is missing. Apply db/migrations/002_social.sql to Aiven.");
-      } else if (!c.auth_nonces_used_at) {
+    if (!out.checks.aiven_postgres.ok) {
+      out.recommendations.push(
+        "Aiven DB check failed. Look at checks.aiven_postgres.error for the exact TLS/auth/host issue."
+      );
+      if (!out.env_presence.DATABASE_URL) {
         out.recommendations.push(
-          "Column auth_nonces.used_at is missing but the profile API expects it. Update the migration or run an ALTER TABLE to add used_at."
+          "DATABASE_URL is missing on Vercel Production env. Add it and redeploy."
+        );
+      }
+    } else {
+      const c = out.checks.aiven_postgres.checks || {};
+      if (!c.user_profiles) out.recommendations.push("Missing table user_profiles on Aiven. Apply db/migrations/002_social.sql.");
+      if (!c.token_comments) out.recommendations.push("Missing table token_comments on Aiven. Apply db/migrations/002_social.sql.");
+      if (c.auth_nonces && !c.auth_nonces_used_at) {
+        out.recommendations.push(
+          "auth_nonces.used_at column is missing but your API expects it. Add the column or update the queries/migration."
         );
       }
     }
 
-    // Supabase check (used by api/upload.js)
-    try {
-      out.checks.supabase = await checkSupabase();
-    } catch (e) {
-      out.checks.supabase = { ok: false, error: safeError(e) };
-      out.recommendations.push("Supabase connectivity failed. Verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.");
-    }
-
-    out.ok = Boolean(out.checks.aivenDb?.ok) && Boolean(out.checks.supabase?.ok);
+    out.ok = Boolean(out.checks.aiven_postgres?.ok);
     return res.status(200).json(out);
   } catch (e) {
-    console.error("[api/diagnostics]", e);
+    console.error("[api/diagnostics] crashed", e);
     return res.status(500).json({ error: "Server error", detail: safeError(e) });
   }
 }
