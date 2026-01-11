@@ -16,7 +16,6 @@ import Create from "./pages/Create";
 import UpDashboard from "./pages/UpDashboard";
 import Profile from "./pages/Profile";
 import TokenDetails from "./pages/TokenDetails";
-import Playbook from "./pages/Playbook";
 import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -58,9 +57,6 @@ const App = () => {
                   <Route path="/up-dashboard" element={<UpDashboard />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
-                  <Route path="/playbook" element={<Playbook />} />
-                  {/* Backwards compatible alias */}
-                  <Route path="/how-it-works" element={<Playbook />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>

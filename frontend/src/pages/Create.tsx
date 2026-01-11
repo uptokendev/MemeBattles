@@ -9,7 +9,6 @@ import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { TokenCategory } from "@/types/token";
-import { Link } from "react-router-dom";
 
 // NEW: import wallet + launchpad client
 import { useWallet } from "@/hooks/useWallet";
@@ -184,7 +183,7 @@ const Create = () => {
                 <BookOpen className="h-6 w-6 md:h-8 md:w-8 text-accent" />
               </div>
               <div>
-                <h2 className="text-lg md:text-2xl font-retro text-foreground mb-1">
+                <h2 className="text-lg md:2xl font-retro text-foreground mb-1">
                   First time launching?
                 </h2>
                 <p className="text-sm md:text-base text-muted-foreground font-retro">
@@ -192,12 +191,8 @@ const Create = () => {
                 </p>
               </div>
             </div>
-
-            <Button
-              asChild
-              className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-base md:text-lg px-6 md:px-8 py-4 md:py-6 rounded-xl shadow-lg w-full md:w-auto"
-            >
-              <Link to="/playbook">Open Playbook</Link>
+            <Button className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-base md:text-lg px-6 md:px-8 py-4 md:py-6 rounded-xl shadow-lg w-full md:w-auto">
+              Read Playbook
             </Button>
           </div>
 
@@ -325,7 +320,8 @@ const Create = () => {
               {/* Token Description */}
               <div>
                 <label className="block text-foreground font-retro mb-3 text-base md:text-lg">
-                  Token description <span className="text-muted-foreground">(optional)</span>
+                  Token description{" "}
+                  <span className="text-muted-foreground">(optional)</span>
                 </label>
                 <Textarea
                   value={formData.description}

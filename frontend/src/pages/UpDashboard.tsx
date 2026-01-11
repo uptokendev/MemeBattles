@@ -1,5 +1,5 @@
 /**
- *   UpDashboardPage
+ * UP Dashboard Page
  * Displays three categories of campaigns.
  *
  * IMPORTANT:

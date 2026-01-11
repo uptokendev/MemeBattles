@@ -121,7 +121,7 @@ const TokenDetails = () => {
 
         setCampaign(match);
 
-        // Unified token stats + metrics (same source as carousel / UpDashboard)
+        // Unified token stats + metrics (same source as carousel / UP Dashboard)
         const s = await fetchCampaignSummary(match);
         setSummary(s);
         setMetrics(s.metrics ?? null);
