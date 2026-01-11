@@ -3,7 +3,7 @@
  *
  * Internal navigation must be campaignAddress-only.
  * This hook therefore navigates to a caller-provided redirect path (e.g. /token/0x...).
- * If none is provided, it navigates to /up-now.
+ * If none is provided, it navigates to /up-dashboard.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -54,7 +54,7 @@ export const useTokenProcessing = () => {
       // Navigate after showing success
       setTimeout(() => {
         toast.success("Token created successfully!");
-        navigate(redirectToRef.current ?? "/up-now");
+        navigate(redirectToRef.current ?? "/up-dashboard");
       }, PROCESSING_TIMING.SUCCESS_NAVIGATION_DELAY);
     }, PROCESSING_TIMING.TOTAL_PROCESS_DURATION);
 

@@ -21,7 +21,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Showcase", path: "/" },
   { icon: Plus, label: "Create", path: "/create" },
-  { icon: upArrowIcon, label: "UP Now", path: "/up-now" },
+  { icon: upArrowIcon, label: "UP Dashboard", path: "/up-dashboard" },
   { icon: userIcon, label: "Profile", path: "/profile" },
 ];
 

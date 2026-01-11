@@ -1,5 +1,5 @@
 /**
- * UpNow Page
+ *   UpDashboardPage
  * Displays three categories of campaigns.
  *
  * IMPORTANT:
@@ -173,7 +173,7 @@ const isGraduatedFromMetrics = (m: CampaignMetrics | null): boolean => {
   }
 };
 
-const UpNow = () => {
+const UpDashboard = () => {
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
 
   const [activeTab, setActiveTab] = useState<Tab>("up");
@@ -242,7 +242,7 @@ const UpNow = () => {
         setMoonTokens(nextMoon);
         setGraduatedTokens(nextGraduated);
       } catch (e) {
-        console.error("[UpNow] Failed to load campaigns", e);
+        console.error("[UpDashboard] Failed to load campaigns", e);
         if (!cancelled) {
           setUpTokens([]);
           setHigherTokens([]);
@@ -433,4 +433,4 @@ const UpNow = () => {
   );
 };
 
-export default UpNow;
+export default UpDashboard;

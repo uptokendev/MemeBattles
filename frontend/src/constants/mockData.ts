@@ -24,7 +24,7 @@ export const trendingTokens = [
   { rank: 3, name: "CIPHER", value: "81.5%", change: "+35.7%" },
 ];
 
-// Up Now - Inception tokens (below $60k)
+// Up Dashboard - Inception tokens (below $60k)
 export const inceptionTokens: Token[] = [
   {
     id: 1,
@@ -64,7 +64,7 @@ export const inceptionTokens: Token[] = [
   },
 ];
 
-// Up Now - Higher tokens (close to bonding: $40k - $60k)
+// UP Dashboard - Higher tokens (close to bonding: $40k - $60k)
 export const higherTokens: Token[] = [
   {
     id: 3,
@@ -92,7 +92,7 @@ export const higherTokens: Token[] = [
   },
 ];
 
-// Up Now - Migrated tokens (above $60k)
+// UP Dashboard - Migrated tokens (above $60k)
 export const migratedTokens: Token[] = [
   {
     id: 5,

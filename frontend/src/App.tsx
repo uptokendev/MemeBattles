@@ -13,7 +13,7 @@ import { useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
-import UpNow from "./pages/UpNow";
+import UpDashboard from "./pages/UpDashboard";
 import Profile from "./pages/Profile";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "./pages/Playbook";
@@ -55,7 +55,7 @@ const App = () => {
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
-                  <Route path="/up-now" element={<UpNow />} />
+                  <Route path="/up-dashboard" element={<UpDashboard />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
                   <Route path="/playbook" element={<Playbook />} />
