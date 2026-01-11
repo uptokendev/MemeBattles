@@ -71,9 +71,13 @@ export function useCurveTrades(campaignAddress?: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Prevent redundant refetches when latest block hasn't moved.
-  const lastToBlockRef = useRef<number>(-1);
+  // Fetch strategy:
+  // - First run: full lookback scan to populate historical curve trades.
+  // - Subsequent runs: scan a smaller recent window and MERGE by (txHash, logIndex)
+  //   so we don't miss trades due to stale block numbers or public RPC quirks.
+  const hasFullScanRef = useRef<boolean>(false);
   const inFlightRef = useRef<boolean>(false);
+  const lastFetchMsRef = useRef<number>(0);
 
   const fetchTrades = useCallback(async () => {
     if (!campaignAddress) {
@@ -92,16 +96,13 @@ export function useCurveTrades(campaignAddress?: string) {
     try {
       const latest = await readProvider.getBlockNumber();
 
-      // Skip if nothing changed.
-      if (latest === lastToBlockRef.current) {
-        setLoading(false);
-        inFlightRef.current = false;
-        return;
-      }
-      lastToBlockRef.current = latest;
-
       const lookback = getLookbackBlocks(chainId);
-      const fromBlock = Math.max(0, latest - lookback);
+      // After the first full scan, only scan a smaller recent range and merge.
+      // This avoids missing trades when providers return a stale block number,
+      // and reduces load on public RPC endpoints.
+      const recent = Math.min(lookback, 3_000);
+      const fromBlock = hasFullScanRef.current ? Math.max(0, latest - recent) : Math.max(0, latest - lookback);
+      hasFullScanRef.current = true;
 
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, readProvider) as any;
       const iface = new ethers.Interface(CAMPAIGN_ABI);
@@ -134,6 +135,7 @@ export function useCurveTrades(campaignAddress?: string) {
               pricePerToken,
               timestamp: 0, // filled later
               txHash: String(log.transactionHash),
+              logIndex: Number(log.logIndex ?? 0),
               blockNumber: Number(log.blockNumber),
             } as any;
           } catch {
@@ -160,6 +162,7 @@ export function useCurveTrades(campaignAddress?: string) {
               pricePerToken,
               timestamp: 0, // filled later
               txHash: String(log.transactionHash),
+              logIndex: Number(log.logIndex ?? 0),
               blockNumber: Number(log.blockNumber),
             } as any;
           } catch {
@@ -189,7 +192,23 @@ export function useCurveTrades(campaignAddress?: string) {
         timestamp: blockTs.get(t.blockNumber) ?? 0,
       }));
 
-      setPoints(finalPoints);
+      setPoints((prev) => {
+        const m = new Map<string, CurveTrade>();
+        for (const t of prev ?? []) {
+          const key = `${String((t as any).txHash ?? "")}:${Number((t as any).logIndex ?? 0)}`;
+          m.set(key, t);
+        }
+        for (const t of finalPoints ?? []) {
+          const key = `${String((t as any).txHash ?? "")}:${Number((t as any).logIndex ?? 0)}`;
+          m.set(key, t as any);
+        }
+        return Array.from(m.values()).sort((a: any, b: any) => {
+          const bn = (a.blockNumber ?? 0) - (b.blockNumber ?? 0);
+          if (bn !== 0) return bn;
+          return Number((a as any).logIndex ?? 0) - Number((b as any).logIndex ?? 0);
+        });
+      });
+      lastFetchMsRef.current = Date.now();
       setLoading(false);
       setError(null);
     } catch (e: any) {
