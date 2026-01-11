@@ -265,30 +265,40 @@ const Example = () => {
           if (!scrollContainerRef.current) return;
           const containerWidth = scrollContainerRef.current.offsetWidth;
           const storedPos = parseFloat(stored);
+
           const viewportCenter = storedPos + containerWidth / 2;
           const fIndex = (viewportCenter - CARD_WIDTH / 2) / TOTAL_CARD_WIDTH;
           let baseIndex = Math.round(fIndex);
+
           const cardCenter = baseIndex * TOTAL_CARD_WIDTH + CARD_WIDTH / 2;
           const rawTarget = cardCenter - containerWidth / 2;
+
           const W = singleSetWidth;
           const candidateShifts = [-2, -1, 0, 1, 2];
+
           let best = rawTarget,
             bestDist = Number.POSITIVE_INFINITY;
+
           for (const k of candidateShifts) {
             let c = rawTarget + k * W;
+
+            // Normalize into the middle set [W, 2W)
             if (c < W) c += W;
             else if (c >= 2 * W) c -= W;
+
             const d = Math.abs(c - storedPos);
             if (d < bestDist) {
               best = c;
               bestDist = d;
             }
           }
+
           setScrollPosition(best);
           setIsSnapping(true);
           setTimeout(() => setIsSnapping(false), 600);
         }, 100);
       }
+
       hasInitialized.current = true;
     }
   }, [displayCards.length, TOTAL_CARD_WIDTH, CARD_WIDTH]);
@@ -298,7 +308,7 @@ const Example = () => {
     if (!container) return;
     if (!displayCards.length) return;
 
-    // ---- Helpers for wheel infinite scroll (desktop) ----
+    // --- Wheel helpers ---
     const getWheelDelta = (evt: WheelEvent, el: HTMLDivElement) => {
       // deltaMode: 0=pixels, 1=lines, 2=pages
       if (evt.deltaMode === 1) return evt.deltaY * 16;
@@ -306,16 +316,18 @@ const Example = () => {
       return evt.deltaY;
     };
 
-    const wrapIntoMiddleBand = (pos: number, W: number) => {
+    // IMPORTANT: Keep scrollPosition ALWAYS in the middle set [W, 2W)
+    // so snapping logic (which normalizes to [W,2W)) cannot "fight" the wheel.
+    const wrapIntoMiddleSet = (pos: number, W: number) => {
       const total = W * 3;
       if (!W || !Number.isFinite(pos)) return 0;
 
       // modulo into [0, total)
       let p = ((pos % total) + total) % total;
 
-      // keep in middle region [0.5W, 2.5W)
-      if (p < W * 0.5) p += W;
-      else if (p >= W * 2.5) p -= W;
+      // normalize into middle set [W, 2W)
+      if (p < W) p += W;
+      else if (p >= 2 * W) p -= W;
 
       return p;
     };
@@ -334,6 +346,7 @@ const Example = () => {
 
         const viewportCenter = currentPos + containerWidth / 2;
         const fIndex = (viewportCenter - cw / 2) / tw;
+
         let baseIndex = Math.round(fIndex);
 
         if (lastDeltaRef.current > 0 && baseIndex * tw + cw / 2 < viewportCenter) {
@@ -344,22 +357,27 @@ const Example = () => {
 
         const cardCenter = baseIndex * tw + cw / 2;
         const rawTarget = cardCenter - containerWidth / 2;
-        const W = singleSetWidth;
 
+        const W = singleSetWidth;
         const candidateShifts = [-2, -1, 0, 1, 2];
+
         let best = rawTarget,
           bestDist = Number.POSITIVE_INFINITY;
 
         for (const k of candidateShifts) {
           let c = rawTarget + k * W;
+
+          // normalize into [W,2W)
           if (c < W) c += W;
           else if (c >= 2 * W) c -= W;
+
           const d = Math.abs(c - currentPos);
           if (d < bestDist) {
             best = c;
             bestDist = d;
           }
         }
+
         return best;
       });
 
@@ -367,16 +385,14 @@ const Example = () => {
       setTimeout(() => setIsSnapping(false), 600);
     };
 
-    // ---- FIXED: infinite scroll both directions on desktop wheel ----
+    // --- FIX: infinite scroll both directions on desktop wheel ---
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
 
       const delta = getWheelDelta(e, container);
       lastDeltaRef.current = delta;
 
-      // Cancel ongoing snap
       if (isSnapping) setIsSnapping(false);
-
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
 
       setScrollPosition((prev) => {
@@ -385,10 +401,11 @@ const Example = () => {
 
         // speed factor
         const next = prev + delta * 0.6;
-        return wrapIntoMiddleBand(next, W);
+
+        // keep it in the middle set so it never "runs out" in either direction
+        return wrapIntoMiddleSet(next, W);
       });
 
-      // Snap after user stops scrolling
       scrollTimeoutRef.current = setTimeout(() => snapToNearestCard(), 150);
     };
 
@@ -416,21 +433,15 @@ const Example = () => {
     const handleTouchMove = (e: TouchEvent) => {
       const touchX = e.touches[0].clientX;
       const deltaX = touchStartX - touchX;
-      const singleSetWidth = TOTAL_CARD_WIDTH * displayCards.length;
+
+      const W = TOTAL_CARD_WIDTH * displayCards.length;
+      if (!W) return;
 
       setScrollPosition(() => {
-        const W = singleSetWidth;
-        if (!W) return touchStartScrollPos;
+        const next = touchStartScrollPos + deltaX;
 
-        let newPosition = touchStartScrollPos + deltaX;
-
-        while (newPosition < 0) newPosition += W;
-        while (newPosition >= W * 3) newPosition -= W;
-
-        if (newPosition < W * 0.5) newPosition += W;
-        else if (newPosition >= W * 2.5) newPosition -= W;
-
-        return newPosition;
+        // keep it in the middle set for seamless infinite swipe
+        return wrapIntoMiddleSet(next, W);
       });
     };
 
@@ -480,18 +491,14 @@ const Example = () => {
 
     setScrollPosition((currentPos) => {
       // Pick the nearest equivalent target by shifting by +/- W and +/- 2W
-      const candidates = [
-        rawTarget - 2 * W,
-        rawTarget - W,
-        rawTarget,
-        rawTarget + W,
-        rawTarget + 2 * W,
-      ];
+      const candidates = [rawTarget - 2 * W, rawTarget - W, rawTarget, rawTarget + W, rawTarget + 2 * W];
       let best = candidates[0];
       let bestDist = Infinity;
 
       for (let c of candidates) {
         let cn = c;
+
+        // normalize into middle set [W,2W)
         if (cn < W) cn += W;
         else if (cn >= 2 * W) cn -= W;
 
@@ -623,15 +630,24 @@ const CardView = ({
       <div
         className={`relative rounded-[1.25rem] p-[1px] ${
           isCentered
-            ? ""
-            : ""
+            ? //? "ring-2 ring-accent/60 shadow-xl shadow-accent/10"
+              ""
+            : //: "border border-border/40"
+              ""
         }`}
         style={{
           height: `${cardWidth}px`,
           width: `${cardWidth}px`,
         }}
       >
-        <GlowingEffect spread={32} glow={false} disabled={false} proximity={80} inactiveZone={0.01} borderWidth={2} />
+        <GlowingEffect
+          spread={32}
+          glow={false}
+          disabled={false}
+          proximity={80}
+          inactiveZone={0.01}
+          borderWidth={2}
+        />
         <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[1.15rem] border border-border/40 bg-card/80 backdrop-blur p-6 shadow-sm">
           {/* Top Section: Links and Stats */}
           <div className="flex items-start justify-between mb-4">
