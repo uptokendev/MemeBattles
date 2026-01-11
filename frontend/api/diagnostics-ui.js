@@ -36,7 +36,13 @@ export default async function handler(req, res) {
                            radial-gradient(900px 600px at 90% 10%, rgba(34,197,94,.10), transparent 55%),
                            var(--bg);
           color:var(--text); font-family:var(--sans); }
-    .wrap{ max-width:1100px; margin:40px auto; padding:0 16px; }
+    td { word-break: break-word; }
+.v, .mono { white-space: normal; }
+    .wrap{
+  max-width: min(1600px, calc(100vw - 32px));
+  margin: 28px auto;
+  padding: 0 16px;
+}
     header{ display:flex; gap:16px; align-items:flex-start; justify-content:space-between; margin-bottom:18px; }
     h1{ margin:0; font-size:22px; letter-spacing:.2px; }
     .sub{ margin-top:6px; color:var(--muted); font-size:13px; }
@@ -53,7 +59,7 @@ export default async function handler(req, res) {
     .dot.bad{ background:var(--bad); }
     .dot.info{ background:var(--info); }
 
-    .grid{ display:grid; grid-template-columns: 1.2fr .8fr; gap:14px; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
     @media (max-width: 900px){ .grid{ grid-template-columns:1fr; } }
 
     .card{ background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
@@ -76,8 +82,18 @@ export default async function handler(req, res) {
 
     .muted{ color:var(--muted); }
     .mono{ font-family:var(--mono); }
-    pre{ margin:0; padding:12px; border-radius:14px; border:1px solid var(--line); background:rgba(0,0,0,.20);
-         color:var(--text); overflow:auto; font-size:12px; line-height:1.4; }
+    pre{
+  margin:0;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background:rgba(0,0,0,.20);
+  color:var(--text);
+  overflow:auto;
+  font-size:12px;
+  line-height:1.5;
+  max-height: 520px;
+}
     .footer{ margin-top:14px; color:var(--muted); font-size:12px; }
     .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-top:8px; }
   </style>
