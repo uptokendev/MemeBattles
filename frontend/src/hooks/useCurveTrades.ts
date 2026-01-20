@@ -220,11 +220,15 @@ useEffect(() => {
 const authUrl = `${API_BASE}/api/ably/token?chainId=${chainId}&campaign=${campaignAddress.toLowerCase()}`;
 
   const ably = new Ably.Realtime({
-    authUrl,
-    authMethod: "GET",
-    recover: (last, cb) => cb(true),
-  });
+  authUrl,
+  authMethod: "GET",
+});
 
+ably.connection.on((stateChange) => {
+  if (stateChange.current === "failed" || stateChange.current === "suspended") {
+    console.warn("[ably] connection", stateChange.current, stateChange.reason);
+  }
+});
   ablyRef.current = ably;
 
   const channelName = `token:${chainId}:${campaign}`;
