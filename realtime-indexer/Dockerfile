@@ -1,7 +1,6 @@
-# Use a Debian/Ubuntu-based image (has predictable CA behavior)
 FROM node:20-bookworm-slim
 
-# Install CA certificates (critical)
+# Install CA certificates (critical for TLS trust)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && update-ca-certificates \
@@ -9,18 +8,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Install deps first (better caching)
-COPY realtime-indexer/package*.json ./
+# Install deps first (cache-friendly)
+COPY package*.json ./
 RUN npm ci
 
-# Copy source
-COPY realtime-indexer/ ./
+# Copy the rest of the service code (context is realtime-indexer/)
+COPY . .
 
-# Build (if you build TS -> dist)
+# Build TypeScript -> dist/
 RUN npm run build
 
 ENV NODE_ENV=production
 EXPOSE 3000
 
-# Adjust if your start script differs
 CMD ["npm", "run", "start"]
