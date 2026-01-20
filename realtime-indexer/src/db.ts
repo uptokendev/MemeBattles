@@ -1,54 +1,60 @@
 import { Pool } from "pg";
 import { ENV } from "./env.js";
 
-/**
- * Standardize on Supabase Postgres.
- *
- * Notes:
- * - Supabase uses a public CA-signed certificate; you typically do NOT need to provide a custom CA.
- * - In hosted environments (Railway), keep TLS enabled and rejectUnauthorized=true.
- * - For local dev against a local Postgres, you can disable TLS by setting PG_DISABLE_SSL=1.
- */
-
-function loadOptionalCaPem(): string | null {
-  // Optional escape hatch: allow providing a custom CA PEM via env
-  // (useful if you ever point at a Postgres that requires it).
-  const b64 = process.env.PG_CA_CERT_B64;
-  if (b64) {
-    const pem = Buffer.from(b64, "base64").toString("utf8");
-    if (pem.includes("BEGIN CERTIFICATE")) return pem;
-    throw new Error("PG_CA_CERT_B64 does not decode to a PEM certificate");
-  }
-  const pem = process.env.PG_CA_CERT;
-  if (pem) return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
-  return null;
-}
-
 function dbHostFromUrl(dbUrl: string): string {
   const u = new URL(dbUrl);
   return u.hostname;
 }
 
-const host = dbHostFromUrl(ENV.DATABASE_URL);
+function loadCustomCaIfEnabled(): string | null {
+  // Only use a custom CA if explicitly enabled.
+  const enabled = String(process.env.PG_USE_CUSTOM_CA || "").trim() === "1";
+  if (!enabled) return null;
 
-let ca: string | null = null;
-try {
-  ca = loadOptionalCaPem();
-} catch (e) {
-  console.error("[db] CA load error:", e);
-  ca = null;
+  const b64 = process.env.PG_CA_CERT_B64;
+  if (b64) {
+    const pem = Buffer.from(b64, "base64").toString("utf8");
+    if (!pem.includes("BEGIN CERTIFICATE")) {
+      throw new Error("PG_CA_CERT_B64 does not decode to a PEM certificate");
+    }
+    return pem;
+  }
+
+  const pem = process.env.PG_CA_CERT;
+  if (pem) return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
+
+  return null;
 }
 
-const sslDisabled = String(process.env.PG_DISABLE_SSL || "").trim() === "1";
+const host = dbHostFromUrl(ENV.DATABASE_URL);
+
+// Keep this for local debugging only; do not set in production.
+const disableSsl = String(process.env.PG_DISABLE_SSL || "").trim() === "1";
+
+let customCa: string | null = null;
+try {
+  customCa = loadCustomCaIfEnabled();
+} catch (e) {
+  console.error("[db] Custom CA load error:", e);
+  throw e; // fail fast; misconfigured CA should not silently degrade security
+}
+
+const ssl =
+  disableSsl
+    ? false
+    : customCa
+      ? { ca: customCa, rejectUnauthorized: true, servername: host }
+      : { rejectUnauthorized: true, servername: host };
+
+// This line makes it immediately obvious in Railway logs what path you’re on.
+console.log(
+  `[db] host=${host} ssl=${disableSsl ? "off" : "on"} verify=${disableSsl ? "n/a" : "on"} ca=${customCa ? "custom" : "system"}`
+);
 
 export const pool = new Pool({
   connectionString: ENV.DATABASE_URL,
-  ssl: sslDisabled
-    ? false
-    : ca
-      ? { ca, rejectUnauthorized: true, servername: host }
-      : { rejectUnauthorized: true, servername: host },
+  ssl,
   max: 10,
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000
+  connectionTimeoutMillis: 10_000,
 });
