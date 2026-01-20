@@ -608,23 +608,26 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     const head = await withProviderRetry((p) => p.getBlockNumber());
     const target = Math.max(0, head - ENV.CONFIRMATIONS);
 
-    // ---------------- Factory scan ----------------
+   // ---------------- Factory scan ----------------
 try {
   const cursor = "factory";
   const state = await getState(chain.chainId, cursor);
 
-  // Start from: state if exists, else configured factoryStartBlock, else (target - lookback)
+  // Start from cursor if set, else FACTORY_START_BLOCK_97 (or fallback)
   const baselineStart = computeStartBlock(chain, target, state);
-  const from = baselineStart;
 
-  // Cap how much we scan per tick to avoid huge catch-up ranges
+  const from =
+    opts.mode === "repair"
+      ? Math.max(0, Math.max(state - opts.rewindBlocks, target - opts.lookbackBlocks))
+      : baselineStart; // IMPORTANT: do NOT clamp by windowStart in normal mode
+
   const to = Math.min(target, from + ENV.MAX_FACTORY_SCAN_BLOCKS - 1);
 
-  await withProviderRetry((p) => scanFactoryRange(p, chain, from, to));
+  if (from <= to) {
+    await withProviderRetry((p) => scanFactoryRange(p, chain, from, to));
+  }
 } catch (e) {
   console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
-}
-
     // ---------------- Campaign scans ----------------
     let campaigns: string[] = [];
     try {
@@ -645,11 +648,13 @@ try {
 
     // Cap per tick so we actually advance and eventually reach head
     const to = Math.min(target, from + ENV.MAX_CAMPAIGN_SCAN_BLOCKS - 1);
-
-    await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, to));
+if (from <= to) {
+  await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, to));
+}
   } catch (e) {
     console.error("scanCampaign error (all RPCs failed)", { chainId: chain.chainId, campaign }, e);
   }
 }
   }
+}
 }

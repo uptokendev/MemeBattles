@@ -22,8 +22,8 @@ export const ENV = {
   FACTORY_START_BLOCK_56: Number(process.env.FACTORY_START_BLOCK_56 || 0),
   // If FACTORY_START_BLOCK_* is not set, we fallback to (latest - FACTORY_LOOKBACK_BLOCKS)
   FACTORY_LOOKBACK_BLOCKS: Number(process.env.FACTORY_LOOKBACK_BLOCKS || 250000),
-  MAX_FACTORY_SCAN_BLOCKS: Number(process.env.MAX_FACTORY_SCAN_BLOCKS || 200000),
-MAX_CAMPAIGN_SCAN_BLOCKS: Number(process.env.MAX_CAMPAIGN_SCAN_BLOCKS || 200000),
+  MAX_FACTORY_SCAN_BLOCKS: Number(process.env.MAX_FACTORY_SCAN_BLOCKS || 500000),
+  MAX_CAMPAIGN_SCAN_BLOCKS: Number(process.env.MAX_CAMPAIGN_SCAN_BLOCKS || 500000),
 
   // Log scanning chunk sizes
   LOG_CHUNK_SIZE: Number(process.env.LOG_CHUNK_SIZE || "2000"),
