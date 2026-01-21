@@ -184,7 +184,13 @@ async function upsertCampaign(
            creator_address=coalesce(excluded.creator_address, public.campaigns.creator_address),
            name=coalesce(excluded.name, public.campaigns.name),
            symbol=coalesce(excluded.symbol, public.campaigns.symbol),
-           created_block=least(public.campaigns.created_block, excluded.created_block),
+           created_block=(
+             case
+               when public.campaigns.created_block is null then excluded.created_block
+               when excluded.created_block is null then public.campaigns.created_block
+               else least(public.campaigns.created_block, excluded.created_block)
+             end
+           ),
            is_active=true,
            updated_at=now()`,
     [
@@ -608,26 +614,21 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     const head = await withProviderRetry((p) => p.getBlockNumber());
     const target = Math.max(0, head - ENV.CONFIRMATIONS);
 
-   // ---------------- Factory scan ----------------
-try {
-  const cursor = "factory";
-  const state = await getState(chain.chainId, cursor);
+    // ---------------- Factory scan ----------------
+    try {
+      const cursor = "factory";
+      const state = await getState(chain.chainId, cursor);
+      const baselineStart = computeStartBlock(chain, target, state);
+      const windowStart = Math.max(0, target - opts.lookbackBlocks);
+      const from = opts.mode === "repair"
+        ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+        : Math.max(baselineStart, windowStart);
 
-  // Start from cursor if set, else FACTORY_START_BLOCK_97 (or fallback)
-  const baselineStart = computeStartBlock(chain, target, state);
+      await withProviderRetry((p) => scanFactoryRange(p, chain, from, target));
+    } catch (e) {
+      console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
+    }
 
-  const from =
-    opts.mode === "repair"
-      ? Math.max(0, Math.max(state - opts.rewindBlocks, target - opts.lookbackBlocks))
-      : baselineStart; // IMPORTANT: do NOT clamp by windowStart in normal mode
-
-  const to = Math.min(target, from + ENV.MAX_FACTORY_SCAN_BLOCKS - 1);
-
-  if (from <= to) {
-    await withProviderRetry((p) => scanFactoryRange(p, chain, from, to));
-  }
-} catch (e) {
-  console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
     // ---------------- Campaign scans ----------------
     let campaigns: string[] = [];
     try {
@@ -638,23 +639,21 @@ try {
     }
 
     for (const campaign of campaigns) {
-  try {
-    const cursor = `campaign:${campaign.toLowerCase()}`;
-    const state = await getState(chain.chainId, cursor);
+      try {
+        const cursor = `campaign:${campaign.toLowerCase()}`;
+        const state = await getState(chain.chainId, cursor);
+        const windowStart = Math.max(0, target - opts.lookbackBlocks);
 
-    // If we have a cursor, continue from it; otherwise only scan recent history
-    const windowStart = Math.max(0, target - opts.lookbackBlocks);
-    const from = state > 0 ? state : windowStart;
+        // In normal mode, campaign scans should start from their cursor state.
+        // In repair mode, rewind the cursor slightly but never earlier than windowStart.
+        const from = opts.mode === "repair"
+          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+          : (state > 0 ? state : windowStart);
 
-    // Cap per tick so we actually advance and eventually reach head
-    const to = Math.min(target, from + ENV.MAX_CAMPAIGN_SCAN_BLOCKS - 1);
-if (from <= to) {
-  await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, to));
-}
-  } catch (e) {
-    console.error("scanCampaign error (all RPCs failed)", { chainId: chain.chainId, campaign }, e);
+        await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, target));
+      } catch (e) {
+        console.error("scanCampaign error (all RPCs failed)", { chainId: chain.chainId, campaign }, e);
+      }
+    }
   }
-}
-  }
-}
 }
