@@ -1,12 +1,13 @@
-// frontend/src/components/token/CurvePriceChart.tsx
-// TradingView-style bonding-curve chart using TradingView Lightweight Charts (free).
+// src/components/token/CurvePriceChart.tsx
+// Market-cap chart for bonding-curve trades, rendered with TradingView Lightweight Charts.
 
 import { useMemo, useState } from "react";
 import { ethers } from "ethers";
 
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { CurveTradesChart } from "@/lib/chart/CurveTradesChart";
-import type { ChartPoint } from "@/lib/chart/buildCandles";
+import type { CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 
 import type { MockCurveEvent } from "@/constants/mockCurveTrades";
 
@@ -30,10 +31,10 @@ const TIMEFRAMES: Array<{ key: TimeframeKey; label: string; seconds: number }> =
   { key: "1h", label: "1h", seconds: 60 * 60 },
 ];
 
-function bnbFromWeiSafe(wei: bigint | undefined | null): number {
+function tokensFromWeiSafe(wei: bigint | undefined | null): number {
   try {
     if (!wei) return 0;
-    const n = Number(ethers.formatEther(wei));
+    const n = Number(ethers.formatUnits(wei, 18));
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0;
@@ -41,11 +42,62 @@ function bnbFromWeiSafe(wei: bigint | undefined | null): number {
 }
 
 /**
- * CurvePriceChart
- * - Uses the shared realtime hook (or override props from TokenDetails)
- * - Buckets trades into candles
- * - Renders TradingView-like chart behaviour (pan/zoom/grid/volume)
+ * Builds market-cap series in USD:
+ * - derive circulating tokens from buys/sells
+ * - mcapBNB = pricePerToken(BNB) * circulatingTokens
+ * - mcapUSD = mcapBNB * bnbUsd
  */
+function toMarketCapPointsUsd(trades: CurveTradePoint[], bnbUsd: number): ChartPoint[] {
+  if (!trades?.length || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
+
+  const sorted = [...trades].sort((a, b) => {
+    if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+    if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
+    return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
+  });
+
+  let circ = 0;
+  const out: ChartPoint[] = [];
+
+  for (const t of sorted) {
+    const delta = tokensFromWeiSafe(t.tokensWei);
+    circ += t.type === "sell" ? -delta : delta;
+    if (circ < 0) circ = 0;
+
+    const mcBnb = Number(t.pricePerToken ?? 0) * circ;
+    const mcUsd = mcBnb * bnbUsd;
+
+    const tsMs = Number(t.timestamp ?? 0) * 1000;
+    if (!Number.isFinite(tsMs) || tsMs <= 0) continue;
+    if (!Number.isFinite(mcUsd) || mcUsd <= 0) continue;
+
+    out.push({ ts: tsMs, value: mcUsd });
+  }
+
+  return out;
+}
+
+/**
+ * Mock mode fallback: uses pricePerToken as "shape" and assumes a small growing supply.
+ */
+function toMarketCapPointsUsdMock(events: MockCurveEvent[], bnbUsd: number): ChartPoint[] {
+  if (!events?.length || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
+  const sorted = [...events].sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0));
+
+  let circ = 0;
+  const out: ChartPoint[] = [];
+  for (const e of sorted) {
+    circ += 1; // 1 token per event (simple)
+    const priceBnb = Number(e.pricePerToken ?? 0);
+    const mcUsd = priceBnb * circ * bnbUsd;
+    const tsMs = Number(e.timestamp ?? 0) * 1000;
+    if (!Number.isFinite(tsMs) || tsMs <= 0) continue;
+    if (!Number.isFinite(mcUsd) || mcUsd <= 0) continue;
+    out.push({ ts: tsMs, value: mcUsd });
+  }
+  return out;
+}
+
 export const CurvePriceChart = ({
   campaignAddress,
   mockMode = false,
@@ -55,39 +107,17 @@ export const CurvePriceChart = ({
   errorOverride,
 }: CurvePriceChartProps) => {
   const [tf, setTf] = useState<TimeframeKey>("1m");
+  const bucketSec = useMemo(() => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60, [tf]);
 
   // Live data (disabled when TokenDetails passes override to avoid duplicate websockets)
-  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
+  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride && !mockMode });
   const livePoints = curvePointsOverride ?? live.points;
   const liveLoading = loadingOverride ?? live.loading;
   const liveError = errorOverride ?? live.error;
 
-  const bucketSec = useMemo(() => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60, [tf]);
+  // USD conversion
+  const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(!mockMode);
 
-  // Build chart points (timestamp in seconds)
-  const chartPoints: ChartPoint[] = useMemo(() => {
-    if (mockMode) {
-      return (mockEvents || [])
-        .map((p) => ({
-          timestamp: Number(p.timestamp ?? 0),
-          value: Number(p.pricePerToken ?? 0),
-          // mock data doesn't include volume; keep 0
-          volume: 0,
-        }))
-        .filter((p) => Number.isFinite(p.timestamp) && Number.isFinite(p.value) && p.timestamp > 0 && p.value > 0);
-    }
-
-    return (livePoints || [])
-      .map((p) => ({
-        timestamp: Number(p.timestamp ?? 0),
-        value: Number(p.pricePerToken ?? 0),
-        // volume in native units (BNB) so the histogram looks like the reference
-        volume: Math.abs(bnbFromWeiSafe(p.nativeWei)),
-      }))
-      .filter((p) => Number.isFinite(p.timestamp) && Number.isFinite(p.value) && p.timestamp > 0 && p.value > 0);
-  }, [mockMode, mockEvents, livePoints]);
-
-  // Render states
   if (mockMode && (!mockEvents || mockEvents.length === 0)) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
@@ -112,10 +142,31 @@ export const CurvePriceChart = ({
     );
   }
 
+  if (!mockMode && (bnbUsdLoading || !bnbUsd)) {
+    return (
+      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
+        Loading USD conversion…
+      </div>
+    );
+  }
+
+  if (!mockMode && bnbUsdError) {
+    return (
+      <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
+        {bnbUsdError}
+      </div>
+    );
+  }
+
+  const chartPoints: ChartPoint[] = useMemo(() => {
+    if (mockMode) return toMarketCapPointsUsdMock(mockEvents || [], bnbUsd ?? 0);
+    return toMarketCapPointsUsd(livePoints || [], bnbUsd ?? 0);
+  }, [mockMode, mockEvents, livePoints, bnbUsd]);
+
   if (chartPoints.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        No trades on the bonding curve yet.
+        No curve data available yet.
       </div>
     );
   }
