@@ -203,18 +203,42 @@ const TokenDetails = () => {
     }
   };
 
-  const formatTokenFromWei = (wei?: bigint | null): string => {
-    if (wei == null) return "—";
-    try {
-      const raw = ethers.formatUnits(wei, TOKEN_DECIMALS);
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return raw;
-      const pretty = n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(6) : n.toFixed(8);
-      return pretty;
-    } catch {
-      return "—";
-    }
-  };
+  const formatDecimalString = (raw: string, maxDp: number): string => {
+  const sign = raw.startsWith("-") ? "-" : "";
+  const s = sign ? raw.slice(1) : raw;
+
+  const [iRaw, fRaw = ""] = s.split(".");
+  const i = (iRaw || "0").replace(/^0+(?=\d)/, "") || "0";
+  const iGrouped = i.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  const f = (fRaw || "")
+    .slice(0, Math.max(0, maxDp))
+    .replace(/0+$/, ""); // trim trailing zeros
+
+  return sign + iGrouped + (f ? `.${f}` : "");
+};
+
+const formatTokenFromWei = (wei?: bigint | null): string => {
+  if (wei == null) return "—";
+  try {
+    const raw = ethers.formatUnits(wei, TOKEN_DECIMALS); // full precision string
+    const n = Number(raw);
+
+    const maxDp =
+      Number.isFinite(n)
+        ? n >= 1
+          ? 4
+          : n >= 0.01
+          ? 6
+          : 8
+        : 8;
+
+    // IMPORTANT: this will turn "8.0000" into "8"
+    return formatDecimalString(raw, maxDp);
+  } catch {
+    return "—";
+  }
+};
   const parseBnbLabel = (input?: string | null): number | null => {
   if (!input) return null;
 
@@ -1795,18 +1819,71 @@ setTxs(next);
             </Tabs>
           </Card>
 
-          <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3" style={{ flex: "1" }}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Bonding curve progress</h3>
-              <span className="text-xs text-muted-foreground">{curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}</span>
-            </div>
-            <Progress value={curveProgress.pct} className="h-2" />
-            <div className="text-xs text-muted-foreground flex items-center justify-between">
-              <span>Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
-              <span>Target: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">Full bar means the bonding curve has graduated and liquidity is on DEX.</p>
-          </Card>
+          <Card
+  className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3"
+  style={{ flex: "1" }}
+>
+  <div className="flex items-center justify-between">
+    <h3 className="text-sm font-semibold">Bonding curve progress</h3>
+    <span className="text-xs text-muted-foreground">
+      {curveProgress.matured ? "Graduated" : `${curveProgress.pct.toFixed(2)}%`}
+    </span>
+  </div>
+
+  {/* Nicer filled bar (ATH-bar style) */}
+  <div className="relative w-full h-3 rounded-full bg-background/40 border border-border/40 overflow-hidden">
+    <div
+      className={`h-full rounded-full ${
+        curveProgress.matured
+          ? "bg-gradient-to-r from-green-500/20 via-green-500/70 to-green-500/20"
+          : "bg-gradient-to-r from-primary/20 via-primary/80 to-primary/20"
+      }`}
+      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
+    />
+    <div className="absolute inset-0 pointer-events-none rounded-full ring-1 ring-inset ring-white/10" />
+  </div>
+
+  <div className="text-xs text-muted-foreground flex items-center justify-between font-mono">
+    <span>Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
+    <span>Target: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    Full bar means the bonding curve has graduated and liquidity is on DEX.
+  </p>
+</Card><Card
+  className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3"
+  style={{ flex: "1" }}
+>
+  <div className="flex items-center justify-between">
+    <h3 className="text-sm font-semibold">Bonding curve progress</h3>
+    <span className="text-xs text-muted-foreground">
+      {curveProgress.matured ? "Graduated" : `${curveProgress.pct.toFixed(2)}%`}
+    </span>
+  </div>
+
+  {/* Nicer filled bar (ATH-bar style) */}
+  <div className="relative w-full h-3 rounded-full bg-background/40 border border-border/40 overflow-hidden">
+    <div
+      className={`h-full rounded-full ${
+        curveProgress.matured
+          ? "bg-gradient-to-r from-green-500/20 via-green-500/70 to-green-500/20"
+          : "bg-gradient-to-r from-primary/20 via-primary/80 to-primary/20"
+      }`}
+      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
+    />
+    <div className="absolute inset-0 pointer-events-none rounded-full ring-1 ring-inset ring-white/10" />
+  </div>
+
+  <div className="text-xs text-muted-foreground flex items-center justify-between font-mono">
+    <span>Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
+    <span>Target: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    Full bar means the bonding curve has graduated and liquidity is on DEX.
+  </p>
+</Card>
 
           {/* Flywheel Statistics - 2/5 height */}
           <Card
