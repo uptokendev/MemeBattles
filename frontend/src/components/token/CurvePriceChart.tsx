@@ -1,13 +1,22 @@
 // src/components/token/CurvePriceChart.tsx
-// Market-cap chart for bonding-curve trades, rendered with TradingView Lightweight Charts.
-
 import { useMemo, useState } from "react";
-import { ethers } from "ethers";
-
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { CurveTradesChart } from "@/lib/chart/CurveTradesChart";
-import type { CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Line,
+  Customized,
+} from "recharts";
 
 import type { MockCurveEvent } from "@/constants/mockCurveTrades";
 
@@ -21,85 +30,168 @@ type CurvePriceChartProps = {
   errorOverride?: string | null;
 };
 
-type TimeframeKey = "5s" | "1m" | "5m" | "15m" | "1h";
+type TimeframeKey = "5s" | "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
 
 const TIMEFRAMES: Array<{ key: TimeframeKey; label: string; seconds: number }> = [
   { key: "5s", label: "5s", seconds: 5 },
   { key: "1m", label: "1m", seconds: 60 },
   { key: "5m", label: "5m", seconds: 5 * 60 },
   { key: "15m", label: "15m", seconds: 15 * 60 },
+  { key: "30m", label: "30m", seconds: 30 * 60 },
   { key: "1h", label: "1h", seconds: 60 * 60 },
+  { key: "4h", label: "4h", seconds: 4 * 60 * 60 },
+  { key: "1d", label: "1d", seconds: 24 * 60 * 60 },
 ];
 
-function tokensFromWeiSafe(wei: bigint | undefined | null): number {
-  try {
-    if (!wei) return 0;
-    const n = Number(ethers.formatUnits(wei, 18));
-    return Number.isFinite(n) ? n : 0;
-  } catch {
-    return 0;
-  }
+type Point = { timestamp: number; pricePerToken: number };
+
+type Candle = {
+  timeMs: number; // epoch ms (bucket start)
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+function bucketStartMs(timestampSec: number, bucketSec: number): number {
+  const t = Math.floor(timestampSec);
+  const b = Math.floor(t / bucketSec) * bucketSec;
+  return b * 1000;
 }
 
-/**
- * Builds market-cap series in USD:
- * - circulatingTokens += buyTokens; -= sellTokens
- * - mcapBNB = pricePerToken(BNB) * circulatingTokens
- * - mcapUSD = mcapBNB * bnbUsd
- */
-function toMarketCapPointsUsd(trades: CurveTradePoint[], bnbUsd: number): ChartPoint[] {
-  if (!trades?.length || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
+function toCandles(points: Point[], bucketSec: number): Candle[] {
+  if (!points.length) return [];
 
-  const sorted = [...trades].sort((a, b) => {
-    if ((a.timestamp ?? 0) !== (b.timestamp ?? 0)) return (a.timestamp ?? 0) - (b.timestamp ?? 0);
-    if ((a.blockNumber ?? 0) !== (b.blockNumber ?? 0)) return (a.blockNumber ?? 0) - (b.blockNumber ?? 0);
-    return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
-  });
+  const sorted = [...points]
+    .filter((p) => Number.isFinite(p.timestamp) && Number.isFinite(p.pricePerToken) && p.pricePerToken > 0)
+    .sort((a, b) => a.timestamp - b.timestamp);
 
-  let circ = 0;
-  const out: ChartPoint[] = [];
+  const out: Candle[] = [];
+  let curBucket: number | null = null;
+  let cur: Candle | null = null;
 
-  for (const t of sorted) {
-    const delta = tokensFromWeiSafe(t.tokensWei);
-    circ += t.type === "sell" ? -delta : delta;
-    if (circ < 0) circ = 0;
-
-    const priceBnb = Number(t.pricePerToken ?? 0);
-    const mcUsd = priceBnb * circ * bnbUsd;
-
-    const tsMs = Number(t.timestamp ?? 0) * 1000;
-    if (!Number.isFinite(tsMs) || tsMs <= 0) continue;
-    if (!Number.isFinite(mcUsd) || mcUsd <= 0) continue;
-
-    out.push({ ts: tsMs, value: mcUsd });
+  for (const p of sorted) {
+    const b = bucketStartMs(p.timestamp, bucketSec);
+    if (curBucket === null || b !== curBucket) {
+      if (cur) out.push(cur);
+      curBucket = b;
+      cur = {
+        timeMs: b,
+        open: p.pricePerToken,
+        high: p.pricePerToken,
+        low: p.pricePerToken,
+        close: p.pricePerToken,
+      };
+      continue;
+    }
+    if (!cur) continue;
+    cur.high = Math.max(cur.high, p.pricePerToken);
+    cur.low = Math.min(cur.low, p.pricePerToken);
+    cur.close = p.pricePerToken;
   }
 
+  if (cur) out.push(cur);
   return out;
 }
 
-/**
- * Mock fallback: uses pricePerToken as "shape" and assumes a small growing supply.
- */
-function toMarketCapPointsUsdMock(events: MockCurveEvent[], bnbUsd: number): ChartPoint[] {
-  if (!events?.length || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
-  const sorted = [...events].sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0));
+function formatTime(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
 
-  let circ = 0;
-  const out: ChartPoint[] = [];
+function formatPrice(x: number): string {
+  if (!Number.isFinite(x)) return "—";
+  // Keep small values readable (bonding curve often has tiny prices)
+  if (x === 0) return "0";
+  const abs = Math.abs(x);
+  if (abs < 0.000001) return x.toExponential(4);
+  if (abs < 0.01) return x.toFixed(8);
+  if (abs < 1) return x.toFixed(6);
+  return x.toFixed(4);
+}
 
-  for (const e of sorted) {
-    circ += 1; // simple mock supply increment
-    const priceBnb = Number(e.pricePerToken ?? 0);
-    const mcUsd = priceBnb * circ * bnbUsd;
+function CandleTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const c: Candle | undefined = payload?.[0]?.payload;
+  if (!c) return null;
 
-    const tsMs = Number(e.timestamp ?? 0) * 1000;
-    if (!Number.isFinite(tsMs) || tsMs <= 0) continue;
-    if (!Number.isFinite(mcUsd) || mcUsd <= 0) continue;
+  return (
+    <div className="rounded-md border bg-background/95 px-3 py-2 text-xs shadow-md">
+      <div className="mb-1 font-medium">{formatTime(c.timeMs)}</div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        <div className="text-muted-foreground">O</div>
+        <div>{formatPrice(c.open)}</div>
+        <div className="text-muted-foreground">H</div>
+        <div>{formatPrice(c.high)}</div>
+        <div className="text-muted-foreground">L</div>
+        <div>{formatPrice(c.low)}</div>
+        <div className="text-muted-foreground">C</div>
+        <div>{formatPrice(c.close)}</div>
+      </div>
+    </div>
+  );
+}
 
-    out.push({ ts: tsMs, value: mcUsd });
-  }
+function CandlesLayer(props: any) {
+  const { xAxisMap, yAxisMap, offset, data } = props;
+  if (!data?.length) return null;
 
-  return out;
+  const xAxis = xAxisMap?.[Object.keys(xAxisMap)[0]];
+  const yAxis = yAxisMap?.[Object.keys(yAxisMap)[0]];
+  const xScale = xAxis?.scale;
+  const yScale = yAxis?.scale;
+  if (typeof xScale !== "function" || typeof yScale !== "function") return null;
+
+  const innerW = (offset?.width ?? 0) || 0;
+  const candleW = Math.max(2, Math.min(18, (innerW / Math.max(1, data.length)) * 0.65));
+
+  return (
+    <g>
+      {data.map((c: Candle) => {
+        const x = xScale(c.timeMs);
+        if (!Number.isFinite(x)) return null;
+
+        const up = c.close >= c.open;
+        const bodyTop = Math.min(c.open, c.close);
+        const bodyBot = Math.max(c.open, c.close);
+
+        const yHigh = yScale(c.high);
+        const yLow = yScale(c.low);
+        const yBodyTop = yScale(bodyBot); // note: yScale is inverted
+        const yBodyBot = yScale(bodyTop);
+
+        if (![yHigh, yLow, yBodyTop, yBodyBot].every(Number.isFinite)) return null;
+
+        const bodyH = Math.max(1, Math.abs(yBodyBot - yBodyTop));
+        const fill = up ? "#16a34a" : "#ef4444"; // green/red as requested
+
+        return (
+          <g key={c.timeMs}>
+            {/* wick */}
+            <line
+              x1={x}
+              x2={x}
+              y1={yHigh}
+              y2={yLow}
+              stroke={fill}
+              strokeWidth={1}
+              opacity={0.9}
+            />
+            {/* body */}
+            <rect
+              x={x - candleW / 2}
+              y={Math.min(yBodyTop, yBodyBot)}
+              width={candleW}
+              height={bodyH}
+              fill={fill}
+              opacity={0.9}
+              rx={1}
+            />
+          </g>
+        );
+      })}
+    </g>
+  );
 }
 
 export const CurvePriceChart = ({
@@ -110,27 +202,36 @@ export const CurvePriceChart = ({
   loadingOverride,
   errorOverride,
 }: CurvePriceChartProps) => {
-  // HOOKS MUST ALWAYS RUN BEFORE ANY RETURN
   const [tf, setTf] = useState<TimeframeKey>("1m");
-  const bucketSec = useMemo(() => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60, [tf]);
 
-  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride && !mockMode });
+  //
+  // 🔹 LIVE CHAIN DATA (only used when mockMode = false)
+  //
+  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
   const livePoints = curvePointsOverride ?? live.points;
   const liveLoading = loadingOverride ?? live.loading;
   const liveError = errorOverride ?? live.error;
 
-  const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(!mockMode);
+  //
+  // 🔹 MERGE: Choose mock or live data
+  //
+  const isMock = mockMode;
 
-  const chartPoints: ChartPoint[] = useMemo(() => {
-    const usd = bnbUsd ?? 0;
-    if (!usd || usd <= 0) return [];
+  const points: Point[] = isMock
+    ? mockEvents.map((e) => ({ timestamp: e.timestamp, pricePerToken: e.pricePerToken }))
+    : livePoints.map((p) => ({ timestamp: p.timestamp, pricePerToken: p.pricePerToken }));
 
-    if (mockMode) return toMarketCapPointsUsdMock(mockEvents || [], usd);
-    return toMarketCapPointsUsd(livePoints || [], usd);
-  }, [mockMode, mockEvents, livePoints, bnbUsd]);
+  const loading = isMock ? false : liveLoading;
+  const error = isMock ? null : liveError;
 
-  // Render states (SAFE: hooks already executed)
-  if (mockMode && (!mockEvents || mockEvents.length === 0)) {
+  const bucketSec = useMemo(() => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60, [tf]);
+
+  const candles = useMemo(() => toCandles(points, bucketSec), [points, bucketSec]);
+
+  //
+  // 🔹 Render states
+  //
+  if (isMock && mockEvents.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
         No mock trades available.
@@ -138,7 +239,7 @@ export const CurvePriceChart = ({
     );
   }
 
-  if (!mockMode && liveLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
         Loading curve trades…
@@ -146,34 +247,18 @@ export const CurvePriceChart = ({
     );
   }
 
-  if (!mockMode && liveError) {
+  if (error) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-        {liveError}
+        {error}
       </div>
     );
   }
 
-  if (!mockMode && (bnbUsdLoading || !bnbUsd)) {
+  if (candles.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        Loading USD conversion…
-      </div>
-    );
-  }
-
-  if (!mockMode && bnbUsdError) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-        {bnbUsdError}
-      </div>
-    );
-  }
-
-  if (chartPoints.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        No curve data available yet.
+        No trades on the bonding curve yet.
       </div>
     );
   }
@@ -181,29 +266,51 @@ export const CurvePriceChart = ({
   return (
     <div className="w-full h-full flex flex-col">
       {/* timeframe controls */}
-      <div className="flex items-center justify-end gap-1 px-2 pb-2">
-        {TIMEFRAMES.map((t) => {
-          const active = t.key === tf;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTf(t.key)}
-              className={[
-                "px-2 py-1 text-[11px] rounded-md border transition",
-                active
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background/50 text-muted-foreground border-border hover:text-foreground",
-              ].join(" ")}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-end px-2 pb-2">
+        <Select value={tf} onValueChange={(v) => setTf(v as TimeframeKey)}>
+          <SelectTrigger className="h-7 w-[92px] rounded-md text-[11px]">
+            <SelectValue placeholder="1m" />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {TIMEFRAMES.map((t) => (
+              <SelectItem key={t.key} value={t.key}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="flex-1 min-h-[260px]">
-        <CurveTradesChart points={chartPoints} intervalSec={bucketSec} />
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            data={candles}
+            margin={{ top: 10, right: 16, left: 0, bottom: 0 }}
+          >
+            <XAxis
+              dataKey="timeMs"
+              type="number"
+              domain={["dataMin", "dataMax"]}
+              scale="time"
+              tick={{ fontSize: 10 }}
+              tickFormatter={(v) => formatTime(Number(v))}
+              minTickGap={20}
+            />
+            <YAxis
+              orientation="right"
+              tick={{ fontSize: 10 }}
+              width={70}
+              tickFormatter={(v) => formatPrice(Number(v))}
+            />
+            <Tooltip content={<CandleTooltip />} />
+
+            {/* Invisible line so tooltip tracking works smoothly */}
+            <Line type="monotone" dataKey="close" stroke="transparent" dot={false} isAnimationActive={false} />
+
+            {/* Custom candle drawing */}
+            <Customized component={CandlesLayer} />
+          </ComposedChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );
