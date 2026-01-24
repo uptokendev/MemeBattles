@@ -216,24 +216,34 @@ const TokenDetails = () => {
     }
   };
   const parseBnbLabel = (input?: string | null): number | null => {
-    if (!input) return null;
-    const s = String(input).trim();
-    if (!s || s === "—") return null;
+  if (!input) return null;
 
-    // Accept forms like:
-    //  - "0.1234 BNB"
-    //  - "1.23k BNB"
-    //  - "1.23k"
-    //  - "0.000123"
-    const m = s.match(/(-?\d+(?:\.\d+)?)(?:\s*([kKmMbBtT]))?/);
-    if (!m) return null;
-    const num = Number(m[1]);
-    if (!Number.isFinite(num)) return null;
+  let s = String(input).trim();
+  if (!s || s === "—") return null;
 
-    const suf = (m[2] ?? "").toLowerCase();
-    const mult = suf === "k" ? 1e3 : suf === "m" ? 1e6 : suf === "b" ? 1e9 : suf === "t" ? 1e12 : 1;
-    return num * mult;
-  };
+  // IMPORTANT: remove unit words so we don't read the "B" in "BNB" as "B = billion"
+  s = s.replace(/bnb/gi, "").trim();
+
+  // normalize commas/spaces
+  s = s.replace(/,/g, ".").replace(/\s+/g, "");
+
+  // optional compact suffix ONLY at the end: k/m/b/t
+  const m = s.match(/^(-?\d+(?:\.\d+)?)([kKmMbBtT])?$/);
+  if (!m) return null;
+
+  const num = Number(m[1]);
+  if (!Number.isFinite(num)) return null;
+
+  const suf = (m[2] ?? "").toLowerCase();
+  const mult =
+    suf === "k" ? 1e3 :
+    suf === "m" ? 1e6 :
+    suf === "b" ? 1e9 :
+    suf === "t" ? 1e12 :
+    1;
+
+  return num * mult;
+};
 
   const formatCompactUsd = (usd: number): string => {
     if (!Number.isFinite(usd)) return "—";
