@@ -39,14 +39,15 @@ const MAX_UINT256 = (1n << 256n) - 1n;
 
 // This is the UI table row shape (NOT the on-chain CurveTrade shape)
 type TxRow = {
+  id: string;
   time: string;
   type: "buy" | "sell";
   amount: string;
   bnb: string;
   price: string;
   mcap: string;
-  trader: string;
-  tx: string;
+  maker: string;
+  txHash: string;
 };
 
 const TokenDetails = () => {
@@ -536,29 +537,36 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
   }, [activity, metrics, formatBnbOrUsd]);
 
   const holderDistribution = useMemo(() => {
-    const shortAddr = (a: string) => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+    const shortAddr = (a: string) =>
+      a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 
+    // Estimated balances derived from bonding curve trades only (no transfers)
     const balances = new Map<string, bigint>();
+
     for (const p of liveCurvePointsSafe) {
       const addr = (p.from || "").toLowerCase();
       if (!addr) continue;
+
       const prev = balances.get(addr) ?? 0n;
-      const delta = p.tokenWei ?? 0n;
-      balances.set(addr, p.side === "buy" ? prev + delta : prev - delta);
+      const delta = p.tokensWei ?? 0n; // ✅ tokensWei (not tokenWei)
+      const isBuy = (p.type ?? "buy") === "buy"; // ✅ type (not side)
+
+      balances.set(addr, isBuy ? prev + delta : prev - delta);
     }
 
     const holders = [...balances.entries()]
       .filter(([, bal]) => bal > 0n)
-      .map(([addr, bal]) => ({ addr, bal }))
+      .map(([address, bal]) => ({ address, bal }))
       .sort((a, b) => (a.bal === b.bal ? 0 : a.bal > b.bal ? -1 : 1));
 
     const totalBal = holders.reduce((acc, x) => acc + x.bal, 0n);
-    const pct = (bal: bigint) => (totalBal > 0n ? Number((bal * 10000n) / totalBal) / 100 : 0);
+
+    const pct = (bal: bigint) =>
+      totalBal > 0n ? Number((bal * 10000n) / totalBal) / 100 : 0;
 
     const top = holders.slice(0, 6).map((h) => ({
-      addr: h.addr,
-      addrShort: shortAddr(h.addr),
-      balWei: h.bal,
+      address: h.address,
+      label: shortAddr(h.address),
       pct: pct(h.bal),
     }));
 
@@ -571,10 +579,6 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       totalHolders: holders.length,
     };
   }, [liveCurvePointsSafe]);
-
-
-
-
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
   useEffect(() => {
@@ -747,16 +751,19 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
             const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
             const priceStr = formatPriceBnb(typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken));
 
-            return {
-              time: formatAgo(p.timestamp),
-              type: p.side,
-              amount: formatCompact(tokenAmount),
-              bnb: bnbStr,
-              price: priceStr,
-              mcap,
-              trader: shorten(p.trader),
-              tx: p.txHash,
-            };
+            const txHash = p.txHash || pseudoTx(`dex-${sym}`, 0);
+
+return {
+  id: txHash,
+  time: formatAgo(p.timestamp),
+  type: p.side,
+  amount: formatCompact(tokenAmount),
+  bnb: bnbStr,
+  price: priceStr,
+  mcap,
+  maker: shorten(p.trader),
+  txHash,
+};
           });
 
         setTxs(next);
@@ -803,16 +810,19 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
           const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
           const priceStr = formatPriceBnb(p.pricePerToken);
 
-          return {
-            time: formatAgo(p.timestamp),
-            type: p.side,
-            amount: formatCompact(tokenAmount),
-            bnb: bnbStr,
-            price: priceStr,
-            mcap,
-            trader: shorten(p.trader),
-            tx: p.txHash,
-          };
+          const txHash = p.txHash || pseudoTx(`curve-${sym}`, 0);
+
+return {
+  id: txHash,
+  time: formatAgo(p.timestamp),
+  type: p.side,
+  amount: formatCompact(tokenAmount),
+  bnb: bnbStr,
+  price: priceStr,
+  mcap,
+  maker: shorten(p.trader),
+  txHash,
+};
         });
 
       setTxs(next);
@@ -823,29 +833,34 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     const mcap = tokenData.marketCap ?? "—";
 
     const next: TxRow[] = [...liveCurvePointsSafe]
-      .slice(-50)
-      .reverse()
-      .map((p: any) => {
-        const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
-        const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
-        const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
+  .slice(-50)
+  .reverse()
+  .map((p: any, idx: number) => {
+    const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
+    const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
+    const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
 
-        const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
-        const priceStr = formatPriceBnb(priceNum);
+    const priceNum = typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0);
+    const priceStr = formatPriceBnb(priceNum);
 
-        return {
-          time: formatAgo(Number(p.timestamp ?? 0)),
-          type: (p.type ?? "buy") as "buy" | "sell",
-          amount: formatCompact(tokenAmount),
-          bnb: bnbStr,
-          price: priceStr,
-          mcap,
-          trader: shorten(p.from),
-          tx: String(p.txHash ?? ""),
-        };
-      });
+    const txHash = String(p.txHash ?? "");
+    const ts = Number(p.timestamp ?? 0);
+    const id = txHash || `${ts}-${idx}`;
 
-    setTxs(next);
+    return {
+      id,
+      time: formatAgo(ts),
+      type: (p.type ?? "buy") as "buy" | "sell",
+      amount: formatCompact(tokenAmount),
+      bnb: bnbStr,
+      price: priceStr,
+      mcap,
+      maker: shorten(p.from),
+      txHash,
+    };
+  });
+
+setTxs(next);
   }, [USE_MOCK_DATA, campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
 
   // 🔹 Dexscreener chart-only URL (mock or live) based on the token contract
@@ -1797,7 +1812,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
               </div>
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.protocolFeesEst}</p>
+                <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
               </div>
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Buyers</p>
@@ -1805,7 +1820,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
               </div>
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Protocol fee rate</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.protocolFeeRate}</p>
+                <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
               </div>
             </div>
 
