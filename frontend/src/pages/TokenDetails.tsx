@@ -18,6 +18,7 @@ import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
+import { AthBar } from "@/components/token/AthBar";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
 import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
@@ -436,9 +437,9 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       metrics: timeframeTiles,
     };
   }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, rtStats]);
-  const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(
-    displayDenom === "USD"
-  );
+  // Keep USD reference price available for UI conversions and ATH tracking.
+  // (Cached + throttled inside the hook.)
+  const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
 
   const marketCapDisplay = useMemo(() => {
     const bnbLabel = tokenData.marketCap;
@@ -452,6 +453,15 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
 
     return formatCompactUsd(mcBnb * bnbUsdPrice);
   }, [displayDenom, tokenData.marketCap, bnbUsdPrice, bnbUsdLoading]);
+
+  // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
+  const marketCapUsdLabel = useMemo(() => {
+    const mcBnb = parseBnbLabel(tokenData.marketCap);
+    if (mcBnb == null) return null;
+    if (!bnbUsdPrice) return null;
+    const usd = mcBnb * bnbUsdPrice;
+    return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
+  }, [tokenData.marketCap, bnbUsdPrice]);
 
   const priceDisplay = useMemo(() => {
     const bnbLabel = tokenData.price;
@@ -1326,17 +1336,27 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
                 </span>
               </div>
 
-              {isDexStage && dexBaseUrl && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                  onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
-                >
-                  <ExternalLink className="h-3 w-3 mr-1" />
-                  DexScreener
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {!isDexStage && (
+                  <AthBar
+                    currentLabel={marketCapUsdLabel ?? undefined}
+                    storageKey={`launchit:ath:${campaign?.campaign ?? campaignAddress ?? tokenData.ticker}`}
+                    className="max-w-[320px]"
+                  />
+                )}
+
+                {isDexStage && dexBaseUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    DexScreener
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="flex-1 min-h-0">
