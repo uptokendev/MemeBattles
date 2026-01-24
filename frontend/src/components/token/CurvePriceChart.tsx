@@ -182,13 +182,17 @@ export const CurvePriceChart = ({
   }
 
   return (
-    <div className="w-full h-full flex flex-col">
-      {/* timeframe dropdown (default 1m) */}
-      <div className="flex items-center justify-end px-2 pb-2">
+  <div className="w-full h-full flex flex-col">
+    <div className="relative flex-1 min-h-[260px]">
+      {/* Chart always gets full width/height */}
+      <CurveTradesChart points={chartPoints} intervalSec={bucketSec} />
+
+      {/* Dropdown overlay (does not take layout space) */}
+      <div className="absolute top-2 right-2 z-10">
         <select
           value={tf}
           onChange={(e) => setTf(e.target.value as TimeframeKey)}
-          className="h-7 rounded-md border border-border bg-background/50 px-2 text-[11px] text-foreground outline-none"
+          className="h-7 rounded-md border border-border bg-background/60 px-2 text-[11px] text-foreground outline-none backdrop-blur"
         >
           {TIMEFRAMES.map((t) => (
             <option key={t.key} value={t.key}>
@@ -197,10 +201,7 @@ export const CurvePriceChart = ({
           ))}
         </select>
       </div>
-
-      <div className="flex-1 min-h-[260px]">
-        <CurveTradesChart points={chartPoints} intervalSec={bucketSec} />
-      </div>
     </div>
-  );
+  </div>
+);
 };
