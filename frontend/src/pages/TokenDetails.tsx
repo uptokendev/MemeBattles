@@ -1851,38 +1851,6 @@ setTxs(next);
   <p className="text-xs text-muted-foreground">
     Full bar means the bonding curve has graduated and liquidity is on DEX.
   </p>
-</Card><Card
-  className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3"
-  style={{ flex: "1" }}
->
-  <div className="flex items-center justify-between">
-    <h3 className="text-sm font-semibold">Bonding curve progress</h3>
-    <span className="text-xs text-muted-foreground">
-      {curveProgress.matured ? "Graduated" : `${curveProgress.pct.toFixed(2)}%`}
-    </span>
-  </div>
-
-  {/* Nicer filled bar (ATH-bar style) */}
-  <div className="relative w-full h-3 rounded-full bg-background/40 border border-border/40 overflow-hidden">
-    <div
-      className={`h-full rounded-full ${
-        curveProgress.matured
-          ? "bg-gradient-to-r from-green-500/20 via-green-500/70 to-green-500/20"
-          : "bg-gradient-to-r from-primary/20 via-primary/80 to-primary/20"
-      }`}
-      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
-    />
-    <div className="absolute inset-0 pointer-events-none rounded-full ring-1 ring-inset ring-white/10" />
-  </div>
-
-  <div className="text-xs text-muted-foreground flex items-center justify-between font-mono">
-    <span>Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
-    <span>Target: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
-  </div>
-
-  <p className="text-xs text-muted-foreground">
-    Full bar means the bonding curve has graduated and liquidity is on DEX.
-  </p>
 </Card>
 
           {/* Flywheel Statistics - 2/5 height */}
