@@ -207,7 +207,7 @@ export function TokenComments({ chainId, campaignAddress, tokenAddress }: TokenC
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder={wallet.account ? "Write a comment…" : "Connect wallet to comment…"}
-              className="min-h-[70px] resize-none"
+              className="min-h-[30px] resize-none"
               maxLength={500}
               disabled={posting}
             />

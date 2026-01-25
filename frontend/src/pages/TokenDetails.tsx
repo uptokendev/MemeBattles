@@ -569,31 +569,28 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
 
     const pct = (bal: bigint) => (totalBal > 0n ? Number((bal * 10000n) / totalBal) / 100 : 0);
 
-    const MAX_TOP = 20;
-const lpIncluded = lpBal > 0n;
-const maxUsers = Math.max(0, MAX_TOP - (lpIncluded ? 1 : 0));
+    const topUsers = holders.slice(0, 6).map((h) => ({
+      address: h.address,
+      label: shortAddr(h.address),
+      pct: pct(h.bal),
+      isLp: false as const,
+    }));
 
-const topUsers = holders.slice(0, maxUsers).map((h) => ({
-  address: h.address,
-  label: shortAddr(h.address),
-  pct: pct(h.bal),
-  isLp: false as const,
-}));
+    const othersBal = holders.slice(6).reduce((acc, x) => acc + x.bal, 0n);
 
-const othersBal = holders.slice(maxUsers).reduce((acc, x) => acc + x.bal, 0n);
-
-const top = [
-  ...(lpIncluded
-    ? [{
-        address: "liquidity-pool",
-        label: "Liquidity pool",
-        pct: pct(lpBal),
-        isLp: true as const,
-      }]
-    : []),
-  ...topUsers,
-];
-
+    const top = [
+      ...(lpBal > 0n
+        ? [
+            {
+              address: "liquidity-pool",
+              label: "Liquidity pool",
+              pct: pct(lpBal),
+              isLp: true as const,
+            },
+          ]
+        : []),
+      ...topUsers,
+    ];
 
     return {
       top,
@@ -1274,11 +1271,12 @@ setTxs(next);
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-3 md:pt-6 gap-3 md:gap-4">
+    <div className="h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col px-3 md:px-6 pt-3 md:pt-6 gap-3 md:gap-4">
       {/* Main Content - Single Row */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4 flex-1 min-h-0">
         {/* Left Column - Header, Chart & Transactions (3/4 width) */}
         <div className="lg:col-span-3 flex flex-col gap-3 md:gap-4 min-h-0">
+          <div className="lg:sticky lg:top-24">
           {/* Top Header Bar */}
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-6 flex-shrink-0">
             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
@@ -1525,8 +1523,10 @@ setTxs(next);
           </Card>
 
           {/* Chart */}
-          <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5">
-
+          <Card
+            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[320px]"
+            style={{ flex: isMobile ? "3" : "2" }}
+          >
             <div className="flex items-center justify-between px-4 py-2 border-b border-border/40 bg-card/20">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-xs text-muted-foreground">{chartTitle}</span>
@@ -1592,18 +1592,18 @@ setTxs(next);
           </Card>
 
           {/* Activity: Comments / Trades */}
-        <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5">
+        <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col" style={{ flex: "1" }}>
           <Tabs
             value={activityTab}
             onValueChange={(v) => setActivityTab(v as any)}
-            className="w-full"
+            className="h-full flex flex-col min-h-0"
           >
             <TabsList className="grid w-full grid-cols-2 mb-3">
               <TabsTrigger value="comments">Comments</TabsTrigger>
               <TabsTrigger value="trades">Trades</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="comments" className="mt-0">
+            <TabsContent value="comments" className="flex-1 min-h-0 overflow-y-auto">
               {campaign?.campaign ? (
                 <TokenComments
                   chainId={Number(wallet.chainId ?? 97)}
@@ -1615,8 +1615,8 @@ setTxs(next);
               )}
             </TabsContent>
 
-            <TabsContent value="trades" className="mt-0">
-              <div>
+            <TabsContent value="trades" className="flex-1 min-h-0 overflow-y-auto">
+              <div className="overflow-auto h-full">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border">
@@ -1659,11 +1659,13 @@ setTxs(next);
           </Tabs>
         </Card>
         </div>
+        </div>
 
         {/* Right Column - Trading Panel & Stats (1/3 width) */}
-        <div className="lg:col-span-1 flex flex-col gap-4 min-h-0">
+        <div className="lg:col-span-1 min-h-0">
+          <div className="flex flex-col gap-4 lg:h-full min-h-0 lg:overflow-y-auto pr-1">
           {/* Trading Panel - 2/5 height */}
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4" style={{ flex: "2" }}>
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
             <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
               <TabsList className="grid w-full grid-cols-2 mb-3">
                 <TabsTrigger value="buy" className="text-sm">Buy</TabsTrigger>
@@ -1817,7 +1819,7 @@ setTxs(next);
             </Tabs>
           </Card>
 
-          <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5">
+          <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3" style={{ flex: "1" }}>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Bonding curve progress</h3>
               <span className="text-xs text-muted-foreground">{curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}</span>
@@ -1849,7 +1851,9 @@ setTxs(next);
 
           {/* Flywheel Statistics - 2/5 height */}
           <Card
-            className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5">
+            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 min-h-0 flex flex-col"
+            style={{ flex: "2" }}
+          >
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
               <span className="text-xs text-muted-foreground">All-time</span>
@@ -1889,7 +1893,9 @@ setTxs(next);
 
           {/* Holder Distribution - 1/5 height */}
           <Card
-            className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5">
+            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4 flex flex-col min-h-0"
+            style={{ flex: "1" }}
+          >
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
               <span className="text-xs text-muted-foreground">
@@ -1898,7 +1904,7 @@ setTxs(next);
             </div>
 
             {holderDistribution.top.length ? (
-              <div className="space-y-3">
+              <div className="space-y-3 overflow-auto flex-1 min-h-0 pr-1">
                 {holderDistribution.top.map((h, idx) => {
                   const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
 
@@ -1943,6 +1949,7 @@ setTxs(next);
               Estimated from bonding-curve trades (excludes transfers).
             </p>
           </Card>
+          </div>
         </div>
       </div>
     </div>
