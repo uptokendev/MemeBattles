@@ -1857,7 +1857,7 @@ setTxs(next);
             <div className="text-xs text-muted-foreground space-y-1">
               <div className="flex items-center justify-between">
                 <span>{formatBnbFromWei(curveProgress.reserveWei ?? undefined)} in bonding curve</span>
-                <span className="text-right"><span className="text-muted-foreground">Remaining:</span>{" "}{remainingCurveLabel.primary}{remainingCurveLabel.secondary !== "—" ? (<span className="ml-2 text-muted-foreground">({remainingCurveLabel.secondary})</span>) : null}</span>
+                <span className="text-right"><span className="text-muted-foreground">Remaining:</span>{" "}{remainingCurveLabel.primary}</span>
               </div>
             </div>
           </Card>
