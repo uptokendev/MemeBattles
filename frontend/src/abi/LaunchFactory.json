@@ -12,6 +12,46 @@
       "type": "constructor"
     },
     {
+      "inputs": [],
+      "name": "FeeTooHigh",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InitBuyValue",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidCurveBps",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "LiquidityBps",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "LogoEmpty",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NameEmpty",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Offset",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "OutOfBounds",
+      "type": "error"
+    },
+    {
       "inputs": [
         {
           "internalType": "address",
@@ -31,6 +71,46 @@
         }
       ],
       "name": "OwnableUnauthorizedAccount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PriceZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RecipientZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RefundFail",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RouterZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SlopeZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SupplyZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SymbolEmpty",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TargetZero",
       "type": "error"
     },
     {
@@ -293,6 +373,11 @@
               "internalType": "address",
               "name": "lpReceiver",
               "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "initialBuyTokens",
+              "type": "uint256"
             }
           ],
           "internalType": "struct LaunchFactory.CampaignRequest",
@@ -313,7 +398,7 @@
           "type": "address"
         }
       ],
-      "stateMutability": "nonpayable",
+      "stateMutability": "payable",
       "type": "function"
     },
     {
@@ -492,6 +577,35 @@
     {
       "inputs": [],
       "name": "protocolFeeBps",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "initialBuyTokens",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "basePriceOverride",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceSlopeOverride",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteInitialBuyTotal",
       "outputs": [
         {
           "internalType": "uint256",
