@@ -949,6 +949,40 @@ setTxs(next);
     };
   }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationTarget, curveReserveWei]);
 
+  const remainingCurveWei = useMemo(() => {
+    // Remaining BNB needed to reach the graduation target (reserve-based trigger).
+    // If already in DEX stage, remaining is 0.
+    if (isDexStage) return 0n;
+
+    const targetWei = curveProgress.targetWei ?? 0n;
+    const reserveWei = curveProgress.reserveWei ?? 0n;
+    return targetWei > reserveWei ? targetWei - reserveWei : 0n;
+  }, [isDexStage, curveProgress.targetWei, curveProgress.reserveWei]);
+
+  const remainingCurveLabel = useMemo(() => {
+    const bnbLabel = formatBnbFromWei(remainingCurveWei);
+
+    let remainingBnbNum: number | null = null;
+    try {
+      const n = Number(ethers.formatEther(remainingCurveWei));
+      remainingBnbNum = Number.isFinite(n) ? n : null;
+    } catch {
+      remainingBnbNum = null;
+    }
+
+    const usdLabel =
+      remainingBnbNum != null && bnbUsdPrice
+        ? formatCompactUsd(remainingBnbNum * bnbUsdPrice)
+        : bnbUsdLoading
+        ? "…"
+        : "—";
+
+    // Primary follows the denomination toggle; secondary shows the other denomination.
+    if (displayDenom === "USD") return { primary: usdLabel, secondary: bnbLabel };
+    return { primary: bnbLabel, secondary: usdLabel };
+  }, [remainingCurveWei, displayDenom, bnbUsdPrice, bnbUsdLoading]);
+
+
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
@@ -1816,14 +1850,14 @@ setTxs(next);
             <div className="h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
               <div
                 className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
-                style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
+                style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%`, minWidth: curveProgress.pct > 0 ? "1px" : undefined }}
               />
             </div>
 
             <div className="text-xs text-muted-foreground space-y-1">
               <div className="flex items-center justify-between">
                 <span>{formatBnbFromWei(curveProgress.reserveWei ?? undefined)} in bonding curve</span>
-                <span>Target: {formatBnbFromWei(curveProgress.targetWei ?? undefined)}</span>
+                <span className="text-right"><span className="text-muted-foreground">Remaining:</span>{" "}{remainingCurveLabel.primary}{remainingCurveLabel.secondary !== "—" ? (<span className="ml-2 text-muted-foreground">({remainingCurveLabel.secondary})</span>) : null}</span>
               </div>
             </div>
           </Card>
