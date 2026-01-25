@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -91,6 +91,10 @@ const Profile = () => {
   );
 
   const account: string | null = isConnected ? (wallet.account ?? null) : null;
+  const [searchParams] = useSearchParams();
+  const addressParam = searchParams.get("address");
+  const viewedAddress: string | null = addressParam ? addressParam : account;
+  const isOwnProfile = Boolean(account && viewedAddress && account.toLowerCase() === viewedAddress.toLowerCase());
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
@@ -122,27 +126,27 @@ const Profile = () => {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
 
-  const walletAddressShort = useMemo(() => shorten(account), [account]);
+  const walletAddressShort = useMemo(() => shorten(viewedAddress), [viewedAddress]);
 
   const displayName = useMemo(() => {
     const u = (profile?.displayName ?? "").trim();
     return u ? `@${u}` : walletAddressShort || "Profile";
   }, [profile?.displayName, walletAddressShort]);
 
-  const walletAddressFull = account ?? "Not connected";
+  const walletAddressFull = viewedAddress ?? "Not connected";
 
   const explorerUrl = useMemo(() => {
     if (!account) return "#";
     const base = getExplorerBase(chainId);
     return `${base}/address/${account}`;
-  }, [account, chainId]);
+  }, [viewedAddress, chainId]);
 
   // Load profile from backend (username/bio/avatar) if configured
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      if (!account) {
+      if (!viewedAddress) {
         setProfile(null);
         return;
       }
@@ -153,7 +157,7 @@ const Profile = () => {
           setProfile(null);
           return;
         }
-        const p = await fetchUserProfile(chainId, account);
+        const p = await fetchUserProfile(chainId, viewedAddress);
         if (!cancelled) setProfile(p);
       } catch (e: any) {
         // Fail gracefully if the backend is not configured or the endpoint is missing.
@@ -168,7 +172,7 @@ const Profile = () => {
     return () => {
       cancelled = true;
     };
-  }, [account, chainId]);
+  }, [viewedAddress, chainId]);
 
 
   const formatTimeAgo = (createdAt?: number): string => {
@@ -187,8 +191,8 @@ const Profile = () => {
   };
 
   const handleCopyAddress = () => {
-    if (!account) return;
-    navigator.clipboard.writeText(account);
+    if (!viewedAddress) return;
+    navigator.clipboard.writeText(viewedAddress);
     toast.success("Address copied!");
   };
 
@@ -383,7 +387,7 @@ const Profile = () => {
 
     const loadCreated = async () => {
       try {
-        if (!account) {
+        if (!viewedAddress) {
           setCreated([]);
           return;
         }
@@ -449,7 +453,7 @@ const Profile = () => {
 
     const loadBalances = async () => {
       try {
-        if (!account) {
+        if (!viewedAddress) {
           setNativeBalance("");
           setTokenBalances([]);
           return;
@@ -680,6 +684,8 @@ const Profile = () => {
             </div>
 
             {/* Edit Button */}
+          {isOwnProfile ? (
+
             <Button
               onClick={handleEdit}
               className="bg-muted hover:bg-muted/80 text-foreground font-retro w-full md:w-auto"
@@ -696,6 +702,8 @@ const Profile = () => {
               onSave={handleSaveProfile}
             />
           </div>
+          ) : null}
+
 
           {/* Tabs */}
           <div className="flex gap-3 md:gap-6 border-t border-border pt-4 md:pt-6 overflow-x-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">

@@ -5,13 +5,14 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Copy, ExternalLink, Globe, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
+import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
@@ -92,6 +93,46 @@ const TokenDetails = () => {
   // Launchpad hooks + state for the on-chain data
   const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, fetchCampaignActivity, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
+
+  const creatorAddress = useMemo(() => {
+    const c: any = campaign as any;
+    const s: any = summary as any;
+    return (
+      c?.creator ??
+      c?.owner ??
+      c?.deployer ??
+      c?.createdBy ??
+      s?.creator ??
+      s?.owner ??
+      s?.deployer ??
+      null
+    ) as string | null;
+  }, [campaign, summary, creatorProfile]);
+
+  const [creatorProfile, setCreatorProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!creatorAddress || !wallet.chainId) {
+        setCreatorProfile(null);
+        return;
+      }
+      try {
+        const p = await fetchUserProfile(wallet.chainId, creatorAddress);
+        if (!cancelled) setCreatorProfile(p);
+      } catch (e) {
+        if (!cancelled) setCreatorProfile(null);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorAddress, wallet.chainId]);
+
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
@@ -521,31 +562,8 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       s?.owner ??
       s?.deployer ??
       null;
-
-    const nickname =
-      c?.creatorNickname ??
-      c?.creatorName ??
-      c?.username ??
-      c?.nickname ??
-      s?.creatorNickname ??
-      s?.creatorName ??
-      s?.username ??
-      s?.nickname ??
-      null;
-
-    const avatar =
-      c?.creatorAvatarURI ??
-      c?.creatorAvatarUri ??
-      c?.creatorAvatar ??
-      c?.avatarURI ??
-      c?.avatarUri ??
-      c?.pfp ??
-      s?.creatorAvatarURI ??
-      s?.creatorAvatarUri ??
-      s?.creatorAvatar ??
-      s?.avatarURI ??
-      s?.avatarUri ??
-      null;
+    const displayName = String(creatorProfile?.displayName ?? "").trim();
+    const avatarUrl = String(creatorProfile?.avatarUrl ?? "").trim();
 
     const createdRaw =
       c?.createdAtSecs ??
@@ -563,17 +581,12 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     const createdSecs = toTimestampSecs(createdRaw);
     const ago = createdSecs ? formatAgo(createdSecs) : "—";
 
-    const label =
-      nickname && String(nickname).trim().length
-        ? String(nickname).trim()
-        : address
-        ? shorten(String(address))
-        : "—";
+    const label = displayName ? displayName : address ? shorten(String(address)) : "—";
 
     return {
       address: address ? String(address) : null,
       label,
-      avatar: avatar ? String(avatar) : "/placeholder.svg",
+      avatar: avatarUrl || "/placeholder.svg",
       createdSecs,
       ago,
     };
@@ -1474,7 +1487,7 @@ setTxs(next);
                       </Button>
                     )}
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/20 px-2 py-1 min-w-0">
+                      <Link to={creatorInfo.address ? `/profile?address=${creatorInfo.address}` : "/profile"} className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/20 hover:bg-muted/30 px-2 py-1 transition-colors min-w-0" aria-label="View creator profile">
                         <img
                           src={creatorInfo.avatar}
                           alt={creatorInfo.label}
@@ -1486,7 +1499,7 @@ setTxs(next);
                         <span className="text-[10px] md:text-xs font-mono text-foreground truncate max-w-[140px]">
                           {creatorInfo.label}
                         </span>
-                      </div>
+                      </Link>
                       <span className="text-[10px] md:text-xs text-muted-foreground whitespace-nowrap">
                         {creatorInfo.ago}
                       </span>
