@@ -316,6 +316,46 @@ const TokenDetails = () => {
     return `${weeks}w`;
   };
 
+  const toTimestampSecs = (v: unknown): number | null => {
+    if (v == null) return null;
+
+    if (typeof v === "bigint") {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return n > 1e11 ? Math.floor(n / 1000) : Math.floor(n);
+    }
+
+    if (typeof v === "number") {
+      if (!Number.isFinite(v) || v <= 0) return null;
+      return v > 1e11 ? Math.floor(v / 1000) : Math.floor(v);
+    }
+
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (!s) return null;
+
+      if (/^\d+$/.test(s)) {
+        const n = Number(s);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return n > 1e11 ? Math.floor(n / 1000) : Math.floor(n);
+      }
+
+      const ms = Date.parse(s);
+      if (!Number.isFinite(ms) || ms <= 0) return null;
+      return Math.floor(ms / 1000);
+    }
+
+    if (typeof v === "object") {
+      const anyV = v as any;
+      const nested =
+        anyV?.seconds ?? anyV?.secs ?? anyV?.timestamp ?? anyV?.time ?? anyV?.createdAt ?? anyV?.created_at;
+      return toTimestampSecs(nested);
+    }
+
+    return null;
+  };
+
+
   // Read curve trades for transactions + analytics (live mode)
   // Hook returns CurveTrade[] (your "@/types/token" Transaction type)
   const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(campaign?.campaign);
@@ -467,6 +507,78 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       metrics: timeframeTiles,
     };
   }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, rtStats]);
+
+  const creatorInfo = useMemo(() => {
+    const c: any = campaign as any;
+    const s: any = summary as any;
+
+    const address =
+      c?.creator ??
+      c?.owner ??
+      c?.deployer ??
+      c?.createdBy ??
+      s?.creator ??
+      s?.owner ??
+      s?.deployer ??
+      null;
+
+    const nickname =
+      c?.creatorNickname ??
+      c?.creatorName ??
+      c?.username ??
+      c?.nickname ??
+      s?.creatorNickname ??
+      s?.creatorName ??
+      s?.username ??
+      s?.nickname ??
+      null;
+
+    const avatar =
+      c?.creatorAvatarURI ??
+      c?.creatorAvatarUri ??
+      c?.creatorAvatar ??
+      c?.avatarURI ??
+      c?.avatarUri ??
+      c?.pfp ??
+      s?.creatorAvatarURI ??
+      s?.creatorAvatarUri ??
+      s?.creatorAvatar ??
+      s?.avatarURI ??
+      s?.avatarUri ??
+      null;
+
+    const createdRaw =
+      c?.createdAtSecs ??
+      c?.createdAtSec ??
+      c?.createdAt ??
+      c?.created_at ??
+      c?.createdAtMs ??
+      s?.createdAtSecs ??
+      s?.createdAtSec ??
+      s?.createdAt ??
+      s?.created_at ??
+      s?.createdAtMs ??
+      null;
+
+    const createdSecs = toTimestampSecs(createdRaw);
+    const ago = createdSecs ? formatAgo(createdSecs) : "—";
+
+    const label =
+      nickname && String(nickname).trim().length
+        ? String(nickname).trim()
+        : address
+        ? shorten(String(address))
+        : "—";
+
+    return {
+      address: address ? String(address) : null,
+      label,
+      avatar: avatar ? String(avatar) : "/placeholder.svg",
+      createdSecs,
+      ago,
+    };
+  }, [campaign, summary]);
+
   // Keep USD reference price available for UI conversions and ATH tracking.
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
@@ -1361,13 +1473,24 @@ setTxs(next);
                         />
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
-                    >
-                      Community
-                    </Button>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2 rounded-full border border-border/40 bg-muted/20 px-2 py-1 min-w-0">
+                        <img
+                          src={creatorInfo.avatar}
+                          alt={creatorInfo.label}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+                          }}
+                          className="h-5 w-5 md:h-6 md:w-6 rounded-full ring-1 ring-border/30 flex-shrink-0"
+                        />
+                        <span className="text-[10px] md:text-xs font-mono text-foreground truncate max-w-[140px]">
+                          {creatorInfo.label}
+                        </span>
+                      </div>
+                      <span className="text-[10px] md:text-xs text-muted-foreground whitespace-nowrap">
+                        {creatorInfo.ago}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1940,10 +2063,6 @@ setTxs(next);
             ) : (
               <div className="text-xs text-muted-foreground">No holder data yet.</div>
             )}
-
-            <p className="text-[11px] text-muted-foreground mt-3 flex-shrink-0">
-              Estimated from bonding-curve trades (excludes transfers).
-            </p>
           </Card>
         </div>
       </div>
