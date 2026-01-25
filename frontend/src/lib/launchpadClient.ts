@@ -545,6 +545,7 @@ marketCap = formatBnbFromWei(mcWei);
       xAccount: string;
       website: string;
       extraLink: string;
+      initialBuyTokens?: string;
       basePriceWei?: bigint;
       priceSlopeWei?: bigint;
       graduationTargetWei?: bigint;
@@ -559,22 +560,50 @@ marketCap = formatBnbFromWei(mcWei);
       const writer = getFactoryWrite();
       if (!writer) throw new Error("Wallet not connected");
 
-      const tx = await writer.createCampaign({
+      const basePriceWei = params.basePriceWei ?? 0n;
+      const priceSlopeWei = params.priceSlopeWei ?? 0n;
+      const initialBuyTokensWei = (() => {
+        const s = (params.initialBuyTokens ?? "").trim();
+        if (!s) return 0n;
+        try {
+          const v = ethers.parseUnits(s, 18);
+          return v > 0n ? v : 0n;
+        } catch {
+          throw new Error("Invalid initial buy amount");
+        }
+      })();
+
+      let valueToSend = 0n;
+      if (initialBuyTokensWei > 0n) {
+        const reader = getFactoryRead();
+        if (!reader) throw new Error("No provider available");
+        valueToSend = await reader.quoteInitialBuyTotal(
+          initialBuyTokensWei,
+          basePriceWei,
+          priceSlopeWei
+        );
+      }
+
+      const tx = await writer.createCampaign(
+        {
         name: params.name,
         symbol: params.symbol,
         logoURI: params.logoURI,
         xAccount: params.xAccount,
         website: params.website,
         extraLink: params.extraLink,
-        basePrice: params.basePriceWei ?? 0n,
-        priceSlope: params.priceSlopeWei ?? 0n,
+        basePrice: basePriceWei,
+        priceSlope: priceSlopeWei,
         graduationTarget: params.graduationTargetWei ?? 0n,
         lpReceiver: params.lpReceiver || ethers.ZeroAddress,
-      });
+        initialBuyTokens: initialBuyTokensWei,
+        },
+        { value: valueToSend }
+      );
 
       return tx.wait();
     },
-    [getFactoryWrite]
+    [getFactoryWrite, getFactoryRead]
   );
 
   const buyTokens = useCallback(

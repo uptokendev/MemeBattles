@@ -40,6 +40,7 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         address lpReceiver;
+        uint256 initialBuyTokens; // optional: buy tokens for the creator in the create tx
     }
 
     uint256 private constant MAX_BPS = 10_000;
@@ -74,14 +75,36 @@ contract LaunchFactory is Ownable {
             basePrice: 5e13, // 0.00005 BNB
             priceSlope: 1e9, // grows 1 gwei per token sold (scaled to 1e18)
             graduationTarget: 50 ether,
-            liquidityBps: 7000
+            // 80% of raised BNB (after protocol fee) goes to LP, 20% to the creator.
+            liquidityBps: 8000
         });
         feeRecipient = msg.sender;
-        protocolFeeBps = 250;
+        // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
+        protocolFeeBps = 200;
+    }
+
+    /// @notice Quotes the BNB value required to perform the optional initial buy during createCampaign.
+    /// @dev Assumes sold == 0 for the newly created campaign.
+    function quoteInitialBuyTotal(
+        uint256 initialBuyTokens,
+        uint256 basePriceOverride,
+        uint256 priceSlopeOverride
+    ) external view returns (uint256) {
+        if (initialBuyTokens == 0) return 0;
+        uint256 base = basePriceOverride > 0 ? basePriceOverride : config.basePrice;
+        uint256 slope = priceSlopeOverride > 0 ? priceSlopeOverride : config.priceSlope;
+
+        // Matches LaunchCampaign._area() for sold == 0
+        uint256 term1 = (base * initialBuyTokens) / 1e18;
+        uint256 term2 = (slope * initialBuyTokens * initialBuyTokens) / (2 * 1e18 * 1e18);
+        uint256 costNoFee = term1 + term2;
+        uint256 fee = (costNoFee * protocolFeeBps) / 10000;
+        return costNoFee + fee;
     }
 
     function createCampaign(CampaignRequest calldata req)
         external
+        payable
         returns (address campaignAddr, address tokenAddr)
     {
         require(bytes(req.name).length > 0, "name");
@@ -132,6 +155,26 @@ contract LaunchFactory is Ownable {
                 createdAt: uint64(block.timestamp)
             })
         );
+
+        // Optional initial buy for the creator, executed within the same transaction.
+        // Any extra msg.value is refunded.
+        uint256 spent = 0;
+        if (req.initialBuyTokens > 0) {
+            uint256 total = LaunchCampaign(campaignAddr).quoteBuyExactTokens(
+                req.initialBuyTokens
+            );
+            require(msg.value >= total, "INIT_BUY_VALUE");
+            LaunchCampaign(campaignAddr).buyExactTokensFor{value: total}(
+                msg.sender,
+                req.initialBuyTokens,
+                total
+            );
+            spent = total;
+        }
+        if (msg.value > spent) {
+            (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
+            require(ok, "REFUND_FAIL");
+        }
 
         emit CampaignCreated(
             _campaigns.length - 1,

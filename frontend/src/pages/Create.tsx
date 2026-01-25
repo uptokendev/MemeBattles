@@ -14,6 +14,7 @@ import { TokenCategory } from "@/types/token";
 import { useWallet } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
+import { useState } from "react";
 
 const Create = () => {
   const {
@@ -43,6 +44,9 @@ const Create = () => {
   // NEW: hooks for wallet + contracts
   const wallet = useWallet();
   const { createCampaign, fetchCampaigns } = useLaunchpad();
+
+  // Optional creator initial buy (tokens, 18 decimals) performed in the same tx.
+  const [initialBuyTokens, setInitialBuyTokens] = useState("");
 
   // UPDATED: async and actually calls the contract
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -122,6 +126,7 @@ const Create = () => {
         xAccount: formData.twitter || "",
         website: formData.website || "",
         extraLink: formData.otherLink || "",
+        initialBuyTokens,
         basePriceWei: 0n,
         priceSlopeWei: 0n,
         graduationTargetWei: 0n,
@@ -427,6 +432,25 @@ const Create = () => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Optional creator initial buy */}
+              <div className="pt-4">
+                <label className="block text-muted-foreground font-retro mb-2 text-xs md:text-sm">
+                  Initial buy (tokens, optional)
+                </label>
+                <Input
+                  value={initialBuyTokens}
+                  onChange={(e) => setInitialBuyTokens(e.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                  className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground font-retro rounded-lg focus:border-accent focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed h-12"
+                  disabled={isProjectDisabled}
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  If set, the creator will buy this many tokens in the same transaction as campaign creation.
+                  You will pay the bonding-curve price plus the protocol fee.
+                </p>
               </div>
 
               {/* Create Button */}

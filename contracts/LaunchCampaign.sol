@@ -63,8 +63,13 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public immutable creatorReserve;
 
     uint256 public sold;
-bool public launched;
-uint256 public finalizedAt;
+    bool public launched;
+    uint256 public finalizedAt;
+
+    modifier onlyFactory() {
+        require(msg.sender == factory, "ONLY_FACTORY");
+        _;
+    }
 
 // ---- Phase 2 cheap counters (no backend / no log scanning) ----
 uint256 public totalBuyVolumeWei;
@@ -134,16 +139,32 @@ mapping(address => bool) public hasBought;
 
     receive() external payable {}
 
+    function _fee(uint256 amountWei) internal view returns (uint256) {
+        if (protocolFeeBps == 0) return 0;
+        return (amountWei * protocolFeeBps) / MAX_BPS;
+    }
+
+    function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
+        return _area(sold + amountOut) - _area(sold);
+    }
+
+    function _quoteSellNoFee(uint256 amountIn) internal view returns (uint256) {
+        return _area(sold) - _area(sold - amountIn);
+    }
+
     function quoteBuyExactTokens(uint256 amountOut) public view returns (uint256) {
         require(amountOut > 0, "zero amount");
         require(sold + amountOut <= curveSupply, "sold out");
-        return _area(sold + amountOut) - _area(sold);
+        uint256 cost = _quoteBuyNoFee(amountOut);
+        return cost + _fee(cost);
     }
 
     function quoteSellExactTokens(uint256 amountIn) public view returns (uint256) {
         require(amountIn > 0, "zero amount");
         require(amountIn <= sold, "exceeds sold");
-        return _area(sold) - _area(sold - amountIn);
+        uint256 payout = _quoteSellNoFee(amountIn);
+        uint256 fee = _fee(payout);
+        return payout - fee;
     }
 
     function currentPrice() external view returns (uint256) {
@@ -157,26 +178,72 @@ mapping(address => bool) public hasBought;
         returns (uint256 cost)
     {
         require(!launched, "campaign launched");
-        cost = quoteBuyExactTokens(amountOut);
-        require(cost <= maxCost, "slippage");
-       if (msg.value < cost) {
-    revert("insufficient value");
-}
+        uint256 costNoFee = _quoteBuyNoFee(amountOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total <= maxCost, "slippage");
+        require(msg.value >= total, "insufficient value");
 
-// Phase 2 counters
-totalBuyVolumeWei += cost;
+// Phase 2 counters (volume excludes protocol fee)
+totalBuyVolumeWei += costNoFee;
 if (!hasBought[msg.sender]) {
     hasBought[msg.sender] = true;
     buyersCount += 1;
 }
 
-sold += amountOut;
-tokenInterface.safeTransfer(msg.sender, amountOut);
-        if (msg.value > cost) {
-            _sendNative(msg.sender, msg.value - cost);
+        sold += amountOut;
+        tokenInterface.safeTransfer(msg.sender, amountOut);
+
+        if (fee > 0) {
+            _sendNative(feeRecipient, fee);
         }
 
-        emit TokensPurchased(msg.sender, amountOut, cost);
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        emit TokensPurchased(msg.sender, amountOut, total);
+        return total;
+    }
+
+    /// @dev Factory-only helper to do an optional initial buy in the same tx as campaign creation.
+    /// Emits the same event shape but attributes the trade to `recipient`.
+    function buyExactTokensFor(address recipient, uint256 amountOut, uint256 maxCost)
+        external
+        payable
+        onlyFactory
+        nonReentrant
+        returns (uint256 total)
+    {
+        require(recipient != address(0), "zero recipient");
+        require(!launched, "campaign launched");
+
+        uint256 costNoFee = _quoteBuyNoFee(amountOut);
+        uint256 fee = _fee(costNoFee);
+        total = costNoFee + fee;
+        require(total <= maxCost, "slippage");
+        require(msg.value >= total, "insufficient value");
+
+        // Phase 2 counters (volume excludes protocol fee)
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[recipient]) {
+            hasBought[recipient] = true;
+            buyersCount += 1;
+        }
+
+        sold += amountOut;
+        tokenInterface.safeTransfer(recipient, amountOut);
+
+        if (fee > 0) {
+            _sendNative(feeRecipient, fee);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        emit TokensPurchased(recipient, amountOut, total);
+        return total;
     }
 
     function sellExactTokens(uint256 amountIn, uint256 minPayout)
@@ -185,17 +252,24 @@ tokenInterface.safeTransfer(msg.sender, amountOut);
         returns (uint256 payout)
     {
         require(!launched, "campaign launched");
-        payout = quoteSellExactTokens(amountIn);
+        uint256 gross = _quoteSellNoFee(amountIn);
+        uint256 fee = _fee(gross);
+        payout = gross - fee; // net to seller
         require(payout >= minPayout, "slippage");
 
         sold -= amountIn;
-tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
-_sendNative(msg.sender, payout);
+        tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
 
-// Phase 2 counters
-totalSellVolumeWei += payout;
+        if (fee > 0) {
+            _sendNative(feeRecipient, fee);
+        }
+        _sendNative(msg.sender, payout);
 
-emit TokensSold(msg.sender, amountIn, payout);
+        // Phase 2 counters (volume excludes protocol fee)
+        totalSellVolumeWei += gross;
+
+        emit TokensSold(msg.sender, amountIn, payout);
+        return payout;
     }
 
     function finalize(uint256 minTokens, uint256 minBnb)
@@ -212,8 +286,22 @@ emit TokensSold(msg.sender, amountIn, payout);
         launched = true;
         finalizedAt = block.timestamp;
 
-        uint256 liquidityValue = (address(this).balance * liquidityBps) /
-            MAX_BPS;
+        // Take protocol fee from the total raised BNB BEFORE creating liquidity.
+        // This ensures the fee is taken from the full raise (and therefore affects both
+        // LP funding and creator payout proportionally).
+        uint256 balanceBefore = address(this).balance;
+        uint256 protocolFee = (balanceBefore * protocolFeeBps) / MAX_BPS;
+        if (protocolFee > 0 && feeRecipient != address(0)) {
+            _sendNative(feeRecipient, protocolFee);
+        }
+
+        // Bonding-curve fees apply only pre-launch. Once liquidity is seeded on the DEX,
+        // this campaign no longer executes trades and the protocol fee should be considered off.
+        // (Also protects against any future code-paths that might read protocolFeeBps post-launch.)
+        protocolFeeBps = 0;
+
+        uint256 remainingAfterFee = address(this).balance;
+        uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 tokensForLp = liquiditySupply;
 
         if (tokensForLp > 0 && liquidityValue > 0) {
@@ -241,14 +329,10 @@ emit TokensSold(msg.sender, amountIn, payout);
             tokenInterface.safeTransfer(owner(), creatorReserve);
         }
 
-        uint256 remainingBalance = address(this).balance;
-        uint256 protocolFee = (remainingBalance * protocolFeeBps) / MAX_BPS;
-        if (protocolFee > 0 && feeRecipient != address(0)) {
-            _sendNative(feeRecipient, protocolFee);
-            remainingBalance -= protocolFee;
-        }
-        if (remainingBalance > 0) {
-            _sendNative(owner(), remainingBalance);
+        // Whatever BNB remains after LP provision (and any LP budget refund) goes to the creator.
+        uint256 creatorPayout = address(this).balance;
+        if (creatorPayout > 0) {
+            _sendNative(owner(), creatorPayout);
         }
 
         // Enable unrestricted token transfers after liquidity is added and funds are distributed
@@ -259,7 +343,7 @@ emit TokensSold(msg.sender, amountIn, payout);
             usedTokens,
             usedBnb,
             protocolFee,
-            remainingBalance
+            creatorPayout
         );
     }
 
