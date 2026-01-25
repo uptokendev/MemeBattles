@@ -49,7 +49,18 @@ type TxRow = {
   maker: string;
   txHash: string;
 };
+const formatChangePct = (ch: number | null): string => {
+  if (ch == null) return "—";
+  const abs = Math.abs(ch);
+  const decimals =
+    abs >= 1 ? 2 :
+    abs >= 0.1 ? 3 :
+    abs >= 0.01 ? 4 :
+    6;
 
+  const glyph = ch > 0 ? "▲" : ch < 0 ? "▼" : "•";
+  return `${glyph} ${abs.toFixed(decimals)}%`;
+};
 const TokenDetails = () => {
   // URL param: /token/:campaignAddress  (address-based)
   const { campaignAddress } = useParams<{ campaignAddress: string }>();
@@ -192,37 +203,71 @@ const TokenDetails = () => {
     }
   };
 
-  const formatTokenFromWei = (wei?: bigint | null): string => {
-    if (wei == null) return "—";
-    try {
-      const raw = ethers.formatUnits(wei, TOKEN_DECIMALS);
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return raw;
-      const pretty = n >= 1 ? n.toFixed(4) : n >= 0.01 ? n.toFixed(6) : n.toFixed(8);
-      return pretty;
-    } catch {
-      return "—";
-    }
-  };
+  const formatDecimalString = (raw: string, maxDp: number): string => {
+  const sign = raw.startsWith("-") ? "-" : "";
+  const s = sign ? raw.slice(1) : raw;
+
+  const [iRaw, fRaw = ""] = s.split(".");
+  const i = (iRaw || "0").replace(/^0+(?=\d)/, "") || "0";
+  const iGrouped = i.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  const f = (fRaw || "")
+    .slice(0, Math.max(0, maxDp))
+    .replace(/0+$/, ""); // trim trailing zeros
+
+  return sign + iGrouped + (f ? `.${f}` : "");
+};
+
+const formatTokenFromWei = (wei?: bigint | null): string => {
+  if (wei == null) return "—";
+  try {
+    const raw = ethers.formatUnits(wei, TOKEN_DECIMALS); // full precision string
+    const n = Number(raw);
+
+    const maxDp =
+      Number.isFinite(n)
+        ? n >= 1
+          ? 4
+          : n >= 0.01
+          ? 6
+          : 8
+        : 8;
+
+    // IMPORTANT: this will turn "8.0000" into "8"
+    return formatDecimalString(raw, maxDp);
+  } catch {
+    return "—";
+  }
+};
   const parseBnbLabel = (input?: string | null): number | null => {
-    if (!input) return null;
-    const s = String(input).trim();
-    if (!s || s === "—") return null;
+  if (!input) return null;
 
-    // Accept forms like:
-    //  - "0.1234 BNB"
-    //  - "1.23k BNB"
-    //  - "1.23k"
-    //  - "0.000123"
-    const m = s.match(/(-?\d+(?:\.\d+)?)(?:\s*([kKmMbBtT]))?/);
-    if (!m) return null;
-    const num = Number(m[1]);
-    if (!Number.isFinite(num)) return null;
+  let s = String(input).trim();
+  if (!s || s === "—") return null;
 
-    const suf = (m[2] ?? "").toLowerCase();
-    const mult = suf === "k" ? 1e3 : suf === "m" ? 1e6 : suf === "b" ? 1e9 : suf === "t" ? 1e12 : 1;
-    return num * mult;
-  };
+  // IMPORTANT: remove unit words so we don't read the "B" in "BNB" as "B = billion"
+  s = s.replace(/bnb/gi, "").trim();
+
+  // normalize commas/spaces
+  s = s.replace(/,/g, ".").replace(/\s+/g, "");
+
+  // optional compact suffix ONLY at the end: k/m/b/t
+  const m = s.match(/^(-?\d+(?:\.\d+)?)([kKmMbBtT])?$/);
+  if (!m) return null;
+
+  const num = Number(m[1]);
+  if (!Number.isFinite(num)) return null;
+
+  const suf = (m[2] ?? "").toLowerCase();
+  const mult =
+    suf === "k" ? 1e3 :
+    suf === "m" ? 1e6 :
+    suf === "b" ? 1e9 :
+    suf === "t" ? 1e12 :
+    1;
+
+  return num * mult;
+};
 
   const formatCompactUsd = (usd: number): string => {
     if (!Number.isFinite(usd)) return "—";
@@ -412,7 +457,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       const start = startPrice ?? end;
       if (start > 0 && end > 0) {
         const pct = ((end - start) / start) * 100;
-        out[k].change = Number.isFinite(pct) ? Number(pct.toFixed(2)) : null;
+        out[k].change = Number.isFinite(pct) ? pct : null;
       } else {
         out[k].change = null;
       }
@@ -883,58 +928,37 @@ setTxs(next);
   const isDexStage = !isCurveTestToken && isGraduated;
 
   const curveProgress = useMemo(() => {
-    // IMPORTANT:
-    // - metrics.sold is TOKEN wei sold on the bonding curve.
-    // - metrics.curveSupply is TOKEN wei available to sell on the curve.
-    // - metrics.graduationTarget is BNB wei required (reserve) to unlock DEX stage.
-    // The contract graduates when either:
-    //   sold >= curveSupply   OR   reserve >= graduationTarget
-
-    const sold = metrics?.sold ?? 0n;
-    const curveSupply = metrics?.curveSupply ?? 0n;
-    const targetWei = metrics?.graduationTarget ?? 0n;
-    const reserveWei = curveReserveWei ?? 0n;
-
-    const soldPct =
-      curveSupply > 0n ? Number(((sold * 10000n) / curveSupply)) / 100 : 0;
-
-    const raisedPct =
-      targetWei > 0n ? Number(((reserveWei * 10000n) / targetWei)) / 100 : 0;
-
-    const reachedSold = curveSupply > 0n && sold >= curveSupply;
-    const reachedRaised = targetWei > 0n && reserveWei >= targetWei;
-
-    // When we are in DEX stage, always show 100%.
+    // Bonding curve progress: sold / graduation target. When in dex stage, treat as 100%.
     if (isDexStage) {
       return {
         pct: 100,
+        soldWei: metrics?.sold ?? null,
+        targetWei: metrics?.graduationTarget ?? null,
         matured: true,
-        soldWei: sold,
-        curveSupplyWei: curveSupply,
-        reserveWei,
-        targetWei,
-        soldPct: 100,
-        raisedPct: 100,
       };
     }
 
-    // Show whichever progress is “more complete”, because graduation triggers on either.
-    const pct = Math.max(
-      0,
-      Math.min(100, Math.max(soldPct, raisedPct))
-    );
+    const sold = metrics?.sold ?? 0n;
+    const target = metrics?.graduationTarget ?? 0n;
+    if (target <= 0n) {
+      return {
+        pct: 0,
+        soldWei: metrics?.sold ?? null,
+        targetWei: metrics?.graduationTarget ?? null,
+        matured: false,
+      };
+    }
+
+    const pctBps = (sold * 10000n) / target; // two decimals
+    const pct = Math.max(0, Math.min(100, Number(pctBps) / 100));
 
     return {
       pct,
-      matured: reachedSold || reachedRaised,
       soldWei: sold,
-      curveSupplyWei: curveSupply,
-      reserveWei,
-      targetWei,
-      soldPct: Math.max(0, Math.min(100, soldPct)),
-      raisedPct: Math.max(0, Math.min(100, raisedPct)),
+      targetWei: target,
+      matured: sold >= target,
     };
-  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationTarget, curveReserveWei]);
+  }, [isDexStage, metrics?.sold, metrics?.graduationTarget]);
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
@@ -1403,7 +1427,7 @@ setTxs(next);
                                       : "text-muted-foreground"
                                   }`}
                                 >
-                                  {ch == null ? "—" : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
+                                  {formatChangePct(ch)}
                                 </span>
                               );
                             })()}
@@ -1795,38 +1819,39 @@ setTxs(next);
             </Tabs>
           </Card>
 
-          <Card className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3" style={{ flex: "1" }}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Bonding curve progress</h3>
-              <span className="text-xs text-muted-foreground">{curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}</span>
-            </div>
-            {/* Custom progress bar (more visible than the default Progress theme) */}
-            <div className="h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
-                style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
-              />
-            </div>
+          <Card
+  className="bg-muted/50 border-muted/50 rounded-3xl shadow-sm p-5 min-h-0 flex flex-col gap-3"
+  style={{ flex: "1" }}
+>
+  <div className="flex items-center justify-between">
+    <h3 className="text-sm font-semibold">Bonding curve progress</h3>
+    <span className="text-xs text-muted-foreground">
+      {curveProgress.matured ? "Graduated" : `${curveProgress.pct.toFixed(2)}%`}
+    </span>
+  </div>
 
-            <div className="text-xs text-muted-foreground space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Raised: {formatBnbFromWei(curveProgress.reserveWei ?? undefined)}</span>
-                <span>Target: {formatBnbFromWei(curveProgress.targetWei ?? undefined)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>
-                  Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)} {tokenData.ticker}
-                </span>
-                <span>
-                  Curve: {formatTokenFromWei(curveProgress.curveSupplyWei ?? undefined)} {tokenData.ticker}
-                </span>
-              </div>
-            </div>
+  {/* Nicer filled bar (ATH-bar style) */}
+  <div className="relative w-full h-3 rounded-full bg-background/40 border border-border/40 overflow-hidden">
+    <div
+      className={`h-full rounded-full ${
+        curveProgress.matured
+          ? "bg-gradient-to-r from-green-500/20 via-green-500/70 to-green-500/20"
+          : "bg-gradient-to-r from-primary/20 via-primary/80 to-primary/20"
+      }`}
+      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
+    />
+    <div className="absolute inset-0 pointer-events-none rounded-full ring-1 ring-inset ring-white/10" />
+  </div>
 
-            <p className="text-xs text-muted-foreground">
-              Graduation triggers when either the reserve reaches the target (BNB) or the curve supply is fully sold.
-            </p>
-          </Card>
+  <div className="text-xs text-muted-foreground flex items-center justify-between font-mono">
+    <span>Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
+    <span>Target: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    Full bar means the bonding curve has graduated and liquidity is on DEX.
+  </p>
+</Card>
 
           {/* Flywheel Statistics - 2/5 height */}
           <Card

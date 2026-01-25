@@ -50,6 +50,42 @@ type TxRow = {
   txHash: string;
 };
 
+// Visual progress bar styled similarly to AthBar (subtle gradient + shimmer)
+const CurveProgressBar = ({ pct }: { pct: number }) => {
+  const safe = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  // Keep the shimmer inside the track.
+  const shimmerLeft = Math.max(0, Math.min(92, safe - 8));
+
+  return (
+    <div className="relative h-2.5 w-full rounded-full bg-muted/30 overflow-hidden border border-border/40">
+      <style>{`
+        @keyframes curveGlowPulse {
+          0%, 100% { opacity: 0.15; transform: translateX(-10px); }
+          50%      { opacity: 0.55; transform: translateX(10px); }
+        }
+      `}</style>
+
+      <div
+        className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary/25 via-primary/60 to-primary transition-[width] duration-300"
+        style={{ width: `${safe}%` }}
+      />
+
+      {/* Shimmer */}
+      {safe > 0 && (
+        <div
+          className="absolute inset-y-0 w-16 pointer-events-none"
+          style={{ left: `${shimmerLeft}%` }}
+        >
+          <div
+            className="h-full w-full bg-gradient-to-r from-transparent via-white/25 to-transparent"
+            style={{ animation: "curveGlowPulse 1.4s ease-in-out infinite" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TokenDetails = () => {
   // URL param: /token/:campaignAddress  (address-based)
   const { campaignAddress } = useParams<{ campaignAddress: string }>();
@@ -405,12 +441,22 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       const within = sorted.find((p) => p.timestamp >= startTs);
       const startPrice = (before ?? within)?.pricePerToken;
 
+      // If we don't have enough datapoints to infer a meaningful change (e.g., a single trade),
+      // return null so the UI shows "—" rather than misleading "0.00%".
+      const inWindowCount = sorted.filter((p) => p.timestamp >= startTs).length;
+      const hasMeaningfulStart = startPrice != null && Number.isFinite(Number(startPrice));
+      const hasMeaningfulEnd = Number.isFinite(Number(end)) && end > 0;
+      const canComputeChange =
+        hasMeaningfulStart &&
+        hasMeaningfulEnd &&
+        (before != null || inWindowCount >= 2);
+
       const volumeWei = sorted
         .filter((p) => p.timestamp >= startTs)
         .reduce((acc, p) => acc + (p.nativeWei ?? 0n), 0n);
 
-      const start = startPrice ?? end;
-      if (start > 0 && end > 0) {
+      if (canComputeChange) {
+        const start = Number(startPrice);
         const pct = ((end - start) / start) * 100;
         out[k].change = Number.isFinite(pct) ? Number(pct.toFixed(2)) : null;
       } else {
@@ -883,58 +929,38 @@ setTxs(next);
   const isDexStage = !isCurveTestToken && isGraduated;
 
   const curveProgress = useMemo(() => {
-    // IMPORTANT:
-    // - metrics.sold is TOKEN wei sold on the bonding curve.
-    // - metrics.curveSupply is TOKEN wei available to sell on the curve.
-    // - metrics.graduationTarget is BNB wei required (reserve) to unlock DEX stage.
-    // The contract graduates when either:
-    //   sold >= curveSupply   OR   reserve >= graduationTarget
-
-    const sold = metrics?.sold ?? 0n;
-    const curveSupply = metrics?.curveSupply ?? 0n;
-    const targetWei = metrics?.graduationTarget ?? 0n;
-    const reserveWei = curveReserveWei ?? 0n;
-
-    const soldPct =
-      curveSupply > 0n ? Number(((sold * 10000n) / curveSupply)) / 100 : 0;
-
-    const raisedPct =
-      targetWei > 0n ? Number(((reserveWei * 10000n) / targetWei)) / 100 : 0;
-
-    const reachedSold = curveSupply > 0n && sold >= curveSupply;
-    const reachedRaised = targetWei > 0n && reserveWei >= targetWei;
-
-    // When we are in DEX stage, always show 100%.
+    // Bonding curve progress: sold / graduation target. When in dex stage, treat as 100%.
     if (isDexStage) {
       return {
         pct: 100,
+        soldWei: metrics?.sold ?? null,
+        // Prefer curveSupply (tokens available on the bonding curve). Fallback to graduationTarget for older contracts.
+        targetWei: metrics?.curveSupply ?? metrics?.graduationTarget ?? null,
         matured: true,
-        soldWei: sold,
-        curveSupplyWei: curveSupply,
-        reserveWei,
-        targetWei,
-        soldPct: 100,
-        raisedPct: 100,
       };
     }
 
-    // Show whichever progress is “more complete”, because graduation triggers on either.
-    const pct = Math.max(
-      0,
-      Math.min(100, Math.max(soldPct, raisedPct))
-    );
+    const sold = metrics?.sold ?? 0n;
+    const target = metrics?.curveSupply ?? metrics?.graduationTarget ?? 0n;
+    if (target <= 0n) {
+      return {
+        pct: 0,
+        soldWei: metrics?.sold ?? null,
+        targetWei: metrics?.curveSupply ?? metrics?.graduationTarget ?? null,
+        matured: false,
+      };
+    }
+
+    const pctBps = (sold * 10000n) / target; // two decimals
+    const pct = Math.max(0, Math.min(100, Number(pctBps) / 100));
 
     return {
       pct,
-      matured: reachedSold || reachedRaised,
       soldWei: sold,
-      curveSupplyWei: curveSupply,
-      reserveWei,
-      targetWei,
-      soldPct: Math.max(0, Math.min(100, soldPct)),
-      raisedPct: Math.max(0, Math.min(100, raisedPct)),
+      targetWei: target,
+      matured: sold >= target,
     };
-  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationTarget, curveReserveWei]);
+  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationTarget]);
 
   const liquidityLabel = isDexStage ? "Liquidity" : "Reserve";
   const liquidityValue = (() => {
@@ -1800,31 +1826,17 @@ setTxs(next);
               <h3 className="text-sm font-semibold">Bonding curve progress</h3>
               <span className="text-xs text-muted-foreground">{curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}</span>
             </div>
-            {/* Custom progress bar (more visible than the default Progress theme) */}
-            <div className="h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
-                style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%` }}
-              />
+            <CurveProgressBar pct={curveProgress.pct} />
+            <div className="text-xs text-muted-foreground flex items-center justify-between">
+              <span>Sold on curve: {formatTokenFromWei(curveProgress.soldWei ?? undefined)}</span>
+              <span>Curve supply: {formatTokenFromWei(curveProgress.targetWei ?? undefined)}</span>
             </div>
-
-            <div className="text-xs text-muted-foreground space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Raised: {formatBnbFromWei(curveProgress.reserveWei ?? undefined)}</span>
-                <span>Target: {formatBnbFromWei(curveProgress.targetWei ?? undefined)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>
-                  Sold: {formatTokenFromWei(curveProgress.soldWei ?? undefined)} {tokenData.ticker}
-                </span>
-                <span>
-                  Curve: {formatTokenFromWei(curveProgress.curveSupplyWei ?? undefined)} {tokenData.ticker}
-                </span>
-              </div>
+            <div className="text-[11px] text-muted-foreground/80 flex items-center justify-between">
+              <span>LP supply: {formatTokenFromWei(metrics?.liquiditySupply ?? undefined)}</span>
+              <span>Creator reserve: {formatTokenFromWei(metrics?.creatorReserve ?? undefined)}</span>
             </div>
-
             <p className="text-xs text-muted-foreground">
-              Graduation triggers when either the reserve reaches the target (BNB) or the curve supply is fully sold.
+              Full bar means the curve supply is fully sold (and the token should be in DEX stage if graduation is configured).
             </p>
           </Card>
 
