@@ -1275,8 +1275,8 @@ setTxs(next);
       {/* Main Content - Single Row */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4 flex-1 min-h-0">
         {/* Left Column - Header, Chart & Transactions (3/4 width) */}
-        <div className="flex flex-col gap-3 md:gap-4 lg:h-full min-h-0 lg:overflow-y-auto pr-1">
-          <div className="lg:sticky lg:top-24">
+        <div className="lg:col-span-3 min-h-0">
+          <div className="flex flex-col gap-3 md:gap-4 lg:h-full min-h-0 lg:overflow-y-auto pr-1">
           {/* Top Header Bar */}
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-6 flex-shrink-0">
             <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
