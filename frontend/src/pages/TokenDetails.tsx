@@ -1524,8 +1524,8 @@ setTxs(next);
 
           {/* Chart */}
           <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[320px]"
-            style={{ flex: isMobile ? "3" : "2" }}
+            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] lg:min-h-[320px] lg:h-auto"
+style={!isMobile ? { flex: "2" } : undefined}
           >
             <div className="flex items-center justify-between px-4 py-2 border-b border-border/40 bg-card/20">
               <div className="flex items-center gap-2 min-w-0">
@@ -1579,6 +1579,7 @@ setTxs(next);
                   </div>
                 )
               ) : (
+                <div className="w-full h-full min-h-[260px]">
                 <CurvePriceChart
                   campaignAddress={campaign?.campaign}
                   mockMode={USE_MOCK_DATA}
@@ -1587,6 +1588,7 @@ setTxs(next);
                   loadingOverride={!USE_MOCK_DATA ? liveCurveLoading : undefined}
                   errorOverride={!USE_MOCK_DATA ? liveCurveError : undefined}
                 />
+                </div>
               )}
             </div>
           </Card>
