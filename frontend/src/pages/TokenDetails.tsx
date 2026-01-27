@@ -22,6 +22,7 @@ import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { TokenComments } from "@/components/token/TokenComments";
 import { AthBar } from "@/components/token/AthBar";
+import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
 import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
@@ -1608,7 +1609,7 @@ setTxs(next);
                       const initial = display ? display.slice(0, 1).toUpperCase() : "C";
 
                       return (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Link
                             to={`/profile?address=${creator}`}
                             className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[240px]"
@@ -1632,6 +1633,16 @@ setTxs(next);
                           <span className="text-[10px] md:text-xs text-muted-foreground">
                             {createdLabel}
                           </span>
+
+                          {/* Upvote CTA */}
+                          {campaignAddress ? (
+                            <UpvoteDialog
+                              campaignAddress={campaignAddress}
+                              buttonVariant="secondary"
+                              buttonSize="sm"
+                              className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
+                            />
+                          ) : null}
                         </div>
                       );
                     })()}
@@ -1916,8 +1927,6 @@ style={!isMobile ? { flex: "2" } : undefined}
                     <tr>
                       <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
                       <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
                       <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
                       <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
                     </tr>

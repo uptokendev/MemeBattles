@@ -139,6 +139,16 @@ export function getFactoryAddress(chainId: SupportedChainId): string {
   return fallback.trim();
 }
 
+export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
+  // Preferred per-chain vars
+  const perChain = (import.meta.env[`VITE_VOTE_TREASURY_ADDRESS_${chainId}`] as string | undefined) ?? "";
+  if (perChain.trim()) return perChain.trim();
+
+  // Backward-compat single var
+  const fallback = (import.meta.env.VITE_VOTE_TREASURY_ADDRESS as string | undefined) ?? "";
+  return fallback.trim();
+}
+
 export function getExplorerTxBase(chainId: SupportedChainId): string {
   return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
 }
