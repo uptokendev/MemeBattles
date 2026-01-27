@@ -317,7 +317,11 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     wallet.chainId,
     !USE_MOCK_DATA
   );
-
+const toSeconds = (ts: number): number => {
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  // If it looks like milliseconds, convert to seconds.
+  return ts > 1e11 ? Math.floor(ts / 1000) : Math.floor(ts);
+};
   type TimeframeKey = "5m" | "1h" | "4h" | "24h";
   const timeframeTiles = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
@@ -341,7 +345,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       const shift = now - lastTs;
       const perTrade = 50_000_000_000_000_000n; // 0.05 BNB per point (demo)
       return mockCurve.map((e) => ({
-        timestamp: e.timestamp + shift,
+        timestamp: toSeconds(e.timestamp + shift),
         pricePerToken: e.pricePerToken,
         nativeWei: perTrade,
       }));
@@ -372,7 +376,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
       USE_MOCK_DATA
         ? (mockGraduated ? mockDexPoints : mockCurvePoints)
         : liveCurvePointsSafe.map((p: any) => ({
-            timestamp: Number(p.timestamp ?? 0),
+            timestamp: toSeconds(Number(p.timestamp ?? 0)),
             pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
             nativeWei: p.nativeWei,
           }));
@@ -460,6 +464,18 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
 
+// Normalize in case the hook returns a scaled value (e.g., 1e18-based).
+const bnbUsd = useMemo(() => {
+  if (bnbUsdPrice == null) return null;
+  const n = Number(bnbUsdPrice);
+  if (!Number.isFinite(n) || n <= 0) return null;
+
+  // BNB price in USD should never be anywhere near 100k+. If it is, it's almost certainly scaled.
+  if (n > 100_000) return n / 1e18;
+
+  return n;
+}, [bnbUsdPrice]);
+
   const marketCapDisplay = useMemo(() => {
     const bnbLabel = tokenData.marketCap;
 
@@ -468,17 +484,17 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     const mcBnb = parseBnbLabel(bnbLabel);
     if (mcBnb == null) return "—";
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(mcBnb * bnbUsdPrice);
+    return formatCompactUsd(mcBnb * bnbUsd);
   }, [displayDenom, tokenData.marketCap, bnbUsdPrice, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
   const marketCapUsdLabel = useMemo(() => {
     const mcBnb = parseBnbLabel(tokenData.marketCap);
     if (mcBnb == null) return null;
-    if (!bnbUsdPrice) return null;
-    const usd = mcBnb * bnbUsdPrice;
+    if (!bnbUsd) return null;
+    const usd = mcBnb * bnbUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
   }, [tokenData.marketCap, bnbUsdPrice]);
 
@@ -490,9 +506,9 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     const priceBnb = parseBnbLabel(bnbLabel);
     if (priceBnb == null) return "—";
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(priceBnb * bnbUsdPrice);
+    return formatCompactUsd(priceBnb * bnbUsd);
   }, [displayDenom, tokenData.price, bnbUsdPrice, bnbUsdLoading]);
 
   const volumeDisplay = useMemo(() => {
@@ -503,9 +519,9 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
     const volBnb = parseBnbLabel(bnbLabel);
     if (volBnb == null) return "—";
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(volBnb * bnbUsdPrice);
+    return formatCompactUsd(volBnb * bnbUsd);
   }, [displayDenom, tokenData.metrics, selectedTimeframe, bnbUsdPrice, bnbUsdLoading]);
 
   const formatBnbOrUsd = useMemo(() => {
@@ -865,7 +881,7 @@ return {
     const priceStr = formatPriceBnb(priceNum);
 
     const txHash = String(p.txHash ?? "");
-    const ts = Number(p.timestamp ?? 0);
+    const ts = toSeconds(Number(p.timestamp ?? 0));
     const id = txHash || `${ts}-${idx}`;
 
     return {
