@@ -214,7 +214,12 @@ const TokenDetails = () => {
     //  - "1.23k BNB"
     //  - "1.23k"
     //  - "0.000123"
-    const m = s.match(/(-?\d+(?:\.\d+)?)(?:\s*([kKmMbBtT]))?/);
+    
+    // IMPORTANT: avoid treating the leading "B" in "BNB" as a suffix.
+
+    const token = s.split(/\s+/)[0] ?? "";
+
+    const m = token.match(/^(-?\d+(?:\.\d+)?)([kKmMbBtT])?$/);
     if (!m) return null;
     const num = Number(m[1]);
     if (!Number.isFinite(num)) return null;
@@ -376,7 +381,7 @@ const toSeconds = (ts: number): number => {
       USE_MOCK_DATA
         ? (mockGraduated ? mockDexPoints : mockCurvePoints)
         : liveCurvePointsSafe.map((p: any) => ({
-            timestamp: toSeconds(Number(p.timestamp ?? 0)),
+            timestamp: Number(p.timestamp ?? 0),
             pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
             nativeWei: p.nativeWei,
           }));
@@ -390,7 +395,8 @@ const toSeconds = (ts: number): number => {
       };
     }
 
-    const sorted = [...points].sort((a, b) => a.timestamp - b.timestamp);
+    const tsOf = (t: number) => (t > 1e11 ? Math.floor(t / 1000) : t); // tolerate ms timestamps
+    const sorted = [...points].sort((a, b) => tsOf(a.timestamp) - tsOf(b.timestamp));
     const latestTradePrice = sorted[sorted.length - 1]?.pricePerToken;
     const end = endPrice ?? latestTradePrice ?? 0;
 
@@ -405,12 +411,12 @@ const toSeconds = (ts: number): number => {
       const startTs = now - windows[k];
 
       // Start price: last trade at/before the window start, else first trade in the window.
-      const before = [...sorted].reverse().find((p) => p.timestamp <= startTs);
-      const within = sorted.find((p) => p.timestamp >= startTs);
+      const before = [...sorted].reverse().find((p) => tsOf(p.timestamp) <= startTs);
+      const within = sorted.find((p) => tsOf(p.timestamp) >= startTs);
       const startPrice = (before ?? within)?.pricePerToken;
 
       const volumeWei = sorted
-        .filter((p) => p.timestamp >= startTs)
+        .filter((p) => tsOf(p.timestamp) >= startTs)
         .reduce((acc, p) => acc + (p.nativeWei ?? 0n), 0n);
 
       const start = startPrice ?? end;
@@ -484,17 +490,17 @@ const bnbUsd = useMemo(() => {
     const mcBnb = parseBnbLabel(bnbLabel);
     if (mcBnb == null) return "—";
 
-    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
+    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(mcBnb * bnbUsd);
+    return formatCompactUsd(mcBnb * bnbUsdPrice);
   }, [displayDenom, tokenData.marketCap, bnbUsdPrice, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
   const marketCapUsdLabel = useMemo(() => {
     const mcBnb = parseBnbLabel(tokenData.marketCap);
     if (mcBnb == null) return null;
-    if (!bnbUsd) return null;
-    const usd = mcBnb * bnbUsd;
+    if (!bnbUsdPrice) return null;
+    const usd = mcBnb * bnbUsdPrice;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
   }, [tokenData.marketCap, bnbUsdPrice]);
 
