@@ -1380,7 +1380,7 @@ setTxs(next);
                     <Button
                       size="sm"
                       variant={displayDenom === "USD" ? "secondary" : "ghost"}
-                      className="h-6 px-2"
+                      className="h-4 px-2"
                       onClick={() => setDisplayDenom("USD")}
                     >
                       USD
@@ -1388,16 +1388,16 @@ setTxs(next);
                     <Button
                       size="sm"
                       variant={displayDenom === "BNB" ? "secondary" : "ghost"}
-                      className="h-6 px-2"
+                      className="h-4 px-2"
                       onClick={() => setDisplayDenom("BNB")}
                     >
                       BNB
                     </Button>
                   </div>
 
-                                    <h2 className="text-lg md:text-2xl font-retro text-foreground">
+                                    <h3 className="text-lg md:text-2xl font-retro text-foreground">
                     {marketCapDisplay}
-                  </h2>
+                  </h3>
                 </div>
               </div>
 
