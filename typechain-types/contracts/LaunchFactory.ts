@@ -63,7 +63,7 @@ export declare namespace LaunchFactory {
     priceSlope: BigNumberish;
     graduationTarget: BigNumberish;
     lpReceiver: AddressLike;
-    initialBuyTokens: BigNumberish;
+    initialBuyBnbWei: BigNumberish;
   };
 
   export type CampaignRequestStructOutput = [
@@ -77,7 +77,7 @@ export declare namespace LaunchFactory {
     priceSlope: bigint,
     graduationTarget: bigint,
     lpReceiver: string,
-    initialBuyTokens: bigint
+    initialBuyBnbWei: bigint
   ] & {
     name: string;
     symbol: string;
@@ -89,7 +89,7 @@ export declare namespace LaunchFactory {
     priceSlope: bigint;
     graduationTarget: bigint;
     lpReceiver: string;
-    initialBuyTokens: bigint;
+    initialBuyBnbWei: bigint;
   };
 
   export type CampaignInfoStruct = {
@@ -133,6 +133,7 @@ export declare namespace LaunchFactory {
 export interface LaunchFactoryInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "campaignImplementation"
       | "campaignsCount"
       | "config"
       | "createCampaign"
@@ -161,6 +162,10 @@ export interface LaunchFactoryInterface extends Interface {
       | "RouterUpdated"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "campaignImplementation",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "campaignsCount",
     values?: undefined
@@ -217,6 +222,10 @@ export interface LaunchFactoryInterface extends Interface {
     values: [AddressLike]
   ): string;
 
+  decodeFunctionResult(
+    functionFragment: "campaignImplementation",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "campaignsCount",
     data: BytesLike
@@ -403,6 +412,8 @@ export interface LaunchFactory extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  campaignImplementation: TypedContractMethod<[], [string], "view">;
+
   campaignsCount: TypedContractMethod<[], [bigint], "view">;
 
   config: TypedContractMethod<
@@ -493,6 +504,9 @@ export interface LaunchFactory extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "campaignImplementation"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "campaignsCount"
   ): TypedContractMethod<[], [bigint], "view">;

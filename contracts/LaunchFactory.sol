@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {LaunchCampaign} from "./LaunchCampaign.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
     // Custom errors to reduce deployed bytecode size (BSC testnet enforces the 24KB limit).
@@ -12,6 +13,7 @@ contract LaunchFactory is Ownable {
     error SymbolEmpty();
     error LogoEmpty();
     error InitBuyValue();
+    error InitBuyTooLarge();
     error RefundFail();
     error RecipientZero();
     error FeeTooHigh();
@@ -61,11 +63,13 @@ contract LaunchFactory is Ownable {
     }
 
     uint256 private constant MAX_BPS = 10_000;
+    uint256 private constant MAX_CREATOR_INIT_BUY = 1 ether;
 
     LaunchConfig public config;
     address public feeRecipient;
     uint256 public protocolFeeBps;
     address public router;
+    address public campaignImplementation;
 
     CampaignInfo[] private _campaigns;
 
@@ -98,7 +102,11 @@ contract LaunchFactory is Ownable {
         feeRecipient = msg.sender;
         // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
         protocolFeeBps = 200;
+        // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
+        campaignImplementation = address(new LaunchCampaign());
     }
+
+    receive() external payable {}
 
     /// @notice Quotes the BNB value required to perform the optional initial buy during createCampaign.
     /// @dev Assumes sold == 0 for the newly created campaign.
@@ -154,9 +162,10 @@ contract LaunchFactory is Ownable {
             factory: address(this)
         });
 
-        LaunchCampaign campaign = new LaunchCampaign(params);
-        campaignAddr = address(campaign);
-        tokenAddr = address(campaign.token());
+        address clone = Clones.clone(campaignImplementation);
+        LaunchCampaign(payable(clone)).initialize(params);
+        campaignAddr = clone;
+        tokenAddr = address(LaunchCampaign(payable(clone)).token());
 
         _campaigns.push(
             CampaignInfo({
@@ -177,13 +186,15 @@ contract LaunchFactory is Ownable {
         // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
         uint256 spent = 0;
         if (req.initialBuyBnbWei > 0) {
-            if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
-            LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
-                msg.sender,
-                0
-            );
-            spent = req.initialBuyBnbWei;
-        }
+    if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
+    if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
+
+    (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
+        msg.sender,
+        0
+    );
+    spent = totalSpent;
+}
         if (msg.value > spent) {
             (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
             if (!ok) revert RefundFail();

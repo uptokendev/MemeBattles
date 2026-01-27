@@ -93,6 +93,8 @@ export interface LaunchCampaignInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "basePrice"
+      | "buyExactBnb"
+      | "buyExactBnbFor"
       | "buyExactTokens"
       | "buyExactTokensFor"
       | "buyersCount"
@@ -106,6 +108,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "finalizedAt"
       | "graduationTarget"
       | "hasBought"
+      | "initialize"
       | "launched"
       | "liquidityBps"
       | "liquiditySupply"
@@ -114,6 +117,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "owner"
       | "priceSlope"
       | "protocolFeeBps"
+      | "quoteBuyExactBnb"
       | "quoteBuyExactTokens"
       | "quoteSellExactTokens"
       | "renounceOwnership"
@@ -138,6 +142,14 @@ export interface LaunchCampaignInterface extends Interface {
   ): EventFragment;
 
   encodeFunctionData(functionFragment: "basePrice", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "buyExactBnb",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "buyExactBnbFor",
+    values: [AddressLike, BigNumberish]
+  ): string;
   encodeFunctionData(
     functionFragment: "buyExactTokens",
     values: [BigNumberish, BigNumberish]
@@ -184,6 +196,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "hasBought",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "initialize",
+    values: [LaunchCampaign.InitParamsStruct]
+  ): string;
   encodeFunctionData(functionFragment: "launched", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "liquidityBps",
@@ -206,6 +222,10 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "protocolFeeBps",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "quoteBuyExactBnb",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "quoteBuyExactTokens",
@@ -247,6 +267,14 @@ export interface LaunchCampaignInterface extends Interface {
 
   decodeFunctionResult(functionFragment: "basePrice", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "buyExactBnb",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "buyExactBnbFor",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "buyExactTokens",
     data: BytesLike
   ): Result;
@@ -286,6 +314,7 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "hasBought", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "launched", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "liquidityBps",
@@ -301,6 +330,10 @@ export interface LaunchCampaignInterface extends Interface {
   decodeFunctionResult(functionFragment: "priceSlope", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "quoteBuyExactBnb",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -464,6 +497,18 @@ export interface LaunchCampaign extends BaseContract {
 
   basePrice: TypedContractMethod<[], [bigint], "view">;
 
+  buyExactBnb: TypedContractMethod<
+    [minTokensOut: BigNumberish],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+
+  buyExactBnbFor: TypedContractMethod<
+    [recipient: AddressLike, minTokensOut: BigNumberish],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+
   buyExactTokens: TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
     [bigint],
@@ -502,6 +547,12 @@ export interface LaunchCampaign extends BaseContract {
 
   hasBought: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
 
+  initialize: TypedContractMethod<
+    [params: LaunchCampaign.InitParamsStruct],
+    [void],
+    "nonpayable"
+  >;
+
   launched: TypedContractMethod<[], [boolean], "view">;
 
   liquidityBps: TypedContractMethod<[], [bigint], "view">;
@@ -517,6 +568,18 @@ export interface LaunchCampaign extends BaseContract {
   priceSlope: TypedContractMethod<[], [bigint], "view">;
 
   protocolFeeBps: TypedContractMethod<[], [bigint], "view">;
+
+  quoteBuyExactBnb: TypedContractMethod<
+    [totalInWei: BigNumberish],
+    [
+      [bigint, bigint, bigint] & {
+        tokensOut: bigint;
+        totalCostWei: bigint;
+        feeWei: bigint;
+      }
+    ],
+    "view"
+  >;
 
   quoteBuyExactTokens: TypedContractMethod<
     [amountOut: BigNumberish],
@@ -567,6 +630,20 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "basePrice"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "buyExactBnb"
+  ): TypedContractMethod<
+    [minTokensOut: BigNumberish],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "buyExactBnbFor"
+  ): TypedContractMethod<
+    [recipient: AddressLike, minTokensOut: BigNumberish],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
   getFunction(
     nameOrSignature: "buyExactTokens"
   ): TypedContractMethod<
@@ -619,6 +696,13 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "hasBought"
   ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
   getFunction(
+    nameOrSignature: "initialize"
+  ): TypedContractMethod<
+    [params: LaunchCampaign.InitParamsStruct],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "launched"
   ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
@@ -642,6 +726,19 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "protocolFeeBps"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "quoteBuyExactBnb"
+  ): TypedContractMethod<
+    [totalInWei: BigNumberish],
+    [
+      [bigint, bigint, bigint] & {
+        tokensOut: bigint;
+        totalCostWei: bigint;
+        feeWei: bigint;
+      }
+    ],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "quoteBuyExactTokens"
   ): TypedContractMethod<[amountOut: BigNumberish], [bigint], "view">;

@@ -4,6 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { X, ImageIcon, Info, BookOpen } from "lucide-react";
 import { z } from "zod";
+import { ethers } from "ethers";
 import ProcessingCard from "@/components/ui/processing-card";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
@@ -45,7 +46,7 @@ const Create = () => {
   const wallet = useWallet();
   const { createCampaign, fetchCampaigns } = useLaunchpad();
 
-  // Optional creator initial buy (in BNB) performed in the same tx.
+  // Optional creator initial buy (tokens, 18 decimals) performed in the same tx.
   const [initialBuyBnb, setInitialBuyBnb] = useState("");
 
   // UPDATED: async and actually calls the contract
@@ -88,6 +89,23 @@ const Create = () => {
       return;
     }
 
+
+    // Optional creator initial buy validation (max 1 BNB to keep launches fair)
+    const initialBuyBnbTrim = (initialBuyBnb ?? "").trim();
+    if (initialBuyBnbTrim) {
+      let wei: bigint;
+      try {
+        wei = ethers.parseEther(initialBuyBnbTrim);
+      } catch {
+        toast.error("Initial buy must be a valid BNB amount (e.g. 0.1)");
+        return;
+      }
+      if (wei > ethers.parseEther("1")) {
+        toast.error("Initial buy max is 1 BNB");
+        return;
+      }
+    }
+
     try {
       // Show nice processing overlay
       startProcessing();
@@ -126,12 +144,13 @@ const Create = () => {
         xAccount: formData.twitter || "",
         website: formData.website || "",
         extraLink: formData.otherLink || "",
-        initialBuyBnb, // <-- BNB string, e.g. "0.05"
+        initialBuyBnb,
         basePriceWei: 0n,
         priceSlopeWei: 0n,
         graduationTargetWei: 0n,
-        lpReceiver: "",
-      });   
+        lpReceiver: "", // lets factory use msg.sender logic
+      });
+
       toast.success("Campaign created on-chain!");
 
       // Best-effort: resolve the created campaign address so we can redirect using campaignAddress-only routes.
@@ -448,6 +467,7 @@ const Create = () => {
                 />
                 <p className="mt-2 text-xs text-muted-foreground">
                   If set, the creator will spend this amount of BNB to buy tokens in the same transaction as campaign creation.
+                  Max 1 BNB.
                 </p>
               </div>
 

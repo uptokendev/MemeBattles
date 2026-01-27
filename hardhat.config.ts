@@ -39,8 +39,9 @@ const config: HardhatUserConfig = {
   solidity: {
   version: "0.8.24",
   settings: {
-    optimizer: { enabled: true, runs: 1 },
+    optimizer: { enabled: true, runs: 1 }, // low runs shrinks code size
     viaIR: true,
+    metadata: { bytecodeHash: "none" } // removes metadata hash bytes
   },
 },
 

@@ -39,28 +39,28 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 private constant WAD = 1e18;
     uint256 private constant MAX_BPS = 10_000;
 
-    LaunchToken public immutable token;
-    IERC20 private immutable tokenInterface;
-    IPancakeRouter02 public immutable router;
-    address public immutable factory;
-    address public immutable feeRecipient;
-    address public immutable lpReceiver;
+    LaunchToken public token;
+    IERC20 private tokenInterface;
+    IPancakeRouter02 public router;
+    address public factory;
+    address public feeRecipient;
+    address public lpReceiver;
 
     string public logoURI;
     string public xAccount;
     string public website;
     string public extraLink;
 
-    uint256 public immutable basePrice;
-    uint256 public immutable priceSlope;
-    uint256 public immutable graduationTarget;
-    uint256 public immutable liquidityBps;
-    uint256 public immutable protocolFeeBps;
+    uint256 public basePrice;
+    uint256 public priceSlope;
+    uint256 public graduationTarget;
+    uint256 public liquidityBps;
+    uint256 public protocolFeeBps;
 
-    uint256 public immutable totalSupply;
-    uint256 public immutable curveSupply;
-    uint256 public immutable liquiditySupply;
-    uint256 public immutable creatorReserve;
+    uint256 public totalSupply;
+    uint256 public curveSupply;
+    uint256 public liquiditySupply;
+    uint256 public creatorReserve;
 
     uint256 public sold;
     bool public launched;
@@ -87,57 +87,71 @@ mapping(address => bool) public hasBought;
         uint256 creatorPayout
     );
 
-    constructor(InitParams memory params) Ownable(params.creator) {
-        require(params.totalSupply > 0, "invalid supply");
-        require(params.curveBps > 0 && params.curveBps < MAX_BPS, "curve bps");
-        require(
-            params.curveBps + params.liquidityTokenBps <= MAX_BPS,
-            "portion overflow"
-        );
-        require(params.basePrice > 0, "price zero");
-        require(params.priceSlope > 0, "slope zero");
-        require(params.router != address(0), "router zero");
-        require(params.creator != address(0), "creator zero");
-        require(params.liquidityBps <= MAX_BPS, "liquidity bps");
-        require(params.protocolFeeBps <= MAX_BPS, "protocol bps");
-        require(bytes(params.logoURI).length > 0, "logo uri");
+    bool private _initialized;
 
-        logoURI = params.logoURI;
-        xAccount = params.xAccount;
-        website = params.website;
-        extraLink = params.extraLink;
-        basePrice = params.basePrice;
-        priceSlope = params.priceSlope;
-        graduationTarget = params.graduationTarget;
-        liquidityBps = params.liquidityBps;
-        protocolFeeBps = params.protocolFeeBps;
-        factory = params.factory;
-        feeRecipient = params.feeRecipient;
-        lpReceiver = params.lpReceiver == address(0)
-            ? params.creator
-            : params.lpReceiver;
-        router = IPancakeRouter02(params.router);
+/// @dev The implementation contract is deployed once and locked in its constructor.
+///      Clones start uninitialized and must call initialize() exactly once.
+constructor() Ownable(address(1)) {
+    _initialized = true;
+}
 
-        totalSupply = params.totalSupply;
-        curveSupply = (params.totalSupply * params.curveBps) / MAX_BPS;
-        liquiditySupply =
-            (params.totalSupply * params.liquidityTokenBps) /
-            MAX_BPS;
-        creatorReserve = params.totalSupply - curveSupply - liquiditySupply;
-        require(liquiditySupply > 0, "liquidity zero");
-        require(creatorReserve >= 0, "creator portion");
+function initialize(InitParams memory params) external {
+    require(!_initialized, "initialized");
+    _initialized = true;
 
-        token = new LaunchToken(
-            params.name,
-            params.symbol,
-            params.totalSupply,
-            address(this)
-        );
-        tokenInterface = IERC20(address(token));
-        token.mint(address(this), params.totalSupply);
-    }
+    require(params.totalSupply > 0, "invalid supply");
+    require(params.curveBps > 0 && params.curveBps < MAX_BPS, "curve bps");
+    require(
+        params.curveBps + params.liquidityTokenBps <= MAX_BPS,
+        "portion overflow"
+    );
+    require(params.basePrice > 0, "price zero");
+    require(params.priceSlope > 0, "slope zero");
+    require(params.router != address(0), "router zero");
+    require(params.creator != address(0), "creator zero");
+    require(params.liquidityBps <= MAX_BPS, "liquidity bps");
+    require(params.protocolFeeBps <= MAX_BPS, "protocol bps");
+    require(bytes(params.logoURI).length > 0, "logo uri");
 
-    receive() external payable {}
+    // set owner to creator
+    _transferOwnership(params.creator);
+
+    logoURI = params.logoURI;
+    xAccount = params.xAccount;
+    website = params.website;
+    extraLink = params.extraLink;
+    basePrice = params.basePrice;
+    priceSlope = params.priceSlope;
+    graduationTarget = params.graduationTarget;
+    liquidityBps = params.liquidityBps;
+    protocolFeeBps = params.protocolFeeBps;
+    factory = params.factory;
+    feeRecipient = params.feeRecipient;
+    lpReceiver = params.lpReceiver == address(0)
+        ? params.creator
+        : params.lpReceiver;
+    router = IPancakeRouter02(params.router);
+
+    totalSupply = params.totalSupply;
+    curveSupply = (params.totalSupply * params.curveBps) / MAX_BPS;
+    liquiditySupply =
+        (params.totalSupply * params.liquidityTokenBps) /
+        MAX_BPS;
+    creatorReserve = params.totalSupply - curveSupply - liquiditySupply;
+    require(liquiditySupply > 0, "liquidity zero");
+    require(creatorReserve >= 0, "creator portion");
+
+    token = new LaunchToken(
+        params.name,
+        params.symbol,
+        params.totalSupply,
+        address(this)
+    );
+    tokenInterface = IERC20(address(token));
+    token.mint(address(this), params.totalSupply);
+}
+
+receive() external payable {}
 
     function _fee(uint256 amountWei) internal view returns (uint256) {
         if (protocolFeeBps == 0) return 0;

@@ -6,7 +6,10 @@ import { quoteBuyExactTokens } from "./helpers/math";
 describe("LaunchFactory", function () {
   it("constructor requires router != 0 and sets defaults", async () => {
     const Factory = await ethers.getContractFactory("LaunchFactory");
-    await expect(Factory.deploy(ethers.ZeroAddress)).to.be.revertedWith("router zero");
+    await expect(Factory.deploy(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+      Factory,
+      "RouterZero"
+    );
 
     const Router = await ethers.getContractFactory("MockRouter");
     const router = await Router.deploy(ethers.ZeroAddress, ethers.ZeroAddress);
@@ -21,7 +24,6 @@ describe("LaunchFactory", function () {
     const { factory } = await deployCoreFixture();
     expect(await factory.quoteInitialBuyTotal(0n, 0n, 0n)).to.eq(0n);
 
-    const cfg = await factory.config();
     const base = 777n;
     const slope = 999n;
     const amount = ethers.parseEther("10");
@@ -45,14 +47,19 @@ describe("LaunchFactory", function () {
       priceSlope: 0n,
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
-      initialBuyBnbWei: 0n
+      initialBuyBnbWei: 0n,
     };
 
-    await expect(factory.connect(creator).createCampaign(bad as any)).to.be.revertedWith("name");
-    await expect(factory.connect(creator).createCampaign({ ...bad, name: "N", symbol: "" } as any))
-      .to.be.revertedWith("symbol");
-    await expect(factory.connect(creator).createCampaign({ ...bad, name: "N", symbol: "S", logoURI: "" } as any))
-      .to.be.revertedWith("logo uri");
+    await expect(factory.connect(creator).createCampaign(bad as any)).to.be.revertedWithCustomError(
+      factory,
+      "NameEmpty"
+    );
+    await expect(
+      factory.connect(creator).createCampaign({ ...bad, name: "N", symbol: "" } as any)
+    ).to.be.revertedWithCustomError(factory, "SymbolEmpty");
+    await expect(
+      factory.connect(creator).createCampaign({ ...bad, name: "N", symbol: "S", logoURI: "" } as any)
+    ).to.be.revertedWithCustomError(factory, "LogoEmpty");
 
     const req = { ...bad, name: "MyToken", symbol: "MYT", logoURI: "ipfs://logo" };
     const tx = await factory.connect(creator).createCampaign(req as any, { value: ethers.parseEther("1") });
@@ -72,8 +79,8 @@ describe("LaunchFactory", function () {
     expect(page[0].campaign).to.eq(info.campaign);
 
     // bounds
-    await expect(factory.getCampaign(1n)).to.be.revertedWith("out of bounds");
-    await expect(factory.getCampaignPage(2n, 1n)).to.be.revertedWith("offset");
+    await expect(factory.getCampaign(1n)).to.be.revertedWithCustomError(factory, "OutOfBounds");
+    await expect(factory.getCampaignPage(2n, 1n)).to.be.revertedWithCustomError(factory, "Offset");
   });
 
   it("createCampaign optional initialBuy: requires enough value; performs buy; refunds extra", async () => {
@@ -90,14 +97,17 @@ describe("LaunchFactory", function () {
       priceSlope: 0n,
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
-      initialBuyBnbWei: ethers.parseEther("1")
+      initialBuyBnbWei: ethers.parseEther("1"),
     };
 
-    await expect(factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei - 1n }))
-      .to.be.revertedWith("INIT_BUY_VALUE");
+    await expect(
+      factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei - 1n })
+    ).to.be.revertedWithCustomError(factory, "InitBuyValue");
 
     const feeBefore = await ethers.provider.getBalance(await feeRecipient.getAddress());
-    const tx = await factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei + ethers.parseEther("0.5") });
+    const tx = await factory
+      .connect(creator)
+      .createCampaign(req as any, { value: req.initialBuyBnbWei + ethers.parseEther("0.5") });
     const receipt = await tx.wait();
 
     const info = await factory.getCampaign(0n);
@@ -111,26 +121,63 @@ describe("LaunchFactory", function () {
     // Fee recipient should have received the bonding-curve fee from the initial buy (not affected by creator gas)
     const feeAfter = await ethers.provider.getBalance(await feeRecipient.getAddress());
     expect(feeAfter).to.be.gt(feeBefore);
+
     // Campaign retains the no-fee portion of the buy (nonzero)
     expect(await ethers.provider.getBalance(info.campaign)).to.be.gt(0n);
 
     expect(receipt).to.not.eq(null);
   });
 
+  it("createCampaign optional initialBuy: reverts when creator initial buy exceeds 1 BNB cap", async () => {
+    const { factory, creator } = await deployCoreFixture();
+
+    const req = {
+      name: "MyToken",
+      symbol: "MYT",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: ethers.parseEther("1.01"),
+    };
+
+    await expect(
+      factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei })
+    ).to.be.revertedWithCustomError(factory, "InitBuyTooLarge");
+  });
+
   it("owner-only setters with validation + events", async () => {
     const { factory, owner, alice } = await deployCoreFixture();
 
-    await expect(factory.connect(alice).setRouter(await alice.getAddress()))
-      .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    await expect(factory.connect(alice).setRouter(await alice.getAddress())).to.be.revertedWithCustomError(
+      factory,
+      "OwnableUnauthorizedAccount"
+    );
 
-    await expect(factory.connect(owner).setRouter(ethers.ZeroAddress)).to.be.revertedWith("router zero");
-    await expect(factory.connect(owner).setFeeRecipient(ethers.ZeroAddress)).to.be.revertedWith("recipient zero");
-    await expect(factory.connect(owner).setProtocolFee(1001n)).to.be.revertedWith("fee too high");
+    await expect(factory.connect(owner).setRouter(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+      factory,
+      "RouterZero"
+    );
+    await expect(factory.connect(owner).setFeeRecipient(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+      factory,
+      "RecipientZero"
+    );
+    await expect(factory.connect(owner).setProtocolFee(1001n)).to.be.revertedWithCustomError(
+      factory,
+      "FeeTooHigh"
+    );
 
     await expect(factory.connect(owner).setProtocolFee(123n)).to.emit(factory, "ProtocolFeeUpdated").withArgs(123n);
     expect(await factory.protocolFeeBps()).to.eq(123n);
 
-    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(
+      ethers.ZeroAddress,
+      ethers.ZeroAddress
+    );
     await expect(factory.connect(owner).setRouter(await newRouter.getAddress()))
       .to.emit(factory, "RouterUpdated")
       .withArgs(await newRouter.getAddress());
@@ -139,24 +186,28 @@ describe("LaunchFactory", function () {
       .to.emit(factory, "FeeRecipientUpdated")
       .withArgs(await alice.getAddress());
 
-    await expect(factory.connect(owner).setConfig({
-      totalSupply: 0n,
-      curveBps: 5000n,
-      liquidityTokenBps: 4000n,
-      basePrice: 1n,
-      priceSlope: 1n,
-      graduationTarget: 1n,
-      liquidityBps: 8000n
-    })).to.be.revertedWith("supply zero");
+    await expect(
+      factory.connect(owner).setConfig({
+        totalSupply: 0n,
+        curveBps: 5000n,
+        liquidityTokenBps: 4000n,
+        basePrice: 1n,
+        priceSlope: 1n,
+        graduationTarget: 1n,
+        liquidityBps: 8000n,
+      })
+    ).to.be.revertedWithCustomError(factory, "SupplyZero");
 
-    await expect(factory.connect(owner).setConfig({
-      totalSupply: 1n,
-      curveBps: 0n,
-      liquidityTokenBps: 0n,
-      basePrice: 1n,
-      priceSlope: 1n,
-      graduationTarget: 1n,
-      liquidityBps: 8000n
-    })).to.be.revertedWith("invalid curve bps");
+    await expect(
+      factory.connect(owner).setConfig({
+        totalSupply: 1n,
+        curveBps: 0n,
+        liquidityTokenBps: 0n,
+        basePrice: 1n,
+        priceSlope: 1n,
+        graduationTarget: 1n,
+        liquidityBps: 8000n,
+      })
+    ).to.be.revertedWithCustomError(factory, "InvalidCurveBps");
   });
 });
