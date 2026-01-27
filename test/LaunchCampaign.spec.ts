@@ -20,7 +20,7 @@ async function createCampaignFixture() {
     priceSlope: 0n,
     graduationTarget: 0n,
     lpReceiver: await fx.lpReceiver.getAddress(),
-    initialBuyTokens: 0n
+    initialBuyBnbWei: 0n
   };
 
   await factory.connect(creator).createCampaign(req as any);

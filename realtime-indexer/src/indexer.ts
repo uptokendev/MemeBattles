@@ -573,7 +573,11 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     let rpcIdx = 0;
 
     const makeProvider = () =>
-      new ethers.JsonRpcProvider(rpcList[rpcIdx], undefined, {
+      // Provide a static network to avoid "failed to detect network" churn in some hosts.
+      new ethers.JsonRpcProvider(rpcList[rpcIdx], {
+        chainId: chain.chainId,
+        name: chain.chainId === 97 ? "bsc-testnet" : "bsc"
+      }, {
         // reduce batch eth_getLogs pressure on public endpoints
         batchMaxCount: 1,
         batchStallTime: 0

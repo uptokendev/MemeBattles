@@ -545,7 +545,7 @@ marketCap = formatBnbFromWei(mcWei);
       xAccount: string;
       website: string;
       extraLink: string;
-      initialBuyTokens?: string;
+      initialBuyBnb?: string;
       basePriceWei?: bigint;
       priceSlopeWei?: bigint;
       graduationTargetWei?: bigint;
@@ -562,27 +562,20 @@ marketCap = formatBnbFromWei(mcWei);
 
       const basePriceWei = params.basePriceWei ?? 0n;
       const priceSlopeWei = params.priceSlopeWei ?? 0n;
-      const initialBuyTokensWei = (() => {
-        const s = (params.initialBuyTokens ?? "").trim();
+      // Creator initial buy is now specified in BNB (exact value spent in the same tx).
+      // This avoids huge "token count" inputs causing UX and quoting issues.
+      const initialBuyBnbWei = (() => {
+        const s = String(params.initialBuyBnb ?? "").trim();
         if (!s) return 0n;
         try {
-          const v = ethers.parseUnits(s, 18);
+          const v = ethers.parseEther(s);
           return v > 0n ? v : 0n;
         } catch {
-          throw new Error("Invalid initial buy amount");
+          throw new Error("Invalid initial buy BNB amount");
         }
       })();
 
-      let valueToSend = 0n;
-      if (initialBuyTokensWei > 0n) {
-        const reader = getFactoryRead();
-        if (!reader) throw new Error("No provider available");
-        valueToSend = await reader.quoteInitialBuyTotal(
-          initialBuyTokensWei,
-          basePriceWei,
-          priceSlopeWei
-        );
-      }
+      const valueToSend = initialBuyBnbWei;
 
       const tx = await writer.createCampaign(
         {
@@ -596,7 +589,7 @@ marketCap = formatBnbFromWei(mcWei);
         priceSlope: priceSlopeWei,
         graduationTarget: params.graduationTargetWei ?? 0n,
         lpReceiver: params.lpReceiver || ethers.ZeroAddress,
-        initialBuyTokens: initialBuyTokensWei,
+        initialBuyBnbWei: initialBuyBnbWei,
         },
         { value: valueToSend }
       );

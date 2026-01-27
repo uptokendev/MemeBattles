@@ -33,10 +33,11 @@ export const ENV = {
   REPAIR_REWIND_BLOCKS: Number(process.env.REPAIR_REWIND_BLOCKS || 200),
 
   // Poll interval for the always-on indexer loop in server.ts
-  // Public RPCs will rate limit if this is too aggressive.
-  INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 15000),
+  // NOTE: Testnet UX benefits from lower latency; tune up for mainnet.
+  INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 5000),
 
-  CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "5"),
+  // Lower default confirmations for faster UI updates (especially on testnet).
+  CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),
 
   PORT: Number(process.env.PORT || "3000")
 };

@@ -376,7 +376,7 @@
             },
             {
               "internalType": "uint256",
-              "name": "initialBuyTokens",
+              "name": "initialBuyBnbWei",
               "type": "uint256"
             }
           ],

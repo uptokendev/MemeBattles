@@ -45,7 +45,7 @@ describe("LaunchFactory", function () {
       priceSlope: 0n,
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
-      initialBuyTokens: 0n
+      initialBuyBnbWei: 0n
     };
 
     await expect(factory.connect(creator).createCampaign(bad as any)).to.be.revertedWith("name");
@@ -90,26 +90,23 @@ describe("LaunchFactory", function () {
       priceSlope: 0n,
       graduationTarget: 0n,
       lpReceiver: ethers.ZeroAddress,
-      initialBuyTokens: ethers.parseEther("10")
+      initialBuyBnbWei: ethers.parseEther("1")
     };
 
-    // compute required total via factory's quote helper
-    const cfg = await factory.config();
-    const total = await factory.quoteInitialBuyTotal(req.initialBuyTokens, cfg.basePrice, cfg.priceSlope);
-
-    await expect(factory.connect(creator).createCampaign(req as any, { value: total - 1n }))
+    await expect(factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei - 1n }))
       .to.be.revertedWith("INIT_BUY_VALUE");
 
     const feeBefore = await ethers.provider.getBalance(await feeRecipient.getAddress());
-    const tx = await factory.connect(creator).createCampaign(req as any, { value: total + ethers.parseEther("0.5") });
+    const tx = await factory.connect(creator).createCampaign(req as any, { value: req.initialBuyBnbWei + ethers.parseEther("0.5") });
     const receipt = await tx.wait();
 
     const info = await factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     const token = await ethers.getContractAt("LaunchToken", await campaign.token());
 
-    expect(await campaign.sold()).to.eq(req.initialBuyTokens);
-    expect(await token.balanceOf(await creator.getAddress())).to.eq(req.initialBuyTokens);
+    // Exact-BNB buy: token amount is determined by the curve, so just assert nonzero.
+    expect(await campaign.sold()).to.be.gt(0n);
+    expect(await token.balanceOf(await creator.getAddress())).to.be.gt(0n);
 
     // Fee recipient should have received the bonding-curve fee from the initial buy (not affected by creator gas)
     const feeAfter = await ethers.provider.getBalance(await feeRecipient.getAddress());

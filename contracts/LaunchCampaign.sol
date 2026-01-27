@@ -159,6 +159,44 @@ mapping(address => bool) public hasBought;
         return cost + _fee(cost);
     }
 
+    /// @notice Quote the maximum tokens obtainable for an exact total BNB input (including protocol fee).
+    /// @dev Uses a monotonic binary search over amountOut to avoid fragile quadratic math.
+    /// Returns (tokensOut, totalCostWei, feeWei) where totalCostWei <= totalInWei.
+    function quoteBuyExactBnb(uint256 totalInWei)
+        public
+        view
+        returns (uint256 tokensOut, uint256 totalCostWei, uint256 feeWei)
+    {
+        if (totalInWei == 0) return (0, 0, 0);
+        if (launched) return (0, 0, 0);
+
+        uint256 remaining = curveSupply - sold;
+        if (remaining == 0) return (0, 0, 0);
+
+        uint256 lo = 0;
+        uint256 hi = remaining;
+
+        // Find max x such that cost(x) <= totalInWei
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) / 2;
+            uint256 costNoFee = _quoteBuyNoFee(mid);
+            uint256 fee = _fee(costNoFee);
+            uint256 total = costNoFee + fee;
+
+            if (total <= totalInWei) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+
+        if (lo == 0) return (0, 0, 0);
+        uint256 costNoFeeFinal = _quoteBuyNoFee(lo);
+        feeWei = _fee(costNoFeeFinal);
+        totalCostWei = costNoFeeFinal + feeWei;
+        return (lo, totalCostWei, feeWei);
+    }
+
     function quoteSellExactTokens(uint256 amountIn) public view returns (uint256) {
         require(amountIn > 0, "zero amount");
         require(amountIn <= sold, "exceeds sold");
@@ -206,6 +244,46 @@ if (!hasBought[msg.sender]) {
         return total;
     }
 
+    /// @notice Buy as many tokens as possible for the exact msg.value provided (incl. protocol fee).
+    /// @param minTokensOut Minimum acceptable tokens (slippage protection).
+    function buyExactBnb(uint256 minTokensOut)
+        external
+        payable
+        nonReentrant
+        returns (uint256 tokensOut, uint256 totalSpent)
+    {
+        require(!launched, "campaign launched");
+        (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
+        require(tokensOut > 0, "zero amount");
+        require(tokensOut >= minTokensOut, "slippage");
+
+        uint256 costNoFee = _quoteBuyNoFee(tokensOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total == totalSpent, "quote mismatch");
+
+        // Phase 2 counters (volume excludes protocol fee)
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[msg.sender]) {
+            hasBought[msg.sender] = true;
+            buyersCount += 1;
+        }
+
+        sold += tokensOut;
+        tokenInterface.safeTransfer(msg.sender, tokensOut);
+
+        if (fee > 0) {
+            _sendNative(feeRecipient, fee);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        emit TokensPurchased(msg.sender, tokensOut, total);
+        return (tokensOut, total);
+    }
+
     /// @dev Factory-only helper to do an optional initial buy in the same tx as campaign creation.
     /// Emits the same event shape but attributes the trade to `recipient`.
     function buyExactTokensFor(address recipient, uint256 amountOut, uint256 maxCost)
@@ -244,6 +322,49 @@ if (!hasBought[msg.sender]) {
 
         emit TokensPurchased(recipient, amountOut, total);
         return total;
+    }
+
+    /// @dev Factory-only helper to do an optional initial buy with exact BNB in the same tx as campaign creation.
+    /// Attributes the trade to `recipient`.
+    function buyExactBnbFor(address recipient, uint256 minTokensOut)
+        external
+        payable
+        onlyFactory
+        nonReentrant
+        returns (uint256 tokensOut, uint256 totalSpent)
+    {
+        require(recipient != address(0), "zero recipient");
+        require(!launched, "campaign launched");
+
+        (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
+        require(tokensOut > 0, "zero amount");
+        require(tokensOut >= minTokensOut, "slippage");
+
+        uint256 costNoFee = _quoteBuyNoFee(tokensOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total == totalSpent, "quote mismatch");
+
+        // Phase 2 counters (volume excludes protocol fee)
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[recipient]) {
+            hasBought[recipient] = true;
+            buyersCount += 1;
+        }
+
+        sold += tokensOut;
+        tokenInterface.safeTransfer(recipient, tokensOut);
+
+        if (fee > 0) {
+            _sendNative(feeRecipient, fee);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        emit TokensPurchased(recipient, tokensOut, total);
+        return (tokensOut, total);
     }
 
     function sellExactTokens(uint256 amountIn, uint256 minPayout)

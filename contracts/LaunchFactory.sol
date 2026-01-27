@@ -57,7 +57,7 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         address lpReceiver;
-        uint256 initialBuyTokens; // optional: buy tokens for the creator in the create tx
+        uint256 initialBuyBnbWei; // optional: buy tokens for the creator using exact BNB in the create tx
     }
 
     uint256 private constant MAX_BPS = 10_000;
@@ -174,19 +174,15 @@ contract LaunchFactory is Ownable {
         );
 
         // Optional initial buy for the creator, executed within the same transaction.
-        // Any extra msg.value is refunded.
+        // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
         uint256 spent = 0;
-        if (req.initialBuyTokens > 0) {
-            uint256 total = LaunchCampaign(payable(campaignAddr)).quoteBuyExactTokens(
-                req.initialBuyTokens
-            );
-            if (msg.value < total) revert InitBuyValue();
-            LaunchCampaign(payable(campaignAddr)).buyExactTokensFor{value: total}(
+        if (req.initialBuyBnbWei > 0) {
+            if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
+            LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
                 msg.sender,
-                req.initialBuyTokens,
-                total
+                0
             );
-            spent = total;
+            spent = req.initialBuyBnbWei;
         }
         if (msg.value > spent) {
             (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
