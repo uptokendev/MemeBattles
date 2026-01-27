@@ -1930,7 +1930,7 @@ style={!isMobile ? { flex: "2" } : undefined}
               <TabsContent value="buy" className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="bg-emerald-500/15 text-emerald-200 border-emerald-500/30 h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground" onClick={toggleTradeInputDenom}>{tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}</Button></div>
+                    <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground hover:bg-emerald-500/15 text-emerald-200 border-emerald-500/30" onClick={toggleTradeInputDenom}>{tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}</Button></div>
                     <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
                   </div>
                   <div className="relative">
