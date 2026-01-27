@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 function parseCompactUsd(input?: string | null): number | null {
   if (!input) return null;
-  const s = String(input).trim();
-  if (!s || s === "—") return null;
+  const raw = String(input).trim();
+  if (!raw || raw === "—") return null;
+
+  // Only parse the first token (prevents misreading trailing units like "BNB").
+  const first = raw.split(/\s+/)[0] ?? "";
+  if (!first) return null;
 
   // Accept forms like "$340.1K", "340.1K", "$1.2M", "$12,345", "€12.3K", etc.
-  const cleaned = s
+  const cleaned = first
     .replace(/[,\s]/g, "")
     .replace(/^[^\d\-\.]+/, ""); // strip leading currency symbols/letters
 
@@ -55,6 +59,9 @@ type AthBarProps = {
 export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
   const current = useMemo(() => parseCompactUsd(currentLabel), [currentLabel]);
 
+  // Bump the storage format version to avoid showing stale ATH values from older (buggy) USD calculations.
+  const storageKeyV2 = useMemo(() => `${storageKey}:v2`, [storageKey]);
+
   const [ath, setAth] = useState<number | null>(null);
   const [burst, setBurst] = useState(0);
   const prevAthRef = useRef<number | null>(null);
@@ -62,7 +69,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
   // Load persisted ATH (per token) once.
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = localStorage.getItem(storageKeyV2);
       const n = raw ? Number(raw) : NaN;
       const stored = Number.isFinite(n) ? n : null;
       setAth(stored);
@@ -71,7 +78,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
       // ignore
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
+  }, [storageKeyV2]);
 
   // Update ATH if we surpass it.
   useEffect(() => {
@@ -84,7 +91,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
         setBurst((b) => b + 1);
 
         try {
-          localStorage.setItem(storageKey, String(current));
+          localStorage.setItem(storageKeyV2, String(current));
         } catch {
           // ignore
         }
@@ -94,7 +101,7 @@ export function AthBar({ currentLabel, storageKey, className }: AthBarProps) {
       prevAthRef.current = p;
       return prev;
     });
-  }, [current, storageKey]);
+  }, [current, storageKeyV2]);
 
   const ratio = useMemo(() => {
     if (current == null || ath == null || ath <= 0) return 0;
