@@ -5,11 +5,6 @@ import { LAUNCH_FACTORY_ABI, LAUNCH_CAMPAIGN_ABI } from "./abis.js";
 import { TIMEFRAMES, bucketStart, TF } from "./timeframes.js";
 import { publishTrade, publishCandle, publishStats } from "./ably.js";
 
-// Cache providers by (chainId,url) to reduce repeated provider startup churn.
-// This helps avoid noisy "failed to detect network" logs on some hosts when
-// instantiating many providers repeatedly.
-const PROVIDER_CACHE = new Map<string, ethers.JsonRpcProvider>();
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -31,6 +26,10 @@ function parseRpcList(v: string): string[] {
 
 function isRateLimitError(e: any): boolean {
   const msg = String(e?.shortMessage || e?.message || "").toLowerCase();
+
+  // ethers fetch wrapper sometimes surfaces this when an endpoint is down / rate-limited
+  if (msg.includes("exceeded maximum retry")) return true;
+  if (msg.includes("429")) return true;
   if (msg.includes("rate limit")) return true;
 
   // ethers v6 BAD_DATA wrapping JSON-RPC batch errors
@@ -577,28 +576,17 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
 
     let rpcIdx = 0;
 
-    const makeProvider = () => {
-      const url = rpcList[rpcIdx];
-      const cacheKey = `${chain.chainId}:${url}`;
-      const cached = PROVIDER_CACHE.get(cacheKey);
-      if (cached) return cached;
+    const staticNetwork = ethers.Network.from(chain.chainId);
 
-      // Provide a static network to avoid "failed to detect network" churn.
-      const p = new ethers.JsonRpcProvider(
-        url,
-        {
-          chainId: chain.chainId,
-          name: chain.chainId === 97 ? "bsc-testnet" : "bsc",
-        },
-        {
-          // Reduce batch eth_getLogs pressure on public endpoints.
-          batchMaxCount: 1,
-          batchStallTime: 0,
-        }
-      );
-      PROVIDER_CACHE.set(cacheKey, p);
-      return p;
-    };
+    const makeProvider = () =>
+      new ethers.JsonRpcProvider(rpcList[rpcIdx], undefined, {
+        // Pin network to avoid repeated chainId detection (reduces "failed to detect network" noise)
+        staticNetwork,
+
+        // reduce batch eth_getLogs pressure on public endpoints
+        batchMaxCount: 1,
+        batchStallTime: 0
+      });
 
     const rotate = () => {
       rpcIdx = (rpcIdx + 1) % rpcList.length;

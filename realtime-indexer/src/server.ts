@@ -72,14 +72,10 @@ app.get("/api/ably/token", async (req, res) => {
     const channel = tokenChannel(chainId, campaign);
     const capability = { [channel]: ["subscribe"] };
 
-    // IMPORTANT: Ably requires that a connection's clientId remains consistent across
-    // re-authentication. Returning a random clientId here causes error 40102
-    // (mismatched clientId for existing connection) when Ably refreshes tokens.
-    // Use a stable public clientId for our read-only subscriber connections.
-    const clientId = "public";
-
     const tokenRequest = await ablyRest.auth.createTokenRequest({
-      clientId,
+      // IMPORTANT: clientId MUST be stable across re-auth on an existing connection.
+      // Using a random clientId triggers Ably 40102 (mismatched clientId).
+      clientId: "public",
       capability: JSON.stringify(capability),
       ttl: 60 * 60 * 1000 // 1 hour
     });
