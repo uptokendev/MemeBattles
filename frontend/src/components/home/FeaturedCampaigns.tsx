@@ -245,7 +245,7 @@ export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: numb
                 <GlowingEffect spread={32} glow={false} disabled={false} proximity={80} inactiveZone={0.01} borderWidth={2} />
                 <div className="relative h-28 md:h-32 w-full rounded-[1.15rem] border border-border/40 bg-card p-3 md:p-4 shadow-sm overflow-hidden">
                 {/* Rank badge */}
-<div className="absolute top-2 right-2 z-10 h-6 min-w-6 px-2 flex items-center justify-center rounded-full bg-card border-2 border-primary text-xs font-bold text-primary">
+<div className="absolute top-2 right-2 z-10 h-6 min-w-6 px-2 flex items-center justify-center rounded-full bg-card border-2 border-[#affe00] text-xs font-bold text-[#affe00]">
   {idx + 1}
 </div>
                   <div className="flex items-start gap-3">
@@ -268,7 +268,7 @@ export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: numb
                             {card.campaign.name || ""}
                           </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right pr-3">
                           <div className="text-[10px] md:text-xs text-muted-foreground">MCap</div>
                           <div className="text-xs md:text-sm font-semibold truncate">
                             {card.marketCapLabel}
