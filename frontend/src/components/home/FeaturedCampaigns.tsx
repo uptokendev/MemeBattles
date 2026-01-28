@@ -268,7 +268,7 @@ export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: numb
                             {card.campaign.name || ""}
                           </div>
                         </div>
-                        <div className="text-right pr-3">
+                        <div className="text-right pr-5">
                           <div className="text-[10px] md:text-xs text-muted-foreground">MCap</div>
                           <div className="text-xs md:text-sm font-semibold truncate">
                             {card.marketCapLabel}
