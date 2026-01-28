@@ -223,11 +223,10 @@ export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: numb
     <div className="mb-4 md:mb-6">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-sm md:text-base font-semibold tracking-wide">Featured Coins</h2>
-        <span className="text-xs text-muted-foreground">Top {Math.min(limit, hydrated.length)}</span>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-        {hydrated.slice(0, limit).map((card) => {
+        {hydrated.slice(0, limit).map((card, idx) => {
           const campaignAddr = String((card.campaign as any).campaign ?? "").trim();
           const creatorAddr = String((card.campaign as any).creator ?? "").trim();
           const displayName =
@@ -245,6 +244,10 @@ export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: numb
               <div className="relative rounded-[1.25rem] p-[1px]">
                 <GlowingEffect spread={32} glow={false} disabled={false} proximity={80} inactiveZone={0.01} borderWidth={2} />
                 <div className="relative h-28 md:h-32 w-full rounded-[1.15rem] border border-border/40 bg-card p-3 md:p-4 shadow-sm overflow-hidden">
+                {/* Rank badge */}
+<div className="absolute top-2 right-2 z-10 h-6 min-w-6 px-2 flex items-center justify-center rounded-full bg-card border border-border/40 text-xs font-bold">
+  {idx + 1}
+</div>
                   <div className="flex items-start gap-3">
                     <div className="h-10 w-10 rounded-xl overflow-hidden border border-border bg-muted flex items-center justify-center flex-shrink-0">
                       <img
