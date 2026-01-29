@@ -30,6 +30,8 @@ type CarouselCard = {
 
   description: string;
   marketCap: string; // BNB label (fallback)
+  /** Unrounded market cap in BNB (preferred for USD conversion / ATH tracking). */
+  marketCapBnb?: number | null;
   marketCapUsdLabel?: string | null; // preferred for UI + ATH tracking
   holders: string;
   volume: string;
@@ -248,11 +250,16 @@ const Example = () => {
 
             const marketCapLabel = stats?.marketCap ?? "—";
 
-            // Convert "X BNB" -> USD label for UI + ATH tracking
+            // Prefer precise numeric market cap from stats (avoids label rounding drift)
+            const mcBnbExact = typeof (stats as any)?.marketCapBnb === "number" ? ((stats as any).marketCapBnb as number) : null;
+
+            // Convert market cap BNB -> USD label for UI + ATH tracking.
+            // IMPORTANT: use the unrounded numeric BNB value when available to prevent ATH/% drift.
             let marketCapUsdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
+            const mcBnbParsed = marketCapLabel.toUpperCase().includes("BNB")
               ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
               : null;
+            const mcBnb = mcBnbExact ?? mcBnbParsed;
             if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
               marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
             }
@@ -271,6 +278,7 @@ const Example = () => {
 
               description: (c as any).description || (c as any).extraLink || "",
               marketCap: marketCapLabel,
+              marketCapBnb: mcBnbExact ?? null,
               marketCapUsdLabel,
               holders: stats?.holders ?? "—",
               volume: stats?.volume ?? "—",
@@ -319,10 +327,13 @@ const Example = () => {
             const stats = card.campaignInfo ? await fetchCampaignCardStats(card.campaignInfo) : null;
             const marketCapLabel = stats?.marketCap ?? card.marketCap;
 
+            const mcBnbExact = typeof (stats as any)?.marketCapBnb === "number" ? ((stats as any).marketCapBnb as number) : null;
+
             let marketCapUsdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
+            const mcBnbParsed = marketCapLabel.toUpperCase().includes("BNB")
               ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
               : null;
+            const mcBnb = mcBnbExact ?? mcBnbParsed;
             if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
               marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
             }
@@ -330,6 +341,7 @@ const Example = () => {
             return {
               ...card,
               marketCap: marketCapLabel,
+              marketCapBnb: mcBnbExact ?? card.marketCapBnb ?? null,
               marketCapUsdLabel,
               holders: stats?.holders ?? card.holders,
               volume: stats?.volume ?? card.volume,
@@ -670,7 +682,6 @@ const Example = () => {
               isMobile={isMobile}
               chainIdForStorage={chainIdForStorage}
               onClick={() => handleCardClick(index)}
-               bnbUsdPrice={bnbUsdPrice}
             />
           );
         })}
@@ -696,7 +707,6 @@ const CardView = ({
   cardWidth,
   isMobile,
   chainIdForStorage,
-  bnbUsdPrice,
   onClick,
 }: {
   card: CarouselCard;
@@ -704,7 +714,6 @@ const CardView = ({
   cardWidth: number;
   isMobile: boolean;
   chainIdForStorage: number;
-  bnbUsdPrice?: number;
   onClick: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
@@ -741,30 +750,6 @@ const CardView = ({
 
   const mcapDisplay = (card.marketCapUsdLabel ?? null) || (card.marketCap ?? "—");
   const barWidthPx = Math.round(Math.max(110, Math.min(170, cardWidth * 0.45)));
-
-  useEffect(() => {
-  // Only log for the centered card to avoid console spam.
-  if (!isCentered) return;
-
-  // NOTE: Carousel does not have rtStats; it derives marketCapUsdLabel from marketCap label + bnbUsdPrice.
-  console.debug("[ATH Carousel]", {
-    chainIdForStorage,
-    campaignAddress: String(card.campaignAddress).toLowerCase(),
-    bnbUsdPrice,
-    marketCapLabel: card.marketCap,
-    marketCapUsdLabel: card.marketCapUsdLabel,
-    mcapDisplay,
-  });
-}, [
-  isCentered,
-  chainIdForStorage,
-  card.campaignAddress,
-  card.marketCap,
-  card.marketCapUsdLabel,
-  bnbUsdPrice,
-  mcapDisplay,
-]);
-
 
   return (
     <div

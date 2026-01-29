@@ -79,6 +79,8 @@ export type CampaignCardStats = {
   holders: string;
   volume: string;
   marketCap: string;
+  /** Unrounded market cap in BNB (for precise USD conversion / ATH tracking). */
+  marketCapBnb?: number;
 };
 
 export type CampaignSummary = {
@@ -485,13 +487,14 @@ export function useLaunchpad() {
       let holders = "—";
       let volume = "—";
       let marketCap = "—";
+      let marketCapBnb: number | undefined = undefined;
 
       if (USE_MOCK_DATA) {
         const anyC = campaign as any;
         holders = anyC.holders ?? "0";
         volume = anyC.volume ?? "0 BNB";
         marketCap = anyC.marketCap ?? "0 BNB";
-        return { campaign, metrics, stats: { holders, volume, marketCap } };
+        return { campaign, metrics, stats: { holders, volume, marketCap, marketCapBnb } };
       }
 
       // Activity rollups (safe + limited)
@@ -518,12 +521,19 @@ const circulating: bigint = metrics.launched ? totalSupply : metrics.sold;
 
 const mcWei = (metrics.currentPrice * circulating) / 10n ** 18n;
 marketCap = formatBnbFromWei(mcWei);
+// Also return an unrounded numeric value for consistent USD conversion on the carousel.
+try {
+  const mcBnbRaw = Number(ethers.formatEther(mcWei));
+  if (Number.isFinite(mcBnbRaw) && mcBnbRaw > 0) marketCapBnb = mcBnbRaw;
+} catch {
+  // ignore
+}
         }
       } catch (e) {
         console.warn("[fetchCampaignSummary] market cap calc failed", e);
       }
 
-      return { campaign, metrics, stats: { holders, volume, marketCap } };
+      return { campaign, metrics, stats: { holders, volume, marketCap, marketCapBnb } };
     },
     [fetchCampaignActivity, fetchCampaignMetrics, readProvider]
   );
