@@ -32,8 +32,6 @@ type CarouselCard = {
 
   description: string;
   marketCap: string; // BNB label (fallback)
-  /** Unrounded market cap in BNB (preferred for USD conversion / ATH tracking). */
-  marketCapBnb?: number | null;
   marketCapUsdLabel?: string | null; // preferred for UI + ATH tracking
   holders: string;
   volume: string;
@@ -195,17 +193,6 @@ const Example = () => {
   const { fetchCampaigns, fetchCampaignCardStats, activeChainId } = useLaunchpad();
   const chainIdForStorage = activeChainId ?? 97;
   const { price: bnbUsdPrice } = useBnbUsdPrice(true);
-  // Normalize in case hook returns a scaled value (TokenDetails does this too)
-const bnbUsd = useMemo(() => {
-  if (bnbUsdPrice == null) return null;
-  const n = Number(bnbUsdPrice);
-  if (!Number.isFinite(n) || n <= 0) return null;
-
-  // BNB price in USD should never be anywhere near 100k+. If it is, it's almost certainly scaled.
-  if (n > 100_000) return n / 1e18;
-
-  return n;
-}, [bnbUsdPrice]);
   const [cards, setCards] = useState<CarouselCard[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [campaignError, setCampaignError] = useState<string | null>(null);
@@ -263,16 +250,11 @@ const bnbUsd = useMemo(() => {
 
             const marketCapLabel = stats?.marketCap ?? "—";
 
-            // Prefer precise numeric market cap from stats (avoids label rounding drift)
-            const mcBnbExact = typeof (stats as any)?.marketCapBnb === "number" ? ((stats as any).marketCapBnb as number) : null;
-
-            // Convert market cap BNB -> USD label for UI + ATH tracking.
-            // IMPORTANT: use the unrounded numeric BNB value when available to prevent ATH/% drift.
+            // Convert "X BNB" -> USD label for UI + ATH tracking
             let marketCapUsdLabel: string | null = null;
-            const mcBnbParsed = marketCapLabel.toUpperCase().includes("BNB")
+            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
               ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
               : null;
-            const mcBnb = mcBnbExact ?? mcBnbParsed;
             if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
               marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
             }
@@ -291,7 +273,6 @@ const bnbUsd = useMemo(() => {
 
               description: (c as any).description || (c as any).extraLink || "",
               marketCap: marketCapLabel,
-              marketCapBnb: mcBnbExact ?? null,
               marketCapUsdLabel,
               holders: stats?.holders ?? "—",
               volume: stats?.volume ?? "—",
@@ -340,13 +321,10 @@ const bnbUsd = useMemo(() => {
             const stats = card.campaignInfo ? await fetchCampaignCardStats(card.campaignInfo) : null;
             const marketCapLabel = stats?.marketCap ?? card.marketCap;
 
-            const mcBnbExact = typeof (stats as any)?.marketCapBnb === "number" ? ((stats as any).marketCapBnb as number) : null;
-
             let marketCapUsdLabel: string | null = null;
-            const mcBnbParsed = marketCapLabel.toUpperCase().includes("BNB")
+            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
               ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
               : null;
-            const mcBnb = mcBnbExact ?? mcBnbParsed;
             if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
               marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
             }
@@ -354,7 +332,6 @@ const bnbUsd = useMemo(() => {
             return {
               ...card,
               marketCap: marketCapLabel,
-              marketCapBnb: mcBnbExact ?? card.marketCapBnb ?? null,
               marketCapUsdLabel,
               holders: stats?.holders ?? card.holders,
               volume: stats?.volume ?? card.volume,
@@ -688,15 +665,15 @@ const bnbUsd = useMemo(() => {
           const isCentered = index === centeredTripleIndex;
           return (
             <CardView
-  card={card}
-  key={`${card.id}-${index}`}
-  isCentered={isCentered}
-  cardWidth={CARD_WIDTH}
-  isMobile={isMobile}
-  chainIdForStorage={chainIdForStorage}
-  bnbUsd={bnbUsd}
-  onClick={() => handleCardClick(index)}
-/>
+              card={card}
+              key={`${card.id}-${index}`}
+              isCentered={isCentered}
+              cardWidth={CARD_WIDTH}
+              isMobile={isMobile}
+              chainIdForStorage={chainIdForStorage}
+              bnbUsdPrice={bnbUsdPrice}
+              onClick={() => handleCardClick(index)}
+            />
           );
         })}
       </div>
@@ -721,7 +698,7 @@ const CardView = ({
   cardWidth,
   isMobile,
   chainIdForStorage,
-  bnbUsd,
+  bnbUsdPrice,
   onClick,
 }: {
   card: CarouselCard;
@@ -729,64 +706,11 @@ const CardView = ({
   cardWidth: number;
   isMobile: boolean;
   chainIdForStorage: number;
-  bnbUsd: number | null;
+  bnbUsdPrice?: number | null;
   onClick: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
-
-  const { chainId } = useWallet();
-
-// Realtime stats (same source as TokenDetails)
-const isDummy =
-  !card.campaignAddress ||
-  !isAddress(card.campaignAddress) ||
-  isZeroAddress(card.campaignAddress);
-
-const { stats: rtStats } = useTokenStatsRealtime(
-  card.campaignAddress,
-  chainId,
-  !isDummy
-);
-
-// Use raw numeric marketcapBnb when available; never parse from a formatted label.
-const athCurrentLabel = useMemo(() => {
-  const raw = rtStats?.marketcapBnb;
-  const mcBnb =
-    raw != null && Number.isFinite(raw) ? Number(raw) : (card.marketCapBnb != null ? Number(card.marketCapBnb) : null);
-
-  if (mcBnb == null || !Number.isFinite(mcBnb) || mcBnb <= 0) return card.marketCapUsdLabel ?? null;
-  if (!bnbUsd) return card.marketCapUsdLabel ?? null;
-
-  const usd = mcBnb * bnbUsd;
-  return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : card.marketCapUsdLabel ?? null;
-}, [rtStats?.marketcapBnb, card.marketCapBnb, card.marketCapUsdLabel, bnbUsd]);
-
-useEffect(() => {
-  if (!isCentered) return;
-
-  console.debug("[ATH Carousel]", {
-    chainIdForStorage,
-    campaignAddress: String(card.campaignAddress).toLowerCase(),
-    bnbUsd,
-    // label-based (old path)
-    marketCapLabel: card.marketCap,
-    marketCapUsdLabel_fromCard: card.marketCapUsdLabel,
-    // realtime raw (correct path)
-    rt_marketcapBnb: rtStats?.marketcapBnb,
-    // what AthBar will now consume
-    athCurrentLabel,
-  });
-}, [
-  isCentered,
-  chainIdForStorage,
-  card.campaignAddress,
-  card.marketCap,
-  card.marketCapUsdLabel,
-  bnbUsd,
-  rtStats?.marketcapBnb,
-  athCurrentLabel,
-]);
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -803,13 +727,32 @@ useEffect(() => {
     }
   };
 
-  const handleClick = () => {
-    const addr = (card.campaignAddress ?? "").trim();
-    const isDummy = !addr || !isAddress(addr) || isZeroAddress(addr);
+  const wallet = useWallet();
 
+  const campaignAddr = String(card.campaignAddress ?? "").trim().toLowerCase();
+  const isDummy = !campaignAddr || !isAddress(campaignAddr) || isZeroAddress(campaignAddr);
+
+  // Realtime stats from Railway/Ably (same hook TokenDetails uses)
+  const { stats: rtStats } = useTokenStatsRealtime(
+    campaignAddr,
+    wallet.chainId,
+    !isDummy
+  );
+
+  // Preferred: raw marketcapBnb -> USD (no parsing from rounded labels)
+  const marketCapUsdLabelPrecise = useMemo(() => {
+    const mcBnb = rtStats?.marketcapBnb;
+    if (mcBnb == null || !Number.isFinite(Number(mcBnb))) return null;
+    if (bnbUsdPrice == null || !Number.isFinite(Number(bnbUsdPrice)) || Number(bnbUsdPrice) <= 0) return null;
+
+    const usd = Number(mcBnb) * Number(bnbUsdPrice);
+    return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
+  }, [rtStats?.marketcapBnb, bnbUsdPrice]);
+
+  const handleClick = () => {
     if (isCentered && !isDummy) {
       // Navigate to token details if centered/highlighted AND we have a real campaign address
-      navigate(`/token/${addr.toLowerCase()}`);
+      navigate(`/token/${campaignAddr}`);
       return;
     }
 
@@ -817,8 +760,39 @@ useEffect(() => {
     onClick();
   };
 
-  const mcapDisplay = (card.marketCapUsdLabel ?? null) || (card.marketCap ?? "—");
+  // IMPORTANT: display + AthBar should prefer precise USD label.
+  const mcapDisplay =
+    marketCapUsdLabelPrecise ??
+    (card.marketCapUsdLabel ?? null) ??
+    (card.marketCap ?? "—");
+
   const barWidthPx = Math.round(Math.max(110, Math.min(170, cardWidth * 0.45)));
+
+  useEffect(() => {
+    // Only log for the centered card to avoid console spam.
+    if (!isCentered) return;
+
+    console.debug("[ATH Carousel]", {
+      chainIdForStorage,
+      campaignAddress: campaignAddr,
+      bnbUsd: bnbUsdPrice,
+      marketCapLabel: card.marketCap,
+      marketCapUsdLabel_fromCard: card.marketCapUsdLabel,
+      rt_marketcapBnb: rtStats?.marketcapBnb,
+      marketCapUsdLabelPrecise,
+      mcapDisplay,
+    });
+  }, [
+    isCentered,
+    chainIdForStorage,
+    campaignAddr,
+    bnbUsdPrice,
+    card.marketCap,
+    card.marketCapUsdLabel,
+    rtStats?.marketcapBnb,
+    marketCapUsdLabelPrecise,
+    mcapDisplay,
+  ]);
 
   return (
     <div
@@ -940,12 +914,12 @@ useEffect(() => {
           {/* Bottom: MC (USD) + ATH bar */}
           <div className="flex items-center justify-between gap-3">
             <AthBar
-  currentLabel={card.marketCapUsdLabel ?? null}
-  storageKey={`ath:${String(chainIdForStorage)}:${String(card.campaignAddress).toLowerCase()}`}
-  className="text-[10px]"
-  barWidthPx={barWidthPx}
-  barMaxWidth="100%"
-/>
+              currentLabel={marketCapUsdLabelPrecise ?? card.marketCapUsdLabel ?? null}
+              storageKey={`ath:${String(chainIdForStorage)}:${String(card.campaignAddress).toLowerCase()}`}
+              className="text-[10px]"
+              barWidthPx={barWidthPx}
+              barMaxWidth="100%"
+            />
           </div>
         </div>
       </div>
