@@ -24,10 +24,6 @@ import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { TokenComments } from "@/components/token/TokenComments";
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
-import { USE_MOCK_DATA } from "@/config/mockConfig";
-import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
-import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
-import { getMockDexLiquidityBnbForSymbol } from "@/constants/mockDexTrades";
 import { useWallet } from "@/hooks/useWallet";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { Contract, ethers } from "ethers";
@@ -449,8 +445,7 @@ const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
   const { stats: rtStats } = useTokenStatsRealtime(
     campaign?.campaign ?? campaignAddress,
-    wallet.chainId,
-    !USE_MOCK_DATA
+    wallet.chainId
   );
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
@@ -472,49 +467,19 @@ const toSeconds = (ts: number): number => {
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
 
-    // Normalize mock timestamps so they sit “around now” for realistic windows.
-    const mockCurve = getMockCurveEventsForSymbol(campaign?.symbol);
-    const mockCurvePoints = (() => {
-      if (!mockCurve.length) return [] as Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }>;
-      const lastTs = mockCurve[mockCurve.length - 1].timestamp;
-      const shift = now - lastTs;
-      const perTrade = 50_000_000_000_000_000n; // 0.05 BNB per point (demo)
-      return mockCurve.map((e) => ({
-        timestamp: toSeconds(e.timestamp + shift),
-        pricePerToken: e.pricePerToken,
-        nativeWei: perTrade,
-      }));
-    })();
-
-    // Mock DEX trades for tokens that are already graduated
-    const mockDex = getMockDexTradesForSymbol(campaign?.symbol);
-    const mockDexPoints = (() => {
-      if (!mockDex.length) return [] as Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }>;
-      const lastTs = mockDex[mockDex.length - 1].timestamp;
-      const shift = now - lastTs;
-      return mockDex.map((t) => ({
-        timestamp: t.timestamp + shift,
-        pricePerToken: t.pricePerToken,
-        nativeWei: t.nativeWei,
-      }));
-    })();
-
-    const isCurveTest = (campaign?.symbol ?? "").toUpperCase() === "MOCK2";
-    const mockGraduated =
-      !isCurveTest &&
-      Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
+    const isGraduated = Boolean(
+  metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget
+);
 
     // IMPORTANT:
     // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
     // - Do NOT ethers.formatEther(pricePerToken) here.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-      USE_MOCK_DATA
-        ? (mockGraduated ? mockDexPoints : mockCurvePoints)
-        : liveCurvePointsSafe.map((p: any) => ({
-            timestamp: Number(p.timestamp ?? 0),
-            pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
-            nativeWei: p.nativeWei,
-          }));
+  liveCurvePointsSafe.map((p: any) => ({
+    timestamp: Number(p.timestamp ?? 0),
+    pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
+    nativeWei: p.nativeWei,
+  }));
 
     if (!points.length && endPrice == null) {
       return {
@@ -561,9 +526,9 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [USE_MOCK_DATA, campaign?.symbol, liveCurvePointsSafe, metrics]);
+  }, [campaign?.symbol, liveCurvePointsSafe, metrics]);
 
-  // Token view-model used throughout the page (mock + live)
+  // Token view-model used throughout the page
   const tokenData = useMemo(() => {
     const ticker = campaign?.symbol ?? "";
     const name = campaign?.name ?? "Token";
@@ -762,11 +727,7 @@ const bnbUsd = useMemo(() => {
 
     const loadReserve = async () => {
       try {
-        if (USE_MOCK_DATA) {
-          setCurveReserveWei(null);
-          return;
-        }
-        if (!wallet.provider || !campaign?.campaign) {
+          if (!wallet.provider || !campaign?.campaign) {
           setCurveReserveWei(null);
           return;
         }
@@ -790,10 +751,6 @@ const bnbUsd = useMemo(() => {
 
     const loadActivity = async () => {
       try {
-        if (USE_MOCK_DATA) {
-          setActivity(null);
-          return;
-        }
         if (!campaign?.campaign) {
           setActivity(null);
           return;
@@ -852,7 +809,6 @@ const bnbUsd = useMemo(() => {
       }
     };
 
-    // In MOCK mode the trading panel can still show balances if the wallet is connected.
     loadBalances();
 
     return () => {
@@ -866,147 +822,6 @@ const bnbUsd = useMemo(() => {
       setTxs([]);
       return;
     }
-
-    // MOCK MODE
-    if (USE_MOCK_DATA) {
-      const sym = campaign?.symbol ?? "";
-      const isCurveTest = sym.toUpperCase() === "MOCK2";
-      const graduated =
-        !isCurveTest &&
-        Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
-
-      const nowTs = Math.floor(Date.now() / 1000);
-      const addrs = [
-        "0x3f2a0bD1B17B2D2b8b1B2b9E3c2f58b9c2aE1111",
-        "0x9f1bA1dE2c3D4e5F6a7B8c9D0e1F2a3B4c5D2222",
-        "0x1111222233334444555566667777888899990000",
-        "0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa",
-      ];
-
-      const pseudoTx = (prefix: string, i: number) => {
-        let h = 2166136261;
-        const s = `${prefix}-${i}`;
-        for (let k = 0; k < s.length; k++) {
-          h ^= s.charCodeAt(k);
-          h = Math.imul(h, 16777619);
-        }
-        const base = (h >>> 0).toString(16).padStart(8, "0");
-        return (`0x${base.repeat(8)}`).slice(0, 66);
-      };
-
-      const mcap = tokenData.marketCap ?? "—";
-
-      // MOCK: Graduated -> mock DEX trades
-      if (graduated) {
-        const dex = getMockDexTradesForSymbol(sym);
-        if (!dex.length) {
-          setTxs([]);
-          return;
-        }
-
-        const lastTs = dex[dex.length - 1].timestamp;
-        const shift = nowTs - lastTs;
-
-        const raw = [...dex].map((t, i) => ({
-          timestamp: t.timestamp + shift,
-          side: t.side as "buy" | "sell",
-          tokensWei: t.tokensWei,
-          nativeWei: t.nativeWei,
-          pricePerToken: t.pricePerToken, // number
-          trader: t.trader || addrs[i % addrs.length],
-          txHash: t.txHash || pseudoTx(`dex-${sym}`, i),
-        }));
-
-        const next: TxRow[] = raw
-          .slice(-50)
-          .reverse()
-          .map((p) => {
-            const tokenAmount = Number(ethers.formatUnits(p.tokensWei ?? 0n, TOKEN_DECIMALS));
-            const bnb = Number(ethers.formatEther(p.nativeWei ?? 0n));
-
-            const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
-            const priceStr = formatPriceBnb(typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken));
-
-            const txHash = p.txHash || pseudoTx(`dex-${sym}`, 0);
-
-return {
-  id: txHash,
-  time: formatAgo(p.timestamp),
-  type: p.side,
-  amount: formatCompact(tokenAmount),
-  bnb: bnbStr,
-  price: priceStr,
-  mcap,
-  maker: shorten(p.trader),
-  makerAddress: String(p.trader ?? ""),
-  txHash,
-};
-          });
-
-        setTxs(next);
-        return;
-      }
-
-      // MOCK: Pre-LP -> derive mock curve txs from mock curve events
-      const curve = getMockCurveEventsForSymbol(sym);
-      if (!curve.length) {
-        setTxs([]);
-        return;
-      }
-
-      const lastTs = curve[curve.length - 1].timestamp;
-      const shift = nowTs - lastTs;
-
-      const perTradeBnb = 0.05;
-      const perTradeWei = 50_000_000_000_000_000n; // 0.05 BNB
-
-      const raw = [...curve].map((e, i) => {
-        const ts = e.timestamp + shift;
-        const side: "buy" | "sell" = i % 4 === 0 ? "sell" : "buy";
-        const tokens = e.pricePerToken > 0 ? perTradeBnb / e.pricePerToken : 0;
-        const tokensWei = BigInt(Math.floor(tokens * 1e18));
-        const trader = addrs[i % addrs.length];
-        const txHash = pseudoTx(`curve-${sym}`, i);
-        return {
-          timestamp: ts,
-          side,
-          tokensWei,
-          nativeWei: perTradeWei,
-          pricePerToken: e.pricePerToken, // number
-          trader,
-          txHash,
-        };
-      });
-
-      const next: TxRow[] = raw
-        .slice(-50)
-        .reverse()
-        .map((p) => {
-          const tokenAmount = Number(ethers.formatUnits(p.tokensWei, TOKEN_DECIMALS));
-          const bnb = Number(ethers.formatEther(p.nativeWei));
-          const bnbStr = Number.isFinite(bnb) ? `${bnb.toFixed(4)} BNB` : "—";
-          const priceStr = formatPriceBnb(p.pricePerToken);
-
-          const txHash = p.txHash || pseudoTx(`curve-${sym}`, 0);
-
-return {
-  id: txHash,
-  time: formatAgo(p.timestamp),
-  type: p.side,
-  amount: formatCompact(tokenAmount),
-  bnb: bnbStr,
-  price: priceStr,
-  mcap,
-  maker: shorten(p.trader),
-  makerAddress: String(p.trader ?? ""),
-  txHash,
-};
-        });
-
-      setTxs(next);
-      return;
-    }
-
     // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
@@ -1040,13 +855,7 @@ return {
   });
 
 setTxs(next);
-  }, [USE_MOCK_DATA, campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
-
-  // 🔹 Dexscreener chart-only URL (mock or live) based on the token contract
-  // In mock mode we still want to be able to test the internal bonding-curve chart.
-  // For the special curve-test token (MOCK2) we force DexScreener OFF so the CurvePriceChart renders.
-  const isCurveTestToken =
-    (campaign?.symbol ?? tokenData.ticker ?? "").toUpperCase() === "MOCK2";
+  }, [campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
 
   // DexScreener gating: only show external DEX chart after graduation / finalize.
   // Prefer explicit flags when available; fall back to sold >= graduationTarget for older deployments.
@@ -1055,11 +864,11 @@ setTxs(next);
     ? Boolean((metrics as any)?.launched) || (typeof (metrics as any)?.finalizedAt === "bigint" ? (metrics as any).finalizedAt > 0n : Number((metrics as any)?.finalizedAt ?? 0) > 0)
     : Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
 
-  const dexTokenAddress = (!isCurveTestToken && isGraduated) ? (campaign?.token ?? "") : "";
+  const dexTokenAddress = isGraduated ? (campaign?.token ?? "") : "";
 
   const { url: chartUrl, baseUrl: dexBaseUrl, liquidityBnb: dexLiquidityBnb } =
     useDexScreenerChart(dexTokenAddress);
-  const isDexStage = !isCurveTestToken && isGraduated;
+  const isDexStage = isGraduated;
 
   const curveProgress = useMemo(() => {
     // IMPORTANT:
@@ -1152,12 +961,6 @@ setTxs(next);
   const liquidityValue = (() => {
     if (!isDexStage) return tokenData.liquidity;
 
-    // MOCK: use per-symbol mock liquidity to mimic a real DEX pool.
-    if (USE_MOCK_DATA) {
-      const liq = getMockDexLiquidityBnbForSymbol(campaign?.symbol);
-      return formatBnb(liq ?? null);
-    }
-
     // LIVE: best-effort liquidity (BNB-equivalent) from DexScreener.
     return formatBnb(dexLiquidityBnb ?? null);
   })()
@@ -1216,28 +1019,6 @@ setTxs(next);
         }
 
         setQuoteLoading(true);
-
-        if (USE_MOCK_DATA) {
-          const priceWei = metrics?.currentPrice ?? 0n;
-          if (tradeInputDenom === "BNB") {
-            // Approximate inversion using current price.
-            if (priceWei > 0n) {
-              const estTokens = (inputBnbWei * 10n ** 18n) / priceWei;
-              amountWei = tradeTab === "buy" ? estTokens : (estTokens * 100n) / 95n;
-            } else {
-              amountWei = 0n;
-            }
-            if (!cancelled) {
-              setEffectiveTokenWei(amountWei);
-              setQuoteWei(inputBnbWei);
-            }
-            return;
-          }
-          const gross = (amountWei * priceWei) / 10n ** 18n;
-          const q = tradeTab === "buy" ? gross : (gross * 95n) / 100n;
-          if (!cancelled) setQuoteWei(q);
-          return;
-        }
 
         if (!wallet.provider) {
           if (!cancelled) {
@@ -1358,32 +1139,30 @@ setTxs(next);
           }
       }
 
-      // Ensure wallet is connected for writes (live mode)
-      if (!USE_MOCK_DATA) {
-        if (!wallet.signer || !wallet.account) {
-          toast({
-            title: "Connect wallet",
-            description: "Please connect your wallet to trade.",
-          });
-          await wallet.connect();
-        }
-        if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
-      }
+      // Ensure wallet is connected for writes
+if (!wallet.signer || !wallet.account) {
+  toast({
+    title: "Connect wallet",
+    description: "Please connect your wallet to trade.",
+  });
+  await wallet.connect();
+}
+if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
       setTradePending(true);
 
       if (tradeTab === "buy") {
-        let costWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
-        if (costWei == null || costWei === 0n) {
-          if (USE_MOCK_DATA) {
-            const priceWei = metrics?.currentPrice ?? 0n;
-            costWei = (amountWei * priceWei) / 10n ** 18n;
-          } else {
-            const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
-            costWei = await c.quoteBuyExactTokens(amountWei);
-          }
-        }
+  let costWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
 
+  if (amountWei > 0n && (costWei == null || costWei === 0n)) {
+    const c = new Contract(
+      campaign.campaign,
+      CAMPAIGN_ABI,
+      wallet.provider ?? wallet.signer
+    ) as any;
+
+    costWei = await c.quoteBuyExactTokens(amountWei);
+  }
         const maxCostWei = (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
 
         toast({
@@ -1399,33 +1178,35 @@ setTxs(next);
         });
       } else {
         let payoutWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
-        if (payoutWei == null || payoutWei === 0n) {
-          if (USE_MOCK_DATA) {
-            const priceWei = metrics?.currentPrice ?? 0n;
-            const gross = (amountWei * priceWei) / 10n ** 18n;
-            payoutWei = (gross * 95n) / 100n;
-          } else {
-            const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
-            payoutWei = await c.quoteSellExactTokens(amountWei);
-          }
-        }
+        if (amountWei > 0n && (payoutWei == null || payoutWei === 0n)) {
+  const c = new Contract(
+    campaign.campaign,
+    CAMPAIGN_ABI,
+    wallet.provider ?? wallet.signer
+  ) as any;
+
+  payoutWei = await c.quoteSellExactTokens(amountWei);
+}
 
         const minPayoutWei = (payoutWei * BigInt(100 - SLIPPAGE_PCT)) / 100n;
 
-        if (!USE_MOCK_DATA && campaign?.token) {
-          const token = new Contract(campaign.token, TOKEN_ABI, wallet.signer) as any;
-          const allowance: bigint = await token.allowance(wallet.account, campaign.campaign);
-          if (allowance < amountWei) {
-            setApprovePending(true);
-            toast({
-              title: "Approval required",
-              description: `Approving ${tokenData.ticker} for selling...`,
-            });
-            const tx = await token.approve(campaign.campaign, MAX_UINT256);
-            await tx.wait();
-            setApprovePending(false);
-          }
-        }
+        if (campaign?.token) {
+  const token = new Contract(campaign.token, TOKEN_ABI, wallet.signer) as any;
+  const allowance: bigint = await token.allowance(wallet.account, campaign.campaign);
+
+  if (allowance < amountWei) {
+    setApprovePending(true);
+    toast({
+      title: "Approval required",
+      description: `Approving ${tokenData.ticker} for selling...`,
+    });
+
+    const tx = await token.approve(campaign.campaign, MAX_UINT256);
+    await tx.wait();
+
+    setApprovePending(false);
+  }
+}
 
         toast({
           title: "Submitting sell",
@@ -1450,7 +1231,7 @@ setTxs(next);
       }
 
       try {
-        if (!USE_MOCK_DATA && wallet.provider && campaign?.campaign) {
+        if (!wallet.provider && campaign?.campaign) {
           const bal = await wallet.provider.getBalance(campaign.campaign);
           setCurveReserveWei(bal);
         }
@@ -1889,13 +1670,11 @@ style={!isMobile ? { flex: "2" } : undefined}
               ) : (
                 <div className="w-full h-full min-h-[260px]">
                 <CurvePriceChart
-                  campaignAddress={campaign?.campaign}
-                  mockMode={USE_MOCK_DATA}
-                  mockEvents={USE_MOCK_DATA ? getMockCurveEventsForSymbol(campaign?.symbol) : []}
-                  curvePointsOverride={!USE_MOCK_DATA ? liveCurvePoints : undefined}
-                  loadingOverride={!USE_MOCK_DATA ? liveCurveLoading : undefined}
-                  errorOverride={!USE_MOCK_DATA ? liveCurveError : undefined}
-                />
+  campaignAddress={campaign?.campaign}
+  curvePointsOverride={liveCurvePoints}
+  loadingOverride={liveCurveLoading}
+  errorOverride={liveCurveError}
+/>
                 </div>
               )}
             </div>
