@@ -649,6 +649,43 @@ const bnbUsd = useMemo(() => {
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
   }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
 
+  useEffect(() => {
+  // Keep this log tight and comparable with carousel/chart.
+  const addrForKey = String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase();
+
+  console.debug("[ATH TokenDetails]", {
+    chainIdForStorage,
+    addrForKey,
+    bnbUsd,
+    // realtime inputs
+    rt_marketcapBnb: rtStats?.marketcapBnb,
+    rt_lastPriceBnb: rtStats?.lastPriceBnb,
+
+    // summary + tokenData labels (string sources)
+    summary_marketCap_label: summary?.stats?.marketCap,
+    tokenData_marketCap_label: tokenData.marketCap,
+
+    // the actual USD label that AthBar consumes here
+    marketCapUsdLabel,
+
+    // helpful: metrics-sourced currentPrice (BNB)
+    metrics_currentPrice_bnb:
+      metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : null,
+  });
+}, [
+  chainIdForStorage,
+  campaignAddress,
+  campaign?.campaign,
+  bnbUsd,
+  rtStats?.marketcapBnb,
+  rtStats?.lastPriceBnb,
+  summary?.stats?.marketCap,
+  tokenData.marketCap,
+  marketCapUsdLabel,
+  metrics?.currentPrice,
+]);
+
+
   const priceDisplay = useMemo(() => {
     const bnbLabel = tokenData.price;
 

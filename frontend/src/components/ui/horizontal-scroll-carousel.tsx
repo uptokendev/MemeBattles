@@ -670,6 +670,7 @@ const Example = () => {
               isMobile={isMobile}
               chainIdForStorage={chainIdForStorage}
               onClick={() => handleCardClick(index)}
+               bnbUsdPrice={bnbUsdPrice}
             />
           );
         })}
@@ -695,6 +696,7 @@ const CardView = ({
   cardWidth,
   isMobile,
   chainIdForStorage,
+  bnbUsdPrice,
   onClick,
 }: {
   card: CarouselCard;
@@ -702,6 +704,7 @@ const CardView = ({
   cardWidth: number;
   isMobile: boolean;
   chainIdForStorage: number;
+  bnbUsdPrice?: number;
   onClick: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
@@ -738,6 +741,30 @@ const CardView = ({
 
   const mcapDisplay = (card.marketCapUsdLabel ?? null) || (card.marketCap ?? "—");
   const barWidthPx = Math.round(Math.max(110, Math.min(170, cardWidth * 0.45)));
+
+  useEffect(() => {
+  // Only log for the centered card to avoid console spam.
+  if (!isCentered) return;
+
+  // NOTE: Carousel does not have rtStats; it derives marketCapUsdLabel from marketCap label + bnbUsdPrice.
+  console.debug("[ATH Carousel]", {
+    chainIdForStorage,
+    campaignAddress: String(card.campaignAddress).toLowerCase(),
+    bnbUsdPrice,
+    marketCapLabel: card.marketCap,
+    marketCapUsdLabel: card.marketCapUsdLabel,
+    mcapDisplay,
+  });
+}, [
+  isCentered,
+  chainIdForStorage,
+  card.campaignAddress,
+  card.marketCap,
+  card.marketCapUsdLabel,
+  bnbUsdPrice,
+  mcapDisplay,
+]);
+
 
   return (
     <div

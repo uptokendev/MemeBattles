@@ -1,7 +1,7 @@
 // src/components/token/CurvePriceChart.tsx
 // Market-cap chart for bonding-curve trades, rendered with TradingView Lightweight Charts.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { ethers } from "ethers";
 
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
@@ -131,6 +131,17 @@ export const CurvePriceChart = ({
     if (mockMode) return toMarketCapPointsUsdMock(mockEvents || [], usd);
     return toMarketCapPointsUsd(livePoints || [], usd);
   }, [mockMode, mockEvents, livePoints, bnbUsd]);
+
+  useEffect(() => {
+  const last = chartPoints && chartPoints.length ? chartPoints[chartPoints.length - 1] : null;
+
+  console.debug("[Chart MCap]", {
+    campaignAddress: (campaignAddress ?? "").toLowerCase(),
+    bnbUsd,
+    lastPoint: last, // { ts, value } where value is mcapUSD
+    pointsCount: chartPoints?.length ?? 0,
+  });
+}, [campaignAddress, bnbUsd, chartPoints]);
 
   // Render states (SAFE: hooks already executed)
   if (mockMode && (!mockEvents || mockEvents.length === 0)) {
