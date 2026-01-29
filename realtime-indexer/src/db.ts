@@ -6,6 +6,12 @@ function dbHostFromUrl(dbUrl: string): string {
   return u.hostname;
 }
 
+function dbPortFromUrl(dbUrl: string): number | null {
+  const u = new URL(dbUrl);
+  const p = u.port ? Number(u.port) : null;
+  return Number.isFinite(p as number) ? (p as number) : null;
+}
+
 function loadCustomCaIfEnabled(): string | null {
   // Only use a custom CA if explicitly enabled.
   const enabled = String(process.env.PG_USE_CUSTOM_CA || "").trim() === "1";
@@ -27,6 +33,7 @@ function loadCustomCaIfEnabled(): string | null {
 }
 
 const host = dbHostFromUrl(ENV.DATABASE_URL);
+const port = dbPortFromUrl(ENV.DATABASE_URL);
 
 // Keep this for local debugging only; do not set in production.
 const disableSsl = String(process.env.PG_DISABLE_SSL || "").trim() === "1";
@@ -53,15 +60,70 @@ const ssl =
         ? { rejectUnauthorized: false, servername: host }
         : { rejectUnauthorized: true, servername: host };
 
-// This line makes it immediately obvious in Railway logs what path you’re on.
+// Pool size: keep small for Supabase pooler to avoid exhausting pool_size.
+const poolMax = (() => {
+  const raw = String(process.env.PG_POOL_MAX || "").trim();
+  const n = raw ? Number(raw) : NaN;
+  // Default 5 is safe for a single Railway instance.
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
+})();
+
+// Supabase Transaction Pooler (port 6543) does not support PREPARE statements.
+// Force pg "simple query" protocol to avoid prepared/extended protocol.
+// Enable automatically if port == 6543, or override with PG_SIMPLE_PROTOCOL=1/0.
+const forceSimpleProtocol = (() => {
+  const override = String(process.env.PG_SIMPLE_PROTOCOL || "").trim();
+  if (override === "1") return true;
+  if (override === "0") return false;
+  return port === 6543; // auto-enable for transaction pooler
+})();
+
+// Log connection mode once at boot for fast diagnosis.
 console.log(
-  `[db] host=${host} ssl=${disableSsl ? "off" : "on"} verify=${disableSsl ? "n/a" : allowSelfSigned ? "off" : "on"} ca=${customCa ? "custom" : "system"}`
+  `[db] host=${host}:${port ?? "?"} ssl=${disableSsl ? "off" : "on"} verify=${disableSsl ? "n/a" : allowSelfSigned ? "off" : "on"} ca=${
+    customCa ? "custom" : "system"
+  } poolMax=${poolMax} simple=${forceSimpleProtocol ? "on" : "off"}`
 );
 
 export const pool = new Pool({
   connectionString: ENV.DATABASE_URL,
   ssl,
-  max: 10,
+  max: poolMax,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
+});
+
+// Force simple protocol globally for this pool (transaction pooler safe).
+if (forceSimpleProtocol) {
+  const origQuery: any = (pool as any).query.bind(pool);
+
+  (pool as any).query = (...args: any[]) => {
+    // query(text, values?)
+    if (typeof args[0] === "string") {
+      const text = args[0];
+      const values = Array.isArray(args[1]) ? args[1] : undefined;
+
+      return origQuery({
+        text,
+        values,
+        simple: true, // <-- supported by pg runtime, not in TS types
+      } as any);
+    }
+
+    // query({ text, values, ... })
+    if (args[0] && typeof args[0] === "object" && typeof (args[0] as any).text === "string") {
+      return origQuery({
+        ...(args[0] as any),
+        simple: true,
+      } as any);
+    }
+
+    // fallback (callback signatures etc.)
+    return origQuery.apply(pool, args);
+  };
+}
+
+
+pool.on("error", (err) => {
+  console.error("[db] pool error:", err);
 });
