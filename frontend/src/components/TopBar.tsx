@@ -41,7 +41,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
 
-  // Ticker feed state (mock OR live depending on your switch inside useLaunchpad)
+  // Ticker feed state
   const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
   const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<
     Record<string, CampaignMetrics | null>
@@ -74,7 +74,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     }
   };
 
-  // Load campaigns for ticker (mock/live handled by your launchpadClient)
+  // Load campaigns for ticker (handled by your launchpadClient)
   useEffect(() => {
     let cancelled = false;
 
@@ -263,7 +263,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
       </div>
 
-      {/* Ticker row (now campaigns; mock/live depends on useLaunchpad switch) */}
+      {/* Ticker row (now campaigns;) */}
       <div className="overflow-hidden py-3 bg-transparent">
         <div className="flex w-max gap-3 animate-[scroll_60s_linear_infinite] hover:[animation-play-state:paused] px-4">
           {tickerLoading && tickerItems.length === 0 ? (

@@ -13,10 +13,6 @@ import {
   type CandlestickData,
   type Time,
 } from "lightweight-charts";
-
-import { USE_MOCK_DATA } from "@/config/mockConfig";
-import { getMockCurveEventsForSymbol } from "@/constants/mockCurveTrades";
-import { getMockDexTradesForSymbol } from "@/constants/mockDexTrades";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useDexPairTrades } from "@/hooks/useDexPairTrades";
 import { useWallet } from "@/hooks/useWallet";
@@ -50,14 +46,6 @@ const TIMEFRAMES: Array<{ key: TimeframeKey; label: string; seconds: number }> =
 ];
 
 type PricePoint = { timestamp: number; price: number };
-
-function normalizeMockTimestamps<T extends { timestamp: number }>(items: T[]): T[] {
-  if (!items.length) return items;
-  const now = Math.floor(Date.now() / 1000);
-  const last = items[items.length - 1].timestamp;
-  const shift = now - last;
-  return items.map((x) => ({ ...x, timestamp: x.timestamp + shift }));
-}
 
 function buildCandles(points: PricePoint[], intervalSec: number): CandlestickData<Time>[] {
   if (!points.length || intervalSec <= 0) return [];
@@ -125,8 +113,8 @@ export function TokenCandlestickChart(props: {
   className?: string;
 }) {
   const { stage, symbol, campaignAddress, tokenAddress, dexPairAddress, chainId: chainIdProp, curvePointsOverride, className } = props;
-  const { activeChainId } = useWallet();
-  const chainId = chainIdProp ?? activeChainId;
+  const wallet = useWallet();
+  const chainId = chainIdProp ?? wallet.chainId ?? 97; // or 56 for BSC mainnet
 
   const [tf, setTf] = useState<TimeframeKey>("15m");
   const tfSeconds = useMemo(() => TIMEFRAMES.find((x) => x.key === tf)?.seconds ?? 900, [tf]);
@@ -145,15 +133,6 @@ export function TokenCandlestickChart(props: {
   });
 
   const points: PricePoint[] = useMemo(() => {
-    if (USE_MOCK_DATA) {
-      if (stage === "dex") {
-        const items = normalizeMockTimestamps(getMockDexTradesForSymbol(symbol));
-        return items.map((t) => ({ timestamp: t.timestamp, price: t.pricePerToken }));
-      }
-      const items = normalizeMockTimestamps(getMockCurveEventsForSymbol(symbol));
-      return items.map((e) => ({ timestamp: e.timestamp, price: e.pricePerToken }));
-    }
-
     if (stage === "dex") {
       return (dex.points ?? []).map((p) => ({ timestamp: p.timestamp, price: p.pricePerToken }));
     }
@@ -163,8 +142,8 @@ export function TokenCandlestickChart(props: {
 
   const candles = useMemo(() => buildCandles(points, tfSeconds), [points, tfSeconds]);
 
-  const loading = USE_MOCK_DATA ? false : stage === "dex" ? dex.loading : curve.loading;
-  const error = USE_MOCK_DATA ? undefined : stage === "dex" ? dex.error : curve.error;
+  const loading = stage === "dex" ? dex.loading : curve.loading;
+  const error = stage === "dex" ? dex.error : curve.error;
 
   // Create chart once
   useEffect(() => {

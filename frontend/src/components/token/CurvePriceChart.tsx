@@ -9,12 +9,8 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { CurveTradesChart } from "@/lib/chart/CurveTradesChart";
 import type { CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 
-import type { MockCurveEvent } from "@/constants/mockCurveTrades";
-
 type CurvePriceChartProps = {
   campaignAddress?: string;
-  mockMode?: boolean;
-  mockEvents?: MockCurveEvent[];
   /** Optional override to avoid opening additional realtime connections in child components. */
   curvePointsOverride?: CurveTradePoint[];
   loadingOverride?: boolean;
@@ -80,98 +76,64 @@ function toMarketCapPointsUsd(trades: CurveTradePoint[], bnbUsd: number): ChartP
   return out;
 }
 
-/**
- * Mock fallback: uses pricePerToken as "shape" and assumes a small growing supply.
- */
-function toMarketCapPointsUsdMock(events: MockCurveEvent[], bnbUsd: number): ChartPoint[] {
-  if (!events?.length || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
-  const sorted = [...events].sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0));
-
-  let circ = 0;
-  const out: ChartPoint[] = [];
-
-  for (const e of sorted) {
-    circ += 1; // simple mock supply increment
-    const priceBnb = Number(e.pricePerToken ?? 0);
-    const mcUsd = priceBnb * circ * bnbUsd;
-
-    const tsMs = Number(e.timestamp ?? 0) * 1000;
-    if (!Number.isFinite(tsMs) || tsMs <= 0) continue;
-    if (!Number.isFinite(mcUsd) || mcUsd <= 0) continue;
-
-    out.push({ ts: tsMs, value: mcUsd });
-  }
-
-  return out;
-}
-
 export const CurvePriceChart = ({
   campaignAddress,
-  mockMode = false,
-  mockEvents = [],
   curvePointsOverride,
   loadingOverride,
   errorOverride,
 }: CurvePriceChartProps) => {
   // HOOKS MUST ALWAYS RUN BEFORE ANY RETURN
   const [tf, setTf] = useState<TimeframeKey>("1m");
-  const bucketSec = useMemo(() => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60, [tf]);
+const bucketSec = useMemo(
+  () => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60,
+  [tf]
+);
 
-  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride && !mockMode });
-  const livePoints = curvePointsOverride ?? live.points;
-  const liveLoading = loadingOverride ?? live.loading;
-  const liveError = errorOverride ?? live.error;
+const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
+const livePoints = curvePointsOverride ?? live.points;
+const liveLoading = loadingOverride ?? live.loading;
+const liveError = errorOverride ?? live.error;
 
-  const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(!mockMode);
+const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
 
-  const chartPoints: ChartPoint[] = useMemo(() => {
-    const usd = bnbUsd ?? 0;
-    if (!usd || usd <= 0) return [];
+const chartPoints: ChartPoint[] = useMemo(() => {
+  const usd = bnbUsd ?? 0;
+  if (!usd || usd <= 0) return [];
+  return toMarketCapPointsUsd(livePoints || [], usd);
+}, [livePoints, bnbUsd]);
 
-    if (mockMode) return toMarketCapPointsUsdMock(mockEvents || [], usd);
-    return toMarketCapPointsUsd(livePoints || [], usd);
-  }, [mockMode, mockEvents, livePoints, bnbUsd]);
+// Render states (SAFE: hooks already executed)
+if (liveLoading) {
+  return (
+    <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
+      Loading curve trades…
+    </div>
+  );
+}
 
-  // Render states (SAFE: hooks already executed)
-  if (mockMode && (!mockEvents || mockEvents.length === 0)) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        No mock trades available.
-      </div>
-    );
-  }
+if (liveError) {
+  return (
+    <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
+      {liveError}
+    </div>
+  );
+}
 
-  if (!mockMode && liveLoading) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        Loading curve trades…
-      </div>
-    );
-  }
+if (bnbUsdLoading || !bnbUsd) {
+  return (
+    <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
+      Loading USD conversion…
+    </div>
+  );
+}
 
-  if (!mockMode && liveError) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-        {liveError}
-      </div>
-    );
-  }
-
-  if (!mockMode && (bnbUsdLoading || !bnbUsd)) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        Loading USD conversion…
-      </div>
-    );
-  }
-
-  if (!mockMode && bnbUsdError) {
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-        {bnbUsdError}
-      </div>
-    );
-  }
+if (bnbUsdError) {
+  return (
+    <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
+      {bnbUsdError}
+    </div>
+  );
+}
 
   if (chartPoints.length === 0) {
     return (

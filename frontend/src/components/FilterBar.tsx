@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { filters } from "@/constants/mockData";
+import { FILTERS, type FilterKey } from "@/constants/filters";
 
 export const FilterBar = () => {
-  const [activeFilter, setActiveFilter] = useState("All");
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("All");
 
   return (
     <div className="flex gap-3 mb-6 justify-center">
-      {filters.map((filter) => (
+      {FILTERS.map((filter) => (
         <Button
           key={filter}
           variant={activeFilter === filter ? "default" : "outline"}

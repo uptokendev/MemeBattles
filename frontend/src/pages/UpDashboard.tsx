@@ -4,7 +4,6 @@
  *
  * IMPORTANT:
  * - Uses the same data source as the carousel: useLaunchpad().fetchCampaigns()
- * - In mock mode: returns populated mock campaigns
  * - In live mode: returns on-chain/live campaigns
  */
 
@@ -142,8 +141,7 @@ const toTokenFromSummary = (s: CampaignSummary, fallbackId: number): Token => {
 
 const classifyTab = (m: CampaignMetrics | null): Tab => {
   // Live data currently doesn't have market-cap stages in the UI.
-  // We classify by bonding progress (sold / graduationTarget) so the
-  // page remains fully compatible once mock data is disabled.
+  // We classify by bonding progress (sold / graduationTarget)
   if (!m) return "up";
 
   try {
@@ -162,7 +160,7 @@ const isGraduatedFromMetrics = (m: CampaignMetrics | null): boolean => {
   if (!m) return false;
 
   // Prefer explicit flags when available; otherwise fall back to sold >= target
-  // so the UI works across older/newer deployments and in mock mode.
+  // so the UI works across older/newer deployments.
   const hasLaunchFlag = (m as any)?.launched !== undefined || (m as any)?.finalizedAt !== undefined;
 
   if (hasLaunchFlag) {

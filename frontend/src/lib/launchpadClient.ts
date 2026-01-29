@@ -4,7 +4,6 @@ import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/hooks/useWallet";
 import { useCallback, useMemo, useRef } from "react";
-import { USE_MOCK_DATA } from "@/config/mockConfig";
 import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 
@@ -193,43 +192,6 @@ async function getLogsChunked(
   return logs;
 }
 
-// ---------------- MOCK DATA ----------------
-const MOCK_CAMPAIGNS: CampaignInfo[] = [
-  {
-    id: 1,
-    campaign: "0x1111111111111111111111111111111111111111",
-    token: "0x2222222222222222222222222222222222222222",
-    creator: "0x9999999999999999999999999999999999999999",
-    name: "LaunchIT Mock Token",
-    symbol: "LIT",
-    logoURI: "/placeholder.svg",
-    xAccount: "https://x.com/launchit_mock",
-    website: "https://launchit.mock",
-    extraLink: "The first mock campaign for testing the UI.",
-    holders: "1.2k",
-    volume: "12.4k BNB",
-    marketCap: "420.0k BNB",
-    timeAgo: "3d",
-    dexPairAddress: "0x7dff3085e3fa13ba0d0c4a0f9baccb872ff3351e",
-    dexScreenerUrl: "https://dexscreener.com/bsc/0x7dff3085e3fa13ba0d0c4a0f9baccb872ff3351e",
-  },
-];
-
-const MOCK_METRICS_BY_CAMPAIGN: Record<string, CampaignMetrics> = {
-  "0x1111111111111111111111111111111111111111": {
-    sold: 150_000n,
-    curveSupply: 1_000_000n,
-    liquiditySupply: 500_000n,
-    creatorReserve: 500_000n,
-    currentPrice: 500_000_000_000_000n,
-    basePrice: 500_000_000_000_000n,
-    priceSlope: 10_000_000_000_000n,
-    graduationTarget: 1_000_000n,
-    liquidityBps: 5_000n,
-    protocolFeeBps: 200n,
-  },
-};
-
 // ---------------- Hook ----------------
 export function useLaunchpad() {
   const { provider: walletProvider, signer, chainId: walletChainId } = useWallet() as any;
@@ -269,8 +231,6 @@ export function useLaunchpad() {
   // --- READS ---
 
   const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
-    if (USE_MOCK_DATA) return MOCK_CAMPAIGNS;
-
     const factory = getFactoryRead();
     if (!factory) return [];
 
@@ -301,16 +261,6 @@ export function useLaunchpad() {
   const fetchCampaignMetrics = useCallback(
     async (campaignAddress: string): Promise<CampaignMetrics | null> => {
       if (!campaignAddress) return null;
-
-      if (USE_MOCK_DATA) {
-        const key = campaignAddress.toLowerCase();
-        const m = MOCK_METRICS_BY_CAMPAIGN[key] ?? MOCK_METRICS_BY_CAMPAIGN[campaignAddress] ?? null;
-        if (!m) return null;
-
-        const launched = (m as any).launched ?? (m.graduationTarget > 0n && m.sold >= m.graduationTarget);
-        const finalizedAt = (m as any).finalizedAt ?? (launched ? 1n : 0n);
-        return { ...m, launched, finalizedAt } as CampaignMetrics;
-      }
 
       const campaign = getCampaignRead(campaignAddress);
       if (!campaign) return null;
@@ -393,7 +343,6 @@ export function useLaunchpad() {
 
   const fetchCampaignActivity = useCallback(
     async (campaignAddress: string): Promise<CampaignActivity | null> => {
-      if (USE_MOCK_DATA) return null;
       if (!campaignAddress) return null;
 
       const latest = await readProvider.getBlockNumber();
@@ -489,14 +438,6 @@ export function useLaunchpad() {
       let marketCap = "—";
       let marketCapBnb: number | undefined = undefined;
 
-      if (USE_MOCK_DATA) {
-        const anyC = campaign as any;
-        holders = anyC.holders ?? "0";
-        volume = anyC.volume ?? "0 BNB";
-        marketCap = anyC.marketCap ?? "0 BNB";
-        return { campaign, metrics, stats: { holders, volume, marketCap, marketCapBnb } };
-      }
-
       // Activity rollups (safe + limited)
       try {
         const activity = await fetchCampaignActivity(campaign.campaign);
@@ -562,11 +503,6 @@ try {
       graduationTargetWei?: bigint;
       lpReceiver?: string;
     }) => {
-      if (USE_MOCK_DATA) {
-        console.log("[MOCK] createCampaign", params);
-        await sleep(300);
-        return { status: 1 };
-      }
 
       const writer = getFactoryWrite();
       if (!writer) throw new Error("Wallet not connected");
@@ -612,11 +548,6 @@ try {
 
   const buyTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
-      if (USE_MOCK_DATA) {
-        console.log("[MOCK] buyTokens", { campaignAddress, amountWei, maxCostWei });
-        await sleep(300);
-        return { status: 1 };
-      }
 
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
@@ -631,11 +562,6 @@ try {
 
   const sellTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => {
-      if (USE_MOCK_DATA) {
-        console.log("[MOCK] sellTokens", { campaignAddress, amountWei, minAmountWei });
-        await sleep(300);
-        return { status: 1 };
-      }
 
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
@@ -648,11 +574,6 @@ try {
 
   const finalizeCampaign = useCallback(
     async (campaignAddress: string, minTokens: bigint, minBnb: bigint) => {
-      if (USE_MOCK_DATA) {
-        console.log("[MOCK] finalizeCampaign", { campaignAddress, minTokens, minBnb });
-        await sleep(300);
-        return { status: 1 };
-      }
 
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
