@@ -5,6 +5,8 @@ import { Globe, Users, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
+import { AthBar } from "@/components/token/AthBar";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 
 // ---- Types ----
 type CarouselCard = {
@@ -12,6 +14,9 @@ type CarouselCard = {
   image: string;
   ticker: string;
   tokenName: string;
+
+  // Keep original campaign info around for lightweight stat refresh polling.
+  campaignInfo?: CampaignInfo;
 
   // IMPORTANT: TokenDetails expects /token/:campaignAddress
   campaignAddress: string;
@@ -23,7 +28,8 @@ type CarouselCard = {
   contractAddress: string;
 
   description: string;
-  marketCap: string;
+  marketCap: string; // BNB label (fallback)
+  marketCapUsdLabel?: string | null; // preferred for UI + ATH tracking
   holders: string;
   volume: string;
   links: { website?: string; twitter?: string; telegram?: string; discord?: string };
@@ -81,6 +87,36 @@ const PLACEHOLDER_CARDS: CarouselCard[] = [
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test((s ?? "").trim());
 const isZeroAddress = (s?: string) => /^0x0{40}$/.test((s ?? "").trim());
 
+function parseCompactNumber(input: string): number | null {
+  const raw = String(input ?? "").trim();
+  if (!raw || raw === "—") return null;
+
+  const first = raw.split(/\s+/)[0] ?? "";
+  const cleaned = first.replace(/[,$]/g, "");
+  const m = cleaned.match(/^(-?\d+(?:\.\d+)?)([KMBT])?$/i);
+  if (!m) {
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const suf = (m[2] ?? "").toUpperCase();
+  const mult = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : suf === "T" ? 1e12 : 1;
+  return n * mult;
+}
+
+function formatCompactUsd(n: number | null): string | null {
+  if (n == null || !Number.isFinite(n) || n <= 0) return null;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  const fmt = (v: number, suffix: string) => `${sign}$${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)}${suffix}`;
+  if (abs >= 1e12) return fmt(abs / 1e12, "T");
+  if (abs >= 1e9) return fmt(abs / 1e9, "B");
+  if (abs >= 1e6) return fmt(abs / 1e6, "M");
+  if (abs >= 1e3) return fmt(abs / 1e3, "K");
+  return `${sign}$${abs.toFixed(abs >= 100 ? 0 : abs >= 10 ? 1 : 2)}`;
+}
+
 function normalizeWebsiteUrl(url?: string): string | undefined {
   const u = (url ?? "").trim();
   if (!u) return undefined;
@@ -94,6 +130,37 @@ function normalizeTwitterUrl(input?: string): string | undefined {
   if (v.startsWith("http://") || v.startsWith("https://")) return v;
   const handle = v.replace(/^@/, "");
   return `https://x.com/${handle}`;
+}
+
+// ---------- Market-cap conversion helpers (BNB label -> USD label) ----------
+function parseCompactNumber(input: string): number | null {
+  const raw = String(input ?? "").trim();
+  if (!raw || raw === "—") return null;
+
+  const first = raw.split(/\s+/)[0] ?? "";
+  const cleaned = first.replace(/[,$]/g, "");
+  const m = cleaned.match(/^(-?\d+(?:\.\d+)?)([KMBT])?$/i);
+  if (!m) {
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const suf = (m[2] ?? "").toUpperCase();
+  const mult = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : suf === "T" ? 1e12 : 1;
+  return n * mult;
+}
+
+function formatCompactUsd(n: number | null): string | null {
+  if (n == null || !Number.isFinite(n) || n <= 0) return null;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  const fmt = (v: number, suffix: string) => `${sign}$${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)}${suffix}`;
+  if (abs >= 1e12) return fmt(abs / 1e12, "T");
+  if (abs >= 1e9) return fmt(abs / 1e9, "B");
+  if (abs >= 1e6) return fmt(abs / 1e6, "M");
+  if (abs >= 1e3) return fmt(abs / 1e3, "K");
+  return `${sign}$${abs.toFixed(abs >= 100 ? 0 : abs >= 10 ? 1 : 2)}`;
 }
 
 // ---------- Responsive card sizing ----------
@@ -149,10 +216,18 @@ const Example = () => {
   }, []);
 
   // Blockchain campaigns -> cards
-  const { fetchCampaigns, fetchCampaignCardStats } = useLaunchpad();
+  const { fetchCampaigns, fetchCampaignCardStats, activeChainId } = useLaunchpad();
+  const chainIdForStorage = activeChainId ?? 97;
+  const { price: bnbUsdPrice } = useBnbUsdPrice(true);
   const [cards, setCards] = useState<CarouselCard[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [campaignError, setCampaignError] = useState<string | null>(null);
+
+  // Keep a ref to the latest cards array so polling doesn't fight React's closure semantics.
+  const cardsRef = useRef<CarouselCard[]>([]);
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
 
   // This is the array we actually render:
   // - real on-chain campaigns if available
@@ -198,18 +273,32 @@ const Example = () => {
                 ? campaignAddress
                 : ZERO_ADDR;
 
+            const marketCapLabel = stats?.marketCap ?? "—";
+
+            // Convert "X BNB" -> USD label for UI + ATH tracking
+            let marketCapUsdLabel: string | null = null;
+            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
+              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
+              : null;
+            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
+              marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
+            }
+
             return {
               id: Number((c as any).id ?? i + 1),
               image: c.logoURI || "/placeholder.svg",
               ticker: String(c.symbol ?? "").toUpperCase(),
               tokenName: c.name ?? "Token",
 
+              campaignInfo: c,
+
               campaignAddress: isAddress(campaignAddress) ? campaignAddress : ZERO_ADDR,
               tokenAddress: isAddress(tokenAddress) ? tokenAddress : undefined,
               contractAddress,
 
               description: (c as any).description || (c as any).extraLink || "",
-              marketCap: stats?.marketCap ?? "—",
+              marketCap: marketCapLabel,
+              marketCapUsdLabel,
               holders: stats?.holders ?? "—",
               volume: stats?.volume ?? "—",
               links: {
@@ -235,7 +324,65 @@ const Example = () => {
     return () => {
       cancelled = true;
     };
-  }, [fetchCampaigns, fetchCampaignCardStats]);
+  }, [fetchCampaigns, fetchCampaignCardStats, bnbUsdPrice]);
+
+  // Poll lightweight stats (market cap/holders/volume) so the card + ATH bar feel "live".
+  // This is best-effort and intentionally modest to avoid hammering the RPC.
+  useEffect(() => {
+    let cancelled = false;
+    const intervalMs = 15_000;
+
+    const tick = async () => {
+      const snapshot = cardsRef.current;
+      if (!snapshot.length) return;
+
+      // Only refresh real campaigns (skip placeholders)
+      const real = snapshot.filter((c) => c.campaignInfo && isAddress(c.campaignAddress) && !isZeroAddress(c.campaignAddress));
+      if (!real.length) return;
+
+      try {
+        const updated = await Promise.all(
+          real.map(async (card) => {
+            const stats = card.campaignInfo ? await fetchCampaignCardStats(card.campaignInfo) : null;
+            const marketCapLabel = stats?.marketCap ?? card.marketCap;
+
+            let marketCapUsdLabel: string | null = null;
+            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
+              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
+              : null;
+            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
+              marketCapUsdLabel = formatCompactUsd(mcBnb * Number(bnbUsdPrice));
+            }
+
+            return {
+              ...card,
+              marketCap: marketCapLabel,
+              marketCapUsdLabel,
+              holders: stats?.holders ?? card.holders,
+              volume: stats?.volume ?? card.volume,
+            };
+          })
+        );
+
+        if (cancelled) return;
+
+        const byAddr = new Map(updated.map((u) => [String(u.campaignAddress).toLowerCase(), u]));
+        setCards((prev) =>
+          prev.map((p) => byAddr.get(String(p.campaignAddress).toLowerCase()) ?? p)
+        );
+      } catch (e) {
+        console.warn("[carousel] stats refresh failed", e);
+      }
+    };
+
+    // Initial tick (after mount) + interval
+    tick();
+    const id = window.setInterval(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [fetchCampaignCardStats, bnbUsdPrice]);
 
   // Save scroll position to sessionStorage whenever it changes
   useEffect(() => {
@@ -548,6 +695,7 @@ const Example = () => {
               isCentered={isCentered}
               cardWidth={CARD_WIDTH}
               isMobile={isMobile}
+              chainIdForStorage={chainIdForStorage}
               onClick={() => handleCardClick(index)}
             />
           );
@@ -573,12 +721,14 @@ const CardView = ({
   isCentered,
   cardWidth,
   isMobile,
+  chainIdForStorage,
   onClick,
 }: {
   card: CarouselCard;
   isCentered: boolean;
   cardWidth: number;
   isMobile: boolean;
+  chainIdForStorage: number;
   onClick: () => void;
 }) => {
   const [copied, setCopied] = useState(false);
@@ -613,9 +763,12 @@ const CardView = ({
     onClick();
   };
 
+  const mcapDisplay = (card.marketCapUsdLabel ?? null) || (card.marketCap ?? "—");
+  const barWidthPx = Math.round(Math.max(110, Math.min(170, cardWidth * 0.45)));
+
   return (
     <div
-      className="relative cursor-pointer transition-transform duration-500 ease-out will-change-transform"
+      className="relative cursor-pointer transition-[transform,filter,opacity] duration-500 ease-out will-change-transform"
       style={{
         // Keep the "featured" card prominent, but avoid blowing up the layout.
         transform: isCentered ? (isMobile ? "scale(1.10)" : "scale(1.22)") : "scale(1)",
@@ -623,7 +776,9 @@ const CardView = ({
         minWidth: `${cardWidth}px`,
         minHeight: `${cardWidth}px`,
         zIndex: isCentered ? 10 : 1,
-        opacity: isMobile ? 1 : isCentered ? 1 : 0.9,
+        // Make the centered card crisp and push the depth effect to the side cards.
+        opacity: isMobile ? 1 : isCentered ? 1 : 0.78,
+        filter: isMobile ? "none" : isCentered ? "none" : "blur(1.1px)",
       }}
       onClick={handleClick}
     >
@@ -648,7 +803,13 @@ const CardView = ({
           inactiveZone={0.01}
           borderWidth={2}
         />
-        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[1.15rem] border border-border/40 bg-card/80 backdrop-blur p-6 shadow-sm">
+        <div
+          className={`relative flex h-full w-full flex-col overflow-hidden rounded-[1.15rem] border border-border/40 bg-card/80 p-6 shadow-sm ${
+            // IMPORTANT: backdrop-blur on the top (center) card will blur the cards behind it.
+            // We only apply backdrop-blur on the side cards.
+            !isMobile && !isCentered ? "backdrop-blur" : ""
+          }`}
+        >
           {/* Top Section: Links and Stats */}
           <div className="flex items-start justify-between mb-4">
             {/* Social Links - Top Left */}
@@ -722,9 +883,16 @@ const CardView = ({
             </p>
           </div>
 
-          {/* Bottom Right: Market Cap */}
-          <div className="flex justify-end">
-            <span className="text-xs font-retro text-accent">MC {card.marketCap}</span>
+          {/* Bottom: MC (USD) + ATH bar */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-retro text-accent whitespace-nowrap">MC {mcapDisplay}</span>
+            <AthBar
+              currentLabel={card.marketCapUsdLabel ?? null}
+              storageKey={`ath:${String(chainIdForStorage)}:${String(card.campaignAddress).toLowerCase()}`}
+              className="text-[10px]"
+              barWidthPx={barWidthPx}
+              barMaxWidth="100%"
+            />
           </div>
         </div>
       </div>
