@@ -4,7 +4,8 @@ import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { Globe, Users, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo } from "@/lib/launchpadClient";
+import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 
@@ -193,6 +194,7 @@ const Example = () => {
   const [cards, setCards] = useState<CarouselCard[]>([]);
   const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [campaignError, setCampaignError] = useState<string | null>(null);
+  
 
   // Keep a ref to the latest cards array so polling doesn't fight React's closure semantics.
   const cardsRef = useRef<CarouselCard[]>([]);

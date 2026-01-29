@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
@@ -138,6 +139,7 @@ const TokenDetails = () => {
   // Launchpad hooks + state for the on-chain data
   const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, fetchCampaignActivity, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
+  const chainIdForStorage = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
@@ -615,22 +617,25 @@ const bnbUsd = useMemo(() => {
 
     if (displayDenom === "BNB") return bnbLabel;
 
-    const mcBnb = parseBnbLabel(bnbLabel);
+    const raw = rtStats?.marketcapBnb;
+    const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(bnbLabel);
     if (mcBnb == null) return "—";
 
-    if (!bnbUsdPrice) return bnbUsdLoading ? "…" : "—";
+    if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
-    return formatCompactUsd(mcBnb * bnbUsdPrice);
-  }, [displayDenom, tokenData.marketCap, bnbUsdPrice, bnbUsdLoading]);
+    return formatCompactUsd(mcBnb * bnbUsd);
+  }, [displayDenom, tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
+  // IMPORTANT: Use raw numeric marketcapBnb when available; never parse from a formatted label.
   const marketCapUsdLabel = useMemo(() => {
-    const mcBnb = parseBnbLabel(tokenData.marketCap);
+    const raw = rtStats?.marketcapBnb;
+    const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(tokenData.marketCap);
     if (mcBnb == null) return null;
-    if (!bnbUsdPrice) return null;
-    const usd = mcBnb * bnbUsdPrice;
+    if (!bnbUsd) return null;
+    const usd = mcBnb * bnbUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
-  }, [tokenData.marketCap, bnbUsdPrice]);
+  }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
 
   const priceDisplay = useMemo(() => {
     const bnbLabel = tokenData.price;
@@ -1848,7 +1853,7 @@ style={!isMobile ? { flex: "2" } : undefined}
                 {!isDexStage && (
                   <AthBar
                     currentLabel={marketCapUsdLabel ?? undefined}
-                    storageKey={`ath:${String(wallet.chainId ?? 97)}:${String((campaignAddress ?? "")).toLowerCase()}`}
+                    storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
                     className="w-full md:w-auto md:max-w-[320px]"
                   />
                 )}
