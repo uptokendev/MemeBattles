@@ -5,8 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AthBar } from "@/components/token/AthBar";
 import { useLaunchpad, type CampaignInfo } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { useWallet } from "@/hooks/useWallet";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getFactoryAddress } from "@/lib/chainConfig";
 
 type FeaturedRow = {
   chainId: number;
@@ -58,13 +57,11 @@ function formatCompactUsd(n: number | null): string | null {
   return `${sign}$${abs.toFixed(decimals)}`;
 }
 
-export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; limit?: number }) {
+export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: number; limit?: number }) {
   const navigate = useNavigate();
-  const wallet = useWallet();
-  const activeChainId = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
-  const cid = chainId ?? activeChainId;
   const { fetchCampaigns, fetchCampaignCardStats } = useLaunchpad();
   const { price: bnbUsdPrice } = useBnbUsdPrice(true);
+  const factoryAddress = useMemo(() => getFactoryAddress(chainId as any).toLowerCase(), [chainId]);
 
   const [featured, setFeatured] = useState<FeaturedRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +76,7 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
     const loadFeatured = async () => {
       try {
         setLoading(true);
-        const r = await fetch(`/api/featured?chainId=${encodeURIComponent(String(cid))}&sort=trending&limit=${encodeURIComponent(String(limit))}`);
+        const r = await fetch(`/api/featured?chainId=${encodeURIComponent(String(chainId))}&factoryAddress=${encodeURIComponent(factoryAddress)}&sort=trending&limit=${encodeURIComponent(String(limit))}`);
         const j = await r.json();
         const items: FeaturedRow[] = Array.isArray(j?.items) ? j.items : [];
         if (!cancelled) setFeatured(items);
@@ -95,13 +92,18 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
     return () => {
       cancelled = true;
     };
-  }, [cid, limit]);
+  }, [chainId, limit, factoryAddress]);
 
   // Build cards by merging featured addresses with on-chain campaign metadata
   useEffect(() => {
     let cancelled = false;
 
     const loadCards = async () => {
+      if (!featured.length) {
+        setCards([]);
+        return;
+      }
+
       try {
         const campaigns = await fetchCampaigns();
         const byCampaign = new Map<string, CampaignInfo>();
@@ -109,58 +111,27 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
           const addr = String((c as any).campaign ?? "").toLowerCase();
           if (isAddress(addr)) byCampaign.set(addr, c);
         }
+
         const out: FeaturedCard[] = [];
+        for (const row of featured) {
+          const addr = String(row.campaignAddress ?? "").toLowerCase();
+          const campaign = byCampaign.get(addr);
+          if (!campaign) continue;
 
-        if (featured.length) {
-          for (const row of featured) {
-            const addr = String(row.campaignAddress ?? "").toLowerCase();
-            const campaign = byCampaign.get(addr);
-            if (!campaign) continue;
+          const stats = await fetchCampaignCardStats(campaign);
+          const marketCapLabel = stats?.marketCap ?? "—";
 
-            const stats = await fetchCampaignCardStats(campaign);
-            const marketCapLabel = stats?.marketCap ?? "—";
-
-            // Convert "X BNB" -> USD for ATH tracking
-            let usdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
-              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
-              : null;
-            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
-              const usd = mcBnb * Number(bnbUsdPrice);
-              usdLabel = formatCompactUsd(usd);
-            }
-
-            out.push({ campaign, marketCapLabel, marketCapUsdLabel: usdLabel, creatorProfile: null });
+          // Convert "X BNB" -> USD for ATH tracking
+          let usdLabel: string | null = null;
+          const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
+            ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
+            : null;
+          if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
+            const usd = mcBnb * Number(bnbUsdPrice);
+            usdLabel = formatCompactUsd(usd);
           }
-        } else {
-          // Fallback: no votes yet (or /api/featured returned empty).
-          // Show the most recently created campaigns so the section never disappears.
-          const sorted = (campaigns ?? [])
-            .slice()
-            .sort((a: any, b: any) => {
-              const at = Number((a as any).createdAt ?? 0);
-              const bt = Number((b as any).createdAt ?? 0);
-              if (bt !== at) return bt - at;
-              const ai = Number((a as any).id ?? 0);
-              const bi = Number((b as any).id ?? 0);
-              return bi - ai;
-            });
 
-          for (const campaign of sorted.slice(0, limit)) {
-            const stats = await fetchCampaignCardStats(campaign);
-            const marketCapLabel = stats?.marketCap ?? "—";
-
-            let usdLabel: string | null = null;
-            const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
-              ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
-              : null;
-            if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
-              const usd = mcBnb * Number(bnbUsdPrice);
-              usdLabel = formatCompactUsd(usd);
-            }
-
-            out.push({ campaign, marketCapLabel, marketCapUsdLabel: usdLabel, creatorProfile: null });
-          }
+          out.push({ campaign, marketCapLabel, marketCapUsdLabel: usdLabel, creatorProfile: null });
         }
 
         if (!cancelled) setCards(out);
@@ -174,7 +145,7 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
     return () => {
       cancelled = true;
     };
-  }, [featured, fetchCampaigns, fetchCampaignCardStats, bnbUsdPrice, limit]);
+  }, [featured, fetchCampaigns, fetchCampaignCardStats, bnbUsdPrice]);
 
   // Fetch creator profiles (best effort) for the cards we ended up with
   useEffect(() => {
@@ -197,7 +168,7 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
           missing.map(async (addr) => {
             try {
               const r = await fetch(
-                `/api/profile?chainId=${encodeURIComponent(String(cid))}&address=${encodeURIComponent(addr)}`
+                `/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
               );
               const j = await r.json();
               return [addr, j?.profile ?? null] as const;
@@ -223,7 +194,7 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, cid]);
+  }, [cards, chainId]);
 
   const hydrated = useMemo(() => {
     return cards.map((c) => {
@@ -249,7 +220,18 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
     );
   }
 
-  if (!hydrated.length) return null;
+  if (!hydrated.length) {
+    return (
+      <div className="mb-4 md:mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm md:text-base font-semibold tracking-wide">Featured Coins</h2>
+        </div>
+        <div className="rounded-[1.25rem] border border-border/40 bg-card p-4 text-sm text-muted-foreground">
+          No campaigns are featured yet for this factory. Upvote a campaign to place it here.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-4 md:mb-6">
@@ -323,7 +305,7 @@ export function FeaturedCampaigns({ chainId, limit = 10 }: { chainId?: number; l
                         <div className="w-[110px] md:w-[140px]">
                           <AthBar
                             currentLabel={card.marketCapUsdLabel}
-                            storageKey={`ath:${cid}:${String(campaignAddr).toLowerCase()}`}
+                            storageKey={`ath:${chainId}:${String(campaignAddr).toLowerCase()}`}
                             className="text-[10px]"
                           />
                         </div>
