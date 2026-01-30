@@ -53,7 +53,7 @@ export function UpvoteDialog({
 }: Props) {
   const { toast } = useToast();
   const wallet = useWallet();
-  const { priceUsd } = useBnbUsdPrice();
+  const { price: priceUsd } = useBnbUsdPrice();
 
   const chainId = getActiveChainId(wallet.chainId);
   const treasuryAddress = useMemo(() => {
