@@ -1834,7 +1834,12 @@ style={!isMobile ? { flex: "2" } : undefined}
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">Wallet: {formatBnbFromWei(bnbBalanceWei)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Balance:{" "}
+                      {tradeInputDenom === "BNB"
+                        ? formatBnbFromWei(bnbBalanceWei)
+                        : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       Cost: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
                     </span>
@@ -1927,7 +1932,10 @@ style={!isMobile ? { flex: "2" } : undefined}
 
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-xs text-muted-foreground">
-                      Balance: {formatTokenFromWei(tokenBalanceWei)} {tokenData.ticker}
+                      Balance:{" "}
+                      {tradeInputDenom === "BNB"
+                        ? formatBnbFromWei(bnbBalanceWei)
+                        : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       Payout: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
