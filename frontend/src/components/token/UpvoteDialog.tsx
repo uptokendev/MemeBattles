@@ -17,6 +17,11 @@ import { useWallet } from "@/hooks/useWallet";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
 
+// Client-side minimum guardrails (in addition to any on-chain minAmount)
+// Requirement: minimum is 0.005 BNB OR ~$2 worth of BNB (whichever is higher).
+const ABS_MIN_BNB = 0.005;
+const USD_MIN = 2;
+
 const UPVOTE_ABI = [
   "function voteWithBNB(address campaign, bytes32 meta) payable",
   "function assetConfig(address asset) view returns (bool enabled, uint256 minAmount)",
@@ -37,7 +42,7 @@ type Props = {
 /**
  * Upvote Dialog (BNB-only for v1)
  * - Reads minAmount for native (address(0)) from the UPVoteTreasury contract
- * - Suggests ~$1 in BNB using live BNB/USD price (best-effort)
+ * - Enforces a client-side minimum: max(0.005 BNB, ~$2 in BNB, on-chain minAmount)
  * - Sends one payable tx => one vote
  */
 export function UpvoteDialog({
@@ -65,6 +70,61 @@ export function UpvoteDialog({
   const [insufficient, setInsufficient] = useState<boolean>(false);
   const [amountBnb, setAmountBnb] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  // Prevent the dialog from closing while the wallet prompt / tx is in-flight.
+  const lockDialog = submitting;
+
+  const absMinWei = useMemo(() => {
+    try {
+      return ethers.parseEther(String(ABS_MIN_BNB));
+    } catch {
+      return 0n;
+    }
+  }, []);
+
+  const usdMinWei = useMemo(() => {
+    const p = Number(priceUsd ?? 0);
+    if (!Number.isFinite(p) || p <= 0) return 0n;
+    const bnb = USD_MIN / p;
+    if (!Number.isFinite(bnb) || bnb <= 0) return 0n;
+    try {
+      // Use a string round-trip to avoid BigInt overflow/precision issues.
+      return ethers.parseEther(bnb.toFixed(18));
+    } catch {
+      return 0n;
+    }
+  }, [priceUsd]);
+
+  const effectiveMinWei = useMemo(() => {
+    let m = minAmountWei ?? 0n;
+    if (absMinWei > m) m = absMinWei;
+    if (usdMinWei > m) m = usdMinWei;
+    return m;
+  }, [minAmountWei, absMinWei, usdMinWei]);
+
+  const humanEffectiveMin = useMemo(() => {
+    try {
+      return ethers.formatEther(effectiveMinWei);
+    } catch {
+      return "—";
+    }
+  }, [effectiveMinWei]);
+
+  const minUsdLabel = useMemo(() => {
+    const p = Number(priceUsd ?? 0);
+    if (!Number.isFinite(p) || p <= 0) return null;
+    try {
+      const minBnb = Number(ethers.formatEther(effectiveMinWei));
+      if (!Number.isFinite(minBnb) || minBnb <= 0) return null;
+      const usd = minBnb * p;
+      if (!Number.isFinite(usd) || usd <= 0) return null;
+      return `$${usd.toFixed(2)}`;
+    } catch {
+      return null;
+    }
+  }, [priceUsd, effectiveMinWei]);
 
 
 // Load wallet BNB balance when dialog opens / account changes
@@ -91,14 +151,26 @@ useEffect(() => {
   };
 }, [open, wallet.provider, wallet.account, chainId]);
 
+  const amountWei = useMemo(() => {
+    try {
+      return ethers.parseEther(String(amountBnb || "0"));
+    } catch {
+      return null;
+    }
+  }, [amountBnb]);
 
-  const suggestedBnb = useMemo(() => {
-    const p = Number(priceUsd ?? 0);
-    if (!Number.isFinite(p) || p <= 0) return null;
-    const bnb = 1 / p; // ~$1
-    // show with 6 decimals for UX
-    return String(Math.max(0, bnb).toFixed(6));
-  }, [priceUsd]);
+  const tooLow = useMemo(() => {
+    if (amountWei == null) return false;
+    if (amountWei <= 0n) return false;
+    return amountWei < effectiveMinWei;
+  }, [amountWei, effectiveMinWei]);
+
+  // When the dialog opens, allow a one-time prefill to the effective minimum.
+  useEffect(() => {
+    if (!open) return;
+    setPrefilled(false);
+    setTouched(false);
+  }, [open]);
 
   // Load minAmount + enabled whenever dialog opens (or chain changes)
   useEffect(() => {
@@ -134,21 +206,6 @@ useEffect(() => {
         if (cancelled) return;
         setEnabled(isEnabled);
         setMinAmountWei(min);
-
-        // Pre-fill amount as max(minAmount, suggested ~$1)
-        let minBnb = "";
-        try {
-          minBnb = ethers.formatEther(min);
-        } catch {
-          minBnb = "";
-        }
-
-        const minNum = Number(minBnb || "0");
-        const sugNum = Number(suggestedBnb || "0");
-        const chosen = Math.max(minNum, sugNum || 0);
-        setAmountBnb(
-          chosen > 0 ? chosen.toFixed(6) : (minBnb ? String(minBnb) : "")
-        );
       } catch (e: any) {
         if (cancelled) return;
         setEnabled(false);
@@ -162,17 +219,38 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, [open, treasuryAddress, wallet.provider, suggestedBnb]);
+  }, [open, treasuryAddress, wallet.provider]);
 
-  const humanMin = useMemo(() => {
-    if (minAmountWei == null) return "—";
-    try {
-      return ethers.formatEther(minAmountWei);
-    } catch {
-      return "—";
+  // One-time prefill: set the input to the effective minimum when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    if (touched) return;
+    if (lockDialog) return;
+    // If we haven't touched the input, keep it aligned with the effective minimum.
+    if (amountWei != null && amountWei > 0n && amountWei < effectiveMinWei) {
+      try {
+        const v = Number(ethers.formatEther(effectiveMinWei));
+        if (Number.isFinite(v) && v > 0) {
+          setAmountBnb(v.toFixed(6));
+          setPrefilled(true);
+        }
+      } catch {
+        // ignore
+      }
+      return;
     }
-  }, [minAmountWei]);
-
+    if (prefilled) return;
+    if (amountBnb.trim() !== "") return;
+    if (effectiveMinWei <= 0n) return;
+    try {
+      const v = Number(ethers.formatEther(effectiveMinWei));
+      if (!Number.isFinite(v) || v <= 0) return;
+      setAmountBnb(v.toFixed(6));
+      setPrefilled(true);
+    } catch {
+      // ignore
+    }
+  }, [open, prefilled, touched, lockDialog, amountBnb, amountWei, effectiveMinWei]);
 
 // Estimate total cost (value + gas) and mark insufficient balance.
 useEffect(() => {
@@ -187,7 +265,7 @@ useEffect(() => {
   (async () => {
     try {
       // Parse value
-      let valueWei: bigint;
+      let valueWei: bigint = 0n;
       try {
         valueWei = ethers.parseEther(String(amountBnb || "0"));
       } catch {
@@ -200,7 +278,7 @@ useEffect(() => {
         setInsufficient(false);
         return;
       }
-      if (minAmountWei != null && valueWei < minAmountWei) {
+      if (valueWei < effectiveMinWei) {
         // Too low amount is handled elsewhere; don't flag as insufficient.
         setEstTotalWei(null);
         setInsufficient(false);
@@ -245,7 +323,7 @@ useEffect(() => {
   return () => {
     cancelled = true;
   };
-}, [open, wallet.provider, wallet.account, treasuryAddress, hasContractCode, enabled, amountBnb, minAmountWei, campaignAddress, balanceWei]);
+}, [open, wallet.provider, wallet.account, treasuryAddress, hasContractCode, enabled, amountBnb, effectiveMinWei, campaignAddress, balanceWei]);
 
   const canUpvote = Boolean(
     treasuryAddress &&
@@ -253,29 +331,37 @@ useEffect(() => {
       enabled &&
       campaignAddress &&
       wallet.provider &&
-      amountBnb &&
-      Number(amountBnb) > 0 && !insufficient
+      amountWei != null &&
+      amountWei > 0n &&
+      !tooLow &&
+      !insufficient
   );
 
   const handleUpvote = async () => {
     try {
+      const ABORT = "__UPVOTE_ABORT__";
+      const fail = (title: string, description: string) => {
+        toast({ title, description });
+        throw new Error(ABORT);
+      };
+
+      // Lock dialog from the moment the user confirms, including wallet confirmation time.
+      setSubmitting(true);
+
       if (!treasuryAddress) {
-        toast({ title: "UP Vote is not configured", description: "Missing vote treasury address for this chain." });
-        return;
+        fail("UP Vote is not configured", "Missing vote treasury address for this chain.");
       }
       if (hasContractCode === false) {
-        toast({
-          title: "UP Vote contract not deployed",
-          description: "The configured vote treasury address has no contract code on this network. Switch networks or update the contract address.",
-        });
-        return;
+        fail(
+          "UP Vote contract not deployed",
+          "The configured vote treasury address has no contract code on this network. Switch networks or update the contract address."
+        );
       }
       if (!wallet.signer) {
         await wallet.connect();
       }
       if (!wallet.signer) {
-        toast({ title: "Wallet not connected", description: "Please connect your wallet to upvote." });
-        return;
+        fail("Wallet not connected", "Please connect your wallet to upvote.");
       }
 
       // Validate amount
@@ -283,15 +369,13 @@ useEffect(() => {
       try {
         valueWei = ethers.parseEther(String(amountBnb));
       } catch {
-        toast({ title: "Invalid amount", description: "Enter a valid BNB amount." });
-        return;
+        fail("Invalid amount", "Enter a valid BNB amount.");
       }
-      if (minAmountWei != null && valueWei < minAmountWei) {
-        toast({
-          title: "Amount too low",
-          description: `Minimum is ${humanMin} BNB for 1 vote.`,
-        });
-        return;
+      if (valueWei < effectiveMinWei) {
+        fail(
+          "Amount too low",
+          `Minimum is ${humanEffectiveMin} BNB${minUsdLabel ? ` (~${minUsdLabel})` : ""} for 1 vote.`
+        );
       }
 
 
@@ -300,15 +384,13 @@ if (balanceWei != null) {
   // If we computed estTotalWei, use it; else at least ensure value fits.
   const needed = estTotalWei ?? valueWei;
   if (balanceWei < needed) {
-    toast({
-      title: "Insufficient BNB",
-      description: "You don't have enough BNB to cover the vote fee (and gas).",
-    });
-    return;
+      fail(
+        "Insufficient BNB",
+        "You don't have enough BNB to cover the vote fee (and gas)."
+      );
   }
 }
 
-      setSubmitting(true);
       const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.signer);
       const meta = ethers.keccak256(ethers.toUtf8Bytes("user"));
       const tx = await c.voteWithBNB(campaignAddress, meta, { value: valueWei });
@@ -318,15 +400,25 @@ if (balanceWei != null) {
       toast({ title: "Upvoted", description: "Your vote has been recorded." });
       setOpen(false);
     } catch (e: any) {
+      // Errors thrown via `fail(...)` already displayed a toast.
       const msg = String(e?.shortMessage || e?.message || "Transaction failed");
-      toast({ title: "Upvote failed", description: msg });
+      if (!msg.includes("__UPVOTE_ABORT__")) {
+        toast({ title: "Upvote failed", description: msg });
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Do not allow closing while awaiting wallet confirmation / tx confirmation.
+        if (!next && lockDialog) return;
+        setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         <Button
           variant={buttonVariant}
@@ -338,7 +430,17 @@ if (balanceWei != null) {
           UP Vote
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent
+        onPointerDownOutside={(e) => {
+          if (lockDialog) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (lockDialog) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (lockDialog) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>UP Vote</DialogTitle>
           <DialogDescription>
@@ -352,12 +454,14 @@ if (balanceWei != null) {
               "Loading fee…"
             ) : enabled ? (
               <>
-                Minimum fee: <span className="text-foreground">{humanMin} BNB</span>
-                {suggestedBnb ? (
+                Minimum fee:{" "}
+                <span className="text-foreground">{humanEffectiveMin} BNB</span>
+                {minUsdLabel ? (
                   <>
-                    {" "}• Suggested (~$1): <span className="text-foreground">{suggestedBnb} BNB</span>
+                    {" "}• <span className="text-foreground">{minUsdLabel}</span>
                   </>
                 ) : null}
+                <span className="ml-2">(min: max(0.005 BNB, ~$2))</span>
               </>
             ) : (
               "UP Vote is currently disabled on this chain."
@@ -378,12 +482,27 @@ if (balanceWei != null) {
           <div className="flex items-center gap-2">
             <Input
               value={amountBnb}
-              onChange={(e) => setAmountBnb(e.target.value)}
+              onChange={(e) => {
+                setTouched(true);
+                setAmountBnb(e.target.value);
+              }}
               placeholder="0.001"
               inputMode="decimal"
             />
             <div className="text-sm text-muted-foreground">BNB</div>
           </div>
+
+          {amountBnb.trim() !== "" && amountWei == null ? (
+            <div className="text-xs text-destructive">
+              Enter a valid BNB amount.
+            </div>
+          ) : null}
+
+          {tooLow ? (
+            <div className="text-xs text-destructive">
+              Minimum is {humanEffectiveMin} BNB{minUsdLabel ? ` (~${minUsdLabel})` : ""}.
+            </div>
+          ) : null}
 
           <div className="text-xs text-muted-foreground">
             Off-chain cooldown & daily caps apply to keep the list fair.
