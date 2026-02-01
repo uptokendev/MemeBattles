@@ -230,33 +230,58 @@ export function useLaunchpad() {
 
   // --- READS ---
 
-  const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
+  /** Total number of campaigns in the factory (used for paging / infinite scroll). */
+  const fetchCampaignsCount = useCallback(async (): Promise<number> => {
     const factory = getFactoryRead();
-    if (!factory) return [];
-
+    if (!factory) return 0;
     const total: bigint = await factory.campaignsCount();
-    if (total === 0n) return [];
+    return Number(total ?? 0n);
+  }, [getFactoryRead]);
 
-    const totalNumber = Number(total);
+  /**
+   * Fetch a raw campaign page from the factory.
+   * NOTE: Factory pages are ordered oldest->newest; we return newest->oldest by default.
+   */
+  const fetchCampaignPage = useCallback(
+    async (offset: number, limit: number, opts?: { newestFirst?: boolean }): Promise<CampaignInfo[]> => {
+      const factory = getFactoryRead();
+      if (!factory) return [];
+      const total = await fetchCampaignsCount();
+      if (total <= 0) return [];
+
+      const safeLimit = Math.max(1, Math.min(50, Number(limit ?? 24)));
+      const safeOffset = Math.max(0, Math.min(total, Number(offset ?? 0)));
+
+      const page = await factory.getCampaignPage(safeOffset, safeLimit);
+      const mapped = (page ?? []).map((c: any, idx: number) => ({
+        id: safeOffset + idx,
+        campaign: c.campaign,
+        token: c.token,
+        creator: c.creator,
+        name: c.name,
+        symbol: c.symbol,
+        logoURI: c.logoURI,
+        xAccount: c.xAccount,
+        website: c.website,
+        extraLink: c.extraLink,
+        createdAt: c.createdAt ? Number(c.createdAt) : undefined,
+      })) as CampaignInfo[];
+
+      const newestFirst = opts?.newestFirst ?? true;
+      return newestFirst ? mapped.slice().reverse() : mapped;
+    },
+    [getFactoryRead, fetchCampaignsCount]
+  );
+
+  const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
+    const totalNumber = await fetchCampaignsCount();
+    if (totalNumber <= 0) return [];
+
+    // Default behavior (kept for backward compatibility): return the latest 25.
     const limit = Math.min(totalNumber, 25);
     const offset = Math.max(0, totalNumber - limit);
-
-    const page = await factory.getCampaignPage(offset, limit);
-
-    return page.map((c: any, idx: number) => ({
-      id: offset + idx,
-      campaign: c.campaign,
-      token: c.token,
-      creator: c.creator,
-      name: c.name,
-      symbol: c.symbol,
-      logoURI: c.logoURI,
-      xAccount: c.xAccount,
-      website: c.website,
-      extraLink: c.extraLink,
-      createdAt: c.createdAt ? Number(c.createdAt) : undefined,
-    })) as CampaignInfo[];
-  }, [getFactoryRead]);
+    return await fetchCampaignPage(offset, limit, { newestFirst: true });
+  }, [fetchCampaignsCount, fetchCampaignPage]);
 
   const fetchCampaignMetrics = useCallback(
     async (campaignAddress: string): Promise<CampaignMetrics | null> => {
@@ -585,6 +610,8 @@ try {
   );
 
   return {
+    fetchCampaignsCount,
+    fetchCampaignPage,
     fetchCampaigns,
     fetchCampaignMetrics,
     fetchCampaignCardStats,

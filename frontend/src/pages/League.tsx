@@ -143,7 +143,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     <div className="h-full overflow-y-auto pr-2">
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
-          <h1 className="text-lg md:text-2xl font-semibold">UP Only League</h1>
+          <h1 className="text-lg md:text-2xl font-semibold">Battle Leagues</h1>
           <p className="text-xs md:text-sm text-muted-foreground">
             Objective, on-chain leaderboards (bonding only). Weekly & monthly use chain timestamps.
           </p>

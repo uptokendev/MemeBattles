@@ -1,57 +1,57 @@
-/**
- * Showcase Page
- * Main landing page displaying a horizontal scrolling carousel of tokens
- * with navigation buttons to Create and UP Dashboard
- */
-
-import Example from "@/components/ui/horizontal-scroll-carousel";
+import { useEffect, useMemo, useState } from "react";
 import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
-import { LeagueCampaigns } from "@/components/home/LeagueCampaigns";
-import { GlowingButton } from "@/components/ui/glowing-button";
-import { Plus, Grid3x3 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
+import { DiscoveryControls } from "@/components/home/DiscoveryControls";
+import { HeaderBand } from "@/components/home/HeaderBand";
+import { LeagueOverlayCard } from "@/components/home/LeagueOverlayCard";
 
 const Showcase = () => {
-  const navigate = useNavigate();
-  
+  const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "" });
+
+  // Optional: keep TopBar typeahead behavior, but also allow "filter in place" for the Home grid.
+  useEffect(() => {
+    const onSearch = (e: any) => {
+      const q = String(e?.detail ?? "");
+      setQuery((prev) => ({ ...prev, search: q }));
+    };
+    window.addEventListener("upmeme:homeSearch", onSearch);
+    return () => window.removeEventListener("upmeme:homeSearch", onSearch);
+  }, []);
+
+  const effectiveQuery = useMemo(() => {
+    return {
+      ...query,
+      // default tab should be trending
+      tab: query.tab ?? "trending",
+    } as HomeQuery;
+  }, [query]);
 
   return (
-    <div className="h-full flex flex-col overflow-y-auto">
-      {/* Featured list sits directly under the ticker (TopBar) */}
-      <div className="flex-none pt-[20px]">
-        <FeaturedCampaigns />
-      </div>
-
-      {/* Carousel slightly shorter to make room for Featured */}
-      <div className="flex-none h-[360px] sm:h-[420px] md:h-[520px] pb-[calc(96px+env(safe-area-inset-bottom))] md:pb-0">
-        <Example />
-      </div>
-      
-      
-      <div className="flex-none px-0 md:px-0">
-        <LeagueCampaigns />
-      </div>
-
-      <div className="absolute bottom-8 left-0 right-0 flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-6 z-20 pointer-events-none px-4 md:static md:mt-6 md:pb-6">
-        <div className="pointer-events-auto w-full sm:w-auto">
-          <GlowingButton 
-            glowColor="#ec4899" 
-            className="flex items-center justify-center gap-2 md:gap-3 text-sm md:text-lg px-4 md:px-8 py-3 md:py-6 w-full sm:w-auto"
-            onClick={() => navigate("/create")}
-          >
-            <Plus className="h-4 w-4 md:h-5 md:w-5" />
-            Create
-          </GlowingButton>
+    <div className="h-full overflow-y-auto">
+      <div className="relative px-3 md:px-6 pb-10">
+        {/* Header band with centered logo + glow strip */}
+        <div className="pt-2">
+          <HeaderBand />
         </div>
-        <div className="pointer-events-auto w-full sm:w-auto">
-          <GlowingButton 
-            glowColor="#a3e635" 
-            className="flex items-center justify-center gap-2 md:gap-3 text-sm md:text-lg px-4 md:px-8 py-3 md:py-6 w-full sm:w-auto"
-            onClick={() => navigate("/up-dashboard")}
-          >
-            <Grid3x3 className="h-4 w-4 md:h-5 md:w-5" />
-            UP Dashboard
-          </GlowingButton>
+
+        {/* League overlay: positioned under the TopBar connect wallet area */}
+        <div className="absolute right-3 md:right-6 top-2 md:top-3 z-30 pointer-events-none">
+          <LeagueOverlayCard className="pointer-events-auto" />
+        </div>
+
+        {/* Featured grid (UpVote campaigns) */}
+        <div className="mt-5 md:pr-[320px]">
+          <FeaturedCampaigns />
+        </div>
+
+        {/* Tabs / filters / sort / search */}
+        <div className="mt-5 md:pr-[320px]">
+          <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
+        </div>
+
+        {/* Main campaign browsing surface (paged / infinite) */}
+        <div className="mt-4">
+          <CampaignGrid query={effectiveQuery} />
         </div>
       </div>
     </div>

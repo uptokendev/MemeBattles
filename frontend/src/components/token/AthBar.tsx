@@ -158,7 +158,22 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
-              background: "linear-gradient(90deg, hsl(var(--muted)) 0%, hsl(var(--success)) 100%)",
+              // MemeBattles look: yellow -> orange -> red, with subtle vertical "block" stripes.
+              background:
+                "linear-gradient(90deg, #ffe55c 0%, #ff9f1c 55%, #ff3b3b 100%)",
+              transition: "width 350ms ease",
+            }}
+          />
+
+          {/* Stripes overlay (visual only) */}
+          <div
+            className="absolute inset-y-0 left-0 rounded-full pointer-events-none"
+            style={{
+              width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
+              background:
+                "repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 6px, rgba(0,0,0,0) 6px, rgba(0,0,0,0) 12px)",
+              mixBlendMode: "overlay",
+              opacity: 0.55,
               transition: "width 350ms ease",
             }}
           />
@@ -168,7 +183,7 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
             className="absolute top-0 bottom-0 w-10"
             style={{
               left: `calc(${Math.max(0, Math.min(100, ratio * 100))}% - 20px)`,
-              background: "linear-gradient(90deg, transparent, hsl(var(--success) / 0.22), transparent)",
+              background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)",
               filter: "blur(0.2px)",
               animation: "athGlowPulse 1.4s ease-in-out infinite",
               pointerEvents: "none",
@@ -196,8 +211,8 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
                     key={i}
                     className="absolute block h-[2px] w-[8px] rounded-full"
                     style={{
-  background: "hsl(var(--success) / 0.95)",
-  boxShadow: "0 0 10px hsl(var(--success) / 0.75)",
+  background: "rgba(255, 229, 92, 0.95)",
+  boxShadow: "0 0 10px rgba(255, 159, 28, 0.75)",
   transform: "translate(0,0)",
   opacity: 0.9,
   animation: `athSparkUp 520ms ease-out ${delay}ms forwards`,

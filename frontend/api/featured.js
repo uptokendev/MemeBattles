@@ -27,6 +27,13 @@ export default async function handler(req, res) {
       `SELECT
          va.chain_id AS "chainId",
          va.campaign_address AS "campaignAddress",
+         c.token_address AS "tokenAddress",
+         c.creator_address AS "creatorAddress",
+         c.name AS "name",
+         c.symbol AS "symbol",
+         c.logo_uri AS "logoUri",
+         c.created_at_chain AS "createdAtChain",
+         c.graduated_at_chain AS "graduatedAtChain",
          va.votes_1h AS "votes1h",
          va.votes_24h AS "votes24h",
          va.votes_7d AS "votes7d",

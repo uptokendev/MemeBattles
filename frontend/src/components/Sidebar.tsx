@@ -4,10 +4,12 @@
  */
 
 import { X } from "lucide-react";
-import logo from "@/assets/logo.png";
 import AnimatedNav from "./ui/animated-nav";
 import { SocialTooltip } from "./ui/social-media";
 import { navItems, socialLinks } from "@/constants/navigation";
+
+// Use public brand assets so we can swap without touching the build pipeline.
+const brandMark = "/assets/ticker.png";
 
 interface SidebarProps {
   mobileMenuOpen: boolean;
@@ -29,7 +31,7 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
       <aside className={`
         fixed top-4 bottom-4 w-64 bg-sidebar/95 backdrop-blur-md border border-sidebar-border/50 rounded-2xl flex flex-col shadow-2xl z-50 transition-transform duration-300 ease-in-out
         ${mobileMenuOpen ? 'left-4' : '-left-72'}
-        lg:left-4 lg:translate-x-0
+        lg:hidden
       `}>
         {/* Mobile Close Button */}
         <button
@@ -40,8 +42,11 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
           <X className="h-5 w-5" />
         </button>
 
-        <div className="p-6 pl-4 flex items-center">
-          <a href="/"><img src={logo} alt="Launchpad" className="h-12 md:h-16 w-auto" /></a>
+        <div className="p-6 pl-4 flex items-center gap-3">
+          <a href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3">
+            <img src={brandMark} alt="Meme Battles" className="h-10 w-10" draggable={false} />
+            <span className="font-retro text-sm">MemeBattles</span>
+          </a>
         </div>
 
         <nav className="flex-1 px-4 overflow-y-auto">
@@ -50,7 +55,7 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
 
         <div className="p-4 md:p-6 border-t border-sidebar-border/50 space-y-4">
           <SocialTooltip items={socialLinks} />
-          <p className="text-xs text-muted-foreground mt-4 hidden md:block">© 2025 Launchpad. All rights reserved.</p>
+          <p className="text-xs text-muted-foreground mt-4 hidden md:block">© 2026 MemeBattles. All rights reserved.</p>
         </div>
       </aside>
     </>

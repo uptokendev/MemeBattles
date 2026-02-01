@@ -185,7 +185,7 @@ const Create = () => {
           await new Promise((r) => setTimeout(r, delayMs));
         }
       } catch (e) {
-        // If this fails, the processing hook will fall back to /up-dashboard
+        // If this fails, the processing hook will fall back to /battle-dashboard
         console.warn("[Create] Failed to resolve created campaign address", e);
       }
 

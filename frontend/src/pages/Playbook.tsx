@@ -162,7 +162,7 @@ const Playbook = () => {
                 </Link>
               </Button>
               <Button asChild variant="outline" className="w-full sm:w-auto">
-                <Link to="/up-dashboard">Explore UP Dashboard</Link>
+                <Link to="/battle-dashboard">Explore Battle Dashboard</Link>
               </Button>
             </div>
           </div>
@@ -176,7 +176,7 @@ const Playbook = () => {
               </div>
               <div className="flex gap-2">
                 <Button asChild size="sm" variant="secondary">
-                  <Link to="/">Showcase</Link>
+                  <Link to="/">Launchpad</Link>
                 </Button>
                 <Button asChild size="sm" variant="secondary">
                   <Link to="/profile">Profile</Link>
@@ -204,7 +204,7 @@ const Playbook = () => {
               </li>
               <li>Double-check external URLs. Use only official domains/handles.</li>
               <li>Submit the transaction and confirm in your wallet.</li>
-              <li>After creation, your token appears in the carousel and UP Dashboard.</li>
+              <li>After creation, your token appears in the Launchpad feed and Battle Dashboard.</li>
             </ol>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -240,7 +240,7 @@ const Playbook = () => {
               </p>
               <p>
                 Once the campaign reaches its graduation criteria, it can transition to DEX trading.
-                Graduated tokens appear in the dedicated “graduated” row on UP Dashboard.
+                Graduated tokens appear in the dedicated “graduated” row on Battle Dashboard.
               </p>
             </div>
           </Section>
@@ -249,13 +249,13 @@ const Playbook = () => {
             id="trading"
             icon={TrendingUp}
             title="3) Discover and trade"
-            subtitle="Use UP Dashboard to find tokens, then open details for chart, activity, and actions."
+            subtitle="Use Battle Dashboard to find tokens, then open details for chart, activity, and actions."
           >
             <ol className="list-decimal pl-5 space-y-2 text-sm text-muted-foreground">
               <li>
                 Open{" "}
-                <Link className="text-accent hover:underline" to="/up-dashboard">
-                  UP Dashboard
+                <Link className="text-accent hover:underline" to="/battle-dashboard">
+                  Battle Dashboard
                 </Link>{" "}
                 and browse the sections.
               </li>
@@ -366,7 +366,7 @@ const Playbook = () => {
                 <AccordionTrigger>Why don’t I see my new token immediately?</AccordionTrigger>
                 <AccordionContent>
                   It can take a short time for indexing / refresh. Try refreshing the page. If you just created
-                  a token, it should appear in the carousel and UP Dashboard shortly after confirmation.
+                  a token, it should appear in the Launchpad feed and Battle Dashboard shortly after confirmation.
                 </AccordionContent>
               </AccordionItem>
 

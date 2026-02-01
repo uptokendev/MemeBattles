@@ -1,322 +1,262 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GlowingEffect } from "@/components/ui/glowing-effect";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { UpvoteDialog } from "@/components/token/UpvoteDialog";
+import { cn } from "@/lib/utils";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignInfo } from "@/types/launchpad";
+import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
-import { useLaunchpad, type CampaignInfo } from "@/lib/launchpadClient";
-import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { getFactoryAddress } from "@/lib/chainConfig";
 
-type FeaturedRow = {
+type FeaturedItemApi = {
   chainId: number;
   campaignAddress: string;
-  votes24h?: number;
-  votes7d?: number;
-  votesAllTime?: number;
-  trendingScore?: string | number;
+  tokenAddress?: string | null;
+  creatorAddress?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+  logoUri?: string | null;
+  createdAtChain?: string | null;
+  graduatedAtChain?: string | null;
+  votes24h?: number | null;
+  votesAllTime?: number | null;
 };
 
-type FeaturedCard = {
-  campaign: CampaignInfo;
-  marketCapLabel: string;
-  marketCapUsdLabel: string | null;
-  creatorProfile?: { displayName?: string | null; avatarUrl?: string | null } | null;
-};
-
-const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test((s ?? "").trim());
-const shortAddr = (a: string) => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
-
-function parseCompactNumber(input: string): number | null {
-  const raw = String(input ?? "").trim();
-  if (!raw || raw === "—") return null;
-
-  const first = raw.split(/\s+/)[0] ?? "";
-  const cleaned = first.replace(/[,$]/g, "");
-  const m = cleaned.match(/^(-?\d+(?:\.\d+)?)([KMBT])?$/i);
-  if (!m) {
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : null;
-  }
-  const n = Number(m[1]);
-  if (!Number.isFinite(n)) return null;
-  const suf = (m[2] ?? "").toUpperCase();
-  const mult = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : suf === "T" ? 1e12 : 1;
-  return n * mult;
+function timeAgoFromUnix(seconds?: number): string {
+  if (!seconds || !Number.isFinite(seconds)) return "—";
+  const now = Math.floor(Date.now() / 1000);
+  const diff = Math.max(0, now - seconds);
+  if (diff < 60) return `${diff}s`;
+  const m = Math.floor(diff / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
 }
 
-function formatCompactUsd(n: number | null): string | null {
-  if (n == null || !Number.isFinite(n) || n <= 0) return null;
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  const fmt = (v: number, suffix: string) => `${sign}$${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)}${suffix}`;
-  if (abs >= 1e12) return fmt(abs / 1e12, "T");
-  if (abs >= 1e9) return fmt(abs / 1e9, "B");
-  if (abs >= 1e6) return fmt(abs / 1e6, "M");
-  if (abs >= 1e3) return fmt(abs / 1e3, "K");
-  const decimals = abs >= 100 ? 0 : abs >= 10 ? 1 : abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
-  return `${sign}$${abs.toFixed(decimals)}`;
-}
-
-export function FeaturedCampaigns({ chainId = 97, limit = 10 }: { chainId?: number; limit?: number }) {
+export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
-  const { fetchCampaigns, fetchCampaignCardStats } = useLaunchpad();
-  const { price: bnbUsdPrice } = useBnbUsdPrice(true);
-  const factoryAddress = useMemo(() => getFactoryAddress(chainId as any).toLowerCase(), [chainId]);
+  const { activeChainId, fetchCampaignCardStats } = useLaunchpad();
 
-  const [featured, setFeatured] = useState<FeaturedRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [cards, setCards] = useState<FeaturedCard[]>([]);
+  const [items, setItems] = useState<FeaturedItemApi[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Tiny in-memory cache to avoid re-fetching the same profiles across rerenders
-  const [profilesByAddress, setProfilesByAddress] = useState<Record<string, any>>({});
-
+  // Load top-20 by votes in last 24h; tie-break handled in SQL (votes_24h).
   useEffect(() => {
-    let cancelled = false;
-
-    const loadFeatured = async () => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      setErr(null);
       try {
-        setLoading(true);
-        const r = await fetch(`/api/featured?chainId=${encodeURIComponent(String(chainId))}&factoryAddress=${encodeURIComponent(factoryAddress)}&sort=trending&limit=${encodeURIComponent(String(limit))}`);
+        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=24h&limit=20`);
         const j = await r.json();
-        const items: FeaturedRow[] = Array.isArray(j?.items) ? j.items : [];
-        if (!cancelled) setFeatured(items);
-      } catch (e) {
-        console.error("[FeaturedCampaigns] failed to load /api/featured", e);
-        if (!cancelled) setFeatured([]);
+        if (!mounted) return;
+        setItems(Array.isArray(j.items) ? j.items : []);
+      } catch (e: any) {
+        if (!mounted) return;
+        setErr(e?.message ?? "Failed to load featured");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!mounted) return;
+        setLoading(false);
       }
-    };
-
-    loadFeatured();
+    })();
     return () => {
-      cancelled = true;
+      mounted = false;
     };
-  }, [chainId, limit, factoryAddress]);
+  }, [activeChainId]);
 
-  // Build cards by merging featured addresses with on-chain campaign metadata
+  // Pull on-chain card stats (market cap / launched) with a light debounce.
+  const [statsByCampaign, setStatsByCampaign] = useState<Record<string, { marketCapUsdLabel?: string | null }>>({});
+
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
+    if (!items.length) return;
 
-    const loadCards = async () => {
-      if (!featured.length) {
-        setCards([]);
-        return;
-      }
+    const load = async () => {
+      const next: Record<string, { marketCapUsdLabel?: string | null }> = {};
+      // Small concurrency to avoid RPC spikes.
+      const queue = items.slice(0, 20);
+      const workers = Array.from({ length: 4 }).map(async () => {
+        while (queue.length) {
+          const it = queue.shift();
+          if (!it) return;
+          const addr = String(it.campaignAddress ?? "").toLowerCase();
+          if (!addr) continue;
 
-      try {
-        const campaigns = await fetchCampaigns();
-        const byCampaign = new Map<string, CampaignInfo>();
-        for (const c of campaigns ?? []) {
-          const addr = String((c as any).campaign ?? "").toLowerCase();
-          if (isAddress(addr)) byCampaign.set(addr, c);
-        }
+          const ci: CampaignInfo = {
+            id: 0,
+            campaign: addr,
+            token: String(it.tokenAddress ?? ""),
+            creator: String(it.creatorAddress ?? ""),
+            name: String(it.name ?? ""),
+            symbol: String(it.symbol ?? ""),
+            logoURI: it.logoUri ?? undefined,
+            xAccount: "",
+            website: "",
+            extraLink: "",
+            createdAt: it.createdAtChain ? Math.floor(new Date(it.createdAtChain).getTime() / 1000) : undefined,
+          };
 
-        const out: FeaturedCard[] = [];
-        for (const row of featured) {
-          const addr = String(row.campaignAddress ?? "").toLowerCase();
-          const campaign = byCampaign.get(addr);
-          if (!campaign) continue;
-
-          const stats = await fetchCampaignCardStats(campaign);
-          const marketCapLabel = stats?.marketCap ?? "—";
-
-          // Convert "X BNB" -> USD for ATH tracking
-          let usdLabel: string | null = null;
-          const mcBnb = marketCapLabel.toUpperCase().includes("BNB")
-            ? parseCompactNumber(marketCapLabel.replace(/BNB/i, "").trim())
-            : null;
-          if (mcBnb != null && bnbUsdPrice && Number.isFinite(Number(bnbUsdPrice))) {
-            const usd = mcBnb * Number(bnbUsdPrice);
-            usdLabel = formatCompactUsd(usd);
+          try {
+            const r = await fetchCampaignCardStats(ci);
+            // We already have compact formatting helper; marketCap in stats is string.
+            // NOTE: marketCapBnb->USD is handled on the main grid; featured keeps it simple for now.
+            const mc = r?.stats?.marketCap ?? null;
+            next[addr] = { marketCapUsdLabel: mc ? `$${mc}` : null };
+          } catch {
+            next[addr] = { marketCapUsdLabel: null };
           }
-
-          out.push({ campaign, marketCapLabel, marketCapUsdLabel: usdLabel, creatorProfile: null });
         }
+      });
 
-        if (!cancelled) setCards(out);
-      } catch (e) {
-        console.error("[FeaturedCampaigns] failed to load cards", e);
-        if (!cancelled) setCards([]);
-      }
+      await Promise.allSettled(workers);
+      if (!mounted) return;
+      setStatsByCampaign((prev) => ({ ...prev, ...next }));
     };
 
-    loadCards();
+    const t = window.setTimeout(load, 120);
     return () => {
-      cancelled = true;
+      mounted = false;
+      window.clearTimeout(t);
     };
-  }, [featured, fetchCampaigns, fetchCampaignCardStats, bnbUsdPrice]);
+  }, [items, fetchCampaignCardStats]);
 
-  // Fetch creator profiles (best effort) for the cards we ended up with
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadProfiles = async () => {
-      const creators = Array.from(
-        new Set(
-          cards
-            .map((c) => String((c.campaign as any).creator ?? "").toLowerCase())
-            .filter((a) => isAddress(a))
-        )
-      );
-
-      const missing = creators.filter((a) => !profilesByAddress[a]);
-      if (!missing.length) return;
-
-      try {
-        const results = await Promise.all(
-          missing.map(async (addr) => {
-            try {
-              const r = await fetch(
-                `/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
-              );
-              const j = await r.json();
-              return [addr, j?.profile ?? null] as const;
-            } catch {
-              return [addr, null] as const;
-            }
-          })
-        );
-
-        if (cancelled) return;
-        setProfilesByAddress((prev) => {
-          const next = { ...prev };
-          for (const [addr, prof] of results) next[addr] = prof;
-          return next;
-        });
-      } catch (e) {
-        console.error("[FeaturedCampaigns] profile fetch failed", e);
-      }
-    };
-
-    loadProfiles();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, chainId]);
-
-  const hydrated = useMemo(() => {
-    return cards.map((c) => {
-      const creator = String((c.campaign as any).creator ?? "").toLowerCase();
-      const profile = creator ? profilesByAddress[creator] ?? null : null;
-      return { ...c, creatorProfile: profile };
+  const cards = useMemo(() => {
+    return items.map((it, idx) => {
+      const addr = String(it.campaignAddress ?? "").toLowerCase();
+      const createdAt = it.createdAtChain ? Math.floor(new Date(it.createdAtChain).getTime() / 1000) : undefined;
+      const votes24h = Number(it.votes24h ?? 0);
+      return {
+        idx: idx + 1,
+        addr,
+        name: String(it.name ?? "Unknown"),
+        symbol: String(it.symbol ?? ""),
+        createdAt,
+        votes24h,
+      };
     });
-  }, [cards, profilesByAddress]);
+  }, [items]);
 
-  if (loading) {
-    return (
-      <div className="mb-4 md:mb-6">
-        <div className="mb-2 flex items-center justify-between">
-  <h2 className="text-sm md:text-base font-semibold tracking-wide">Featured Coins</h2>
-  <span className="text-xs text-muted-foreground">Top {limit}</span>
-</div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-          {Array.from({ length: limit }).map((_, i) => (
-            <div key={i} className="h-28 md:h-32 rounded-[1.25rem] border border-border/40 bg-card" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (!hydrated.length) {
-    return (
-      <div className="mb-4 md:mb-6">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm md:text-base font-semibold tracking-wide">Featured Coins</h2>
-        </div>
-        <div className="rounded-[1.25rem] border border-border/40 bg-card p-4 text-sm text-muted-foreground">
-          No campaigns are featured yet for this factory. Upvote a campaign to place it here.
-        </div>
-      </div>
-    );
-  }
+  const scrollByCards = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const amount = Math.max(280, Math.floor(el.clientWidth * 0.8));
+    el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
+  };
 
   return (
-    <div className="mb-4 md:mb-6">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm md:text-base font-semibold tracking-wide">Featured Coins</h2>
+    <div className={cn("w-full", className)}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold">
+            <ThumbsUp className="h-4 w-4 text-accent" />
+            UpVote Campaigns
+          </div>
+          <div className="text-xs text-muted-foreground">Top 20 (last 24h)</div>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => scrollByCards("left")}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => scrollByCards("right")}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-        {hydrated.slice(0, limit).map((card, idx) => {
-          const campaignAddr = String((card.campaign as any).campaign ?? "").trim();
-          const creatorAddr = String((card.campaign as any).creator ?? "").trim();
-          const displayName =
-            (card.creatorProfile?.displayName ? String(card.creatorProfile.displayName).trim() : "") ||
-            (creatorAddr ? shortAddr(creatorAddr) : "—");
-          const initial = displayName ? displayName.slice(0, 1).toUpperCase() : "C";
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          className="flex gap-4 overflow-x-auto pb-2 pr-2 snap-x snap-mandatory scroll-smooth"
+          style={{ scrollbarWidth: "none" } as any}
+        >
+          {loading && !cards.length ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="snap-start min-w-[260px] md:min-w-[280px] h-[154px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+              />
+            ))
+          ) : err ? (
+            <div className="text-sm text-muted-foreground py-8">{err}</div>
+          ) : cards.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8">No featured campaigns yet.</div>
+          ) : (
+            cards.map((c) => (
+              <div
+                key={c.addr}
+                className="snap-start min-w-[260px] md:min-w-[280px] rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/token/${c.addr}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
+                }}
+              >
+                <div className="p-4 flex items-start gap-3">
+                  <div className="relative">
+                    <img
+                      src="/assets/profile_placeholder.png"
+                      alt="Creator"
+                      className="w-12 h-12 rounded-xl object-cover border border-border/60"
+                      draggable={false}
+                    />
+                    <div className="absolute -top-2 -left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-card border-2 border-emerald-400 text-xs font-bold text-emerald-400">
+                      {c.idx}
+                    </div>
+                  </div>
 
-          return (
-            <button
-              key={campaignAddr}
-              type="button"
-              className="text-left"
-              onClick={() => navigate(`/token/${campaignAddr}`)}
-            >
-              <div className="relative rounded-[1.25rem] p-[1px]">
-                <GlowingEffect spread={32} glow={false} disabled={false} proximity={80} inactiveZone={0.01} borderWidth={2} />
-                <div className="relative h-28 md:h-32 w-full rounded-[1.15rem] border border-border/40 bg-card p-3 md:p-4 shadow-sm overflow-hidden">
-                {/* Rank badge */}
-<div className="absolute top-2 right-2 z-10 h-6 min-w-6 px-2 flex items-center justify-center rounded-full bg-card border-2 border-[#affe00] text-xs font-bold text-[#affe00]">
-  {idx + 1}
-</div>
-                  <div className="flex items-start gap-3">
-                    <div className="h-10 w-10 rounded-xl overflow-hidden border border-border bg-muted flex items-center justify-center flex-shrink-0">
-                      <img
-                        src={card.campaign.logoURI || "/placeholder.svg"}
-                        alt={card.campaign.symbol}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{c.name}</div>
+                        <div className="text-xs text-muted-foreground">{c.symbol ? `$${c.symbol}` : ""}</div>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-accent">
+                        <Flame className="h-4 w-4" />
+                        <span className="font-semibold">{c.votes24h}</span>
+                      </div>
                     </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-xs md:text-sm font-semibold truncate">
-                            {String(card.campaign.symbol ?? "").toUpperCase() || "TOKEN"}
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)}</div>
+                      <div className="flex items-center gap-2">
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <UpvoteDialog campaignAddress={c.addr} />
                           </div>
-                          <div className="text-[10px] md:text-xs text-muted-foreground truncate">
-                            {card.campaign.name || ""}
-                          </div>
-                        </div>
-                        <div className="text-right pr-5">
-                          <div className="text-[10px] md:text-xs text-muted-foreground">MCap</div>
-                          <div className="text-xs md:text-sm font-semibold truncate">
-                            {card.marketCapLabel}
-                          </div>
-                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/token/${c.addr}`);
+                            }}
+                        >
+                          Buy
+                        </Button>
                       </div>
+                    </div>
 
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage src={card.creatorProfile?.avatarUrl || undefined} alt={displayName} />
-                            <AvatarFallback className="text-[10px]">{initial}</AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <div className="text-[10px] md:text-xs text-muted-foreground">Creator</div>
-                            <div className="text-xs md:text-sm truncate">{displayName}</div>
-                          </div>
-                        </div>
-
-                        <div className="w-[110px] md:w-[140px]">
-                          <AthBar
-                            currentLabel={card.marketCapUsdLabel}
-                            storageKey={`ath:${chainId}:${String(campaignAddr).toLowerCase()}`}
-                            className="text-[10px]"
-                          />
-                        </div>
-                      </div>
+                    <div className="mt-3">
+                      <AthBar
+                        currentLabel={statsByCampaign[c.addr]?.marketCapUsdLabel ?? null}
+                        storageKey={`ath:${activeChainId}:${c.addr}`}
+                        className="text-[10px]"
+                        barWidthPx={230}
+                        barMaxWidth="100%"
+                      />
                     </div>
                   </div>
                 </div>
+
               </div>
-            </button>
-          );
-        })}
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

@@ -13,7 +13,7 @@ import { useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
-import UpDashboard from "./pages/UpDashboard";
+import BattleDashboard from "./pages/BattleDashboard";
 import League from "./pages/League";
 import Profile from "./pages/Profile";
 import TokenDetails from "./pages/TokenDetails";
@@ -53,15 +53,20 @@ const App = () => {
               <GridBackground />
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-              <main className="flex-1 overflow-hidden pt-28 lg:pt-28 pl-0 lg:pl-72 pr-4 md:pr-6 lg:pr-8 pb-4 md:pb-6 lg:pb-8">
+              <main className="flex-1 overflow-hidden pt-28 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
-                  <Route path="/up-dashboard" element={<UpDashboard />} />
+                  {/* New naming (keep old paths as aliases) */}
+                  <Route path="/battle-dashboard" element={<BattleDashboard />} />
+                  <Route path="/up-dashboard" element={<BattleDashboard />} />
+                  <Route path="/battle-leagues" element={<League />} />
                   <Route path="/league" element={<League />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
-                  <Route path="/playbook" element={<Playbook />} />
+                  <Route path="/docs" element={<Playbook />} />
+            <Route path="/playbook" element={<Playbook />} />
+            <Route path="/docs" element={<Playbook />} />
                   <Route path="/status" element={<Status />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />

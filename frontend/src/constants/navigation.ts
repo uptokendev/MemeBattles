@@ -2,14 +2,13 @@
  * Navigation and social link configuration
  */
 
-import { Plus, Trophy } from "lucide-react";
+import { Plus, Trophy, BookOpen } from "lucide-react";
 import carouselIcon from "@/assets/menu-icons/carousel.png";
 import upArrowIcon from "@/assets/menu-icons/up-arrow.png";
 import userIcon from "@/assets/menu-icons/user.png";
 import twitterIcon from "@/assets/social/twitter.png";
 import discordIcon from "@/assets/social/discord.png";
 import telegramIcon from "@/assets/social/telegram.png";
-import bookIcon from "@/assets/social/book.png";
 import { SocialItem } from "@/components/ui/social-media";
 
 export interface NavItem {
@@ -19,11 +18,12 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { icon: carouselIcon, label: "Showcase", path: "/" },
-  { icon: Plus, label: "Create", path: "/create" },
-  { icon: upArrowIcon, label: "UP Dashboard", path: "/up-dashboard" },
-  { icon: Trophy, label: "UP Only League", path: "/league" },
+  { icon: carouselIcon, label: "Launchpad", path: "/" },
+  { icon: Plus, label: "Create Coin", path: "/create" },
+  { icon: upArrowIcon, label: "Battle Dashboard", path: "/battle-dashboard" },
+  { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
   { icon: userIcon, label: "Profile", path: "/profile" },
+  { icon: BookOpen, label: "Docs", path: "/docs" },
 ];
 
 export const socialLinks: SocialItem[] = [
@@ -48,11 +48,5 @@ export const socialLinks: SocialItem[] = [
     color: "#0088cc",
     svgUrl: telegramIcon,
   },
-  {
-    href: "/playbook",
-    ariaLabel: "Documentation",
-    tooltip: "Docs",
-    color: "#10b981",
-    svgUrl: bookIcon,
-  },
+  // Docs moved into the main navigation
 ];

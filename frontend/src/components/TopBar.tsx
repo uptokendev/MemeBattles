@@ -8,7 +8,8 @@ import { Menu } from "lucide-react";
 import { GlowingButton } from "./ui/glowing-button";
 import { SearchBar } from "./ui/search-bar";
 import { GlassButton } from "./ui/glass-button";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import { useWallet, WalletType } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
@@ -30,8 +31,12 @@ type TickerItem = {
   route: string; // where to navigate on click
 };
 
+// Public brand asset (no bundler import required)
+const brandMark = "/assets/ticker.png";
+
 export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const wallet = useWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
@@ -66,6 +71,18 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     // You can decide: allow switching wallet even when connected or not
     setWalletModalOpen(true);
   };
+
+  const navLinks = useMemo(
+    () => [
+      { label: "Launchpad", path: "/" },
+      { label: "Create Coin", path: "/create" },
+      { label: "Battle Dashboard", path: "/battle-dashboard" },
+      { label: "Battle Leagues", path: "/battle-leagues" },
+      { label: "Profile", path: "/profile" },
+      { label: "Docs", path: "/docs" },
+    ],
+    []
+  );
 
   const handleWalletSelect = async (type: WalletType) => {
     try {
@@ -208,9 +225,14 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return out.slice(0, target);
   }, [tickerItems]);
 
+  const isActive = (path: string) => {
+    if (path === "/") return location.pathname === "/";
+    return location.pathname.startsWith(path);
+  };
+
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent border-b border-border/30">
-      <div className="flex items-center justify-between px-4 md:px-6 py-3 lg:pl-72">
+      <div className="flex items-center justify-between px-4 md:px-6 py-3">
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -220,12 +242,46 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
           <Menu className="h-6 w-6" />
         </button>
 
+        {/* Desktop nav */}
+        <div className="hidden lg:flex items-center gap-4 flex-1">
+          <Link to="/" className="flex items-center gap-2 mr-2">
+            <img src={brandMark} alt="MemeBattles" className="h-7 w-7" draggable={false} />
+            <span className="font-retro text-sm">MemeBattles</span>
+          </Link>
+
+          <div className="flex items-center gap-1">
+            {navLinks.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "px-3 py-2 rounded-xl text-xs font-retro transition-colors border",
+                  isActive(item.path)
+                    ? "bg-card/60 border-amber-400/40 text-amber-200"
+                    : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/30"
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
         {/* Search */}
-        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0">
+        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6">
           <SearchBar
-            placeholder="Search tokens..."
+            placeholder="Search campaigns..."
             value={searchQuery}
-            onValueChange={setSearchQuery}
+            onValueChange={(q) => {
+              setSearchQuery(q);
+              // Also broadcast to the Home grid as an optional "filter-in-place" search.
+              // Pages that don't care can ignore this event.
+              try {
+                window.dispatchEvent(new CustomEvent("upmeme:homeSearch", { detail: String(q ?? "") }));
+              } catch {
+                // ignore
+              }
+            }}
             results={searchResults}
             loading={searchLoading}
             error={searchError}
@@ -238,14 +294,14 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
-          {/* Launch token button (unchanged) */}
+          {/* Primary CTA */}
           <GlowingButton
             glowColor="#ec4899"
             onClick={() => navigate("/create")}
             className="text-xs md:text-sm px-3 md:px-4 py-2"
           >
-            <span className="hidden sm:inline">Launch token</span>
-            <span className="sm:hidden">Launch</span>
+            <span className="hidden sm:inline">Create Coin</span>
+            <span className="sm:hidden">Create</span>
           </GlowingButton>
 
           {/* Connect wallet button with SAME style, but now opens modal */}
