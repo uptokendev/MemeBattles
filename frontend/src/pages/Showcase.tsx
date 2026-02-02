@@ -30,7 +30,8 @@ const Showcase = () => {
     <div className="h-full overflow-y-auto">
       <div className="relative px-3 md:px-6 pb-10">
         {/* Header band with centered logo + glow strip */}
-        <div className="pt-2">
+        {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
+        <div className="-mt-6">
           <HeaderBand />
         </div>
 
