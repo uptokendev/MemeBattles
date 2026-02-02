@@ -78,21 +78,24 @@ export default async function handler(req, res) {
     const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
 
     // Deterministic ordering per tab/sort.
+    // IMPORTANT: the outer query selects from the CTE `calc`.
+    // So ORDER BY must only reference columns available on `calc`.
     const orderBy = (() => {
-      if (sort === "created_desc") return "c.created_block desc, c.campaign_address asc";
-      if (sort === "created_asc") return "c.created_block asc, c.campaign_address asc";
-      if (sort === "mcap_desc") return "coalesce(ts.marketcap_bnb, 0) desc, c.created_block desc, c.campaign_address asc";
-      if (sort === "mcap_asc") return "coalesce(ts.marketcap_bnb, 0) asc, c.created_block desc, c.campaign_address asc";
-      if (sort === "votes_desc") return "coalesce(va.votes_24h, 0) desc, c.created_block desc, c.campaign_address asc";
-      if (sort === "progress_desc") return "coalesce(calc.progress_pct, -1) desc, c.created_block desc, c.campaign_address asc";
+      if (sort === "created_desc") return "calc.created_block desc, calc.campaign_address asc";
+      if (sort === "created_asc") return "calc.created_block asc, calc.campaign_address asc";
+      if (sort === "mcap_desc") return "coalesce(calc.marketcap_bnb, 0) desc, calc.created_block desc, calc.campaign_address asc";
+      if (sort === "mcap_asc") return "coalesce(calc.marketcap_bnb, 0) asc, calc.created_block desc, calc.campaign_address asc";
+      if (sort === "votes_desc") return "coalesce(calc.votes_24h, 0) desc, calc.created_block desc, calc.campaign_address asc";
+      if (sort === "progress_desc") return "coalesce(calc.progress_pct, -1) desc, calc.created_block desc, calc.campaign_address asc";
 
       // Tab defaults
-      if (tab === "new") return "c.created_block desc, c.campaign_address asc";
-      if (tab === "ending") return "calc.eta_sec asc nulls last, calc.progress_pct desc nulls last, c.created_block desc, c.campaign_address asc";
-      if (tab === "dex") return "c.graduated_block desc nulls last, c.created_block desc, c.campaign_address asc";
+      if (tab === "new") return "calc.created_block desc, calc.campaign_address asc";
+      if (tab === "ending")
+        return "calc.eta_sec asc nulls last, calc.progress_pct desc nulls last, calc.created_block desc, calc.campaign_address asc";
+      if (tab === "dex") return "calc.graduated_block desc nulls last, calc.created_block desc, calc.campaign_address asc";
 
       // trending default
-      return "calc.trending_score desc nulls last, c.created_block desc, c.campaign_address asc";
+      return "calc.trending_score desc nulls last, calc.created_block desc, calc.campaign_address asc";
     })();
 
     const sql = `
