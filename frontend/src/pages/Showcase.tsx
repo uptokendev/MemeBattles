@@ -29,11 +29,12 @@ const Showcase = () => {
   return (
     <div className="h-full overflow-y-auto">
       <div className="relative px-3 md:px-6 pb-10">
-        {/* Header band with centered logo + glow strip */}
-        {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
-        <div className="-mt-10">
-          <HeaderBand />
-        </div>
+        {/*
+          Header band (logo + glow strip)
+          IMPORTANT: avoid negative margins here — the scroll container clips anything pushed above its top.
+          We align the logo by tightening App.tsx main padding instead.
+        */}
+        <HeaderBand />
 
         {/* League overlay: positioned under the TopBar connect wallet area */}
         <div className="absolute right-3 md:right-6 top-4 md:top-3 z-30 pointer-events-none">
@@ -41,7 +42,7 @@ const Showcase = () => {
         </div>
 
         {/* Featured grid (UpVote campaigns) */}
-        <div className="mt-5 md:pr-[320px]">
+        <div className="mt-2 md:pr-[320px]">
           <FeaturedCampaigns />
         </div>
 

@@ -17,7 +17,8 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 3%;
+    /* Pure black app canvas */
+    --background: 0 0% 0%;
     --foreground: 0 0% 98%;
 
     --card: 0 0% 8%;
@@ -54,7 +55,7 @@ All colors MUST be HSL.
     --glow-accent: 81 100% 50%;
     --glow-success: 142 76% 36%;
     
-    --sidebar-background: 0 0% 3%;
+    --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 0 0% 70%;
     --sidebar-primary: 81 100% 50%;
     --sidebar-primary-foreground: 0 0% 3%;

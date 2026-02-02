@@ -51,7 +51,12 @@ const App = () => {
             <div className="h-screen overflow-hidden bg-black flex flex-col">
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-              <main className="flex-1 overflow-hidden pt-20 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
+              {/*
+                TopBar is fixed-position, so main content needs top padding.
+                pt-14 (~56px) matches the TopBar height more closely and removes the
+                extra dead space above the hero/logo.
+              */}
+              <main className="flex-1 overflow-hidden pt-14 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
