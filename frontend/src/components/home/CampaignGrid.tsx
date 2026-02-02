@@ -186,26 +186,32 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams]);
 
   const vms: CampaignCardVM[] = useMemo(() => {
-    return (items || []).map((it) => {
-      const mcapBnb = Number(it.marketcapBnb ?? NaN);
-      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
-      const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
+  return (items || []).map((it) => {
+    const mcapBnb = Number(it.marketcapBnb ?? NaN);
+    const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
+    const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
 
-      return {
-        campaignAddress: String(it.campaignAddress ?? "").toLowerCase(),
-        name: String(it.name ?? "Unknown"),
-        symbol: String(it.symbol ?? ""),
-        logoURI: resolveImageUri(it.logoUri) ?? undefined,
-        creator: it.creatorAddress ?? undefined,
-        createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
-        marketCapUsdLabel,
-        athLabel: marketCapUsdLabel,
-        progressPct: it.progressPct ?? null,
-        isDexTrading: Boolean(it.isDexTrading),
-        votes24h: Number(it.votes24h ?? 0),
-      } as CampaignCardVM;
-    });
-  }, [items, bnbUsd]);
+    const image =
+      (it as any).logoURI ||
+      (it as any).logoUri ||
+      (it as any).image ||
+      "/placeholder.svg";
+
+    return {
+      campaignAddress: String(it.campaignAddress ?? "").toLowerCase(),
+      name: String(it.name ?? "Unknown"),
+      symbol: String(it.symbol ?? ""),
+      logoURI: resolveImageUri(image) ?? undefined,
+      creator: it.creatorAddress ?? undefined,
+      createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
+      marketCapUsdLabel,
+      athLabel: marketCapUsdLabel,
+      progressPct: it.progressPct ?? null,
+      isDexTrading: Boolean(it.isDexTrading),
+      votes24h: Number(it.votes24h ?? 0),
+    } as CampaignCardVM;
+  });
+}, [items, bnbUsd]);
 
   const resultsMeta = useMemo(() => {
     const count = vms.length;
