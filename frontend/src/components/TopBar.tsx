@@ -15,6 +15,7 @@ import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useTokenSearch } from "@/hooks/useTokenSearch";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { LeagueOverlayCard } from "@/components/home/LeagueOverlayCard";
 
 interface TopBarProps {
   mobileMenuOpen: boolean;
@@ -290,7 +291,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             }}
           />
         </div>
-
+       <div className="relative flex items-center gap-2">
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
           {/* Primary CTA */}
@@ -342,6 +343,11 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </div>
             )}
           </div>
+        </div>
+         {/* League overlay: always under the buttons */}
+  <div className="absolute right-0 top-full mt-2 z-20 pointer-events-none">
+    <LeagueOverlayCard className="pointer-events-auto" />
+  </div>
         </div>
       </div>
 

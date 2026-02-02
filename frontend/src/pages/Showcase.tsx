@@ -3,7 +3,7 @@ import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { HeaderBand } from "@/components/home/HeaderBand";
-import { LeagueOverlayCard } from "@/components/home/LeagueOverlayCard";
+
 
 const Showcase = () => {
   const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "" });
@@ -35,11 +35,6 @@ const Showcase = () => {
           We align the logo by tightening App.tsx main padding instead.
         */}
         <HeaderBand />
-
-        {/* League overlay: positioned under the TopBar connect wallet area */}
-        <div className="absolute right-3 md:right-6 top-8 md:top-3 z-30 pointer-events-none">
-          <LeagueOverlayCard className="pointer-events-auto" />
-        </div>
 
         {/* Featured grid (UpVote campaigns) */}
         <div className="md:pr-[320px] -translate-y-8">
