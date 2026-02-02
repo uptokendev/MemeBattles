@@ -289,7 +289,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                     
 
                     {/* Upvote + MCap row */}
-<div className="mt-3 flex items-end justify-between gap-3 w-full">
+<div className="mt-3 flex items-center justify-between gap-3 w-full">
   {/* MCap (left) */}
   <div className="min-w-0">
     <div className="text-[10px] text-muted-foreground">MCap</div>
