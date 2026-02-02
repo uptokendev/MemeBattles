@@ -105,210 +105,193 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="flex flex-col gap-3 md:gap-2">
-        {/* Tabs row */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex rounded-xl border border-border/50 bg-card/40 p-1">
-            {TAB_DEFS.map((t) => {
-              const active = query.tab === t.key;
-              return (
-                <Button
-                  key={t.key}
-                  variant={active ? "default" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "gap-2 rounded-lg font-retro",
-                    active
-                      ? "bg-accent text-accent-foreground hover:bg-accent/90"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => {
-                    const nextTab = t.key;
-                    const nextStatus = nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
-                    onChange({ ...query, tab: nextTab, status: nextStatus });
-                  }}
-                >
-                  {t.icon}
-                  <span className="hidden sm:inline">{t.label}</span>
-                </Button>
-              );
-            })}
-          </div>
+      {/* One row on desktop: Tabs + controls side-by-side */}
+<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+  {/* Left: Tabs + time chips */}
+  <div className="flex flex-wrap items-center gap-2">
+    <div className="inline-flex rounded-xl border border-border/50 bg-card/40 p-1">
+      {TAB_DEFS.map((t) => {
+        const active = query.tab === t.key;
+        return (
+          <Button
+            key={t.key}
+            variant={active ? "default" : "ghost"}
+            size="sm"
+            className={cn(
+              "gap-2 rounded-lg font-retro",
+              active
+                ? "bg-accent text-accent-foreground hover:bg-accent/90"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => {
+              const nextTab = t.key;
+              const nextStatus =
+                nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
+              onChange({ ...query, tab: nextTab, status: nextStatus });
+            }}
+          >
+            {t.icon}
+            <span className="hidden sm:inline">{t.label}</span>
+          </Button>
+        );
+      })}
+    </div>
 
-          {/* Time chips (optional) */}
-          <div className="hidden md:flex items-center gap-2">
-            {timeChips.map((k) => {
-              const active = (query.timeFilter ?? "24h") === k;
-              return (
-                <Button
-                  key={k}
-                  size="sm"
-                  variant={active ? "default" : "outline"}
-                  className={cn(
-                    "h-8 px-3 rounded-lg",
-                    active ? "bg-accent text-accent-foreground" : "text-muted-foreground"
-                  )}
-                  onClick={() => onChange({ ...query, timeFilter: k })}
-                >
-                  {k}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
+    {/* Time chips (optional) */}
+    <div className="hidden md:flex items-center gap-2">
+      {timeChips.map((k) => {
+        const active = (query.timeFilter ?? "24h") === k;
+        return (
+          <Button
+            key={k}
+            size="sm"
+            variant={active ? "default" : "outline"}
+            className={cn(
+              "h-8 px-3 rounded-lg",
+              active ? "bg-accent text-accent-foreground" : "text-muted-foreground"
+            )}
+            onClick={() => onChange({ ...query, timeFilter: k })}
+          >
+            {k}
+          </Button>
+        );
+      })}
+    </div>
+  </div>
 
-        {/* Filters + sort + inline grid search */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Filter className="h-4 w-4" />
-                  Filters
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="bottom" className="border-border/60">
-                <SheetHeader>
-                  <SheetTitle>Filters</SheetTitle>
-                </SheetHeader>
+  {/* Right: Filters / Sort / Search */}
+  <div className="flex flex-col md:flex-row md:items-center gap-2 w-full md:w-auto">
+    <div className="flex items-center gap-2">
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <Filter className="h-4 w-4" />
+            Filters
+          </Button>
+        </SheetTrigger>
 
-                <div className="mt-6 grid gap-5">
-                  <div className="grid gap-2">
-                    <Label>Status</Label>
-                    <Select
-                      value={statusValue}
-                      disabled={Boolean(forcedStatus)}
-                      onValueChange={(v) => onChange({ ...query, status: v as any })}
-                    >
-                      <SelectTrigger className="rounded-xl">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="live">Live</SelectItem>
-                        <SelectItem value="graduated">Graduated</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {forcedStatus ? (
-                      <div className="text-xs text-muted-foreground">
-                        Status is locked to <span className="font-medium">{forcedStatus}</span> for this tab.
-                      </div>
-                    ) : null}
-                  </div>
+        {/* keep your SheetContent exactly as-is */}
+        <SheetContent side="bottom" className="border-border/60">
+          <SheetHeader>
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
 
-                  <div className="grid gap-2">
-                    <Label>Market Cap (USD) range</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        value={mcapMin}
-                        onChange={(e) => setMcapMin(e.target.value)}
-                        onBlur={applyNumericFilters}
-                        placeholder="Min"
-                        inputMode="decimal"
-                        className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-                      />
-                      <input
-                        value={mcapMax}
-                        onChange={(e) => setMcapMax(e.target.value)}
-                        onBlur={applyNumericFilters}
-                        placeholder="Max"
-                        inputMode="decimal"
-                        className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-                      />
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Uses best-effort BNB/USD conversion. If price is unavailable, Market Cap filtering may hide unknown values.
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Progress (%) range</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        value={pMin}
-                        onChange={(e) => setPMin(e.target.value)}
-                        onBlur={applyNumericFilters}
-                        placeholder="Min"
-                        inputMode="decimal"
-                        className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-                      />
-                      <input
-                        value={pMax}
-                        onChange={(e) => setPMax(e.target.value)}
-                        onBlur={applyNumericFilters}
-                        placeholder="Max"
-                        inputMode="decimal"
-                        className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-2">
-                    <Button variant="outline" onClick={resetFilters}>
-                      Reset
-                    </Button>
-                    <Button
-                      className="bg-accent text-accent-foreground hover:bg-accent/90"
-                      onClick={() => {
-                        applyNumericFilters();
-                        setFiltersOpen(false);
-                      }}
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                </div>
-              </SheetContent>
-            </Sheet>
-
-            <div className="hidden sm:block w-[220px]">
+          <div className="mt-6 grid gap-5">
+            <div className="grid gap-2">
+              <Label>Status</Label>
               <Select
-                value={sortValue}
-                onValueChange={(v) => onChange({ ...query, sort: v as any })}
+                value={statusValue}
+                disabled={Boolean(forcedStatus)}
+                onValueChange={(v) => onChange({ ...query, status: v as any })}
               >
-                <SelectTrigger className="h-9 rounded-xl border-border/50 bg-card/40">
-                  <SelectValue placeholder="Sort" />
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  {SORT_DEFS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="live">Live</SelectItem>
+                  <SelectItem value="graduated">Graduated</SelectItem>
                 </SelectContent>
               </Select>
+              {forcedStatus ? (
+                <div className="text-xs text-muted-foreground">
+                  Status is locked to <span className="font-medium">{forcedStatus}</span> for this tab.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Market Cap (USD) range</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={mcapMin}
+                  onChange={(e) => setMcapMin(e.target.value)}
+                  onBlur={applyNumericFilters}
+                  placeholder="Min"
+                  inputMode="decimal"
+                  className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <input
+                  value={mcapMax}
+                  onChange={(e) => setMcapMax(e.target.value)}
+                  onBlur={applyNumericFilters}
+                  placeholder="Max"
+                  inputMode="decimal"
+                  className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Uses best-effort BNB/USD conversion. If price is unavailable, Market Cap filtering may hide unknown values.
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Progress (%) range</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={pMin}
+                  onChange={(e) => setPMin(e.target.value)}
+                  onBlur={applyNumericFilters}
+                  placeholder="Min"
+                  inputMode="decimal"
+                  className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
+                />
+                <input
+                  value={pMax}
+                  onChange={(e) => setPMax(e.target.value)}
+                  onBlur={applyNumericFilters}
+                  placeholder="Max"
+                  inputMode="decimal"
+                  className="h-10 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <Button variant="outline" onClick={resetFilters}>
+                Reset
+              </Button>
+              <Button
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => {
+                  applyNumericFilters();
+                  setFiltersOpen(false);
+                }}
+              >
+                Apply
+              </Button>
             </div>
           </div>
+        </SheetContent>
+      </Sheet>
 
-          <div className="relative w-full md:w-[320px]">
-            <input
-              value={searchValue}
-              onChange={(e) => onChange({ ...query, search: e.target.value })}
-              placeholder="Filter grid…"
-              className="w-full h-9 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-            />
-          </div>
-        </div>
-
-        {/* Mobile sort under controls */}
-        <div className="sm:hidden">
-          <Select
-            value={sortValue}
-            onValueChange={(v) => onChange({ ...query, sort: v as any })}
-          >
-            <SelectTrigger className="h-9 rounded-xl border-border/50 bg-card/40">
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_DEFS.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="hidden sm:block w-[220px]">
+        <Select value={sortValue} onValueChange={(v) => onChange({ ...query, sort: v as any })}>
+          <SelectTrigger className="h-9 rounded-xl border-border/50 bg-card/40">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_DEFS.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+    </div>
+
+    <div className="relative w-full md:w-[320px]">
+      <input
+        value={searchValue}
+        onChange={(e) => onChange({ ...query, search: e.target.value })}
+        placeholder="Filter grid…"
+        className="w-full h-9 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
+      />
+    </div>
+  </div>
+</div>
+
     </div>
   );
 }
