@@ -288,17 +288,19 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
                     
 
-                    {/* Upvote */}
-                    <div className="mt-3 flex items-center justify-end">
-                      {/* MCap */}
-                    <div className="mt-3">
-                      <div className="text-[10px] text-muted-foreground">MCap</div>
-                      <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
-                    </div>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <UpvoteDialog campaignAddress={c.addr} />
-                      </div>
-                    </div>
+                    {/* Upvote + MCap row */}
+<div className="mt-3 flex items-end justify-between gap-3 w-full">
+  {/* MCap (left) */}
+  <div className="min-w-0">
+    <div className="text-[10px] text-muted-foreground">MCap</div>
+    <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+  </div>
+
+  {/* Upvote (right) */}
+  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+    <UpvoteDialog campaignAddress={c.addr} />
+  </div>
+</div>
 
                     {/* Spacer so content doesn't hug AthBar overlay */}
                     <div className="flex-1" />
