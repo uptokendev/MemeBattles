@@ -286,14 +286,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       </div>
                     </div>
 
-                    {/* MCap */}
+                    
+
+                    {/* Upvote */}
+                    <div className="mt-3 flex items-center justify-end">
+                      {/* MCap */}
                     <div className="mt-3">
                       <div className="text-[10px] text-muted-foreground">MCap</div>
                       <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
                     </div>
-
-                    {/* Upvote */}
-                    <div className="mt-3 flex items-center justify-end">
                       <div onClick={(e) => e.stopPropagation()}>
                         <UpvoteDialog campaignAddress={c.addr} />
                       </div>
