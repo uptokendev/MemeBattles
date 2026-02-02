@@ -58,7 +58,9 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const statusValue = query.status ?? "all";
+  const forcedStatus = query.tab === "ending" ? "live" : query.tab === "dex" ? "graduated" : null;
+
+  const statusValue = forcedStatus ?? (query.status ?? "all");
   const sortValue = query.sort ?? "default";
 
   // local controlled strings for numeric inputs (avoid NaN churn)
@@ -120,7 +122,11 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                       ? "bg-accent text-accent-foreground hover:bg-accent/90"
                       : "text-muted-foreground hover:text-foreground"
                   )}
-                  onClick={() => onChange({ ...query, tab: t.key })}
+                  onClick={() => {
+                    const nextTab = t.key;
+                    const nextStatus = nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
+                    onChange({ ...query, tab: nextTab, status: nextStatus });
+                  }}
                 >
                   {t.icon}
                   <span className="hidden sm:inline">{t.label}</span>
@@ -171,6 +177,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                     <Label>Status</Label>
                     <Select
                       value={statusValue}
+                      disabled={Boolean(forcedStatus)}
                       onValueChange={(v) => onChange({ ...query, status: v as any })}
                     >
                       <SelectTrigger className="rounded-xl">
@@ -182,6 +189,11 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                         <SelectItem value="graduated">Graduated</SelectItem>
                       </SelectContent>
                     </Select>
+                    {forcedStatus ? (
+                      <div className="text-xs text-muted-foreground">
+                        Status is locked to <span className="font-medium">{forcedStatus}</span> for this tab.
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-2">

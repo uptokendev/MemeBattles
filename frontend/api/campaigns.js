@@ -58,6 +58,13 @@ export default async function handler(req, res) {
     const tab = normalizeTab(q.tab);
     const sort = normalizeSort(q.sort);
     const status = normalizeStatus(q.status);
+
+    // Contract rule:
+    // - /api/campaigns defaults to "all"
+    // - "Ending Soon" is always Live-only
+    // - "Trading on DEX" is always Graduated-only
+    const effectiveStatus =
+      tab === "ending" ? "live" : tab === "dex" ? "graduated" : status;
     const searchRaw = String(q.search || "").trim();
     const search = searchRaw ? `%${searchRaw}%` : null;
 
@@ -206,7 +213,7 @@ export default async function handler(req, res) {
       chainId,
       gradTargetBnb,
       search,
-      status,
+      effectiveStatus,
       tab,
       bnbUsd,
       mcapMinUsd,
@@ -232,6 +239,10 @@ export default async function handler(req, res) {
         createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
         graduatedAtChain: graduatedAt,
         isDexTrading: Boolean(graduatedAt),
+
+        // canonical status (useful for UI)
+        isActive: Boolean(row.is_active),
+        status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
 
         // stats
         lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
