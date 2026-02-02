@@ -14,6 +14,10 @@ type FeaturedItemApi = {
   campaignAddress: string;
   tokenAddress?: string | null;
   creatorAddress?: string | null;
+  // Optional profile fields (may or may not be present depending on API version)
+  creatorName?: string | null;
+  creatorUsername?: string | null;
+  username?: string | null;
   name?: string | null;
   symbol?: string | null;
   logoUri?: string | null;
@@ -45,6 +49,12 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
+
+  const goProfile = (creatorAddr?: string) => {
+    const a = (creatorAddr ?? "").trim();
+    if (!a) return;
+    navigate(`/profile/${a}`);
+  };
 
   const [items, setItems] = useState<FeaturedItemApi[]>([]);
   const [loading, setLoading] = useState(false);
@@ -136,13 +146,33 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       const rawLogo = it.logoUri || logoCache[addr] || null;
       const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
 
+      const creatorAddr = String(it.creatorAddress ?? "");
+      const maybeUsernameRaw =
+        (it as any).creatorUsername ??
+        (it as any).username ??
+        (it as any).creatorName ??
+        (it as any).creator?.username ??
+        (it as any).creatorProfile?.username ??
+        (it as any).profile?.username ??
+        (it as any).creatorProfile?.displayName ??
+        (it as any).profile?.displayName ??
+        null;
+
+      const creatorName =
+        typeof maybeUsernameRaw === "string" && maybeUsernameRaw.trim().length > 0
+          ? maybeUsernameRaw.trim()
+          : null;
+
+      const creatorLabel = creatorName ? creatorName : creatorAddr ? shortAddr(creatorAddr) : "—";
+
       return {
         idx: idx + 1,
         addr,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
-        creator: String((it as any).creatorAddress ?? ""),
-        creatorName: (it as any).creatorName ? String((it as any).creatorName) : null,
+        creator: creatorAddr,
+        creatorName,
+        creatorLabel,
         createdAt,
         votes24h,
         mcapUsdLabel,
@@ -280,9 +310,37 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                         alt="Creator"
                         className="w-7 h-7 rounded-full object-cover border border-border/60"
                         draggable={false}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goProfile(c.creator);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            goProfile(c.creator);
+                          }
+                        }}
                       />
-                      <div className="text-xs text-muted-foreground truncate">
-                        {c.creatorName ? c.creatorName : c.creator ? shortAddr(c.creator) : "—"}
+                      <div
+                        className="text-xs text-muted-foreground truncate"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goProfile(c.creator);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            goProfile(c.creator);
+                          }
+                        }}
+                      >
+                        {c.creatorLabel}
                       </div>
                     </div>
 
