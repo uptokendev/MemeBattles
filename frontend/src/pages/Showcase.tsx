@@ -31,7 +31,7 @@ const Showcase = () => {
       <div className="relative px-3 md:px-6 pb-10">
         {/* Header band with centered logo + glow strip */}
         {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
-        <div className="pt-16 -mt-16">
+        <div className="pt-20 -mt-20">
           <HeaderBand />
         </div>
 
