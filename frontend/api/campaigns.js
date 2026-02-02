@@ -115,8 +115,7 @@ export default async function handler(req, res) {
           ts.marketcap_bnb,
           ts.vol_24h_bnb,
           va.votes_24h,
-          va.votes_total,
-          va.velocity_10m
+          va.votes_all_time
         from public.campaigns c
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
@@ -177,7 +176,6 @@ export default async function handler(req, res) {
           (
             coalesce(b.vol_24h_bnb, 0) * 1000
             + coalesce(b.votes_24h, 0) * 10
-            + coalesce(b.velocity_10m, 0) * 100
           ) as trending_score
         from base b
         join rt
@@ -250,7 +248,7 @@ export default async function handler(req, res) {
         marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
         vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
         votes24h: row.votes_24h != null ? Number(row.votes_24h) : 0,
-        votesAllTime: row.votes_total != null ? Number(row.votes_total) : 0,
+        votesAllTime: row.votes_all_time != null ? Number(row.votes_all_time) : 0,
 
         // derived
         raisedTotalBnb: row.raised_total_bnb != null ? String(row.raised_total_bnb) : "0",
