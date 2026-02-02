@@ -2,37 +2,50 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
+import { AthBar } from "@/components/token/AthBar";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
-import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { resolveImageUri } from "@/lib/media";
+import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
 
 type FeaturedItemApi = {
   chainId: number;
   campaignAddress: string;
   tokenAddress?: string | null;
   creatorAddress?: string | null;
+
+  // Optional profile fields (only used if your API provides them)
+  creatorName?: string | null;
+  creatorAvatarUri?: string | null;
+
   name?: string | null;
   symbol?: string | null;
   logoUri?: string | null;
   createdAtChain?: string | null;
-  graduatedAtChain?: string | null;
   votes24h?: number | null;
-  votesAllTime?: number | null;
   marketcapBnb?: string | null;
 };
 
-function formatCompactUsd(value: number): string {
-  if (!Number.isFinite(value)) return "—";
-  const fmt = new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  });
-  return fmt.format(value);
+type FeaturedCardVM = {
+  idx: number;
+  addr: string;
+  name: string;
+  symbol: string;
+  createdAt?: number;
+  votes24h: number;
+  mcapUsdLabel: string | null;
+  imageSrc: string;
+
+  creatorAddr: string | null;
+  creatorName: string | null;
+  creatorAvatarUri: string | null;
+};
+
+function shortAddr(addr?: string | null) {
+  if (!addr) return "";
+  const a = String(addr);
+  return a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
 }
 
 function timeAgoFromUnix(seconds?: number): string {
@@ -48,13 +61,15 @@ function timeAgoFromUnix(seconds?: number): string {
   return `${d}d`;
 }
 
-// Use the same placeholder style you already have in the project
-const FALLBACK_LOGOS = ["/placeholder.svg"];
-
-function pickFallbackLogo(seed: string): string {
-  let acc = 0;
-  for (let i = 0; i < seed.length; i++) acc = (acc + seed.charCodeAt(i)) % 9973;
-  return FALLBACK_LOGOS[acc % FALLBACK_LOGOS.length];
+function formatCompactUsd(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const fmt = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  });
+  return fmt.format(value);
 }
 
 export function FeaturedCampaigns({ className }: { className?: string }) {
@@ -66,7 +81,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // On-chain logo hydration cache (same idea as CampaignGrid)
+  // On-chain hydration for missing logoUri (same pattern as CampaignGrid)
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -94,7 +109,6 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [activeChainId]);
 
-  // Hydrate missing logos from chain if DB didn’t have logoUri (mirrors CampaignGrid)
   useEffect(() => {
     let cancelled = false;
 
@@ -136,7 +150,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [items, logoCache, fetchCampaignLogoURI]);
 
-  const cards = useMemo(() => {
+  const cards = useMemo<FeaturedCardVM[]>(() => {
     return items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
 
@@ -149,8 +163,12 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       const mcapBnb = Number(it.marketcapBnb ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
 
-      const rawLogo = it.logoUri || logoCache[addr] || null;
-      const resolved = resolveImageUri(rawLogo) || pickFallbackLogo(addr);
+      const logoURI = it.logoUri || logoCache[addr] || undefined;
+      const imageSrc = resolveImageUri(logoURI) || "/placeholder.svg";
+
+      const creatorAddr = (it.creatorAddress ? String(it.creatorAddress) : "").trim() || null;
+      const creatorName = it.creatorName ? String(it.creatorName) : null;
+      const creatorAvatarUri = it.creatorAvatarUri ? String(it.creatorAvatarUri) : null;
 
       return {
         idx: idx + 1,
@@ -160,7 +178,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         createdAt,
         votes24h,
         mcapUsdLabel,
-        image: resolved,
+        imageSrc,
+        creatorAddr,
+        creatorName,
+        creatorAvatarUri,
       };
     });
   }, [items, bnbUsd, logoCache]);
@@ -168,7 +189,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const scrollByCards = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
-    const amount = Math.max(320, Math.floor(el.clientWidth * 0.9));
+    const amount = Math.max(280, Math.floor(el.clientWidth * 0.85));
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   };
 
@@ -205,12 +226,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                 key={i}
                 className={cn(
                   "snap-start shrink-0 rounded-2xl border border-border/40 bg-card/40 animate-pulse",
-                  // responsive width so it never becomes tiny
                   "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
               >
                 <div className="aspect-[2/1]" />
-                <div className="h-10 border-t border-border/40" />
               </div>
             ))
           ) : err ? (
@@ -222,8 +241,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
               <div
                 key={c.addr}
                 className={cn(
-                  "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors",
-                  // ✅ this prevents “tiny cards” on small screens
+                  "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors relative",
                   "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
                 role="button"
@@ -233,68 +251,84 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
                 }}
               >
-                {/* ATH overlay across image + data */}
-<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
-  <AthBar
-    currentLabel={c.mcapUsdLabel ?? null}
-    storageKey={`ath:${activeChainId}:${c.addr}`}
-    className="text-[10px]"
-    barWidthPx={420}
-    barMaxWidth="100%"
-  />
-</div>
+                {/* ATH across both halves (no background; pointer-events disabled) */}
+                <div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
+                  <AthBar
+                    currentLabel={c.mcapUsdLabel ?? null}
+                    storageKey={`ath:${activeChainId}:${c.addr}`}
+                    className="text-[10px]"
+                    barWidthPx={420}
+                    barMaxWidth="100%"
+                  />
+                </div>
+
                 {/* Top: two equal squares (image + data) */}
                 <div className="grid grid-cols-2 aspect-[2/1]">
                   {/* Left: token image */}
                   <div className="relative w-full h-full bg-black">
                     <img
-                      src={c.image}
+                      src={c.imageSrc}
                       alt={c.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover bg-muted"
                       draggable={false}
+                      loading="lazy"
                       onError={(e) => {
                         const img = e.currentTarget;
                         if (!img.dataset.fallback) {
                           img.dataset.fallback = "1";
-                          img.src = pickFallbackLogo(c.addr);
+                          img.src = "/placeholder.svg";
                         }
                       }}
                     />
-
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 to-transparent" />
 
                     <div className="absolute top-2 left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-black/60 border-2 border-emerald-400 text-xs font-bold text-emerald-400">
                       {c.idx}
                     </div>
                   </div>
 
-                  {/* Right: data panel (same size as image) */}
+                  {/* Right: data panel */}
                   <div className="w-full h-full p-3 md:p-4 pb-12 flex flex-col justify-between min-w-0">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold truncate">{c.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {c.symbol ? `$${c.symbol}` : ""}
+                    {/* Title row: name left, votes right */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-base font-semibold truncate">{c.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{c.symbol ? `$${c.symbol}` : ""}</div>
+
+                        {/* Creator row under ticker (same pattern as CampaignCard) */}
+                        <div className="mt-2 flex items-center gap-2 min-w-0">
+                          <img
+                            src={resolveImageUri(c.creatorAvatarUri) || "/assets/profile_placeholder.png"}
+                            alt="Creator"
+                            className="w-7 h-7 rounded-full object-cover border border-border/60"
+                            draggable={false}
+                            loading="lazy"
+                          />
+                          <div className="text-xs text-muted-foreground truncate">
+                            {c.creatorName ? c.creatorName : c.creatorAddr ? shortAddr(c.creatorAddr) : "—"}
+                          </div>
+                        </div>
                       </div>
-<div className="flex items-center gap-1 text-xs text-accent">
+
+                      {/* Votes (24h) top-right */}
+                      <div className="flex items-center gap-1 text-xs text-accent shrink-0">
                         <Flame className="h-4 w-4" />
                         <span className="font-semibold">{c.votes24h}</span>
                         <span className="text-muted-foreground">/ 24h</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      
-                      <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)} ago</div>
-                    </div>
+                    {/* Bottom row: MCap left, created time + upvote right */}
+                    <div className="flex items-end justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] text-muted-foreground">MCap</div>
+                        <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+                      </div>
 
-                    <div>
-                      <div className="text-[10px] text-muted-foreground">MCap</div>
-                      <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
-                    </div>
-
-                    <div className="flex items-center gap-2 justify-end">
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <UpvoteDialog campaignAddress={c.addr} />
+                      <div className="flex items-center gap-2 justify-end shrink-0">
+                        <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)} ago</div>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <UpvoteDialog campaignAddress={c.addr} />
+                        </div>
                       </div>
                     </div>
                   </div>
