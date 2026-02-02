@@ -37,7 +37,7 @@ const Showcase = () => {
         <HeaderBand />
 
         {/* League overlay: positioned under the TopBar connect wallet area */}
-        <div className="absolute right-3 md:right-6 top-4 md:top-3 z-30 pointer-events-none">
+        <div className="absolute right-3 md:right-6 top-8 md:top-3 z-30 pointer-events-none">
           <LeagueOverlayCard className="pointer-events-auto" />
         </div>
 
