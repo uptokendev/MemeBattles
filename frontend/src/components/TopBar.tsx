@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Menu } from "lucide-react";
 import { GlowingButton } from "./ui/glowing-button";
 import { SearchBar } from "./ui/search-bar";
-import { GlassButton } from "./ui/glass-button";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useWallet, WalletType } from "@/hooks/useWallet";
@@ -343,66 +342,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </div>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Ticker row (now campaigns;) */}
-      <div className="overflow-hidden py-3 bg-transparent">
-        <div className="flex w-max gap-3 animate-[scroll_60s_linear_infinite] hover:[animation-play-state:paused] px-4">
-          {tickerLoading && tickerItems.length === 0 ? (
-            Array.from({ length: 8 }).map((_, i) => (
-              <GlassButton
-                key={`loading-${i}`}
-                size="sm"
-                contentClassName="flex items-center gap-2 whitespace-nowrap"
-                onClick={() => navigate("/create")}
-              >
-                <div className="w-4 h-4 rounded-full bg-muted" />
-                <span className="font-semibold text-xs">Loading campaigns…</span>
-              </GlassButton>
-            ))
-          ) : tickerItems.length === 0 ? (
-            <GlassButton
-              size="sm"
-              contentClassName="flex items-center gap-2 whitespace-nowrap"
-              onClick={() => navigate("/create")}
-            >
-              <div className="w-4 h-4 rounded-full bg-muted" />
-              <span className="font-semibold text-xs">No campaigns yet</span>
-              <span className="text-xs text-muted-foreground">Launch one</span>
-            </GlassButton>
-          ) : (
-            [...tickerBaseLoop, ...tickerBaseLoop].map((item, i) => (
-              <GlassButton
-                key={`${item.key}-${i}`}
-                size="sm"
-                contentClassName="flex items-center gap-2 whitespace-nowrap"
-                onClick={() => navigate(item.route)}
-              >
-                {item.logoURI ? (
-                  <img
-                    src={item.logoURI}
-                    alt={item.symbol}
-                    className="w-4 h-4 rounded-full object-cover"
-                    onError={(e) => {
-                      // fallback to placeholder if image fails
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : (
-                  <div className="w-4 h-4 rounded-full bg-muted" />
-                )}
-
-                <span className="font-semibold text-xs">{item.symbol}</span>
-
-                <span className={item.hot ? "text-success" : "text-muted-foreground"}>
-                  {item.hot ? "🔥" : "•"}
-                </span>
-
-                <span className="text-xs text-muted-foreground">{item.subtitle}</span>
-              </GlassButton>
-            ))
-          )}
         </div>
       </div>
 
