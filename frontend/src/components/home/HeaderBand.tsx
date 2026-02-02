@@ -8,15 +8,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
   return (
     <div className={cn("relative w-full", className)}>
       {/* Glow strip / separator */}
-      <div className="relative h-[84px] md:h-[96px] rounded-2xl overflow-hidden border border-border/40 bg-card/20">
-        {/* background glow */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(1200px 180px at 50% 50%, rgba(255, 179, 0, 0.18) 0%, rgba(255, 80, 0, 0.08) 35%, rgba(0,0,0,0) 70%)",
-          }}
-        />
+      <div className="relative h-[200px] md:h-[200px] rounded-2xl overflow-hidden border border-border/40 bg-card/20">
 
         {/* horizontal highlight band */}
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2">
