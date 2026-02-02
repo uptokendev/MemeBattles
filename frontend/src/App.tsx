@@ -56,7 +56,7 @@ const App = () => {
                 pt-14 (~56px) matches the TopBar height more closely and removes the
                 extra dead space above the hero/logo.
               */}
-              <main className="flex-1 overflow-hidden pt-10 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
+              <main className="flex-1 overflow-hidden pt-6 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
