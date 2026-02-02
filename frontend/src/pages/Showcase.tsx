@@ -31,12 +31,9 @@ const Showcase = () => {
       <div className="relative px-3 md:px-6 pb-10">
         {/* Header band with centered logo + glow strip */}
         {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
-        {/* Create headroom, then visually move the band up without clipping */}
-<div className="pt-22">
-  <div className="-translate-y-22">
-    <HeaderBand />
-  </div>
-</div>
+        <div className="pt-16 -mt-16">
+          <HeaderBand />
+        </div>
 
         {/* League overlay: positioned under the TopBar connect wallet area */}
         <div className="absolute right-3 md:right-6 top-8 md:top-3 z-30 pointer-events-none">
