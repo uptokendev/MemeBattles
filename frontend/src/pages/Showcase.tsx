@@ -27,16 +27,16 @@ const Showcase = () => {
   }, [query]);
 
   return (
-    <div className="h-full overflow-y-auto pt-20">
+    <div className="h-full overflow-y-auto">
       <div className="relative px-3 md:px-6 pb-10">
         {/* Header band with centered logo + glow strip */}
         {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
-        <div className="pt-20 -mt-20">
+        <div className="-mt-10">
           <HeaderBand />
         </div>
 
         {/* League overlay: positioned under the TopBar connect wallet area */}
-        <div className="absolute right-3 md:right-6 top-8 md:top-3 z-30 pointer-events-none">
+        <div className="absolute right-3 md:right-6 top-4 md:top-3 z-30 pointer-events-none">
           <LeagueOverlayCard className="pointer-events-auto" />
         </div>
 
