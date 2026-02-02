@@ -4,13 +4,49 @@ import type { CampaignInfo } from "@/lib/launchpadClient";
 import { CampaignCard, CampaignCardVM } from "./CampaignCard";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+
+function formatCompactUsd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+
+  const fmt = (v: number, suffix: string) => {
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+    return `${sign}$${v.toFixed(decimals)}${suffix}`;
+  };
+
+  if (abs >= 1e12) return fmt(abs / 1e12, "T");
+  if (abs >= 1e9) return fmt(abs / 1e9, "B");
+  if (abs >= 1e6) return fmt(abs / 1e6, "M");
+  if (abs >= 1e3) return fmt(abs / 1e3, "K");
+  const decimals = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
+  return `${sign}$${abs.toFixed(decimals)}`;
+}
 
 export type FeedTabKey = "trending" | "new" | "ending" | "dex";
 
 export type HomeQuery = {
   tab: FeedTabKey;
+  // UI filters (bound to fields we can derive immediately from existing feed/stats)
+  status?: "all" | "live" | "graduated";
+  mcapMinUsd?: number;
+  mcapMaxUsd?: number;
+  progressMinPct?: number;
+  progressMaxPct?: number;
+
+  // Future-ready (no-op until campaign categories exist in the feed)
   category?: string;
-  sort?: string;
+
+  // UI sort key. "default" means tab-defined behavior.
+  sort?:
+    | "default"
+    | "mcap_desc"
+    | "mcap_asc"
+    | "votes_desc"
+    | "progress_desc"
+    | "created_desc"
+    | "created_asc";
   timeFilter?: "1h" | "24h" | "7d" | "all";
   search?: string;
 };
@@ -21,6 +57,8 @@ type Hydrated = {
   // used for client-side sorting
   progressPct?: number | null;
   etaToGraduationSec?: number | null;
+  marketCapUsd?: number | null;
+  status?: "live" | "graduated";
 };
 
 function safeUnixSeconds(ts: any): number | null {
@@ -51,8 +89,10 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     activeChainId,
     fetchCampaignsCount,
     fetchCampaignPage,
-    fetchCampaignCardStats,
+    fetchCampaignSummary,
   } = useLaunchpad();
+
+  const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const PAGE_SIZE = 24;
 
@@ -106,7 +146,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChainId, query.tab, query.category, query.sort, query.timeFilter, query.search]);
+  }, [activeChainId, bnbUsd, query.tab, query.category, query.sort, query.timeFilter, query.search, query.status, query.mcapMinUsd, query.mcapMaxUsd, query.progressMinPct, query.progressMaxPct]);
 
   // Infinite scroll observer.
   useEffect(() => {
@@ -149,18 +189,19 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         };
 
         try {
-          const r = await fetchCampaignCardStats(c);
-          const mc = r?.stats?.marketCap ?? null;
-          vm.marketCapUsdLabel = mc ? `$${mc}` : null;
-          vm.athLabel = mc ? `$${mc}` : null; // AthBar uses current as reference
-          const sold = Number(r?.metrics?.sold ?? 0);
-          const target = Number(r?.metrics?.graduationTarget ?? 0);
+          const summary = await fetchCampaignSummary(c);
+          const mcBnb = (summary as any)?.stats?.marketCapBnb ?? null;
+          const mcUsd = (mcBnb != null && bnbUsd && Number.isFinite(Number(bnbUsd))) ? Number(mcBnb) * Number(bnbUsd) : null;
+          vm.marketCapUsdLabel = mcUsd != null ? formatCompactUsd(mcUsd) : null;
+          vm.athLabel = vm.marketCapUsdLabel;
+          const sold = Number((summary as any)?.metrics?.sold ?? 0);
+          const target = Number((summary as any)?.metrics?.graduationTarget ?? 0);
           const progressPct = target > 0 ? Math.min(100, Math.max(0, (sold / target) * 100)) : null;
           vm.progressPct = progressPct;
 
           // DEX tab truth condition: must be provided as a single boolean from backend.
           // Prefer stats.isDexTrading / metrics.isDexTrading; fall back to legacy metrics.launched.
-          vm.isDexTrading = Boolean((r as any)?.stats?.isDexTrading ?? (r as any)?.metrics?.isDexTrading ?? (r as any)?.metrics?.launched);
+          vm.isDexTrading = Boolean((summary as any)?.stats?.isDexTrading ?? (summary as any)?.metrics?.isDexTrading ?? (summary as any)?.metrics?.launched);
 
           // "Ending Soon" definition: estimate time-to-graduation from current velocity.
           // We only have aggregate progress, so we approximate velocity using sold / max(age, 10m), capped to 6h.
@@ -172,9 +213,10 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           const velocity = ageSec && ageSec > 0 ? sold / ageSec : 0;
           const eta = velocity > 0 ? remaining / velocity : null;
 
-          out.push({ base: c, vm, progressPct, etaToGraduationSec: eta });
+          const status: "live" | "graduated" = (summary as any)?.metrics?.launched ? "graduated" : "live";
+          out.push({ base: c, vm, progressPct, etaToGraduationSec: eta, marketCapUsd: mcUsd, status });
         } catch {
-          out.push({ base: c, vm, progressPct: null, etaToGraduationSec: null });
+          out.push({ base: c, vm, progressPct: null, etaToGraduationSec: null, marketCapUsd: null, status: "live" });
         }
       }
     });
@@ -222,11 +264,45 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       arr = arr.filter((x) => Boolean(x.vm.isDexTrading));
     }
 
-    if (query.tab === "ending") {
-      // Sort by ETA ascending; tie-breaker: higher progress first.
-      arr = arr
-        .slice()
-        .sort((a, b) => {
+    // Status filter
+    const status = query.status ?? "all";
+    if (status !== "all") {
+      arr = arr.filter((x) => (x.status ?? "live") === status);
+    }
+
+    // Market cap (USD) range filter
+    const minMc = typeof query.mcapMinUsd === "number" ? query.mcapMinUsd : null;
+    const maxMc = typeof query.mcapMaxUsd === "number" ? query.mcapMaxUsd : null;
+    if (minMc != null || maxMc != null) {
+      arr = arr.filter((x) => {
+        const mc = x.marketCapUsd;
+        if (mc == null) return false;
+        if (minMc != null && mc < minMc) return false;
+        if (maxMc != null && mc > maxMc) return false;
+        return true;
+      });
+    }
+
+    // Progress % range filter
+    const minP = typeof query.progressMinPct === "number" ? query.progressMinPct : null;
+    const maxP = typeof query.progressMaxPct === "number" ? query.progressMaxPct : null;
+    if (minP != null || maxP != null) {
+      arr = arr.filter((x) => {
+        const p = x.progressPct;
+        if (p == null) return false;
+        if (minP != null && p < minP) return false;
+        if (maxP != null && p > maxP) return false;
+        return true;
+      });
+    }
+
+    // Sorting
+    const sortKey = query.sort ?? "default";
+
+    const tabSort = (input: Hydrated[]) => {
+      if (query.tab === "ending") {
+        // Sort by ETA ascending; tie-breaker: higher progress first.
+        return input.slice().sort((a, b) => {
           const ea = a.etaToGraduationSec;
           const eb = b.etaToGraduationSec;
           const aInf = ea == null ? Number.POSITIVE_INFINITY : ea;
@@ -234,15 +310,55 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           if (aInf !== bInf) return aInf - bInf;
           return Number(b.progressPct ?? 0) - Number(a.progressPct ?? 0);
         });
-    }
+      }
 
-    if (query.tab === "trending") {
-      // Heuristic: vote velocity proxy (24h votes). Replace with backend score later.
-      arr = arr.slice().sort((a, b) => Number(b.vm.votes24h ?? 0) - Number(a.vm.votes24h ?? 0));
+      if (query.tab === "trending") {
+        // Heuristic: vote velocity proxy (24h votes). Replace with backend score later.
+        return input.slice().sort((a, b) => Number(b.vm.votes24h ?? 0) - Number(a.vm.votes24h ?? 0));
+      }
+
+      if (query.tab === "new") {
+        return input.slice().sort((a, b) => {
+          const aT = safeUnixSeconds(a.base.createdAt);
+          const bT = safeUnixSeconds(b.base.createdAt);
+          return Number(bT ?? 0) - Number(aT ?? 0);
+        });
+      }
+
+      return input;
+    };
+
+    if (sortKey === "default") {
+      arr = tabSort(arr);
+    } else {
+      arr = arr.slice().sort((a, b) => {
+        switch (sortKey) {
+          case "mcap_desc":
+            return Number(b.marketCapUsd ?? -1) - Number(a.marketCapUsd ?? -1);
+          case "mcap_asc":
+            return Number(a.marketCapUsd ?? Number.POSITIVE_INFINITY) - Number(b.marketCapUsd ?? Number.POSITIVE_INFINITY);
+          case "votes_desc":
+            return Number(b.vm.votes24h ?? 0) - Number(a.vm.votes24h ?? 0);
+          case "progress_desc":
+            return Number(b.progressPct ?? -1) - Number(a.progressPct ?? -1);
+          case "created_desc": {
+            const aT = safeUnixSeconds(a.base.createdAt);
+            const bT = safeUnixSeconds(b.base.createdAt);
+            return Number(bT ?? 0) - Number(aT ?? 0);
+          }
+          case "created_asc": {
+            const aT = safeUnixSeconds(a.base.createdAt);
+            const bT = safeUnixSeconds(b.base.createdAt);
+            return Number(aT ?? Number.POSITIVE_INFINITY) - Number(bT ?? Number.POSITIVE_INFINITY);
+          }
+          default:
+            return 0;
+        }
+      });
     }
 
     return arr;
-  }, [items, query.search, query.tab]);
+  }, [items, query.search, query.tab, query.status, query.mcapMinUsd, query.mcapMaxUsd, query.progressMinPct, query.progressMaxPct, query.sort]);
 
   const updatedLabel = useMemo(() => {
     if (!lastUpdatedAt) return "—";
@@ -260,6 +376,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
         <div>
           Showing <span className="text-foreground/90 font-semibold">{filtered.length}</span> campaigns
+          <span className="opacity-70"> • Loaded {items.length}</span>
           {total ? <span className="opacity-70"> • Total {total}</span> : null}
         </div>
         <div className="opacity-70">Updated {updatedLabel} ago</div>
