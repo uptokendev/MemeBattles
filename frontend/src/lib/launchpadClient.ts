@@ -283,6 +283,30 @@ export function useLaunchpad() {
     return await fetchCampaignPage(offset, limit, { newestFirst: true });
   }, [fetchCampaignsCount, fetchCampaignPage]);
 
+  /**
+   * Fetch only the on-chain logoURI for a given campaign.
+   *
+   * This is used as a lightweight hydration step for the campaign grid when the
+   * DB-backed feed does not have logo_uri populated yet (but the campaign
+   * contract does).
+   */
+  const fetchCampaignLogoURI = useCallback(
+    async (campaignAddress: string): Promise<string | null> => {
+      const addr = String(campaignAddress ?? '').trim();
+      if (!addr) return null;
+      const campaign = getCampaignRead(addr);
+      if (!campaign) return null;
+      try {
+        const uri = await campaign.logoURI();
+        const s = uri != null ? String(uri).trim() : '';
+        return s ? s : null;
+      } catch {
+        return null;
+      }
+    },
+    [getCampaignRead]
+  );
+
   const fetchCampaignMetrics = useCallback(
     async (campaignAddress: string): Promise<CampaignMetrics | null> => {
       if (!campaignAddress) return null;
@@ -613,6 +637,7 @@ try {
     fetchCampaignsCount,
     fetchCampaignPage,
     fetchCampaigns,
+    fetchCampaignLogoURI,
     fetchCampaignMetrics,
     fetchCampaignCardStats,
     fetchCampaignActivity,

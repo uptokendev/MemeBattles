@@ -70,7 +70,7 @@ export function CampaignCard({
       >
         <div className="relative">
           <img
-             src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
+            src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
             alt={vm.name}
             className="w-full h-[140px] object-cover bg-muted"
             draggable={false}
