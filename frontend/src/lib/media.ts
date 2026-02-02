@@ -4,6 +4,23 @@ export function resolveImageUri(uri?: string | null): string | undefined {
   const raw = String(uri ?? "").trim();
   if (!raw) return undefined;
 
+  // Some backends store a bare CID (e.g. Qm..., bafy...) or "ipfs/<cid>/...".
+  // Normalize those to a gateway URL so browsers can load them.
+  const isLikelyCid = (s: string) =>
+    /^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(s) || // CIDv0 base58btc
+    /^b[a-z2-7]{20,}$/i.test(s); // CIDv1 base32-ish (bafy..., etc.)
+
+  // ipfs/<cid>/<path>
+  if (raw.startsWith("ipfs/")) {
+    const p = raw.slice("ipfs/".length);
+    return `https://cloudflare-ipfs.com/ipfs/${p}`;
+  }
+
+  // bare CID
+  if (isLikelyCid(raw)) {
+    return `https://cloudflare-ipfs.com/ipfs/${raw}`;
+  }
+
   // ipfs://<cid>/<path> or ipfs://ipfs/<cid>/<path>
   if (raw.startsWith("ipfs://")) {
     let p = raw.slice("ipfs://".length);

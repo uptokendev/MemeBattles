@@ -4,6 +4,7 @@ import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
+import { useEffect, useMemo, useState } from "react";
 
 export type CampaignCardVM = {
   campaignAddress: string;
@@ -52,7 +53,20 @@ export function CampaignCard({
   const navigate = useNavigate();
   const addr = String(vm.campaignAddress ?? "").toLowerCase();
 
+  const desiredSrc = useMemo(
+    () => resolveImageUri(vm.logoURI) || "/placeholder.svg",
+    [vm.logoURI]
+  );
+  const [imgSrc, setImgSrc] = useState<string>(desiredSrc);
+
+  // Keep local img src in sync if the campaign changes while scrolling.
+  useEffect(() => {
+    setImgSrc(desiredSrc);
+  }, [desiredSrc]);
+
   const buyLabel = vm.isDexTrading ? "On DEX" : "Buy";
+
+  // Robust image fallback: if the remote/logo URL fails for any reason, fall back to local placeholder.
 
   return (
     <div
@@ -70,11 +84,14 @@ export function CampaignCard({
       >
         <div className="relative">
           <img
-            src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
+            src={imgSrc}
             alt={vm.name}
             className="w-full h-[140px] object-cover bg-muted"
             draggable={false}
             loading="lazy"
+            onError={() => {
+              if (imgSrc !== "/placeholder.svg") setImgSrc("/placeholder.svg");
+            }}
           />
           {/* subtle top fade */}
           <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-transparent" />
