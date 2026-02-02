@@ -275,14 +275,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       <div className="text-xs text-muted-foreground truncate">
                         {c.symbol ? `$${c.symbol}` : ""}
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1 text-xs text-accent">
+<div className="flex items-center gap-1 text-xs text-accent">
                         <Flame className="h-4 w-4" />
                         <span className="font-semibold">{c.votes24h}</span>
                         <span className="text-muted-foreground">/ 24h</span>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      
                       <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)} ago</div>
                     </div>
 
