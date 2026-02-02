@@ -35,14 +35,10 @@ function formatCompactUsd(value: number): string {
   return fmt.format(value);
 }
 
-
-// Use the same placeholder style you already have in the project
-const FALLBACK_LOGOS = ["/placeholder.svg"];
-
-function pickFallbackLogo(seed: string): string {
-  let acc = 0;
-  for (let i = 0; i < seed.length; i++) acc = (acc + seed.charCodeAt(i)) % 9973;
-  return FALLBACK_LOGOS[acc % FALLBACK_LOGOS.length];
+function shortAddr(addr?: string) {
+  if (!addr) return "";
+  const a = String(addr);
+  return a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
 }
 
 export function FeaturedCampaigns({ className }: { className?: string }) {
@@ -138,13 +134,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
 
       const rawLogo = it.logoUri || logoCache[addr] || null;
-      const resolved = resolveImageUri(rawLogo) || pickFallbackLogo(addr);
+      const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
 
       return {
         idx: idx + 1,
         addr,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
+        creator: String((it as any).creatorAddress ?? ""),
+        creatorName: (it as any).creatorName ? String((it as any).creatorName) : null,
         createdAt,
         votes24h,
         mcapUsdLabel,
@@ -244,7 +242,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                         const img = e.currentTarget;
                         if (!img.dataset.fallback) {
                           img.dataset.fallback = "1";
-                          img.src = pickFallbackLogo(c.addr);
+                          img.src = "/placeholder.svg";
                         }
                       }}
                     />
@@ -257,29 +255,52 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   </div>
 
                   {/* Right: data panel (same size as image) */}
-                  <div className="w-full h-full p-3 md:p-4 pb-20 flex flex-col justify-between min-w-0">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold truncate">{c.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {c.symbol ? `$${c.symbol}` : ""}
+                  <div className="w-full h-full p-3 md:p-4 pb-20 flex flex-col min-w-0">
+                    {/* Name + votes (24h) */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-base font-semibold truncate">{c.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {c.symbol ? `$${c.symbol}` : ""}
+                        </div>
                       </div>
-                          <div className="flex items-center gap-1 text-xs text-accent">
-                              <Flame className="h-4 w-4" />
-                              <span className="font-semibold">{c.votes24h}</span>
-                              <span className="text-muted-foreground">/ 24h</span>
+
+                      {/* Votes (24h) top-right */}
+                      <div className="flex items-center gap-1 text-xs text-accent shrink-0">
+                        <Flame className="h-4 w-4" />
+                        <span className="font-semibold">{c.votes24h}</span>
+                        <span className="text-muted-foreground">/ 24h</span>
                       </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground">MCap</div>
-                      <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
-                      
                     </div>
 
-                    <div className="flex items-center gap-2 justify-end mb-2">
+                    {/* Creator row under ticker */}
+                    <div className="mt-2 flex items-center gap-2 min-w-0">
+                      <img
+                        src="/assets/profile_placeholder.png"
+                        alt="Creator"
+                        className="w-7 h-7 rounded-full object-cover border border-border/60"
+                        draggable={false}
+                      />
+                      <div className="text-xs text-muted-foreground truncate">
+                        {c.creatorName ? c.creatorName : c.creator ? shortAddr(c.creator) : "—"}
+                      </div>
+                    </div>
+
+                    {/* MCap */}
+                    <div className="mt-3">
+                      <div className="text-[10px] text-muted-foreground">MCap</div>
+                      <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+                    </div>
+
+                    {/* Upvote */}
+                    <div className="mt-3 flex items-center justify-end">
                       <div onClick={(e) => e.stopPropagation()}>
                         <UpvoteDialog campaignAddress={c.addr} />
                       </div>
                     </div>
+
+                    {/* Spacer so content doesn't hug AthBar overlay */}
+                    <div className="flex-1" />
                   </div>
                 </div>
               </div>
