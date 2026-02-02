@@ -234,7 +234,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                 }}
               >
                 {/* ATH overlay across image + data */}
-<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 bg-black/70 backdrop-blur-md border-t border-border/30 pointer-events-none">
+<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
   <AthBar
     currentLabel={c.mcapUsdLabel ?? null}
     storageKey={`ath:${activeChainId}:${c.addr}`}
