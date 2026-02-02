@@ -95,10 +95,21 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
 }
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
-  const { activeChainId } = useLaunchpad();
+  const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
+  // Debug toggle (works in production):
+  //   localStorage.setItem('debug_campaign_grid', '1'); location.reload();
+  //   localStorage.removeItem('debug_campaign_grid'); location.reload();
+  const DEBUG =
+    typeof window !== "undefined" &&
+    (window.localStorage?.getItem("debug_campaign_grid") === "1" ||
+      // Allow an escape hatch if you prefer a global flag.
+      (window as any).__DEBUG_CAMPAIGN_GRID__ === true);
+
   const [items, setItems] = useState<CampaignFeedItemApi[]>([]);
+  // Lightweight on-chain hydration for missing logo_uri in the DB-backed feed.
+  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -133,8 +144,22 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       setLoading(true);
       setErr(null);
       try {
+        if (DEBUG) {
+          console.debug('[CampaignGrid] fetch first page params', { ...baseParams, cursor: 0 });
+        }
         const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0 });
         if (!mounted) return;
+        if (DEBUG) {
+          console.debug('[CampaignGrid] first page response', {
+            count: resp.items?.length ?? 0,
+            sample: (resp.items ?? []).slice(0, 3).map((x) => ({
+              campaignAddress: x.campaignAddress,
+              logoUri: x.logoUri,
+              name: x.name,
+              symbol: x.symbol,
+            })),
+          });
+        }
         setItems(resp.items ?? []);
         setNextCursor(resp.nextCursor ?? null);
         setLastUpdatedAt(resp.updatedAt ?? null);
@@ -153,11 +178,81 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     };
   }, [baseParams]);
 
+  // Hydrate missing token images from on-chain logoURI.
+  // This keeps the DB feed fast for stats/sorts while matching the behavior of
+  // pages that render images via useLaunchpad().fetchCampaigns().
+  useEffect(() => {
+    let cancelled = false;
+
+    const missing = (items || [])
+      .map((it) => String(it.campaignAddress ?? "").toLowerCase())
+      .filter((addr) => addr && !logoCache[addr])
+      .filter((addr) => {
+        // If the feed already has a logo, don't hydrate.
+        const found = (items || []).find((x) => String(x.campaignAddress ?? "").toLowerCase() === addr);
+        return !found?.logoUri;
+      })
+      .slice(0, 24);
+
+    if (!missing.length) return;
+
+    if (DEBUG) {
+      console.debug('[CampaignGrid] hydrating missing logos', {
+        missingCount: missing.length,
+        missing: missing.slice(0, 10),
+      });
+    }
+
+    (async () => {
+      try {
+        const pairs = await Promise.all(
+          missing.map(async (addr) => {
+            const uri = await fetchCampaignLogoURI(addr);
+            return [addr, uri] as const;
+          })
+        );
+        if (cancelled) return;
+        if (DEBUG) {
+          console.debug('[CampaignGrid] hydration results', {
+            resolved: pairs
+              .filter(([, uri]) => !!uri)
+              .slice(0, 10)
+              .map(([addr, uri]) => ({ addr, uri, resolvedUrl: resolveImageUri(uri) })),
+            unresolved: pairs.filter(([, uri]) => !uri).slice(0, 10).map(([addr]) => addr),
+          });
+        }
+        setLogoCache((prev) => {
+          const next = { ...prev };
+          for (const [addr, uri] of pairs) {
+            if (uri) next[addr] = uri;
+          }
+          return next;
+        });
+      } catch {
+        if (DEBUG) console.debug('[CampaignGrid] hydration failed');
+        // silent: missing images are non-fatal
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, logoCache, fetchCampaignLogoURI, DEBUG]);
+
   const loadMore = async () => {
     if (loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
     try {
+      if (DEBUG) {
+        console.debug('[CampaignGrid] loadMore params', { ...baseParams, cursor: nextCursor });
+      }
       const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor });
+      if (DEBUG) {
+        console.debug('[CampaignGrid] loadMore response', {
+          count: resp.items?.length ?? 0,
+          nextCursor: resp.nextCursor,
+        });
+      }
       setItems((prev) => [...prev, ...(resp.items ?? [])]);
       setNextCursor(resp.nextCursor ?? null);
       setLastUpdatedAt(resp.updatedAt ?? null);
@@ -186,32 +281,29 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams]);
 
   const vms: CampaignCardVM[] = useMemo(() => {
-  return (items || []).map((it) => {
-    const mcapBnb = Number(it.marketcapBnb ?? NaN);
-    const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
-    const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
+    return (items || []).map((it) => {
+      const mcapBnb = Number(it.marketcapBnb ?? NaN);
+      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
+      const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
 
-    const image =
-      (it as any).logoURI ||
-      (it as any).logoUri ||
-      (it as any).image ||
-      "/placeholder.svg";
+      const addr = String(it.campaignAddress ?? "").toLowerCase();
+      const rawLogo = it.logoUri || logoCache[addr] || null;
 
-    return {
-      campaignAddress: String(it.campaignAddress ?? "").toLowerCase(),
-      name: String(it.name ?? "Unknown"),
-      symbol: String(it.symbol ?? ""),
-      logoURI: resolveImageUri(image) ?? undefined,
-      creator: it.creatorAddress ?? undefined,
-      createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
-      marketCapUsdLabel,
-      athLabel: marketCapUsdLabel,
-      progressPct: it.progressPct ?? null,
-      isDexTrading: Boolean(it.isDexTrading),
-      votes24h: Number(it.votes24h ?? 0),
-    } as CampaignCardVM;
-  });
-}, [items, bnbUsd]);
+      return {
+        campaignAddress: addr,
+        name: String(it.name ?? "Unknown"),
+        symbol: String(it.symbol ?? ""),
+        logoURI: resolveImageUri(rawLogo) ?? undefined,
+        creator: it.creatorAddress ?? undefined,
+        createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
+        marketCapUsdLabel,
+        athLabel: marketCapUsdLabel,
+        progressPct: it.progressPct ?? null,
+        isDexTrading: Boolean(it.isDexTrading),
+        votes24h: Number(it.votes24h ?? 0),
+      } as CampaignCardVM;
+    });
+  }, [items, bnbUsd, logoCache]);
 
   const resultsMeta = useMemo(() => {
     const count = vms.length;
