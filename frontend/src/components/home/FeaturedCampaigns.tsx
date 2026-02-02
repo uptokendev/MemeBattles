@@ -233,6 +233,16 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
                 }}
               >
+                {/* ATH overlay across image + data */}
+<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 bg-black/70 backdrop-blur-md border-t border-border/30 pointer-events-none">
+  <AthBar
+    currentLabel={c.mcapUsdLabel ?? null}
+    storageKey={`ath:${activeChainId}:${c.addr}`}
+    className="text-[10px]"
+    barWidthPx={420}
+    barMaxWidth="100%"
+  />
+</div>
                 {/* Top: two equal squares (image + data) */}
                 <div className="grid grid-cols-2 aspect-[2/1]">
                   {/* Left: token image */}
@@ -259,7 +269,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   </div>
 
                   {/* Right: data panel (same size as image) */}
-                  <div className="w-full h-full p-3 md:p-4 flex flex-col justify-between min-w-0">
+                  <div className="w-full h-full p-3 md:p-4 pb-12 flex flex-col justify-between min-w-0">
                     <div className="min-w-0">
                       <div className="text-base font-semibold truncate">{c.name}</div>
                       <div className="text-xs text-muted-foreground truncate">
@@ -298,17 +308,6 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       </Button>
                     </div>
                   </div>
-                </div>
-
-                {/* Bottom: ATH bar (clean strip, no overlap) */}
-                <div className="px-3 py-2 bg-black/40 border-t border-border/40">
-                  <AthBar
-                    currentLabel={c.mcapUsdLabel ?? null}
-                    storageKey={`ath:${activeChainId}:${c.addr}`}
-                    className="text-[10px]"
-                    barWidthPx={420}
-                    barMaxWidth="100%"
-                  />
                 </div>
               </div>
             ))
