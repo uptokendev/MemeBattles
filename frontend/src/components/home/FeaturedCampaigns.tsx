@@ -190,7 +190,7 @@ return {
       </div>
 
       {/* Right: data panel (same height as image) */}
-      <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
+      <div className="w-[168px] h-[168px] shrink-0 p-4 flex flex-col justify-between min-w-0">
         {/* Title */}
         <div className="min-w-0">
           <div className="text-base font-semibold truncate">{c.name}</div>
