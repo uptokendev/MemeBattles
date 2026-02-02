@@ -32,8 +32,8 @@ const Showcase = () => {
         {/* Header band with centered logo + glow strip */}
         {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
         {/* Create headroom, then visually move the band up without clipping */}
-<div className="pt-16">
-  <div className="-translate-y-16">
+<div className="pt-20">
+  <div className="-translate-y-20">
     <HeaderBand />
   </div>
 </div>
