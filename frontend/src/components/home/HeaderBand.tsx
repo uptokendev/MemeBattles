@@ -8,12 +8,12 @@ export function HeaderBand({ className }: HeaderBandProps) {
   return (
     <div className={cn("relative w-full", className)}>
       {/* Glow strip / separator */}
-      <div className="relative h-[200px] md:h-[200px] overflow-hidden">
+      <div className="relative h-[300px] md:h-[300px] overflow-hidden">
 
         {/* horizontal highlight band */}
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2">
           <div
-            className="h-[10px] md:h-[12px] opacity-90"
+            className="h-[10px] md:h-[10px] opacity-90"
             style={{
               background:
                 "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,229,92,0.7) 25%, rgba(255,159,28,0.8) 50%, rgba(255,59,59,0.75) 75%, rgba(0,0,0,0) 100%)",
@@ -34,7 +34,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
           <img
             src="/assets/logo.png"
             alt="Meme Battles"
-            className="h-[200px] md:h-[200px] w-auto drop-shadow-[0_0_18px_rgba(255,160,0,0.35)]"
+            className="h-[300px] md:h-[300px] w-auto drop-shadow-[0_0_18px_rgba(255,160,0,0.35)]"
             draggable={false}
           />
         </div>
