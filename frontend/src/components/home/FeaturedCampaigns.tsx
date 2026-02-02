@@ -47,6 +47,15 @@ function timeAgoFromUnix(seconds?: number): string {
   return `${d}d`;
 }
 
+const FALLBACK_LOGOS = ["/placeholder.svg"];
+
+function pickFallbackLogo(seed: string): string {
+  // deterministic index based on address
+  let acc = 0;
+  for (let i = 0; i < seed.length; i++) acc = (acc + seed.charCodeAt(i)) % 9973;
+  return FALLBACK_LOGOS[acc % FALLBACK_LOGOS.length];
+}
+
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId } = useLaunchpad();
@@ -88,7 +97,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       const votes24h = Number(it.votes24h ?? 0);
       const mcapBnb = Number(it.marketcapBnb ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
-      const image = String(it.logoUri ?? "").trim() || "/assets/profile_placeholder.png";
+      const image = String(it.logoUri ?? "").trim() || pickFallbackLogo(addr);
 
 return {
   idx: idx + 1,
@@ -141,7 +150,7 @@ return {
             Array.from({ length: 6 }).map((_, i) => (
               <div
   key={i}
-  className="snap-start min-w-[260px] md:min-w-[280px] aspect-square rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+  className="snap-start min-w-[420px] md:min-w-[520px] h-[168px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
 />
             ))
           ) : err ? (
@@ -151,87 +160,92 @@ return {
           ) : (
             cards.map((c) => (
               <div
-  key={c.addr}
-  className="snap-start min-w-[260px] md:min-w-[280px] aspect-square rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors relative"
-  role="button"
-  tabIndex={0}
-  onClick={() => navigate(`/token/${c.addr}`)}
-  onKeyDown={(e) => {
-    if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
-  }}
->
-  {/* Split layout */}
-  <div className="flex h-full">
-    {/* Left: campaign image */}
-    <div className="relative w-1/2 h-full">
-      <img
-        src={c.image}
-        alt={c.name}
-        className="w-full h-full object-cover"
-        draggable={false}
+    key={c.addr}
+    className="snap-start min-w-[420px] md:min-w-[520px] rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors"
+    role="button"
+    tabIndex={0}
+    onClick={() => navigate(`/token/${c.addr}`)}
+    onKeyDown={(e) => {
+      if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
+    }}
+  >
+    {/* Top row: image (square) + data (same height) */}
+    <div className="flex h-[168px]">
+      {/* Left: token image square */}
+      <div className="relative w-[168px] h-[168px] shrink-0 bg-black">
+        <img
+          src={c.image}
+          alt={c.name}
+          className="w-full h-full object-cover"
+          draggable={false}
+        />
+
+        {/* Subtle bottom fade for readability */}
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 to-transparent" />
+
+        {/* Rank badge */}
+        <div className="absolute top-2 left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-black/60 border-2 border-emerald-400 text-xs font-bold text-emerald-400">
+          {c.idx}
+        </div>
+      </div>
+
+      {/* Right: data panel (same height as image) */}
+      <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
+        {/* Title */}
+        <div className="min-w-0">
+          <div className="text-base font-semibold truncate">{c.name}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {c.symbol ? `$${c.symbol}` : ""}
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1 text-xs text-accent">
+            <Flame className="h-4 w-4" />
+            <span className="font-semibold">{c.votes24h}</span>
+            <span className="text-muted-foreground">/ 24h</span>
+          </div>
+          <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)} ago</div>
+        </div>
+
+        <div>
+          <div className="text-[10px] text-muted-foreground">MCap</div>
+          <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 justify-end">
+          <div onClick={(e) => e.stopPropagation()}>
+            <UpvoteDialog campaignAddress={c.addr} />
+          </div>
+
+          <Button
+            size="sm"
+            className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/token/${c.addr}`);
+            }}
+          >
+            Buy
+          </Button>
+        </div>
+      </div>
+    </div>
+
+    {/* Bottom row: ATH bar across BOTH halves */}
+    <div className="px-3 py-2 bg-black/40 border-t border-border/40">
+      <AthBar
+        currentLabel={c.mcapUsdLabel ?? null}
+        storageKey={`ath:${activeChainId}:${c.addr}`}
+        className="text-[10px]"
+        barWidthPx={520}
+        barMaxWidth="100%"
       />
-
-      {/* Rank badge */}
-      <div className="absolute top-2 left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-black/60 border-2 border-emerald-400 text-xs font-bold text-emerald-400">
-        {c.idx}
-      </div>
-    </div>
-
-    {/* Right: data */}
-    <div className="w-1/2 p-3 flex flex-col min-w-0 pb-12">
-      <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">{c.name}</div>
-        <div className="text-xs text-muted-foreground truncate">
-          {c.symbol ? `$${c.symbol}` : ""}
-        </div>
-      </div>
-
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 text-xs text-accent">
-          <Flame className="h-4 w-4" />
-          <span className="font-semibold">{c.votes24h}</span>
-        </div>
-        <div className="text-xs text-muted-foreground">{timeAgoFromUnix(c.createdAt)}</div>
-      </div>
-
-      <div className="mt-2">
-        <div className="text-[10px] text-muted-foreground">MCap</div>
-        <div className="text-xs font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
-      </div>
-
-      <div className="flex-1" />
-
-      <div className="flex items-center gap-2 justify-end">
-        <div onClick={(e) => e.stopPropagation()}>
-          <UpvoteDialog campaignAddress={c.addr} />
-        </div>
-
-        <Button
-          size="sm"
-          className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro"
-          onClick={(e) => {
-            e.stopPropagation();
-            navigate(`/token/${c.addr}`);
-          }}
-        >
-          Buy
-        </Button>
-      </div>
     </div>
   </div>
-
-  {/* ATH overlay bottom across both halves */}
-  <div className="absolute inset-x-0 bottom-0 p-2 bg-black/60 backdrop-blur-md border-t border-border/40">
-    <AthBar
-      currentLabel={c.mcapUsdLabel ?? null}
-      storageKey={`ath:${activeChainId}:${c.addr}`}
-      className="text-[10px]"
-      barWidthPx={280}
-      barMaxWidth="100%"
-    />
-  </div>
-</div>
-            ))
+))
           )}
         </div>
       </div>
