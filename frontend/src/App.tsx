@@ -21,6 +21,7 @@ import Playbook from "@/pages/Playbook";
 import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { GridBackground } from "@/components/GridBackground";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,7 @@ const App = () => {
             <div className="h-screen overflow-hidden bg-background flex flex-col">
               <GridBackground />
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+              <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <main className="flex-1 overflow-hidden pt-28 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
                 <Routes>
                   <Route path="/" element={<Showcase />} />

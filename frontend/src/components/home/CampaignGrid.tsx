@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
+import { resolveImageUri } from "@/lib/media";
 
 export type FeedTabKey = "trending" | "new" | "ending" | "dex";
 
@@ -194,7 +195,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         campaignAddress: String(it.campaignAddress ?? "").toLowerCase(),
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
-        logoURI: it.logoUri ?? undefined,
+        logoURI: resolveImageUri(it.logoUri) ?? undefined,
         creator: it.creatorAddress ?? undefined,
         createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
         marketCapUsdLabel,

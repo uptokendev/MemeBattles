@@ -3,6 +3,7 @@ import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+import { resolveImageUri } from "@/lib/media";
 
 export type CampaignCardVM = {
   campaignAddress: string;
@@ -69,7 +70,7 @@ export function CampaignCard({
       >
         <div className="relative">
           <img
-            src={vm.logoURI || "/placeholder.svg"}
+            src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
             alt={vm.name}
             className="w-full h-[140px] object-cover bg-muted"
             draggable={false}
