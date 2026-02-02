@@ -230,7 +230,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-40 bg-transparent border-b border-border/30">
+    <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
       <div className="flex items-center justify-between px-4 md:px-6 py-3">
         {/* Mobile Menu Button */}
         <button

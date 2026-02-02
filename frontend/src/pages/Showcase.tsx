@@ -42,7 +42,7 @@ const Showcase = () => {
         </div>
 
         {/* Featured grid (UpVote campaigns) */}
-        <div className="mt-0 md:pr-[320px]">
+        <div className="md:pr-[320px] -translate-y-8">
           <FeaturedCampaigns />
         </div>
 

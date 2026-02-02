@@ -109,7 +109,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div className="inline-flex items-center gap-2 text-sm font-semibold">
             <ThumbsUp className="h-4 w-4 text-accent" />
