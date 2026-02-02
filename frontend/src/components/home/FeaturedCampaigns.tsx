@@ -166,7 +166,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         <div className="flex items-center gap-2">
           <div className="inline-flex items-center gap-2 text-sm font-semibold">
             <ThumbsUp className="h-4 w-4 text-accent" />
-            UpVote Campaigns
+            Featured Campaigns
           </div>
           <div className="text-xs text-muted-foreground">Top 20 (last 24h)</div>
         </div>
@@ -272,13 +272,13 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                     <div>
                       <div className="text-[10px] text-muted-foreground">MCap</div>
                       <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+                      <div className="flex items-center gap-2 justify-end mb-2">
                       <div onClick={(e) => e.stopPropagation()}>
                         <UpvoteDialog campaignAddress={c.addr} />
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 justify-end mb-2">
-                      
+                    
                     </div>
                   </div>
                 </div>
