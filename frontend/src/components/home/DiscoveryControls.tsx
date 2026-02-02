@@ -280,15 +280,6 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
         </Select>
       </div>
     </div>
-
-    <div className="relative w-full md:w-[320px]">
-      <input
-        value={searchValue}
-        onChange={(e) => onChange({ ...query, search: e.target.value })}
-        placeholder="Filter grid…"
-        className="w-full h-9 rounded-xl border border-border/50 bg-card/40 px-3 text-sm outline-none focus:ring-2 focus:ring-accent/30"
-      />
-    </div>
   </div>
 </div>
 
