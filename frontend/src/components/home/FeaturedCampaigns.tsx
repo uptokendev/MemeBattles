@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { resolveImageUri } from "@/lib/media";
+import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 
 type FeaturedItemApi = {
   chainId: number;
@@ -45,6 +46,10 @@ function shortAddr(addr?: string) {
   return a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
 }
 
+function isEvmAddress(addr?: string | null) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
+}
+
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
@@ -53,7 +58,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const goProfile = (creatorAddr?: string) => {
     const a = (creatorAddr ?? "").trim();
     if (!a) return;
-    navigate(`/profile/${a}`);
+    navigate(`/profile?address=${encodeURIComponent(a)}`);
   };
 
   const [items, setItems] = useState<FeaturedItemApi[]>([]);
@@ -62,6 +67,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
   // On-chain logo hydration cache (same idea as CampaignGrid)
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
+  const [profilesByAddr, setProfilesByAddr] = useState<Record<string, UserProfile | null>>({});
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -130,6 +136,51 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [items, logoCache, fetchCampaignLogoURI]);
 
+
+  // Hydrate creator profiles (username/displayName) so we can show username instead of short address
+  useEffect(() => {
+    let cancelled = false;
+
+    const unique = Array.from(
+      new Set(
+        (items || [])
+          .map((it) => String(it.creatorAddress ?? "").trim().toLowerCase())
+          .filter((a) => isEvmAddress(a))
+      )
+    );
+
+    const missing = unique.filter((a) => profilesByAddr[a] === undefined);
+    if (!missing.length) return;
+
+    (async () => {
+      try {
+        const results = await Promise.all(
+          missing.map(async (addr) => {
+            try {
+              const p = await fetchUserProfile(activeChainId, addr);
+              return [addr, p] as const;
+            } catch {
+              return [addr, null] as const;
+            }
+          })
+        );
+        if (cancelled) return;
+
+        setProfilesByAddr((prev) => {
+          const next = { ...prev };
+          for (const [addr, p] of results) next[addr] = p;
+          return next;
+        });
+      } catch {
+        // non-fatal
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, activeChainId, profilesByAddr]);
+
   const cards = useMemo(() => {
     return items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
@@ -147,6 +198,11 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
 
       const creatorAddr = String(it.creatorAddress ?? "");
+      const creatorKey = creatorAddr ? creatorAddr.trim().toLowerCase() : "";
+      const profile = creatorKey ? profilesByAddr[creatorKey] ?? null : null;
+
+      const profileDisplayName = (profile?.displayName ?? "").trim();
+
       const maybeUsernameRaw =
         (it as any).creatorUsername ??
         (it as any).username ??
@@ -158,10 +214,17 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         (it as any).profile?.displayName ??
         null;
 
-      const creatorName =
-        typeof maybeUsernameRaw === "string" && maybeUsernameRaw.trim().length > 0
+      const usernameRaw =
+        profileDisplayName ||
+        (typeof maybeUsernameRaw === "string" && maybeUsernameRaw.trim().length > 0
           ? maybeUsernameRaw.trim()
-          : null;
+          : "");
+
+      const creatorName = usernameRaw
+        ? usernameRaw.startsWith("@")
+          ? usernameRaw
+          : `@${usernameRaw}`
+        : null;
 
       const creatorLabel = creatorName ? creatorName : creatorAddr ? shortAddr(creatorAddr) : "—";
 
@@ -179,7 +242,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         image: resolved,
       };
     });
-  }, [items, bnbUsd, logoCache]);
+  }, [items, bnbUsd, logoCache, profilesByAddr]);
 
   const scrollByCards = (dir: "left" | "right") => {
     const el = scrollRef.current;
