@@ -150,7 +150,7 @@ return {
             Array.from({ length: 6 }).map((_, i) => (
               <div
   key={i}
-  className="snap-start min-w-[420px] md:min-w-[520px] h-[168px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+  className="snap-start min-w-[336px] md:min-w-[336px] h-[168px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
 />
             ))
           ) : err ? (
@@ -161,7 +161,7 @@ return {
             cards.map((c) => (
               <div
     key={c.addr}
-    className="snap-start min-w-[420px] md:min-w-[520px] rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors"
+    className="snap-start min-w-[336pxpx] md:min-w-[336pxpx]  rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors"
     role="button"
     tabIndex={0}
     onClick={() => navigate(`/token/${c.addr}`)}
