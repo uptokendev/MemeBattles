@@ -295,17 +295,6 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       <div onClick={(e) => e.stopPropagation()}>
                         <UpvoteDialog campaignAddress={c.addr} />
                       </div>
-
-                      <Button
-                        size="sm"
-                        className="bg-accent hover:bg-accent/90 text-accent-foreground font-retro"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/token/${c.addr}`);
-                        }}
-                      >
-                        Buy
-                      </Button>
                     </div>
                   </div>
                 </div>
