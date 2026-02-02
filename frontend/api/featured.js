@@ -34,6 +34,7 @@ export default async function handler(req, res) {
          c.logo_uri AS "logoUri",
          c.created_at_chain AS "createdAtChain",
          c.graduated_at_chain AS "graduatedAtChain",
+         ts.marketcap_bnb AS "marketcapBnb",
          va.votes_1h AS "votes1h",
          va.votes_24h AS "votes24h",
          va.votes_7d AS "votes7d",
@@ -44,6 +45,9 @@ export default async function handler(req, res) {
        INNER JOIN campaigns c
          ON c.chain_id = va.chain_id
         AND c.campaign_address = va.campaign_address
+       LEFT JOIN token_stats ts
+         ON ts.chain_id = c.chain_id
+        AND ts.campaign_address = c.campaign_address
        WHERE va.chain_id = $1
          AND (c.graduated_at_chain IS NULL)
        ORDER BY ${sortCol} DESC NULLS LAST

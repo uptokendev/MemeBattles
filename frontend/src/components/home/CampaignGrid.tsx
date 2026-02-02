@@ -1,44 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo } from "@/lib/launchpadClient";
-import { CampaignCard, CampaignCardVM } from "./CampaignCard";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { useLaunchpad } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-
-function formatCompactUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-
-  const fmt = (v: number, suffix: string) => {
-    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
-    return `${sign}$${v.toFixed(decimals)}${suffix}`;
-  };
-
-  if (abs >= 1e12) return fmt(abs / 1e12, "T");
-  if (abs >= 1e9) return fmt(abs / 1e9, "B");
-  if (abs >= 1e6) return fmt(abs / 1e6, "M");
-  if (abs >= 1e3) return fmt(abs / 1e3, "K");
-  const decimals = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
-  return `${sign}$${abs.toFixed(decimals)}`;
-}
+import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 
 export type FeedTabKey = "trending" | "new" | "ending" | "dex";
 
 export type HomeQuery = {
   tab: FeedTabKey;
-  // UI filters (bound to fields we can derive immediately from existing feed/stats)
   status?: "all" | "live" | "graduated";
   mcapMinUsd?: number;
   mcapMaxUsd?: number;
   progressMinPct?: number;
   progressMaxPct?: number;
-
-  // Future-ready (no-op until campaign categories exist in the feed)
   category?: string;
-
-  // UI sort key. "default" means tab-defined behavior.
   sort?:
     | "default"
     | "mcap_desc"
@@ -51,20 +26,33 @@ export type HomeQuery = {
   search?: string;
 };
 
-type Hydrated = {
-  base: CampaignInfo;
-  vm: CampaignCardVM;
-  // used for client-side sorting
+type CampaignFeedItemApi = {
+  chainId: number;
+  campaignAddress: string;
+  tokenAddress?: string | null;
+  creatorAddress?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+  logoUri?: string | null;
+  createdAtChain?: string | null;
+  graduatedAtChain?: string | null;
+  isDexTrading?: boolean;
+  marketcapBnb?: string | null;
+  votes24h?: number;
   progressPct?: number | null;
-  etaToGraduationSec?: number | null;
-  marketCapUsd?: number | null;
-  status?: "live" | "graduated";
+  etaSec?: number | null;
+};
+
+type CampaignFeedResponse = {
+  items: CampaignFeedItemApi[];
+  nextCursor: number | null;
+  pageSize: number;
+  updatedAt?: string;
 };
 
 function safeUnixSeconds(ts: any): number | null {
   if (ts == null) return null;
   if (typeof ts === "number" && Number.isFinite(ts)) {
-    // if it's ms, convert
     return ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts);
   }
   if (typeof ts === "string") {
@@ -76,348 +64,188 @@ function safeUnixSeconds(ts: any): number | null {
   return null;
 }
 
-async function fetchVoteCounts(chainId: number, addrs: string[]) {
-  if (!addrs.length) return {} as Record<string, any>;
-  const qs = encodeURIComponent(addrs.join(","));
-  const r = await fetch(`/api/vote_counts?chainId=${chainId}&campaigns=${qs}`);
+function formatCompactUsd(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const fmt = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  });
+  return fmt.format(value);
+}
+
+function buildQueryString(params: Record<string, any>) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) continue;
+    if (typeof v === "string" && v.trim() === "") continue;
+    qs.set(k, String(v));
+  }
+  return qs.toString();
+}
+
+async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+  const qs = buildQueryString(params);
+  const r = await fetch(`/api/campaigns?${qs}`);
   const j = await r.json();
-  return (j?.counts ?? {}) as Record<string, { votes24h?: number }>;
+  if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
+  return j as CampaignFeedResponse;
 }
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
-  const {
-    activeChainId,
-    fetchCampaignsCount,
-    fetchCampaignPage,
-    fetchCampaignSummary,
-  } = useLaunchpad();
-
+  const { activeChainId } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  const PAGE_SIZE = 24;
-
-  const [items, setItems] = useState<Hydrated[]>([]);
+  const [items, setItems] = useState<CampaignFeedItemApi[]>([]);
+  const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState<number>(0);
-  const [nextOffset, setNextOffset] = useState<number | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset on tab/filter/search changes.
+  const baseParams = useMemo(() => {
+    return {
+      chainId: activeChainId,
+      limit: 24,
+      tab: query.tab ?? "trending",
+      sort: query.sort ?? "default",
+      status: query.status ?? "all",
+      search: query.search ?? "",
+
+      // Filters that require USD conversion.
+      // We pass bnbUsd so the API can filter on marketcap_usd deterministically.
+      bnbUsd: bnbUsd ? bnbUsd : null,
+      mcapMinUsd: query.mcapMinUsd ?? null,
+      mcapMaxUsd: query.mcapMaxUsd ?? null,
+      progressMinPct: query.progressMinPct ?? null,
+      progressMaxPct: query.progressMaxPct ?? null,
+    };
+  }, [activeChainId, query, bnbUsd]);
+
+  // Reset + fetch first page whenever the query changes.
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
-      setError(null);
+      setErr(null);
       try {
-        const t = await fetchCampaignsCount();
+        const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0 });
         if (!mounted) return;
-        setTotal(t);
-        if (t <= 0) {
-          setItems([]);
-          setNextOffset(null);
-          return;
-        }
-
-        // Start from newest campaigns.
-        const offset = Math.max(0, t - PAGE_SIZE);
-        const page = await fetchCampaignPage(offset, PAGE_SIZE, { newestFirst: true });
-        if (!mounted) return;
-
-        const hydrated = await hydratePage(page);
-        if (!mounted) return;
-
-        setItems(hydrated);
-        setNextOffset(offset > 0 ? Math.max(0, offset - PAGE_SIZE) : null);
-        setLastUpdatedAt(Date.now());
+        setItems(resp.items ?? []);
+        setNextCursor(resp.nextCursor ?? null);
+        setLastUpdatedAt(resp.updatedAt ?? null);
       } catch (e: any) {
         if (!mounted) return;
-        setError(e?.message ?? "Failed to load campaigns");
+        setErr(e?.message ?? "Failed to load campaigns");
+        setItems([]);
+        setNextCursor(null);
       } finally {
         if (!mounted) return;
         setLoading(false);
       }
     })();
-
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChainId, bnbUsd, query.tab, query.category, query.sort, query.timeFilter, query.search, query.status, query.mcapMinUsd, query.mcapMaxUsd, query.progressMinPct, query.progressMaxPct]);
-
-  // Infinite scroll observer.
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          void loadMore();
-        }
-      },
-      { rootMargin: "800px" }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentinelRef.current, nextOffset, loadingMore, loading, query.tab]);
-
-  const hydratePage = async (page: CampaignInfo[]): Promise<Hydrated[]> => {
-    const pageAddrs = page.map((c) => String(c.campaign ?? "").toLowerCase()).filter(Boolean);
-    const voteCounts = await fetchVoteCounts(activeChainId, pageAddrs);
-
-    const queue = page.slice();
-    const out: Hydrated[] = [];
-
-    const workers = Array.from({ length: 4 }).map(async () => {
-      while (queue.length) {
-        const c = queue.shift();
-        if (!c) return;
-        const addr = String(c.campaign ?? "").toLowerCase();
-
-        const vm: CampaignCardVM = {
-          campaignAddress: addr,
-          name: c.name ?? "Unknown",
-          symbol: c.symbol ?? "",
-          logoURI: c.logoURI || undefined,
-          creator: c.creator || undefined,
-          createdAt: c.createdAt,
-          votes24h: Number(voteCounts[addr]?.votes24h ?? 0),
-        };
-
-        try {
-          const summary = await fetchCampaignSummary(c);
-          const mcBnb = (summary as any)?.stats?.marketCapBnb ?? null;
-          const mcUsd = (mcBnb != null && bnbUsd && Number.isFinite(Number(bnbUsd))) ? Number(mcBnb) * Number(bnbUsd) : null;
-          vm.marketCapUsdLabel = mcUsd != null ? formatCompactUsd(mcUsd) : null;
-          vm.athLabel = vm.marketCapUsdLabel;
-          const sold = Number((summary as any)?.metrics?.sold ?? 0);
-          const target = Number((summary as any)?.metrics?.graduationTarget ?? 0);
-          const progressPct = target > 0 ? Math.min(100, Math.max(0, (sold / target) * 100)) : null;
-          vm.progressPct = progressPct;
-
-          // DEX tab truth condition: must be provided as a single boolean from backend.
-          // Prefer stats.isDexTrading / metrics.isDexTrading; fall back to legacy metrics.launched.
-          vm.isDexTrading = Boolean((summary as any)?.stats?.isDexTrading ?? (summary as any)?.metrics?.isDexTrading ?? (summary as any)?.metrics?.launched);
-
-          // "Ending Soon" definition: estimate time-to-graduation from current velocity.
-          // We only have aggregate progress, so we approximate velocity using sold / max(age, 10m), capped to 6h.
-          const createdAtSec = safeUnixSeconds(c.createdAt);
-          const nowSec = Math.floor(Date.now() / 1000);
-          const ageSecRaw = createdAtSec ? Math.max(60, nowSec - createdAtSec) : null;
-          const ageSec = ageSecRaw == null ? null : Math.min(Math.max(ageSecRaw, 600), 6 * 3600);
-          const remaining = Math.max(0, target - sold);
-          const velocity = ageSec && ageSec > 0 ? sold / ageSec : 0;
-          const eta = velocity > 0 ? remaining / velocity : null;
-
-          const status: "live" | "graduated" = (summary as any)?.metrics?.launched ? "graduated" : "live";
-          out.push({ base: c, vm, progressPct, etaToGraduationSec: eta, marketCapUsd: mcUsd, status });
-        } catch {
-          out.push({ base: c, vm, progressPct: null, etaToGraduationSec: null, marketCapUsd: null, status: "live" });
-        }
-      }
-    });
-
-    await Promise.allSettled(workers);
-
-    // Keep deterministic order based on original page ordering.
-    const index = new Map(page.map((c, i) => [String(c.campaign ?? "").toLowerCase(), i]));
-    out.sort((a, b) => (index.get(a.vm.campaignAddress) ?? 0) - (index.get(b.vm.campaignAddress) ?? 0));
-    return out;
-  };
+  }, [baseParams]);
 
   const loadMore = async () => {
-    if (loading || loadingMore) return;
-    if (nextOffset === null) return;
-
+    if (loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
     try {
-      const page = await fetchCampaignPage(nextOffset, PAGE_SIZE, { newestFirst: true });
-      const hydrated = await hydratePage(page);
-      setItems((prev) => [...prev, ...hydrated]);
-      setNextOffset(nextOffset > 0 ? Math.max(0, nextOffset - PAGE_SIZE) : null);
-      setLastUpdatedAt(Date.now());
+      const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor });
+      setItems((prev) => [...prev, ...(resp.items ?? [])]);
+      setNextCursor(resp.nextCursor ?? null);
+      setLastUpdatedAt(resp.updatedAt ?? null);
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load more campaigns");
+      setErr(e?.message ?? "Failed to load more");
     } finally {
       setLoadingMore(false);
     }
   };
 
-  // Apply client-side search filter (fast) on hydrated items.
-  const filtered = useMemo(() => {
-    const s = String(query.search ?? "").trim().toLowerCase();
-    let arr = items;
-    if (s) {
-      arr = arr.filter((x) => {
-        const n = String(x.vm.name ?? "").toLowerCase();
-        const sym = String(x.vm.symbol ?? "").toLowerCase();
-        const ca = String(x.vm.campaignAddress ?? "").toLowerCase();
-        return n.includes(s) || sym.includes(s) || ca.includes(s);
-      });
-    }
-
-    if (query.tab === "dex") {
-      arr = arr.filter((x) => Boolean(x.vm.isDexTrading));
-    }
-
-    // Status filter
-    const status = query.status ?? "all";
-    if (status !== "all") {
-      arr = arr.filter((x) => (x.status ?? "live") === status);
-    }
-
-    // Market cap (USD) range filter
-    const minMc = typeof query.mcapMinUsd === "number" ? query.mcapMinUsd : null;
-    const maxMc = typeof query.mcapMaxUsd === "number" ? query.mcapMaxUsd : null;
-    if (minMc != null || maxMc != null) {
-      arr = arr.filter((x) => {
-        const mc = x.marketCapUsd;
-        if (mc == null) return false;
-        if (minMc != null && mc < minMc) return false;
-        if (maxMc != null && mc > maxMc) return false;
-        return true;
-      });
-    }
-
-    // Progress % range filter
-    const minP = typeof query.progressMinPct === "number" ? query.progressMinPct : null;
-    const maxP = typeof query.progressMaxPct === "number" ? query.progressMaxPct : null;
-    if (minP != null || maxP != null) {
-      arr = arr.filter((x) => {
-        const p = x.progressPct;
-        if (p == null) return false;
-        if (minP != null && p < minP) return false;
-        if (maxP != null && p > maxP) return false;
-        return true;
-      });
-    }
-
-    // Sorting
-    const sortKey = query.sort ?? "default";
-
-    const tabSort = (input: Hydrated[]) => {
-      if (query.tab === "ending") {
-        // Sort by ETA ascending; tie-breaker: higher progress first.
-        return input.slice().sort((a, b) => {
-          const ea = a.etaToGraduationSec;
-          const eb = b.etaToGraduationSec;
-          const aInf = ea == null ? Number.POSITIVE_INFINITY : ea;
-          const bInf = eb == null ? Number.POSITIVE_INFINITY : eb;
-          if (aInf !== bInf) return aInf - bInf;
-          return Number(b.progressPct ?? 0) - Number(a.progressPct ?? 0);
-        });
-      }
-
-      if (query.tab === "trending") {
-        // Heuristic: vote velocity proxy (24h votes). Replace with backend score later.
-        return input.slice().sort((a, b) => Number(b.vm.votes24h ?? 0) - Number(a.vm.votes24h ?? 0));
-      }
-
-      if (query.tab === "new") {
-        return input.slice().sort((a, b) => {
-          const aT = safeUnixSeconds(a.base.createdAt);
-          const bT = safeUnixSeconds(b.base.createdAt);
-          return Number(bT ?? 0) - Number(aT ?? 0);
-        });
-      }
-
-      return input;
-    };
-
-    if (sortKey === "default") {
-      arr = tabSort(arr);
-    } else {
-      arr = arr.slice().sort((a, b) => {
-        switch (sortKey) {
-          case "mcap_desc":
-            return Number(b.marketCapUsd ?? -1) - Number(a.marketCapUsd ?? -1);
-          case "mcap_asc":
-            return Number(a.marketCapUsd ?? Number.POSITIVE_INFINITY) - Number(b.marketCapUsd ?? Number.POSITIVE_INFINITY);
-          case "votes_desc":
-            return Number(b.vm.votes24h ?? 0) - Number(a.vm.votes24h ?? 0);
-          case "progress_desc":
-            return Number(b.progressPct ?? -1) - Number(a.progressPct ?? -1);
-          case "created_desc": {
-            const aT = safeUnixSeconds(a.base.createdAt);
-            const bT = safeUnixSeconds(b.base.createdAt);
-            return Number(bT ?? 0) - Number(aT ?? 0);
-          }
-          case "created_asc": {
-            const aT = safeUnixSeconds(a.base.createdAt);
-            const bT = safeUnixSeconds(b.base.createdAt);
-            return Number(aT ?? Number.POSITIVE_INFINITY) - Number(bT ?? Number.POSITIVE_INFINITY);
-          }
-          default:
-            return 0;
+  // Infinite scroll: load next page when sentinel becomes visible.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) loadMore();
         }
-      });
-    }
+      },
+      { root: null, rootMargin: "600px", threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams]);
 
-    return arr;
-  }, [items, query.search, query.tab, query.status, query.mcapMinUsd, query.mcapMaxUsd, query.progressMinPct, query.progressMaxPct, query.sort]);
+  const vms: CampaignCardVM[] = useMemo(() => {
+    return (items || []).map((it) => {
+      const mcapBnb = Number(it.marketcapBnb ?? NaN);
+      const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
+      const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
 
-  const updatedLabel = useMemo(() => {
-    if (!lastUpdatedAt) return "—";
-    const secs = Math.max(0, Math.floor((Date.now() - lastUpdatedAt) / 1000));
-    if (secs < 60) return `${secs}s`;
-    const m = Math.floor(secs / 60);
-    if (m < 60) return `${m}m`;
-    const h = Math.floor(m / 60);
-    return `${h}h`;
-  }, [lastUpdatedAt]);
+      return {
+        campaignAddress: String(it.campaignAddress ?? "").toLowerCase(),
+        name: String(it.name ?? "Unknown"),
+        symbol: String(it.symbol ?? ""),
+        logoURI: it.logoUri ?? undefined,
+        creator: it.creatorAddress ?? undefined,
+        createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
+        marketCapUsdLabel,
+        athLabel: marketCapUsdLabel,
+        progressPct: it.progressPct ?? null,
+        isDexTrading: Boolean(it.isDexTrading),
+        votes24h: Number(it.votes24h ?? 0),
+      } as CampaignCardVM;
+    });
+  }, [items, bnbUsd]);
+
+  const resultsMeta = useMemo(() => {
+    const count = vms.length;
+    const updated = lastUpdatedAt ? Math.floor((Date.now() - Date.parse(lastUpdatedAt)) / 1000) : null;
+    const updatedLabel = updated != null && Number.isFinite(updated) ? `${Math.max(0, updated)}s ago` : "—";
+    return `Showing ${count} campaigns • Updated ${updatedLabel}`;
+  }, [vms.length, lastUpdatedAt]);
 
   return (
     <div className={cn("w-full", className)}>
-      {/* Results meta */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-        <div>
-          Showing <span className="text-foreground/90 font-semibold">{filtered.length}</span> campaigns
-          <span className="opacity-70"> • Loaded {items.length}</span>
-          {total ? <span className="opacity-70"> • Total {total}</span> : null}
-        </div>
-        <div className="opacity-70">Updated {updatedLabel} ago</div>
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="text-xs text-muted-foreground">{resultsMeta}</div>
       </div>
 
-      {loading ? (
+      {loading && !vms.length ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
-              className="h-[340px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+              className="h-[320px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
             />
           ))}
         </div>
-      ) : error ? (
-        <div className="py-10 text-center">
-          <div className="text-sm text-muted-foreground">{error}</div>
-          <div className="mt-4">
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Reload
-            </Button>
-          </div>
-        </div>
-      ) : filtered.length === 0 ? (
+      ) : err ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">{err}</div>
+      ) : vms.length === 0 ? (
         <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtered.map((x) => (
-              <CampaignCard
-                key={x.vm.campaignAddress}
-                vm={x.vm}
-                chainIdForStorage={activeChainId}
-              />
+            {vms.map((vm) => (
+              <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />
             ))}
           </div>
 
-          {/* sentinel for infinite scroll */}
-          <div ref={sentinelRef} className="h-10" />
+          <div ref={sentinelRef} className="h-12" />
+
           {loadingMore ? (
             <div className="py-6 text-center text-xs text-muted-foreground">Loading more…</div>
+          ) : nextCursor == null ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">End of results</div>
           ) : null}
         </>
       )}

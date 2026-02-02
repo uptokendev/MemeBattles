@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo } from "@/types/launchpad";
 import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 
 type FeaturedItemApi = {
   chainId: number;
@@ -20,7 +20,19 @@ type FeaturedItemApi = {
   graduatedAtChain?: string | null;
   votes24h?: number | null;
   votesAllTime?: number | null;
+  marketcapBnb?: string | null;
 };
+
+function formatCompactUsd(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  const fmt = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  });
+  return fmt.format(value);
+}
 
 function timeAgoFromUnix(seconds?: number): string {
   if (!seconds || !Number.isFinite(seconds)) return "—";
@@ -37,7 +49,8 @@ function timeAgoFromUnix(seconds?: number): string {
 
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
-  const { activeChainId, fetchCampaignCardStats } = useLaunchpad();
+  const { activeChainId } = useLaunchpad();
+  const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const [items, setItems] = useState<FeaturedItemApi[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,67 +81,13 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [activeChainId]);
 
-  // Pull on-chain card stats (market cap / launched) with a light debounce.
-  const [statsByCampaign, setStatsByCampaign] = useState<Record<string, { marketCapUsdLabel?: string | null }>>({});
-
-  useEffect(() => {
-    let mounted = true;
-    if (!items.length) return;
-
-    const load = async () => {
-      const next: Record<string, { marketCapUsdLabel?: string | null }> = {};
-      // Small concurrency to avoid RPC spikes.
-      const queue = items.slice(0, 20);
-      const workers = Array.from({ length: 4 }).map(async () => {
-        while (queue.length) {
-          const it = queue.shift();
-          if (!it) return;
-          const addr = String(it.campaignAddress ?? "").toLowerCase();
-          if (!addr) continue;
-
-          const ci: CampaignInfo = {
-            id: 0,
-            campaign: addr,
-            token: String(it.tokenAddress ?? ""),
-            creator: String(it.creatorAddress ?? ""),
-            name: String(it.name ?? ""),
-            symbol: String(it.symbol ?? ""),
-            logoURI: it.logoUri ?? undefined,
-            xAccount: "",
-            website: "",
-            extraLink: "",
-            createdAt: it.createdAtChain ? Math.floor(new Date(it.createdAtChain).getTime() / 1000) : undefined,
-          };
-
-          try {
-            const r = await fetchCampaignCardStats(ci);
-            // We already have compact formatting helper; marketCap in stats is string.
-            // NOTE: marketCapBnb->USD is handled on the main grid; featured keeps it simple for now.
-            const mc = r?.stats?.marketCap ?? null;
-            next[addr] = { marketCapUsdLabel: mc ? `$${mc}` : null };
-          } catch {
-            next[addr] = { marketCapUsdLabel: null };
-          }
-        }
-      });
-
-      await Promise.allSettled(workers);
-      if (!mounted) return;
-      setStatsByCampaign((prev) => ({ ...prev, ...next }));
-    };
-
-    const t = window.setTimeout(load, 120);
-    return () => {
-      mounted = false;
-      window.clearTimeout(t);
-    };
-  }, [items, fetchCampaignCardStats]);
-
   const cards = useMemo(() => {
     return items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const createdAt = it.createdAtChain ? Math.floor(new Date(it.createdAtChain).getTime() / 1000) : undefined;
       const votes24h = Number(it.votes24h ?? 0);
+      const mcapBnb = Number(it.marketcapBnb ?? NaN);
+      const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
       return {
         idx: idx + 1,
         addr,
@@ -136,9 +95,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         symbol: String(it.symbol ?? ""),
         createdAt,
         votes24h,
+        mcapUsdLabel,
       };
     });
-  }, [items]);
+  }, [items, bnbUsd]);
 
   const scrollByCards = (dir: "left" | "right") => {
     const el = scrollRef.current;
@@ -243,7 +203,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
                     <div className="mt-3">
                       <AthBar
-                        currentLabel={statsByCampaign[c.addr]?.marketCapUsdLabel ?? null}
+                        currentLabel={c.mcapUsdLabel ?? null}
                         storageKey={`ath:${activeChainId}:${c.addr}`}
                         className="text-[10px]"
                         barWidthPx={230}
