@@ -27,15 +27,15 @@ const Showcase = () => {
   }, [query]);
 
   return (
-    <div className="h-full overflow-y-auto pt-20">
+    <div className="h-full overflow-y-auto">
       <div className="relative px-3 md:px-6 pb-10">
         {/* Header band with centered logo + glow strip */}
         {/* Pull the hero band up so the logo top aligns with the TopBar nav baseline */}
         {/* Create headroom, then visually move the band up without clipping */}
-<div className="pt-25">
-
+<div className="pt-20">
+  <div className="-translate-y-16">
     <HeaderBand />
-
+  </div>
 </div>
 
         {/* League overlay: positioned under the TopBar connect wallet area */}
