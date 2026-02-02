@@ -161,7 +161,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
 
   {/* Right: Filters / Sort / Search */}
   <div className="flex flex-col md:flex-row md:items-center gap-2 w-full md:w-auto">
-    <div className="flex items-center gap-2">
+    <div className="inline-flex items-center gap-2">
       <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
         <SheetTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
@@ -265,7 +265,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
         </SheetContent>
       </Sheet>
 
-      <div className="hidden sm:block w-[220px]">
+      <div className="hidden sm:block shrink-0 w-[220px]">
         <Select value={sortValue} onValueChange={(v) => onChange({ ...query, sort: v as any })}>
           <SelectTrigger className="h-9 rounded-xl border-border/50 bg-card/40">
             <SelectValue placeholder="Sort" />
