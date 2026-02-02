@@ -8,7 +8,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
   return (
     <div className={cn("relative w-full", className)}>
       {/* Glow strip / separator */}
-      <div className="relative h-[200px] md:h-[96px] rounded-2xl overflow-hidden border border-border/40 bg-card/20">
+      <div className="relative h-[200px] md:h-[200px] rounded-2xl overflow-hidden border border-border/40 bg-card/20">
         {/* background glow */}
         <div
           className="absolute inset-0"
