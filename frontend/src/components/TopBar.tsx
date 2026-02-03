@@ -5,10 +5,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Menu } from "lucide-react";
-import { GlowingButton } from "./ui/glowing-button";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useWallet, WalletType } from "@/hooks/useWallet";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
@@ -66,6 +66,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     wallet.account && wallet.account.length > 8
       ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}`
       : wallet.account;
+
+  // Match the primary button styling used across the app
+  const topbarButtonClass = "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg";
 
   const openWalletModal = () => {
     // You can decide: allow switching wallet even when connected or not
@@ -295,14 +298,10 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
           {/* Primary CTA */}
-          <GlowingButton
-            glowColor="#ec4899"
-            onClick={() => navigate("/create")}
-            className="text-xs md:text-sm px-3 md:px-4 py-2"
-          >
+          <Button onClick={() => navigate("/create")} className={topbarButtonClass}>
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
-          </GlowingButton>
+          </Button>
 
           {/* Connect wallet button with SAME style, but now opens modal */}
           <div
@@ -310,23 +309,14 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
             onMouseLeave={() => setDisconnectOpen(false)}
           >
-            <GlowingButton
-              glowColor="#a3e635"
-              className="text-xs md:text-sm px-3 md:px-4 py-2"
-              onClick={() => {
-                // Only open modal if NOT connected
-                if (!wallet.isConnected) {
-                  openWalletModal();
-                }
-              }}
-            >
+            <Button className={topbarButtonClass} onClick={() => { if (!wallet.isConnected) { openWalletModal(); } }}>
               <span className="hidden sm:inline">
                 {wallet.isConnected ? shortAddress : "Connect wallet"}
               </span>
               <span className="sm:hidden">
                 {wallet.isConnected ? "Wallet" : "Connect"}
               </span>
-            </GlowingButton>
+            </Button>
 
             {/* Disconnect dropdown */}
             {wallet.isConnected && disconnectOpen && (

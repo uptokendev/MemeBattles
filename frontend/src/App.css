@@ -18,6 +18,12 @@
   filter: drop-shadow(0 0 2em #ddab4d);
 }
 
+@layer base {
+  a:hover {
+    color: hsl(var(--accent));
+  }
+}
+
 @keyframes logo-spin {
   from {
     transform: rotate(0deg);

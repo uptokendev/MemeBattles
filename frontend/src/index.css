@@ -78,7 +78,9 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-
+a:hover {
+    color: hsl(var(--accent));
+  }
   body {
     @apply bg-background text-foreground;
     font-size: 1.125rem; /* 18px - increased by 2pt from default 16px */
