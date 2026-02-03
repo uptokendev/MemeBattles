@@ -6,7 +6,11 @@
 
 import { useEffect, useState } from "react";
 import { SpaceBackground } from "@/components/ui/space-background";
-import logo from "@/assets/logo.png";
+
+// NOTE:
+// Use the public logo so there's exactly one source of truth with the header logo.
+// The query string helps bust aggressive caching.
+const LOADING_LOGO_SRC = "/assets/logo.png?v=mb1";
 
 interface LoadingScreenProps {
   onLoadComplete?: () => void;
@@ -45,7 +49,7 @@ export const LoadingScreen = ({ onLoadComplete, minLoadTime = 2000 }: LoadingScr
     >
       <SpaceBackground 
         particleCount={450} 
-        particleColor="rgba(175, 127, 35, 0.8)"
+        particleColor="rgba(175, 254, 0, 0.8)"
         backgroundColor="hsl(var(--background))"
       />
       
@@ -56,7 +60,7 @@ export const LoadingScreen = ({ onLoadComplete, minLoadTime = 2000 }: LoadingScr
       >
         <div className="animate-pulse">
           <img 
-            src={logo} 
+            src={LOADING_LOGO_SRC} 
             alt="Launchpad Logo" 
             className="h-48 w-48 mx-auto object-contain drop-shadow-[0_0_40px_rgba(175,254,0,0.6)]"
           />
