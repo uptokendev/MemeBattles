@@ -248,7 +248,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         {/* Desktop nav */}
         <div className="hidden lg:flex items-center gap-4 flex-1">
           <Link to="/" className="flex items-center gap-2 mr-2">
-            <img src={brandMark} alt="MemeBattles" className="h-7 w-7" draggable={false} />
+            <img src={brandMark} alt="MemeBattles" className="h-10 w-10" draggable={false} />
             <span className="font-retro text-sm">MemeBattles</span>
           </Link>
 
