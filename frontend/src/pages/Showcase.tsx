@@ -42,12 +42,12 @@ const Showcase = () => {
         </div>
 
         {/* Tabs / filters / sort / search */}
-        <div className="mt-5 md:pr-[320px]">
+        <div className="mt-5 md:pr-[320px] -translate-y-6 md:-translate-y-14">
           <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
         </div>
 
         {/* Main campaign browsing surface (paged / infinite) */}
-        <div className="mt-4">
+        <div className="mt-4 -translate-y-6 md:-translate-y-14">
           <CampaignGrid query={effectiveQuery} />
         </div>
       </div>
