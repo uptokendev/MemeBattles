@@ -49,7 +49,7 @@ export const LoadingScreen = ({ onLoadComplete, minLoadTime = 2000 }: LoadingScr
     >
       <SpaceBackground 
         particleCount={450} 
-        particleColor="rgba(175, 254, 0, 0.8)"
+        particleColor="rgba(175, 127, 35, 0.8)"
         backgroundColor="hsl(var(--background))"
       />
       
