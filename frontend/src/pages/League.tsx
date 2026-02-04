@@ -216,6 +216,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [data, setData] = useState<Record<string, unknown[]>>({});
   const [warnings, setWarnings] = useState<Record<string, string | undefined>>({});
   const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
+  const [fallbackMonthlyPrize, setFallbackMonthlyPrize] = useState<PrizeMeta | undefined>(undefined);
+
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
 
@@ -250,6 +252,22 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           nextWarnings[k] = r?.warning;
           nextPrizes[k] = r?.prize;
         }
+
+        let nextFallbackMonthlyPrize: PrizeMeta | undefined = undefined;
+
+        // Perfect Run is monthly-only, but we still want to show its monthly jackpot even when the user is viewing Weekly.
+        // If the API doesn't return a prize for perfect_run, fall back to any monthly prize (monthly league pots are equal by config).
+        if (!nextPrizes["perfect_run"]) {
+          try {
+            const qs2 = `chainId=${encodeURIComponent(String(chainId))}&period=${encodeURIComponent("monthly")}&limit=${encodeURIComponent("1")}&category=${encodeURIComponent("fastest_finish")}`;
+            const rr = (await fetch(`/api/league?${qs2}`).then((x) => x.json())) as LeagueResponse<unknown>;
+            nextFallbackMonthlyPrize = rr?.prize;
+          } catch (e) {
+            console.warn("[League] failed to load monthly prize fallback", e);
+          }
+        }
+
+        setFallbackMonthlyPrize(nextFallbackMonthlyPrize);
 
         setData(nextData);
         setWarnings(nextWarnings);
@@ -307,6 +325,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           const items = (data[l.key] ?? []) as unknown[];
           const warn = warnings[l.key];
           const prize = prizes[l.key];
+          const cardPrize = l.key === "perfect_run" ? (prize ?? fallbackMonthlyPrize) : prize;
 
           const emptyText = !l.supports.includes(period)
             ? `This league runs ${l.supports.map(periodLabel).join(" / ")}.`
@@ -332,33 +351,33 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
               <div className="p-4">
                 {/* Prize box (weekly/monthly only) */}
-                {prize && (effectivePeriod === "weekly" || effectivePeriod === "monthly") ? (
+                {cardPrize && (effectivePeriod === "weekly" || effectivePeriod === "monthly") ? (
                   <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-[11px] text-muted-foreground">{l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}</div>
-                      <div className="text-sm font-semibold">{formatBnbFromRaw(prize.potRaw)} BNB</div>
+                      <div className="text-sm font-semibold">{formatBnbFromRaw(cardPrize.potRaw)} BNB</div>
                     </div>
 
                     <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-1 text-[11px]">
                       <div>
-                        <span className="text-muted-foreground">#1</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw[0])}</span>
+                        <span className="text-muted-foreground">#1</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[0])}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">#2</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw[1])}</span>
+                        <span className="text-muted-foreground">#2</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[1])}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">#3</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw[2])}</span>
+                        <span className="text-muted-foreground">#3</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[2])}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">#4</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw[3])}</span>
+                        <span className="text-muted-foreground">#4</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[3])}</span>
                       </div>
                       <div>
-                        <span className="text-muted-foreground">#5</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw[4])}</span>
+                        <span className="text-muted-foreground">#5</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[4])}</span>
                       </div>
                     </div>
 
                     <div className="mt-2 text-[10px] text-muted-foreground">
-                      Updated daily · computed {formatIsoTiny(prize.computedAt)} · total league fees {formatBnbFromRaw(prize.totalLeagueFeeRaw)} BNB
+                      Updated daily · computed {formatIsoTiny(cardPrize.computedAt)} · total league fees {formatBnbFromRaw(cardPrize.totalLeagueFeeRaw)} BNB
                     </div>
                   </div>
                 ) : null}
