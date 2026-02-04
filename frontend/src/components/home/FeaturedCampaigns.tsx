@@ -54,7 +54,14 @@ function isEvmAddress(addr?: string | null) {
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
-  const { patchByCampaign } = useLeagueRealtime(true, activeChainId);
+const [refetchNonce, setRefetchNonce] = useState(0);
+
+const { patchByCampaign } = useLeagueRealtime({
+  enabled: true,
+  chainId: activeChainId,
+  fallbackMs: 25000,
+  onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
+});
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const goProfile = (creatorAddr?: string) => {
@@ -94,7 +101,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     return () => {
       mounted = false;
     };
-  }, [activeChainId]);
+  }, [activeChainId, refetchNonce]);
 
   // Hydrate missing logos from chain if DB didn’t have logoUri (mirrors CampaignGrid)
   useEffect(() => {

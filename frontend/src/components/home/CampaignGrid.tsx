@@ -97,7 +97,14 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
-  const { patchByCampaign } = useLeagueRealtime(true, activeChainId);
+  const [refetchNonce, setRefetchNonce] = useState(0);
+
+const { patchByCampaign } = useLeagueRealtime({
+  enabled: true,
+  chainId: activeChainId,
+  fallbackMs: 25000,
+  onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
+});
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   // Debug toggle (works in production):
@@ -178,7 +185,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     return () => {
       mounted = false;
     };
-  }, [baseParams]);
+  }, [baseParams, refetchNonce]);
 
   // Hydrate missing token images from on-chain logoURI.
   // This keeps the DB feed fast for stats/sorts while matching the behavior of

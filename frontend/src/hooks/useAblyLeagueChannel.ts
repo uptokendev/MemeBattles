@@ -103,21 +103,49 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
   }, [enabled, chainId]);
 
   const [entry, setEntry] = useState<Entry | null>(null);
+  const [connectionState, setConnectionState] = useState<string>("initialized");
 
   useEffect(() => {
     if (!enabled) {
       setEntry(null);
+      setConnectionState("disabled");
       return;
     }
     if (!API_BASE) {
       setEntry(null);
+      setConnectionState("missing_base");
       return;
     }
 
     const e = acquire(chainId);
     setEntry(e);
 
+    try {
+      setConnectionState(e.client.connection.state);
+    } catch {
+      // ignore
+    }
+
+    // Track Ably connection health for self-heal fallback
+    const onConn = () => {
+      try {
+        setConnectionState(e.client.connection.state);
+      } catch {
+        // ignore
+      }
+    };
+    try {
+      e.client.connection.on(onConn);
+    } catch {
+      // ignore
+    }
+
     return () => {
+        try {
+        e.client.connection.off(onConn);
+      } catch {
+        // ignore
+      }
       release(e.key);
     };
   }, [enabled, chainId]);
@@ -129,5 +157,7 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
     ready: Boolean(entry && entry.client && entry.channel),
     missingBase: enabled && !API_BASE,
     cacheKey: key,
+    connectionState,
+    isConnected: connectionState === "connected",
   };
 }
