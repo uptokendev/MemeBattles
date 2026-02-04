@@ -16,6 +16,13 @@ import {
   saveUserProfile,
   type UserProfile,
 } from "@/lib/profileApi";
+import {
+  buildLeagueClaimMessage,
+  fetchClaimableRewards,
+  formatWeiToBnb,
+  submitLeagueClaim,
+  type RewardItem,
+} from "@/lib/rewardsApi";
 
 type TokenBalanceRow = {
   campaignAddress: string;
@@ -112,12 +119,19 @@ const Profile = () => {
   const account: string | null = isConnected ? (wallet.account ?? null) : null;
   const [searchParams] = useSearchParams();
   const addressParam = searchParams.get("address");
+  const tabParam = searchParams.get("tab");
   const viewedAddress: string | null = addressParam ? addressParam : account;
   const isOwnProfile = Boolean(account && viewedAddress && account.toLowerCase() === viewedAddress.toLowerCase());
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
   const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
+
+  // Rewards (league winnings)
+  const [rewards, setRewards] = useState<RewardItem[]>([]);
+  const [loadingRewards, setLoadingRewards] = useState(false);
+  const [rewardsError, setRewardsError] = useState<string | null>(null);
+  const [claimingKey, setClaimingKey] = useState<string | null>(null);
 
   const [activityTrades, setActivityTrades] = useState<ActivityTradeRow[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -149,6 +163,24 @@ const Profile = () => {
   const [savingAvatar, setSavingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Optional: allow deep-linking to a tab (e.g. /profile?tab=rewards)
+  useEffect(() => {
+    const t = String(tabParam ?? "").toLowerCase().trim();
+    if (!t) return;
+    if (t === "rewards") setActiveTab("rewards");
+    if (t === "balances") setActiveTab("balances");
+    if (t === "coins") setActiveTab("coins");
+    if (t === "activity" || t === "replies") setActiveTab("replies");
+    if (t === "followers") setActiveTab("followers");
+    if (t === "notifications") setActiveTab("notifications");
+  }, [tabParam]);
+
+  // Allow deep-linking: /profile?tab=rewards
+  useEffect(() => {
+    const t = String(tabParam ?? "").toLowerCase().trim();
+    if (t === "rewards") setActiveTab("rewards");
+  }, [tabParam]);
+
 
   const walletAddressShort = useMemo(() => shorten(viewedAddress), [viewedAddress]);
 
@@ -164,6 +196,14 @@ const Profile = () => {
     const base = getExplorerBase(chainId);
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);
+
+  // Optional deep-linking: /profile?tab=rewards
+  useEffect(() => {
+    const t = String(tabParam ?? "").toLowerCase().trim();
+    if (!t) return;
+    const allowed: ProfileTab[] = ["balances", "coins", "replies", "rewards", "notifications", "followers"];
+    if (allowed.includes(t as ProfileTab)) setActiveTab(t as ProfileTab);
+  }, [tabParam]);
 
   // Load profile from backend (username/bio/avatar) if configured
   useEffect(() => {
@@ -197,6 +237,35 @@ const Profile = () => {
       cancelled = true;
     };
   }, [viewedAddress, chainId]);
+
+  // Load claimable league rewards (suppresses already-claimed)
+  useEffect(() => {
+    let cancelled = false;
+    const loadRewards = async () => {
+      if (activeTab !== "rewards") return;
+      if (!chainId || !account || !isOwnProfile) {
+        setRewards([]);
+        return;
+      }
+      setLoadingRewards(true);
+      setRewardsError(null);
+      try {
+        const items = await fetchClaimableRewards(chainId, account);
+        if (!cancelled) setRewards(items);
+      } catch (e: any) {
+        const msg = String(e?.message ?? "Failed to load rewards");
+        console.warn("Failed to load rewards", e);
+        if (!cancelled) setRewardsError(msg);
+        if (!cancelled) setRewards([]);
+      } finally {
+        if (!cancelled) setLoadingRewards(false);
+      }
+    };
+    loadRewards();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, chainId, account, isOwnProfile]);
 
 
   const formatTimeAgo = (createdAt?: number): string => {
@@ -406,6 +475,78 @@ const Profile = () => {
       toast.error(e?.message ?? "Failed to update profile.");
     } finally {
       setSavingProfile(false);
+      toast.dismiss(toastId);
+    }
+  };
+
+  const handleClaimPrize = async (item: RewardItem) => {
+    if (!account) {
+      toast.error("Connect your wallet to claim.");
+      handleConnect();
+      return;
+    }
+    if (!chainId) {
+      toast.error("ChainId is not available. Reconnect your wallet and try again.");
+      return;
+    }
+    if (!wallet.signer) {
+      toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
+      return;
+    }
+    if (!isOwnProfile) {
+      toast.error("You can only claim from your own profile.");
+      return;
+    }
+
+    const key = `${item.period}:${item.epochStart}:${item.category}:${item.rank}`;
+    setClaimingKey(key);
+
+    const toastId = toast.loading("Preparing claim…");
+    try {
+      const recipient = account.toLowerCase();
+      const nonce = await requestNonce(chainId, recipient);
+
+      toast.dismiss(toastId);
+      const toastId2 = toast.loading("Confirm the signature in your wallet…");
+      let signature = "";
+      try {
+        const msg = buildLeagueClaimMessage({
+          chainId,
+          recipient,
+          period: item.period,
+          epochStart: item.epochStart,
+          category: item.category,
+          rank: item.rank,
+          nonce,
+        });
+        signature = await wallet.signer.signMessage(msg);
+      } finally {
+        toast.dismiss(toastId2);
+      }
+
+      const toastId3 = toast.loading("Submitting claim…");
+      try {
+        await submitLeagueClaim({
+          chainId,
+          period: item.period,
+          epochStart: item.epochStart,
+          category: item.category,
+          rank: item.rank,
+          recipient,
+          nonce,
+          signature,
+        });
+      } finally {
+        toast.dismiss(toastId3);
+      }
+
+      // Remove from list (claimed prizes are suppressed)
+      setRewards((prev) => prev.filter((r) => `${r.period}:${r.epochStart}:${r.category}:${r.rank}` !== key));
+      toast.success("Claim recorded.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Claim failed.");
+    } finally {
+      setClaimingKey(null);
       toast.dismiss(toastId);
     }
   };
@@ -813,6 +954,7 @@ const Profile = () => {
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
+              { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
             ].map((tab) => (
@@ -949,6 +1091,116 @@ const Profile = () => {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* REWARDS TAB */}
+        {activeTab === "rewards" && (
+          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs md:text-sm font-retro text-foreground">rewards</h3>
+              {isOwnProfile ? (
+                <Button
+                  onClick={() => {
+                    // force reload
+                    setActiveTab("balances");
+                    setTimeout(() => setActiveTab("rewards"), 0);
+                  }}
+                  variant="outline"
+                  className="font-retro"
+                >
+                  refresh
+                </Button>
+              ) : null}
+            </div>
+
+            {!isOwnProfile && (
+              <div className="font-retro text-muted-foreground text-sm">
+                Rewards are only visible on your own profile.
+              </div>
+            )}
+
+            {isOwnProfile && !account && (
+              <div className="font-retro text-muted-foreground text-sm">
+                Connect your wallet to view and claim rewards.
+              </div>
+            )}
+
+            {isOwnProfile && account && (
+              <>
+                {loadingRewards && (
+                  <div className="font-retro text-muted-foreground text-sm">Loading rewards…</div>
+                )}
+                {rewardsError && !loadingRewards && (
+                  <div className="font-retro text-destructive text-sm">{rewardsError}</div>
+                )}
+                {!loadingRewards && !rewardsError && rewards.length === 0 && (
+                  <div className="font-retro text-muted-foreground text-sm">
+                    No claimable rewards right now.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {rewards.map((r) => {
+                    const key = `${r.period}:${r.epochStart}:${r.category}:${r.rank}`;
+                    const amountBnb = formatWeiToBnb(r.amountRaw);
+                    const p: any = r.payload || {};
+                    const name = String(p.name ?? p.campaignName ?? "").trim();
+                    const symbol = String(p.symbol ?? p.campaignSymbol ?? "").trim();
+                    const logo = String(p.logo_uri ?? p.logoUri ?? p.logoURI ?? "").trim();
+
+                    const titleParts = [
+                      r.period === "weekly" ? "Weekly" : "Monthly",
+                      r.category.replace(/_/g, " "),
+                      `#${r.rank}`,
+                    ];
+
+                    return (
+                      <div key={key} className="p-4 bg-background/50 rounded-xl border border-border">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {logo ? (
+                              <img src={logo} alt={name || symbol || "token"} className="w-10 h-10 rounded-full border-2 border-border object-cover" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-accent/20 border border-border" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-retro text-foreground text-sm truncate">
+                                {titleParts.join(" · ")}
+                              </div>
+                              <div className="font-retro text-muted-foreground text-xs truncate">
+                                {name || symbol || "—"}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-retro text-foreground text-sm">
+                              {Number(amountBnb).toLocaleString(undefined, { maximumFractionDigits: 6 })} BNB
+                            </div>
+                            <div className="font-retro text-muted-foreground text-xs">Prize</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <div className="font-retro text-muted-foreground text-[10px] truncate">
+                            {new Date(r.epochStart).toUTCString()} → {new Date(r.epochEnd).toUTCString()}
+                          </div>
+
+                          <Button
+                            onClick={() => handleClaimPrize(r)}
+                            disabled={!isOwnProfile || claimingKey === key}
+                            className="bg-accent hover:bg-accent/80 text-accent-foreground font-retro"
+                          >
+                            {claimingKey === key ? "claiming…" : "claim"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         )}
 

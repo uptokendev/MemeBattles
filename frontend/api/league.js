@@ -1,5 +1,6 @@
+import { ethers } from "ethers";
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, json } from "../server/http.js";
+import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
 
 // League categories (LOCKED):
 // - perfect_run (monthly only)
@@ -25,10 +26,70 @@ function normPeriod(periodRaw) {
   return "all_time";
 }
 
-function periodCutoff(norm) {
-  if (norm === "weekly") return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  if (norm === "monthly") return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  return null; // all-time
+// ---------------------------
+// Fixed epochs (UTC, locked)
+// ---------------------------
+// Weekly: Monday 00:00 UTC → next Monday 00:00 UTC
+// Monthly: 1st 00:00 UTC → next 1st 00:00 UTC
+// For live epoch: rangeEnd = now
+// For past epoch: rangeEnd = epochEnd
+
+function startOfUtcDay(d) {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
+function getWeeklyEpochUtc(epochOffset) {
+  const now = new Date();
+  const today0 = startOfUtcDay(now);
+  // JS: 0=Sun..6=Sat. We want Monday-based.
+  const dow = today0.getUTCDay();
+  const daysSinceMonday = (dow + 6) % 7; // Mon=0, Tue=1, ... Sun=6
+  const thisMonday0 = new Date(today0.getTime() - daysSinceMonday * 86400_000);
+  const epochStart = new Date(thisMonday0.getTime() - epochOffset * 7 * 86400_000);
+  const epochEnd = new Date(epochStart.getTime() + 7 * 86400_000);
+  const isLive = epochOffset === 0;
+  const rangeEnd = isLive ? now : epochEnd;
+  return {
+    period: "weekly",
+    epochOffset,
+    epochStart,
+    epochEnd,
+    rangeEnd,
+    isLive
+  };
+}
+
+function getMonthlyEpochUtc(epochOffset) {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const thisMonthStart = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
+  const epochStart = new Date(Date.UTC(y, m - epochOffset, 1, 0, 0, 0, 0));
+  const epochEnd = new Date(Date.UTC(epochStart.getUTCFullYear(), epochStart.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  // If epochOffset is 0, use thisMonthStart for clarity, but the computed epochStart already matches.
+  const isLive = epochOffset === 0;
+  const rangeEnd = isLive ? now : epochEnd;
+  return {
+    period: "monthly",
+    epochOffset,
+    epochStart,
+    epochEnd,
+    rangeEnd,
+    isLive
+  };
+}
+
+function getEpoch(periodNorm, epochOffset) {
+  if (periodNorm === "weekly") return getWeeklyEpochUtc(epochOffset);
+  if (periodNorm === "monthly") return getMonthlyEpochUtc(epochOffset);
+  return {
+    period: "all_time",
+    epochOffset: 0,
+    epochStart: null,
+    epochEnd: null,
+    rangeEnd: null,
+    isLive: false
+  };
 }
 
 // ---------------------------
@@ -54,6 +115,45 @@ function prizeEligibleCategories(periodNorm) {
 
 const prizeCache = new Map(); // key: `${chainId}:${period}` -> { computedAtMs, data }
 
+// ---------------------------
+// Claims (signature + nonce)
+// ---------------------------
+
+function buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce }) {
+  return [
+    "MemeBattles League",
+    "Action: LEAGUE_CLAIM",
+    `ChainId: ${chainId}`,
+    `Recipient: ${String(recipient).toLowerCase()}`,
+    `Period: ${period}`,
+    `EpochStart: ${epochStart}`,
+    `Category: ${category}`,
+    `Rank: ${rank}`,
+    `Nonce: ${nonce}`,
+  ].join("\n");
+}
+
+async function consumeNonce(chainId, address, nonce) {
+  const { rows } = await pool.query(
+    `SELECT nonce, expires_at, used_at
+     FROM auth_nonces
+     WHERE chain_id = $1 AND address = $2
+     LIMIT 1`,
+    [chainId, address]
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Nonce not found");
+  if (row.used_at) throw new Error("Nonce already used");
+  const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (!exp || Date.now() > exp) throw new Error("Nonce expired");
+  if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch");
+
+  await pool.query(
+    `UPDATE auth_nonces SET used_at = NOW() WHERE chain_id = $1 AND address = $2`,
+    [chainId, address]
+  );
+}
+
 function splitPotRaw(potRawBigInt) {
   const pot = BigInt(potRawBigInt);
   const payouts = PRIZE_SPLIT_BPS.map((bps) => (pot * BigInt(bps)) / 10000n);
@@ -63,7 +163,46 @@ function splitPotRaw(potRawBigInt) {
   return payouts.map((x) => x.toString());
 }
 
-async function computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leagueFeeBps) {
+// ---------------------------
+// Claims (Profile -> Rewards)
+// ---------------------------
+
+function buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce }) {
+  return [
+    "MemeBattles League",
+    "Action: LEAGUE_CLAIM",
+    `ChainId: ${chainId}`,
+    `Recipient: ${String(recipient).toLowerCase()}`,
+    `Period: ${period}`,
+    `EpochStart: ${epochStart}`,
+    `Category: ${category}`,
+    `Rank: ${rank}`,
+    `Nonce: ${nonce}`,
+  ].join("\n");
+}
+
+async function consumeNonce(chainId, address, nonce) {
+  const { rows } = await pool.query(
+    `SELECT nonce, expires_at, used_at
+     FROM auth_nonces
+     WHERE chain_id = $1 AND address = $2
+     LIMIT 1`,
+    [chainId, address]
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Nonce not found");
+  if (row.used_at) throw new Error("Nonce already used");
+  const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (!exp || Date.now() > exp) throw new Error("Nonce expired");
+  if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch");
+
+  await pool.query(
+    `UPDATE auth_nonces SET used_at = NOW() WHERE chain_id = $1 AND address = $2`,
+    [chainId, address]
+  );
+}
+
+async function computeTotalLeagueFeeRawInRange(chainId, startIso, endIso, protocolFeeBps, leagueFeeBps) {
   // IMPORTANT:
   // curve_trades.bnb_amount_raw is:
   // - buy: total paid = gross + floor(gross * protocolFeeBps / 10000)
@@ -79,13 +218,14 @@ async function computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leag
       FROM public.curve_trades t
       WHERE t.chain_id = $1
         AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
+        AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
     ),
     base AS (
       SELECT
         side,
         amt,
-        floor((amt * 10000) / (10000 + $3)) AS buy_g0,
-        ceiling((amt * 10000) / (10000 - $3)) AS sell_g0
+        floor((amt * 10000) / (10000 + $4)) AS buy_g0,
+        ceiling((amt * 10000) / (10000 - $4)) AS sell_g0
       FROM trades
     ),
     calc AS (
@@ -94,21 +234,21 @@ async function computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leag
         CASE
           WHEN side = 'buy' THEN (
             CASE
-              WHEN (buy_g0 + floor((buy_g0 * $3) / 10000)) = amt THEN buy_g0
-              WHEN ((buy_g0 + 1) + floor(((buy_g0 + 1) * $3) / 10000)) = amt THEN buy_g0 + 1
-              WHEN ((buy_g0 + 2) + floor(((buy_g0 + 2) * $3) / 10000)) = amt THEN buy_g0 + 2
-              WHEN (greatest(buy_g0 - 1, 0) + floor((greatest(buy_g0 - 1, 0) * $3) / 10000)) = amt THEN greatest(buy_g0 - 1, 0)
-              WHEN (greatest(buy_g0 - 2, 0) + floor((greatest(buy_g0 - 2, 0) * $3) / 10000)) = amt THEN greatest(buy_g0 - 2, 0)
+              WHEN (buy_g0 + floor((buy_g0 * $4) / 10000)) = amt THEN buy_g0
+              WHEN ((buy_g0 + 1) + floor(((buy_g0 + 1) * $4) / 10000)) = amt THEN buy_g0 + 1
+              WHEN ((buy_g0 + 2) + floor(((buy_g0 + 2) * $4) / 10000)) = amt THEN buy_g0 + 2
+              WHEN (greatest(buy_g0 - 1, 0) + floor((greatest(buy_g0 - 1, 0) * $4) / 10000)) = amt THEN greatest(buy_g0 - 1, 0)
+              WHEN (greatest(buy_g0 - 2, 0) + floor((greatest(buy_g0 - 2, 0) * $4) / 10000)) = amt THEN greatest(buy_g0 - 2, 0)
               ELSE buy_g0
             END
           )
           ELSE (
             CASE
-              WHEN (sell_g0 - floor((sell_g0 * $3) / 10000)) = amt THEN sell_g0
-              WHEN (greatest(sell_g0 - 1, 0) - floor((greatest(sell_g0 - 1, 0) * $3) / 10000)) = amt THEN greatest(sell_g0 - 1, 0)
-              WHEN (greatest(sell_g0 - 2, 0) - floor((greatest(sell_g0 - 2, 0) * $3) / 10000)) = amt THEN greatest(sell_g0 - 2, 0)
-              WHEN ((sell_g0 + 1) - floor(((sell_g0 + 1) * $3) / 10000)) = amt THEN sell_g0 + 1
-              WHEN ((sell_g0 + 2) - floor(((sell_g0 + 2) * $3) / 10000)) = amt THEN sell_g0 + 2
+              WHEN (sell_g0 - floor((sell_g0 * $4) / 10000)) = amt THEN sell_g0
+              WHEN (greatest(sell_g0 - 1, 0) - floor((greatest(sell_g0 - 1, 0) * $4) / 10000)) = amt THEN greatest(sell_g0 - 1, 0)
+              WHEN (greatest(sell_g0 - 2, 0) - floor((greatest(sell_g0 - 2, 0) * $4) / 10000)) = amt THEN greatest(sell_g0 - 2, 0)
+              WHEN ((sell_g0 + 1) - floor(((sell_g0 + 1) * $4) / 10000)) = amt THEN sell_g0 + 1
+              WHEN ((sell_g0 + 2) - floor(((sell_g0 + 2) * $4) / 10000)) = amt THEN sell_g0 + 2
               ELSE sell_g0
             END
           )
@@ -116,13 +256,13 @@ async function computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leag
       FROM base
     ),
     fees AS (
-      SELECT floor((gross * $4) / 10000) AS league_fee
+      SELECT floor((gross * $5) / 10000) AS league_fee
       FROM calc
     )
     SELECT COALESCE(sum(league_fee), 0)::numeric(78, 0) AS total_league_fee_raw
     FROM fees;
     `,
-    [chainId, cutoffIso ?? null, protocolFeeBps, leagueFeeBps]
+    [chainId, startIso ?? null, endIso ?? null, protocolFeeBps, leagueFeeBps]
   );
 
   const v = rows?.[0]?.total_league_fee_raw;
@@ -130,11 +270,12 @@ async function computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leag
   return String(v ?? "0");
 }
 
-async function getPrizeMeta(chainId, periodNorm) {
+async function getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso) {
   const eligible = prizeEligibleCategories(periodNorm);
   if (!eligible) return null;
 
-  const key = `${chainId}:${periodNorm}`;
+  // Keyed by epoch start so we never bleed between epochs on warm instances.
+  const key = `${chainId}:${periodNorm}:${epochStartIso ?? ""}`;
   const now = Date.now();
   const cached = prizeCache.get(key);
   if (cached && now - cached.computedAtMs < PRIZE_TTL_MS) return cached.data;
@@ -142,10 +283,13 @@ async function getPrizeMeta(chainId, periodNorm) {
   const protocolFeeBps = readBps("PROTOCOL_FEE_BPS", DEFAULT_PROTOCOL_FEE_BPS);
   const leagueFeeBps = readBps("LEAGUE_FEE_BPS", DEFAULT_LEAGUE_FEE_BPS);
 
-  const cutoff = periodCutoff(periodNorm);
-  const cutoffIso = cutoff ? cutoff.toISOString() : null;
-
-  const totalLeagueFeeRaw = await computeTotalLeagueFeeRaw(chainId, cutoffIso, protocolFeeBps, leagueFeeBps);
+  const totalLeagueFeeRaw = await computeTotalLeagueFeeRawInRange(
+    chainId,
+    epochStartIso ?? null,
+    rangeEndIso ?? null,
+    protocolFeeBps,
+    leagueFeeBps
+  );
   const total = BigInt(totalLeagueFeeRaw);
 
   const leagueCount = eligible.length;
@@ -165,7 +309,8 @@ async function getPrizeMeta(chainId, periodNorm) {
   const data = {
     basis: "league_fee_only",
     period: periodNorm,
-    cutoff: cutoffIso,
+    cutoff: epochStartIso,
+    rangeEnd: rangeEndIso,
     computedAt: new Date(now).toISOString(),
     protocolFeeBps,
     leagueFeeBps,
@@ -181,6 +326,91 @@ async function getPrizeMeta(chainId, periodNorm) {
 }
 
 export default async function handler(req, res) {
+  // POST = claim a finalized prize (Profile -> Rewards)
+  if (req.method === "POST") {
+    try {
+      const b = await readJson(req);
+      const action = String(b.action ?? "").toLowerCase().trim();
+      if (action !== "claim") return json(res, 400, { error: "Invalid action" });
+
+      const chainId = Number(b.chainId);
+      const period = String(b.period ?? "").toLowerCase().trim();
+      const epochStart = String(b.epochStart ?? "").trim();
+      const category = String(b.category ?? "").toLowerCase().trim();
+      const rank = Number(b.rank);
+      const recipient = String(b.recipient ?? b.address ?? "").toLowerCase().trim();
+      const nonce = String(b.nonce ?? "");
+      const signature = String(b.signature ?? "");
+
+      if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+      if (!isAddress(recipient)) return json(res, 400, { error: "Invalid recipient" });
+      if (!(period === "weekly" || period === "monthly")) return json(res, 400, { error: "Invalid period" });
+      if (!CATEGORY_SET.has(category)) return json(res, 400, { error: "Invalid category" });
+      if (!Number.isFinite(rank) || rank < 1 || rank > 5) return json(res, 400, { error: "Invalid rank" });
+      if (!epochStart) return json(res, 400, { error: "epochStart missing" });
+      if (!nonce) return json(res, 400, { error: "Nonce missing" });
+      if (!signature) return json(res, 400, { error: "Signature missing" });
+      if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
+
+      // Nonce must match the *recipient* (wallet) signing the claim.
+      await consumeNonce(chainId, recipient, nonce);
+
+      const msg = buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce });
+      const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
+      if (recovered !== recipient) return json(res, 401, { error: "Invalid signature" });
+
+      // Winner must exist, and must belong to recipient.
+      const { rows: wrows } = await pool.query(
+        `SELECT epoch_end AS "epochEnd", recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
+           FROM league_epoch_winners
+          WHERE chain_id = $1
+            AND period = $2
+            AND epoch_start = $3::timestamptz
+            AND category = $4
+            AND rank = $5
+          LIMIT 1`,
+        [chainId, period, epochStart, category, rank]
+      );
+      const w = wrows[0];
+      if (!w) return json(res, 404, { error: "Winner not found" });
+      if (String(w.recipientAddress ?? "").toLowerCase() !== recipient) {
+        return json(res, 403, { error: "Not the winner" });
+      }
+
+      // Optional safety: only allow claims after epoch end.
+      const epochEndMs = w.epochEnd ? new Date(w.epochEnd).getTime() : 0;
+      if (epochEndMs && Date.now() < epochEndMs) {
+        return json(res, 400, { error: "Epoch not finalized" });
+      }
+
+      // Record the claim (prevents double-claim)
+      await pool.query(
+        `INSERT INTO league_epoch_claims (chain_id, period, epoch_start, category, rank, recipient_address, signature)
+         VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7)
+         ON CONFLICT (chain_id, period, epoch_start, category, rank)
+         DO NOTHING`,
+        [chainId, period, epochStart, category, rank, recipient, signature]
+      );
+
+      // If already claimed, the insert is ignored. Detect it.
+      const { rows: crows } = await pool.query(
+        `SELECT claimed_at AS "claimedAt"
+           FROM league_epoch_claims
+          WHERE chain_id = $1 AND period = $2 AND epoch_start = $3::timestamptz AND category = $4 AND rank = $5
+          LIMIT 1`,
+        [chainId, period, epochStart, category, rank]
+      );
+      const claimedAt = crows?.[0]?.claimedAt ? new Date(crows[0].claimedAt).toISOString() : null;
+
+      return json(res, 200, { ok: true, claimedAt, amountRaw: w.amountRaw });
+    } catch (e) {
+      const msg = String(e?.message ?? "");
+      const isAuth = /nonce|signature/i.test(msg);
+      console.error("[api/league claim]", e);
+      return json(res, isAuth ? 401 : 500, { error: isAuth ? msg : "Server error" });
+    }
+  }
+
   if (req.method !== "GET") return badMethod(res);
 
   try {
@@ -195,19 +425,29 @@ export default async function handler(req, res) {
     if (!PERIOD_SET.has(periodRaw)) return json(res, 400, { error: "Invalid period" });
 
     const periodNorm = normPeriod(periodRaw);
-    const cutoff = periodCutoff(periodNorm);
-    const cutoffIso = cutoff ? cutoff.toISOString() : null;
+    const epochOffset =
+      periodNorm === "weekly"
+        ? clampInt(q.epochOffset ?? 0, 0, 2, 0)
+        : periodNorm === "monthly"
+          ? clampInt(q.epochOffset ?? 0, 0, 1, 0)
+          : 0;
+
+    const epoch = getEpoch(periodNorm, epochOffset);
+    const epochStartIso = epoch?.epochStart ? epoch.epochStart.toISOString() : null;
+    const epochEndIso = epoch?.epochEnd ? epoch.epochEnd.toISOString() : null;
+    const rangeEndIso = epoch?.rangeEnd ? epoch.rangeEnd.toISOString() : null;
 
     const limit = clampInt(q.limit ?? 10, 1, 50, 10);
 
     // Prize meta is computed once per chain/period per warm instance (and TTL = 1h).
     // This prevents recomputing fee totals on every category request.
-    const prizeMeta = await getPrizeMeta(chainId, periodNorm);
+    const prizeMeta = await getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso);
     const prizeForCategory = prizeMeta?.byCategory?.[category]
       ? {
           basis: prizeMeta.basis,
           period: prizeMeta.period,
           cutoff: prizeMeta.cutoff,
+          rangeEnd: prizeMeta.rangeEnd,
           computedAt: prizeMeta.computedAt,
           totalLeagueFeeRaw: prizeMeta.totalLeagueFeeRaw,
           leagueCount: prizeMeta.leagueCount,
@@ -218,11 +458,23 @@ export default async function handler(req, res) {
         }
       : undefined;
 
+    const epochMeta =
+      periodNorm === "weekly" || periodNorm === "monthly"
+        ? {
+            period: periodNorm,
+            epochOffset,
+            epochStart: epochStartIso,
+            epochEnd: epochEndIso,
+            rangeEnd: rangeEndIso,
+            status: epoch.isLive ? "live" : "finalized"
+          }
+        : undefined;
+
     // -------------------------------------------------
     // Fastest Finish
     // -------------------------------------------------
     if (category === "fastest_finish") {
-      const params = [chainId, cutoffIso, limit];
+      const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       const { rows } = await pool.query(
         `
@@ -256,17 +508,18 @@ export default async function handler(req, res) {
             AND c.graduated_at_chain IS NOT NULL
             AND (c.graduated_block IS NOT NULL AND c.graduated_block > 0)
             AND ($2::timestamptz IS NULL OR c.graduated_at_chain >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR c.graduated_at_chain < $3::timestamptz)
         )
         SELECT *
         FROM grads
         WHERE unique_buyers >= 25
         ORDER BY duration_seconds ASC NULLS LAST
-        LIMIT $3
+        LIMIT $4
         `,
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
     }
 
     // -------------------------------------------------
@@ -275,10 +528,10 @@ export default async function handler(req, res) {
     if (category === "perfect_run") {
       // Locked rule: monthly only. If caller asks weekly/all-time, respond empty.
       if (periodNorm !== "monthly") {
-        return json(res, 200, { items: [], warning: "perfect_run is monthly only", prize: prizeForCategory });
+        return json(res, 200, { items: [], warning: "perfect_run is monthly only", prize: prizeForCategory, epoch: epochMeta });
       }
 
-      const params = [chainId, cutoffIso, limit];
+      const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       const { rows } = await pool.query(
         `
@@ -321,6 +574,7 @@ export default async function handler(req, res) {
             AND c.graduated_at_chain IS NOT NULL
             AND (c.graduated_block IS NOT NULL AND c.graduated_block > 0)
             AND ($2::timestamptz IS NULL OR c.graduated_at_chain >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR c.graduated_at_chain < $3::timestamptz)
             AND NOT EXISTS (
               SELECT 1
               FROM curve_trades t
@@ -338,7 +592,7 @@ export default async function handler(req, res) {
         -- 2) most unique buyers
         -- 3) fastest graduation
         ORDER BY buy_total_raw DESC, unique_buyers DESC, duration_seconds ASC
-        LIMIT $3
+        LIMIT $4
         `,
         params
       );
@@ -346,7 +600,8 @@ export default async function handler(req, res) {
       return json(res, 200, {
         items: rows,
         warning: rows.length ? undefined : "No Perfect Run qualifiers found. Jackpot rolls over.",
-        prize: prizeForCategory
+        prize: prizeForCategory,
+        epoch: epochMeta
       });
     }
 
@@ -354,7 +609,7 @@ export default async function handler(req, res) {
     // Biggest Hit (largest single buy in bonding)
     // -------------------------------------------------
     if (category === "biggest_hit") {
-      const params = [chainId, cutoffIso, limit];
+      const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       const { rows } = await pool.query(
         `
@@ -379,6 +634,7 @@ export default async function handler(req, res) {
         WHERE t.chain_id = $1
           AND t.side = 'buy'
           AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
+          AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
           -- anti-abuse exclusions
           AND t.wallet <> c.campaign_address
           AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
@@ -386,19 +642,19 @@ export default async function handler(req, res) {
           -- ensure "during bonding" when we have a graduation block
           AND (c.graduated_block IS NULL OR c.graduated_block = 0 OR t.block_number <= c.graduated_block)
         ORDER BY t.bnb_amount_raw::numeric DESC NULLS LAST
-        LIMIT $3
+        LIMIT $4
         `,
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
     }
 
     // -------------------------------------------------
     // Crowd Favorite (most upvotes)
     // -------------------------------------------------
     if (category === "crowd_favorite") {
-      const params = [chainId, cutoffIso, limit];
+      const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       // Rank by total confirmed vote count first, then unique voters.
       const { rows } = await pool.query(
@@ -413,6 +669,7 @@ export default async function handler(req, res) {
           FROM public.votes_confirmed v
           WHERE v.chain_id = $1
             AND ($2::timestamptz IS NULL OR v.block_timestamp >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR v.block_timestamp < $3::timestamptz)
           GROUP BY v.chain_id, v.campaign_address
         )
         SELECT
@@ -430,12 +687,12 @@ export default async function handler(req, res) {
           ON c.chain_id = a.chain_id
          AND c.campaign_address = a.campaign_address
         ORDER BY a.votes_count DESC, a.unique_voters DESC
-        LIMIT $3
+        LIMIT $4
         `,
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
     }
 
     // -------------------------------------------------
@@ -450,7 +707,7 @@ export default async function handler(req, res) {
         return json(res, 200, { items: [], warning: "top_earner is paid weekly/monthly only", prize: prizeForCategory });
       }
 
-      const params = [chainId, cutoffIso, limit];
+      const params = [chainId, epochStartIso, rangeEndIso, limit];
 
       const { rows } = await pool.query(
         `
@@ -465,6 +722,7 @@ export default async function handler(req, res) {
            AND c.campaign_address = t.campaign_address
           WHERE t.chain_id = $1
             AND ($2::timestamptz IS NULL OR t.block_time >= $2::timestamptz)
+            AND ($3::timestamptz IS NULL OR t.block_time < $3::timestamptz)
             -- exclude campaign/creator/feeRecipient wallets for that campaign
             AND t.wallet <> c.campaign_address
             AND (c.creator_address IS NULL OR t.wallet <> c.creator_address)
@@ -492,15 +750,15 @@ export default async function handler(req, res) {
         FROM calc
         WHERE profit_raw > 0
         ORDER BY profit_raw DESC
-        LIMIT $3
+        LIMIT $4
         `,
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
     }
 
-    return json(res, 200, { items: [], prize: prizeForCategory });
+    return json(res, 200, { items: [], prize: prizeForCategory, epoch: epochMeta });
   } catch (e) {
     // If the DB schema hasn't been migrated yet, avoid breaking the UI with 500s.
     const code = e?.code;

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useWallet } from "@/hooks/useWallet";
+import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
 const shortAddr = (a: string) => (a && a.length > 12 ? a.slice(0, 6) + "..." + a.slice(-4) : a);
@@ -49,6 +51,7 @@ type PrizeMeta = {
   basis: "league_fee_only";
   period: "weekly" | "monthly";
   cutoff?: string | null;
+  rangeEnd?: string | null;
   computedAt: string;
   totalLeagueFeeRaw: string;
   leagueCount: number;
@@ -58,10 +61,20 @@ type PrizeMeta = {
   payoutsRaw: [string, string, string, string, string];
 };
 
+type EpochMeta = {
+  period: "weekly" | "monthly";
+  epochOffset: number;
+  epochStart: string;
+  epochEnd: string;
+  rangeEnd: string;
+  status: "live" | "finalized";
+};
+
 type LeagueResponse<T> = {
   items: T[];
   warning?: string;
   prize?: PrizeMeta;
+  epoch?: EpochMeta;
 };
 
 function clampInt(n: number, lo: number, hi: number) {
@@ -207,19 +220,81 @@ function formatIsoTiny(iso?: string | null) {
   }
 }
 
+function formatUtcTiny(iso?: string | null) {
+  try {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    // Force UTC display regardless of client locale.
+    return d.toLocaleString("en-GB", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "";
+  }
+}
+
+function formatEpochRangeUtc(epoch?: EpochMeta) {
+  if (!epoch) return "";
+  const start = formatUtcTiny(epoch.epochStart);
+  const end = formatUtcTiny(epoch.status === "live" ? epoch.rangeEnd : epoch.epochEnd);
+  if (!start || !end) return "";
+  return `${start} UTC → ${end} UTC`;
+}
+
 export default function League({ chainId = 97 }: { chainId?: number }) {
   const navigate = useNavigate();
 
+  const wallet = useWallet();
+  const defaultChain = getDefaultChainId();
+  const activeChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
+
   const [period, setPeriod] = useState<Period>("weekly");
+  const [epochOffset, setEpochOffset] = useState<number>(0);
   const [loading, setLoading] = useState(true);
+
+  // Automatic refresh: hourly.
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [data, setData] = useState<Record<string, unknown[]>>({});
   const [warnings, setWarnings] = useState<Record<string, string | undefined>>({});
   const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
   const [fallbackMonthlyPrize, setFallbackMonthlyPrize] = useState<PrizeMeta | undefined>(undefined);
+  const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
 
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
+
+  const epochButtons = useMemo(() => {
+    if (period === "weekly") {
+      return [
+        { label: "This week", offset: 0 },
+        { label: "Last week", offset: 1 },
+        { label: "2 weeks ago", offset: 2 },
+      ];
+    }
+    return [
+      { label: "This month", offset: 0 },
+      { label: "Last month", offset: 1 },
+    ];
+  }, [period]);
+
+  // Reset history selection when the user flips between Weekly and Monthly.
+  useEffect(() => {
+    setEpochOffset(0);
+  }, [period]);
+
+  // Hourly refresh (dynamic leaderboards / prize boxes).
+  useEffect(() => {
+    const id = window.setInterval(() => setRefreshTick((t) => t + 1), 60 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,7 +307,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           LEAGUES.map(async (l) => {
             const effectivePeriod = l.supports.includes(period) ? period : l.supports[0];
             const limit = getLimit(l, effectivePeriod);
-            const qs = `chainId=${encodeURIComponent(String(chainId))}&period=${encodeURIComponent(effectivePeriod)}&limit=${encodeURIComponent(
+            const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(effectivePeriod)}&epochOffset=${encodeURIComponent(
+              String(effectivePeriod === "weekly" ? (period === "weekly" ? epochOffset : 0) : period === "monthly" ? epochOffset : 0)
+            )}&limit=${encodeURIComponent(
               String(limit)
             )}&category=${encodeURIComponent(l.key)}`;
 
@@ -246,12 +323,17 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         const nextWarnings: Record<string, string | undefined> = {};
         const nextPrizes: Record<string, PrizeMeta | undefined> = {};
 
+        let nextEpoch: EpochMeta | undefined = undefined;
+
         for (const [k, r] of results) {
           const items = Array.isArray(r?.items) ? r.items : [];
           nextData[k] = items;
           nextWarnings[k] = r?.warning;
           nextPrizes[k] = r?.prize;
+          if (!nextEpoch && r?.epoch) nextEpoch = r.epoch;
         }
+
+        setEpochInfo(nextEpoch);
 
         let nextFallbackMonthlyPrize: PrizeMeta | undefined = undefined;
 
@@ -259,7 +341,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         // If the API doesn't return a prize for perfect_run, fall back to any monthly prize (monthly league pots are equal by config).
         if (!nextPrizes["perfect_run"]) {
           try {
-            const qs2 = `chainId=${encodeURIComponent(String(chainId))}&period=${encodeURIComponent("monthly")}&limit=${encodeURIComponent("1")}&category=${encodeURIComponent("fastest_finish")}`;
+            const qs2 = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent("monthly")}&epochOffset=${encodeURIComponent(
+              "0"
+            )}&limit=${encodeURIComponent("1")}&category=${encodeURIComponent("fastest_finish")}`;
             const rr = (await fetch(`/api/league?${qs2}`).then((x) => x.json())) as LeagueResponse<unknown>;
             nextFallbackMonthlyPrize = rr?.prize;
           } catch (e) {
@@ -288,7 +372,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     return () => {
       cancelled = true;
     };
-  }, [chainId, period]);
+  }, [activeChainId, period, epochOffset, refreshTick]);
 
   return (
     <div className="h-full overflow-y-auto pr-2 pt-6 md:pt-8">
@@ -298,24 +382,66 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <p className="text-xs md:text-sm text-muted-foreground">
             Objective on‑chain leaderboards. Prize pools are funded from the <span className="font-semibold">league fee</span> inside bonding‑curve trades.
           </p>
+
+          <div className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
+            <span className="text-muted-foreground">Winners claim in</span>
+            <button
+              type="button"
+              onClick={() => navigate("/profile?tab=rewards")}
+              className="text-accent hover:text-accent/80 font-semibold"
+            >
+              Profile → Rewards
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {periodButtons.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPeriod(p)}
-              className={
-                "px-3 py-2 rounded-xl border text-xs md:text-sm transition-colors " +
-                (period === p
-                  ? "bg-card border-border text-foreground"
-                  : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-              }
-            >
-              {periodLabel(p)}
-            </button>
-          ))}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {periodButtons.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriod(p)}
+                className={
+                  "px-3 py-2 rounded-xl border text-xs md:text-sm transition-colors " +
+                  (period === p
+                    ? "bg-card border-border text-foreground"
+                    : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+                }
+              >
+                {periodLabel(p)}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {epochButtons.map((b) => (
+              <button
+                key={b.offset}
+                type="button"
+                onClick={() => setEpochOffset(b.offset)}
+                className={
+                  "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
+                  (epochOffset === b.offset
+                    ? "bg-card border-border text-foreground"
+                    : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+                }
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-muted-foreground text-right">
+            <div>
+              {epochInfo ? (
+                <>
+                  {epochInfo.status === "live" ? "Live" : "Finalized"} · {formatEpochRangeUtc(epochInfo)}
+                </>
+              ) : null}
+            </div>
+            <div>Chain {activeChainId}</div>
+          </div>
         </div>
       </div>
 

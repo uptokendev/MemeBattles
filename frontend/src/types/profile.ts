@@ -2,7 +2,7 @@
  * Profile and user-related TypeScript interfaces
  */
 
-export type ProfileTab = "balances" | "coins" | "replies" | "notifications" | "followers";
+export type ProfileTab = "balances" | "coins" | "replies" | "rewards" | "notifications" | "followers";
 
 export interface Coin {
   id: number;
