@@ -3,7 +3,7 @@ import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { LAUNCH_FACTORY_ABI, LAUNCH_CAMPAIGN_ABI, UP_VOTE_TREASURY_ABI } from "./abis.js";
 import { TIMEFRAMES, bucketStart, TF } from "./timeframes.js";
-import { publishTrade, publishCandle, publishStats } from "./ably.js";
+import { publishTrade, publishCandle, publishStats, publishLeague } from "./ably.js";
 import { createLeagueFeedPublisher } from "./leagueFeed.js";
 
 // ---------------------------------------------------------------------------
@@ -684,6 +684,27 @@ async function scanFactoryRange(
         log.blockNumber,
         blockTime
       );
+
+      // Realtime: announce newly created campaigns so Home "New" can insert instantly.
+      // Keep payload minimal; UI can hydrate logoURI from chain later.
+      try {
+        await publishLeague(chain.chainId, "campaign_created", {
+          type: "campaign_created",
+          chainId: chain.chainId,
+          ts: Math.floor(Date.now() / 1000),
+          item: {
+            campaignAddress: String(campaign).toLowerCase(),
+            tokenAddress: String(token).toLowerCase(),
+            creatorAddress: String(creator).toLowerCase(),
+            name,
+            symbol,
+            createdAtChain: blockTime ? blockTime.toISOString() : null,
+            blockNumber: log.blockNumber,
+          },
+        });
+      } catch {
+        // best-effort
+      }
 
       if (log.transactionHash) {
         await insertActivityEvent({

@@ -101,7 +101,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
-const { patchByCampaign } = useLeagueRealtime({
+const { patchByCampaign, created } = useLeagueRealtime({
   enabled: true,
   chainId: activeChainId,
   fallbackMs: 25000,
@@ -126,6 +126,44 @@ const { patchByCampaign } = useLeagueRealtime({
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+
+  // Insert newly-created campaigns instantly (no REST refetch) for the "New" tab.
+  // Trending/etc will naturally catch up via periodic snapshot refresh.
+  useEffect(() => {
+    if (query.tab !== "new") return;
+    if (!created?.length) return;
+
+    setItems((prev) => {
+      const seen = new Set(prev.map((x) => String(x.campaignAddress ?? "").toLowerCase()).filter(Boolean));
+      const additions: CampaignFeedItemApi[] = [];
+
+      for (const it of created) {
+        const addr = String(it?.campaignAddress ?? "").toLowerCase();
+        if (!addr || seen.has(addr)) continue;
+        seen.add(addr);
+
+        additions.push({
+          chainId: activeChainId,
+          campaignAddress: addr,
+          tokenAddress: it.tokenAddress ?? null,
+          creatorAddress: it.creatorAddress ?? null,
+          name: it.name ?? null,
+          symbol: it.symbol ?? null,
+          logoUri: null,
+          createdAtChain: it.createdAtChain ?? new Date().toISOString(),
+          graduatedAtChain: null,
+          isDexTrading: false,
+          marketcapBnb: null,
+          votes24h: 0,
+          progressPct: 0,
+          etaSec: null,
+        });
+      }
+
+      if (!additions.length) return prev;
+      return [...additions, ...prev].slice(0, 200);
+    });
+  }, [created, query.tab, activeChainId]);
 
   // Immediately refresh the feed after a confirmed tx (upvote/buy/sell/finalize)
   // so the card order and vote counts update without requiring a hard reload.

@@ -13,11 +13,28 @@ export type LeaguePatch = {
   ts?: number;
 };
 
+export type LeagueCampaignCreated = {
+  campaignAddress: string; // lowercase
+  tokenAddress?: string | null;
+  creatorAddress?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+  createdAtChain?: string | null;
+  blockNumber?: number | null;
+};
+
 type PatchMsg = {
   type: "campaign_patch";
   chainId: number;
   ts: number;
   items: LeaguePatch[];
+};
+
+type CampaignCreatedMsg = {
+  type: "campaign_created";
+  chainId: number;
+  ts: number;
+  item: LeagueCampaignCreated;
 };
 
 type Opts = {
@@ -42,33 +59,76 @@ export function useLeagueRealtime(opts: Opts) {
   const { channel, ready, isConnected } = useAblyLeagueChannel({ enabled, chainId });
 
   const [patchByCampaign, setPatchByCampaign] = useState<Record<string, LeaguePatch>>({});
+  const [created, setCreated] = useState<LeagueCampaignCreated[]>([]);
+
+  // Buffer updates to avoid render storms. Flush at 500ms (requested).
+  const pendingPatchRef = useRef<Record<string, LeaguePatch>>({});
+  const pendingCreatedRef = useRef<LeagueCampaignCreated[]>([]);
 
   // --- realtime subscription (campaign_patch) ---
   useEffect(() => {
     if (!ready || !channel) return;
 
-    const onMsg = (msg: any) => {
+    const onPatch = (msg: any) => {
       const data = (msg?.data ?? null) as PatchMsg | null;
       if (!data || data.type !== "campaign_patch" || !Array.isArray(data.items)) return;
 
-      setPatchByCampaign((prev) => {
-        const next = { ...prev };
-        for (const it of data.items) {
-          const addr = String(it?.campaignAddress ?? "").toLowerCase();
-          if (!addr) continue;
-          next[addr] = { ...(next[addr] ?? { campaignAddress: addr }), ...it, campaignAddress: addr, ts: data.ts };
-        }
-        return next;
-      });
+      const buf = pendingPatchRef.current;
+      for (const it of data.items) {
+        const addr = String(it?.campaignAddress ?? "").toLowerCase();
+        if (!addr) continue;
+        const prev = buf[addr] ?? { campaignAddress: addr };
+        buf[addr] = { ...prev, ...it, campaignAddress: addr, ts: data.ts };
+      }
     };
 
-    channel.subscribe("campaign_patch", onMsg);
-    return () => {
-      try {
-        channel.unsubscribe("campaign_patch", onMsg);
-      } catch {
-        // ignore
+    const onCreated = (msg: any) => {
+      const data = (msg?.data ?? null) as CampaignCreatedMsg | null;
+      if (!data || data.type !== "campaign_created" || !data.item) return;
+      const addr = String((data.item as any).campaignAddress ?? "").toLowerCase();
+      if (!addr) return;
+      pendingCreatedRef.current.push({ ...data.item, campaignAddress: addr });
+    };
+
+    channel.subscribe("campaign_patch", onPatch);
+    channel.subscribe("campaign_created", onCreated);
+
+    const flushId = setInterval(() => {
+      // Flush patches
+      const buf = pendingPatchRef.current;
+      const keys = Object.keys(buf);
+      if (keys.length) {
+        setPatchByCampaign((prev) => {
+          const next = { ...prev };
+          for (const k of keys) {
+            const it = buf[k];
+            next[k] = { ...(next[k] ?? { campaignAddress: k }), ...it, campaignAddress: k };
+          }
+          return next;
+        });
+        pendingPatchRef.current = {};
       }
+
+      // Flush created campaigns
+      const createdBatch = pendingCreatedRef.current;
+      if (createdBatch.length) {
+        setCreated((prev) => {
+          // keep last 50 created announcements (UI consumption only)
+          const next = [...createdBatch, ...prev];
+          return next.slice(0, 50);
+        });
+        pendingCreatedRef.current = [];
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(flushId);
+      try {
+        channel.unsubscribe("campaign_patch", onPatch);
+      } catch {}
+      try {
+        channel.unsubscribe("campaign_created", onCreated);
+      } catch {}
     };
   }, [ready, channel]);
 
@@ -123,5 +183,5 @@ export function useLeagueRealtime(opts: Opts) {
     };
   }, [enabled, isConnected, onFallbackRefresh, fallbackMs]);
 
-  return useMemo(() => ({ patchByCampaign, isConnected }), [patchByCampaign, isConnected]);
+  return useMemo(() => ({ patchByCampaign, created, isConnected }), [patchByCampaign, created, isConnected]);
 }
