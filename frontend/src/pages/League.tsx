@@ -377,7 +377,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                     </div>
 
                     <div className="mt-2 text-[10px] text-muted-foreground">
-                      Updated daily · computed {formatIsoTiny(cardPrize.computedAt)} · total league fees {formatBnbFromRaw(cardPrize.totalLeagueFeeRaw)} BNB
+                      Updated hourly · computed {formatIsoTiny(cardPrize.computedAt)} · total league fees {formatBnbFromRaw(cardPrize.totalLeagueFeeRaw)} BNB
                     </div>
                   </div>
                 ) : null}

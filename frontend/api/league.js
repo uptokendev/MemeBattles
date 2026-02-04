@@ -36,7 +36,7 @@ function periodCutoff(norm) {
 // ---------------------------
 const DEFAULT_PROTOCOL_FEE_BPS = 200; // 2%
 const DEFAULT_LEAGUE_FEE_BPS = 25; // 0.25% slice of gross
-const PRIZE_TTL_MS = 24 * 60 * 60 * 1000;
+const PRIZE_TTL_MS = 60 * 60 * 1000;
 const PRIZE_SPLIT_BPS = [4000, 2500, 1500, 1200, 800]; // 40/25/15/12/8
 
 function readBps(name, def) {
@@ -200,7 +200,7 @@ export default async function handler(req, res) {
 
     const limit = clampInt(q.limit ?? 10, 1, 50, 10);
 
-    // Prize meta is computed once per chain/period per warm instance (and TTL = 24h).
+    // Prize meta is computed once per chain/period per warm instance (and TTL = 1h).
     // This prevents recomputing fee totals on every category request.
     const prizeMeta = await getPrizeMeta(chainId, periodNorm);
     const prizeForCategory = prizeMeta?.byCategory?.[category]
