@@ -393,12 +393,43 @@ if (balanceWei != null) {
 
       const c = new ethers.Contract(treasuryAddress, UPVOTE_ABI, wallet.signer);
       const meta = ethers.keccak256(ethers.toUtf8Bytes("user"));
-      const tx = await c.voteWithBNB(campaignAddress, meta, { value: valueWei });
+      // BSC (56/97) is legacy gas (no EIP-1559). Some RPCs (and MetaMask) log
+      // noisy errors for `eth_maxPriorityFeePerGas`. Force a legacy tx by
+      // supplying gasPrice and type=0 when available.
+      let gasPrice: bigint | undefined;
+      try {
+        const gpHex = await wallet.provider!.send("eth_gasPrice", []);
+        gasPrice = gpHex ? BigInt(gpHex) : undefined;
+      } catch {
+        try {
+          const fee = await wallet.provider!.getFeeData();
+          gasPrice = fee.gasPrice != null ? BigInt(fee.gasPrice) : undefined;
+        } catch {
+          gasPrice = undefined;
+        }
+      }
+
+      const overrides: any = { value: valueWei };
+      if (gasPrice && gasPrice > 0n) {
+        overrides.gasPrice = gasPrice;
+        overrides.type = 0;
+      }
+
+      const tx = await c.voteWithBNB(campaignAddress, meta, overrides);
 
       toast({ title: "Upvote sent", description: "Waiting for confirmation…" });
       await tx.wait();
       toast({ title: "Upvoted", description: "Your vote has been recorded." });
       setOpen(false);
+
+      // Nudge any UI surfaces that render vote-sorted leaderboards to refresh immediately.
+      try {
+        window.dispatchEvent(
+          new CustomEvent("upmeme:upvoteConfirmed", {
+            detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
+          })
+        );
+      } catch {}
     } catch (e: any) {
       // Errors thrown via `fail(...)` already displayed a toast.
       const msg = String(e?.shortMessage || e?.message || "Transaction failed");

@@ -80,6 +80,18 @@ const { patchByCampaign } = useLeagueRealtime({
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Immediately refresh featured sorting after a confirmed upvote.
+  useEffect(() => {
+    const onUpvote = (e: any) => {
+      const d = e?.detail ?? {};
+      const cid = Number(d.chainId ?? NaN);
+      if (Number.isFinite(cid) && cid !== activeChainId) return;
+      setRefetchNonce((n) => n + 1);
+    };
+    window.addEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+    return () => window.removeEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+  }, [activeChainId]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {

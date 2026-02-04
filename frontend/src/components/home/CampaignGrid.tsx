@@ -125,6 +125,19 @@ const { patchByCampaign } = useLeagueRealtime({
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
+  // Immediately refresh the feed after a confirmed upvote so the card order and vote counts
+  // update without requiring a hard reload.
+  useEffect(() => {
+    const onUpvote = (e: any) => {
+      const d = e?.detail ?? {};
+      const cid = Number(d.chainId ?? NaN);
+      if (Number.isFinite(cid) && cid !== activeChainId) return;
+      setRefetchNonce((n) => n + 1);
+    };
+    window.addEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+    return () => window.removeEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+  }, [activeChainId]);
+
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const baseParams = useMemo(() => {
