@@ -3,6 +3,7 @@ import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { HeaderBand } from "@/components/home/HeaderBand";
+import { LeagueOverlayCard } from "@/components/home/LeagueOverlayCard";
 
 
 const Showcase = () => {
@@ -35,6 +36,11 @@ const Showcase = () => {
           We align the logo by tightening App.tsx main padding instead.
         */}
         <HeaderBand />
+
+        {/* Mobile League card (moves out of TopBar on small screens) */}
+        <div className="md:hidden mt-2 mb-5">
+          <LeagueOverlayCard className="w-full max-w-[460px] mx-auto" />
+        </div>
 
         {/* Featured grid (UpVote campaigns) */}
         <div className="md:pr-[320px] -translate-y-6 md:-translate-y-14">

@@ -333,12 +333,12 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             )}
           </div>
         </div>
-         {/* League overlay: always under the buttons */}
+         {/* League overlay: desktop only (mobile renders in main content) */}
          {location.pathname === "/" && (
-  <div className="absolute right-6 top-full mt-2 z-20 pointer-events-none">
-    <LeagueOverlayCard className="pointer-events-auto" />
-  </div>
-  )}
+           <div className="absolute right-6 top-full mt-2 z-20 pointer-events-none hidden md:block">
+             <LeagueOverlayCard className="pointer-events-auto" />
+           </div>
+         )}
         </div>
       </div>
 
