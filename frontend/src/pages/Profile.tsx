@@ -657,7 +657,7 @@ const Profile = () => {
   }, [created]);
 
   return (
-        <div className="w-full min-h-[100dvh] pt-8 md:pt-8 lg:pt-8 pl-0 lg:pl-0 overflow-y-auto">
+        <div className="w-full min-h-[100dvh] pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0 overflow-y-auto">
       {/* Disconnect Overlay */}
       {!isConnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
@@ -677,7 +677,7 @@ const Profile = () => {
       )}
 
       <div
-        className={`px-3 md:px-5 pb-5 md:pb-6 pt-4 md:pt-6 ${
+        className={`px-3 md:px-5 pb-5 md:pb-6 pt-6 md:pt-6 ${
           !isConnected ? "blur-md pointer-events-none select-none" : ""
         }`}
       >
