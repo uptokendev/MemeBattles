@@ -27,6 +27,25 @@ type TokenBalanceRow = {
   balanceFormatted: string;
 };
 
+type ActivityTradeRow = {
+  id: string;
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  blockTime: string;
+  side: "buy" | "sell";
+  wallet: string;
+  tokenAmount: number | null;
+  bnbAmount: number | null;
+  priceBnb: number | null;
+  campaignAddress: string;
+  campaignName: string | null;
+  campaignSymbol: string | null;
+  logoUri: string | null;
+};
+
+const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
+
 const ERC20_ABI_MIN = [
   {
     type: "function",
@@ -99,6 +118,10 @@ const Profile = () => {
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
   const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
+
+  const [activityTrades, setActivityTrades] = useState<ActivityTradeRow[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const [created, setCreated] = useState<
     Array<{
@@ -189,6 +212,11 @@ const Profile = () => {
     if (days < 7) return `${days}d`;
     const weeks = Math.floor(days / 7);
     return `${weeks}w`;
+  };
+
+  const formatNumber = (value?: number | null, maxDecimals = 4): string => {
+    if (value == null || !Number.isFinite(value)) return "â€”";
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: maxDecimals });
   };
 
   const handleCopyAddress = () => {
@@ -433,7 +461,7 @@ const Profile = () => {
     };
   }, [account, fetchCampaigns, fetchCampaignSummary]);
 
-    // Load balances (native + launchpad token balances)
+  // Load balances (native + launchpad token balances)
   useEffect(() => {
     let cancelled = false;
 
@@ -544,6 +572,79 @@ const Profile = () => {
     };
     // IMPORTANT: include wallet.provider as a dependency so it reruns once provider is ready.
   }, [account, fetchCampaigns, fetchCampaignSummary, wallet]);
+
+  // Activity: Trades (profile feed)
+  useEffect(() => {
+    let cancelled = false;
+
+    if (activeTab !== "replies" || activityTab !== "trades") return;
+
+    if (!viewedAddress) {
+      setActivityTrades([]);
+      setActivityError(null);
+      setActivityLoading(false);
+      return;
+    }
+
+    if (!REALTIME_API_BASE) {
+      setActivityTrades([]);
+      setActivityError("Missing VITE_REALTIME_API_BASE");
+      setActivityLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    const addr = viewedAddress.toLowerCase();
+    const cid = Number(chainId ?? 97);
+
+    setActivityLoading(true);
+    setActivityError(null);
+
+    (async () => {
+      try {
+        const qs = new URLSearchParams({
+          chainId: String(cid),
+          address: addr,
+          limit: "50",
+        });
+        const url = `${REALTIME_API_BASE}/api/activity/trades?${qs.toString()}`;
+        const r = await fetch(url, { method: "GET", signal: ac.signal });
+        const j = await r.json().catch(() => null);
+        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+        const rows = Array.isArray(j?.items) ? j.items : [];
+        const next: ActivityTradeRow[] = rows.map((it: any) => ({
+          id: String(it?.id ?? `${it?.txHash ?? ""}:${it?.logIndex ?? 0}`),
+          txHash: String(it?.txHash ?? ""),
+          logIndex: Number(it?.logIndex ?? 0),
+          blockNumber: Number(it?.blockNumber ?? 0),
+          blockTime: String(it?.blockTime ?? ""),
+          side: (String(it?.side ?? "buy") === "sell" ? "sell" : "buy"),
+          wallet: String(it?.wallet ?? ""),
+          tokenAmount: it?.tokenAmount == null ? null : Number(it.tokenAmount),
+          bnbAmount: it?.bnbAmount == null ? null : Number(it.bnbAmount),
+          priceBnb: it?.priceBnb == null ? null : Number(it.priceBnb),
+          campaignAddress: String(it?.campaignAddress ?? ""),
+          campaignName: it?.campaignName ?? null,
+          campaignSymbol: it?.campaignSymbol ?? null,
+          logoUri: it?.logoUri ?? null,
+        }));
+        if (cancelled) return;
+        setActivityTrades(next);
+      } catch (e: any) {
+        if (cancelled || ac.signal.aborted) return;
+        setActivityError(String(e?.message || "Failed to load trades"));
+        setActivityTrades([]);
+      } finally {
+        if (cancelled) return;
+        setActivityLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [activeTab, activityTab, viewedAddress, chainId]);
 
 
   // Followers/Following numbers (MVP proxies)
@@ -925,17 +1026,91 @@ const Profile = () => {
               ))}
             </div>
 
-            <div className="rounded-xl border border-border bg-background/40 p-4 md:p-6 text-center">
-              <p className="font-retro text-muted-foreground text-sm md:text-base">
-                Activity will be powered by <span className="text-foreground">indexed events</span> (recommended),
-                not per-campaign polling. This keeps the feed fast and efficient.
-              </p>
-              <p className="mt-2 font-retro text-muted-foreground text-xs md:text-sm">
-                Showing: <span className="text-foreground">{activityTab}</span>
-              </p>
+            <div className="rounded-xl border border-border bg-background/40 p-4 md:p-6">
+              <div className="text-[11px] font-retro text-muted-foreground mb-4">
+                Powered by indexed events (no per-campaign polling).
+              </div>
+
+              {activityTab === "trades" ? (
+                <div className="space-y-3">
+                  {activityLoading && (
+                    <div className="font-retro text-muted-foreground text-sm">Loading trades...</div>
+                  )}
+
+                  {!activityLoading && activityError && (
+                    <div className="font-retro text-destructive text-sm">{activityError}</div>
+                  )}
+
+                  {!activityLoading && !activityError && activityTrades.length === 0 && (
+                    <div className="font-retro text-muted-foreground text-sm">No trades yet.</div>
+                  )}
+
+                  {!activityLoading && !activityError && activityTrades.length > 0 && (
+                    <div className="space-y-2">
+                      {activityTrades.map((t) => {
+                        const label = t.campaignName || (t.campaignSymbol ? `$${t.campaignSymbol}` : "Unknown");
+                        const symbol = t.campaignSymbol ? `$${t.campaignSymbol}` : "";
+                        const ts = t.blockTime ? Math.floor(new Date(t.blockTime).getTime() / 1000) : undefined;
+                        const timeAgo = ts ? formatTimeAgo(ts) : "";
+                        const explorer = getExplorerBase(chainId);
+                        const txUrl = t.txHash ? `${explorer}/tx/${t.txHash}` : "";
+
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <img
+                                src={t.logoUri || "/placeholder.svg"}
+                                alt={label}
+                                className="h-9 w-9 rounded-full border border-border/60 object-cover"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-retro text-foreground text-sm truncate">{label}</div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {symbol} {timeAgo ? `â€¢ ${timeAgo}` : ""}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <div className={`font-retro text-xs ${t.side === "buy" ? "text-emerald-400" : "text-red-400"}`}>
+                                {t.side === "buy" ? "Buy" : "Sell"}
+                              </div>
+                              <div className="font-retro text-xs text-muted-foreground">
+                                {formatNumber(t.bnbAmount, 6)} BNB
+                              </div>
+                              {txUrl ? (
+                                <a
+                                  href={txUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                                >
+                                  View tx
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center">
+                  <p className="font-retro text-muted-foreground text-sm md:text-base">
+                    Activity will be powered by <span className="text-foreground">indexed events</span> (recommended).
+                  </p>
+                  <p className="mt-2 font-retro text-muted-foreground text-xs md:text-sm">
+                    Showing: <span className="text-foreground">{activityTab}</span>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
-          )}
+        )}
 
           {/* NOTIFICATIONS TAB */}
         {activeTab === "notifications" && (

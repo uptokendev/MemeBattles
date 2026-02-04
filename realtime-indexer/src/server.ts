@@ -132,6 +132,336 @@ app.get("/api/ably/token", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Profile Activity (v1)
+// ---------------------------------------------------------------------------
+// Trades activity (bonding curve buys/sells) for a wallet.
+// GET /api/activity/trades?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
+app.get("/api/activity/trades", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const cursorRaw = String(req.query.cursor || "").trim();
+
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+
+  let cursorBlock: number | null = null;
+  let cursorLog: number | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split(":");
+    const b = Number(parts[0]);
+    const l = Number(parts[1]);
+    if (Number.isFinite(b) && Number.isFinite(l)) {
+      cursorBlock = b;
+      cursorLog = l;
+    }
+  }
+
+  const params: any[] = [chainId, address];
+  let whereCursor = "";
+  if (cursorBlock != null && cursorLog != null) {
+    params.push(cursorBlock, cursorLog);
+    whereCursor = "and (t.block_number < $3 or (t.block_number = $3 and t.log_index < $4))";
+  }
+
+  params.push(limit);
+
+  const r = await pool.query(
+    `select
+       t.tx_hash,
+       t.log_index,
+       t.block_number,
+       t.block_time,
+       t.side,
+       t.wallet,
+       t.token_amount,
+       t.bnb_amount,
+       t.price_bnb,
+       t.campaign_address,
+       c.name,
+       c.symbol,
+       c.logo_uri
+     from public.curve_trades t
+     left join public.campaigns c
+       on c.chain_id = t.chain_id
+      and c.campaign_address = t.campaign_address
+     where t.chain_id = $1
+       and t.wallet = $2
+       ${whereCursor}
+     order by t.block_number desc, t.log_index desc
+     limit $${params.length}`,
+    params
+  );
+
+  const items = (r.rows || []).map((row: any) => ({
+    id: `${row.tx_hash}:${row.log_index}`,
+    txHash: row.tx_hash,
+    logIndex: Number(row.log_index),
+    blockNumber: Number(row.block_number),
+    blockTime: row.block_time,
+    side: row.side,
+    wallet: row.wallet,
+    tokenAmount: row.token_amount,
+    bnbAmount: row.bnb_amount,
+    priceBnb: row.price_bnb,
+    campaignAddress: row.campaign_address,
+    campaignName: row.name ?? null,
+    campaignSymbol: row.symbol ?? null,
+    logoUri: row.logo_uri ?? null,
+  }));
+
+  const last = items[items.length - 1];
+  const nextCursor = last ? `${last.blockNumber}:${last.logIndex}` : null;
+
+  res.json({ items, nextCursor });
+}));
+
+// Comments activity for a wallet (authored comments).
+// GET /api/activity/comments?chainId=97&address=0x...&limit=50&cursor=TS:ID
+app.get("/api/activity/comments", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const cursorRaw = String(req.query.cursor || "").trim();
+
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+
+  let cursorTs: Date | null = null;
+  let cursorId: number | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split(":");
+    const ts = Number(parts[0]);
+    const id = Number(parts[1]);
+    if (Number.isFinite(ts) && Number.isFinite(id)) {
+      cursorTs = new Date(ts * 1000);
+      cursorId = id;
+    }
+  }
+
+  const params: any[] = [chainId, address];
+  let whereCursor = "";
+  if (cursorTs && cursorId != null) {
+    params.push(cursorTs, cursorId);
+    whereCursor = "and (c.created_at < $3 or (c.created_at = $3 and c.id < $4))";
+  }
+
+  params.push(limit);
+
+  const r = await pool.query(
+    `select
+       c.id,
+       c.campaign_address,
+       c.token_address,
+       c.author_address,
+       c.body,
+       c.parent_id,
+       c.created_at,
+       camp.name,
+       camp.symbol,
+       camp.logo_uri
+     from public.token_comments c
+     left join public.campaigns camp
+       on camp.chain_id = c.chain_id
+      and camp.campaign_address = c.campaign_address
+     where c.chain_id = $1
+       and c.author_address = $2
+       and c.status = 0
+       ${whereCursor}
+     order by c.created_at desc, c.id desc
+     limit $${params.length}`,
+    params
+  );
+
+  const items = (r.rows || []).map((row: any) => ({
+    id: Number(row.id),
+    campaignAddress: row.campaign_address,
+    tokenAddress: row.token_address,
+    authorAddress: row.author_address,
+    body: row.body,
+    parentId: row.parent_id,
+    createdAt: row.created_at,
+    campaignName: row.name ?? null,
+    campaignSymbol: row.symbol ?? null,
+    logoUri: row.logo_uri ?? null,
+  }));
+
+  const last = items[items.length - 1];
+  const nextCursor = last
+    ? `${Math.floor(new Date(last.createdAt).getTime() / 1000)}:${last.id}`
+    : null;
+
+  res.json({ items, nextCursor });
+}));
+
+// Created campaigns for a wallet.
+// GET /api/activity/created?chainId=97&address=0x...&limit=50&cursor=TS:ADDR
+app.get("/api/activity/created", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const cursorRaw = String(req.query.cursor || "").trim();
+
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+
+  let cursorTs: Date | null = null;
+  let cursorAddr: string | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split(":");
+    const ts = Number(parts[0]);
+    const addr = String(parts[1] || "").toLowerCase();
+    if (Number.isFinite(ts) && /^0x[a-f0-9]{40}$/.test(addr)) {
+      cursorTs = new Date(ts * 1000);
+      cursorAddr = addr;
+    }
+  }
+
+  const params: any[] = [chainId, address];
+  let whereCursor = "";
+  if (cursorTs && cursorAddr) {
+    params.push(cursorTs, cursorAddr);
+    whereCursor = `and (
+      coalesce(c.created_at_chain, c.created_at) < $3
+      or (coalesce(c.created_at_chain, c.created_at) = $3 and c.campaign_address < $4)
+    )`;
+  }
+
+  params.push(limit);
+
+  const r = await pool.query(
+    `select
+       c.campaign_address,
+       c.token_address,
+       c.name,
+       c.symbol,
+       c.logo_uri,
+       c.created_at_chain,
+       c.created_at
+     from public.campaigns c
+     where c.chain_id = $1
+       and c.creator_address = $2
+       ${whereCursor}
+     order by coalesce(c.created_at_chain, c.created_at) desc, c.campaign_address desc
+     limit $${params.length}`,
+    params
+  );
+
+  const items = (r.rows || []).map((row: any) => ({
+    campaignAddress: row.campaign_address,
+    tokenAddress: row.token_address,
+    name: row.name ?? null,
+    symbol: row.symbol ?? null,
+    logoUri: row.logo_uri ?? null,
+    createdAt: row.created_at_chain ?? row.created_at ?? null,
+  }));
+
+  const last = items[items.length - 1];
+  const lastTs = last?.createdAt ? Math.floor(new Date(last.createdAt).getTime() / 1000) : null;
+  const nextCursor = last && lastTs ? `${lastTs}:${last.campaignAddress}` : null;
+
+  res.json({ items, nextCursor });
+}));
+
+// Interactions (Upvotes) for a wallet.
+// GET /api/activity/interactions?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
+app.get("/api/activity/interactions", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const cursorRaw = String(req.query.cursor || "").trim();
+
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+
+  let cursorBlock: number | null = null;
+  let cursorLog: number | null = null;
+  if (cursorRaw) {
+    const parts = cursorRaw.split(":");
+    const b = Number(parts[0]);
+    const l = Number(parts[1]);
+    if (Number.isFinite(b) && Number.isFinite(l)) {
+      cursorBlock = b;
+      cursorLog = l;
+    }
+  }
+
+  const params: any[] = [chainId, address];
+  let whereCursor = "";
+  if (cursorBlock != null && cursorLog != null) {
+    params.push(cursorBlock, cursorLog);
+    whereCursor = "and (v.block_number < $3 or (v.block_number = $3 and v.log_index < $4))";
+  }
+
+  params.push(limit);
+
+  const r = await pool.query(
+    `select
+       v.tx_hash,
+       v.log_index,
+       v.block_number,
+       v.block_timestamp,
+       v.campaign_address,
+       v.voter_address,
+       v.asset_address,
+       v.amount_raw,
+       v.meta,
+       c.name,
+       c.symbol,
+       c.logo_uri
+     from public.votes v
+     left join public.campaigns c
+       on c.chain_id = v.chain_id
+      and c.campaign_address = v.campaign_address
+     where v.chain_id = $1
+       and v.voter_address = $2
+       and v.status = 'confirmed'
+       ${whereCursor}
+     order by v.block_number desc, v.log_index desc
+     limit $${params.length}`,
+    params
+  );
+
+  const items = (r.rows || []).map((row: any) => ({
+    id: `${row.tx_hash}:${row.log_index}`,
+    txHash: row.tx_hash,
+    logIndex: Number(row.log_index),
+    blockNumber: Number(row.block_number),
+    blockTime: row.block_timestamp,
+    campaignAddress: row.campaign_address,
+    voterAddress: row.voter_address,
+    assetAddress: row.asset_address,
+    amountRaw: row.amount_raw,
+    meta: row.meta,
+    campaignName: row.name ?? null,
+    campaignSymbol: row.symbol ?? null,
+    logoUri: row.logo_uri ?? null,
+    type: "upvote",
+  }));
+
+  const last = items[items.length - 1];
+  const nextCursor = last ? `${last.blockNumber}:${last.logIndex}` : null;
+
+  res.json({ items, nextCursor });
+}));
+
 /**
  * Snapshot endpoints for TokenDetails
  */

@@ -70,6 +70,104 @@ function isRpcTransportError(e: any): boolean {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Activity feed helpers
+// ---------------------------------------------------------------------------
+
+type CampaignInfo = {
+  tokenAddress: string | null;
+  name: string | null;
+  symbol: string | null;
+};
+
+const CAMPAIGN_CACHE = new Map<string, CampaignInfo>();
+let activityWritesDisabled = false;
+
+function cacheCampaignInfo(chainId: number, campaign: string, info: CampaignInfo) {
+  const key = `${chainId}:${campaign.toLowerCase()}`;
+  CAMPAIGN_CACHE.set(key, info);
+}
+
+async function getCampaignInfo(chainId: number, campaign: string): Promise<CampaignInfo | null> {
+  const key = `${chainId}:${campaign.toLowerCase()}`;
+  const cached = CAMPAIGN_CACHE.get(key);
+  if (cached) return cached;
+
+  try {
+    const r = await pool.query(
+      `select token_address, name, symbol
+       from public.campaigns
+       where chain_id=$1 and campaign_address=$2`,
+      [chainId, campaign.toLowerCase()]
+    );
+    const row = r.rows?.[0];
+    const info: CampaignInfo = {
+      tokenAddress: row?.token_address ?? null,
+      name: row?.name ?? null,
+      symbol: row?.symbol ?? null,
+    };
+    cacheCampaignInfo(chainId, campaign, info);
+    return info;
+  } catch {
+    return null;
+  }
+}
+
+async function insertActivityEvent(row: {
+  chainId: number;
+  eventType: string;
+  txHash: string;
+  logIndex: number;
+  blockNumber: number;
+  blockTime: Date;
+  actor: string;
+  campaign?: string | null;
+  token?: string | null;
+  amountInWei?: bigint | null;
+  amountOutWei?: bigint | null;
+  costWei?: bigint | null;
+  payoutWei?: bigint | null;
+  meta?: Record<string, any> | null;
+}) {
+  if (activityWritesDisabled) return;
+
+  try {
+    await pool.query(
+      `insert into public.activity_events(
+         chain_id,event_type,tx_hash,log_index,block_number,block_time,
+         actor_address,campaign_address,token_address,
+         amount_in_wei,amount_out_wei,cost_wei,payout_wei,meta
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       on conflict (chain_id,tx_hash,log_index) do nothing`,
+      [
+        row.chainId,
+        row.eventType,
+        row.txHash.toLowerCase(),
+        row.logIndex,
+        row.blockNumber,
+        row.blockTime,
+        row.actor.toLowerCase(),
+        row.campaign ? row.campaign.toLowerCase() : null,
+        row.token ? row.token.toLowerCase() : null,
+        row.amountInWei ? row.amountInWei.toString() : null,
+        row.amountOutWei ? row.amountOutWei.toString() : null,
+        row.costWei ? row.costWei.toString() : null,
+        row.payoutWei ? row.payoutWei.toString() : null,
+        row.meta ? JSON.stringify(row.meta) : "{}",
+      ]
+    );
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.includes("activity_events") || msg.includes("relation")) {
+      // Disable further writes to avoid spamming logs if migration is missing.
+      activityWritesDisabled = true;
+      console.warn("[activity_events] disabled (table missing or invalid).", msg);
+      return;
+    }
+    console.warn("[activity_events] insert failed", msg);
+  }
+}
+
 async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth = 0): Promise<ethers.Log[]> {
   try {
     return await provider.getLogs(filter);
@@ -219,6 +317,12 @@ async function upsertCampaign(
       createdAtChain
     ]
   );
+
+  cacheCampaignInfo(chainId, campaign, {
+    tokenAddress: token ? token.toLowerCase() : null,
+    name: name || null,
+    symbol: symbol || null,
+  });
 }
 
 async function setCampaignGraduated(
@@ -552,7 +656,37 @@ async function scanFactoryRange(
       const creator = String((parsed.args as any).creator);
       const name = String((parsed.args as any).name);
       const symbol = String((parsed.args as any).symbol);
-      await upsertCampaign(chain.chainId, chain.factoryAddress ?? null, campaign, token, creator, name, symbol, log.blockNumber, blockTimes.get(log.blockNumber) || null);
+      const blockTime = blockTimes.get(log.blockNumber) || null;
+      await upsertCampaign(
+        chain.chainId,
+        chain.factoryAddress ?? null,
+        campaign,
+        token,
+        creator,
+        name,
+        symbol,
+        log.blockNumber,
+        blockTime
+      );
+
+      if (log.transactionHash) {
+        await insertActivityEvent({
+          chainId: chain.chainId,
+          eventType: "CREATE_CAMPAIGN",
+          txHash: log.transactionHash,
+          logIndex: log.index ?? 0,
+          blockNumber: log.blockNumber,
+          blockTime: blockTime || new Date(0),
+          actor: creator,
+          campaign,
+          token,
+          meta: {
+            name,
+            symbol,
+            factory: chain.factoryAddress ? chain.factoryAddress.toLowerCase() : null,
+          },
+        });
+      }
     }
 
     await setStateMax(chain.chainId, cursor, end + 1);
@@ -615,6 +749,22 @@ async function scanVoteTreasuryRange(
           logIndex: log.index,
           blockNumber: log.blockNumber,
           blockTime: blockTimes.get(log.blockNumber) || new Date(0)
+        });
+
+        await insertActivityEvent({
+          chainId: chain.chainId,
+          eventType: "UPVOTE",
+          txHash: log.transactionHash,
+          logIndex: log.index ?? 0,
+          blockNumber: log.blockNumber,
+          blockTime: blockTimes.get(log.blockNumber) || new Date(0),
+          actor: voter,
+          campaign,
+          amountInWei: amountPaid,
+          meta: {
+            asset: asset?.toLowerCase?.() ?? asset,
+            meta,
+          },
         });
 
         touched.add(campaign.toLowerCase());
@@ -728,6 +878,8 @@ async function scanCampaignRange(
   const cursor = `campaign:${campaign.toLowerCase()}`;
   const step = ENV.LOG_CHUNK_SIZE;
   const blockTimeCache = new Map<number, number>();
+  const campaignInfo = await getCampaignInfo(chainId, campaign);
+  const tokenAddr = campaignInfo?.tokenAddress ?? null;
 
   // Best-effort: hydrate campaign feeRecipient for anti-abuse checks (Largest Buys).
   try {
@@ -808,6 +960,22 @@ async function scanCampaignRange(
           blockNumber: log.blockNumber
         });
 
+        await insertActivityEvent({
+          chainId,
+          eventType: "BUY",
+          txHash,
+          logIndex,
+          blockNumber: log.blockNumber,
+          blockTime: new Date(tsSec * 1000),
+          actor: buyer,
+          campaign,
+          token: tokenAddr,
+          amountInWei: cost,
+          amountOutWei: amountOut,
+          costWei: cost,
+          meta: { priceBnb },
+        });
+
         if (priceBnb !== null) {
           for (const tf of TIMEFRAMES) {
             const b = bucketStart(tsSec, tf);
@@ -847,6 +1015,22 @@ async function scanCampaignRange(
           blockNumber: log.blockNumber
         });
 
+        await insertActivityEvent({
+          chainId,
+          eventType: "SELL",
+          txHash,
+          logIndex,
+          blockNumber: log.blockNumber,
+          blockTime: new Date(tsSec * 1000),
+          actor: seller,
+          campaign,
+          token: tokenAddr,
+          amountInWei: amountIn,
+          amountOutWei: payout,
+          payoutWei: payout,
+          meta: { priceBnb },
+        });
+
         if (priceBnb !== null) {
           for (const tf of TIMEFRAMES) {
             const b = bucketStart(tsSec, tf);
@@ -854,6 +1038,30 @@ async function scanCampaignRange(
           }
         }
       } else if (name === "CampaignFinalized") {
+        const caller = String((parsed.args as any).caller ?? "");
+        const liquidityTokens = (parsed.args as any).liquidityTokens as bigint;
+        const liquidityBnb = (parsed.args as any).liquidityBnb as bigint;
+        const protocolFee = (parsed.args as any).protocolFee as bigint;
+        const creatorPayout = (parsed.args as any).creatorPayout as bigint;
+
+        await insertActivityEvent({
+          chainId,
+          eventType: "FINALIZE",
+          txHash,
+          logIndex,
+          blockNumber: log.blockNumber,
+          blockTime: new Date(tsSec * 1000),
+          actor: caller || campaign,
+          campaign,
+          token: tokenAddr,
+          meta: {
+            liquidityTokens: liquidityTokens?.toString?.() ?? null,
+            liquidityBnb: liquidityBnb?.toString?.() ?? null,
+            protocolFee: protocolFee?.toString?.() ?? null,
+            creatorPayout: creatorPayout?.toString?.() ?? null,
+          },
+        });
+
         // Graduation marker for league categories
         await setCampaignGraduated(chainId, campaign, log.blockNumber, new Date(tsSec * 1000), txHash);
       }
