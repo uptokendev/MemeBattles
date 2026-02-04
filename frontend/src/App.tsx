@@ -13,7 +13,6 @@ import { useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
-import BattleDashboard from "./pages/BattleDashboard";
 import League from "./pages/League";
 import Profile from "./pages/Profile";
 import TokenDetails from "./pages/TokenDetails";
@@ -61,8 +60,6 @@ const App = () => {
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
                   {/* New naming (keep old paths as aliases) */}
-                  <Route path="/battle-dashboard" element={<BattleDashboard />} />
-                  <Route path="/up-dashboard" element={<BattleDashboard />} />
                   <Route path="/battle-leagues" element={<League />} />
                   <Route path="/league" element={<League />} />
                   <Route path="/profile" element={<Profile />} />

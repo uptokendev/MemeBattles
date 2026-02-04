@@ -20,7 +20,6 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
   { icon: Plus, label: "Create Coin", path: "/create" },
-  { icon: upArrowIcon, label: "Battle Dashboard", path: "/battle-dashboard" },
   { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
   { icon: userIcon, label: "Profile", path: "/profile" },
   { icon: BookOpen, label: "Docs", path: "/docs" },

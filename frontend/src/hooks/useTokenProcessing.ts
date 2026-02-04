@@ -3,7 +3,7 @@
  *
  * Internal navigation must be campaignAddress-only.
  * This hook therefore navigates to a caller-provided redirect path (e.g. /token/0x...).
- * If none is provided, it navigates to /battle-dashboard.
+ * If none is provided, it navigates to the Launchpad feed.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -54,7 +54,7 @@ export const useTokenProcessing = () => {
       // Navigate after showing success
       setTimeout(() => {
         toast.success("Token created successfully!");
-        navigate(redirectToRef.current ?? "/battle-dashboard");
+        navigate(redirectToRef.current ?? "/");
       }, PROCESSING_TIMING.SUCCESS_NAVIGATION_DELAY);
     }, PROCESSING_TIMING.TOTAL_PROCESS_DURATION);
 

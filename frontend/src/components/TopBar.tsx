@@ -79,7 +79,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     () => [
       { label: "Launchpad", path: "/" },
       { label: "Create Coin", path: "/create" },
-      { label: "Battle Dashboard", path: "/battle-dashboard" },
       { label: "Battle Leagues", path: "/battle-leagues" },
       { label: "Profile", path: "/profile" },
       { label: "Docs", path: "/docs" },
