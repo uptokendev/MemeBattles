@@ -4,10 +4,14 @@ import { ENV } from "./env.js";
 import { LAUNCH_FACTORY_ABI, LAUNCH_CAMPAIGN_ABI, UP_VOTE_TREASURY_ABI } from "./abis.js";
 import { TIMEFRAMES, bucketStart, TF } from "./timeframes.js";
 import { publishTrade, publishCandle, publishStats } from "./ably.js";
+import { createLeagueFeedPublisher } from "./leagueFeed.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const leagueFeed = createLeagueFeedPublisher({ pool, flushMs: 500 });
+leagueFeed.start();
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -517,6 +521,11 @@ async function patchVoteAggregates(chainId: number, campaign: string) {
       x.last_vote_at
     ]
   );
+  leagueFeed.queueVotes(chainId, campaign, {
+    votes24h: Number(x.votes_24h || 0),
+    votesAllTime: Number(x.votes_all_time || 0),
+    trendingScore: String(x.trending_score || 0)
+  });
 }
 
 async function upsertCandle(
@@ -608,6 +617,13 @@ async function patchStats(chainId: number, campaign: string) {
     marketcapBnb: marketcap !== null ? String(marketcap) : null,
     vol24hBnb: String(vol24h)
   });
+
+  leagueFeed.queueStats(chainId, campaign, {
+    lastPriceBnb: lastPrice !== null ? String(lastPrice) : null,
+    marketcapBnb: marketcap !== null ? String(marketcap) : null,
+    vol24hBnb: String(vol24h)
+  });
+
 }
 
 // ---------------------------------------------------------------------------
@@ -999,6 +1015,9 @@ async function scanCampaignRange(
           tokenRaw: amountIn,
           bnbRaw: payout
         });
+
+        // Home feed progress: sells subtract from raisedTotalBnb
+        leagueFeed.queueRaisedDelta(chainId, campaign, -bnbAmount);
 
         await publishTrade(chainId, campaign, {
           type: "trade",

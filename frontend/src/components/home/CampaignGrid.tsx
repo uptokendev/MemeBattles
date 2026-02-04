@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 
@@ -96,6 +97,7 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
+  const { patchByCampaign } = useLeagueRealtime(true, activeChainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   // Debug toggle (works in production):
@@ -281,13 +283,22 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams]);
 
   const vms: CampaignCardVM[] = useMemo(() => {
+    const GRAD_TARGET_BNB = 50;
+
     return (items || []).map((it) => {
-      const mcapBnb = Number(it.marketcapBnb ?? NaN);
+      const addr = String(it.campaignAddress ?? "").toLowerCase();
+      const patch = patchByCampaign[addr];
+
+      const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
       const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
       const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
-
-      const addr = String(it.campaignAddress ?? "").toLowerCase();
       const rawLogo = it.logoUri || logoCache[addr] || null;
+
+      let progressPct: number | null = it.progressPct ?? null;
+      const raised = Number(patch?.raisedTotalBnb ?? NaN);
+      if (Number.isFinite(raised)) {
+        progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
+      }
 
       return {
         campaignAddress: addr,
@@ -298,12 +309,12 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
         marketCapUsdLabel,
         athLabel: marketCapUsdLabel,
-        progressPct: it.progressPct ?? null,
+        progressPct,
         isDexTrading: Boolean(it.isDexTrading),
-        votes24h: Number(it.votes24h ?? 0),
+        votes24h: Number(patch?.votes24h ?? it.votes24h ?? 0),
       } as CampaignCardVM;
     });
-  }, [items, bnbUsd, logoCache]);
+  }, [items, bnbUsd, logoCache, patchByCampaign]);
 
   const resultsMeta = useMemo(() => {
     const count = vms.length;

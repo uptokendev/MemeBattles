@@ -7,6 +7,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { resolveImageUri } from "@/lib/media";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 
@@ -53,6 +54,7 @@ function isEvmAddress(addr?: string | null) {
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
+  const { patchByCampaign } = useLeagueRealtime(true, activeChainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const goProfile = (creatorAddr?: string) => {
@@ -184,14 +186,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const cards = useMemo(() => {
     return items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
+      const patch = patchByCampaign[addr];
 
       const createdAt = it.createdAtChain
         ? Math.floor(new Date(it.createdAtChain).getTime() / 1000)
         : undefined;
 
-      const votes24h = Number(it.votes24h ?? 0);
-
-      const mcapBnb = Number(it.marketcapBnb ?? NaN);
+      const votes24h = Number(patch?.votes24h ?? it.votes24h ?? 0);
+      
+      const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
 
       const rawLogo = it.logoUri || logoCache[addr] || null;
