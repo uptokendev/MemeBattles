@@ -149,7 +149,7 @@ const LEAGUES: LeagueDef[] = [
   {
     key: "perfect_run",
     title: "Perfect Run",
-    subtitle: "Monthly only · No sells in bonding · Jackpot rolls over if not hit",
+    subtitle: "Monthly only · No sells in bonding · <br><br>Jackpot rolls over if not hit",
     image: "/assets/perfectrun.png",
     supports: ["monthly"],
     monthlyLimit: 5,

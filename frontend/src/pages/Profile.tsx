@@ -657,7 +657,7 @@ const Profile = () => {
   }, [created]);
 
   return (
-        <div className="w-full min-h-[100dvh] pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0 overflow-y-auto">
+        <div className="w-full h-full overflow-y-auto pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0">
       {/* Disconnect Overlay */}
       {!isConnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
@@ -1069,7 +1069,7 @@ const Profile = () => {
                               <div className="min-w-0">
                                 <div className="font-retro text-foreground text-sm truncate">{label}</div>
                                 <div className="text-xs text-muted-foreground truncate">
-                                  {symbol} {timeAgo ? `â€¢ ${timeAgo}` : ""}
+                                  {symbol} {timeAgo ? `- ${timeAgo} ago` : ""}
                                 </div>
                               </div>
                             </div>
@@ -1139,4 +1139,3 @@ const Profile = () => {
 };
 
 export default Profile;
-
