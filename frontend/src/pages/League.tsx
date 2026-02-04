@@ -6,8 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
 const shortAddr = (a: string) => (a && a.length > 12 ? a.slice(0, 6) + "..." + a.slice(-4) : a);
 
-// We keep "all_time" for browsing history, but prizes are only weekly/monthly.
-type Period = "weekly" | "monthly" | "all_time";
+type Period = "weekly" | "monthly";
 
 type LeagueBase = {
   campaign_address: string;
@@ -97,8 +96,7 @@ function formatBnbFromRaw(raw?: string | null) {
 
 function periodLabel(p: Period) {
   if (p === "weekly") return "Weekly";
-  if (p === "monthly") return "Monthly";
-  return "All-time";
+  return "Monthly";
 }
 
 function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
@@ -145,7 +143,6 @@ type LeagueDef = {
   supports: Period[];
   weeklyLimit?: number;
   monthlyLimit?: number;
-  allTimeLimit?: number;
 };
 
 const LEAGUES: LeagueDef[] = [
@@ -162,20 +159,18 @@ const LEAGUES: LeagueDef[] = [
     title: "Fastest Finish",
     subtitle: "Fastest graduation (creator buys excluded)",
     image: "/assets/fastestfinish.png",
-    supports: ["weekly", "monthly", "all_time"],
+    supports: ["weekly", "monthly"],
     weeklyLimit: 5,
     monthlyLimit: 5,
-    allTimeLimit: 10,
   },
   {
     key: "biggest_hit",
     title: "Biggest Hit",
     subtitle: "Biggest single buy in bonding",
     image: "/assets/biggesthit.png",
-    supports: ["weekly", "monthly", "all_time"],
+    supports: ["weekly", "monthly"],
     weeklyLimit: 5,
     monthlyLimit: 5,
-    allTimeLimit: 10,
   },
   {
     key: "top_earner",
@@ -191,17 +186,14 @@ const LEAGUES: LeagueDef[] = [
     title: "Crowd Favorite",
     subtitle: "Most UpVotes (community‑driven)",
     image: "/assets/crowdfavorite.png",
-    supports: ["weekly", "monthly", "all_time"],
+    supports: ["weekly", "monthly"],
     weeklyLimit: 5,
     monthlyLimit: 5,
-    allTimeLimit: 10,
   },
 ];
 
 function getLimit(def: LeagueDef, period: Period) {
-  if (period === "weekly") return def.weeklyLimit ?? 10;
-  if (period === "monthly") return def.monthlyLimit ?? 10;
-  return def.allTimeLimit ?? 10;
+  return period === "weekly" ? def.weeklyLimit ?? 10 : def.monthlyLimit ?? 10;
 }
 
 function formatIsoTiny(iso?: string | null) {
@@ -225,7 +217,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [warnings, setWarnings] = useState<Record<string, string | undefined>>({});
   const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
 
-  const periodButtons = useMemo(() => ["weekly", "monthly", "all_time"] as Period[], []);
+  const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
 
   useEffect(() => {
     let cancelled = false;
@@ -309,7 +301,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {LEAGUES.map((l) => {
           const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
           const items = (data[l.key] ?? []) as unknown[];
@@ -323,7 +315,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           return (
             <div key={l.key} className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden">
               <div className="relative">
-                <img src={l.image} alt={l.title} className="w-full h-[140px] md:h-[170px] object-cover" draggable={false} />
+                <div className="w-full aspect-square bg-black/10 flex items-center justify-center">
+                  <img src={l.image} alt={l.title} className="max-w-full max-h-full object-contain" draggable={false} />
+                </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
                 <div className="absolute left-4 right-4 bottom-3">
                   <div className="flex items-end justify-between gap-3">
@@ -341,7 +335,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 {prize && (effectivePeriod === "weekly" || effectivePeriod === "monthly") ? (
                   <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-[11px] text-muted-foreground">Prize pool (league fee only)</div>
+                      <div className="text-[11px] text-muted-foreground">{l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}</div>
                       <div className="text-sm font-semibold">{formatBnbFromRaw(prize.potRaw)} BNB</div>
                     </div>
 
