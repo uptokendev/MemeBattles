@@ -38,6 +38,7 @@ const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:3000",
   "https://upmeme.vercel.app",
+  "https://meme-battles.vercel.app",
 ]);
 
 function isAllowedOrigin(origin?: string) {
@@ -49,7 +50,11 @@ function isAllowedOrigin(origin?: string) {
   // If you have a custom pattern, adjust as needed.
   try {
     const u = new URL(origin);
-    if (u.hostname.endsWith(".vercel.app") && u.hostname.includes("upmeme")) return true;
+    const host = u.hostname.toLowerCase();
+    if (host.endsWith(".vercel.app") && (host.includes("upmeme") || host.includes("meme-battles"))) {
+      return true;
+    }
+    if (host.includes("meme-battles")) return true;
   } catch {
     // ignore invalid origin
   }
