@@ -163,45 +163,6 @@ function splitPotRaw(potRawBigInt) {
   return payouts.map((x) => x.toString());
 }
 
-// ---------------------------
-// Claims (Profile -> Rewards)
-// ---------------------------
-
-function buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce }) {
-  return [
-    "MemeBattles League",
-    "Action: LEAGUE_CLAIM",
-    `ChainId: ${chainId}`,
-    `Recipient: ${String(recipient).toLowerCase()}`,
-    `Period: ${period}`,
-    `EpochStart: ${epochStart}`,
-    `Category: ${category}`,
-    `Rank: ${rank}`,
-    `Nonce: ${nonce}`,
-  ].join("\n");
-}
-
-async function consumeNonce(chainId, address, nonce) {
-  const { rows } = await pool.query(
-    `SELECT nonce, expires_at, used_at
-     FROM auth_nonces
-     WHERE chain_id = $1 AND address = $2
-     LIMIT 1`,
-    [chainId, address]
-  );
-  const row = rows[0];
-  if (!row) throw new Error("Nonce not found");
-  if (row.used_at) throw new Error("Nonce already used");
-  const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
-  if (!exp || Date.now() > exp) throw new Error("Nonce expired");
-  if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch");
-
-  await pool.query(
-    `UPDATE auth_nonces SET used_at = NOW() WHERE chain_id = $1 AND address = $2`,
-    [chainId, address]
-  );
-}
-
 async function computeTotalLeagueFeeRawInRange(chainId, startIso, endIso, protocolFeeBps, leagueFeeBps) {
   // IMPORTANT:
   // curve_trades.bnb_amount_raw is:
