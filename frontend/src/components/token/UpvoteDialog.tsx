@@ -429,6 +429,11 @@ if (balanceWei != null) {
             detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
           })
         );
+        window.dispatchEvent(
+          new CustomEvent("upmeme:txConfirmed", {
+            detail: { kind: "upvote", chainId, campaignAddress: safeLowerHex(campaignAddress), txHash: tx?.hash },
+          })
+        );
       } catch {}
     } catch (e: any) {
       // Errors thrown via `fail(...)` already displayed a toast.

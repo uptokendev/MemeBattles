@@ -538,6 +538,30 @@ try {
 
   // --- WRITES ---
 
+  function emitTxConfirmed(detail: any) {
+    try {
+      if (typeof window === "undefined") return;
+      window.dispatchEvent(new CustomEvent("upmeme:txConfirmed", { detail }));
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function legacyGasOverrides(extra: any = {}) {
+    // BSC (56/97) is legacy gas. Some RPCs log noisy errors for `eth_maxPriorityFeePerGas`.
+    // Force a legacy tx by providing gasPrice and type=0 when available.
+    try {
+      const p: any = signer?.provider ?? walletProvider ?? readProvider;
+      if (!p || typeof p.send !== "function") return extra;
+      const gpHex = await p.send("eth_gasPrice", []);
+      const gasPrice = gpHex ? BigInt(gpHex) : 0n;
+      if (gasPrice > 0n) return { ...extra, gasPrice, type: 0 };
+      return extra;
+    } catch {
+      return extra;
+    }
+  }
+
   const createCampaign = useCallback(
     async (params: {
       name: string;
@@ -587,12 +611,14 @@ try {
         lpReceiver: params.lpReceiver || ethers.ZeroAddress,
         initialBuyBnbWei: initialBuyBnbWei,
         },
-        { value: valueToSend }
+        await legacyGasOverrides({ value: valueToSend })
       );
 
-      return tx.wait();
+      const receipt = await tx.wait();
+      emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash });
+      return receipt;
     },
-    [getFactoryWrite, getFactoryRead]
+    [getFactoryWrite, getFactoryRead, activeChainId]
   );
 
   const buyTokens = useCallback(
@@ -601,12 +627,12 @@ try {
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
 
-      const tx = await campaign.buyExactTokens(amountWei, maxCostWei, {
-        value: maxCostWei,
-      });
-      return tx.wait();
+      const tx = await campaign.buyExactTokens(amountWei, maxCostWei, await legacyGasOverrides({ value: maxCostWei }));
+      const receipt = await tx.wait();
+      emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+      return receipt;
     },
-    [signer]
+    [signer, activeChainId]
   );
 
   const sellTokens = useCallback(
@@ -615,10 +641,12 @@ try {
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
 
-      const tx = await campaign.sellExactTokens(amountWei, minAmountWei);
-      return tx.wait();
+      const tx = await campaign.sellExactTokens(amountWei, minAmountWei, await legacyGasOverrides());
+      const receipt = await tx.wait();
+      emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+      return receipt;
     },
-    [signer]
+    [signer, activeChainId]
   );
 
   const finalizeCampaign = useCallback(
@@ -627,10 +655,12 @@ try {
       if (!signer) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
 
-      const tx = await campaign.finalize(minTokens, minBnb);
-      return tx.wait();
+      const tx = await campaign.finalize(minTokens, minBnb, await legacyGasOverrides());
+      const receipt = await tx.wait();
+      emitTxConfirmed({ kind: "finalize", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+      return receipt;
     },
-    [signer]
+    [signer, activeChainId]
   );
 
   return {

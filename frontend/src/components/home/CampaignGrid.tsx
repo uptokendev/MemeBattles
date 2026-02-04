@@ -89,7 +89,9 @@ function buildQueryString(params: Record<string, any>) {
 
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
   const qs = buildQueryString(params);
-  const r = await fetch(`/api/campaigns?${qs}`);
+  // Avoid CDN/browser caching for dynamic leaderboards (votes, trending, etc.).
+  // Vercel edge caching keys on the URL, so include a changing param when callers want a refresh.
+  const r = await fetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
   const j = await r.json();
   if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
   return j as CampaignFeedResponse;
@@ -125,17 +127,21 @@ const { patchByCampaign } = useLeagueRealtime({
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
-  // Immediately refresh the feed after a confirmed upvote so the card order and vote counts
-  // update without requiring a hard reload.
+  // Immediately refresh the feed after a confirmed tx (upvote/buy/sell/finalize)
+  // so the card order and vote counts update without requiring a hard reload.
   useEffect(() => {
-    const onUpvote = (e: any) => {
+    const onRefresh = (e: any) => {
       const d = e?.detail ?? {};
       const cid = Number(d.chainId ?? NaN);
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("upmeme:upvoteConfirmed", onUpvote as any);
-    return () => window.removeEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+    window.addEventListener("upmeme:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("upmeme:txConfirmed", onRefresh as any);
+    return () => {
+      window.removeEventListener("upmeme:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("upmeme:txConfirmed", onRefresh as any);
+    };
   }, [activeChainId]);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -169,7 +175,7 @@ const { patchByCampaign } = useLeagueRealtime({
         if (DEBUG) {
           console.debug('[CampaignGrid] fetch first page params', { ...baseParams, cursor: 0 });
         }
-        const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0 });
+        const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0, _r: refetchNonce });
         if (!mounted) return;
         if (DEBUG) {
           console.debug('[CampaignGrid] first page response', {
@@ -268,7 +274,7 @@ const { patchByCampaign } = useLeagueRealtime({
       if (DEBUG) {
         console.debug('[CampaignGrid] loadMore params', { ...baseParams, cursor: nextCursor });
       }
-      const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor });
+      const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor, _r: refetchNonce });
       if (DEBUG) {
         console.debug('[CampaignGrid] loadMore response', {
           count: resp.items?.length ?? 0,

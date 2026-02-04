@@ -53,8 +53,18 @@ export const useTokenProcessing = () => {
 
       // Navigate after showing success
       setTimeout(() => {
-        toast.success("Token created successfully!");
-        navigate(redirectToRef.current ?? "/");
+        // IMPORTANT: do not navigate to the Showcase as a fallback if we simply haven't
+        // resolved the campaign address yet (indexer / RPC delay). Wait briefly for the
+        // caller to provide a redirect path.
+        (async () => {
+          const started = Date.now();
+          const maxWaitMs = 20000;
+          while (!redirectToRef.current && Date.now() - started < maxWaitMs) {
+            await new Promise((r) => setTimeout(r, 500));
+          }
+          toast.success("Token created successfully!");
+          navigate(redirectToRef.current ?? "/");
+        })();
       }, PROCESSING_TIMING.SUCCESS_NAVIGATION_DELAY);
     }, PROCESSING_TIMING.TOTAL_PROCESS_DURATION);
 

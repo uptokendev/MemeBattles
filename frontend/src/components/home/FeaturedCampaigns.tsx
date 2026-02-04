@@ -80,16 +80,20 @@ const { patchByCampaign } = useLeagueRealtime({
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Immediately refresh featured sorting after a confirmed upvote.
+  // Immediately refresh featured sorting after a confirmed tx (upvote/buy/sell/finalize).
   useEffect(() => {
-    const onUpvote = (e: any) => {
+    const onRefresh = (e: any) => {
       const d = e?.detail ?? {};
       const cid = Number(d.chainId ?? NaN);
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("upmeme:upvoteConfirmed", onUpvote as any);
-    return () => window.removeEventListener("upmeme:upvoteConfirmed", onUpvote as any);
+    window.addEventListener("upmeme:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("upmeme:txConfirmed", onRefresh as any);
+    return () => {
+      window.removeEventListener("upmeme:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("upmeme:txConfirmed", onRefresh as any);
+    };
   }, [activeChainId]);
 
   useEffect(() => {
@@ -98,7 +102,10 @@ const { patchByCampaign } = useLeagueRealtime({
       setLoading(true);
       setErr(null);
       try {
-        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=24h&limit=20`);
+        // Avoid edge/browser caching so vote counts/order refresh immediately after tx confirmation.
+        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=24h&limit=20&_r=${refetchNonce}`, {
+          cache: "no-store" as any,
+        });
         const j = await r.json();
         if (!mounted) return;
         setItems(Array.isArray(j.items) ? j.items : []);
