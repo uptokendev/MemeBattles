@@ -98,6 +98,7 @@ const Profile = () => {
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
+  const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
 
   const [created, setCreated] = useState<
     Array<{
@@ -555,7 +556,7 @@ const Profile = () => {
   }, [created]);
 
   return (
-        <div className="w-full min-h-[100dvh] pt-10 md:pt-10 lg:pt-10 pl-0 lg:pl-0 overflow-y-auto">
+        <div className="w-full min-h-[100dvh] pt-4 md:pt-6 lg:pt-6 pl-0 lg:pl-0 overflow-y-auto">
       {/* Disconnect Overlay */}
       {!isConnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
@@ -575,7 +576,7 @@ const Profile = () => {
       )}
 
       <div
-        className={`p-4 md:p-6 ${
+        className={`px-3 md:px-5 pb-5 md:pb-6 pt-2 md:pt-4 ${
           !isConnected ? "blur-md pointer-events-none select-none" : ""
         }`}
       >
@@ -710,7 +711,7 @@ const Profile = () => {
             {[
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
-              { id: "replies" as ProfileTab, label: "Replies", badge: null },
+              { id: "replies" as ProfileTab, label: "Activity", badge: null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
             ].map((tab) => (
@@ -900,18 +901,43 @@ const Profile = () => {
           </div>
         )}
 
-        {/* REPLIES TAB: best-fit = Activity feed */}
+        {/* REPLIES TAB: Activity feed */}
         {activeTab === "replies" && (
-          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-8 md:p-12 border border-border text-center">
-            <p className="font-retro text-muted-foreground text-sm md:text-base">
-              Replies will become your <span className="text-foreground">Activity</span> feed:
-              buys/sells, creations, and interactions. To power this we’ll either:
-              (1) index events (recommended), or (2) fetch recent trades per campaign (heavier).
-            </p>
-          </div>
-        )}
+          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {[
+                { id: "trades", label: "Trades" },
+                { id: "comments", label: "Comments" },
+                { id: "created", label: "Created" },
+                { id: "interactions", label: "Interactions" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActivityTab(t.id as typeof activityTab)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-retro transition-colors ${
+                    activityTab === t.id
+                      ? "bg-accent/20 text-accent border-accent/40"
+                      : "bg-transparent text-muted-foreground border-border hover:text-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
 
-        {/* NOTIFICATIONS TAB */}
+            <div className="rounded-xl border border-border bg-background/40 p-4 md:p-6 text-center">
+              <p className="font-retro text-muted-foreground text-sm md:text-base">
+                Activity will be powered by <span className="text-foreground">indexed events</span> (recommended),
+                not per-campaign polling. This keeps the feed fast and efficient.
+              </p>
+              <p className="mt-2 font-retro text-muted-foreground text-xs md:text-sm">
+                Showing: <span className="text-foreground">{activityTab}</span>
+              </p>
+            </div>
+          </div>
+          )}
+
+          {/* NOTIFICATIONS TAB */}
         {activeTab === "notifications" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-8 md:p-12 border border-border text-center">
             <p className="font-retro text-muted-foreground text-sm md:text-base">
@@ -938,3 +964,4 @@ const Profile = () => {
 };
 
 export default Profile;
+
