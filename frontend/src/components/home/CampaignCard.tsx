@@ -50,6 +50,12 @@ export function CampaignCard({
 }) {
   const navigate = useNavigate();
   const addr = String(vm.campaignAddress ?? "").toLowerCase();
+  const creatorAddr = String(vm.creator ?? "").trim();
+  const canOpenProfile = creatorAddr.length > 0;
+  const openProfile = () => {
+    if (!canOpenProfile) return;
+    navigate(`/profile?address=${encodeURIComponent(creatorAddr)}`);
+  };
 
   return (
     <div
@@ -98,10 +104,48 @@ export function CampaignCard({
             <img
               src="/assets/profile_placeholder.png"
               alt="Creator"
-              className="w-7 h-7 rounded-full object-cover border border-border/60"
+              className={cn(
+                "w-7 h-7 rounded-full object-cover border border-border/60",
+                canOpenProfile ? "cursor-pointer hover:border-accent/60" : ""
+              )}
               draggable={false}
+              role={canOpenProfile ? "button" : undefined}
+              tabIndex={canOpenProfile ? 0 : undefined}
+              onClick={(e) => {
+                if (!canOpenProfile) return;
+                e.stopPropagation();
+                openProfile();
+              }}
+              onKeyDown={(e) => {
+                if (!canOpenProfile) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openProfile();
+                }
+              }}
             />
-            <div className="text-xs text-muted-foreground truncate">
+            <div
+              className={cn(
+                "text-xs text-muted-foreground truncate",
+                canOpenProfile ? "cursor-pointer hover:text-foreground" : ""
+              )}
+              role={canOpenProfile ? "button" : undefined}
+              tabIndex={canOpenProfile ? 0 : undefined}
+              onClick={(e) => {
+                if (!canOpenProfile) return;
+                e.stopPropagation();
+                openProfile();
+              }}
+              onKeyDown={(e) => {
+                if (!canOpenProfile) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openProfile();
+                }
+              }}
+            >
               {vm.creator ? shortAddr(vm.creator) : "—"}
             </div>
           </div>

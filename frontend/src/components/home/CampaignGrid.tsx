@@ -319,7 +319,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       </div>
 
       {loading && !vms.length ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 justify-items-center">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
@@ -333,7 +333,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 justify-items-center">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
             {vms.map((vm) => (
               <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />
             ))}
