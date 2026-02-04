@@ -54,7 +54,7 @@ export function CampaignCard({
   return (
     <div
       className={cn(
-        "group relative flex flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
+        "group relative flex w-full max-w-[clamp(160px,20vw,210px)] flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
         "transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]",
         className
       )}
