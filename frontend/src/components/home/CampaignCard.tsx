@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
@@ -52,12 +51,10 @@ export function CampaignCard({
   const navigate = useNavigate();
   const addr = String(vm.campaignAddress ?? "").toLowerCase();
 
-  const buyLabel = vm.isDexTrading ? "On DEX" : "Buy";
-
   return (
     <div
       className={cn(
-        "group relative rounded-2xl overflow-hidden border border-border/50 bg-card/60",
+        "group relative flex flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
         "transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]",
         className
       )}
@@ -68,11 +65,11 @@ export function CampaignCard({
         onClick={() => navigate(`/token/${addr}`)}
         aria-label={`Open ${vm.name}`}
       >
-        <div className="relative">
+        <div className="relative aspect-square w-full">
           <img
             src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
             alt={vm.name}
-            className="w-full h-[140px] object-cover bg-muted"
+            className="h-full w-full object-cover bg-muted"
             draggable={false}
             loading="lazy"
           />
@@ -82,7 +79,7 @@ export function CampaignCard({
       </button>
 
       {/* Content */}
-      <div className="p-4">
+      <div className="flex aspect-square flex-col p-4">
         {/* Title + upvotes */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -135,20 +132,6 @@ export function CampaignCard({
           />
         </div>
 
-        {/* CTA */}
-        <div className="mt-4 flex items-center justify-between gap-2">
-          <Button
-            className={cn(
-              "w-full font-retro",
-              vm.isDexTrading
-                ? "bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30"
-                : "bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-            )}
-            onClick={() => navigate(`/token/${addr}`)}
-          >
-            {buyLabel}
-          </Button>
-        </div>
       </div>
     </div>
   );

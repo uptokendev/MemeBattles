@@ -323,7 +323,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
-              className="h-[320px] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+              className="aspect-[1/2] w-full rounded-2xl border border-border/40 bg-card/40 animate-pulse"
             />
           ))}
         </div>
