@@ -1892,13 +1892,13 @@ style={!isMobile ? { flex: "2" } : undefined}
                 )
               ) : (
                 <div className="w-full h-full min-h-[260px]">
-                <CurvePriceChart
-  campaignAddress={campaign?.campaign}
-  curvePointsOverride={curvePointsForUi}
-  loadingOverride={liveCurveLoading}
-  errorOverride={liveCurveError}
-/>
-                </div>
+  <CurvePriceChart
+    campaignAddress={campaign?.campaign}
+    curvePointsOverride={curvePointsForUi}
+    loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
+    errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
+  />
+</div>
               )}
             </div>
           </Card>
