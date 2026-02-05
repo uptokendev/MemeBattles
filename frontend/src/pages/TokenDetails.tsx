@@ -499,6 +499,54 @@ const TokenDetails = () => {
     campaign?.campaign ?? campaignAddress,
     wallet.chainId
   );
+
+  // Optimistic header override: makes Price / Market Cap update instantly on confirmed tx,
+  // then auto-clears once realtime catches up (or after a timeout).
+  const [optimisticHeader, setOptimisticHeader] = useState<{
+    priceBnb: number | null;
+    mcapBnb: number | null;
+    expiresAt: number;
+  } | null>(null);
+
+  // Auto-clear when expired or when rtStats catches up to optimistic price.
+  useEffect(() => {
+    if (!optimisticHeader) return;
+
+    const t = window.setInterval(() => {
+      const now = Date.now();
+      if (now >= optimisticHeader.expiresAt) {
+        setOptimisticHeader(null);
+        return;
+      }
+
+      const rtP = rtStats?.lastPriceBnb;
+      const optP = optimisticHeader.priceBnb;
+      if (rtP != null && optP != null && Number.isFinite(rtP) && Number.isFinite(optP) && rtP > 0) {
+        const rel = Math.abs((rtP - optP) / rtP);
+        if (rel < 0.01) { // within 1%
+          setOptimisticHeader(null);
+        }
+      }
+    }, 500);
+
+    return () => window.clearInterval(t);
+  }, [optimisticHeader, rtStats?.lastPriceBnb]);
+
+  // Use optimistic values while they are active.
+  const effectiveRtStats = useMemo(() => {
+    if (!optimisticHeader) return rtStats;
+    if (Date.now() >= optimisticHeader.expiresAt) return rtStats;
+
+    const next: any = { ...(rtStats ?? {}) };
+    if (optimisticHeader.priceBnb != null && Number.isFinite(optimisticHeader.priceBnb)) {
+      next.lastPriceBnb = optimisticHeader.priceBnb;
+    }
+    if (optimisticHeader.mcapBnb != null && Number.isFinite(optimisticHeader.mcapBnb)) {
+      next.marketcapBnb = optimisticHeader.mcapBnb;
+    }
+    return next;
+  }, [rtStats, optimisticHeader]);
+
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   // If it looks like milliseconds, convert to seconds.
@@ -516,7 +564,7 @@ const toSeconds = (ts: number): number => {
 
     // End price: prefer realtime last trade price, else on-chain price, else latest trade price
     const endPrice =
-      (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
+      (effectiveRtStats?.lastPriceBnb != null ? Number(effectiveRtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
 
     const isGraduated = Boolean(
@@ -586,8 +634,8 @@ const toSeconds = (ts: number): number => {
     const name = campaign?.name ?? "Token";
     const stats = summary?.stats;
 
-    const rtMarketCap = rtStats?.marketcapBnb;
-    const rtPrice = rtStats?.lastPriceBnb;
+    const rtMarketCap = effectiveRtStats?.marketcapBnb;
+    const rtPrice = effectiveRtStats?.lastPriceBnb;
 
     return {
       image: campaign?.logoURI || "/placeholder.svg",
@@ -612,7 +660,7 @@ const toSeconds = (ts: number): number => {
       // Timeframe analytics (BNB volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, rtStats]);
+  }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, effectiveRtStats]);
   // Keep USD reference price available for UI conversions and ATH tracking.
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
@@ -634,14 +682,14 @@ const bnbUsd = useMemo(() => {
 
     if (displayDenom === "BNB") return bnbLabel;
 
-    const raw = rtStats?.marketcapBnb;
+    const raw = effectiveRtStats?.marketcapBnb;
     const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(bnbLabel);
     if (mcBnb == null) return "—";
 
     if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
     return formatCompactUsd(mcBnb * bnbUsd);
-  }, [displayDenom, tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
+  }, [displayDenom, tokenData.marketCap, effectiveRtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
   // IMPORTANT: Use raw numeric marketcapBnb when available; never parse from a formatted label.
@@ -652,7 +700,7 @@ const bnbUsd = useMemo(() => {
     if (!bnbUsd) return null;
     const usd = mcBnb * bnbUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
-  }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
+  }, [tokenData.marketCap, effectiveRtStats?.marketcapBnb, bnbUsd]);
 
   const priceDisplay = useMemo(() => {
     const bnbLabel = tokenData.price;
@@ -1224,6 +1272,26 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
 
+        // Optimistic header: price/mcap update instantly (until realtime catches up).
+        try {
+          const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
+          const cost = Number(ethers.formatEther(costWei ?? 0n));
+          const priceBnb = tokens > 0 ? cost / tokens : null;
+
+          let mcapBnb: number | null = null;
+          const rtP = rtStats?.lastPriceBnb;
+          const rtM = rtStats?.marketcapBnb;
+          if (priceBnb != null && rtP != null && rtM != null && rtP > 0 && Number.isFinite(rtP) && Number.isFinite(rtM)) {
+            mcapBnb = Number(rtM) * (priceBnb / Number(rtP));
+          }
+
+          setOptimisticHeader({
+            priceBnb: priceBnb != null && Number.isFinite(priceBnb) ? priceBnb : null,
+            mcapBnb: mcapBnb != null && Number.isFinite(mcapBnb) ? mcapBnb : null,
+            expiresAt: Date.now() + 120_000,
+          });
+        } catch {}
+
         // Optimistic: append the trade immediately so the chart + trades tab update
         // without waiting for the realtime indexer to ingest and publish.
         try {
@@ -1298,6 +1366,26 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
         });
 
         const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
+
+        // Optimistic header for sells as well.
+        try {
+          const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
+          const payout = Number(ethers.formatEther(payoutWei ?? 0n));
+          const priceBnb = tokens > 0 ? payout / tokens : null;
+
+          let mcapBnb: number | null = null;
+          const rtP = rtStats?.lastPriceBnb;
+          const rtM = rtStats?.marketcapBnb;
+          if (priceBnb != null && rtP != null && rtM != null && rtP > 0 && Number.isFinite(rtP) && Number.isFinite(rtM)) {
+            mcapBnb = Number(rtM) * (priceBnb / Number(rtP));
+          }
+
+          setOptimisticHeader({
+            priceBnb: priceBnb != null && Number.isFinite(priceBnb) ? priceBnb : null,
+            mcapBnb: mcapBnb != null && Number.isFinite(mcapBnb) ? mcapBnb : null,
+            expiresAt: Date.now() + 120_000,
+          });
+        } catch {}
 
         // Optimistic: append the trade immediately so the chart + trades tab update
         // without waiting for the realtime indexer to ingest and publish.
