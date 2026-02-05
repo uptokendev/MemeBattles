@@ -4,7 +4,7 @@
  * chart, trading interface, transactions, and holder distribution
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Copy, ExternalLink, Globe, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -442,130 +442,21 @@ const TokenDetails = () => {
   const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(campaign?.campaign);
   const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? liveCurvePoints : [];
 
-  // Optimistic trades (for instant UI while the indexer/Ably catches up)
-  // - We append these immediately after a confirmed tx receipt.
-  // - They are kept "sticky" for a short time even after appearing in the live feed,
-  //   to avoid flicker when live data momentarily refreshes/clears.
-  const [optimisticCurvePoints, setOptimisticCurvePoints] = useState<
-    (CurveTradePoint & { __opt?: { status: "pending" | "seen_in_live"; seenAt?: number; createdAt: number } })[]
-  >([]);
+  // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
+  const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
+  useEffect(() => {
+    if (liveCurvePointsSafe.length) lastCurvePointsRef.current = liveCurvePointsSafe;
+  }, [liveCurvePointsSafe]);
 
   const curvePointsForUi: CurveTradePoint[] = useMemo(() => {
-    const live = liveCurvePointsSafe;
-    if (!optimisticCurvePoints.length) return live;
-
-    // IMPORTANT: always keep optimistic points in the combined list.
-    // Dedupe below prefers the *live* point when both exist, but keeping the optimistic
-    // point prevents brief disappear/reappear flicker during live refresh gaps.
-    const keepOptimistic = optimisticCurvePoints;
-
-    // Combine then sort by timestamp ascending (chart code expects chronological order).
-    const combined = [...live, ...keepOptimistic].sort(
-      (a: any, b: any) => Number(a?.timestamp ?? 0) - Number(b?.timestamp ?? 0)
-    );
-
-    // Dedupe by txHash if present; otherwise fall back to (timestamp,type,from,tokensWei,nativeWei).
-    const seen = new Set<string>();
-    const out: CurveTradePoint[] = [];
-    for (const p of combined) {
-      const h = String((p as any)?.txHash ?? "").toLowerCase();
-      const key = h
-        ? `h:${h}`
-        : `k:${Number((p as any)?.timestamp ?? 0)}:${String((p as any)?.type ?? "")}::${String((p as any)?.from ?? "").toLowerCase()}::${String((p as any)?.tokensWei ?? 0n)}::${String((p as any)?.nativeWei ?? 0n)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(p);
-    }
-    return out;
-  }, [liveCurvePointsSafe, optimisticCurvePoints]);
-
-  // Prune optimistic points:
-  // - If a txHash appears in the live feed, mark it as "seen_in_live" and keep it for ~2s.
-  //   This avoids flicker if the live list momentarily refreshes/clears/returns a slice.
-  // - Also drop any optimistic points older than ~2 minutes.
-  useEffect(() => {
-    if (!optimisticCurvePoints.length) return;
-    const liveTx = new Set(liveCurvePointsSafe.map((p: any) => String(p?.txHash ?? "").toLowerCase()).filter(Boolean));
-    const nowSec = Math.floor(Date.now() / 1000);
-    const nowMs = Date.now();
-    setOptimisticCurvePoints((prev) => {
-      const next = prev.map((p: any) => {
-        const h = String(p?.txHash ?? "").toLowerCase();
-        const opt = p?.__opt ?? { status: "pending", createdAt: nowMs };
-        if (h && liveTx.has(h) && opt.status !== "seen_in_live") {
-          return { ...p, __opt: { ...opt, status: "seen_in_live", seenAt: nowMs } };
-        }
-        return p;
-      });
-
-      return next
-        .filter((p: any) => {
-          const ts = Number(p?.timestamp ?? 0);
-          if (!(ts > 0) || nowSec - ts >= 120) return false; // keep at most ~2 minutes
-
-          const opt = p?.__opt;
-          if (opt?.status === "seen_in_live" && opt?.seenAt && nowMs - opt.seenAt > 2000) {
-            return false; // remove 2s after live confirmation
-          }
-          return true;
-        })
-        .slice(0, 50);
-    });
-  }, [liveCurvePointsSafe, optimisticCurvePoints.length]);
+    return liveCurvePointsSafe.length ? liveCurvePointsSafe : lastCurvePointsRef.current;
+  }, [liveCurvePointsSafe]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
   const { stats: rtStats } = useTokenStatsRealtime(
     campaign?.campaign ?? campaignAddress,
     wallet.chainId
   );
-
-  // Optimistic header override: makes Price / Market Cap update instantly on confirmed tx,
-  // then auto-clears once realtime catches up (or after a timeout).
-  const [optimisticHeader, setOptimisticHeader] = useState<{
-    priceBnb: number | null;
-    mcapBnb: number | null;
-    expiresAt: number;
-  } | null>(null);
-
-  // Auto-clear when expired or when rtStats catches up to optimistic price.
-  useEffect(() => {
-    if (!optimisticHeader) return;
-
-    const t = window.setInterval(() => {
-      const now = Date.now();
-      if (now >= optimisticHeader.expiresAt) {
-        setOptimisticHeader(null);
-        return;
-      }
-
-      const rtP = rtStats?.lastPriceBnb;
-      const optP = optimisticHeader.priceBnb;
-      if (rtP != null && optP != null && Number.isFinite(rtP) && Number.isFinite(optP) && rtP > 0) {
-        const rel = Math.abs((rtP - optP) / rtP);
-        if (rel < 0.01) { // within 1%
-          setOptimisticHeader(null);
-        }
-      }
-    }, 500);
-
-    return () => window.clearInterval(t);
-  }, [optimisticHeader, rtStats?.lastPriceBnb]);
-
-  // Use optimistic values while they are active.
-  const effectiveRtStats = useMemo(() => {
-    if (!optimisticHeader) return rtStats;
-    if (Date.now() >= optimisticHeader.expiresAt) return rtStats;
-
-    const next: any = { ...(rtStats ?? {}) };
-    if (optimisticHeader.priceBnb != null && Number.isFinite(optimisticHeader.priceBnb)) {
-      next.lastPriceBnb = optimisticHeader.priceBnb;
-    }
-    if (optimisticHeader.mcapBnb != null && Number.isFinite(optimisticHeader.mcapBnb)) {
-      next.marketcapBnb = optimisticHeader.mcapBnb;
-    }
-    return next;
-  }, [rtStats, optimisticHeader]);
-
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   // If it looks like milliseconds, convert to seconds.
@@ -583,7 +474,7 @@ const toSeconds = (ts: number): number => {
 
     // End price: prefer realtime last trade price, else on-chain price, else latest trade price
     const endPrice =
-      (effectiveRtStats?.lastPriceBnb != null ? Number(effectiveRtStats.lastPriceBnb) : undefined) ??
+      (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
 
     const isGraduated = Boolean(
@@ -594,7 +485,7 @@ const toSeconds = (ts: number): number => {
     // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
     // - Do NOT ethers.formatEther(pricePerToken) here.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-      curvePointsForUi.map((p: any) => ({
+  liveCurvePointsSafe.map((p: any) => ({
     timestamp: Number(p.timestamp ?? 0),
     pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
     nativeWei: p.nativeWei,
@@ -645,7 +536,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [campaign?.symbol, curvePointsForUi, metrics, rtStats?.lastPriceBnb]);
+  }, [campaign?.symbol, liveCurvePointsSafe, metrics]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -653,8 +544,8 @@ const toSeconds = (ts: number): number => {
     const name = campaign?.name ?? "Token";
     const stats = summary?.stats;
 
-    const rtMarketCap = effectiveRtStats?.marketcapBnb;
-    const rtPrice = effectiveRtStats?.lastPriceBnb;
+    const rtMarketCap = rtStats?.marketcapBnb;
+    const rtPrice = rtStats?.lastPriceBnb;
 
     return {
       image: campaign?.logoURI || "/placeholder.svg",
@@ -679,7 +570,7 @@ const toSeconds = (ts: number): number => {
       // Timeframe analytics (BNB volume + price change)
       metrics: timeframeTiles,
     };
-  }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, effectiveRtStats]);
+  }, [campaign, curveReserveWei, metrics, summary, timeframeTiles, rtStats]);
   // Keep USD reference price available for UI conversions and ATH tracking.
   // (Cached + throttled inside the hook.)
   const { price: bnbUsdPrice, loading: bnbUsdLoading } = useBnbUsdPrice(true);
@@ -701,14 +592,14 @@ const bnbUsd = useMemo(() => {
 
     if (displayDenom === "BNB") return bnbLabel;
 
-    const raw = effectiveRtStats?.marketcapBnb;
+    const raw = rtStats?.marketcapBnb;
     const mcBnb = raw != null && Number.isFinite(raw) ? Number(raw) : parseBnbLabel(bnbLabel);
     if (mcBnb == null) return "—";
 
     if (!bnbUsd) return bnbUsdLoading ? "…" : "—";
 
     return formatCompactUsd(mcBnb * bnbUsd);
-  }, [displayDenom, tokenData.marketCap, effectiveRtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
+  }, [displayDenom, tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd, bnbUsdLoading]);
 
   // Always-USD market cap label for ATH tracking (independent of the denomination toggle).
   // IMPORTANT: Use raw numeric marketcapBnb when available; never parse from a formatted label.
@@ -719,7 +610,7 @@ const bnbUsd = useMemo(() => {
     if (!bnbUsd) return null;
     const usd = mcBnb * bnbUsd;
     return Number.isFinite(usd) && usd > 0 ? formatCompactUsd(usd) : null;
-  }, [tokenData.marketCap, effectiveRtStats?.marketcapBnb, bnbUsd]);
+  }, [tokenData.marketCap, rtStats?.marketcapBnb, bnbUsd]);
 
   const priceDisplay = useMemo(() => {
     const bnbLabel = tokenData.price;
@@ -783,7 +674,7 @@ const bnbUsd = useMemo(() => {
     // NOTE: This is a best-effort view and does not include transfers.
     const balances = new Map<string, bigint>();
 
-    for (const p of curvePointsForUi) {
+    for (const p of liveCurvePointsSafe) {
       const addr = (p.from || "").toLowerCase();
       if (!addr) continue;
 
@@ -837,7 +728,7 @@ const bnbUsd = useMemo(() => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [curvePointsForUi, metrics?.liquiditySupply]);
+  }, [liveCurvePointsSafe, metrics?.liquiditySupply]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
@@ -944,7 +835,7 @@ const bnbUsd = useMemo(() => {
     // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
-    const next: TxRow[] = [...curvePointsForUi]
+    const next: TxRow[] = [...liveCurvePointsSafe]
   .slice(-50)
   .reverse()
   .map((p: any, idx: number) => {
@@ -973,8 +864,8 @@ const bnbUsd = useMemo(() => {
     };
   });
 
-    setTxs(next);
-  }, [campaign, curvePointsForUi, tokenData.marketCap, metrics]);
+setTxs(next);
+  }, [campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
 
   // DexScreener gating: only show external DEX chart after graduation / finalize.
   // Prefer explicit flags when available; fall back to sold >= graduationTarget for older deployments.
@@ -1291,58 +1182,6 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
 
-        // Optimistic header: price/mcap update instantly (until realtime catches up).
-        try {
-          const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
-          const cost = Number(ethers.formatEther(costWei ?? 0n));
-          const priceBnb = tokens > 0 ? cost / tokens : null;
-
-          let mcapBnb: number | null = null;
-          const rtP = rtStats?.lastPriceBnb;
-          const rtM = rtStats?.marketcapBnb;
-          if (priceBnb != null && rtP != null && rtM != null && rtP > 0 && Number.isFinite(rtP) && Number.isFinite(rtM)) {
-            mcapBnb = Number(rtM) * (priceBnb / Number(rtP));
-          }
-
-          setOptimisticHeader({
-            priceBnb: priceBnb != null && Number.isFinite(priceBnb) ? priceBnb : null,
-            mcapBnb: mcapBnb != null && Number.isFinite(mcapBnb) ? mcapBnb : null,
-            expiresAt: Date.now() + 120_000,
-          });
-        } catch {}
-
-        // Optimistic: append the trade immediately so the chart + trades tab update
-        // without waiting for the realtime indexer to ingest and publish.
-        try {
-          const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-          const from = String(wallet.account || "").toLowerCase();
-          if (/^0x[a-f0-9]{64}$/i.test(txHash) && from) {
-            const ts = Math.floor(Date.now() / 1000);
-            const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
-            const bnb = Number(ethers.formatEther(costWei ?? 0n));
-            const pricePerToken = tokens > 0 ? bnb / tokens : 0;
-            setOptimisticCurvePoints((prev) => {
-              const exists = prev.some((p: any) => String(p?.txHash ?? "").toLowerCase() === txHash.toLowerCase());
-              if (exists) return prev;
-              const next: CurveTradePoint = {
-                type: "buy",
-                from,
-                to: String(campaign.campaign).toLowerCase(),
-                tokensWei: amountWei,
-                nativeWei: costWei ?? 0n,
-                pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
-                timestamp: ts,
-                txHash,
-                blockNumber: 0,
-                logIndex: -1,
-              };
-              return ([{ ...(next as any), __opt: { status: "pending", createdAt: Date.now() } }, ...prev] as any).slice(0, 50);
-            });
-          }
-        } catch {
-          // ignore
-        }
-
         toast({
           title: "Buy confirmed",
           description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
@@ -1385,58 +1224,6 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
         });
 
         const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
-
-        // Optimistic header for sells as well.
-        try {
-          const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
-          const payout = Number(ethers.formatEther(payoutWei ?? 0n));
-          const priceBnb = tokens > 0 ? payout / tokens : null;
-
-          let mcapBnb: number | null = null;
-          const rtP = rtStats?.lastPriceBnb;
-          const rtM = rtStats?.marketcapBnb;
-          if (priceBnb != null && rtP != null && rtM != null && rtP > 0 && Number.isFinite(rtP) && Number.isFinite(rtM)) {
-            mcapBnb = Number(rtM) * (priceBnb / Number(rtP));
-          }
-
-          setOptimisticHeader({
-            priceBnb: priceBnb != null && Number.isFinite(priceBnb) ? priceBnb : null,
-            mcapBnb: mcapBnb != null && Number.isFinite(mcapBnb) ? mcapBnb : null,
-            expiresAt: Date.now() + 120_000,
-          });
-        } catch {}
-
-        // Optimistic: append the trade immediately so the chart + trades tab update
-        // without waiting for the realtime indexer to ingest and publish.
-        try {
-          const txHash = String(receipt?.transactionHash || receipt?.hash || "");
-          const from = String(wallet.account || "").toLowerCase();
-          if (/^0x[a-f0-9]{64}$/i.test(txHash) && from) {
-            const ts = Math.floor(Date.now() / 1000);
-            const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
-            const bnb = Number(ethers.formatEther(payoutWei ?? 0n));
-            const pricePerToken = tokens > 0 ? bnb / tokens : 0;
-            setOptimisticCurvePoints((prev) => {
-              const exists = prev.some((p: any) => String(p?.txHash ?? "").toLowerCase() === txHash.toLowerCase());
-              if (exists) return prev;
-              const next: CurveTradePoint = {
-                type: "sell",
-                from,
-                to: String(campaign.campaign).toLowerCase(),
-                tokensWei: amountWei,
-                nativeWei: payoutWei ?? 0n,
-                pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
-                timestamp: ts,
-                txHash,
-                blockNumber: 0,
-                logIndex: -1,
-              };
-              return ([{ ...(next as any), __opt: { status: "pending", createdAt: Date.now() } }, ...prev] as any).slice(0, 50);
-            });
-          }
-        } catch {
-          // ignore
-        }
 
         toast({
           title: "Sell confirmed",
@@ -1892,13 +1679,13 @@ style={!isMobile ? { flex: "2" } : undefined}
                 )
               ) : (
                 <div className="w-full h-full min-h-[260px]">
-  <CurvePriceChart
-    campaignAddress={campaign?.campaign}
-    curvePointsOverride={curvePointsForUi}
-    loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
-    errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
-  />
-</div>
+                <CurvePriceChart
+                  campaignAddress={campaign?.campaign}
+                  curvePointsOverride={curvePointsForUi}
+                  loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
+                  errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
+                />
+                </div>
               )}
             </div>
           </Card>
