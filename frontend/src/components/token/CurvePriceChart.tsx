@@ -103,22 +103,8 @@ const chartPoints: ChartPoint[] = useMemo(() => {
 }, [livePoints, bnbUsd]);
 
 // Render states (SAFE: hooks already executed)
-if (liveLoading) {
-  return (
-    <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-      Loading curve trades…
-    </div>
-  );
-}
-
-if (liveError) {
-  return (
-    <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-      {liveError}
-    </div>
-  );
-}
-
+// IMPORTANT: avoid chart "flicker" during realtime handoff by not replacing a non-empty
+// series with a loading/error placeholder. If we already have chartPoints, render them.
 if (bnbUsdLoading || !bnbUsd) {
   return (
     <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
@@ -136,6 +122,20 @@ if (bnbUsdError) {
 }
 
   if (chartPoints.length === 0) {
+    if (liveLoading) {
+      return (
+        <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
+          Loading curve trades…
+        </div>
+      );
+    }
+    if (liveError) {
+      return (
+        <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
+          {liveError}
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
         No curve data available yet.
