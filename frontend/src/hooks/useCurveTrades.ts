@@ -106,6 +106,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Only hard-reset state when the campaign address actually changes.
+  // This prevents brief "trade list resets" that can cause the chart to
+  // momentarily drop the latest candle while the indexer catches up.
+  const prevCampaignRef = useRef<string>("");
+
   const chainId = useMemo<SupportedChainId>(() => {
     const cid = Number(opts?.chainId ?? 97);
     return getActiveChainId(cid);
@@ -191,10 +196,18 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   // Initial snapshot + periodic reconcile
   useEffect(() => {
     const ac = new AbortController();
-    setPoints([]);
-    setLoading(true);
-    setError(null);
-    initialLoadedRef.current = false;
+    const curr = (campaignAddress || "").toLowerCase();
+    const prev = prevCampaignRef.current;
+    // Only reset when the campaign truly changed. Avoid resets caused by
+    // incidental prop changes (e.g., undefined -> 97 chainId) which can
+    // temporarily clear the trade series and cause chart flicker.
+    if (curr !== prev) {
+      prevCampaignRef.current = curr;
+      setPoints([]);
+      setLoading(true);
+      setError(null);
+      initialLoadedRef.current = false;
+    }
 
     pullSnapshot(ac.signal);
 
@@ -208,7 +221,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       clearInterval(t);
       ac.abort();
     };
-  }, [enabled, campaignAddress, chainId, pullSnapshot, reconcileMs]);
+  }, [enabled, campaignAddress, pullSnapshot, reconcileMs]);
 
   // Ably realtime stream (trade events) — shared per campaign to avoid multiple WebSockets.
   const ably = useAblyTokenChannel({ enabled: enabled && !!campaignAddress, chainId, campaignAddress });
