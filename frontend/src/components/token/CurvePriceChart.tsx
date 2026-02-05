@@ -1,7 +1,7 @@
 // src/components/token/CurvePriceChart.tsx
 // Market-cap chart for bonding-curve trades, rendered with TradingView Lightweight Charts.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
@@ -96,52 +96,44 @@ const liveError = errorOverride ?? live.error;
 
 const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
 
-const chartPoints: ChartPoint[] = useMemo(() => {
-  const usd = bnbUsd ?? 0;
+// Keep last known-good USD so we never blank during refresh.
+const lastUsdRef = useRef<number>(0);
+useEffect(() => {
+  if (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0) lastUsdRef.current = bnbUsd;
+}, [bnbUsd]);
+
+const usd = (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0 ? bnbUsd : lastUsdRef.current) || 0;
+
+const chartPointsComputed: ChartPoint[] = useMemo(() => {
   if (!usd || usd <= 0) return [];
   return toMarketCapPointsUsd(livePoints || [], usd);
-}, [livePoints, bnbUsd]);
+}, [livePoints, usd]);
 
-// Render states (SAFE: hooks already executed)
-// IMPORTANT: avoid chart "flicker" during realtime handoff by not replacing a non-empty
-// series with a loading/error placeholder. If we already have chartPoints, render them.
-if (bnbUsdLoading || !bnbUsd) {
-  return (
-    <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-      Loading USD conversion…
-    </div>
-  );
-}
+// Keep last non-empty points to avoid flicker on brief loading toggles.
+const lastPointsRef = useRef<ChartPoint[]>([]);
+useEffect(() => {
+  if (chartPointsComputed.length) lastPointsRef.current = chartPointsComputed;
+}, [chartPointsComputed]);
 
-if (bnbUsdError) {
-  return (
-    <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-      {bnbUsdError}
-    </div>
-  );
-}
+const renderPoints = chartPointsComputed.length ? chartPointsComputed : lastPointsRef.current;
 
-  if (chartPoints.length === 0) {
-    if (liveLoading) {
-      return (
-        <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-          Loading curve trades…
-        </div>
-      );
-    }
-    if (liveError) {
-      return (
-        <div className="flex items-center justify-center h-full text-xs text-destructive p-4">
-          {liveError}
-        </div>
-      );
-    }
-    return (
-      <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">
-        No curve data available yet.
-      </div>
-    );
+// Only show blocking placeholders when we truly have no points to render.
+if (renderPoints.length === 0) {
+  if (liveError) {
+    return <div className="flex items-center justify-center h-full text-xs text-destructive p-4">{liveError}</div>;
   }
+  if (bnbUsdError) {
+    return <div className="flex items-center justify-center h-full text-xs text-destructive p-4">{bnbUsdError}</div>;
+  }
+  if (liveLoading) {
+    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading curve trades…</div>;
+  }
+  if (bnbUsdLoading || !usd) {
+    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading USD conversion…</div>;
+  }
+  return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">No curve data available yet.</div>;
+}
+  
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -161,8 +153,8 @@ if (bnbUsdError) {
       </div>
 
       <div className="flex-1 min-h-[260px]">
-        <CurveTradesChart points={chartPoints} intervalSec={bucketSec} />
+        <CurveTradesChart points={renderPoints} intervalSec={bucketSec} />
       </div>
     </div>
   );
-};
+}
