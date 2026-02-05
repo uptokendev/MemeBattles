@@ -444,18 +444,20 @@ const TokenDetails = () => {
 
   // Optimistic trades (for instant UI while the indexer/Ably catches up)
   // - We append these immediately after a confirmed tx receipt.
-  // - They are removed automatically once the same txHash appears in the live feed.
-  const [optimisticCurvePoints, setOptimisticCurvePoints] = useState<CurveTradePoint[]>([]);
+  // - They are kept "sticky" for a short time even after appearing in the live feed,
+  //   to avoid flicker when live data momentarily refreshes/clears.
+  const [optimisticCurvePoints, setOptimisticCurvePoints] = useState<
+    (CurveTradePoint & { __opt?: { status: "pending" | "seen_in_live"; seenAt?: number; createdAt: number } })[]
+  >([]);
 
   const curvePointsForUi: CurveTradePoint[] = useMemo(() => {
     const live = liveCurvePointsSafe;
     if (!optimisticCurvePoints.length) return live;
 
-    const liveTx = new Set(live.map((p: any) => String(p?.txHash ?? "").toLowerCase()).filter(Boolean));
-    const keepOptimistic = optimisticCurvePoints.filter((p: any) => {
-      const h = String(p?.txHash ?? "").toLowerCase();
-      return h && !liveTx.has(h);
-    });
+    // IMPORTANT: always keep optimistic points in the combined list.
+    // Dedupe below prefers the *live* point when both exist, but keeping the optimistic
+    // point prevents brief disappear/reappear flicker during live refresh gaps.
+    const keepOptimistic = optimisticCurvePoints;
 
     // Combine then sort by timestamp ascending (chart code expects chronological order).
     const combined = [...live, ...keepOptimistic].sort(
@@ -477,21 +479,38 @@ const TokenDetails = () => {
     return out;
   }, [liveCurvePointsSafe, optimisticCurvePoints]);
 
-  // Prune optimistic points that have been superseded by the live feed (or are too old).
+  // Prune optimistic points:
+  // - If a txHash appears in the live feed, mark it as "seen_in_live" and keep it for ~2s.
+  //   This avoids flicker if the live list momentarily refreshes/clears/returns a slice.
+  // - Also drop any optimistic points older than ~2 minutes.
   useEffect(() => {
     if (!optimisticCurvePoints.length) return;
     const liveTx = new Set(liveCurvePointsSafe.map((p: any) => String(p?.txHash ?? "").toLowerCase()).filter(Boolean));
     const nowSec = Math.floor(Date.now() / 1000);
-    setOptimisticCurvePoints((prev) =>
-      prev
+    const nowMs = Date.now();
+    setOptimisticCurvePoints((prev) => {
+      const next = prev.map((p: any) => {
+        const h = String(p?.txHash ?? "").toLowerCase();
+        const opt = p?.__opt ?? { status: "pending", createdAt: nowMs };
+        if (h && liveTx.has(h) && opt.status !== "seen_in_live") {
+          return { ...p, __opt: { ...opt, status: "seen_in_live", seenAt: nowMs } };
+        }
+        return p;
+      });
+
+      return next
         .filter((p: any) => {
-          const h = String(p?.txHash ?? "").toLowerCase();
-          if (h && liveTx.has(h)) return false;
           const ts = Number(p?.timestamp ?? 0);
-          return ts > 0 && nowSec - ts < 120; // keep at most ~2 minutes
+          if (!(ts > 0) || nowSec - ts >= 120) return false; // keep at most ~2 minutes
+
+          const opt = p?.__opt;
+          if (opt?.status === "seen_in_live" && opt?.seenAt && nowMs - opt.seenAt > 2000) {
+            return false; // remove 2s after live confirmation
+          }
+          return true;
         })
-        .slice(0, 50)
-    );
+        .slice(0, 50);
+    });
   }, [liveCurvePointsSafe, optimisticCurvePoints.length]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
@@ -1317,7 +1336,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 blockNumber: 0,
                 logIndex: -1,
               };
-              return [next, ...prev].slice(0, 50);
+              return ([{ ...(next as any), __opt: { status: "pending", createdAt: Date.now() } }, ...prev] as any).slice(0, 50);
             });
           }
         } catch {
@@ -1412,7 +1431,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 blockNumber: 0,
                 logIndex: -1,
               };
-              return [next, ...prev].slice(0, 50);
+              return ([{ ...(next as any), __opt: { status: "pending", createdAt: Date.now() } }, ...prev] as any).slice(0, 50);
             });
           }
         } catch {
