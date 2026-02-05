@@ -440,7 +440,59 @@ const TokenDetails = () => {
   // Read curve trades for transactions + analytics (live mode)
   // Hook returns CurveTrade[] (your "@/types/token" Transaction type)
   const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(campaign?.campaign);
-const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? liveCurvePoints : [];
+  const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? liveCurvePoints : [];
+
+  // Optimistic trades (for instant UI while the indexer/Ably catches up)
+  // - We append these immediately after a confirmed tx receipt.
+  // - They are removed automatically once the same txHash appears in the live feed.
+  const [optimisticCurvePoints, setOptimisticCurvePoints] = useState<CurveTradePoint[]>([]);
+
+  const curvePointsForUi: CurveTradePoint[] = useMemo(() => {
+    const live = liveCurvePointsSafe;
+    if (!optimisticCurvePoints.length) return live;
+
+    const liveTx = new Set(live.map((p: any) => String(p?.txHash ?? "").toLowerCase()).filter(Boolean));
+    const keepOptimistic = optimisticCurvePoints.filter((p: any) => {
+      const h = String(p?.txHash ?? "").toLowerCase();
+      return h && !liveTx.has(h);
+    });
+
+    // Combine then sort by timestamp ascending (chart code expects chronological order).
+    const combined = [...live, ...keepOptimistic].sort(
+      (a: any, b: any) => Number(a?.timestamp ?? 0) - Number(b?.timestamp ?? 0)
+    );
+
+    // Dedupe by txHash if present; otherwise fall back to (timestamp,type,from,tokensWei,nativeWei).
+    const seen = new Set<string>();
+    const out: CurveTradePoint[] = [];
+    for (const p of combined) {
+      const h = String((p as any)?.txHash ?? "").toLowerCase();
+      const key = h
+        ? `h:${h}`
+        : `k:${Number((p as any)?.timestamp ?? 0)}:${String((p as any)?.type ?? "")}::${String((p as any)?.from ?? "").toLowerCase()}::${String((p as any)?.tokensWei ?? 0n)}::${String((p as any)?.nativeWei ?? 0n)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
+    }
+    return out;
+  }, [liveCurvePointsSafe, optimisticCurvePoints]);
+
+  // Prune optimistic points that have been superseded by the live feed (or are too old).
+  useEffect(() => {
+    if (!optimisticCurvePoints.length) return;
+    const liveTx = new Set(liveCurvePointsSafe.map((p: any) => String(p?.txHash ?? "").toLowerCase()).filter(Boolean));
+    const nowSec = Math.floor(Date.now() / 1000);
+    setOptimisticCurvePoints((prev) =>
+      prev
+        .filter((p: any) => {
+          const h = String(p?.txHash ?? "").toLowerCase();
+          if (h && liveTx.has(h)) return false;
+          const ts = Number(p?.timestamp ?? 0);
+          return ts > 0 && nowSec - ts < 120; // keep at most ~2 minutes
+        })
+        .slice(0, 50)
+    );
+  }, [liveCurvePointsSafe, optimisticCurvePoints.length]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
   const { stats: rtStats } = useTokenStatsRealtime(
@@ -475,7 +527,7 @@ const toSeconds = (ts: number): number => {
     // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
     // - Do NOT ethers.formatEther(pricePerToken) here.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-  liveCurvePointsSafe.map((p: any) => ({
+      curvePointsForUi.map((p: any) => ({
     timestamp: Number(p.timestamp ?? 0),
     pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
     nativeWei: p.nativeWei,
@@ -526,7 +578,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [campaign?.symbol, liveCurvePointsSafe, metrics]);
+  }, [campaign?.symbol, curvePointsForUi, metrics, rtStats?.lastPriceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -664,7 +716,7 @@ const bnbUsd = useMemo(() => {
     // NOTE: This is a best-effort view and does not include transfers.
     const balances = new Map<string, bigint>();
 
-    for (const p of liveCurvePointsSafe) {
+    for (const p of curvePointsForUi) {
       const addr = (p.from || "").toLowerCase();
       if (!addr) continue;
 
@@ -718,7 +770,7 @@ const bnbUsd = useMemo(() => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [liveCurvePointsSafe, metrics?.liquiditySupply]);
+  }, [curvePointsForUi, metrics?.liquiditySupply]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
@@ -825,7 +877,7 @@ const bnbUsd = useMemo(() => {
     // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
-    const next: TxRow[] = [...liveCurvePointsSafe]
+    const next: TxRow[] = [...curvePointsForUi]
   .slice(-50)
   .reverse()
   .map((p: any, idx: number) => {
@@ -854,8 +906,8 @@ const bnbUsd = useMemo(() => {
     };
   });
 
-setTxs(next);
-  }, [campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
+    setTxs(next);
+  }, [campaign, curvePointsForUi, tokenData.marketCap, metrics]);
 
   // DexScreener gating: only show external DEX chart after graduation / finalize.
   // Prefer explicit flags when available; fall back to sold >= graduationTarget for older deployments.
@@ -1172,6 +1224,38 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
         const receipt: any = await buyTokens(campaign.campaign, amountWei, maxCostWei);
 
+        // Optimistic: append the trade immediately so the chart + trades tab update
+        // without waiting for the realtime indexer to ingest and publish.
+        try {
+          const txHash = String(receipt?.transactionHash || receipt?.hash || "");
+          const from = String(wallet.account || "").toLowerCase();
+          if (/^0x[a-f0-9]{64}$/i.test(txHash) && from) {
+            const ts = Math.floor(Date.now() / 1000);
+            const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
+            const bnb = Number(ethers.formatEther(costWei ?? 0n));
+            const pricePerToken = tokens > 0 ? bnb / tokens : 0;
+            setOptimisticCurvePoints((prev) => {
+              const exists = prev.some((p: any) => String(p?.txHash ?? "").toLowerCase() === txHash.toLowerCase());
+              if (exists) return prev;
+              const next: CurveTradePoint = {
+                type: "buy",
+                from,
+                to: String(campaign.campaign).toLowerCase(),
+                tokensWei: amountWei,
+                nativeWei: costWei ?? 0n,
+                pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+                timestamp: ts,
+                txHash,
+                blockNumber: 0,
+                logIndex: -1,
+              };
+              return [next, ...prev].slice(0, 50);
+            });
+          }
+        } catch {
+          // ignore
+        }
+
         toast({
           title: "Buy confirmed",
           description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
@@ -1214,6 +1298,38 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
         });
 
         const receipt: any = await sellTokens(campaign.campaign, amountWei, minPayoutWei);
+
+        // Optimistic: append the trade immediately so the chart + trades tab update
+        // without waiting for the realtime indexer to ingest and publish.
+        try {
+          const txHash = String(receipt?.transactionHash || receipt?.hash || "");
+          const from = String(wallet.account || "").toLowerCase();
+          if (/^0x[a-f0-9]{64}$/i.test(txHash) && from) {
+            const ts = Math.floor(Date.now() / 1000);
+            const tokens = Number(ethers.formatUnits(amountWei, TOKEN_DECIMALS));
+            const bnb = Number(ethers.formatEther(payoutWei ?? 0n));
+            const pricePerToken = tokens > 0 ? bnb / tokens : 0;
+            setOptimisticCurvePoints((prev) => {
+              const exists = prev.some((p: any) => String(p?.txHash ?? "").toLowerCase() === txHash.toLowerCase());
+              if (exists) return prev;
+              const next: CurveTradePoint = {
+                type: "sell",
+                from,
+                to: String(campaign.campaign).toLowerCase(),
+                tokensWei: amountWei,
+                nativeWei: payoutWei ?? 0n,
+                pricePerToken: Number.isFinite(pricePerToken) ? pricePerToken : 0,
+                timestamp: ts,
+                txHash,
+                blockNumber: 0,
+                logIndex: -1,
+              };
+              return [next, ...prev].slice(0, 50);
+            });
+          }
+        } catch {
+          // ignore
+        }
 
         toast({
           title: "Sell confirmed",
@@ -1671,7 +1787,7 @@ style={!isMobile ? { flex: "2" } : undefined}
                 <div className="w-full h-full min-h-[260px]">
                 <CurvePriceChart
   campaignAddress={campaign?.campaign}
-  curvePointsOverride={liveCurvePoints}
+  curvePointsOverride={curvePointsForUi}
   loadingOverride={liveCurveLoading}
   errorOverride={liveCurveError}
 />
