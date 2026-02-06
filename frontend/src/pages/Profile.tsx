@@ -30,7 +30,6 @@ import {
 
 type ProfileTabEx = ProfileTab | "followers" | "following";
 
-
 type TokenBalanceRow = {
   campaignAddress: string;
   tokenAddress: string;
@@ -176,6 +175,7 @@ const Profile = () => {
   const [followersList, setFollowersList] = useState<any[]>([]);
   const [followingList, setFollowingList] = useState<any[]>([]);
   const [followedCampaigns, setFollowedCampaigns] = useState<string[]>([]);
+  const [followedCards, setFollowedCards] = useState<any[]>([]);
   const [loadingFollows, setLoadingFollows] = useState(true);
 
   // Optional: allow deep-linking to a tab (e.g. /profile?tab=rewards)
@@ -187,6 +187,7 @@ const Profile = () => {
     if (t === "coins") setActiveTab("coins");
     if (t === "activity" || t === "replies") setActiveTab("replies");
     if (t === "followers") setActiveTab("followers");
+    if (t === "following") setActiveTab("following");
     if (t === "notifications") setActiveTab("notifications");
   }, [tabParam]);
 
@@ -230,7 +231,7 @@ const Profile = () => {
     }
   };
   loadFollows();
-}, [viewedAddress, activeTab, isOwnProfile]);
+}, [viewedAddress, activeTab, isOwnProfile, chainId, wallet?.account]);
 
   const walletAddressShort = useMemo(() => shorten(viewedAddress), [viewedAddress]);
 
@@ -251,7 +252,7 @@ const Profile = () => {
   useEffect(() => {
     const t = String(tabParam ?? "").toLowerCase().trim();
     if (!t) return;
-    const allowed: ProfileTabEx[] = ["balances", "coins", "replies", "rewards", "notifications", "followers"];
+    const allowed: ProfileTabEx[] = ["balances", "coins", "replies", "rewards", "notifications", "followers", "following"];
     if (allowed.includes(t as ProfileTab)) setActiveTab(t as ProfileTab);
   }, [tabParam]);
 
@@ -601,7 +602,64 @@ const Profile = () => {
     }
   };
 
-  // Load created campaigns (creator view)
+  
+  // Load followed campaign summaries when viewing the Following tab
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFollowedCampaignCards = async () => {
+      try {
+        if (activeTab !== "following") {
+          setFollowedCards([]);
+          return;
+        }
+        if (!viewedAddress) {
+          setFollowedCards([]);
+          return;
+        }
+
+        const addrs = (followedCampaigns || []).map((a) => String(a || "").toLowerCase()).filter(Boolean);
+        if (addrs.length === 0) {
+          setFollowedCards([]);
+          return;
+        }
+
+        const all = (await fetchCampaigns()) ?? [];
+        const wanted = all.filter((c) => addrs.includes(String((c as any).campaignAddress ?? (c as any).campaign ?? "").toLowerCase()));
+        const results = await Promise.allSettled(wanted.map((c) => fetchCampaignSummary(c)));
+
+        if (cancelled) return;
+
+        const next = results
+          .filter((r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled")
+          .map((r, idx) => {
+            const s = r.value;
+            return {
+              id: typeof s.campaign.id === "number" ? s.campaign.id : idx + 1,
+              image: s.campaign.logoURI || "/placeholder.svg",
+              name: s.campaign.name,
+              ticker: s.campaign.symbol,
+              campaignAddress: s.campaign.campaign,
+              marketCap: s.stats.marketCap,
+              timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
+              buyersCount: (s.stats as any)?.buyersCount ?? undefined,
+            };
+          });
+
+        setFollowedCards(next);
+      } catch (e) {
+        console.error("[Profile] Failed to load followed campaigns", e);
+        if (!cancelled) setFollowedCards([]);
+      }
+    };
+
+    loadFollowedCampaignCards();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, viewedAddress, followedCampaigns, fetchCampaigns, fetchCampaignSummary]);
+
+// Load created campaigns (creator view)
   useEffect(() => {
     let cancelled = false;
 
@@ -1018,8 +1076,8 @@ const Profile = () => {
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
               { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
-              { id: "followers" as ProfileTab, label: "Followers", badge: null },
-              { id: "following" as ProfileTab, label: "Following", badge: null },
+              { id: "followers" as ProfileTabEx, label: "Followers", badge: null },
+              { id: "following" as ProfileTabEx, label: "Following", badge: null },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1459,6 +1517,55 @@ const Profile = () => {
     )}
   </div>
 )}
+
+        {/* FOLLOWING TAB */}
+        {activeTab === "following" && (
+          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-6 border border-border">
+            <h3 className="text-xl font-retro mb-4">Following</h3>
+
+            {loadingFollows ? (
+              <p>Loading...</p>
+            ) : followedCards.length === 0 ? (
+              <p className="text-muted-foreground">No followed campaigns yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {followedCards.map((c: any) => (
+                  <div
+                    key={c.campaignAddress}
+                    className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
+                    onClick={() => navigate(`/token/${String(c.campaignAddress).toLowerCase()}`)}
+                    role="button"
+                  >
+                    <img
+                      src={c.image || "/placeholder.svg"}
+                      alt=""
+                      className="w-10 h-10 rounded-xl object-cover border border-border"
+                      loading="lazy"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold truncate">
+                        {c.name} <span className="text-muted-foreground">·</span>{" "}
+                        <span className="text-muted-foreground">${c.ticker}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {String(c.campaignAddress).toLowerCase()}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/token/${String(c.campaignAddress).toLowerCase()}`);
+                      }}
+                    >
+                      View
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
