@@ -154,10 +154,6 @@ export function CampaignCard({
             <div className="text-base font-semibold truncate">{vm.name}</div>
             <div className="text-xs text-muted-foreground truncate">{vm.symbol ? `$${vm.symbol}` : ""}</div>
           </div>
-
-          <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-            <UpvoteDialog campaignAddress={addr} />
-          </div>
           <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {/* Follow ⭐ */}
             <Button

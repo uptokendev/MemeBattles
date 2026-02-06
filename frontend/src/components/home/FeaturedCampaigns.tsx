@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { ChevronLeft, ChevronRight, Flame, ThumbsUp } from "lucide-react";
+import { useWallet } from "@/hooks/useWallet";
+import { useToast } from "@/hooks/use-toast";
+import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
+import { ChevronLeft, ChevronRight, Flame, ThumbsUp, Star } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
@@ -52,6 +55,11 @@ function isEvmAddress(addr?: string | null) {
 }
 
 export function FeaturedCampaigns({ className }: { className?: string }) {
+  const wallet = useWallet();
+  const { toast } = useToast();
+  const [followedMap, setFollowedMap] = useState<Record<string, boolean>>({});
+  const [followBusyMap, setFollowBusyMap] = useState<Record<string, boolean>>({});
+
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
 const [refetchNonce, setRefetchNonce] = useState(0);
@@ -259,6 +267,7 @@ const { patchByCampaign } = useLeagueRealtime({
 
       return {
         idx: idx + 1,
+        chainId: Number((it as any).chainId ?? 0) || 0,
         addr,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
@@ -273,6 +282,66 @@ const { patchByCampaign } = useLeagueRealtime({
     });
   }, [items, bnbUsd, logoCache, profilesByAddr]);
 
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!wallet.account) {
+          if (alive) setFollowedMap({});
+          return;
+        }
+        const next: Record<string, boolean> = {};
+        await Promise.all(
+          cards.map(async (c) => {
+            try {
+              const v = await isFollowingCampaign(wallet.account!, c.addr, c.chainId);
+              next[c.addr] = !!v;
+            } catch {
+              next[c.addr] = false;
+            }
+          })
+        );
+        if (alive) setFollowedMap(next);
+      } catch {
+        if (alive) setFollowedMap({});
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [wallet.account, cards]);
+
+  const toggleFollow = async (e: any, c: any) => {
+    e.stopPropagation();
+    if (!c?.addr) return;
+
+    if (!wallet.account) {
+      toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
+      try {
+        await wallet.connect();
+      } catch {}
+      return;
+    }
+
+    const key = String(c.addr).toLowerCase();
+    if (followBusyMap[key]) return;
+
+    const nextVal = !(followedMap[key] ?? false);
+    setFollowBusyMap((m) => ({ ...m, [key]: true }));
+    setFollowedMap((m) => ({ ...m, [key]: nextVal })); // optimistic
+
+    try {
+      if (nextVal) await followCampaign(wallet.account, key, c.chainId);
+      else await unfollowCampaign(wallet.account, key, c.chainId);
+    } catch (err: any) {
+      // rollback
+      setFollowedMap((m) => ({ ...m, [key]: !nextVal }));
+      toast({ title: "Follow failed", description: String(err?.message ?? err ?? "Unknown error") });
+    } finally {
+      setFollowBusyMap((m) => ({ ...m, [key]: false }));
+    }
+  };
   const scrollByCards = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
@@ -446,8 +515,21 @@ const { patchByCampaign } = useLeagueRealtime({
     <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
   </div>
 
-  {/* Upvote (right) */}
-  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+  {/* Actions (right) */}
+  <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+    <Button
+      type="button"
+      variant="secondary"
+      size="icon"
+      className="h-8 w-8 rounded-xl"
+      onClick={(e) => toggleFollow(e, c)}
+      disabled={!!followBusyMap[c.addr]}
+      aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
+      title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
+    >
+      <Star className={cn("h-4 w-4", (followedMap[c.addr] ?? false) ? "fill-current" : "")} />
+    </Button>
+
     <UpvoteDialog campaignAddress={c.addr} />
   </div>
 </div>
