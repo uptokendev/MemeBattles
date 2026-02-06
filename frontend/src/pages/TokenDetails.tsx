@@ -1487,7 +1487,8 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                                 aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
                                 title={isFollowing ? "Unfollow" : "Follow"}
                               >
-                                <Star className={isFollowing ? "h-3.5 w-3.5 fill-current" : "h-3.5 w-3.5"} />
+                                <Star className={isFollowing ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+      : "text-muted-foreground/70"} />
                               </Button>
 
                               <UpvoteDialog

@@ -527,7 +527,8 @@ const { patchByCampaign } = useLeagueRealtime({
       aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
       title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
     >
-      <Star className={cn("h-4 w-4", (followedMap[c.addr] ?? false) ? "fill-current" : "")} />
+      <Star className={cn("h-4 w-4 transition-all", (followedMap[c.addr] ?? false) ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+      : "text-muted-foreground/70")} />
     </Button>
 
     <UpvoteDialog campaignAddress={c.addr} />

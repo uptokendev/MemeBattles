@@ -166,7 +166,14 @@ export function CampaignCard({
               aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
               title={followed ? "Unfollow" : "Follow"}
             >
-              <Star className={cn("h-4 w-4", followed ? "fill-current" : "")} />
+              <Star
+  className={cn(
+    "h-4 w-4 transition-all",
+    followed
+      ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+      : "text-muted-foreground/70"
+  )}
+/>
             </Button>
 
             {/* Upvote */}
