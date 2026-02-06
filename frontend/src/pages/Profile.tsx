@@ -174,6 +174,7 @@ const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersList, setFollowersList] = useState<any[]>([]);
   const [followingList, setFollowingList] = useState<any[]>([]);
+  const [followingView, setFollowingView] = useState<"campaigns" | "profiles">("campaigns");
   const [followedCampaigns, setFollowedCampaigns] = useState<string[]>([]);
   const [followedCards, setFollowedCards] = useState<any[]>([]);
   const [loadingFollows, setLoadingFollows] = useState(true);
@@ -1521,41 +1522,99 @@ const Profile = () => {
         {/* FOLLOWING TAB */}
         {activeTab === "following" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-6 border border-border">
-            <h3 className="text-xl font-retro mb-4">Following</h3>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+              <h3 className="text-xl font-retro">Following</h3>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={followingView === "campaigns" ? "default" : "outline"}
+                  onClick={() => setFollowingView("campaigns")}
+                  className="rounded-xl"
+                >
+                  Campaigns
+                </Button>
+                <Button
+                  type="button"
+                  variant={followingView === "profiles" ? "default" : "outline"}
+                  onClick={() => setFollowingView("profiles")}
+                  className="rounded-xl"
+                >
+                  Profiles
+                </Button>
+              </div>
+            </div>
 
             {loadingFollows ? (
               <p>Loading...</p>
-            ) : followedCards.length === 0 ? (
-              <p className="text-muted-foreground">No followed campaigns yet.</p>
+            ) : followingView === "campaigns" ? (
+              followedCards.length === 0 ? (
+                <p className="text-muted-foreground">No followed campaigns yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {followedCards.map((c: any) => (
+                    <div
+                      key={c.campaignAddress}
+                      className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
+                      onClick={() => navigate(`/token/${String(c.campaignAddress).toLowerCase()}`)}
+                      role="button"
+                    >
+                      <img
+                        src={c.image || "/placeholder.svg"}
+                        alt=""
+                        className="w-10 h-10 rounded-xl object-cover border border-border"
+                        loading="lazy"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold truncate">
+                          {c.name} <span className="text-muted-foreground">·</span>{" "}
+                          <span className="text-muted-foreground">${c.ticker}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {String(c.campaignAddress).toLowerCase()}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/token/${String(c.campaignAddress).toLowerCase()}`);
+                        }}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : followingList.length === 0 ? (
+              <p className="text-muted-foreground">No followed profiles yet.</p>
             ) : (
               <div className="space-y-3">
-                {followedCards.map((c: any) => (
+                {followingList.map((f: any) => (
                   <div
-                    key={c.campaignAddress}
+                    key={f.id}
                     className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
-                    onClick={() => navigate(`/token/${String(c.campaignAddress).toLowerCase()}`)}
+                    onClick={() => navigate(`/profile?address=${encodeURIComponent(f.id)}`)}
                     role="button"
                   >
                     <img
-                      src={c.image || "/placeholder.svg"}
+                      src={f.profile?.avatarUrl || "/placeholder.svg"}
                       alt=""
-                      className="w-10 h-10 rounded-xl object-cover border border-border"
+                      className="w-10 h-10 rounded-full border border-border object-cover"
                       loading="lazy"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold truncate">
-                        {c.name} <span className="text-muted-foreground">·</span>{" "}
-                        <span className="text-muted-foreground">${c.ticker}</span>
+                        {f.profile?.displayName || shorten(f.id)}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {String(c.campaignAddress).toLowerCase()}
-                      </div>
+                      <div className="text-xs text-muted-foreground truncate">{shorten(f.id)}</div>
                     </div>
                     <Button
                       variant="outline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/token/${String(c.campaignAddress).toLowerCase()}`);
+                        navigate(`/profile?address=${encodeURIComponent(f.id)}`);
                       }}
                     >
                       View
