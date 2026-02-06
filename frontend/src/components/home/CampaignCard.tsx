@@ -1,8 +1,14 @@
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { useWallet } from "@/hooks/useWallet";
+import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
+import { Star } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export type CampaignCardVM = {
   campaignAddress: string;
@@ -49,12 +55,68 @@ export function CampaignCard({
   className?: string;
 }) {
   const navigate = useNavigate();
+  const wallet = useWallet();
+  const { toast } = useToast();
+  const [followBusy, setFollowBusy] = useState(false);
+  const [followed, setFollowed] = useState(false);
   const addr = String(vm.campaignAddress ?? "").toLowerCase();
   const creatorAddr = String(vm.creator ?? "").trim();
   const canOpenProfile = creatorAddr.length > 0;
   const openProfile = () => {
     if (!canOpenProfile) return;
     navigate(`/profile?address=${encodeURIComponent(creatorAddr)}`);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!wallet.account) {
+          if (alive) setFollowed(false);
+          return;
+        }
+        const v = await isFollowingCampaign(wallet.account, addr, chainIdForStorage);
+        if (alive) setFollowed(v);
+      } catch {
+        if (alive) setFollowed(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [wallet.account, addr, chainIdForStorage]);
+
+  const toggleFollow = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!addr) return;
+
+    if (!wallet.account) {
+      toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
+      try {
+        await wallet.connect();
+      } catch {}
+      return;
+    }
+
+    if (followBusy) return;
+    setFollowBusy(true);
+    const next = !followed;
+    setFollowed(next); // optimistic
+    try {
+      if (next) {
+        await followCampaign(wallet.account, addr, chainIdForStorage);
+      } else {
+        await unfollowCampaign(wallet.account, addr, chainIdForStorage);
+      }
+    } catch (err: any) {
+      setFollowed(!next); // rollback
+      toast({
+        title: "Follow failed",
+        description: String(err?.message ?? err ?? "Unknown error"),
+      });
+    } finally {
+      setFollowBusy(false);
+    }
   };
 
   return (
@@ -94,6 +156,24 @@ export function CampaignCard({
           </div>
 
           <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+            <UpvoteDialog campaignAddress={addr} />
+          </div>
+          <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {/* Follow ⭐ */}
+            <Button
+              type="button"
+              variant="secondary"
+              size="icon"
+              className="h-8 w-8 rounded-xl"
+              onClick={toggleFollow}
+              disabled={followBusy}
+              aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
+              title={followed ? "Unfollow" : "Follow"}
+            >
+              <Star className={cn("h-4 w-4", followed ? "fill-current" : "")} />
+            </Button>
+
+            {/* Upvote */}
             <UpvoteDialog campaignAddress={addr} />
           </div>
         </div>

@@ -3,10 +3,9 @@
  * Displays comprehensive information about a specific token including
  * chart, trading interface, transactions, and holder distribution
  */
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Copy, ExternalLink, Globe, ChevronDown } from "lucide-react";
+import { Copy, ExternalLink, Globe, ChevronDown, Star } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -25,6 +24,7 @@ import { TokenComments } from "@/components/token/TokenComments";
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { useWallet } from "@/hooks/useWallet";
+import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
@@ -135,7 +135,50 @@ const TokenDetails = () => {
   // Launchpad hooks + state for the on-chain data
   const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, fetchCampaignActivity, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
   const chainIdForStorage = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
+
+  const campaignAddr = useMemo(() => (campaignAddress ?? "").trim().toLowerCase(), [campaignAddress]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!wallet.account || !campaignAddr) {
+          if (alive) setIsFollowing(false);
+          return;
+        }
+        const v = await isFollowingCampaign(wallet.account, campaignAddr, chainIdForStorage);
+        if (alive) setIsFollowing(!!v);
+      } catch {
+        if (alive) setIsFollowing(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [wallet.account, campaignAddr, chainIdForStorage]);
+
+  const toggleFollow = async () => {
+    if (!campaignAddr) return;
+    if (!wallet.account) {
+      toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
+      try { await wallet.connect(); } catch {}
+      return;
+    }
+    if (followBusy) return;
+    setFollowBusy(true);
+    const next = !isFollowing;
+    setIsFollowing(next);
+    try {
+      if (next) await followCampaign(wallet.account, campaignAddr, chainIdForStorage);
+      else await unfollowCampaign(wallet.account, campaignAddr, chainIdForStorage);
+    } catch (e: any) {
+      setIsFollowing(!next);
+      toast({ title: "Follow failed", description: String(e?.message ?? e ?? "Unknown error") });
+    } finally {
+      setFollowBusy(false);
+    }
+  };
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
@@ -1431,13 +1474,29 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           </span>
 
                           {/* Upvote CTA */}
-                          {campaignAddress ? (
-                            <UpvoteDialog
-                              campaignAddress={campaignAddress}
-                              buttonVariant="secondary"
-                              buttonSize="sm"
-                              className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
-                            />
+                          {/* Follow + Upvote CTA */}
+                          {campaignAddr ? (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="icon"
+                                className="h-6 w-6 md:h-7 md:w-7 rounded-xl"
+                                onClick={toggleFollow}
+                                disabled={followBusy}
+                                aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
+                                title={isFollowing ? "Unfollow" : "Follow"}
+                              >
+                                <Star className={isFollowing ? "h-3.5 w-3.5 fill-current" : "h-3.5 w-3.5"} />
+                              </Button>
+
+                              <UpvoteDialog
+                                campaignAddress={campaignAddr}
+                                buttonVariant="secondary"
+                                buttonSize="sm"
+                                className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
+                              />
+                            </div>
                           ) : null}
                         </div>
                       );

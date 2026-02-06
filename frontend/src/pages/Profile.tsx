@@ -23,6 +23,13 @@ import {
   submitLeagueClaim,
   type RewardItem,
 } from "@/lib/rewardsApi";
+import { 
+  followUser, unfollowUser, isFollowingUser, getFollowersCount, getFollowingCount, 
+  getFollowers, getFollowing, getFollowedCampaigns 
+} from '@/lib/followApi';
+
+type ProfileTabEx = ProfileTab | "followers" | "following";
+
 
 type TokenBalanceRow = {
   campaignAddress: string;
@@ -124,7 +131,7 @@ const Profile = () => {
   const isOwnProfile = Boolean(account && viewedAddress && account.toLowerCase() === viewedAddress.toLowerCase());
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
+  const [activeTab, setActiveTab] = useState<ProfileTabEx>("balances");
   const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
 
   // Rewards (league winnings)
@@ -163,6 +170,14 @@ const Profile = () => {
   const [savingAvatar, setSavingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followersList, setFollowersList] = useState<any[]>([]);
+  const [followingList, setFollowingList] = useState<any[]>([]);
+  const [followedCampaigns, setFollowedCampaigns] = useState<string[]>([]);
+  const [loadingFollows, setLoadingFollows] = useState(true);
+
   // Optional: allow deep-linking to a tab (e.g. /profile?tab=rewards)
   useEffect(() => {
     const t = String(tabParam ?? "").toLowerCase().trim();
@@ -181,6 +196,41 @@ const Profile = () => {
     if (t === "rewards") setActiveTab("rewards");
   }, [tabParam]);
 
+  useEffect(() => {
+  if (!viewedAddress) return;
+  const loadFollows = async () => {
+    setLoadingFollows(true);
+    try {
+      const [fc, fgc, isF] = await Promise.all([
+        getFollowersCount(viewedAddress, chainId ?? 0),
+        getFollowingCount(viewedAddress, chainId ?? 0),
+        isOwnProfile || !wallet?.account
+          ? false
+          : isFollowingUser(wallet.account, viewedAddress, chainId ?? 0),
+      ]);
+      setFollowersCount(fc);
+      setFollowingCount(fgc);
+      setIsFollowing(isF);
+
+      if (activeTab === 'followers') {
+        const fl = await getFollowers(viewedAddress, chainId ?? 0);
+        setFollowersList(fl);
+      } else if (activeTab === 'following') {
+        const [fl, camps] = await Promise.all([
+          getFollowing(viewedAddress, chainId ?? 0),
+          getFollowedCampaigns(viewedAddress, chainId ?? 0),
+        ]);
+        setFollowingList(fl);
+        setFollowedCampaigns(camps);
+      }
+    } catch (err) {
+      console.error('Follow data load failed', err);
+    } finally {
+      setLoadingFollows(false);
+    }
+  };
+  loadFollows();
+}, [viewedAddress, activeTab, isOwnProfile]);
 
   const walletAddressShort = useMemo(() => shorten(viewedAddress), [viewedAddress]);
 
@@ -201,7 +251,7 @@ const Profile = () => {
   useEffect(() => {
     const t = String(tabParam ?? "").toLowerCase().trim();
     if (!t) return;
-    const allowed: ProfileTab[] = ["balances", "coins", "replies", "rewards", "notifications", "followers"];
+    const allowed: ProfileTabEx[] = ["balances", "coins", "replies", "rewards", "notifications", "followers"];
     if (allowed.includes(t as ProfileTab)) setActiveTab(t as ProfileTab);
   }, [tabParam]);
 
@@ -787,16 +837,6 @@ const Profile = () => {
     };
   }, [activeTab, activityTab, viewedAddress, chainId]);
 
-
-  // Followers/Following numbers (MVP proxies)
-  const followingCount = 0; // later: number of followed creators/coins (watchlist)
-  const followersCount = useMemo(() => {
-    // MVP proxy:
-    // If you created coins, treat total buyersCount as "followers" (better label later: "Investors").
-    const sum = created.reduce((acc, c) => acc + (c.buyersCount ?? 0), 0);
-    return sum;
-  }, [created]);
-
   return (
         <div className="w-full h-full overflow-y-auto pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0">
       {/* Disconnect Overlay */}
@@ -905,17 +945,13 @@ const Profile = () => {
                 {/* Stats */}
                 <div className="flex justify-center sm:justify-start gap-6 md:gap-8">
                   <div className="text-center">
-                    <div className="text-xl md:text-2xl font-retro text-foreground">
-                      {followersCount}
-                    </div>
-                    <div className="text-xs font-retro text-muted-foreground">Followers</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xl md:text-2xl font-retro text-foreground">
-                      {followingCount}
-                    </div>
-                    <div className="text-xs font-retro text-muted-foreground">Following</div>
-                  </div>
+  <div className="text-xl md:text-2xl font-retro text-foreground">{followersCount}</div>
+  <div className="text-xs font-retro text-muted-foreground">Followers</div>
+</div>
+<div className="text-center">
+  <div className="text-xl md:text-2xl font-retro text-foreground">{followingCount}</div>
+  <div className="text-xs font-retro text-muted-foreground">Following</div>
+</div>
                   <div className="text-center">
                     <div className="text-xl md:text-2xl font-retro text-foreground">
                       {created.length}
@@ -945,6 +981,32 @@ const Profile = () => {
                 />
               </div>
             ) : null}
+
+            {!isOwnProfile && viewedAddress && (
+  <Button
+    onClick={async () => {
+      try {
+        if (isFollowing) {
+          if (!wallet?.account) throw new Error('Connect wallet');
+          await unfollowUser(wallet.account, viewedAddress, chainId ?? 0);
+          setIsFollowing(false);
+          setFollowersCount(c => c - 1);
+        } else {
+          if (!wallet?.account) throw new Error('Connect wallet');
+          await followUser(wallet.account, viewedAddress, chainId ?? 0);
+          setIsFollowing(true);
+          setFollowersCount(c => c + 1);
+        }
+      } catch (err) {
+        toast.error('Failed to update follow');
+      }
+    }}
+    variant={isFollowing ? 'outline' : 'default'}
+    className="font-retro ml-2"
+  >
+    {isFollowing ? 'Unfollow' : 'Follow'}
+  </Button>
+)}
           </div>
 
 
@@ -957,6 +1019,7 @@ const Profile = () => {
               { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
+              { id: "following" as ProfileTab, label: "Following", badge: null },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1377,14 +1440,26 @@ const Profile = () => {
 
         {/* FOLLOWERS TAB */}
         {activeTab === "followers" && (
-          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-8 md:p-12 border border-border text-center">
-            <p className="font-retro text-muted-foreground text-sm md:text-base">
-              Followers MVP direction:
-              for creators, show investors/holders of your coins (requires event indexing);
-              for regular users, this becomes “Creators you follow” and “Coins you watch”.
-            </p>
-          </div>
-        )}
+        <div className="bg-card/30 backdrop-blur-md rounded-2xl p-6 border border-border">
+          <h3 className="text-xl font-retro mb-4">Followers ({followersCount})</h3>
+            {loadingFollows ? <p>Loading...</p> : followersList.length === 0 ? (
+              <p className="text-muted-foreground">No followers yet.</p>
+                ) : (
+                <div className="space-y-3">
+                  {followersList.map(f => (
+                    <div key={f.id} className="flex items-center gap-3 p-3 bg-background/50 rounded-xl">
+                      <img src={f.profile?.avatarUrl || '/placeholder.svg'} className="w-10 h-10 rounded-full" />
+                    <div>
+                    <div className="font-semibold">{f.profile?.displayName || shorten(f.id)}</div>
+                </div>
+                  <Button variant="link" onClick={() => navigate(`/profile?address=${f.id}`)}>View</Button>
+        </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+
       </div>
     </div>
   );
