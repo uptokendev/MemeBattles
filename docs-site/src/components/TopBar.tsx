@@ -27,7 +27,7 @@ export default function TopBar() {
         </button>
 
         <button
-          onClick={() => nav('/getting-started')}
+          onClick={() => nav('/introduction')}
           className="inline-flex items-center gap-2"
         >
           <div className="h-8 w-8 rounded-xl bg-mb-panel border border-mb-border grid place-items-center">
