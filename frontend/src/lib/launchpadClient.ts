@@ -2,7 +2,7 @@ import { Contract, ethers } from "ethers";
 import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { useCallback, useMemo, useRef } from "react";
 import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";

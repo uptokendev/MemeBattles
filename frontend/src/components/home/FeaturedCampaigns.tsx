@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { ChevronLeft, ChevronRight, Flame, ThumbsUp, Star } from "lucide-react";

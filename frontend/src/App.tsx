@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
 import League from "./pages/League";
@@ -37,7 +38,8 @@ const App = () => {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
+      <WalletProvider>
+        <TooltipProvider>
         <Toaster />
         <Sonner />
         {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
@@ -75,7 +77,8 @@ const App = () => {
             </div>
           </BrowserRouter>
         </div>
-      </TooltipProvider>
+        </TooltipProvider>
+      </WalletProvider>
     </QueryClientProvider>
   );
 };

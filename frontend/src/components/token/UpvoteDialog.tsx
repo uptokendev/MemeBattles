@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
 

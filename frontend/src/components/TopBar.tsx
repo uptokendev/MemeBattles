@@ -9,7 +9,7 @@ import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useWallet, WalletType } from "@/hooks/useWallet";
+import { useWallet, type WalletType } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useTokenSearch } from "@/hooks/useTokenSearch";

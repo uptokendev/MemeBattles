@@ -4,7 +4,7 @@ import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ProfileTab } from "@/types/profile";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import { BrowserProvider, Contract, ethers } from "ethers";

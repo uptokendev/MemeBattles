@@ -23,7 +23,7 @@ import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { TokenComments } from "@/components/token/TokenComments";
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { Contract, ethers } from "ethers";

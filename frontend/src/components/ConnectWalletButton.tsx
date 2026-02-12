@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useWallet, WalletType } from "@/hooks/useWallet";
+import { useWallet, type WalletType } from "@/contexts/WalletContext";
 import { Loader2, ChevronDown, Check } from "lucide-react";
 
 export const ConnectWalletButton = () => {

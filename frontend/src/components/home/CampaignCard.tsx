@@ -2,7 +2,7 @@ import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";

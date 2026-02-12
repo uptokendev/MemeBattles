@@ -12,7 +12,7 @@ import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { TokenCategory } from "@/types/token";
 
 // NEW: import wallet + launchpad client
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useState } from "react";
