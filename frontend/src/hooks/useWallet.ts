@@ -1,5 +1,5 @@
 import { BrowserProvider, JsonRpcSigner } from "ethers";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export type WalletType = "metamask" | "binance" | "injected";
 
@@ -20,6 +20,80 @@ export function useWallet(): WalletHook {
   const [account, setAccount] = useState("");
   const [chainId, setChainId] = useState<number>();
   const [connecting, setConnecting] = useState(false);
+  const eip1193Ref = useRef<any>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  const bindEip1193Listeners = useCallback((selectedProvider: any) => {
+    // Tear down any previous listeners
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+
+    const anyWindow = window as any;
+    const ethereum = anyWindow.ethereum;
+
+    const targets = new Set<any>();
+    if (ethereum) targets.add(ethereum);            // important: aggregator
+    if (selectedProvider) targets.add(selectedProvider); // specific provider
+
+    const offs: Array<() => void> = [];
+
+    const onAccountsChanged = (accounts: string[]) => {
+      const primary = accounts?.[0] ?? "";
+      setAccount(primary);
+
+      if (!primary) {
+        setSigner(null);
+        return;
+      }
+
+      // Rebuild BrowserProvider against current selected provider to keep it in sync
+      try {
+        const bp = new BrowserProvider(selectedProvider ?? ethereum);
+        setProvider(bp);
+        bp.getSigner()
+          .then((s) => setSigner(s))
+          .catch(() => setSigner(null));
+      } catch {
+        setSigner(null);
+      }
+    };
+
+    const onChainChanged = (hexChainId: string) => {
+      try {
+        setChainId(Number(BigInt(hexChainId)));
+      } catch {
+        setChainId(undefined);
+      }
+
+      // Recreate provider + signer to avoid "network changed" errors (ethers v6)
+      try {
+        const bp = new BrowserProvider(selectedProvider ?? ethereum);
+        setProvider(bp);
+        bp.send("eth_accounts", [])
+          .then(onAccountsChanged)
+          .catch(() => setSigner(null));
+      } catch {
+        // ignore
+      }
+    };
+
+    // Attach listeners on both targets (aggregator + selected)
+    for (const t of targets) {
+      if (!t?.on) continue;
+      t.on("accountsChanged", onAccountsChanged);
+      t.on("chainChanged", onChainChanged);
+      offs.push(() => {
+        t.removeListener?.("accountsChanged", onAccountsChanged);
+        t.removeListener?.("chainChanged", onChainChanged);
+      });
+    }
+
+    cleanupRef.current = () => {
+      offs.forEach((fn) => {
+        try { fn(); } catch {}
+      });
+    };
+  }, []);
 
   // Detect default wallet on mount (for read-only state)
   useEffect(() => {
@@ -35,52 +109,23 @@ export function useWallet(): WalletHook {
     const injected = ethereum.providers?.find?.((p: any) => p.isMetaMask) || ethereum;
 
     if (!injected || typeof injected.request !== "function") return;
+    eip1193Ref.current = injected;
+    bindEip1193Listeners(injected);
     // IMPORTANT (ethers v6): BrowserProvider throws NETWORK_ERROR if the wallet
     // changes networks after the provider is created. So we recreate the
     // BrowserProvider on chainChanged.
-    let browserProvider = new BrowserProvider(injected);
+    const browserProvider = new BrowserProvider(injected);
     setProvider(browserProvider);
-
-    const handleAccountsChanged = (accounts: string[]) => {
-      const primary = accounts[0] ?? "";
-      setAccount(primary);
-
-      if (!primary) {
-        setSigner(null);
-        return;
-      }
-
-      browserProvider
-        .getSigner()
-        .then((s) => setSigner(s))
-        .catch(() => setSigner(null));
-    };
-
-    const handleChainChanged = (hexChainId: string) => {
-      try {
-        setChainId(Number(BigInt(hexChainId)));
-      } catch {
-        setChainId(undefined);
-      }
-
-      // Recreate provider + signer to avoid "network changed" errors.
-      try {
-        browserProvider = new BrowserProvider(injected);
-        setProvider(browserProvider);
-        // Refresh signer based on current accounts
-        browserProvider
-          .send("eth_accounts", [])
-          .then(handleAccountsChanged)
-          .catch(() => setSigner(null));
-      } catch {
-        // ignore
-      }
-    };
 
     // Initialize from current accounts
     browserProvider
       .send("eth_accounts", [])
-      .then(handleAccountsChanged)
+      .then((accounts) => {
+        const primary = accounts?.[0] ?? "";
+        setAccount(primary);
+        if (!primary) return;
+        browserProvider.getSigner().then(setSigner).catch(() => setSigner(null));
+      })
       .catch(() => {});
 
     // Initialize from current network
@@ -89,14 +134,11 @@ export function useWallet(): WalletHook {
       .then((network) => setChainId(Number(network.chainId)))
       .catch(() => {});
 
-    injected?.on?.("accountsChanged", handleAccountsChanged);
-    injected?.on?.("chainChanged", handleChainChanged);
-
     return () => {
-      injected?.removeListener?.("accountsChanged", handleAccountsChanged);
-      injected?.removeListener?.("chainChanged", handleChainChanged);
+      cleanupRef.current?.();
+      cleanupRef.current = null;
     };
-  }, []);
+  }, [bindEip1193Listeners]);
 
   // Helper: pick a specific injected wallet
   const pickInjected = (wallet: WalletType | undefined) => {
@@ -141,6 +183,10 @@ export function useWallet(): WalletHook {
           throw new Error("No accounts returned from wallet.");
         }
 
+        // IMPORTANT: re-bind listeners to the wallet the user actually picked
+        eip1193Ref.current = selected;
+        bindEip1193Listeners(selected);
+
         const browserProvider = new BrowserProvider(selected);
         setProvider(browserProvider);
         setAccount(accounts[0]);
@@ -168,7 +214,7 @@ export function useWallet(): WalletHook {
         setConnecting(false);
       }
     },
-    []
+    [bindEip1193Listeners]
   );
  const disconnect = useCallback(() => {
     setAccount("");
