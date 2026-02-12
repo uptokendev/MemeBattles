@@ -16,8 +16,8 @@ export default function TopBar() {
   }, [loc.pathname])
 
   return (
-    <div className="sticky top-0 z-40 border-b border-mb-border bg-mb-bg/80 backdrop-blur">
-      <div className="mx-auto max-w-[1400px] px-4 h-14 flex items-center gap-3">
+    <div className="mb-topbar sticky top-0 z-40 border-b border-mb-border bg-mb-bg/80 backdrop-blur">
+      <div className="mb-topbar__inner mx-auto max-w-[1400px] px-4 flex items-center gap-3">
         <button
           className="lg:hidden inline-flex items-center justify-center h-9 w-9 rounded-xl border border-mb-border bg-mb-panel hover:shadow-glow"
           onClick={() => setOpen(v => !v)}
@@ -26,12 +26,12 @@ export default function TopBar() {
           <span className="text-mb-gold">☰</span>
         </button>
 
-         <button onClick={() => nav('/introduction')} className="inline-flex items-center gap-2">
-          <div className="h-8 w-8 rounded-xl bg-mb-panel border border-mb-border grid place-items-center overflow-hidden">
+        <button onClick={() => nav('/introduction')} className="inline-flex items-center gap-3">
+          <div className="mb-logo-wrap rounded-xl bg-mb-panel border border-mb-border grid place-items-center overflow-hidden">
             <img
               src="/logo.png"
               alt="MemeBattles"
-              className="h-7 w-7 object-contain"
+              className="mb-logo object-contain"
               loading="eager"
               decoding="async"
             />
@@ -44,7 +44,7 @@ export default function TopBar() {
 
         <div className="ml-auto flex items-center gap-2">
           <a
-            className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-[#9e721f] bg-[#9e721f] text-[#0b0b0b] font-semibold hover:bg-[#b38226] hover:border-[#b38226] hover:shadow-glow text-sm"
+            className="mb-topbar__cta hidden sm:inline-flex"
             href={siteConfig.mainSiteUrl}
             target="_blank"
             rel="noreferrer"
