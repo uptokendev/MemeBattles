@@ -1,6 +1,8 @@
 import React, { createContext, useContext } from "react";
 
-import { useWallet as useWalletImpl, type WalletType } from "@/contexts/WalletContext";
+// IMPORTANT: this context wraps the *implementation* hook.
+// Do NOT import from this file again (would create a circular dependency).
+import { useWallet as useWalletImpl, type WalletType } from "@/hooks/useWallet";
 
 /**
  * WalletContext
