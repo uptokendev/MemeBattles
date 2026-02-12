@@ -1,4 +1,4 @@
-import matter from 'gray-matter'
+import { parseFrontmatter } from '../lib/frontmatter'
 
 // Load all markdown content at build-time.
 // Paths are exported as: /src/content/<slug>.md
@@ -35,6 +35,6 @@ export function getPageByPath(path: string): string | null {
 export function getFrontmatterTitle(path: string): string | null {
   const raw = getPageByPath(path)
   if (!raw) return null
-  const { data } = matter(raw)
+  const { data } = parseFrontmatter(raw)
   return (data.title as string) || null
 }

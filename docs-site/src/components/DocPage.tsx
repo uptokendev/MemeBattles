@@ -2,17 +2,17 @@ import { useMemo } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import matter from 'gray-matter'
 import Toc from './Toc'
 import PrevNext from './PrevNext'
 import { getPageByPath, normalizePath } from '../content/loader'
+import { parseFrontmatter } from '../lib/frontmatter'
 
 export default function DocPage() {
   const loc = useLocation()
   const path = useMemo(() => normalizePath(loc.pathname), [loc.pathname])
 
   const raw = useMemo(() => getPageByPath(path), [path])
-  const { data, content } = useMemo(() => matter(raw ?? ''), [raw])
+  const { data, content } = useMemo(() => parseFrontmatter(raw ?? ''), [raw])
 
   const title = (data.title as string) || 'Not found'
   const description = (data.description as string) || ''
@@ -91,23 +91,7 @@ export default function DocPage() {
                 ),
                 a: ({ node, ...props }) => (
                   <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
-                ),
-                code: ({ node, inline, className, children, ...props }) => {
-                  if (inline) {
-                    return (
-                      <code className="text-mb-text" {...props}>
-                        {children}
-                      </code>
-                    )
-                  }
-                  return (
-                    <pre className="my-5">
-                      <code className={className} {...props}>
-                        {children}
-                      </code>
-                    </pre>
-                  )
-                }
+                )
               }}
             >
               {content}
