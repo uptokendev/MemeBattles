@@ -10,7 +10,11 @@ export const sidebar: NavSection[] = [
       { title: 'What is MemeBattles?', href: '/what-is-memebattles' },
       { title: 'What problem does it solve?', href: '/problem-we-solve' },
       { title: 'Getting Started', href: '/getting-started' },
-      { title: 'Core Concepts', href: '/core-concepts' },
+    ]
+  },
+  {
+    title: 'Core Concepts',
+    items: [
       { title: 'Campaigns', href: '/core-concepts/campaigns' },
       { title: 'Bonding Curve', href: '/core-concepts/bonding-curve' },
       { title: 'Graduation', href: '/core-concepts/graduation' },

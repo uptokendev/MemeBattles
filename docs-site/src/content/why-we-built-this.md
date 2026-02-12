@@ -19,7 +19,7 @@ So the protocol is designed to:
 ## 1) Fix discovery
 Discovery on meme launchpads often turns into pay-to-play shilling.
 
-MemeBattles replaces that with **UpVotes** — a clear, on-chain way to show support and push campaigns up the rankings.
+MemeBattles replaces that with **UpVotes** - a clear, on-chain way to show support and push campaigns up the rankings.
 
 ## 2) Make launches a game people want to come back to
 We add **Leagues** (weekly + monthly competitions) that turn trading and creator performance into a **repeatable loop**.
