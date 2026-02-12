@@ -6,6 +6,8 @@ import Toc from './Toc'
 import PrevNext from './PrevNext'
 import { getPageByPath, normalizePath } from '../content/loader'
 import { parseFrontmatter } from '../lib/frontmatter'
+import FaqContent from './FaqContent'
+import { buildFaqToc, parseFaqMarkdown } from '../lib/faq'
 
 export default function DocPage() {
   const loc = useLocation()
@@ -18,6 +20,11 @@ export default function DocPage() {
   const description = (data.description as string) || ''
   const toc = useMemo(() => {
     if (!raw) return []
+    if (path === '/faq') {
+      const parsed = parseFaqMarkdown(content)
+      return buildFaqToc(parsed)
+    }
+
     const lines = content.split('\n')
     const headings: { depth: number; text: string; id: string }[] = []
     for (const line of lines) {
@@ -32,7 +39,7 @@ export default function DocPage() {
       headings.push({ depth, text, id })
     }
     return headings
-  }, [raw, content])
+  }, [raw, content, path])
 
   if (!raw) {
     return (
@@ -61,41 +68,42 @@ export default function DocPage() {
           </div>
 
           <div className="prose-mb text-mb-text">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h2: ({ node, ...props }) => {
-                  const text = String(props.children)
-                  const id = text
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                  return <h2 id={id} className="text-2xl font-semibold mt-10 mb-4" {...props} />
-                },
-                h3: ({ node, ...props }) => {
-                  const text = String(props.children)
-                  const id = text
-                    .toLowerCase()
-                    .replace(/[^a-z0-9\s-]/g, '')
-                    .replace(/\s+/g, '-')
-                  return <h3 id={id} className="text-xl font-semibold mt-8 mb-3" {...props} />
-                },
-                p: ({ node, ...props }) => <p className="leading-7 text-mb-text/95 my-4" {...props} />,
-                ul: ({ node, ...props }) => <ul className="list-disc pl-6 my-4 space-y-2" {...props} />,
-                ol: ({ node, ...props }) => <ol className="list-decimal pl-6 my-4 space-y-2" {...props} />,
-                blockquote: ({ node, ...props }) => (
-                  <blockquote
-                    className="border-l-2 border-mb-gold/60 pl-4 my-5 text-mb-muted"
-                    {...props}
-                  />
-                ),
-                a: ({ node, ...props }) => (
-                  <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
-                )
-              }}
-            >
-              {content}
-            </ReactMarkdown>
+            {path === '/faq' ? (
+              <FaqContent markdown={content} />
+            ) : (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h2: ({ node, ...props }) => {
+                    const text = String(props.children)
+                    const id = text
+                      .toLowerCase()
+                      .replace(/[^a-z0-9\s-]/g, '')
+                      .replace(/\s+/g, '-')
+                    return <h2 id={id} className="text-2xl font-semibold mt-10 mb-4" {...props} />
+                  },
+                  h3: ({ node, ...props }) => {
+                    const text = String(props.children)
+                    const id = text
+                      .toLowerCase()
+                      .replace(/[^a-z0-9\s-]/g, '')
+                      .replace(/\s+/g, '-')
+                    return <h3 id={id} className="text-xl font-semibold mt-8 mb-3" {...props} />
+                  },
+                  p: ({ node, ...props }) => <p className="leading-7 text-mb-text/95 my-4" {...props} />,
+                  ul: ({ node, ...props }) => <ul className="list-disc pl-6 my-4 space-y-2" {...props} />,
+                  ol: ({ node, ...props }) => <ol className="list-decimal pl-6 my-4 space-y-2" {...props} />,
+                  blockquote: ({ node, ...props }) => (
+                    <blockquote className="border-l-2 border-mb-gold/60 pl-4 my-5 text-mb-muted" {...props} />
+                  ),
+                  a: ({ node, ...props }) => (
+                    <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
+                  )
+                }}
+              >
+                {content}
+              </ReactMarkdown>
+            )}
           </div>
 
           <div className="mt-10 pt-6 border-t border-mb-border">
