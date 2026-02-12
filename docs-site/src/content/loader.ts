@@ -2,7 +2,12 @@ import { parseFrontmatter } from '../lib/frontmatter'
 
 // Load all markdown content at build-time.
 // Paths are exported as: /src/content/<slug>.md
-const pages = import.meta.glob('./**/*.md', { as: 'raw', eager: true }) as Record<string, string>
+// Vite 5+: use `query: '?raw'` instead of deprecated `as: 'raw'`.
+const pages = import.meta.glob('./**/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true
+}) as Record<string, string>
 
 type PageIndex = Record<string, string>
 
