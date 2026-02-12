@@ -30,8 +30,14 @@ export default function TopBar() {
           onClick={() => nav('/introduction')}
           className="inline-flex items-center gap-2"
         >
-          <div className="h-8 w-8 rounded-xl bg-mb-panel border border-mb-border grid place-items-center">
-            <span className="text-mb-gold font-bold">MB</span>
+          <div className="h-8 w-8 rounded-xl bg-mb-panel border border-mb-border grid place-items-center overflow-hidden">
+            <img
+              src="/logo.png"
+              alt="MemeBattles"
+              className="h-7 w-7 object-contain"
+              loading="eager"
+              decoding="async"
+            />
           </div>
           <div className="leading-tight">
             <div className="text-sm font-semibold text-mb-text">{siteConfig.title}</div>
@@ -41,7 +47,7 @@ export default function TopBar() {
 
         <div className="ml-auto flex items-center gap-2">
           <a
-            className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-mb-border bg-mb-panel hover:shadow-glow text-sm"
+            className="hidden sm:inline-flex px-3 py-2 rounded-xl border border-mb-brand bg-mb-brand text-mb-bg font-semibold hover:bg-mb-brandHover hover:border-mb-brandHover hover:shadow-glow text-sm"
             href={siteConfig.mainSiteUrl}
             target="_blank"
             rel="noreferrer"
