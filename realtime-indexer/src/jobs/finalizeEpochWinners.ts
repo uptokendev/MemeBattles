@@ -434,7 +434,10 @@ async function main() {
     process.exit(1);
   }
 
-  const chains = String(process.env.LEAGUE_CHAINS || ENV.LEAGUE_CHAINS || "97,56")
+  // LEAGUE_CHAINS is an optional runtime-only knob for cron execution.
+  // It's not part of the strict ENV typing, so read directly from process.env.
+  // Example: "97,56"
+  const chains = String(process.env.LEAGUE_CHAINS || "97,56")
     .split(",")
     .map((s) => Number(s.trim()))
     .filter((n) => Number.isFinite(n));
