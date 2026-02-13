@@ -19,8 +19,15 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
   const selectedValue = location.pathname
 
   const handleChange = (path: string) => {
+    if (/^https?:\/\//i.test(path)) {
+      window.open(path, "_blank", "noopener,noreferrer")
+      return
+    }
     navigate(path)
   }
+
+  const makeId = (label: string) =>
+    `nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
 
   const getGliderTransform = () => {
     const index = options.findIndex((option) => option.path === selectedValue)
@@ -39,7 +46,7 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
       {options.map((option) => (
         <div key={option.path} className="relative z-20 py-1 [-webkit-tap-highlight-color:transparent]">
           <input
-            id={`nav-${option.path}`}
+            id={makeId(option.label)}
             name="navigation"
             type="radio"
             value={option.path}
@@ -48,7 +55,7 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
             className="absolute w-full h-full m-0 opacity-0 cursor-pointer z-30 appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none ring-0 active:outline-none [-webkit-tap-highlight-color:transparent] accent-[hsl(var(--accent))]"
           />
           <label
-            htmlFor={`nav-${option.path}`}
+            htmlFor={makeId(option.label)}
             className={`cursor-pointer flex items-center gap-3 text-base py-3 px-4 block transition-all duration-300 ease-in-out outline-none focus:outline-none focus-visible:outline-none [-webkit-tap-highlight-color:transparent] ${
               selectedValue === option.path
                 ? "text-accent font-medium"
