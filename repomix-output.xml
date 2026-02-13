@@ -103,7 +103,7 @@ frontend/public/assets/perfectrun.png
 frontend/public/assets/profile_placeholder.png
 frontend/public/assets/ticker.png
 frontend/public/assets/topearner.png
-frontend/public/assets/UPMEME.png
+frontend/public/assets/memebattles.png
 frontend/public/assets/UpVote_image.png
 frontend/public/favicon.ico
 frontend/public/fonts/Pixeboy.ttf
@@ -2067,7 +2067,7 @@ contract TreasuryVault {
 pragma solidity ^0.8.20;
 
 /**
- * UPMEME UP Vote Treasury (v1 - Forwarding)
+ * MemeBattles UP Vote Treasury (v1 - Forwarding)
  *
  * - Users pay a small fee (BNB or supported ERC20) to cast an upvote for a campaign/token.
  * - Payments are forwarded immediately to feeReceiver (do not sit in this contract).
@@ -2628,7 +2628,7 @@ COMMIT;
 
 <file path="db/migrations/20260127_000001_votes.sql">
 -- =========================================
--- UPMEME Votes: ledger + aggregates
+-- MemeBattles Votes: ledger + aggregates
 -- =========================================
 
 begin;
@@ -2711,7 +2711,7 @@ commit;
 
 <file path="db/migrations/20260129_000001_league.sql">
 -- =========================================
--- UPMEME UP Only League: lifecycle columns + indexes
+-- MemeBattles UP Only League: lifecycle columns + indexes
 -- =========================================
 
 begin;
@@ -2752,7 +2752,7 @@ commit;
 </file>
 
 <file path="db/SUPABASE_SCHEMA_FIX.sql">
--- UPMEME Supabase schema fix (League + profiles/comments)
+-- MemeBattles Supabase schema fix (League + profiles/comments)
 -- Safe to run multiple times.
 
 -- ---------------------------
@@ -2868,7 +2868,7 @@ CREATE INDEX IF NOT EXISTS token_comments_chain_campaign_id_idx
 </file>
 
 <file path="frontend/.env.example">
-# UPMEME Frontend Environment (Vite)
+# MemeBattles Frontend Environment (Vite)
 
 # Chain configuration
 # Reads follow the wallet chain automatically (if allowed); otherwise we fall back to default.
@@ -3103,7 +3103,7 @@ import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.j
 function buildCommentMessage({ chainId, address, campaignAddress, nonce, body }) {
   const bodyPreview = String(body ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
   return [
-    "UPMEME Comment",
+    "MemeBattles Comment",
     "Action: COMMENT_CREATE",
     `ChainId: ${chainId}`,
     `Address: ${String(address).toLowerCase()}`,
@@ -3562,7 +3562,7 @@ async function checkSupabasePublic() {
 async function checkSupabaseServiceRole() {
   const baseUrl = process.env.SUPABASE_URL || "";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const bucket = process.env.SUPABASE_BUCKET || "UPMEME";
+  const bucket = process.env.SUPABASE_BUCKET || "MemeBattles";
 
   const supaHost = (() => { try { return new URL(baseUrl).host; } catch { return null; } })();
   const jwt = decodeJwtUnsafe(key);
@@ -3681,7 +3681,7 @@ export default async function handler(req, res) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>UPMEME Diagnostics</title>
+  <title>MemeBattles Diagnostics</title>
   <style>
     :root{
       --bg:#0b1020;
@@ -3800,7 +3800,7 @@ th:nth-child(3), td:nth-child(3){ width:56%; }
   <div class="wrap">
     <header>
       <div>
-        <h1>UPMEME Diagnostics</h1>
+        <h1>MemeBattles Diagnostics</h1>
         <div class="sub">Readable health view for Supabase Postgres (single DB) and integrations. Token is required via <span class="mono">?token=</span>.</div>
         <div class="row">
           <span id="overall" class="pill"><span class="dot info"></span><span>Loading…</span></span>
@@ -4750,7 +4750,7 @@ function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }
   const name = String(displayName ?? "").trim().slice(0, 32);
   const avatar = String(avatarUrl ?? "").trim().slice(0, 200);
   return [
-    "UPMEME Profile",
+    "MemeBattles Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${chainId}`,
     `Address: ${String(address).toLowerCase()}`,
@@ -4906,7 +4906,7 @@ export default async function handler(req, res) {
 </file>
 
 <file path="frontend/api/SUPABASE_SCHEMA_FIX.sql">
--- UPMEME Supabase schema fix (League + profiles/comments)
+-- MemeBattles Supabase schema fix (League + profiles/comments)
 -- Safe to run multiple times.
 
 -- ---------------------------
@@ -5069,7 +5069,7 @@ export default async function handler(req, res) {
       const ext = pickExt(mimetype);
       if (!ext) return bad(res, 400, "Unsupported image type.");
 
-      const bucket = process.env.SUPABASE_BUCKET || "upmeme";
+      const bucket = process.env.SUPABASE_BUCKET || "MemeBattles";
 
       // Defensive UUID generation across runtimes
       const uuid =
@@ -5658,7 +5658,7 @@ function parseDbUrl(url) {
 }
 
 // Reuse pool across invocations
-let _pool = globalThis.__upmeme_pool;
+let _pool = globalThis.__MemeBattles_pool;
 
 if (!_pool) {
   if (!DATABASE_URL) throw new Error("DATABASE_URL missing");
@@ -5701,7 +5701,7 @@ if (!_pool) {
     connectionTimeoutMillis: 10_000,
   });
 
-  globalThis.__upmeme_pool = _pool;
+  globalThis.__MemeBattles_pool = _pool;
 
   _pool.on("error", (err) => console.error("[api/_db] Pool error", err));
 }
@@ -9199,7 +9199,7 @@ function buildCommentMessage(args: {
   // Keep this stable; the server verifies the exact string.
   const bodyPreview = args.body.replace(/\s+/g, " ").trim().slice(0, 180);
   return [
-    "UPMEME Comment",
+    "MemeBattles Comment",
     `Action: COMMENT_CREATE`,
     `ChainId: ${args.chainId}`,
     `Address: ${args.address.toLowerCase()}`,
@@ -17189,7 +17189,7 @@ export function useDexPairTrades(args: Args) {
           const reserve0 = BigInt(parsed?.args?.reserve0 ?? 0n);
           const reserve1 = BigInt(parsed?.args?.reserve1 ?? 0n);
 
-          // Assume 18 decimals for both sides (good enough for WBNB + most UPMEME tokens).
+          // Assume 18 decimals for both sides (good enough for WBNB + most MemeBattles tokens).
           // If you introduce non-18 decimals, we should fetch decimals from ERC20s and normalize.
           const r0 = Number(ethers.formatUnits(reserve0, 18));
           const r1 = Number(ethers.formatUnits(reserve1, 18));
@@ -18058,7 +18058,7 @@ export function useWallet(): WalletHook {
 
 <file path="frontend/src/lib/chainConfig.ts">
 // src/lib/chainConfig.ts
-// Centralized chain + env config for UPMEME (BSC mainnet + testnet).
+// Centralized chain + env config for MemeBattles (BSC mainnet + testnet).
 //
 // Design goal:
 // - Reads follow the wallet's connected chain (if allowed), otherwise fall back to default chain.
@@ -18796,7 +18796,7 @@ export function buildProfileMessage(args: {
   const name = String(args.displayName ?? "").trim().slice(0, 32);
   const avatar = String(args.avatarUrl ?? "").trim().slice(0, 200);
   return [
-    "UPMEME Profile",
+    "MemeBattles Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${args.chainId}`,
     `Address: ${normalizeAddress(args.address)}`,
@@ -47750,9 +47750,9 @@ export function createLeagueFeedPublisher(opts: Opts) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>UP.MEME</title>
+    <title>MemeBattles</title>
     <meta name="description" content="Launch a meme or project on BSC today with just a few button">
-    <meta name="author" content="UP.MEME Launchpad" />
+    <meta name="author" content="MemeBattles Launchpad" />
 
     
     
@@ -47769,8 +47769,8 @@ export function createLeagueFeedPublisher(opts: Opts) {
   
   
   
-  <meta property="og:title" content="UP.MEME">
-  <meta name="twitter:title" content="UP.MEME">
+  <meta property="og:title" content="MemeBattles">
+  <meta name="twitter:title" content="MemeBattles">
   <meta property="og:description" content="launch a meme or project on BSC today with just a few button">
   <meta name="twitter:description" content="launch a meme or project on BSC today with just a few button">
   <!--

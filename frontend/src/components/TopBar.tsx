@@ -279,7 +279,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               // Also broadcast to the Home grid as an optional "filter-in-place" search.
               // Pages that don't care can ignore this event.
               try {
-                window.dispatchEvent(new CustomEvent("upmeme:homeSearch", { detail: String(q ?? "") }));
+                window.dispatchEvent(new CustomEvent("MemeBattles:homeSearch", { detail: String(q ?? "") }));
               } catch {
                 // ignore
               }

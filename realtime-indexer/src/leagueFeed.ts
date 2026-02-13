@@ -13,6 +13,8 @@ export type LeagueCampaignPatch = {
   trendingScore?: string | null;
 
   raisedTotalBnb?: string | null;
+
+  lastActivityAt?: number; // unix seconds
 };
 
 type Opts = {
@@ -149,6 +151,10 @@ export function createLeagueFeedPublisher(opts: Opts) {
         votesAllTime: p.votesAllTime,
         trendingScore: p.trendingScore ?? null,
       });
+    },
+
+    queueActivity(chainId: number, campaign: string, lastActivityAt: number) {
+      mergePatch(chainId, campaign, { lastActivityAt });
     },
 
     queueRaisedDelta(chainId: number, campaign: string, deltaBnb: number) {

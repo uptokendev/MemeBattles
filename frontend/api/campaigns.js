@@ -94,8 +94,8 @@ export default async function handler(req, res) {
         return "calc.eta_sec asc nulls last, calc.progress_pct desc nulls last, calc.created_block desc, calc.campaign_address asc";
       if (tab === "dex") return "calc.graduated_block desc nulls last, calc.created_block desc, calc.campaign_address asc";
 
-      // trending default
-      return "calc.trending_score desc nulls last, calc.created_block desc, calc.campaign_address asc";
+      // trending default (pump.fun-like): most recent activity first
+      return "calc.last_activity_at desc nulls last, calc.created_block desc, calc.campaign_address asc";
     })();
 
     const sql = `
@@ -117,11 +117,14 @@ export default async function handler(req, res) {
           ts.sold_tokens,
           ts.marketcap_bnb,
           ts.vol_24h_bnb,
+          ca.last_activity_at,
           va.votes_24h,
           va.votes_all_time
         from public.campaigns c
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
+        left join public.campaign_activity ca
+          on ca.chain_id = c.chain_id and ca.campaign_address = c.campaign_address
         left join public.vote_aggregates va
           on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
         where c.chain_id = $1
@@ -246,6 +249,7 @@ export default async function handler(req, res) {
         status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
 
         // stats
+        lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
         lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
         soldTokens: row.sold_tokens != null ? String(row.sold_tokens) : null,
         marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,

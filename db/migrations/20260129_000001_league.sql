@@ -1,5 +1,5 @@
 -- =========================================
--- UPMEME UP Only League: lifecycle columns + indexes
+-- MemeBattles UP Only League: lifecycle columns + indexes
 -- =========================================
 
 begin;

@@ -5,7 +5,7 @@ import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.j
 function buildCommentMessage({ chainId, address, campaignAddress, nonce, body }) {
   const bodyPreview = String(body ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
   return [
-    "UPMEME Comment",
+    "MemeBattles Comment",
     "Action: COMMENT_CREATE",
     `ChainId: ${chainId}`,
     `Address: ${String(address).toLowerCase()}`,

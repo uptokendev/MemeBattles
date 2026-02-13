@@ -6,7 +6,7 @@ function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }
   const name = String(displayName ?? "").trim().slice(0, 32);
   const avatar = String(avatarUrl ?? "").trim().slice(0, 200);
   return [
-    "UPMEME Profile",
+    "MemeBattles Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${chainId}`,
     `Address: ${String(address).toLowerCase()}`,

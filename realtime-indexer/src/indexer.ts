@@ -429,6 +429,8 @@ async function insertTrade(row: {
     ]
   );
 
+  await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
+
   return { tokenAmount, bnbAmount, priceBnb };
 }
 
@@ -463,6 +465,28 @@ async function insertVote(row: {
       row.meta.toLowerCase()
     ]
   );
+
+  await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
+}
+
+
+async function touchCampaignActivity(chainId: number, campaign: string, at: Date) {
+  const addr = campaign.toLowerCase();
+  await pool.query(
+    `insert into public.campaign_activity (chain_id, campaign_address, last_activity_at, updated_at)
+     values ($1, $2, $3, now())
+     on conflict (chain_id, campaign_address) do update set
+       last_activity_at = greatest(excluded.last_activity_at, coalesce(public.campaign_activity.last_activity_at, to_timestamp(0))),
+       updated_at = now()`,
+    [chainId, addr, at]
+  );
+
+  // Realtime: propagate activity so home grids can re-sort instantly.
+  try {
+    leagueFeed.queueActivity(chainId, addr, Math.floor(at.getTime() / 1000));
+  } catch {
+    // best-effort
+  }
 }
 
 async function patchVoteAggregates(chainId: number, campaign: string) {

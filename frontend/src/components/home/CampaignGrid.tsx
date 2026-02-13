@@ -37,6 +37,7 @@ type CampaignFeedItemApi = {
   symbol?: string | null;
   logoUri?: string | null;
   createdAtChain?: string | null;
+  lastActivityAt?: string | null;
   graduatedAtChain?: string | null;
   isDexTrading?: boolean;
   marketcapBnb?: string | null;
@@ -349,7 +350,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
   const vms: CampaignCardVM[] = useMemo(() => {
     const GRAD_TARGET_BNB = 50;
 
-    return (items || []).map((it) => {
+    const isTrendingDefault = baseParams.tab === "trending" && baseParams.sort === "default";
+    const mapped = (items || []).map((it) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const patch = patchByCampaign[addr];
 
@@ -359,6 +361,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
       const rawLogo = it.logoUri || logoCache[addr] || null;
 
       let progressPct: number | null = it.progressPct ?? null;
+
+      const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
       const raised = Number(patch?.raisedTotalBnb ?? NaN);
       if (Number.isFinite(raised)) {
         progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
@@ -371,6 +375,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
         logoURI: resolveImageUri(rawLogo) ?? undefined,
         creator: it.creatorAddress ?? undefined,
         createdAt: safeUnixSeconds(it.createdAtChain ?? null) ?? undefined,
+        lastActivityAtSec: activitySec,
         marketCapUsdLabel,
         athLabel: marketCapUsdLabel,
         progressPct,
@@ -378,7 +383,19 @@ const { patchByCampaign, created } = useLeagueRealtime({
         votes24h: Number(patch?.votes24h ?? it.votes24h ?? 0),
       } as CampaignCardVM;
     });
-  }, [items, bnbUsd, logoCache, patchByCampaign]);
+
+    if (!isTrendingDefault) return mapped;
+
+    return mapped.slice().sort((a: any, b: any) => {
+      const aa = Number(a.lastActivityAtSec ?? 0);
+      const bb = Number(b.lastActivityAtSec ?? 0);
+      if (bb !== aa) return bb - aa;
+      const ac = Number(a.createdAt ?? 0);
+      const bc = Number(b.createdAt ?? 0);
+      if (bc !== ac) return bc - ac;
+      return String(a.campaignAddress).localeCompare(String(b.campaignAddress));
+    });
+  }, [items, bnbUsd, logoCache, patchByCampaign, baseParams]);
 
   const resultsMeta = useMemo(() => {
     const count = vms.length;

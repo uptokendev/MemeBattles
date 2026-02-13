@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /**
- * UPMEME UP Vote Treasury (v1 - Forwarding)
+ * MemeBattles UP Vote Treasury (v1 - Forwarding)
  *
  * - Users pay a small fee (BNB or supported ERC20) to cast an upvote for a campaign/token.
  * - Payments are forwarded immediately to feeReceiver (do not sit in this contract).

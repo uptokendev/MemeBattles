@@ -1,5 +1,5 @@
 -- =========================================
--- UPMEME Votes: ledger + aggregates
+-- MemeBattles Votes: ledger + aggregates
 -- =========================================
 
 begin;

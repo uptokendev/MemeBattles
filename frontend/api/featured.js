@@ -2,6 +2,7 @@ import { pool } from "../server/db.js";
 import { badMethod, getQuery, json } from "../server/http.js";
 
 const SORT_MAP = {
+  activity: "last_activity_at",
   trending: "trending_score",
   "24h": "votes_24h",
   "7d": "votes_7d",
@@ -14,8 +15,9 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 97);
-    const sortKeyRaw = String(q.sort ?? "trending").toLowerCase();
-    const sortCol = SORT_MAP[sortKeyRaw] ?? SORT_MAP.trending;
+    const sortKeyRaw = String(q.sort ?? "activity").toLowerCase();
+    const sortCol = SORT_MAP[sortKeyRaw] ?? SORT_MAP.activity;
+    const orderByExpr = sortCol === "last_activity_at" ? "ca.last_activity_at" : `va.${sortCol}`;
     const limit = Math.max(1, Math.min(50, Number(q.limit ?? 10)));
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
@@ -40,7 +42,8 @@ export default async function handler(req, res) {
          va.votes_7d AS "votes7d",
          va.votes_all_time AS "votesAllTime",
          va.trending_score AS "trendingScore",
-         va.last_vote_at AS "lastVoteAt"
+         va.last_vote_at AS "lastVoteAt",
+         ca.last_activity_at AS "lastActivityAt"
        FROM vote_aggregates va
        INNER JOIN campaigns c
          ON c.chain_id = va.chain_id
@@ -48,9 +51,12 @@ export default async function handler(req, res) {
        LEFT JOIN token_stats ts
          ON ts.chain_id = c.chain_id
         AND ts.campaign_address = c.campaign_address
+       LEFT JOIN campaign_activity ca
+         ON ca.chain_id = c.chain_id
+        AND ca.campaign_address = c.campaign_address
        WHERE va.chain_id = $1
          AND (c.graduated_at_chain IS NULL)
-       ORDER BY ${sortCol} DESC NULLS LAST
+       ORDER BY ${orderByExpr} DESC NULLS LAST
        LIMIT $2`,
       [chainId, limit]
     );

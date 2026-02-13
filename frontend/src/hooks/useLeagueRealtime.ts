@@ -10,6 +10,7 @@ export type LeaguePatch = {
   votesAllTime?: number;
   trendingScore?: string | null;
   raisedTotalBnb?: string | null;
+  lastActivityAt?: number;
   ts?: number;
 };
 
@@ -182,6 +183,51 @@ export function useLeagueRealtime(opts: Opts) {
       }
     };
   }, [enabled, isConnected, onFallbackRefresh, fallbackMs]);
+
+
+  // --- optimistic local activity/vote nudge on confirmed tx ---
+  useEffect(() => {
+    if (!enabled) return;
+
+    const onUpvote = (e: any) => {
+      const d = e?.detail ?? {};
+      const cid = Number(d.chainId ?? NaN);
+      if (Number.isFinite(cid) && cid !== chainId) return;
+      const addr = String(d.campaignAddress ?? '').toLowerCase();
+      if (!addr) return;
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      setPatchByCampaign((prev) => {
+        const cur = prev[addr] ?? ({ campaignAddress: addr } as LeaguePatch);
+        const v24 = Number(cur.votes24h ?? 0) + 1;
+        const vall = Number(cur.votesAllTime ?? 0) + 1;
+        return {
+          ...prev,
+          [addr]: { ...cur, campaignAddress: addr, votes24h: v24, votesAllTime: vall, lastActivityAt: nowSec },
+        };
+      });
+    };
+
+    const onTx = (e: any) => {
+      const d = e?.detail ?? {};
+      const cid = Number(d.chainId ?? NaN);
+      if (Number.isFinite(cid) && cid !== chainId) return;
+      const addr = String(d.campaignAddress ?? '').toLowerCase();
+      if (!addr) return;
+      const nowSec = Math.floor(Date.now() / 1000);
+      setPatchByCampaign((prev) => {
+        const cur = prev[addr] ?? ({ campaignAddress: addr } as LeaguePatch);
+        return { ...prev, [addr]: { ...cur, campaignAddress: addr, lastActivityAt: nowSec } };
+      });
+    };
+
+    window.addEventListener('upmeme:upvoteConfirmed', onUpvote as any);
+    window.addEventListener('upmeme:txConfirmed', onTx as any);
+    return () => {
+      window.removeEventListener('upmeme:upvoteConfirmed', onUpvote as any);
+      window.removeEventListener('upmeme:txConfirmed', onTx as any);
+    };
+  }, [enabled, chainId]);
 
   return useMemo(() => ({ patchByCampaign, created, isConnected }), [patchByCampaign, created, isConnected]);
 }
