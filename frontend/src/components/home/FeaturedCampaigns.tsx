@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
@@ -88,6 +88,8 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const [profilesByAddr, setProfilesByAddr] = useState<Record<string, UserProfile | null>>({});
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const anchorAddrRef = useRef<string | null>(null);
+  const prevOrderKeyRef = useRef<string>("");
 
   // Immediately refresh featured sorting after a confirmed tx (upvote/buy/sell/finalize).
   useEffect(() => {
@@ -314,6 +316,57 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     return mapped.map((c, i) => ({ ...c, idx: i + 1 }));
   }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr]);
 
+  // Keep the carousel viewport stable when the order changes (avoid "jumping" left/right).
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const orderKey = cards.map((c) => c.addr).join("|");
+    const prevKey = prevOrderKeyRef.current;
+    prevOrderKeyRef.current = orderKey;
+
+    // Only adjust on actual reorders (not first render).
+    if (!prevKey || prevKey === orderKey) return;
+
+    // If user is at far-left, don't fight them.
+    if (el.scrollLeft <= 2) {
+      anchorAddrRef.current = null;
+      return;
+    }
+
+    // Determine current leftmost visible card BEFORE we scroll-adjust.
+    // We use the current scrollLeft and child offsets.
+    const children = Array.from(el.children) as HTMLElement[];
+    const left = el.scrollLeft + 4; // small padding
+    let anchor: string | null = null;
+
+    for (const child of children) {
+      const start = child.offsetLeft;
+      const end = start + child.offsetWidth;
+      if (end > left) {
+        anchor = child.getAttribute("data-addr");
+        break;
+      }
+    }
+
+    if (!anchor) return;
+    anchorAddrRef.current = anchor;
+
+    // After DOM reorders, scroll the same anchor card back into view.
+    // Use rAF to ensure layout has settled.
+    requestAnimationFrame(() => {
+      const el2 = scrollRef.current;
+      if (!el2) return;
+      const target = el2.querySelector<HTMLElement>(`[data-addr="${anchor}"]`);
+      if (!target) return;
+
+      const desiredLeft = target.offsetLeft - 4;
+      // Jump without animation to avoid visible sliding.
+      el2.scrollTo({ left: desiredLeft, behavior: "auto" as any });
+    });
+  }, [cards]);
+
+
 
   useEffect(() => {
     let alive = true;
@@ -451,6 +504,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             cards.map((c) => (
               <div
                 key={c.addr}
+                data-addr={c.addr}
                 className={cn(
                   "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors",
                   // ✅ this prevents “tiny cards” on small screens
