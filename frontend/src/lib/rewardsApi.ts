@@ -4,6 +4,7 @@ export type RewardItem = {
   period: "weekly" | "monthly";
   epochStart: string;
   epochEnd: string;
+  expiresAt?: string | null;
   category: string;
   rank: number;
   amountRaw: string;

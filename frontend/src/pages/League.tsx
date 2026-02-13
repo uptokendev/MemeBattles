@@ -396,6 +396,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               Profile → Rewards
             </button>
             <span className="hidden md:inline text-muted-foreground">· appears after epoch finalizes (hourly)</span>
+            <span className="hidden md:inline text-muted-foreground">· claims expire after 90 days — unclaimed rewards roll back into the next pool</span>
           </div>
         </div>
 

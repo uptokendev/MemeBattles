@@ -20,6 +20,7 @@ export default async function handler(req, res) {
           w.period,
           w.epoch_start AS "epochStart",
           w.epoch_end AS "epochEnd",
+          w.expires_at AS "expiresAt",
           w.category,
           w.rank,
           w.amount_raw AS "amountRaw",
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
         WHERE w.chain_id = $1
           AND lower(w.recipient_address) = $2
           AND c.claimed_at IS NULL
+          AND (w.expires_at IS NULL OR w.expires_at > NOW())
         ORDER BY w.epoch_start DESC, w.period DESC, w.category ASC, w.rank ASC`,
       [chainId, address]
     );
@@ -46,6 +48,7 @@ export default async function handler(req, res) {
         period: r.period,
         epochStart: r.epochStart,
         epochEnd: r.epochEnd,
+        expiresAt: r.expiresAt,
         category: r.category,
         rank: r.rank,
         amountRaw: r.amountRaw,

@@ -267,6 +267,40 @@ async function getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso) {
     };
   }
 
+  // Add per-category rollover amount for this epoch (if present).
+  // Rollovers are a ledger of funds carried into this epoch from:
+  // - expired, unclaimed prizes (swept into next epoch)
+  // - no-clear-winner outcomes (e.g., ties / Perfect Run edge cases)
+  if (epochStartIso) {
+    try {
+      const { rows: rrows } = await pool.query(
+        `select category, coalesce(sum(amount_raw), 0)::numeric(78,0) as amount_raw
+           from public.league_rollovers
+          where chain_id = $1 and period = $2 and epoch_start = $3::timestamptz
+          group by category`,
+        [chainId, periodNorm, epochStartIso]
+      );
+
+      for (const rr of rrows) {
+        const cat = String(rr.category || "");
+        if (!byCategory[cat]) continue;
+        const rollover = BigInt(String(rr.amount_raw ?? "0"));
+        if (rollover <= 0n) continue;
+
+        const basePot = BigInt(byCategory[cat].potRaw);
+        const nextPot = basePot + rollover;
+        byCategory[cat] = {
+          ...byCategory[cat],
+          rolloverRaw: rollover.toString(),
+          potRaw: nextPot.toString(),
+          payoutsRaw: splitPotRaw(nextPot)
+        };
+      }
+    } catch {
+      // If the rollover table isn't deployed yet, ignore (backward compatible).
+    }
+  }
+
   const data = {
     basis: "league_fee_only",
     period: periodNorm,
@@ -322,7 +356,7 @@ export default async function handler(req, res) {
 
       // Winner must exist, and must belong to recipient.
       const { rows: wrows } = await pool.query(
-        `SELECT epoch_end AS "epochEnd", recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
+        `SELECT epoch_end AS "epochEnd", expires_at AS "expiresAt", recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
            FROM league_epoch_winners
           WHERE chain_id = $1
             AND period = $2
@@ -342,6 +376,12 @@ export default async function handler(req, res) {
       const epochEndMs = w.epochEnd ? new Date(w.epochEnd).getTime() : 0;
       if (epochEndMs && Date.now() < epochEndMs) {
         return json(res, 400, { error: "Epoch not finalized" });
+      }
+
+      // Enforce claim expiry (default: 90 days after epoch_end)
+      const expiresMs = w.expiresAt ? new Date(w.expiresAt).getTime() : 0;
+      if (expiresMs && Date.now() > expiresMs) {
+        return json(res, 410, { error: "Claim expired" });
       }
 
       // Record the claim (prevents double-claim)
