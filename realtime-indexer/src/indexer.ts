@@ -30,6 +30,12 @@ function parseRpcList(v: string): string[] {
 
 function isRateLimitError(e: any): boolean {
   const msg = String(e?.shortMessage || e?.message || "").toLowerCase();
+  // ethers v6 often wraps provider/network failures like this
+  if (msg.includes("could not coalesce")) return true;
+  if (msg.includes("missing response")) return true;
+  if (msg.includes("failed to fetch")) return true;
+  if (msg.includes("network error")) return true;
+
   if (msg.includes("rate limit")) return true;
 
   // ethers v6 BAD_DATA wrapping JSON-RPC batch errors
