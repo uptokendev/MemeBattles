@@ -35,7 +35,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
           <img
             src="/assets/logo.png"
             alt="Meme Battles"
-            className="h-[240px] md:h-[260px] lg:h-[280px] w-auto drop-shadow-[0_0_18px_rgba(255,160,0,0.35)]"
+            className="h-[200px] md:h-[200px] lg:h-[200px] w-auto drop-shadow-[0_0_18px_rgba(255,160,0,0.35)]"
             draggable={false}
           />
         </div>
