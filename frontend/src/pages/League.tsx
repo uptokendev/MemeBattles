@@ -375,7 +375,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [activeChainId, period, epochOffset, refreshTick]);
 
   return (
-    <div className="h-full overflow-y-auto pr-2 pt-6 md:pt-8">
+    // NOTE: TopBar is fixed-position. This page doesn't have a tall header band
+    // (like the Showcase) so it needs extra top padding to avoid overlapping the
+    // header actions (Create coin / Connect).
+    <div className="h-full overflow-y-auto pr-2 pt-16 md:pt-16">
       <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <h1 className="text-lg md:text-2xl font-semibold">Battle Leagues</h1>
@@ -392,6 +395,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             >
               Profile → Rewards
             </button>
+            <span className="hidden md:inline text-muted-foreground">· appears after epoch finalizes (hourly)</span>
           </div>
         </div>
 
@@ -477,35 +481,53 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
               <div className="p-4">
                 {/* Prize box (weekly/monthly only) */}
-                {cardPrize && (effectivePeriod === "weekly" || effectivePeriod === "monthly") ? (
-                  <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-[11px] text-muted-foreground">{l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}</div>
-                      <div className="text-sm font-semibold">{formatBnbFromRaw(cardPrize.potRaw)} BNB</div>
-                    </div>
+                {effectivePeriod === "weekly" || effectivePeriod === "monthly" ? (
+                  cardPrize ? (
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] text-muted-foreground">
+                          {l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}
+                        </div>
+                        <div className="text-sm font-semibold">{formatBnbFromRaw(cardPrize.potRaw)} BNB</div>
+                      </div>
 
-                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-1 text-[11px]">
-                      <div>
-                        <span className="text-muted-foreground">#1</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[0])}</span>
+                      {/* Weekly should show 1 winner; Monthly can show up to top-5 */}
+                      <div
+                        className={
+                          "mt-2 grid gap-x-4 gap-y-1 text-[11px] " +
+                          (effectivePeriod === "weekly" ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-5")
+                        }
+                      >
+                        {Array.from({ length: effectivePeriod === "weekly" ? 1 : 5 }).map((_, i) => (
+                          <div key={i}>
+                            <span className="text-muted-foreground">#{i + 1}</span>{" "}
+                            <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw?.[i] ?? "0")}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">#2</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[1])}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">#3</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[2])}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">#4</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[3])}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">#5</span> <span className="font-semibold">{formatBnbFromRaw(cardPrize.payoutsRaw[4])}</span>
-                      </div>
-                    </div>
 
-                    <div className="mt-2 text-[10px] text-muted-foreground">
-                      Updated hourly · computed {formatIsoTiny(cardPrize.computedAt)} · total league fees {formatBnbFromRaw(cardPrize.totalLeagueFeeRaw)} BNB
+                      <div className="mt-2 text-[10px] text-muted-foreground">
+                        Updated hourly · computed {formatIsoTiny(cardPrize.computedAt)} · total league fees {formatBnbFromRaw(cardPrize.totalLeagueFeeRaw)} BNB
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] text-muted-foreground">Prize pool</div>
+                        <div className="text-sm font-semibold">—</div>
+                      </div>
+                      <div className="mt-2 text-[11px] text-muted-foreground">
+                        Prize metadata not available yet (indexer/API). Check <span className="font-semibold">Status</span>.
+                        <button
+                          type="button"
+                          onClick={() => navigate("/status")}
+                          className="ml-2 text-accent hover:text-accent/80 font-semibold"
+                        >
+                          Open →
+                        </button>
+                      </div>
+                    </div>
+                  )
                 ) : null}
 
                 {warn ? <div className="mb-3 text-[11px] text-muted-foreground">{warn}</div> : null}
