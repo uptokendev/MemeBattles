@@ -124,6 +124,17 @@ const TokenDetails = () => {
   const [metricsExpanded, setMetricsExpanded] = useState(false);
   const isMobile = window.innerWidth < 768;
 
+  // Keep CTA styling consistent with TopBar (Create Coin / Connect Wallet)
+  const topbarButtonClass =
+    "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg";
+
+  // Tabs that should visually read like the TopBar CTA buttons.
+  const ctaTabsListClass = "grid w-full grid-cols-2 mb-3 bg-transparent p-0 h-auto gap-2";
+  const ctaTabsTriggerClass =
+    "rounded-xl border px-3 py-2 font-retro text-xs md:text-sm transition-colors " +
+    "bg-transparent border-border/40 text-muted-foreground hover:text-foreground hover:bg-card/30 " +
+    "data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:border-amber-400/40 data-[state=active]:shadow-lg";
+
   useEffect(() => {
     try {
       localStorage.setItem("launchit:displayDenom", displayDenom);
@@ -1365,7 +1376,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col px-3 md:px-6 pt-3 md:pt-6 gap-3 md:gap-4">
+    <div className="h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
       {/* Main Content - Single Row */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4 lg:flex-1 lg:min-h-0">
         {/* Left Column - Header, Chart & Transactions (3/4 width) */}
@@ -1757,9 +1768,9 @@ style={!isMobile ? { flex: "2" } : undefined}
             onValueChange={(v) => setActivityTab(v as any)}
             className="h-full flex flex-col min-h-0"
           >
-            <TabsList className="grid w-full grid-cols-2 mb-3">
-              <TabsTrigger value="comments">Comments</TabsTrigger>
-              <TabsTrigger value="trades">Trades</TabsTrigger>
+            <TabsList className={ctaTabsListClass}>
+              <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Comments</TabsTrigger>
+              <TabsTrigger value="trades" className={ctaTabsTriggerClass}>Trades</TabsTrigger>
             </TabsList>
 
             <TabsContent value="comments" className="flex-1 min-h-0 overflow-y-auto">
@@ -1882,9 +1893,9 @@ style={!isMobile ? { flex: "2" } : undefined}
           {/* Trading Panel - 2/5 height */}
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
             <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
-              <TabsList className="grid w-full grid-cols-2 mb-3">
-                <TabsTrigger value="buy" className="text-sm">Buy</TabsTrigger>
-                <TabsTrigger value="sell" className="text-sm">Sell</TabsTrigger>
+            <TabsList className={ctaTabsListClass}>
+                <TabsTrigger value="buy" className={ctaTabsTriggerClass}>Buy</TabsTrigger>
+                <TabsTrigger value="sell" className={ctaTabsTriggerClass}>Sell</TabsTrigger>
               </TabsList>
 
               <TabsContent value="buy" className="space-y-3">
@@ -1939,9 +1950,9 @@ style={!isMobile ? { flex: "2" } : undefined}
                 <Button
                   onClick={handlePlaceTrade}
                   disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5"
+                  className={`w-full ${topbarButtonClass} py-5`}
                 >
-                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Place Trade"}
+                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
                 </Button>
               </TabsContent>
 
@@ -2040,9 +2051,9 @@ style={!isMobile ? { flex: "2" } : undefined}
                 <Button
                   onClick={handlePlaceTrade}
                   disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
-                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-retro py-5"
+                  className={`w-full ${topbarButtonClass} py-5`}
                 >
-                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Place Trade"}
+                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}
                 </Button>
               </TabsContent>
             </Tabs>
