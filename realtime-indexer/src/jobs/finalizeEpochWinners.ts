@@ -1,3 +1,12 @@
+// Force IPv4-first DNS resolution to avoid ENETUNREACH on IPv6-only answers
+// in some hosted environments (e.g., Railway).
+import dns from "node:dns";
+try {
+  // Node 18+ supports this; harmless if already configured via NODE_OPTIONS.
+  dns.setDefaultResultOrder("ipv4first");
+} catch {}
+
+
 import { pool } from "../db.js";
 import { ENV } from "../env.js";
 
