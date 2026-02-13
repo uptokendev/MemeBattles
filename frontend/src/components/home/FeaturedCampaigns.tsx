@@ -63,6 +63,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
   const [refetchNonce, setRefetchNonce] = useState(0);
+  const [voteMode, setVoteMode] = useState<"24h" | "all">("24h");
 
   const { patchByCampaign } = useLeagueRealtime({
   enabled: true,
@@ -226,7 +227,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         ? Math.floor(new Date(it.createdAtChain).getTime() / 1000)
         : undefined;
 
-      const votes24h = Number(patch?.votes24h ?? it.votes24h ?? 0);
+      const votes24h = Number((patch as any)?.votes24h ?? (it as any)?.votes24h ?? 0);
+      const votesAll = Number(
+        (patch as any)?.votesAllTime ??
+          (patch as any)?.votesAll ??
+          (it as any)?.votesAllTime ??
+          (it as any)?.votes_all_time ??
+          0
+      );
+      const rankVotes = voteMode === "24h" ? votes24h : votesAll;
 
       // Pump.fun-like: sort by "most recent activity" (vote or trade)
       const activitySec =
@@ -284,6 +293,8 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         creatorLabel,
         createdAt,
         votes24h,
+        votesAll,
+        rankVotes,
         activitySec: typeof activitySec === "number" && Number.isFinite(activitySec) ? activitySec : 0,
         mcapUsdLabel,
         image: resolved,
@@ -292,8 +303,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
     // Sort live on every realtime patch (both tabs)
     mapped.sort((a, b) => {
+      // RULE: higher selected votes ranks higher
+      if (b.rankVotes !== a.rankVotes) return b.rankVotes - a.rankVotes;
+      // Tie-break: newest activity first (pump.fun feel)
       if (b.activitySec !== a.activitySec) return b.activitySec - a.activitySec;
-      if (b.votes24h !== a.votes24h) return b.votes24h - a.votes24h;
       return (b.createdAt ?? 0) - (a.createdAt ?? 0);
     });
 
@@ -376,7 +389,28 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             <ThumbsUp className="h-4 w-4 text-accent" />
             Featured Campaigns
           </div>
-          <div className="text-xs text-muted-foreground">Top 20 (most recent activity)</div>
+          <div className="text-xs text-muted-foreground">
+            Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"}, tie-break by activity)
+          </div>
+        </div>
+        {/* 24h / All-time toggle */}
+        <div className="hidden md:flex items-center gap-1">
+          <Button
+            type="button"
+            variant={voteMode === "24h" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setVoteMode("24h")}
+          >
+            24h
+          </Button>
+          <Button
+            type="button"
+            variant={voteMode === "all" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setVoteMode("all")}
+          >
+            All-time
+          </Button>
         </div>
 
         <div className="hidden md:flex items-center gap-2">
@@ -478,8 +512,12 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       {/* Votes (24h) top-right */}
                       <div className="flex items-center gap-1 text-xs text-accent shrink-0">
                         <Flame className="h-4 w-4" />
-                        <span className="font-semibold">{c.votes24h}</span>
-                        <span className="text-muted-foreground">/ 24h</span>
+                        <span className="font-semibold">
+                          {voteMode === "24h" ? c.votes24h : c.votesAll}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {voteMode === "24h" ? "/ 24h" : "all"}
+                        </span>
                       </div>
                     </div>
 
