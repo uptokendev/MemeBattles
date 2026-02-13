@@ -525,15 +525,24 @@ async function patchVoteAggregates(chainId: number, campaign: string) {
       Number(x.votes_24h || 0),
       Number(x.votes_7d || 0),
       Number(x.votes_all_time || 0),
-      String(x.trending_score || 0),
+      Number(x.trending_score || 0),
       x.last_vote_at
     ]
   );
-  leagueFeed.queueVotes(chainId, campaign, {
-    votes24h: Number(x.votes_24h || 0),
-    votesAllTime: Number(x.votes_all_time || 0),
-    trendingScore: String(x.trending_score || 0)
-  });
+  // Realtime publish is best-effort; never let it break indexing progress.
+  try {
+    leagueFeed.queueVotes(chainId, campaign, {
+      votes24h: Number(x.votes_24h || 0),
+      votesAllTime: Number(x.votes_all_time || 0),
+      trendingScore: String(x.trending_score || 0)
+    });
+  } catch (e: any) {
+    console.warn("leagueFeed.queueVotes failed", {
+      chainId,
+      campaign: campaign.toLowerCase(),
+      err: e?.message || e
+    });
+  }
 }
 
 async function upsertCandle(
@@ -816,14 +825,24 @@ async function scanVoteTreasuryRange(
       }
 
       for (const c of touched) {
-        await patchVoteAggregates(chain.chainId, c);
+        try {
+          await patchVoteAggregates(chain.chainId, c);
+        } catch (e: any) {
+          // If aggregates fail, we still want the ledger + cursor to keep moving.
+          // Otherwise Featured freezes forever.
+          console.error("patchVoteAggregates failed", {
+            chainId: chain.chainId,
+            campaign: c,
+            err: e?.message || e,
+          });
+        }
       }
     }
 
+    // Cursor progression must not depend on aggregates or realtime publishing.
     await setStateMax(chain.chainId, cursor, end + 1);
   }
 }
-
 
 
 // ---------------------------------------------------------------------------
