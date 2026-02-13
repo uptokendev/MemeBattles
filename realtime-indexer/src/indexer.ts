@@ -55,6 +55,12 @@ function isPrunedHistoryError(e: any): boolean {
 function isRpcTransportError(e: any): boolean {
   const msg = String(e?.shortMessage || e?.message || "").toLowerCase();
 
+  // ethers v6 sometimes wraps provider/network issues as "could not coalesce error"
+  // (often caused by transient gateway failures or malformed JSON-RPC responses)
+  if (msg.includes("could not coalesce")) return true;
+  if (msg.includes("missing response")) return true;
+  if (msg.includes("failed to fetch")) return true;
+
   // Common transient gateway/network failures from public RPCs
   if (msg.includes("service unavailable") || msg.includes("503")) return true;
   if (msg.includes("bad gateway") || msg.includes("502")) return true;
@@ -179,7 +185,9 @@ async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth 
     // Pruned history should not be retried on the SAME provider.
     if (isPrunedHistoryError(e)) throw e;
 
-    if (!isRateLimitError(e)) throw e;
+    // Some public RPCs fail eth_getLogs with transport-layer issues.
+    // Treat those as transient so we can split ranges / retry.
+    if (!isRateLimitError(e) && !isRpcTransportError(e)) throw e;
 
     const from = typeof filter?.fromBlock === "number" ? filter.fromBlock : null;
     const to = typeof filter?.toBlock === "number" ? filter.toBlock : null;
@@ -203,7 +211,7 @@ async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth 
         return await provider.getLogs(filter);
       } catch (e2: any) {
         if (isPrunedHistoryError(e2)) throw e2;
-        if (!isRateLimitError(e2)) throw e2;
+        if (!isRateLimitError(e2) && !isRpcTransportError(e2)) throw e2;
       }
       delay = Math.min(15_000, delay * 2);
     }
