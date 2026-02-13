@@ -27,7 +27,7 @@ export const navItems: NavItem[] = [
 
 export const socialLinks: SocialItem[] = [
   {
-    href: "https://twitter.com/launchpad",
+    href: "https://twitter.com/_MemeBattles",
     ariaLabel: "X",
     tooltip: "X",
     color: "#000000",

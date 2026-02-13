@@ -248,7 +248,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         <div className="hidden lg:flex items-center gap-4 flex-1">
           <Link to="/" className="flex items-center gap-2 mr-2">
             <img src={brandMark} alt="MemeBattles" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-sm">MemeBattles</span>
+            <span className="font-retro text-base">MemeBattles</span>
           </Link>
 
           <div className="flex items-center gap-1">
@@ -257,7 +257,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "px-3 py-2 rounded-xl text-xs font-retro transition-colors border",
+                  "px-3 py-2 rounded-xl text-base font-retro transition-colors border",
                   isActive(item.path)
                     ? "bg-card/60 border-amber-400/40 text-amber-200"
                     : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/30"
