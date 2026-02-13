@@ -62,14 +62,14 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
-const [refetchNonce, setRefetchNonce] = useState(0);
+  const [refetchNonce, setRefetchNonce] = useState(0);
 
-const { patchByCampaign } = useLeagueRealtime({
+  const { patchByCampaign } = useLeagueRealtime({
   enabled: true,
   chainId: activeChainId,
   fallbackMs: 25000,
   onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
-});
+ });
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
   const goProfile = (creatorAddr?: string) => {
@@ -111,7 +111,7 @@ const { patchByCampaign } = useLeagueRealtime({
       setErr(null);
       try {
         // Avoid edge/browser caching so vote counts/order refresh immediately after tx confirmation.
-        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=24h&limit=20&_r=${refetchNonce}`, {
+        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, {
           cache: "no-store" as any,
         });
         const j = await r.json();
@@ -218,7 +218,7 @@ const { patchByCampaign } = useLeagueRealtime({
   }, [items, activeChainId, profilesByAddr]);
 
   const cards = useMemo(() => {
-    return items.map((it, idx) => {
+    const mapped = items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const patch = patchByCampaign[addr];
 
@@ -227,6 +227,14 @@ const { patchByCampaign } = useLeagueRealtime({
         : undefined;
 
       const votes24h = Number(patch?.votes24h ?? it.votes24h ?? 0);
+
+      // Pump.fun-like: sort by "most recent activity" (vote or trade)
+      const activitySec =
+        (typeof (patch as any)?.lastActivityAt === "number" ? (patch as any).lastActivityAt : null) ??
+        (typeof (it as any)?.lastActivityAt === "number" ? (it as any).lastActivityAt : null) ??
+        (typeof (it as any)?.last_activity_at === "number" ? (it as any).last_activity_at : null) ??
+        (it as any)?.lastActivityAt ??
+        null;
       
       const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
@@ -276,11 +284,22 @@ const { patchByCampaign } = useLeagueRealtime({
         creatorLabel,
         createdAt,
         votes24h,
+        activitySec: typeof activitySec === "number" && Number.isFinite(activitySec) ? activitySec : 0,
         mcapUsdLabel,
         image: resolved,
       };
     });
-  }, [items, bnbUsd, logoCache, profilesByAddr]);
+
+    // Sort live on every realtime patch (both tabs)
+    mapped.sort((a, b) => {
+      if (b.activitySec !== a.activitySec) return b.activitySec - a.activitySec;
+      if (b.votes24h !== a.votes24h) return b.votes24h - a.votes24h;
+      return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
+
+    // Re-number badges after sort
+    return mapped.map((c, i) => ({ ...c, idx: i + 1 }));
+  }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr]);
 
 
   useEffect(() => {
@@ -357,7 +376,7 @@ const { patchByCampaign } = useLeagueRealtime({
             <ThumbsUp className="h-4 w-4 text-accent" />
             Featured Campaigns
           </div>
-          <div className="text-xs text-muted-foreground">Top 20 (last 24h)</div>
+          <div className="text-xs text-muted-foreground">Top 20 (most recent activity)</div>
         </div>
 
         <div className="hidden md:flex items-center gap-2">
