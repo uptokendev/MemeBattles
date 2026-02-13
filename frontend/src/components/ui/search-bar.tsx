@@ -52,6 +52,23 @@ const SearchBar = ({
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [activeIndex, setActiveIndex] = useState<number>(-1);
 
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setIsMobile(Boolean(mq.matches));
+    apply();
+    try {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    } catch {
+      // Safari fallback
+      mq.addListener(apply);
+      return () => mq.removeListener(apply);
+    }
+  }, []);
+
   const isUnsupportedBrowser = useMemo(() => {
     if (typeof window === "undefined") return false;
     const ua = navigator.userAgent.toLowerCase();
@@ -165,8 +182,17 @@ const SearchBar = ({
       <motion.form
         onSubmit={handleSubmit}
         className="relative flex items-center justify-center w-full mx-auto"
-        initial={{ width: "240px" }}
-        animate={{ width: isFocused ? "340px" : "240px", scale: isFocused ? 1.05 : 1 }}
+        initial={{ width: isMobile ? "170px" : "240px" }}
+        animate={{
+          width: isFocused
+            ? isMobile
+              ? "220px"
+              : "340px"
+            : isMobile
+            ? "170px"
+            : "240px",
+          scale: isFocused ? 1.05 : 1,
+        }}
         transition={{ type: "spring", stiffness: 400, damping: 25 }}
         onMouseMove={handleMouseMove}
       >

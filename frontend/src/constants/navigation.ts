@@ -22,7 +22,7 @@ export const navItems: NavItem[] = [
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
   { icon: userIcon, label: "Profile", path: "/profile" },
-  { icon: BookOpen, label: "Docs", path: "/docs" },
+  { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
 ];
 
 export const socialLinks: SocialItem[] = [
