@@ -37,18 +37,31 @@ const Showcase = () => {
         */}
         <HeaderBand />
 
-        {/* Mobile League card (moves out of TopBar on small screens) */}
-        <div className="md:hidden mt-2 mb-5">
-          <LeagueOverlayCard className="w-full max-w-[460px] mx-auto" />
-        </div>
+        {/* Featured + League card row */}
+        <div className="-translate-y-6 md:-translate-y-14">
+          {/* Mobile: show the league card above featured */}
+          <div className="md:hidden mt-2 mb-5">
+            <LeagueOverlayCard className="w-full max-w-[460px] mx-auto" />
+          </div>
 
-        {/* Featured grid (UpVote campaigns) */}
-        <div className="md:pr-[320px] -translate-y-6 md:-translate-y-14">
-          <FeaturedCampaigns />
+          {/* Desktop: side-by-side so the league card has a fixed slot next to Featured */}
+          <div className="hidden md:flex gap-4 items-start">
+            <div className="flex-1 min-w-0">
+              <FeaturedCampaigns />
+            </div>
+            <div className="w-[300px] shrink-0">
+              <LeagueOverlayCard className="w-full" />
+            </div>
+          </div>
+
+          {/* Mobile: featured below the league card */}
+          <div className="md:hidden">
+            <FeaturedCampaigns />
+          </div>
         </div>
 
         {/* Tabs / filters / sort / search */}
-        <div className="mt-5 md:pr-[320px] -translate-y-6 md:-translate-y-14">
+        <div className="mt-5 -translate-y-6 md:-translate-y-14">
           <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
         </div>
 
