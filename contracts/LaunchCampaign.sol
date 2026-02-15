@@ -293,6 +293,12 @@ if (!hasBought[msg.sender]) {
             _sendNative(msg.sender, msg.value - total);
         }
 
+        // Auto-finalize (graduate) immediately once the campaign becomes eligible.
+        // This matches pump.fun / gra.fun style behavior: the completion trade triggers LP deployment.
+        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+            _finalize(0, 0, msg.sender);
+        }
+
         emit TokensPurchased(msg.sender, amountOut, total);
         return total;
     }
@@ -335,6 +341,11 @@ if (!hasBought[msg.sender]) {
 
         if (msg.value > total) {
             _sendNative(msg.sender, msg.value - total);
+        }
+
+        // Auto-finalize (graduate) immediately once eligible.
+        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+            _finalize(0, 0, msg.sender);
         }
 
         emit TokensPurchased(msg.sender, tokensOut, total);
@@ -380,6 +391,11 @@ if (!hasBought[msg.sender]) {
 
         if (msg.value > total) {
             _sendNative(msg.sender, msg.value - total);
+        }
+
+        // Auto-finalize (graduate) immediately once eligible (factory initial buy can trigger this too).
+        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+            _finalize(0, 0, recipient);
         }
 
         emit TokensPurchased(recipient, amountOut, total);
@@ -429,6 +445,11 @@ if (!hasBought[msg.sender]) {
             _sendNative(msg.sender, msg.value - total);
         }
 
+        // Auto-finalize (graduate) immediately once eligible.
+        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+            _finalize(0, 0, recipient);
+        }
+
         emit TokensPurchased(recipient, tokensOut, total);
         return (tokensOut, total);
     }
@@ -473,10 +494,19 @@ if (!hasBought[msg.sender]) {
     emit NativeClaimed(msg.sender, amount);
 }
 
-function finalize(uint256 minTokens, uint256 minBnb)
+    /// @notice Creator-controlled manual finalize (emergency/backstop only).
+    /// @dev Normal flow auto-finalizes inside the completion buy transaction.
+    function finalize(uint256 minTokens, uint256 minBnb)
         external
         onlyOwner
         nonReentrant
+        returns (uint256 usedTokens, uint256 usedBnb)
+    {
+        return _finalize(minTokens, minBnb, msg.sender);
+    }
+
+    function _finalize(uint256 minTokens, uint256 minBnb, address caller)
+        internal
         returns (uint256 usedTokens, uint256 usedBnb)
     {
         require(!launched, "finalized");
@@ -496,16 +526,16 @@ function finalize(uint256 minTokens, uint256 minBnb)
             _sendNativeFee(payable(feeRecipient), protocolFee);
         }
 
-        // Bonding-curve fees apply only pre-launch. Once liquidity is seeded on the DEX,
-        // this campaign no longer executes trades and the protocol fee should be considered off.
-        // (Also protects against any future code-paths that might read protocolFeeBps post-launch.)
-        // protocolFeeBps = 0;
-
         uint256 remainingAfterFee = address(this).balance;
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 tokensForLp = liquiditySupply;
 
         if (tokensForLp > 0 && liquidityValue > 0) {
+
+            // NOTE: We intentionally do NOT revert if the v2 pair already exists or even has reserves.
+            // LaunchToken blocks user transfers pre-finalize, so meaningful preseeding should be impossible.
+            // Reverting here can brick campaigns, which is worse than any theoretical edge case.
+
             tokenInterface.forceApprove(address(router), tokensForLp);
             (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
                 address(token),
@@ -540,7 +570,7 @@ function finalize(uint256 minTokens, uint256 minBnb)
         token.enableTrading();
 
         emit CampaignFinalized(
-            msg.sender,
+            caller,
             usedTokens,
             usedBnb,
             protocolFee,

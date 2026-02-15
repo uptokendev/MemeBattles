@@ -1,19 +1,18 @@
 import { expect } from "chai";
-import hre from "hardhat";
+import { ethers } from "hardhat";
 
-const { ethers } = await hre.network.connect();
 const { parseEther } = ethers;
 
-// ✅ Helper to jump time using ethers.provider
-async function setNextBlockTimestamp(timestamp) {
+// Helper to jump time using ethers.provider
+async function setNextBlockTimestamp(timestamp: number) {
   await ethers.provider.send("evm_setNextBlockTimestamp", [timestamp]);
   await ethers.provider.send("evm_mine", []);
 }
 
 describe("LpTimelock", function () {
-  let owner, beneficiary, other;
-  let token;
-  let LpTimelock;
+  let owner: any, beneficiary: any, other: any;
+  let token: any;
+  let LpTimelock: any;
 
   beforeEach(async function () {
     [owner, beneficiary, other] = await ethers.getSigners();
@@ -24,9 +23,7 @@ describe("LpTimelock", function () {
     await token.waitForDeployment();
 
     // Initialize token so it behaves like in the other tests
-    await token
-      .connect(owner)
-      .initialize("LP Token", "LPT", owner.address);
+    await token.connect(owner).initialize("LP Token", "LPT", owner.address);
 
     LpTimelock = await ethers.getContractFactory("LpTimelock");
   });
@@ -35,14 +32,10 @@ describe("LpTimelock", function () {
     const tokenAddr = await token.getAddress();
 
     const latest = await ethers.provider.getBlock("latest");
-    const now = latest.timestamp;
+    const now = Number(latest!.timestamp);
     const releaseTime = now + 3600; // 1 hour from now
 
-    const timelock = await LpTimelock.deploy(
-      tokenAddr,
-      beneficiary.address,
-      releaseTime
-    );
+    const timelock = await LpTimelock.deploy(tokenAddr, beneficiary.address, releaseTime);
     await timelock.waitForDeployment();
 
     expect(await timelock.token()).to.equal(tokenAddr);
@@ -53,89 +46,50 @@ describe("LpTimelock", function () {
   it("reverts if releaseTime is not strictly in the future", async function () {
     const tokenAddr = await token.getAddress();
     const latest = await ethers.provider.getBlock("latest");
-    const now = latest.timestamp;
+    const now = Number(latest!.timestamp);
 
-    let errorEqual;
-    try {
-      await LpTimelock.deploy(tokenAddr, beneficiary.address, now);
-    } catch (e) {
-      errorEqual = e;
-    }
-    expect(errorEqual).to.be.an("Error");
-    expect(String(errorEqual.message)).to.include("Release before now");
-
-    let errorPast;
-    try {
-      await LpTimelock.deploy(tokenAddr, beneficiary.address, now - 1);
-    } catch (e) {
-      errorPast = e;
-    }
-    expect(errorPast).to.be.an("Error");
-    expect(String(errorPast.message)).to.include("Release before now");
+    await expect(LpTimelock.deploy(tokenAddr, beneficiary.address, now)).to.be.revertedWith(
+      "Release before now"
+    );
+    await expect(LpTimelock.deploy(tokenAddr, beneficiary.address, now - 1)).to.be.revertedWith(
+      "Release before now"
+    );
   });
 
   it("reverts release() before releaseTime", async function () {
     const tokenAddr = await token.getAddress();
     const latest = await ethers.provider.getBlock("latest");
-    const now = latest.timestamp;
+    const now = Number(latest!.timestamp);
     const releaseTime = now + 3600;
 
-    const timelock = await LpTimelock.deploy(
-      tokenAddr,
-      beneficiary.address,
-      releaseTime
-    );
+    const timelock = await LpTimelock.deploy(tokenAddr, beneficiary.address, releaseTime);
     await timelock.waitForDeployment();
 
-    let error;
-    try {
-      await timelock.connect(beneficiary).release();
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an("Error");
-    expect(String(error.message)).to.include("Not released");
+    await expect(timelock.connect(beneficiary).release()).to.be.revertedWith("Not released");
   });
 
   it("reverts release() after time if no tokens locked", async function () {
     const tokenAddr = await token.getAddress();
     const latest = await ethers.provider.getBlock("latest");
-    const now = latest.timestamp;
+    const now = Number(latest!.timestamp);
     const releaseTime = now + 3600;
 
-    const timelock = await LpTimelock.deploy(
-      tokenAddr,
-      beneficiary.address,
-      releaseTime
-    );
+    const timelock = await LpTimelock.deploy(tokenAddr, beneficiary.address, releaseTime);
     await timelock.waitForDeployment();
 
     // move just past releaseTime
     await setNextBlockTimestamp(releaseTime + 1);
 
-    let error;
-    try {
-      await timelock.connect(beneficiary).release();
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an("Error");
-    expect(String(error.message)).to.include("No tokens");
+    await expect(timelock.connect(beneficiary).release()).to.be.revertedWith("No tokens");
   });
 
   it("releases full balance to beneficiary after releaseTime", async function () {
     const tokenAddr = await token.getAddress();
     const latest = await ethers.provider.getBlock("latest");
-    const now = latest.timestamp;
+    const now = Number(latest!.timestamp);
     const releaseTime = now + 3600;
 
-    const timelock = await LpTimelock.deploy(
-      tokenAddr,
-      beneficiary.address,
-      releaseTime
-    );
+    const timelock = await LpTimelock.deploy(tokenAddr, beneficiary.address, releaseTime);
     await timelock.waitForDeployment();
 
     const timelockAddr = await timelock.getAddress();
@@ -149,15 +103,13 @@ describe("LpTimelock", function () {
 
     const beforeBeneficiary = await token.balanceOf(beneficiary.address);
     const beforeLock = await token.balanceOf(timelockAddr);
-
     expect(beforeLock).to.equal(amount);
 
     // move time past releaseTime
     await setNextBlockTimestamp(releaseTime + 1);
 
     // release tokens
-    const tx = await timelock.connect(beneficiary).release();
-    await tx.wait();
+    await (await timelock.connect(beneficiary).release()).wait();
 
     const afterBeneficiary = await token.balanceOf(beneficiary.address);
     const afterLock = await token.balanceOf(timelockAddr);

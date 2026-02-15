@@ -16821,7 +16821,7 @@ export { useToast, toast };
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://upmeme-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type Entry = {
@@ -19140,7 +19140,7 @@ function statusColor(kind: "green" | "yellow" | "red") {
 }
 
 export default function Status() {
-  const [token, setToken] = useState(() => localStorage.getItem("upmeme_status_token") || "");
+  const [token, setToken] = useState(() => localStorage.getItem("memebattles_status_token") || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TelemetryResponse | null>(null);
@@ -19205,7 +19205,7 @@ export default function Status() {
   }, [auto, token]);
 
   function saveToken() {
-    localStorage.setItem("upmeme_status_token", token);
+    localStorage.setItem("memebattles_status_token", token);
     fetchStatus(token);
   }
 
@@ -19214,7 +19214,7 @@ export default function Status() {
       <div className="max-w-5xl mx-auto">
         <Card className="bg-card/60 backdrop-blur border-border">
           <CardHeader>
-            <CardTitle className="font-retro text-lg">UPMEME Status (Private)</CardTitle>
+            <CardTitle className="font-retro text-lg">MEMEBATTLES Status (Private)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
@@ -21005,7 +21005,7 @@ export const ENV = {
   CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),
 
   // Optional telemetry (recommended). If not set, telemetry is disabled.
-  TELEMETRY_INGEST_URL: process.env.TELEMETRY_INGEST_URL || "https://upmeme-telemetry-production.up.railway.app/ingest",
+  TELEMETRY_INGEST_URL: process.env.TELEMETRY_INGEST_URL || "https://memebattles-telemetry-production.up.railway.app/ingest",
   TELEMETRY_TOKEN: process.env.TELEMETRY_TOKEN || "datraadjetochnooit1234!!",
   TELEMETRY_INTERVAL_MS: Number(process.env.TELEMETRY_INTERVAL_MS || "15000"),
 
@@ -21131,7 +21131,7 @@ export function bucketStart(tsSec: number, tf: TF): number {
 </file>
 
 <file path="realtime-indexer/SUPABASE_SCHEMA_FIX.sql">
--- UPMEME Supabase schema fix (League + profiles/comments)
+-- MEMEBATTLES Supabase schema fix (League + profiles/comments)
 -- Safe to run multiple times.
 
 -- ---------------------------
@@ -46346,7 +46346,7 @@ import { ethers } from "ethers";
 import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
-// Realtime-indexer HTTP base (Railway). Example: https://upmeme-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type RealtimeChannel = any;
@@ -47757,11 +47757,11 @@ export function createLeagueFeedPublisher(opts: Opts) {
     
     
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/public/assets/UPMEME.png" />
+    <meta property="og:image" content="/public/assets/memebattles.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@updotmeme" />
-    <meta name="twitter:image" content="/assets/UPMEME.png" />
+    <meta name="twitter:site" content="@MemeBattles_" />
+    <meta name="twitter:image" content="/assets/memebattles.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -48430,12 +48430,12 @@ if (balanceWei != null) {
       // Nudge any UI surfaces that render vote-sorted leaderboards to refresh immediately.
       try {
         window.dispatchEvent(
-          new CustomEvent("upmeme:upvoteConfirmed", {
+          new CustomEvent("memebattles:upvoteConfirmed", {
             detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
           })
         );
         window.dispatchEvent(
-          new CustomEvent("upmeme:txConfirmed", {
+          new CustomEvent("memebattles:txConfirmed", {
             detail: { kind: "upvote", chainId, campaignAddress: safeLowerHex(campaignAddress), txHash: tx?.hash },
           })
         );
@@ -48575,7 +48575,7 @@ if (balanceWei != null) {
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://upmeme-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type Entry = {
@@ -49376,7 +49376,7 @@ try {
   function emitTxConfirmed(detail: any) {
     try {
       if (typeof window === "undefined") return;
-      window.dispatchEvent(new CustomEvent("upmeme:txConfirmed", { detail }));
+      window.dispatchEvent(new CustomEvent("memebattles:txConfirmed", { detail }));
     } catch {
       // non-fatal
     }
@@ -49612,7 +49612,7 @@ const wrap =
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://upmeme.vercel.app",
+  "https://meme-battles.vercel.app",
   "https://meme-battles.vercel.app",
 ]);
 
@@ -49621,12 +49621,12 @@ function isAllowedOrigin(origin?: string) {
   if (allowedOrigins.has(origin)) return true;
 
   // Allow Vercel preview deployments for this project:
-  // e.g. https://upmeme-git-somebranch-uptokendev.vercel.app
+  // e.g. https://memebattles-git-somebranch-uptokendev.vercel.app
   // If you have a custom pattern, adjust as needed.
   try {
     const u = new URL(origin);
     const host = u.hostname.toLowerCase();
-    if (host.endsWith(".vercel.app") && (host.includes("upmeme") || host.includes("meme-battles"))) {
+    if (host.endsWith(".vercel.app") && (host.includes("memebattles") || host.includes("meme-battles"))) {
       return true;
     }
     if (host.includes("meme-battles")) return true;
@@ -58379,7 +58379,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               // Also broadcast to the Home grid as an optional "filter-in-place" search.
               // Pages that don't care can ignore this event.
               try {
-                window.dispatchEvent(new CustomEvent("upmeme:homeSearch", { detail: String(q ?? "") }));
+                window.dispatchEvent(new CustomEvent("memebattles:homeSearch", { detail: String(q ?? "") }));
               } catch {
                 // ignore
               }
@@ -58704,11 +58704,11 @@ const { patchByCampaign, created } = useLeagueRealtime({
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-    window.addEventListener("upmeme:txConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:txConfirmed", onRefresh as any);
     return () => {
-      window.removeEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-      window.removeEventListener("upmeme:txConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:txConfirmed", onRefresh as any);
     };
   }, [activeChainId]);
 
@@ -58976,8 +58976,8 @@ const Showcase = () => {
       const q = String(e?.detail ?? "");
       setQuery((prev) => ({ ...prev, search: q }));
     };
-    window.addEventListener("upmeme:homeSearch", onSearch);
-    return () => window.removeEventListener("upmeme:homeSearch", onSearch);
+    window.addEventListener("memebattles:homeSearch", onSearch);
+    return () => window.removeEventListener("memebattles:homeSearch", onSearch);
   }, []);
 
   const effectiveQuery = useMemo(() => {
@@ -59116,11 +59116,11 @@ const { patchByCampaign } = useLeagueRealtime({
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-    window.addEventListener("upmeme:txConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:txConfirmed", onRefresh as any);
     return () => {
-      window.removeEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-      window.removeEventListener("upmeme:txConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:txConfirmed", onRefresh as any);
     };
   }, [activeChainId]);
 

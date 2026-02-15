@@ -99,11 +99,11 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-    window.addEventListener("upmeme:txConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:txConfirmed", onRefresh as any);
     return () => {
-      window.removeEventListener("upmeme:upvoteConfirmed", onRefresh as any);
-      window.removeEventListener("upmeme:txConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:txConfirmed", onRefresh as any);
     };
   }, [activeChainId]);
 

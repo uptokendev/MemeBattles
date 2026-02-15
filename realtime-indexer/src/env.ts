@@ -48,7 +48,7 @@ export const ENV = {
   CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),
 
   // Optional telemetry (recommended). If not set, telemetry is disabled.
-  TELEMETRY_INGEST_URL: process.env.TELEMETRY_INGEST_URL || "https://upmeme-telemetry-production.up.railway.app/ingest",
+  TELEMETRY_INGEST_URL: process.env.TELEMETRY_INGEST_URL || "https://memebattles-telemetry-production.up.railway.app/ingest",
   TELEMETRY_TOKEN: process.env.TELEMETRY_TOKEN || "datraadjetochnooit1234!!",
   TELEMETRY_INTERVAL_MS: Number(process.env.TELEMETRY_INTERVAL_MS || "15000"),
 

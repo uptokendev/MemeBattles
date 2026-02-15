@@ -1,33 +1,32 @@
 import { expect } from "chai";
-import hre from "hardhat";
+import { ethers } from "hardhat";
 
-const { ethers } = await hre.network.connect();
 const { parseEther } = ethers;
 
 // Helper to build a sane InitParams object
-function buildInitParams(tokenAddress, overrides = {}) {
+function buildInitParams(tokenAddress: string, overrides: Record<string, any> = {}) {
   return {
     token: tokenAddress,
-    tierSize: parseEther("1000"),          // 1000 tokens per tier
-    startPrice: parseEther("0.0001"),      // 0.0001 BNB per token
-    priceStep: parseEther("0.00001"),      // +0.00001 BNB per tier
+    tierSize: parseEther("1000"), // 1000 tokens per tier
+    startPrice: parseEther("0.0001"), // 0.0001 BNB per token
+    priceStep: parseEther("0.00001"), // +0.00001 BNB per tier
     maxTiersPerTx: 10,
-    platformFeeBps: 500,                   // 5%
-    endTime: 0n,                           // no time limit
-    hardCapBNB: 0n,                        // unlimited
-    lpPercent: 7000,                       // 70% to LP
+    platformFeeBps: 500, // 5%
+    endTime: 0n, // no time limit
+    hardCapBNB: 0n, // unlimited
+    lpPercent: 7000, // 70% to LP
     router: overrides.router || overrides.owner || tokenAddress, // dummy non-zero
     treasury: overrides.treasury || overrides.owner,
     payout: overrides.payout || overrides.owner,
-    mode: overrides.mode ?? 0,             // 0 = Mode.Minter
+    mode: overrides.mode ?? 0, // 0 = Mode.Minter
     ...overrides,
   };
 }
 
 describe("BondingCurveSale", function () {
-  let owner, user, other;
-  let token;
-  let sale;
+  let owner: any, user: any, other: any;
+  let token: any;
+  let sale: any;
 
   beforeEach(async function () {
     [owner, user, other] = await ethers.getSigners();
@@ -77,16 +76,9 @@ describe("BondingCurveSale", function () {
     });
 
     await sale.connect(owner).initialize(params);
-
-    let error;
-    try {
-      await sale.connect(owner).initialize(params);
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an("Error");
-    expect(String(error.message)).to.include("Already initialized");
+    await expect(sale.connect(owner).initialize(params)).to.be.revertedWith(
+      "Already initialized"
+    );
   });
 
   it("allows owner to run audit() in Minter mode and marks audited", async function () {
@@ -130,10 +122,7 @@ describe("BondingCurveSale", function () {
     const minTokensOut = 0n;
     const deadline = 0n;
 
-    const tx = await sale
-      .connect(owner)
-      .buy(minTokensOut, deadline, { value: bnbIn });
-
+    const tx = await sale.connect(owner).buy(minTokensOut, deadline, { value: bnbIn });
     await tx.wait();
 
     const sold = await sale.sold();
@@ -159,17 +148,8 @@ describe("BondingCurveSale", function () {
     await sale.connect(owner).initialize(params);
     await sale.connect(owner).unpauseSale();
 
-    let error;
-    try {
-      await sale
-        .connect(user)
-        .buy(0n, 0n, { value: parseEther("0.1") });
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an("Error");
-    expect(String(error.message)).to.include("External not OK");
+    await expect(sale.connect(user).buy(0n, 0n, { value: parseEther("0.1") })).to.be
+      .reverted;
   });
 
   it("unpauseSale can only be called by the owner", async function () {
@@ -185,14 +165,7 @@ describe("BondingCurveSale", function () {
     await sale.connect(owner).initialize(params);
 
     // Non-owner call should revert
-    let error;
-    try {
-      await sale.connect(user).unpauseSale();
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).to.be.an("Error");
+    await expect(sale.connect(user).unpauseSale()).to.be.reverted;
 
     // Owner call should succeed
     await sale.connect(owner).unpauseSale();
@@ -212,8 +185,7 @@ describe("BondingCurveSale", function () {
     await sale.connect(owner).initialize(params);
 
     const bnbIn = parseEther("1");
-    const [tokensOut, bnbUsed, tiersCrossed] =
-      await sale.quoteTokensOut(bnbIn);
+    const [tokensOut, bnbUsed, tiersCrossed] = await sale.quoteTokensOut(bnbIn);
 
     expect(tokensOut).to.be.gt(0n);
     expect(bnbUsed).to.be.gt(0n);

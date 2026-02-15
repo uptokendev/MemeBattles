@@ -106,6 +106,18 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockRouter__factory>;
     getContractFactory(
+      name: "MockV2Factory",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockV2Factory__factory>;
+    getContractFactory(
+      name: "MockV2Pair",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockV2Pair__factory>;
+    getContractFactory(
+      name: "ReenteringFeeRecipient",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ReenteringFeeRecipient__factory>;
+    getContractFactory(
       name: "RevertingReceiver",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RevertingReceiver__factory>;
@@ -254,6 +266,21 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.MockRouter>;
     getContractAt(
+      name: "MockV2Factory",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockV2Factory>;
+    getContractAt(
+      name: "MockV2Pair",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockV2Pair>;
+    getContractAt(
+      name: "ReenteringFeeRecipient",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ReenteringFeeRecipient>;
+    getContractAt(
       name: "RevertingReceiver",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -387,6 +414,18 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockRouter>;
     deployContract(
+      name: "MockV2Factory",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockV2Factory>;
+    deployContract(
+      name: "MockV2Pair",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockV2Pair>;
+    deployContract(
+      name: "ReenteringFeeRecipient",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ReenteringFeeRecipient>;
+    deployContract(
       name: "RevertingReceiver",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RevertingReceiver>;
@@ -534,6 +573,21 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockRouter>;
+    deployContract(
+      name: "MockV2Factory",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockV2Factory>;
+    deployContract(
+      name: "MockV2Pair",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockV2Pair>;
+    deployContract(
+      name: "ReenteringFeeRecipient",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ReenteringFeeRecipient>;
     deployContract(
       name: "RevertingReceiver",
       args: any[],

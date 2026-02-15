@@ -4,4 +4,7 @@
 export { MockERC20__factory } from "./MockERC20__factory";
 export { MockFeeOnTransferERC20__factory } from "./MockFeeOnTransferERC20__factory";
 export { MockRouter__factory } from "./MockRouter__factory";
+export { MockV2Factory__factory } from "./MockV2Factory__factory";
+export { MockV2Pair__factory } from "./MockV2Pair__factory";
+export { ReenteringFeeRecipient__factory } from "./ReenteringFeeRecipient__factory";
 export { RevertingReceiver__factory } from "./RevertingReceiver__factory";

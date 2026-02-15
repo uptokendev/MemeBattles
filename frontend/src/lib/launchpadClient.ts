@@ -541,7 +541,7 @@ try {
   function emitTxConfirmed(detail: any) {
     try {
       if (typeof window === "undefined") return;
-      window.dispatchEvent(new CustomEvent("upmeme:txConfirmed", { detail }));
+      window.dispatchEvent(new CustomEvent("memebattles:txConfirmed", { detail }));
     } catch {
       // non-fatal
     }

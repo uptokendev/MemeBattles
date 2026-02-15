@@ -425,12 +425,12 @@ if (balanceWei != null) {
       // Nudge any UI surfaces that render vote-sorted leaderboards to refresh immediately.
       try {
         window.dispatchEvent(
-          new CustomEvent("upmeme:upvoteConfirmed", {
+          new CustomEvent("memebattles:upvoteConfirmed", {
             detail: { chainId, campaignAddress: safeLowerHex(campaignAddress) },
           })
         );
         window.dispatchEvent(
-          new CustomEvent("upmeme:txConfirmed", {
+          new CustomEvent("memebattles:txConfirmed", {
             detail: { kind: "upvote", chainId, campaignAddress: safeLowerHex(campaignAddress), txHash: tx?.hash },
           })
         );

@@ -1,4 +1,4 @@
--- UPMEME Supabase schema fix (League + profiles/comments)
+-- MemeBattles Supabase schema fix (League + profiles/comments)
 -- Safe to run multiple times.
 
 -- ---------------------------

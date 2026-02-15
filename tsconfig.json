@@ -10,5 +10,5 @@
     "outDir": "dist",
     "types": ["node", "mocha"]
   },
-  "include": ["./hardhat.config.ts", "./test/**/*.ts", "./scripts/**/*.ts"]
+  "include": ["./hardhat.config.ts", "./test/**/*.ts", "./scripts/**/*.ts", "test/lpTimelock.test.ts.disabled"]
 }

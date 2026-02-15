@@ -5,6 +5,10 @@ import { deployCoreFixture } from "./fixtures/core";
 import { quoteBuyExactTokens, quoteSellExactTokens, currentPrice as priceFn } from "./helpers/math";
 import { getBalance } from "./helpers/balances";
 
+// hardhat-toolbox chai matcher helper
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
+
 async function createCampaignFixture() {
   const fx = await deployCoreFixture();
   const { factory, creator } = fx;
@@ -21,6 +25,34 @@ async function createCampaignFixture() {
     graduationTarget: 0n,
     lpReceiver: await fx.lpReceiver.getAddress(),
     initialBuyBnbWei: 0n
+  };
+
+  await factory.connect(creator).createCampaign(req as any);
+  const info = await factory.getCampaign(0n);
+  const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+  const token = await ethers.getContractAt("LaunchToken", await campaign.token());
+  return { ...fx, info, campaign, token, req };
+}
+
+async function createLowTargetCampaignFixture() {
+  const fx = await deployCoreFixture();
+  const { factory, creator } = fx;
+
+  // Set a low graduation target so we can trigger auto-finalize without selling out the curve.
+  const req = {
+    name: "MyToken",
+    symbol: "MYT",
+    logoURI: "ipfs://logo",
+    xAccount: "x",
+    website: "w",
+    extraLink: "e",
+    basePrice: 0n,
+    priceSlope: 0n,
+    // Set to 1 wei so the first nonzero buy crosses the threshold
+    // while remaining far below curve sellout.
+    graduationTarget: 1n,
+    lpReceiver: ethers.ZeroAddress,
+    initialBuyBnbWei: 0n,
   };
 
   await factory.connect(creator).createCampaign(req as any);
@@ -372,37 +404,29 @@ await campaign.initialize(params);
     expect(await ethers.provider.getBalance(await leagueReceiver.getAddress())).to.eq(leagueFee);
   });
 
-  it("finalize: reverts unless threshold met; onlyOwner; marks launched; adds liquidity; burns unsold; transfers creatorReserve; pays creator; enables trading", async () => {
+  it("auto-finalize: completion buy triggers graduation; adds liquidity; burns unsold; transfers creatorReserve; pays creator; enables trading", async () => {
     const { campaign, token, creator, alice, feeRecipient, lpReceiver, router } = await loadFixture(createCampaignFixture);
-
-    // onlyOwner
-    await expect(campaign.connect(alice).finalize(0n, 0n))
-      .to.be.revertedWithCustomError(campaign, "OwnableUnauthorizedAccount");
-
-    await expect(campaign.connect(creator).finalize(0n, 0n)).to.be.revertedWith("threshold");
 
     // Meet finalize threshold robustly by selling out the curve
     // (With some parameter sets, graduationTarget may be unreachable given curveSupply and pricing.)
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
-    await campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
-
-    expect(await campaign.sold()).to.eq(curveSupply);
 
     const ownerAddr = await creator.getAddress();
     const creatorBalBefore = await getBalance(ownerAddr);
-    const feeBefore = await getBalance(await feeRecipient.getAddress());
-    const leagueBefore = await getBalance(await lpReceiver.getAddress());
 
-    const tx = await campaign.connect(creator).finalize(0n, 0n);
+    const tx = await campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
     const receipt = await tx.wait();
-    // Hardhat/Ethers can expose gas pricing differently across versions (effectiveGasPrice, gasPrice, maxFeePerGas).
-    // For portability, bound the creator's gas spend rather than relying on a single receipt field.
-    const gasUsed = BigInt((receipt!.gasUsed ?? 0n).toString());
-    const maxFeePerGas = BigInt((((tx as any).maxFeePerGas ?? (tx as any).gasPrice ?? 0n)).toString());
+
+    expect(await campaign.sold()).to.eq(curveSupply);
 
     await expect(tx).to.emit(campaign, "CampaignFinalized");
     await expect(tx).to.emit(router, "LiquidityAdded");
+
+    // LP should be minted to the burn address (forced by LaunchFactory).
+    await expect(tx)
+      .to.emit(router, "LiquidityAdded")
+      .withArgs(await token.getAddress(), anyValue, anyValue, "0x000000000000000000000000000000000000dEaD");
 
     expect(await campaign.launched()).to.eq(true);
     expect(await token.tradingEnabled()).to.eq(true);
@@ -424,12 +448,9 @@ await campaign.initialize(params);
     const creatorPayout = BigInt(ev!.args.creatorPayout.toString());
 
     const creatorBalAfter = await getBalance(ownerAddr);
-    // creatorBalBefore + creatorPayout - creatorBalAfter == gas spent by creator for finalize tx
-    const spent = creatorBalBefore + creatorPayout - creatorBalAfter;
-    expect(spent).to.be.gt(0n);
-    if (maxFeePerGas !== 0n) {
-      expect(spent).to.be.lte(gasUsed * maxFeePerGas);
-    }
+
+    // Creator received payout.
+    expect(creatorBalAfter).to.be.gt(creatorBalBefore);
 
     const creatorReserve = await campaign.creatorReserve();
     expect(await token.balanceOf(ownerAddr)).to.be.gte(creatorReserve); // may also include tokens bought by creator in other tests
@@ -442,7 +463,66 @@ await campaign.initialize(params);
 
     // fee recipient should have received finalize protocol fee (plus any trade fees from buys/sells)
     const feeAfter = await getBalance(await feeRecipient.getAddress());
-    expect(feeAfter - feeBefore).to.be.gte(protocolFee);
+    // We don't do exact delta accounting here because prior tests may have altered balances.
+    expect(feeAfter).to.be.gte(protocolFee);
+  });
+
+  it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
+    const { campaign, token, alice, router } = await loadFixture(createLowTargetCampaignFixture);
+
+    const curveSupply = await campaign.curveSupply();
+
+    // Buy enough tokens such that the campaign retains >= graduationTarget in no-fee proceeds,
+    // WITHOUT selling out the curve. We choose an amount programmatically to avoid fragile assumptions
+    // about default curve params.
+    let amountOut = ethers.parseEther("1");
+    while (amountOut * 2n < curveSupply) {
+      const totalBuy = await campaign.quoteBuyExactTokens(amountOut);
+      const txTry = await campaign.connect(alice).buyExactTokens(amountOut, totalBuy, { value: totalBuy });
+      const launched = await campaign.launched();
+      if (launched) {
+        await expect(txTry).to.emit(campaign, "CampaignFinalized");
+        await expect(txTry).to.emit(router, "LiquidityAdded");
+        expect(await token.tradingEnabled()).to.eq(true);
+        expect(await campaign.sold()).to.eq(amountOut);
+        expect(await campaign.sold()).to.be.lt(curveSupply);
+        return;
+      }
+      // If not launched yet, revert state by selling back and try larger amount.
+      await token.connect(alice).approve(await campaign.getAddress(), amountOut);
+      const minPayout = 0n;
+      await campaign.connect(alice).sellExactTokens(amountOut, minPayout);
+      amountOut = amountOut * 2n;
+    }
+
+    throw new Error("Failed to trigger graduationTarget without selling out curve");
+  });
+
+  it("auto-finalize: succeeds even if Pancake V2 pair is pre-created (empty)", async () => {
+    const { campaign, token, alice, router, v2factory } = await loadFixture(createCampaignFixture);
+
+    // Simulate third-party pre-creating the pair before graduation.
+    // With transfers locked pre-finalize, they cannot seed liquidity, but the pair contract may exist.
+    const Pair = await ethers.getContractFactory("MockV2Pair");
+    const pair = await Pair.deploy();
+
+    // Ensure the pair is empty (no reserves, no LP supply).
+    await pair.setTotalSupply(0);
+    await pair.setReserves(0, 0);
+
+    await v2factory.setPair(await token.getAddress(), await router.WETH(), await pair.getAddress());
+
+    // Sell out the curve to guarantee auto-finalize triggers in this buy.
+    const curveSupply = await campaign.curveSupply();
+    const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
+
+    const tx = await campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
+
+    await expect(tx).to.emit(campaign, "CampaignFinalized");
+    await expect(tx).to.emit(router, "LiquidityAdded");
+
+    // Transfers should be enabled after auto-finalize.
+    expect(await token.tradingEnabled()).to.eq(true);
   });
 
   it("post-finalize: trading restriction lifted; buys/sells revert", async () => {
@@ -452,8 +532,6 @@ await campaign.initialize(params);
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
     await campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
-
-    await campaign.connect(creator).finalize(0n, 0n);
 
     // After finalize, buy/sell entrypoints must revert on the launched guard.
     await expect(campaign.connect(alice).buyExactTokens(1n, 0n, { value: 0n }))

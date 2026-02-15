@@ -22,7 +22,7 @@ function statusColor(kind: "green" | "yellow" | "red") {
 }
 
 export default function Status() {
-  const [token, setToken] = useState(() => localStorage.getItem("upmeme_status_token") || "");
+  const [token, setToken] = useState(() => localStorage.getItem("memebattles_status_token") || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<TelemetryResponse | null>(null);
@@ -87,7 +87,7 @@ export default function Status() {
   }, [auto, token]);
 
   function saveToken() {
-    localStorage.setItem("upmeme_status_token", token);
+    localStorage.setItem("memebattles_status_token", token);
     fetchStatus(token);
   }
 
@@ -96,7 +96,7 @@ export default function Status() {
       <div className="max-w-5xl mx-auto">
         <Card className="bg-card/60 backdrop-blur border-border">
           <CardHeader>
-            <CardTitle className="font-retro text-lg">UPMEME Status (Private)</CardTitle>
+            <CardTitle className="font-retro text-lg">MemeBattles Status (Private)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">

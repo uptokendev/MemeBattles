@@ -84,7 +84,7 @@ function buildCommentMessage(args: {
   // Keep this stable; the server verifies the exact string.
   const bodyPreview = args.body.replace(/\s+/g, " ").trim().slice(0, 180);
   return [
-    "UPMEME Comment",
+    "MemeBattles Comment",
     `Action: COMMENT_CREATE`,
     `ChainId: ${args.chainId}`,
     `Address: ${args.address.toLowerCase()}`,

@@ -8,14 +8,19 @@ export type CoreFixture = {
   feeRecipient: any;
   lpReceiver: any;
   router: any;
+  v2factory: any;
   factory: any;
 };
 
 export async function deployCoreFixture(): Promise<CoreFixture> {
   const [owner, creator, alice, bob, feeRecipient, lpReceiver] = await ethers.getSigners();
 
+  const V2Factory = await ethers.getContractFactory("MockV2Factory");
+  const v2factory = await V2Factory.deploy();
+
   const Router = await ethers.getContractFactory("MockRouter");
-  const router = await Router.deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+  // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
+  const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
 
   const Factory = await ethers.getContractFactory("LaunchFactory");
   const factory = await Factory.deploy(await router.getAddress(), await lpReceiver.getAddress());
@@ -34,5 +39,5 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     liquidityBps: 8000                           // 80% of raised (after finalize fee) to LP
   });
 
-  return { owner, creator, alice, bob, feeRecipient, lpReceiver, router, factory };
+  return { owner, creator, alice, bob, feeRecipient, lpReceiver, router, v2factory, factory };
 }

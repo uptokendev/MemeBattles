@@ -37,7 +37,7 @@ const wrap =
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://upmeme.vercel.app",
+  "https://memebattles.vercel.app",
   "https://meme-battles.vercel.app",
 ]);
 
@@ -46,12 +46,12 @@ function isAllowedOrigin(origin?: string) {
   if (allowedOrigins.has(origin)) return true;
 
   // Allow Vercel preview deployments for this project:
-  // e.g. https://upmeme-git-somebranch-uptokendev.vercel.app
+  // e.g. https://memebattles-git-somebranch-uptokendev.vercel.app
   // If you have a custom pattern, adjust as needed.
   try {
     const u = new URL(origin);
     const host = u.hostname.toLowerCase();
-    if (host.endsWith(".vercel.app") && (host.includes("upmeme") || host.includes("meme-battles"))) {
+    if (host.endsWith(".vercel.app") && (host.includes("memebattles") || host.includes("meme-battles"))) {
       return true;
     }
     if (host.includes("meme-battles")) return true;

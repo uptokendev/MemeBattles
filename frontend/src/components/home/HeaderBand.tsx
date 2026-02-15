@@ -9,7 +9,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
     <div className={cn("relative w-full", className)}>
       {/* Glow strip / separator */}
       {/* Slightly shorter hero height to reduce dead space above Featured grid */}
-      <div className="relative h-[240px] md:h-[240px] lg:h-[240px] overflow-hidden">
+      <div className="relative h-[200px] md:h-[200px] lg:h-[200px] overflow-hidden">
 
         {/* horizontal highlight band */}
         <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2">

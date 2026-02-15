@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://upmeme-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type Entry = {

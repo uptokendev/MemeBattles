@@ -133,6 +133,7 @@ export declare namespace LaunchFactory {
 export interface LaunchFactoryInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "DEAD"
       | "LEAGUE_FEE_BPS"
       | "MAX_BASE_PRICE"
       | "MAX_GRADUATION_TARGET"
@@ -167,6 +168,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "RouterUpdated"
   ): EventFragment;
 
+  encodeFunctionData(functionFragment: "DEAD", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "LEAGUE_FEE_BPS",
     values?: undefined
@@ -247,6 +249,7 @@ export interface LaunchFactoryInterface extends Interface {
     values: [AddressLike]
   ): string;
 
+  decodeFunctionResult(functionFragment: "DEAD", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "LEAGUE_FEE_BPS",
     data: BytesLike
@@ -457,6 +460,8 @@ export interface LaunchFactory extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  DEAD: TypedContractMethod<[], [string], "view">;
+
   LEAGUE_FEE_BPS: TypedContractMethod<[], [bigint], "view">;
 
   MAX_BASE_PRICE: TypedContractMethod<[], [bigint], "view">;
@@ -559,6 +564,9 @@ export interface LaunchFactory extends BaseContract {
     key: string | FunctionFragment
   ): T;
 
+  getFunction(
+    nameOrSignature: "DEAD"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "LEAGUE_FEE_BPS"
   ): TypedContractMethod<[], [bigint], "view">;

@@ -52,6 +52,12 @@ export type { MockFeeOnTransferERC20 } from "./contracts/mocks/MockFeeOnTransfer
 export { MockFeeOnTransferERC20__factory } from "./factories/contracts/mocks/MockFeeOnTransferERC20__factory";
 export type { MockRouter } from "./contracts/mocks/MockRouter";
 export { MockRouter__factory } from "./factories/contracts/mocks/MockRouter__factory";
+export type { MockV2Factory } from "./contracts/mocks/MockV2Factory";
+export { MockV2Factory__factory } from "./factories/contracts/mocks/MockV2Factory__factory";
+export type { MockV2Pair } from "./contracts/mocks/MockV2Pair";
+export { MockV2Pair__factory } from "./factories/contracts/mocks/MockV2Pair__factory";
+export type { ReenteringFeeRecipient } from "./contracts/mocks/ReenteringFeeRecipient";
+export { ReenteringFeeRecipient__factory } from "./factories/contracts/mocks/ReenteringFeeRecipient__factory";
 export type { RevertingReceiver } from "./contracts/mocks/RevertingReceiver";
 export { RevertingReceiver__factory } from "./factories/contracts/mocks/RevertingReceiver__factory";
 export type { FactoryCaller } from "./contracts/test/FactoryCaller";

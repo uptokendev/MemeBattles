@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
-// Realtime-indexer HTTP base (Railway). Example: https://upmeme-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type RealtimeChannel = any;

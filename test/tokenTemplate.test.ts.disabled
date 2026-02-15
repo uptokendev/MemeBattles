@@ -1,11 +1,8 @@
 import { expect } from "chai";
-import hre from "hardhat";
-import { Interface } from "ethers";  // <-- get Interface from ethers package
-
-const { ethers } = await hre.network.connect();
+import { ethers } from "hardhat";
 
 // same helper style as factory test
-async function waitForDeployment(contract) {
+async function waitForDeployment(contract: any) {
   if (typeof contract.waitForDeployment === "function") {
     await contract.waitForDeployment(); // ethers v6
   } else if (typeof contract.deployed === "function") {
@@ -14,28 +11,19 @@ async function waitForDeployment(contract) {
 }
 
 describe("TokenTemplate", function () {
-  let owner, alice, bob;
-  let TokenTemplate;
-  let token;
+  let owner: any, alice: any, bob: any;
+  let token: any;
 
   beforeEach(async function () {
     [owner, alice, bob] = await ethers.getSigners();
 
-    TokenTemplate = await ethers.getContractFactory("TokenTemplate");
-
-    // 🔴 OLD (causes invalid overrides):
-    // token = await TokenTemplate.deploy(owner.address);
-
-    // ✅ NEW: no constructor args, matches the compiled contract ABI
+    const TokenTemplate = await ethers.getContractFactory("TokenTemplate");
+    // no constructor args, matches the compiled contract ABI
     token = await TokenTemplate.deploy();
-
     await waitForDeployment(token);
   });
 
   it("sets the initial owner correctly (if constructor sets it)", async function () {
-    // If your TokenTemplate constructor uses Ownable(msg.sender),
-    // this will pass. If you still plan to set owner in initialize(),
-    // you might need to adjust this expectation later.
     expect(await token.owner()).to.equal(owner.address);
   });
 
@@ -50,16 +38,15 @@ describe("TokenTemplate", function () {
   it("reverts if initialize() is called twice", async function () {
     await token.initialize("AAA", "AAA", owner.address);
 
-    await expect(
-      token.initialize("BBB", "BBB", owner.address)
-    ).to.be.revertedWith("Already initialized");
+    await expect(token.initialize("BBB", "BBB", owner.address)).to.be.revertedWith(
+      "Already initialized"
+    );
   });
 
   it("owner can grant minter role", async function () {
     await token.initialize("T", "T", owner.address);
     await token.grantMinter(alice.address);
 
-    // no isMinter() in the contract, so we rely on AccessControl.hasRole
     const minterRole = await token.MINTER_ROLE();
     expect(await token.hasRole(minterRole, alice.address)).to.equal(true);
   });
@@ -67,9 +54,10 @@ describe("TokenTemplate", function () {
   it("non-owner cannot grant minter role", async function () {
     await token.initialize("T", "T", owner.address);
 
-    await expect(
-      token.connect(alice).grantMinter(bob.address)
-    ).to.be.revertedWithCustomError(token, "OwnableUnauthorizedAccount");
+    await expect(token.connect(alice).grantMinter(bob.address)).to.be.revertedWithCustomError(
+      token,
+      "OwnableUnauthorizedAccount"
+    );
   });
 
   it("minter can mint tokens", async function () {
@@ -83,9 +71,7 @@ describe("TokenTemplate", function () {
   it("non-minter cannot mint", async function () {
     await token.initialize("T", "T", owner.address);
 
-    await expect(
-      token.connect(alice).mint(bob.address, 500)
-    ).to.be.revertedWith("Not minter");
+    await expect(token.connect(alice).mint(bob.address, 500)).to.be.revertedWith("Not minter");
   });
 
   it("holder can burn their tokens", async function () {

@@ -39,7 +39,7 @@ function parseDbUrl(url) {
 }
 
 // Reuse pool across invocations
-let _pool = globalThis.__upmeme_pool;
+let _pool = globalThis.__memebattles_pool;
 
 if (!_pool) {
   if (!DATABASE_URL) throw new Error("DATABASE_URL missing");
@@ -82,7 +82,7 @@ if (!_pool) {
     connectionTimeoutMillis: 10_000,
   });
 
-  globalThis.__upmeme_pool = _pool;
+  globalThis.__memebattles_pool = _pool;
 
   _pool.on("error", (err) => console.error("[api/_db] Pool error", err));
 }

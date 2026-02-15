@@ -1,19 +1,17 @@
-// test/factory.test.js
+// test/factory.test.ts
 import { expect } from "chai";
-import hre from "hardhat";
-import { Interface } from "ethers";  // <-- get Interface from ethers package
-
-const { ethers } = await hre.network.connect();
+import { ethers } from "hardhat";
+import { Interface } from "ethers"; // Interface from ethers package
 
 // -----------------------------------------------------------------------------
 // Helpers (ethers v6)
 // -----------------------------------------------------------------------------
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-const parseEther = (v) => ethers.parseEther(v);
-const isAddress  = (v) => ethers.isAddress(v);
+const parseEther = (v: string) => ethers.parseEther(v);
+const isAddress = (v: string) => ethers.isAddress(v);
 
-async function waitForDeployment(contract) {
+async function waitForDeployment(contract: any) {
   if (typeof contract.waitForDeployment === "function") {
     await contract.waitForDeployment(); // ethers v6
   } else if (typeof contract.deployed === "function") {
@@ -24,24 +22,24 @@ async function waitForDeployment(contract) {
 // -----------------------------------------------------------------------------
 // Match BondingCurveSale.InitParams
 // -----------------------------------------------------------------------------
-function buildValidInitParams(context, overrides = {}) {
+function buildValidInitParams(context: any, overrides: Record<string, any> = {}) {
   const owner = context.owner;
   const user = context.user || owner;
 
   return {
-    token: ZERO_ADDRESS,                        // Factory fills this for createLaunch
-    tierSize: parseEther("1000"),              // 1000 tokens per tier
-    startPrice: parseEther("0.0001"),          // 0.0001 BNB per token
-    priceStep: parseEther("0.00001"),          // step per tier
+    token: ZERO_ADDRESS, // Factory fills this for createLaunch
+    tierSize: parseEther("1000"), // 1000 tokens per tier
+    startPrice: parseEther("0.0001"), // 0.0001 BNB per token
+    priceStep: parseEther("0.00001"), // step per tier
     maxTiersPerTx: 10,
-    platformFeeBps: 500,                       // 5% fee
-    endTime: 0,                                // no end time
-    hardCapBNB: parseEther("100"),             // or 0 for unlimited
-    lpPercent: 7000,                           // 70% to LP
-    router: context.router || owner.address,   // dummy router
+    platformFeeBps: 500, // 5% fee
+    endTime: 0, // no end time
+    hardCapBNB: parseEther("100"), // or 0 for unlimited
+    lpPercent: 7000, // 70% to LP
+    router: context.router || owner.address, // dummy router
     treasury: context.treasury || owner.address,
     payout: context.payout || user.address,
-    mode: 0,                                   // Mode.Minter
+    mode: 0, // Mode.Minter
     ...overrides,
   };
 }
@@ -50,8 +48,8 @@ function buildValidInitParams(context, overrides = {}) {
 // TESTS
 // -----------------------------------------------------------------------------
 describe("Factory", function () {
-  let owner, user, other;
-  let tokenImpl, saleImpl, factory;
+  let owner: any, user: any, other: any;
+  let tokenImpl: any, saleImpl: any, factory: any;
 
   beforeEach(async function () {
     [owner, user, other] = await ethers.getSigners();
@@ -69,15 +67,8 @@ describe("Factory", function () {
     // Deploy Factory
     const Factory = await ethers.getContractFactory("Factory");
 
-    const tokenImplAddr =
-      typeof tokenImpl.getAddress === "function"
-        ? await tokenImpl.getAddress()
-        : tokenImpl.address;
-
-    const saleImplAddr =
-      typeof saleImpl.getAddress === "function"
-        ? await saleImpl.getAddress()
-        : saleImpl.address;
+    const tokenImplAddr = typeof tokenImpl.getAddress === "function" ? await tokenImpl.getAddress() : tokenImpl.address;
+    const saleImplAddr = typeof saleImpl.getAddress === "function" ? await saleImpl.getAddress() : saleImpl.address;
 
     factory = await Factory.deploy(tokenImplAddr, saleImplAddr);
     await waitForDeployment(factory);
@@ -88,15 +79,8 @@ describe("Factory", function () {
   // ---------------------------------------------------------------------------
   describe("constructor", function () {
     it("sets tokenImpl, saleImpl and owner correctly", async function () {
-      const tokenImplAddr =
-        typeof tokenImpl.getAddress === "function"
-          ? await tokenImpl.getAddress()
-          : tokenImpl.address;
-
-      const saleImplAddr =
-        typeof saleImpl.getAddress === "function"
-          ? await saleImpl.getAddress()
-          : saleImpl.address;
+      const tokenImplAddr = typeof tokenImpl.getAddress === "function" ? await tokenImpl.getAddress() : tokenImpl.address;
+      const saleImplAddr = typeof saleImpl.getAddress === "function" ? await saleImpl.getAddress() : saleImpl.address;
 
       expect(await factory.tokenImpl()).to.equal(tokenImplAddr);
       expect(await factory.saleImpl()).to.equal(saleImplAddr);
@@ -105,38 +89,16 @@ describe("Factory", function () {
 
     it("reverts if tokenImpl is zero", async function () {
       const Factory = await ethers.getContractFactory("Factory");
-      const saleImplAddr =
-        typeof saleImpl.getAddress === "function"
-          ? await saleImpl.getAddress()
-          : saleImpl.address;
+      const saleImplAddr = typeof saleImpl.getAddress === "function" ? await saleImpl.getAddress() : saleImpl.address;
 
-      let error;
-      try {
-        await Factory.deploy(ZERO_ADDRESS, saleImplAddr);
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.instanceOf(Error);
-      expect(String(error.message)).to.include("impl zero");
+      await expect(Factory.deploy(ZERO_ADDRESS, saleImplAddr)).to.be.revertedWith("impl zero");
     });
 
     it("reverts if saleImpl is zero", async function () {
       const Factory = await ethers.getContractFactory("Factory");
-      const tokenImplAddr =
-        typeof tokenImpl.getAddress === "function"
-          ? await tokenImpl.getAddress()
-          : tokenImpl.address;
+      const tokenImplAddr = typeof tokenImpl.getAddress === "function" ? await tokenImpl.getAddress() : tokenImpl.address;
 
-      let error;
-      try {
-        await Factory.deploy(tokenImplAddr, ZERO_ADDRESS);
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.instanceOf(Error);
-      expect(String(error.message)).to.include("impl zero");
+      await expect(Factory.deploy(tokenImplAddr, ZERO_ADDRESS)).to.be.revertedWith("impl zero");
     });
   });
 
@@ -150,32 +112,23 @@ describe("Factory", function () {
         token: user.address, // force non-zero to trigger require
       });
 
-      let error;
-      try {
-        await factory.connect(user).createLaunch("MyToken", "MTK", params);
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.instanceOf(Error);
-      expect(String(error.message)).to.include("Token specified");
+      await expect(factory.connect(user).createLaunch("MyToken", "MTK", params)).to.be.revertedWith(
+        "Token specified"
+      );
     });
 
     it("creates token + sale clones, emits LaunchCreated and transfers sale ownership", async function () {
       const context = { owner, user, tokenImpl, saleImpl };
       const params = buildValidInitParams(context);
 
-      const tx = await factory
-        .connect(user)
-        .createLaunch("My Launch Token", "MLT", params);
-
+      const tx = await factory.connect(user).createLaunch("My Launch Token", "MLT", params);
       const receipt = await tx.wait();
 
       const iface = new Interface([
         "event LaunchCreated(uint256 indexed launchId, address indexed token, address indexed sale, bool externalToken, address creator)",
       ]);
 
-      let eventData = null;
+      let eventData: any = null;
       for (const log of receipt.logs) {
         try {
           const parsed = iface.parseLog(log);
@@ -212,20 +165,16 @@ describe("Factory", function () {
       const params1 = buildValidInitParams(context);
       const params2 = buildValidInitParams(context);
 
-      await (
-        await factory.connect(user).createLaunch("TokenOne", "ONE", params1)
-      ).wait();
+      await (await factory.connect(user).createLaunch("TokenOne", "ONE", params1)).wait();
 
-      const tx2 = await factory
-        .connect(other)
-        .createLaunch("TokenTwo", "TWO", params2);
+      const tx2 = await factory.connect(other).createLaunch("TokenTwo", "TWO", params2);
       const receipt2 = await tx2.wait();
 
       const iface = new Interface([
         "event LaunchCreated(uint256 indexed launchId, address indexed token, address indexed sale, bool externalToken, address creator)",
       ]);
 
-      const ids = [];
+      const ids: string[] = [];
       for (const log of receipt2.logs) {
         try {
           const parsed = iface.parseLog(log);
@@ -251,34 +200,17 @@ describe("Factory", function () {
         token: ZERO_ADDRESS,
       });
 
-      let error;
-      try {
-        await factory.connect(user).createExternalSale(params);
-      } catch (e) {
-        error = e;
-      }
-
-      expect(error).to.be.instanceOf(Error);
-      expect(String(error.message)).to.include("Token not set");
+      await expect(factory.connect(user).createExternalSale(params)).to.be.reverted;
     });
 
-    it("creates a sale for an external token, emits LaunchCreated with externalToken = true and transfers ownership", async function () {
+    it("creates a sale clone for an external token and emits LaunchCreated", async function () {
+      // Deploy an external TokenTemplate to use as the token
       const TokenTemplate = await ethers.getContractFactory("TokenTemplate");
       const externalToken = await TokenTemplate.deploy();
       await waitForDeployment(externalToken);
+      const externalTokenAddr = await externalToken.getAddress();
 
-      const externalTokenAddr =
-        typeof externalToken.getAddress === "function"
-          ? await externalToken.getAddress()
-          : externalToken.address;
-
-      const context = {
-        owner,
-        user,
-        tokenImpl,
-        saleImpl,
-        externalToken: externalTokenAddr,
-      };
+      const context = { owner, user, tokenImpl, saleImpl };
       const params = buildValidInitParams(context, {
         token: externalTokenAddr,
       });
@@ -290,7 +222,7 @@ describe("Factory", function () {
         "event LaunchCreated(uint256 indexed launchId, address indexed token, address indexed sale, bool externalToken, address creator)",
       ]);
 
-      let eventData = null;
+      let eventData: any = null;
       for (const log of receipt.logs) {
         try {
           const parsed = iface.parseLog(log);

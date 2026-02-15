@@ -74,6 +74,8 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
+    // Burn address for LP tokens. LP minted here can never be redeemed.
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
     address public router;
     address public campaignImplementation;
@@ -170,9 +172,9 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             leagueFeeBps: LEAGUE_FEE_BPS,
             leagueReceiver: leagueReceiver,
             router: router,
-            lpReceiver: req.lpReceiver == address(0)
-                ? msg.sender
-                : req.lpReceiver,
+            // Force LP to be burned for every campaign.
+            // We intentionally ignore any user-provided lpReceiver.
+            lpReceiver: DEAD,
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this)

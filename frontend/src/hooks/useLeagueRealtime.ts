@@ -221,11 +221,11 @@ export function useLeagueRealtime(opts: Opts) {
       });
     };
 
-    window.addEventListener('upmeme:upvoteConfirmed', onUpvote as any);
-    window.addEventListener('upmeme:txConfirmed', onTx as any);
+    window.addEventListener('memebattles:upvoteConfirmed', onUpvote as any);
+    window.addEventListener('memebattles:txConfirmed', onTx as any);
     return () => {
-      window.removeEventListener('upmeme:upvoteConfirmed', onUpvote as any);
-      window.removeEventListener('upmeme:txConfirmed', onTx as any);
+      window.removeEventListener('memebattles:upvoteConfirmed', onUpvote as any);
+      window.removeEventListener('memebattles:txConfirmed', onTx as any);
     };
   }, [enabled, chainId]);
 

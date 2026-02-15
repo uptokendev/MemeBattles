@@ -112,7 +112,7 @@ export function useDexPairTrades(args: Args) {
           const reserve0 = BigInt(parsed?.args?.reserve0 ?? 0n);
           const reserve1 = BigInt(parsed?.args?.reserve1 ?? 0n);
 
-          // Assume 18 decimals for both sides (good enough for WBNB + most UPMEME tokens).
+          // Assume 18 decimals for both sides (good enough for WBNB + most MemeBattles tokens).
           // If you introduce non-18 decimals, we should fetch decimals from ERC20s and normalize.
           const r0 = Number(ethers.formatUnits(reserve0, 18));
           const r1 = Number(ethers.formatUnits(reserve1, 18));
