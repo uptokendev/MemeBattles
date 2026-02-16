@@ -579,7 +579,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 className="h-[150px] w-[150px] select-none"
                 draggable={false}
               />
-              <div className="-mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+              <div className="-mt-7 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
             </div>
           </div>
         </div>
