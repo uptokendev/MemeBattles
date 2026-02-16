@@ -430,9 +430,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [data, period]);
 
   return (
-    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto">
+    <div className="relative w-full min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto overflow-x-hidden">
       {/* Full-page background (fixed; page content scrolls) */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div
           className="absolute inset-0"
           style={{
@@ -485,7 +485,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden h-[150px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+         <div className="relative overflow-hidden min-h-[260px] md:min-h-[190px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -565,7 +565,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="mt-2 h-[150px] w-[150px] select-none"
+                className="mt-6 h-[160px] w-[160px] select-none"
                 draggable={false}
               />
               <div className="-mt-7 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
@@ -579,7 +579,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 className="h-[150px] w-[150px] select-none"
                 draggable={false}
               />
-              <div className="-mt-7 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+              <div className="-mt-7 text-sm md:text-base text-muted-foreground leading-none">Create. Compete. Conquer.</div>
             </div>
           </div>
         </div>
