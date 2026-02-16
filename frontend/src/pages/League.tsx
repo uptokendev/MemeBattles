@@ -515,10 +515,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           {b.label}
         </button>
       ))}
-    </div>
-  </div>
-
-  {/* Center hero */}
+       {/* Center hero */}
   <div className="mt-1 md:mt-1 flex flex-col items-center text-center">
     <img
       src="/assets/logo.png"
@@ -526,9 +523,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       className="h-[200px] w-[200px] select-none"
       draggable={false}
     />
-
-    <div className="mt-3 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+    <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
   </div>
+    </div>
+  </div>
+
+ 
 </div>
       </div>
 
