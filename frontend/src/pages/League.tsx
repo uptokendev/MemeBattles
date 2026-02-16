@@ -430,15 +430,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [data, period]);
 
   return (
-    // NOTE: TopBar is fixed-position. This page needs extra top padding to avoid
-    // overlapping the header actions (Create coin / Connect).
-    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10">
+    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-x-hidden">
       {/* Full-page background (fixed, no scroll) */}
       <div
         className="fixed inset-0 -z-10 pointer-events-none"
         style={{
-          // Works when the image lives in src/assets (bundled by Vite)
-          backgroundImage: `url(${leagueBg})`,
+          backgroundImage: "url(/assets/league_background.png)",
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
