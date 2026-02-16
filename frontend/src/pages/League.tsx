@@ -429,7 +429,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [data, period]);
 
   return (
-    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-x-hidden">
+    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto">
       {/* Full-page background (fixed; page content scrolls) */}
       <div
         className="fixed inset-0 z-0 pointer-events-none"
