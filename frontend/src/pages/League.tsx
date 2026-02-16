@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -226,13 +226,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
 
-  // Live bulletin (Option B): polling diff on lightweight top snapshots.
-  const [bulletinEvents, setBulletinEvents] = useState<Array<{ id: string; ts: number; text: string }>>([]);
-  const prevBulletinRef = useRef<{
-    leaders: Record<string, string[]>;
-    pots: Record<string, string>;
-    lastHashes: string[];
-  } | null>(null);
+  const live = epochInfo?.status === "live";
 
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
@@ -261,139 +255,6 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     const id = window.setInterval(() => setRefreshTick((t) => t + 1), 60 * 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  // Live bulletin polling (lightweight) — every 5s.
-  useEffect(() => {
-    let cancelled = false;
-    const intervalMs = 5_000;
-    const keepEvents = 12;
-
-    const keyOfRow = (leagueKey: string, row: any): string => {
-      // For Biggest Hit we need a per-trade identity, otherwise a bigger buy in the *same* campaign
-      // won't look like a "leader change" (because campaign_address stays identical).
-      if (leagueKey === "biggest_hit") {
-        const tx = row?.tx_hash ? String(row.tx_hash) : "";
-        const li = row?.log_index !== undefined && row?.log_index !== null ? String(row.log_index) : "";
-        if (tx) return `${tx}:${li}`;
-      }
-      // Default: prefer campaign address, otherwise wallet.
-      if (row && typeof row.campaign_address === "string") return row.campaign_address;
-      if (row && typeof row.wallet === "string") return row.wallet;
-      if (row && typeof row.buyer_address === "string") return row.buyer_address;
-      return "";
-    };
-
-    const labelOfRow = (row: any): string => {
-      if (row && typeof row.campaign_address === "string") {
-        const nm = String(row?.name ?? "Unknown");
-        const sym = String(row?.symbol ?? "");
-        return `${nm}${sym ? ` (${sym})` : ""}`;
-      }
-      if (row && typeof row.wallet === "string") return shortAddr(row.wallet);
-      if (row && typeof row.buyer_address === "string") return shortAddr(row.buyer_address);
-      return "Unknown";
-    };
-
-    const pushEvent = (text: string) => {
-      const ts = Date.now();
-      // Deduplicate bursts: keep a small rolling set of recent hashes.
-      const h = `${Math.floor(ts / 5000)}|${text}`; // 5s bucket
-      const prev = prevBulletinRef.current;
-      const lastHashes = prev?.lastHashes ?? [];
-      if (lastHashes.includes(h)) return;
-      const nextHashes = [h, ...lastHashes].slice(0, 32);
-      prevBulletinRef.current = { leaders: prev?.leaders ?? {}, pots: prev?.pots ?? {}, lastHashes: nextHashes };
-
-      setBulletinEvents((evts) => {
-        const id = `${ts}-${Math.random().toString(16).slice(2)}`;
-        const next = [{ id, ts, text }, ...evts];
-        return next.slice(0, keepEvents);
-      });
-    };
-
-    const poll = async () => {
-      try {
-        const targets = LEAGUES.filter((l) => l.supports.includes(period));
-        const results = await Promise.all(
-          targets.map(async (l) => {
-            const limit = 3; // keep lightweight
-            const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(period)}&epochOffset=${encodeURIComponent(
-              String(epochOffset)
-            )}&limit=${encodeURIComponent(String(limit))}&category=${encodeURIComponent(l.key)}`;
-            const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<any>;
-            return [l.key, r] as const;
-          })
-        );
-        if (cancelled) return;
-
-        const nowLeaders: Record<string, string[]> = {};
-        const nowPots: Record<string, string> = {};
-
-        for (const [k, r] of results) {
-          const items = Array.isArray(r?.items) ? r.items : [];
-          nowLeaders[k] = items.map((x: any) => keyOfRow(k, x)).filter(Boolean).slice(0, 3);
-          nowPots[k] = String(r?.prize?.potRaw ?? "0");
-
-          const prev = prevBulletinRef.current;
-          const prevLeaders = prev?.leaders?.[k] ?? [];
-          const prevTop = prevLeaders?.[0];
-          const curTop = nowLeaders[k]?.[0];
-
-          // Rank flip: #1 changed.
-          if (prevTop && curTop && prevTop !== curTop) {
-            const curRow = items.find((x: any) => keyOfRow(k, x) === curTop) ?? items?.[0];
-            const prevRow = items.find((x: any) => keyOfRow(k, x) === prevTop);
-            const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
-            pushEvent(`${labelOfRow(curRow)} overtook ${labelOfRow(prevRow)} for #1 in ${leagueTitle}.`);
-          }
-
-          // Biggest Hit: show a “big buy” style message when a new top appears.
-          if (k === "biggest_hit") {
-            const top = items?.[0];
-            const amt = top?.bnb_amount_raw ? formatBnbFromRaw(String(top.bnb_amount_raw)) : "";
-            if (amt && prevTop && curTop && prevTop !== curTop) {
-              const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
-              pushEvent(`Big buy: ${labelOfRow(top)} hit ${amt} BNB and took #1 in ${leagueTitle}.`);
-            }
-          }
-
-          // Pot jump: if pot increased meaningfully.
-          try {
-            const prevPot = BigInt(String(prev?.pots?.[k] ?? "0"));
-            const curPot = BigInt(String(nowPots[k] ?? "0"));
-            if (curPot > prevPot) {
-              const delta = curPot - prevPot;
-              // Threshold: 0.02 BNB to avoid spam
-              const threshold = 20_000_000_000_000_000n;
-              if (delta >= threshold) {
-                const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
-                pushEvent(`Prize pool +${formatBnbFromRaw(delta.toString())} BNB in ${leagueTitle}.`);
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-
-        const prev = prevBulletinRef.current;
-        prevBulletinRef.current = {
-          leaders: nowLeaders,
-          pots: nowPots,
-          lastHashes: prev?.lastHashes ?? [],
-        };
-      } catch {
-        // Silent: bulletin should not break the page.
-      }
-    };
-
-    // Prime immediately.
-    poll();
-    const id = window.setInterval(poll, intervalMs);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [activeChainId, period, epochOffset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,11 +374,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     return rows;
   }, [period, prizes]);
 
-  const liveBulletin = useMemo(() => {
-    const top = bulletinEvents?.[0];
-    if (top?.text) return top.text;
-    return "Waiting for activity…";
-  }, [bulletinEvents]);
+  const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
 
   const recentLeaders = useMemo(() => {
     // Phase 1 "Recent Wins": show the current #1 per league (top row) for the selected period.
@@ -608,7 +465,6 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 ) : null}
               </div>
               <div className="hidden md:block">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
-              <div>Chain {activeChainId}</div>
             </div>
           </div>
         </div>
@@ -629,9 +485,42 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
 
         <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
-          <div className="text-xs text-muted-foreground">Live bulletin</div>
-          <div className="mt-2 text-sm font-semibold leading-snug">{liveBulletin}</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">Phase 2: realtime battle feed (rank flips, big buys, pot jumps)</div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">League countdowns</div>
+            {live ? (
+              <div className="text-[11px] font-semibold text-red-500 animate-pulse">LIVE</div>
+            ) : (
+              <div className="text-[11px] font-semibold text-muted-foreground">FINAL</div>
+            )}
+          </div>
+
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <div className="text-2xl font-semibold">{endsIn ? endsIn : "—"}</div>
+            <div className="text-[11px] text-muted-foreground text-right">
+              <div>{endAtUtc ? `${endAtUtc} UTC` : ""}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {LEAGUES.map((l) => {
+              const supported = l.supports.includes(period);
+              return (
+                <div key={l.key} className="flex items-center justify-between gap-3 text-[11px]">
+                  <div className="min-w-0">
+                    <div className="font-semibold truncate">{l.title}</div>
+                    {!supported ? <div className="text-muted-foreground">Runs {l.supports.map(periodLabel).join(" / ")}</div> : null}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {supported ? (
+                      <div className={"font-semibold " + (live ? "text-red-500 animate-pulse" : "text-muted-foreground")}>{live ? "LIVE" : "FINAL"}</div>
+                    ) : (
+                      <div className="text-muted-foreground">—</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

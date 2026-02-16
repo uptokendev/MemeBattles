@@ -380,7 +380,6 @@ export default function LeagueDetail({ chainId = 97 }: { chainId?: number }) {
 
           <div className="text-[11px] text-muted-foreground text-right">
             <div>{epochInfo ? formatEpochRangeUtc(epochInfo) : null}</div>
-            <div>Chain {activeChainId}</div>
           </div>
         </div>
       </div>
