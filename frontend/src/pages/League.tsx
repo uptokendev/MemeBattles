@@ -431,9 +431,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   return (
     <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto">
-+      {/* Full-page background (fixed; page content scrolls) */}
-+      <div className="fixed inset-0 z-0 pointer-events-none">
-+        <div
+      {/* Full-page background (fixed; page content scrolls) */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div
           className="absolute inset-0"
           style={{
             backgroundImage: "url(/assets/league_background.png)",
@@ -442,8 +442,17 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             backgroundRepeat: "no-repeat",
           }}
         />
-        {/* Soft dark overlay */}
-        <div className="absolute inset-0 bg-black/45" />
+        {/* Soft dark overlay (leave more room for fire/smoke to read) */}
+        <div className="absolute inset-0 bg-black/35" />
+
+        {/* Fire glow (adds that "arena on fire" feel) */}
+        <div
+          className="absolute inset-0 opacity-70 mix-blend-screen"
+          style={{
+            background:
+              "radial-gradient(1000px 520px at 50% 92%, rgba(255, 110, 20, 0.55), rgba(255, 110, 20, 0) 58%), radial-gradient(700px 420px at 15% 88%, rgba(255, 160, 60, 0.30), rgba(255, 160, 60, 0) 60%), radial-gradient(720px 440px at 85% 88%, rgba(255, 120, 30, 0.28), rgba(255, 120, 30, 0) 62%)",
+          }}
+        />
 
         {/* Moving smoke (very subtle) */}
         <div className="absolute inset-0 opacity-60 mix-blend-screen">
