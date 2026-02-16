@@ -411,8 +411,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div
         className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/20 mb-6"
         style={{
-          // Drop your arena / colosseum image in: public/images/league-arena.jpg
-          backgroundImage: "url(/images/league-arena.jpg)",
+          backgroundImage: "url(/images/league-arena.png)",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
