@@ -138,7 +138,9 @@ function formatUtcTiny(iso?: string | null) {
 function formatEpochRangeUtc(epoch?: EpochMeta) {
   if (!epoch) return "";
   const start = formatUtcTiny(epoch.epochStart);
-  const end = formatUtcTiny(epoch.status === "live" ? epoch.rangeEnd : epoch.epochEnd);
+  // NOTE: rangeEnd is "now" for live epochs and is only meant for query filtering.
+  // For user-facing timers we must always use the real epochEnd.
+  const end = formatUtcTiny(epoch.epochEnd);
   if (!start || !end) return "";
   return `${start} UTC → ${end} UTC`;
 }

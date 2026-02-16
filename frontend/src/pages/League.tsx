@@ -177,9 +177,8 @@ function formatUtcTiny(iso?: string | null) {
 function formatEpochRangeUtc(epoch?: EpochMeta) {
   if (!epoch) return "";
   const start = formatUtcTiny(epoch.epochStart);
-  // IMPORTANT:
-  // epochEnd = actual period end (used for countdown + display)
-  // rangeEnd = data cutoff (often "now") for live queries
+  // NOTE: rangeEnd is "now" for live epochs and is only meant for query filtering.
+  // For user-facing timers we must always use the real epochEnd.
   const end = formatUtcTiny(epoch.epochEnd);
   if (!start || !end) return "";
   return `${start} UTC → ${end} UTC`;
@@ -188,7 +187,6 @@ function formatEpochRangeUtc(epoch?: EpochMeta) {
 function formatEndsIn(epoch?: EpochMeta) {
   try {
     if (!epoch) return "";
-    // Countdown should always be to the real period end.
     const endIso = epoch.epochEnd;
     if (!endIso) return "";
     const end = new Date(endIso).getTime();
@@ -270,8 +268,15 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     const intervalMs = 5_000;
     const keepEvents = 12;
 
-    const keyOfRow = (row: any): string => {
-      // Prefer campaign address, otherwise wallet.
+    const keyOfRow = (leagueKey: string, row: any): string => {
+      // For Biggest Hit we need a per-trade identity, otherwise a bigger buy in the *same* campaign
+      // won't look like a "leader change" (because campaign_address stays identical).
+      if (leagueKey === "biggest_hit") {
+        const tx = row?.tx_hash ? String(row.tx_hash) : "";
+        const li = row?.log_index !== undefined && row?.log_index !== null ? String(row.log_index) : "";
+        if (tx) return `${tx}:${li}`;
+      }
+      // Default: prefer campaign address, otherwise wallet.
       if (row && typeof row.campaign_address === "string") return row.campaign_address;
       if (row && typeof row.wallet === "string") return row.wallet;
       if (row && typeof row.buyer_address === "string") return row.buyer_address;
@@ -326,7 +331,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
         for (const [k, r] of results) {
           const items = Array.isArray(r?.items) ? r.items : [];
-          nowLeaders[k] = items.map(keyOfRow).filter(Boolean).slice(0, 3);
+          nowLeaders[k] = items.map((x: any) => keyOfRow(k, x)).filter(Boolean).slice(0, 3);
           nowPots[k] = String(r?.prize?.potRaw ?? "0");
 
           const prev = prevBulletinRef.current;
@@ -336,14 +341,14 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
           // Rank flip: #1 changed.
           if (prevTop && curTop && prevTop !== curTop) {
-            const curRow = items.find((x: any) => keyOfRow(x) === curTop) ?? items?.[0];
-            const prevRow = items.find((x: any) => keyOfRow(x) === prevTop);
+            const curRow = items.find((x: any) => keyOfRow(k, x) === curTop) ?? items?.[0];
+            const prevRow = items.find((x: any) => keyOfRow(k, x) === prevTop);
             const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
             pushEvent(`${labelOfRow(curRow)} overtook ${labelOfRow(prevRow)} for #1 in ${leagueTitle}.`);
           }
 
           // Biggest Hit: show a “big buy” style message when a new top appears.
-          if (k.startsWith("biggest_hit")) {
+          if (k === "biggest_hit") {
             const top = items?.[0];
             const amt = top?.bnb_amount_raw ? formatBnbFromRaw(String(top.bnb_amount_raw)) : "";
             if (amt && prevTop && curTop && prevTop !== curTop) {
