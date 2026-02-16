@@ -5,7 +5,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
-import leagueBg from "@/assets/league_background.png";
 
 function mulberry32(seed: number) {
   let t = seed >>> 0;
@@ -431,9 +430,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   return (
     <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-x-hidden">
-      {/* Full-page background (fixed, no scroll) */}
+      {/* Full-page background (fixed; page content scrolls) */}
       <div
-        className="fixed inset-0 -z-10 pointer-events-none"
+        className="fixed inset-0 z-0 pointer-events-none"
         style={{
           backgroundImage: "url(/assets/league_background.png)",
           backgroundSize: "cover",
@@ -442,7 +441,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           backgroundAttachment: "fixed",
         }}
       />
-      <div className="fixed inset-0 -z-10 bg-background/70 pointer-events-none" />
+      <div className="fixed inset-0 z-0 bg-background/70 pointer-events-none" />
+
+      {/* Ensure content is above the fixed background */}
+      <div className="relative z-10"></div>
 
       {/* Hero banner */}
       <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
