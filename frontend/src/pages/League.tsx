@@ -177,7 +177,10 @@ function formatUtcTiny(iso?: string | null) {
 function formatEpochRangeUtc(epoch?: EpochMeta) {
   if (!epoch) return "";
   const start = formatUtcTiny(epoch.epochStart);
-  const end = formatUtcTiny(epoch.status === "live" ? epoch.rangeEnd : epoch.epochEnd);
+  // IMPORTANT:
+  // epochEnd = actual period end (used for countdown + display)
+  // rangeEnd = data cutoff (often "now") for live queries
+  const end = formatUtcTiny(epoch.epochEnd);
   if (!start || !end) return "";
   return `${start} UTC → ${end} UTC`;
 }
@@ -185,7 +188,8 @@ function formatEpochRangeUtc(epoch?: EpochMeta) {
 function formatEndsIn(epoch?: EpochMeta) {
   try {
     if (!epoch) return "";
-    const endIso = epoch.status === "live" ? epoch.rangeEnd : epoch.epochEnd;
+    // Countdown should always be to the real period end.
+    const endIso = epoch.epochEnd;
     if (!endIso) return "";
     const end = new Date(endIso).getTime();
     if (!Number.isFinite(end)) return "";
