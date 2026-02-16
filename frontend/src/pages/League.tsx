@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -224,6 +224,14 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
 
+  // Live bulletin (Option B): polling diff on lightweight top snapshots.
+  const [bulletinEvents, setBulletinEvents] = useState<Array<{ id: string; ts: number; text: string }>>([]);
+  const prevBulletinRef = useRef<{
+    leaders: Record<string, string[]>;
+    pots: Record<string, string>;
+    lastHashes: string[];
+  } | null>(null);
+
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
 
@@ -246,11 +254,137 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     setEpochOffset(0);
   }, [period]);
 
-  // Hourly refresh (dynamic leaderboards / prize boxes).
+  // Hourly refresh (full leaderboards / prize boxes).
   useEffect(() => {
     const id = window.setInterval(() => setRefreshTick((t) => t + 1), 60 * 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Live bulletin polling (lightweight) — every 5s.
+  useEffect(() => {
+    let cancelled = false;
+    const intervalMs = 5_000;
+    const keepEvents = 12;
+
+    const keyOfRow = (row: any): string => {
+      // Prefer campaign address, otherwise wallet.
+      if (row && typeof row.campaign_address === "string") return row.campaign_address;
+      if (row && typeof row.wallet === "string") return row.wallet;
+      if (row && typeof row.buyer_address === "string") return row.buyer_address;
+      return "";
+    };
+
+    const labelOfRow = (row: any): string => {
+      if (row && typeof row.campaign_address === "string") {
+        const nm = String(row?.name ?? "Unknown");
+        const sym = String(row?.symbol ?? "");
+        return `${nm}${sym ? ` (${sym})` : ""}`;
+      }
+      if (row && typeof row.wallet === "string") return shortAddr(row.wallet);
+      if (row && typeof row.buyer_address === "string") return shortAddr(row.buyer_address);
+      return "Unknown";
+    };
+
+    const pushEvent = (text: string) => {
+      const ts = Date.now();
+      // Deduplicate bursts: keep a small rolling set of recent hashes.
+      const h = `${Math.floor(ts / 5000)}|${text}`; // 5s bucket
+      const prev = prevBulletinRef.current;
+      const lastHashes = prev?.lastHashes ?? [];
+      if (lastHashes.includes(h)) return;
+      const nextHashes = [h, ...lastHashes].slice(0, 32);
+      prevBulletinRef.current = { leaders: prev?.leaders ?? {}, pots: prev?.pots ?? {}, lastHashes: nextHashes };
+
+      setBulletinEvents((evts) => {
+        const id = `${ts}-${Math.random().toString(16).slice(2)}`;
+        const next = [{ id, ts, text }, ...evts];
+        return next.slice(0, keepEvents);
+      });
+    };
+
+    const poll = async () => {
+      try {
+        const targets = LEAGUES.filter((l) => l.supports.includes(period));
+        const results = await Promise.all(
+          targets.map(async (l) => {
+            const limit = 3; // keep lightweight
+            const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(period)}&epochOffset=${encodeURIComponent(
+              String(epochOffset)
+            )}&limit=${encodeURIComponent(String(limit))}&category=${encodeURIComponent(l.key)}`;
+            const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<any>;
+            return [l.key, r] as const;
+          })
+        );
+        if (cancelled) return;
+
+        const nowLeaders: Record<string, string[]> = {};
+        const nowPots: Record<string, string> = {};
+
+        for (const [k, r] of results) {
+          const items = Array.isArray(r?.items) ? r.items : [];
+          nowLeaders[k] = items.map(keyOfRow).filter(Boolean).slice(0, 3);
+          nowPots[k] = String(r?.prize?.potRaw ?? "0");
+
+          const prev = prevBulletinRef.current;
+          const prevLeaders = prev?.leaders?.[k] ?? [];
+          const prevTop = prevLeaders?.[0];
+          const curTop = nowLeaders[k]?.[0];
+
+          // Rank flip: #1 changed.
+          if (prevTop && curTop && prevTop !== curTop) {
+            const curRow = items.find((x: any) => keyOfRow(x) === curTop) ?? items?.[0];
+            const prevRow = items.find((x: any) => keyOfRow(x) === prevTop);
+            const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
+            pushEvent(`${labelOfRow(curRow)} overtook ${labelOfRow(prevRow)} for #1 in ${leagueTitle}.`);
+          }
+
+          // Biggest Hit: show a “big buy” style message when a new top appears.
+          if (k.startsWith("biggest_hit")) {
+            const top = items?.[0];
+            const amt = top?.bnb_amount_raw ? formatBnbFromRaw(String(top.bnb_amount_raw)) : "";
+            if (amt && prevTop && curTop && prevTop !== curTop) {
+              const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
+              pushEvent(`Big buy: ${labelOfRow(top)} hit ${amt} BNB and took #1 in ${leagueTitle}.`);
+            }
+          }
+
+          // Pot jump: if pot increased meaningfully.
+          try {
+            const prevPot = BigInt(String(prev?.pots?.[k] ?? "0"));
+            const curPot = BigInt(String(nowPots[k] ?? "0"));
+            if (curPot > prevPot) {
+              const delta = curPot - prevPot;
+              // Threshold: 0.02 BNB to avoid spam
+              const threshold = 20_000_000_000_000_000n;
+              if (delta >= threshold) {
+                const leagueTitle = LEAGUES.find((x) => x.key === k)?.title ?? k;
+                pushEvent(`Prize pool +${formatBnbFromRaw(delta.toString())} BNB in ${leagueTitle}.`);
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const prev = prevBulletinRef.current;
+        prevBulletinRef.current = {
+          leaders: nowLeaders,
+          pots: nowPots,
+          lastHashes: prev?.lastHashes ?? [],
+        };
+      } catch {
+        // Silent: bulletin should not break the page.
+      }
+    };
+
+    // Prime immediately.
+    poll();
+    const id = window.setInterval(poll, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [activeChainId, period, epochOffset]);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,15 +505,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [period, prizes]);
 
   const liveBulletin = useMemo(() => {
-    // Phase 1: UI placeholder. We'll wire this to real-time events (Ably / indexer) in Phase 2.
-    const sample = [
-      "Live bulletin will show rank flips & big buys in real-time.",
-      "Example: Campaign X overtook Campaign Y with a big buy.",
-      "Example: Prize pool jumped from a large trade.",
-    ];
-    const idx = Math.abs((epochOffset * 13 + (period === "weekly" ? 7 : 11)) % sample.length);
-    return sample[idx];
-  }, [epochOffset, period]);
+    const top = bulletinEvents?.[0];
+    if (top?.text) return top.text;
+    return "Waiting for activity…";
+  }, [bulletinEvents]);
 
   const recentLeaders = useMemo(() => {
     // Phase 1 "Recent Wins": show the current #1 per league (top row) for the selected period.
@@ -411,7 +540,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div
         className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/20 mb-6"
         style={{
-          backgroundImage: "url(/images/league-arena.png)",
+          // Drop your arena / colosseum image in: public/images/league-arena.jpg
+          backgroundImage: "url(/images/league-arena.jpg)",
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
