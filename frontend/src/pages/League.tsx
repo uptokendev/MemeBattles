@@ -6,6 +6,16 @@ import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
 
+function mulberry32(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
 const shortAddr = (a: string) => (a && a.length > 12 ? a.slice(0, 6) + "..." + a.slice(-4) : a);
 
@@ -376,6 +386,27 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
 
+  // Subtle ember particles for the hero banner (deterministic per UTC day).
+  const heroEmbers = useMemo(() => {
+    const now = new Date();
+    const seed = Number(
+      `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`
+    );
+    const rnd = mulberry32(seed);
+    const count = 18;
+    return Array.from({ length: count }).map((_, i) => {
+      const left = rnd() * 100;
+      const top = 55 + rnd() * 45; // biased lower half
+      const size = 1.5 + rnd() * 2.5;
+      const dur = 4 + rnd() * 4;
+      const delay = rnd() * 4;
+      const drift = (rnd() - 0.5) * 60;
+      const blur = rnd() * 1.5;
+      const opacity = 0.22 + rnd() * 0.32;
+      return { i, left, top, size, dur, delay, drift, blur, opacity };
+    });
+  }, []);
+
   const recentLeaders = useMemo(() => {
     // Phase 1 "Recent Wins": show the current #1 per league (top row) for the selected period.
     const out: Array<{ league: LeagueDef; line1: string; line2?: string }> = [];
@@ -417,15 +448,57 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       {/* Hero banner */}
       <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
         <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
+
+        {/* ultra-light ember overlay */}
+        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+          <style>{`
+            @keyframes mb_ember_float {
+              0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
+              12% { opacity: var(--mb-ember-opacity, .35); }
+              70% { opacity: var(--mb-ember-opacity, .35); }
+              100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
+            }
+          `}</style>
+          {heroEmbers.map((p) => (
+            <span
+              key={p.i}
+              className="absolute rounded-full"
+              style={{
+                left: `${p.left}%`,
+                top: `${p.top}%`,
+                width: `${p.size}px`,
+                height: `${p.size}px`,
+                filter: `blur(${p.blur}px)`,
+                background: "rgba(255, 147, 41, 1)",
+                boxShadow: "0 0 12px rgba(255, 147, 41, 0.35)",
+                animation: `mb_ember_float ${p.dur}s linear ${p.delay}s infinite`,
+                // custom properties consumed by keyframes
+                ["--mb-ember-drift" as any]: `${p.drift}px`,
+                ["--mb-ember-opacity" as any]: String(p.opacity),
+              }}
+            />
+          ))}
+        </div>
+
         <div className="relative p-5 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-4">
-              <div className="relative shrink-0">
+              <div className="relative shrink-0 pb-6">
                 <div className="absolute -inset-3 rounded-full bg-accent/20 blur-xl" />
                 <div className="absolute -inset-10 rounded-full border border-border/30" />
                 <div className="absolute -inset-14 rounded-full border border-border/20" />
                 <div className="relative h-14 w-14 md:h-16 md:w-16 rounded-2xl border border-border/50 bg-card/40 flex items-center justify-center">
                   <img src="/assets/logo.png" alt="MemeBattles" className="h-9 w-9 md:h-10 md:w-10" draggable={false} />
+                </div>
+
+                {/* Champion ribbon */}
+                <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2">
+                  <div className="relative">
+                    <div className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-amber-500/45 via-orange-500/45 to-amber-500/45 blur" />
+                    <div className="relative px-3.5 py-1 rounded-xl border border-amber-500/40 bg-background/70 backdrop-blur text-[10px] md:text-[11px] font-extrabold tracking-wide uppercase text-amber-200 shadow">
+                      WEEKLY LEAGUES LIVE
+                    </div>
+                  </div>
                 </div>
               </div>
 
