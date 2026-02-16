@@ -22,6 +22,49 @@ describe("LaunchFactory", function () {
     expect(await factory.router()).to.eq(await router.getAddress());
     expect((await factory.config()).totalSupply).to.be.gt(0n);
     expect(await factory.protocolFeeBps()).to.eq(200n);
+    // Default is Prepare Mode
+    expect(await factory.live()).to.eq(false);
+  });
+
+  it("live latch: createCampaign blocked until enabled; onlyOwner; enableLive is one-way", async () => {
+    const [owner, creator, lpReceiver] = await ethers.getSigners();
+
+    const V2Factory = await ethers.getContractFactory("MockV2Factory");
+    const v2factory = await V2Factory.deploy();
+
+    const Router = await ethers.getContractFactory("MockRouter");
+    const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
+
+    const Factory = await ethers.getContractFactory("LaunchFactory");
+    const factory = await Factory.deploy(await router.getAddress(), await lpReceiver.getAddress());
+
+    const req = {
+      name: "MyToken",
+      symbol: "MYT",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: 0n,
+    };
+
+    await expect(factory.connect(creator).createCampaign(req as any)).to.be.revertedWithCustomError(factory, "NotLive");
+
+    await expect(factory.connect(creator).enableLive()).to.be.revertedWithCustomError(
+      factory,
+      "OwnableUnauthorizedAccount"
+    );
+
+    await expect(factory.connect(owner).enableLive()).to.emit(factory, "LiveEnabled");
+    expect(await factory.live()).to.eq(true);
+
+    await expect(factory.connect(owner).enableLive()).to.be.revertedWithCustomError(factory, "AlreadyLive");
+
+    await expect(factory.connect(creator).createCampaign(req as any)).to.emit(factory, "CampaignCreated");    
   });
 
   it("quoteInitialBuyTotal: 0 tokens -> 0; override params respected", async () => {

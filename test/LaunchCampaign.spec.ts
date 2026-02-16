@@ -238,7 +238,7 @@ describe("LaunchCampaign", function () {
       graduationTarget: ethers.parseEther("1"),
       liquidityBps: 8000,
       protocolFeeBps: 200,
-      leagueFeeBps: 25,
+      leagueFeeBps: 75,
       leagueReceiver: await owner.getAddress(),
       router: await router.getAddress(),
       lpReceiver: await creator.getAddress(),
@@ -360,7 +360,7 @@ await campaign.initialize(params);
       graduationTarget: ethers.parseEther("1"),
       liquidityBps: 8000,
       protocolFeeBps: 200,
-      leagueFeeBps: 25,
+      leagueFeeBps: 75,
       leagueReceiver: await leagueReceiver.getAddress(),
       router: await dexRouter.getAddress(),
       lpReceiver: await creator.getAddress(),
@@ -387,7 +387,8 @@ await campaign.initialize(params);
       BigInt(feeBps)
     );
 
-    const leagueFee = (costNoFee * 25n) / 10_000n;
+    const leagueFeeBps = BigInt(await campaign.leagueFeeBps());
+    const leagueFee = (costNoFee * leagueFeeBps) / 10_000n;
     const protocolNet = fee - leagueFee;
 
     const tx = await campaign.connect(alice).buyExactTokens(amountOut, total, { value: total });

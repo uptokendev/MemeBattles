@@ -19,6 +19,11 @@ describe("Launchpad end-to-end", function () {
     const LaunchFactory = await ethers.getContractFactory("LaunchFactory");
     const factory = (await LaunchFactory.deploy(await router.getAddress(), await deployer.getAddress())) as unknown as LaunchFactory;
 
+    // NEW: default to Live Mode for end-to-end tests.
+    // Prepare Mode (live=false) is tested separately in LaunchFactory.spec.ts.
+    await factory.connect(deployer).enableLive();
+
+
     return { deployer, creator, trader, other, router, factory, v2Factory };
   }
 

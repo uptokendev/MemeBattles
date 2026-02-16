@@ -27,6 +27,8 @@ contract LaunchFactory is Ownable {
     error SlopeZero();
     error TargetZero();
     error LiquidityBps();
+    error NotLive();
+    error AlreadyLive();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -70,7 +72,10 @@ contract LaunchFactory is Ownable {
     LaunchConfig public config;
     address public feeRecipient;
     uint256 public protocolFeeBps;
-    uint256 public constant LEAGUE_FEE_BPS = 25;
+
+    /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
+    bool public live;
+    uint256 public constant LEAGUE_FEE_BPS = 75;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
@@ -94,6 +99,7 @@ contract LaunchFactory is Ownable {
     event FeeRecipientUpdated(address indexed newRecipient);
     event RouterUpdated(address indexed newRouter);
     event ProtocolFeeUpdated(uint256 newFeeBps);
+    event LiveEnabled(uint64 at);
 
     constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
         if (router_ == address(0)) revert RouterZero();
@@ -116,6 +122,14 @@ contract LaunchFactory is Ownable {
         // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
         campaignImplementation = address(new LaunchCampaign());
     }
+
+    /// @notice Enables Live Mode permanently. Cannot be undone.
+    function enableLive() external onlyOwner {
+        if (live) revert AlreadyLive();
+        live = true;
+        emit LiveEnabled(uint64(block.timestamp));
+    }
+
 
     receive() external payable {}
 
@@ -143,6 +157,7 @@ contract LaunchFactory is Ownable {
         payable
         returns (address campaignAddr, address tokenAddr)
     {
+        if (!live) revert NotLive();
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();

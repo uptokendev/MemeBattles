@@ -16,12 +16,17 @@ import { ENV } from "../env.js";
 // This job is designed to be safe to run repeatedly.
 
 const DEFAULT_PROTOCOL_FEE_BPS = 200; // 2%
-const DEFAULT_LEAGUE_FEE_BPS = 25; // 0.25% slice of gross
+const DEFAULT_LEAGUE_FEE_BPS = 75; // 0.75% slice of gross (carved out of the 2% protocol fee)
 
 const WEEKLY_CATEGORIES = ["fastest_finish", "biggest_hit", "top_earner", "crowd_favorite"] as const;
 const MONTHLY_CATEGORIES = ["perfect_run", ...WEEKLY_CATEGORIES] as const;
 
 const PRIZE_SPLIT_BPS = [4000, 2500, 1500, 1200, 800]; // 40/25/15/12/8
+
+// Split the League fee stream between weekly and monthly prize budgets.
+// Weekly budget is paid to 4 categories (1 winner each). Monthly budget is paid to 5 categories (top 5 each).
+const DEFAULT_WEEKLY_PRIZE_BUDGET_BPS = 3000; // 30%
+const DEFAULT_MONTHLY_PRIZE_BUDGET_BPS = 7000; // 70%
 
 function readBps(raw: any, def: number) {
   const n = Number(raw);
@@ -369,10 +374,15 @@ async function finalizeEpochFor(
 
   const totalLeagueFeeRaw = await computeTotalLeagueFeeRawInRange(chainId, epochStartIso, epochEndIso, protocolFeeBps, leagueFeeBps);
 
-  // Split total evenly among eligible categories for the period.
+  // Split this epoch's League fee inflow into weekly vs monthly prize budgets, then split evenly among eligible categories.
+  const weeklyBudgetBps = readBps(process.env.WEEKLY_PRIZE_BUDGET_BPS, DEFAULT_WEEKLY_PRIZE_BUDGET_BPS);
+  const monthlyBudgetBps = readBps(process.env.MONTHLY_PRIZE_BUDGET_BPS, DEFAULT_MONTHLY_PRIZE_BUDGET_BPS);
+  const budgetBps = period === "weekly" ? weeklyBudgetBps : period === "monthly" ? monthlyBudgetBps : 10_000;
+  const budget = (totalLeagueFeeRaw * BigInt(budgetBps)) / 10_000n;
+
   const leagueCount = categories.length;
-  const base = leagueCount ? totalLeagueFeeRaw / BigInt(leagueCount) : 0n;
-  const rem = leagueCount ? totalLeagueFeeRaw % BigInt(leagueCount) : 0n;
+  const base = leagueCount ? budget / BigInt(leagueCount) : 0n;
+  const rem = leagueCount ? budget % BigInt(leagueCount) : 0n;
 
   for (let i = 0; i < categories.length; i++) {
     const category = categories[i];

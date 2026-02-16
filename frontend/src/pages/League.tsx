@@ -4,11 +4,10 @@ import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
 
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
 const shortAddr = (a: string) => (a && a.length > 12 ? a.slice(0, 6) + "..." + a.slice(-4) : a);
-
-type Period = "weekly" | "monthly";
 
 type LeagueBase = {
   campaign_address: string;
@@ -75,6 +74,7 @@ type LeagueResponse<T> = {
   warning?: string;
   prize?: PrizeMeta;
   epoch?: EpochMeta;
+  stats?: { campaignsCreated?: number };
 };
 
 function clampInt(n: number, lo: number, hi: number) {
@@ -105,11 +105,6 @@ function formatBnbFromRaw(raw?: string | null) {
   } catch {
     return "0";
   }
-}
-
-function periodLabel(p: Period) {
-  if (p === "weekly") return "Weekly";
-  return "Monthly";
 }
 
 function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
@@ -146,67 +141,6 @@ function RowWallet({ address }: { address: string }) {
       </div>
     </div>
   );
-}
-
-type LeagueDef = {
-  key: "perfect_run" | "fastest_finish" | "biggest_hit" | "top_earner" | "crowd_favorite";
-  title: string;
-  subtitle: string;
-  image: string;
-  supports: Period[];
-  weeklyLimit?: number;
-  monthlyLimit?: number;
-};
-
-const LEAGUES: LeagueDef[] = [
-  {
-    key: "perfect_run",
-    title: "Perfect Run",
-    subtitle: "Monthly only · No sells in bonding · <br><br>Jackpot rolls over if not hit",
-    image: "/assets/perfectrun.png",
-    supports: ["monthly"],
-    monthlyLimit: 5,
-  },
-  {
-    key: "fastest_finish",
-    title: "Fastest Finish",
-    subtitle: "Fastest graduation (creator buys excluded)",
-    image: "/assets/fastestfinish.png",
-    supports: ["weekly", "monthly"],
-    weeklyLimit: 5,
-    monthlyLimit: 5,
-  },
-  {
-    key: "biggest_hit",
-    title: "Biggest Hit",
-    subtitle: "Biggest single buy in bonding",
-    image: "/assets/biggesthit.png",
-    supports: ["weekly", "monthly"],
-    weeklyLimit: 5,
-    monthlyLimit: 5,
-  },
-  {
-    key: "top_earner",
-    title: "Top Earner",
-    subtitle: "Highest trader earnings inside the bonding curve · Paid weekly/monthly",
-    image: "/assets/topearner.png",
-    supports: ["weekly", "monthly"],
-    weeklyLimit: 5,
-    monthlyLimit: 5,
-  },
-  {
-    key: "crowd_favorite",
-    title: "Crowd Favorite",
-    subtitle: "Most UpVotes (community‑driven)",
-    image: "/assets/crowdfavorite.png",
-    supports: ["weekly", "monthly"],
-    weeklyLimit: 5,
-    monthlyLimit: 5,
-  },
-];
-
-function getLimit(def: LeagueDef, period: Period) {
-  return period === "weekly" ? def.weeklyLimit ?? 10 : def.monthlyLimit ?? 10;
 }
 
 function formatIsoTiny(iso?: string | null) {
@@ -267,6 +201,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
   const [fallbackMonthlyPrize, setFallbackMonthlyPrize] = useState<PrizeMeta | undefined>(undefined);
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
+  const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
 
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
@@ -325,15 +260,21 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
         let nextEpoch: EpochMeta | undefined = undefined;
 
+        let nextCampaignsCreated: number | undefined = undefined;
+
         for (const [k, r] of results) {
           const items = Array.isArray(r?.items) ? r.items : [];
           nextData[k] = items;
           nextWarnings[k] = r?.warning;
           nextPrizes[k] = r?.prize;
           if (!nextEpoch && r?.epoch) nextEpoch = r.epoch;
+          if (typeof r?.stats?.campaignsCreated === "number" && typeof nextCampaignsCreated !== "number") {
+            nextCampaignsCreated = r.stats.campaignsCreated;
+          }
         }
 
         setEpochInfo(nextEpoch);
+        setCampaignsCreated(nextCampaignsCreated);
 
         let nextFallbackMonthlyPrize: PrizeMeta | undefined = undefined;
 
@@ -374,6 +315,23 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     };
   }, [activeChainId, period, epochOffset, refreshTick]);
 
+  const totalPrizePoolRaw = useMemo(() => {
+    try {
+      // Sum the per-category pots returned by /api/league for the current view.
+      // This correctly accounts for rollovers, since each category carries its own potRaw.
+      const eligible = LEAGUES.filter((l) => l.supports.includes(period)).map((l) => l.key);
+      let sum = 0n;
+      for (const k of eligible) {
+        const p = prizes[k];
+        if (!p?.potRaw) continue;
+        sum += BigInt(String(p.potRaw));
+      }
+      return sum.toString();
+    } catch {
+      return "0";
+    }
+  }, [period, prizes]);
+
   return (
     // NOTE: TopBar is fixed-position. This page doesn't have a tall header band
     // (like the Showcase) so it needs extra top padding to avoid overlapping the
@@ -385,6 +343,20 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <p className="text-xs md:text-sm text-muted-foreground">
             Objective on‑chain leaderboards. Prize pools are funded from the <span className="font-semibold">league fee</span> inside bonding‑curve trades.
           </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
+              <span className="text-muted-foreground">Total prize pool</span>
+              <span className="font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</span>
+              <span className="text-muted-foreground">· {periodLabel(period)}</span>
+            </div>
+            {typeof campaignsCreated === "number" ? (
+              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
+                <span className="text-muted-foreground">Campaigns created</span>
+                <span className="font-semibold">{campaignsCreated}</span>
+              </div>
+            ) : null}
+          </div>
 
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
             <span className="text-muted-foreground">Winners claim in</span>
@@ -463,7 +435,24 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             : "No results yet for this period.";
 
           return (
-            <div key={l.key} className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden">
+            <div
+              key={l.key}
+              onClick={(e) => {
+                // Allow inner interactive elements (row buttons, links) to work without triggering card navigation.
+                const el = e.target as Element | null;
+                if (el && el.closest && el.closest("button")) return;
+                navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden text-left hover:bg-card/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
               <div className="relative">
                 <div className="w-full aspect-square bg-black/10 flex items-center justify-center">
                   <img src={l.image} alt={l.title} className="max-w-full max-h-full object-contain" draggable={false} />

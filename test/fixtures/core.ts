@@ -39,5 +39,8 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     liquidityBps: 8000                           // 80% of raised (after finalize fee) to LP
   });
 
+  // Tests assume the system is in Live Mode unless explicitly testing Prepare Mode.
+  await factory.connect(owner).enableLive();
+
   return { owner, creator, alice, bob, feeRecipient, lpReceiver, router, v2factory, factory };
 }

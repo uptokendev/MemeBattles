@@ -96,9 +96,14 @@ function getEpoch(periodNorm, epochOffset) {
 // Prize pool (league fee only)
 // ---------------------------
 const DEFAULT_PROTOCOL_FEE_BPS = 200; // 2%
-const DEFAULT_LEAGUE_FEE_BPS = 25; // 0.25% slice of gross
+const DEFAULT_LEAGUE_FEE_BPS = 75; // 0.75% slice of gross (carved out of the 2% protocol fee)
 const PRIZE_TTL_MS = 60 * 60 * 1000;
 const PRIZE_SPLIT_BPS = [4000, 2500, 1500, 1200, 800]; // 40/25/15/12/8
+
+// Split the League fee stream between weekly and monthly prize budgets.
+// Weekly budget is paid to 4 categories (1 winner each). Monthly budget is paid to 5 categories (top 5 each).
+const DEFAULT_WEEKLY_PRIZE_BUDGET_BPS = 3000; // 30%
+const DEFAULT_MONTHLY_PRIZE_BUDGET_BPS = 7000; // 70%
 
 function readBps(name, def) {
   const raw = process?.env?.[name];
@@ -114,6 +119,34 @@ function prizeEligibleCategories(periodNorm) {
 }
 
 const prizeCache = new Map(); // key: `${chainId}:${period}` -> { computedAtMs, data }
+
+// Epoch stats cache (cheap, but avoid 5x duplicate queries from the hub)
+const statsCache = new Map(); // key: `${chainId}:${periodNorm}:${epochStartIso ?? ''}:${rangeEndIso ?? ''}` -> { computedAtMs, data }
+
+async function getEpochStats(chainId, periodNorm, epochStartIso, rangeEndIso) {
+  if (!(periodNorm === "weekly" || periodNorm === "monthly")) return null;
+
+  const key = `${chainId}:${periodNorm}:${epochStartIso ?? ""}:${rangeEndIso ?? ""}`;
+  const now = Date.now();
+  const cached = statsCache.get(key);
+  if (cached && now - cached.computedAtMs < PRIZE_TTL_MS) return cached.data;
+
+  const { rows } = await pool.query(
+    `select count(*)::bigint as n
+       from public.campaigns c
+      where c.chain_id = $1
+        and ($2::timestamptz is null or c.created_at_chain >= $2::timestamptz)
+        and ($3::timestamptz is null or c.created_at_chain < $3::timestamptz)`,
+    [chainId, epochStartIso ?? null, rangeEndIso ?? null]
+  );
+
+  const data = {
+    campaignsCreated: Number(rows?.[0]?.n ?? 0),
+  };
+
+  statsCache.set(key, { computedAtMs: now, data });
+  return data;
+}
 
 // ---------------------------
 // Claims (signature + nonce)
@@ -253,9 +286,14 @@ async function getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso) {
   );
   const total = BigInt(totalLeagueFeeRaw);
 
+  const weeklyBudgetBps = readBps("WEEKLY_PRIZE_BUDGET_BPS", DEFAULT_WEEKLY_PRIZE_BUDGET_BPS);
+  const monthlyBudgetBps = readBps("MONTHLY_PRIZE_BUDGET_BPS", DEFAULT_MONTHLY_PRIZE_BUDGET_BPS);
+  const budgetBps = periodNorm === "weekly" ? weeklyBudgetBps : periodNorm === "monthly" ? monthlyBudgetBps : 10_000;
+  const budget = (total * BigInt(budgetBps)) / 10_000n;
+
   const leagueCount = eligible.length;
-  const base = leagueCount > 0 ? total / BigInt(leagueCount) : 0n;
-  const rem = leagueCount > 0 ? total % BigInt(leagueCount) : 0n;
+  const base = leagueCount > 0 ? budget / BigInt(leagueCount) : 0n;
+  const rem = leagueCount > 0 ? budget % BigInt(leagueCount) : 0n;
 
   const byCategory = {};
   for (let i = 0; i < eligible.length; i++) {
@@ -443,6 +481,9 @@ export default async function handler(req, res) {
     // Prize meta is computed once per chain/period per warm instance (and TTL = 1h).
     // This prevents recomputing fee totals on every category request.
     const prizeMeta = await getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso);
+
+    // Hub stats (cached for 1h)
+    const stats = await getEpochStats(chainId, periodNorm, epochStartIso, rangeEndIso);
     const prizeForCategory = prizeMeta?.byCategory?.[category]
       ? {
           basis: prizeMeta.basis,
@@ -520,7 +561,7 @@ export default async function handler(req, res) {
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
     }
 
     // -------------------------------------------------
@@ -529,7 +570,7 @@ export default async function handler(req, res) {
     if (category === "perfect_run") {
       // Locked rule: monthly only. If caller asks weekly/all-time, respond empty.
       if (periodNorm !== "monthly") {
-        return json(res, 200, { items: [], warning: "perfect_run is monthly only", prize: prizeForCategory, epoch: epochMeta });
+        return json(res, 200, { items: [], warning: "perfect_run is monthly only", prize: prizeForCategory, epoch: epochMeta, stats });
       }
 
       const params = [chainId, epochStartIso, rangeEndIso, limit];
@@ -602,7 +643,8 @@ export default async function handler(req, res) {
         items: rows,
         warning: rows.length ? undefined : "No Perfect Run qualifiers found. Jackpot rolls over.",
         prize: prizeForCategory,
-        epoch: epochMeta
+        epoch: epochMeta,
+        stats
       });
     }
 
@@ -648,7 +690,7 @@ export default async function handler(req, res) {
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
     }
 
     // -------------------------------------------------
@@ -693,7 +735,7 @@ export default async function handler(req, res) {
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
     }
 
     // -------------------------------------------------
@@ -756,10 +798,10 @@ export default async function handler(req, res) {
         params
       );
 
-      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta });
+      return json(res, 200, { items: rows, prize: prizeForCategory, epoch: epochMeta, stats });
     }
 
-    return json(res, 200, { items: [], prize: prizeForCategory, epoch: epochMeta });
+    return json(res, 200, { items: [], prize: prizeForCategory, epoch: epochMeta, stats });
   } catch (e) {
     // If the DB schema hasn't been migrated yet, avoid breaking the UI with 500s.
     const code = e?.code;

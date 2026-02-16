@@ -142,10 +142,12 @@ export interface LaunchFactoryInterface extends Interface {
       | "campaignsCount"
       | "config"
       | "createCampaign"
+      | "enableLive"
       | "feeRecipient"
       | "getCampaign"
       | "getCampaignPage"
       | "leagueReceiver"
+      | "live"
       | "owner"
       | "protocolFeeBps"
       | "quoteInitialBuyTotal"
@@ -163,6 +165,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "CampaignCreated"
       | "ConfigUpdated"
       | "FeeRecipientUpdated"
+      | "LiveEnabled"
       | "OwnershipTransferred"
       | "ProtocolFeeUpdated"
       | "RouterUpdated"
@@ -199,6 +202,10 @@ export interface LaunchFactoryInterface extends Interface {
     values: [LaunchFactory.CampaignRequestStruct]
   ): string;
   encodeFunctionData(
+    functionFragment: "enableLive",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "feeRecipient",
     values?: undefined
   ): string;
@@ -214,6 +221,7 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "leagueReceiver",
     values?: undefined
   ): string;
+  encodeFunctionData(functionFragment: "live", values?: undefined): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "protocolFeeBps",
@@ -279,6 +287,7 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "createCampaign",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "enableLive", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeRecipient",
     data: BytesLike
@@ -295,6 +304,7 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "leagueReceiver",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "live", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
@@ -373,6 +383,18 @@ export namespace FeeRecipientUpdatedEvent {
   export type OutputTuple = [newRecipient: string];
   export interface OutputObject {
     newRecipient: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace LiveEnabledEvent {
+  export type InputTuple = [at: BigNumberish];
+  export type OutputTuple = [at: bigint];
+  export interface OutputObject {
+    at: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -496,6 +518,8 @@ export interface LaunchFactory extends BaseContract {
     "payable"
   >;
 
+  enableLive: TypedContractMethod<[], [void], "nonpayable">;
+
   feeRecipient: TypedContractMethod<[], [string], "view">;
 
   getCampaign: TypedContractMethod<
@@ -511,6 +535,8 @@ export interface LaunchFactory extends BaseContract {
   >;
 
   leagueReceiver: TypedContractMethod<[], [string], "view">;
+
+  live: TypedContractMethod<[], [boolean], "view">;
 
   owner: TypedContractMethod<[], [string], "view">;
 
@@ -610,6 +636,9 @@ export interface LaunchFactory extends BaseContract {
     "payable"
   >;
   getFunction(
+    nameOrSignature: "enableLive"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "feeRecipient"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -629,6 +658,9 @@ export interface LaunchFactory extends BaseContract {
   getFunction(
     nameOrSignature: "leagueReceiver"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "live"
+  ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
@@ -698,6 +730,13 @@ export interface LaunchFactory extends BaseContract {
     FeeRecipientUpdatedEvent.OutputObject
   >;
   getEvent(
+    key: "LiveEnabled"
+  ): TypedContractEvent<
+    LiveEnabledEvent.InputTuple,
+    LiveEnabledEvent.OutputTuple,
+    LiveEnabledEvent.OutputObject
+  >;
+  getEvent(
     key: "OwnershipTransferred"
   ): TypedContractEvent<
     OwnershipTransferredEvent.InputTuple,
@@ -751,6 +790,17 @@ export interface LaunchFactory extends BaseContract {
       FeeRecipientUpdatedEvent.InputTuple,
       FeeRecipientUpdatedEvent.OutputTuple,
       FeeRecipientUpdatedEvent.OutputObject
+    >;
+
+    "LiveEnabled(uint64)": TypedContractEvent<
+      LiveEnabledEvent.InputTuple,
+      LiveEnabledEvent.OutputTuple,
+      LiveEnabledEvent.OutputObject
+    >;
+    LiveEnabled: TypedContractEvent<
+      LiveEnabledEvent.InputTuple,
+      LiveEnabledEvent.OutputTuple,
+      LiveEnabledEvent.OutputObject
     >;
 
     "OwnershipTransferred(address,address)": TypedContractEvent<

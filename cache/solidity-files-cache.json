@@ -1427,8 +1427,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1771165744804,
-      "contentHash": "9974905b6a89043c72e1cf0972925497",
+      "lastModificationDate": 1771198100077,
+      "contentHash": "d5bb4f61727496f03559fe2a8f038be9",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
