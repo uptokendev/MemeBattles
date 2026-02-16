@@ -480,56 +480,69 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ))}
         </div>
 
-        <div className="relative p-1 md:p-1">
-  {/* Top controls */}
-  <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
-    <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
-      {periodButtons.map((p) => (
-        <button
-          key={p}
-          type="button"
-          onClick={() => setPeriod(p)}
-          className={
-            "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
-            (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
-          }
-        >
-          {periodLabel(p)}
-        </button>
-      ))}
-    </div>
+        <div className="relative p-3 md:p-4">
+          {/* Desktop: buttons left, logo centered (true center). Mobile: stack. */}
+          <div className="flex flex-col gap-4 md:gap-0 md:flex-row md:items-center md:justify-start">
+            {/* LEFT controls */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
+                {periodButtons.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={
+                      "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
+                      (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
+                    }
+                 >
+                    {periodLabel(p)}
+                  </button>
+                ))}
+              </div>
 
-    <div className="flex items-center text-center gap-2 flex-wrap md:justify-end">
-      {epochButtons.map((b) => (
-        <button
-          key={b.offset}
-          type="button"
-          onClick={() => setEpochOffset(b.offset)}
-          className={
-            "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
-            (epochOffset === b.offset
-              ? "bg-card border-border text-foreground"
-              : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-          }
-        >
-          {b.label}
-        </button>
-      ))}
-         {/* Center hero */}
-          <div className="mt-1 md:mt-1 flex flex-col items-center text-center">
-            <img
-               src="/assets/logo.png"
-               alt="MemeBattles"
-               className="h-[200px] w-[200px] select-none"
-               draggable={false}
+              <div className="flex items-center gap-2 flex-wrap md:justify-start">
+                {epochButtons.map((b) => (
+                  <button
+                    key={b.offset}
+                    type="button"
+                    onClick={() => setEpochOffset(b.offset)}
+                    className={
+                      "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
+                      (epochOffset === b.offset
+                        ? "bg-card border-border text-foreground"
+                        : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {b.label}
+                  </button>
+               ))}
+              </div>
+            </div>
+
+            {/* CENTER (mobile): below controls, normal flow */}
+            <div className="flex flex-col items-center text-center md:hidden">
+              <img
+                src="/assets/logo.png"
+                alt="MemeBattles"
+                className="h-[200px] w-[200px] select-none"
+                draggable={false}
               />
               <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
             </div>
-    </div>
-  </div>
 
- 
-</div>
+            {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
+            <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
+              <img
+                src="/assets/logo.png"
+                alt="MemeBattles"
+                className="h-[200px] w-[200px] select-none"
+                draggable={false}
+              />
+              <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI row */}
