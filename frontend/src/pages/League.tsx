@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useId } from "react";
 import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -216,6 +216,7 @@ function formatEndsIn(epoch?: EpochMeta) {
 }
 
 export default function League({ chainId = 97 }: { chainId?: number }) {
+  const emberSeed = useId(); // stable per mount
   const navigate = useNavigate();
 
   const wallet = useWallet();
@@ -430,25 +431,50 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   return (
     <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto">
-      {/* Full-page background (fixed; page content scrolls) */}
-      <div
-        className="fixed inset-0 z-0 pointer-events-none"
-        style={{
-          backgroundImage: "url(/assets/league_background.png)",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-          backgroundAttachment: "fixed",
-        }}
-      />
-      {/* Soft black overlay to improve readability */}
-      <div className="fixed inset-0 z-0 bg-black/45 pointer-events-none" />
++      {/* Full-page background (fixed; page content scrolls) */}
++      <div className="fixed inset-0 z-0 pointer-events-none">
++        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url(/assets/league_background.png)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+        {/* Soft dark overlay */}
+        <div className="absolute inset-0 bg-black/45" />
+
+        {/* Moving smoke (very subtle) */}
+        <div className="absolute inset-0 opacity-60 mix-blend-screen">
+          <div className="smoke-layer smoke-1" />
+          <div className="smoke-layer smoke-2" />
+          <div className="smoke-layer smoke-3" />
+        </div>
+
+        {/* Embers overlay */}
+        <div className="absolute inset-0">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <span
+              key={`${emberSeed}-${i}`}
+              className="ember"
+              style={{
+                left: `${(i * 37) % 100}%`,
+                animationDelay: `${(i * 0.37) % 6}s`,
+                animationDuration: `${6 + ((i * 0.29) % 6)}s`,
+                opacity: 0.22 + ((i * 13) % 10) / 100,
+                transform: `translateY(${40 + ((i * 17) % 60)}vh)`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
 
         {/* Ensure content is above the fixed background */}
        <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+         <div className="relative overflow-hidden h-[150px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -875,6 +901,72 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </ul>
         </div>
       </div>
+
+      {/* League-only background animations (scoped CSS) */}
+      <style>{`
+        /* Embers */
+        .ember{
+          position:absolute;
+          bottom:-10vh;
+          width:2px;
+          height:2px;
+          border-radius:9999px;
+          background:rgba(255,150,50,.95);
+          filter: blur(.2px);
+          box-shadow:
+            0 0 10px rgba(255,120,0,.35),
+            0 0 18px rgba(255,80,0,.18);
+          animation-name: emberFloat;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        @keyframes emberFloat{
+          0%   { transform: translate3d(0, 0, 0) scale(1); opacity: .05; }
+          10%  { opacity: .35; }
+          100% { transform: translate3d(-24px, -110vh, 0) scale(.85); opacity: 0; }
+        }
+
+        /* Smoke: large blurred gradient blobs drifting slowly */
+        .smoke-layer{
+          position:absolute;
+          inset:-20%;
+          background:
+            radial-gradient(closest-side at 20% 30%, rgba(255,255,255,.12), rgba(255,255,255,0) 65%),
+            radial-gradient(closest-side at 70% 45%, rgba(255,255,255,.10), rgba(255,255,255,0) 62%),
+            radial-gradient(closest-side at 45% 75%, rgba(255,255,255,.08), rgba(255,255,255,0) 60%);
+          filter: blur(28px);
+          opacity: .18;
+          transform: translate3d(0,0,0);
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        .smoke-1{ animation: smokeDrift1 42s linear infinite; }
+        .smoke-2{
+          opacity: .14;
+          filter: blur(36px);
+          animation: smokeDrift2 58s linear infinite;
+        }
+        .smoke-3{
+          opacity: .10;
+          filter: blur(44px);
+          animation: smokeDrift3 76s linear infinite;
+        }
+        @keyframes smokeDrift1{
+          0% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
+          50% { transform: translate3d(3%, -2%, 0) scale(1.08); }
+          100% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
+        }
+        @keyframes smokeDrift2{
+          0% { transform: translate3d(6%, -1%, 0) scale(1.12); }
+          50% { transform: translate3d(-3%, 3%, 0) scale(1.15); }
+          100% { transform: translate3d(6%, -1%, 0) scale(1.12); }
+        }
+        @keyframes smokeDrift3{
+          0% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
+          50% { transform: translate3d(2%, 2%, 0) scale(1.26); }
+          100% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
+        }
+      `}</style>
     </div>
   );
 }
