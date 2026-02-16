@@ -480,7 +480,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ))}
         </div>
 
-        <div className="relative p-5 md:p-10">
+        <div className="relative p-4 md:p-6">
   {/* Top controls */}
   <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
     <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
@@ -519,18 +519,13 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   </div>
 
   {/* Center hero */}
-  <div className="mt-6 md:mt-10 flex flex-col items-center text-center">
-    <div className="relative">
-      <div className="absolute -inset-6 rounded-full bg-accent/20 blur-2xl" />
-      <div className="absolute -inset-14 rounded-full border border-border/30" />
-      <div className="absolute -inset-20 rounded-full border border-border/20" />
-      <img
-        src="/assets/logo.png"
-        alt="MemeBattles"
-        className="relative h-[200px] w-[200px] select-none"
-        draggable={false}
-      />
-    </div>
+  <div className="mt-4 md:mt-6 flex flex-col items-center text-center">
+    <img
+      src="/assets/logo.png"
+      alt="MemeBattles"
+      className="h-[200px] w-[200px] select-none"
+      draggable={false}
+    />
 
     <div className="mt-3 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
   </div>
