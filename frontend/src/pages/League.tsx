@@ -536,7 +536,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="h-[200px] w-[200px] select-none"
+                className="h-[150px] w-[150px] select-none"
                 draggable={false}
               />
               <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
