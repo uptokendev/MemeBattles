@@ -524,23 +524,15 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div className="absolute -inset-6 rounded-full bg-accent/20 blur-2xl" />
       <div className="absolute -inset-14 rounded-full border border-border/30" />
       <div className="absolute -inset-20 rounded-full border border-border/20" />
-      <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-3xl border border-border/50 bg-card/40 flex items-center justify-center">
-        <img src="/assets/logo.png" alt="MemeBattles" className="h-12 w-12 md:h-14 md:w-14" draggable={false} />
-      </div>
-
-      {/* Champion ribbon */}
-      <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2">
-        <div className="relative">
-          <div className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-amber-500/45 via-orange-500/45 to-amber-500/45 blur" />
-          <div className="relative px-4 py-1.5 rounded-xl border border-amber-500/40 bg-background/70 backdrop-blur text-[11px] md:text-xs font-extrabold tracking-wide uppercase text-amber-200 shadow">
-            WEEKLY LEAGUES LIVE
-          </div>
-        </div>
-      </div>
+      <img
+        src="/assets/logo.png"
+        alt="MemeBattles"
+        className="relative h-[200px] w-[200px] select-none"
+        draggable={false}
+      />
     </div>
 
-    <div className="mt-10 text-2xl md:text-4xl font-semibold tracking-tight">MemeBattles Leagues</div>
-    <div className="mt-1 text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
+    <div className="mt-3 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
   </div>
 </div>
       </div>
