@@ -480,7 +480,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ))}
         </div>
 
-        <div className="relative p-4 md:p-6">
+        <div className="relative p-3 md:p-4">
   {/* Top controls */}
   <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
     <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
@@ -519,7 +519,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   </div>
 
   {/* Center hero */}
-  <div className="mt-4 md:mt-6 flex flex-col items-center text-center">
+  <div className="mt-2 md:mt-2 flex flex-col items-center text-center">
     <img
       src="/assets/logo.png"
       alt="MemeBattles"
