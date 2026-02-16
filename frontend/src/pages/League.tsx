@@ -441,13 +441,14 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           backgroundAttachment: "fixed",
         }}
       />
-      <div className="fixed inset-0 z-0 bg-background/70 pointer-events-none" />
+      {/* Soft black overlay to improve readability */}
+      <div className="fixed inset-0 z-0 bg-black/45 pointer-events-none" />
 
         {/* Ensure content is above the fixed background */}
        <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
+         <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -487,7 +488,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="flex flex-col gap-4 md:gap-0 md:flex-row md:items-center md:justify-start">
             {/* LEFT controls */}
             <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-1 w-fit">
                 {periodButtons.map((p) => (
                   <button
                     key={p}
@@ -549,19 +550,19 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
       {/* KPI row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Total prize pool</div>
           <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
           <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · updated hourly</div>
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Campaigns created</div>
           <div className="mt-1 text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
           <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · epoch stats</div>
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">League countdowns</div>
             {live ? (
@@ -620,7 +621,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               }}
               role="button"
               tabIndex={0}
-              className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden text-left hover:bg-card/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]"
             >
               <div className="relative">
                 <div className="w-full aspect-[4/3] bg-black/10 flex items-center justify-center">
@@ -642,7 +643,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 {/* Prize box (weekly/monthly only) */}
                 {effectivePeriod === "weekly" || effectivePeriod === "monthly" ? (
                   cardPrize ? (
-                    <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/70 backdrop-blur-sm p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[11px] text-muted-foreground">
                           {l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}
@@ -670,7 +671,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="mb-3 rounded-xl border border-border/40 bg-card/20 p-3">
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/50 backdrop-blur-sm p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[11px] text-muted-foreground">Prize pool</div>
                         <div className="text-sm font-semibold">—</div>
@@ -791,7 +792,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
       {/* Two-column block: breakdown + right rail */}
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-8 rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="xl:col-span-8 rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold">Prize Pool Breakdown</div>
@@ -803,7 +804,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="mt-4 space-y-2">
             {prizeBreakdown.length ? (
               prizeBreakdown.map((r) => (
-                <div key={r.key} className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                <div key={r.key} className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-card/55 px-3 py-2">
                   <div className="text-sm font-semibold truncate">{r.title}</div>
                   <div className="text-sm font-semibold">{formatBnbFromRaw(r.potRaw)} BNB</div>
                 </div>
@@ -815,13 +816,13 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
 
         <div className="xl:col-span-4 space-y-4 xl:sticky xl:top-20 self-start">
-          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
             <div className="text-sm font-semibold">Recent Wins</div>
             <div className="text-[11px] text-muted-foreground">Phase 1: shows the current #1 per league</div>
             <div className="mt-3 space-y-2">
               {recentLeaders.length ? (
                 recentLeaders.map((x) => (
-                  <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                  <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/55 px-3 py-2">
                     <div className="text-[11px] text-muted-foreground">{x.league.title}</div>
                     <div className="text-sm font-semibold truncate">{x.line1}</div>
                     {x.line2 ? <div className="text-[11px] text-muted-foreground">{x.line2}</div> : null}
@@ -833,10 +834,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
             <div className="text-sm font-semibold">Campaigns Created</div>
             <div className="text-[11px] text-muted-foreground">Phase 1: total only · Phase 2: newest campaigns feed</div>
-            <div className="mt-3 rounded-xl border border-border/30 bg-card/30 px-3 py-3">
+            <div className="mt-3 rounded-xl border border-border/30 bg-card/55 px-3 py-3">
               <div className="text-[11px] text-muted-foreground">{periodLabel(period)} total</div>
               <div className="text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
               <div className="mt-2 text-[11px] text-muted-foreground">We can wire a live feed here from the indexer (new campaign events).</div>
@@ -845,7 +846,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-border/40 bg-card/20 px-4 py-3 text-[11px] text-muted-foreground">
+      <div className="mt-6 rounded-2xl border border-border/40 bg-card/45 backdrop-blur-sm px-4 py-3 text-[11px] text-muted-foreground">
         Winners claim in{" "}
         <button type="button" onClick={() => navigate("/profile?tab=rewards")} className="text-accent hover:text-accent/80 font-semibold">
           Profile → Rewards
