@@ -699,7 +699,8 @@ export default async function handler(req, res) {
     if (category === "crowd_favorite") {
       const params = [chainId, epochStartIso, rangeEndIso, limit];
 
-      // Rank by total confirmed vote count first, then unique voters.
+      // IMPORTANT: Our indexer writes paid upvotes (VoteCast events) to public.votes.
+      // Rank by vote count first, then unique voters.
       const { rows } = await pool.query(
         `
         WITH agg AS (
@@ -709,7 +710,7 @@ export default async function handler(req, res) {
             COUNT(*)::bigint AS votes_count,
             COUNT(DISTINCT v.voter_address)::bigint AS unique_voters,
             COALESCE(SUM(v.amount_raw), 0)::numeric AS amount_raw_sum
-          FROM public.votes_confirmed v
+          FROM public.votes v
           WHERE v.chain_id = $1
             AND ($2::timestamptz IS NULL OR v.block_timestamp >= $2::timestamptz)
             AND ($3::timestamptz IS NULL OR v.block_timestamp < $3::timestamptz)
