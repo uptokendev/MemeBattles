@@ -499,7 +499,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       ))}
     </div>
 
-    <div className="flex items-center gap-2 flex-wrap md:justify-end">
+    <div className="flex items-center text-center gap-2 flex-wrap md:justify-end">
       {epochButtons.map((b) => (
         <button
           key={b.offset}
@@ -515,16 +515,16 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           {b.label}
         </button>
       ))}
-       {/* Center hero */}
-  <div className="mt-1 md:mt-1 flex flex-col items-center text-center">
-    <img
-      src="/assets/logo.png"
-      alt="MemeBattles"
-      className="h-[200px] w-[200px] select-none"
-      draggable={false}
-    />
-    <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
-  </div>
+         {/* Center hero */}
+          <div className="mt-1 md:mt-1 flex flex-col items-center text-center">
+            <img
+               src="/assets/logo.png"
+               alt="MemeBattles"
+               className="h-[200px] w-[200px] select-none"
+               draggable={false}
+              />
+              <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+            </div>
     </div>
   </div>
 
