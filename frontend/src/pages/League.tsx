@@ -216,6 +216,7 @@ function formatEndsIn(epoch?: EpochMeta) {
 }
 
 export default function League({ chainId = 97 }: { chainId?: number }) {
+  const emberSeed = useId(); // stable per mount
   const navigate = useNavigate();
 
   const wallet = useWallet();
@@ -235,9 +236,6 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [fallbackMonthlyPrize, setFallbackMonthlyPrize] = useState<PrizeMeta | undefined>(undefined);
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
-
-  // Stable per-mount id used to seed background effects.
-  const bgId = useId();
 
   const live = epochInfo?.status === "live";
 
@@ -431,33 +429,11 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     return out.slice(0, 8);
   }, [data, period]);
 
-  // Background embers (subtle, deterministic per mount)
-  const bgEmbers = useMemo(() => {
-    const id = String(bgId);
-    let seed = 0;
-    for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) >>> 0;
-    const rnd = mulberry32(seed || 123456789);
-    const count = 22;
-    return Array.from({ length: count }).map((_, i) => {
-      const left = Math.round(rnd() * 1000) / 10;
-      const size = 1.5 + rnd() * 2.2;
-      const blur = 0.1 + rnd() * 0.7;
-      const dur = 7 + rnd() * 7;
-      const delay = rnd() * 7;
-      const drift = (rnd() * 60 - 30) | 0;
-      const opacity = 0.14 + rnd() * 0.18;
-      return { i, left, size, blur, dur, delay, drift, opacity };
-    });
-  }, [bgId]);
-
   return (
-    // NOTE: TopBar is fixed-position. This page needs extra top padding to avoid
-    // overlapping the header actions (Create coin / Connect).
-    <div className="relative min-h-[100dvh] pt-16 md:pt-16 overflow-y-auto">
-      {/* Full-page background (fixed; page content scrolls) */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        {/* Background image */}
-        <div
+    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto">
++      {/* Full-page background (fixed; page content scrolls) */}
++      <div className="fixed inset-0 z-0 pointer-events-none">
++        <div
           className="absolute inset-0"
           style={{
             backgroundImage: "url(/assets/league_background.png)",
@@ -466,112 +442,54 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             backgroundRepeat: "no-repeat",
           }}
         />
-
-        {/* Soft black overlay */}
+        {/* Soft dark overlay */}
         <div className="absolute inset-0 bg-black/45" />
 
-        {/* Smoke haze (battlefield style) */}
-        <div className="absolute inset-0 mb-smoke-wrap">
-          <div className="mb-smoke-layer mb-smoke-1" />
-          <div className="mb-smoke-layer mb-smoke-2" />
-          <div className="mb-smoke-layer mb-smoke-3" />
+        {/* Moving smoke (very subtle) */}
+        <div className="absolute inset-0 opacity-60 mix-blend-screen">
+          <div className="smoke-layer smoke-1" />
+          <div className="smoke-layer smoke-2" />
+          <div className="smoke-layer smoke-3" />
         </div>
 
-        {/* Embers */}
+        {/* Embers overlay */}
         <div className="absolute inset-0">
-          {bgEmbers.map((p) => (
+          {Array.from({ length: 18 }).map((_, i) => (
             <span
-              key={p.i}
-              className="mb-bg-ember"
+              key={`${emberSeed}-${i}`}
+              className="ember"
               style={{
-                left: `${p.left}%`,
-                width: `${p.size}px`,
-                height: `${p.size}px`,
-                filter: `blur(${p.blur}px)`,
-                animationDuration: `${p.dur}s`,
-                animationDelay: `${p.delay}s`,
-                opacity: p.opacity,
-                ["--mb-ember-drift" as any]: `${p.drift}px`,
-                ["--mb-ember-opacity" as any]: String(p.opacity),
+                left: `${(i * 37) % 100}%`,
+                animationDelay: `${(i * 0.37) % 6}s`,
+                animationDuration: `${6 + ((i * 0.29) % 6)}s`,
+                opacity: 0.22 + ((i * 13) % 10) / 100,
+                transform: `translateY(${40 + ((i * 17) % 60)}vh)`,
               }}
             />
           ))}
         </div>
-
-        {/* League-only background animation CSS */}
-        <style>{`
-          .mb-bg-ember{
-            position:absolute;
-            bottom:-12vh;
-            border-radius:9999px;
-            background:rgba(255,150,50,.95);
-            box-shadow: 0 0 10px rgba(255,120,0,.28), 0 0 18px rgba(255,80,0,.16);
-            animation-name: mbEmberFloat;
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-            transform: translate3d(0,0,0);
-          }
-          @keyframes mbEmberFloat{
-            0%   { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
-            10%  { opacity: var(--mb-ember-opacity, .30); }
-            100% { transform: translate3d(var(--mb-ember-drift, 0px), -115vh, 0) scale(.85); opacity: 0; }
-          }
-
-          /* Smoke haze: darker gradients, soft-light blend */
-          .mb-smoke-wrap{ mix-blend-mode: soft-light; opacity: .70; }
-          .mb-smoke-layer{
-            position:absolute;
-            inset:-25%;
-            background:
-              radial-gradient(closest-side at 22% 35%, rgba(0,0,0,.40), rgba(0,0,0,0) 68%),
-              radial-gradient(closest-side at 72% 40%, rgba(0,0,0,.32), rgba(0,0,0,0) 66%),
-              radial-gradient(closest-side at 48% 78%, rgba(0,0,0,.26), rgba(0,0,0,0) 64%);
-            filter: blur(34px);
-            opacity: .22;
-            transform: translate3d(0,0,0);
-            animation-timing-function: linear;
-            animation-iteration-count: infinite;
-          }
-          .mb-smoke-1{ animation: mbSmokeDrift1 46s linear infinite; }
-          .mb-smoke-2{ opacity:.18; filter: blur(44px); animation: mbSmokeDrift2 62s linear infinite; }
-          .mb-smoke-3{ opacity:.14; filter: blur(56px); animation: mbSmokeDrift3 84s linear infinite; }
-          @keyframes mbSmokeDrift1{
-            0% { transform: translate3d(-5%, 3%, 0) scale(1.10); }
-            50%{ transform: translate3d(4%, -2%, 0) scale(1.14); }
-            100%{ transform: translate3d(-5%, 3%, 0) scale(1.10); }
-          }
-          @keyframes mbSmokeDrift2{
-            0% { transform: translate3d(6%, -2%, 0) scale(1.18); }
-            50%{ transform: translate3d(-4%, 4%, 0) scale(1.22); }
-            100%{ transform: translate3d(6%, -2%, 0) scale(1.18); }
-          }
-          @keyframes mbSmokeDrift3{
-            0% { transform: translate3d(-3%, -4%, 0) scale(1.28); }
-            50%{ transform: translate3d(3%, 3%, 0) scale(1.32); }
-            100%{ transform: translate3d(-3%, -4%, 0) scale(1.28); }
-          }
-        `}</style>
       </div>
 
-      {/* Ensure content is above the fixed background */}
-      <div className="relative z-10">
+        {/* Ensure content is above the fixed background */}
+       <div className="relative z-10">
 
-      {/* Hero banner */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
-        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
+         {/* Hero banner */}
+         <div className="relative overflow-hidden h-[150px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+          <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
-        {/* ultra-light ember overlay */}
-        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-          <style>{`
-            @keyframes mb_ember_float {
-              0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
-              12% { opacity: var(--mb-ember-opacity, .35); }
-              70% { opacity: var(--mb-ember-opacity, .35); }
-              100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
-            }
-          `}</style>
-          {heroEmbers.map((p) => (
-            <span
+            {/* ultra-light ember overlay */}
+            <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+              <style>{`
+                  @keyframes mb_ember_float {
+                  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
+                  12% { opacity: var(--mb-ember-opacity, .35); }
+                  70% { opacity: var(--mb-ember-opacity, .35); }
+                  100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
+                }
+               `}
+              </style>
+                {heroEmbers.map((p) => (
+                  <span
               key={p.i}
               className="absolute rounded-full"
               style={{
@@ -591,73 +509,86 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ))}
         </div>
 
-        <div className="relative p-1 md:p-1">
-  {/* Top controls */}
-  <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
-    <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
-      {periodButtons.map((p) => (
-        <button
-          key={p}
-          type="button"
-          onClick={() => setPeriod(p)}
-          className={
-            "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
-            (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
-          }
-        >
-          {periodLabel(p)}
-        </button>
-      ))}
-    </div>
+        <div className="relative p-3 md:p-4">
+          {/* Desktop: buttons left, logo centered (true center). Mobile: stack. */}
+          <div className="flex flex-col gap-4 md:gap-0 md:flex-row md:items-center md:justify-start">
+            {/* LEFT controls */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-1 w-fit">
+                {periodButtons.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPeriod(p)}
+                    className={
+                      "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
+                      (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
+                    }
+                 >
+                    {periodLabel(p)}
+                  </button>
+                ))}
+              </div>
 
-    <div className="flex items-center text-center gap-2 flex-wrap md:justify-end">
-      {epochButtons.map((b) => (
-        <button
-          key={b.offset}
-          type="button"
-          onClick={() => setEpochOffset(b.offset)}
-          className={
-            "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
-            (epochOffset === b.offset
-              ? "bg-card border-border text-foreground"
-              : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-          }
-        >
-          {b.label}
-        </button>
-      ))}
-         {/* Center hero */}
-          <div className="mt-1 md:mt-1 flex flex-col items-center text-center">
-            <img
-               src="/assets/logo.png"
-               alt="MemeBattles"
-               className="h-[200px] w-[200px] select-none"
-               draggable={false}
+              <div className="flex items-center gap-2 flex-wrap md:justify-start">
+                {epochButtons.map((b) => (
+                  <button
+                    key={b.offset}
+                    type="button"
+                    onClick={() => setEpochOffset(b.offset)}
+                    className={
+                      "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
+                      (epochOffset === b.offset
+                        ? "bg-card border-border text-foreground"
+                        : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {b.label}
+                  </button>
+               ))}
+              </div>
+            </div>
+
+            {/* CENTER (mobile): below controls, normal flow */}
+            <div className="flex flex-col items-center text-center md:hidden">
+              <img
+                src="/assets/logo.png"
+                alt="MemeBattles"
+                className="h-[200px] w-[200px] select-none"
+                draggable={false}
+              />
+              <div className="-mt-4 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+            </div>
+
+            {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
+            <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
+              <img
+                src="/assets/logo.png"
+                alt="MemeBattles"
+                className="h-[150px] w-[150px] select-none"
+                draggable={false}
               />
               <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
             </div>
-    </div>
-  </div>
-
- 
-</div>
+          </div>
+        </div>
       </div>
 
       {/* KPI row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Total prize pool</div>
           <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
           <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · updated hourly</div>
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Campaigns created</div>
           <div className="mt-1 text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
           <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · epoch stats</div>
         </div>
 
-        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">League countdowns</div>
             {live ? (
@@ -716,7 +647,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               }}
               role="button"
               tabIndex={0}
-              className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden text-left hover:bg-card/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
+              className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]"
             >
               <div className="relative">
                 <div className="w-full aspect-[4/3] bg-black/10 flex items-center justify-center">
@@ -738,7 +669,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 {/* Prize box (weekly/monthly only) */}
                 {effectivePeriod === "weekly" || effectivePeriod === "monthly" ? (
                   cardPrize ? (
-                    <div className="mb-3 rounded-xl border border-border/40 bg-card/50 p-3">
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/70 backdrop-blur-sm p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[11px] text-muted-foreground">
                           {l.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}
@@ -766,7 +697,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="mb-3 rounded-xl border border-border/40 bg-card/20 p-3">
+                    <div className="mb-3 rounded-xl border border-border/40 bg-card/50 backdrop-blur-sm p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[11px] text-muted-foreground">Prize pool</div>
                         <div className="text-sm font-semibold">—</div>
@@ -887,7 +818,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
       {/* Two-column block: breakdown + right rail */}
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <div className="xl:col-span-8 rounded-2xl border border-border/50 bg-card/40 p-4">
+        <div className="xl:col-span-8 rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold">Prize Pool Breakdown</div>
@@ -899,7 +830,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="mt-4 space-y-2">
             {prizeBreakdown.length ? (
               prizeBreakdown.map((r) => (
-                <div key={r.key} className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                <div key={r.key} className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-card/55 px-3 py-2">
                   <div className="text-sm font-semibold truncate">{r.title}</div>
                   <div className="text-sm font-semibold">{formatBnbFromRaw(r.potRaw)} BNB</div>
                 </div>
@@ -911,13 +842,13 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
 
         <div className="xl:col-span-4 space-y-4 xl:sticky xl:top-20 self-start">
-          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
             <div className="text-sm font-semibold">Recent Wins</div>
             <div className="text-[11px] text-muted-foreground">Phase 1: shows the current #1 per league</div>
             <div className="mt-3 space-y-2">
               {recentLeaders.length ? (
                 recentLeaders.map((x) => (
-                  <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                  <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/55 px-3 py-2">
                     <div className="text-[11px] text-muted-foreground">{x.league.title}</div>
                     <div className="text-sm font-semibold truncate">{x.line1}</div>
                     {x.line2 ? <div className="text-[11px] text-muted-foreground">{x.line2}</div> : null}
@@ -929,10 +860,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
             <div className="text-sm font-semibold">Campaigns Created</div>
             <div className="text-[11px] text-muted-foreground">Phase 1: total only · Phase 2: newest campaigns feed</div>
-            <div className="mt-3 rounded-xl border border-border/30 bg-card/30 px-3 py-3">
+            <div className="mt-3 rounded-xl border border-border/30 bg-card/55 px-3 py-3">
               <div className="text-[11px] text-muted-foreground">{periodLabel(period)} total</div>
               <div className="text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
               <div className="mt-2 text-[11px] text-muted-foreground">We can wire a live feed here from the indexer (new campaign events).</div>
@@ -941,7 +872,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-border/40 bg-card/20 px-4 py-3 text-[11px] text-muted-foreground">
+      <div className="mt-6 rounded-2xl border border-border/40 bg-card/45 backdrop-blur-sm px-4 py-3 text-[11px] text-muted-foreground">
         Winners claim in{" "}
         <button type="button" onClick={() => navigate("/profile?tab=rewards")} className="text-accent hover:text-accent/80 font-semibold">
           Profile → Rewards
@@ -968,10 +899,74 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             <span className="font-semibold">Crowd Favorite</span>: most UpVotes (confirmed votes).
           </li>
         </ul>
+        </div>
       </div>
 
-      {/* End z-10 content wrapper */}
-      </div>
+      {/* League-only background animations (scoped CSS) */}
+      <style>{`
+        /* Embers */
+        .ember{
+          position:absolute;
+          bottom:-10vh;
+          width:2px;
+          height:2px;
+          border-radius:9999px;
+          background:rgba(255,150,50,.95);
+          filter: blur(.2px);
+          box-shadow:
+            0 0 10px rgba(255,120,0,.35),
+            0 0 18px rgba(255,80,0,.18);
+          animation-name: emberFloat;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        @keyframes emberFloat{
+          0%   { transform: translate3d(0, 0, 0) scale(1); opacity: .05; }
+          10%  { opacity: .35; }
+          100% { transform: translate3d(-24px, -110vh, 0) scale(.85); opacity: 0; }
+        }
+
+        /* Smoke: large blurred gradient blobs drifting slowly */
+        .smoke-layer{
+          position:absolute;
+          inset:-20%;
+          background:
+            radial-gradient(closest-side at 20% 30%, rgba(255,255,255,.12), rgba(255,255,255,0) 65%),
+            radial-gradient(closest-side at 70% 45%, rgba(255,255,255,.10), rgba(255,255,255,0) 62%),
+            radial-gradient(closest-side at 45% 75%, rgba(255,255,255,.08), rgba(255,255,255,0) 60%);
+          filter: blur(28px);
+          opacity: .18;
+          transform: translate3d(0,0,0);
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        .smoke-1{ animation: smokeDrift1 42s linear infinite; }
+        .smoke-2{
+          opacity: .14;
+          filter: blur(36px);
+          animation: smokeDrift2 58s linear infinite;
+        }
+        .smoke-3{
+          opacity: .10;
+          filter: blur(44px);
+          animation: smokeDrift3 76s linear infinite;
+        }
+        @keyframes smokeDrift1{
+          0% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
+          50% { transform: translate3d(3%, -2%, 0) scale(1.08); }
+          100% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
+        }
+        @keyframes smokeDrift2{
+          0% { transform: translate3d(6%, -1%, 0) scale(1.12); }
+          50% { transform: translate3d(-3%, 3%, 0) scale(1.15); }
+          100% { transform: translate3d(6%, -1%, 0) scale(1.12); }
+        }
+        @keyframes smokeDrift3{
+          0% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
+          50% { transform: translate3d(2%, 2%, 0) scale(1.26); }
+          100% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
+        }
+      `}</style>
     </div>
   );
 }
