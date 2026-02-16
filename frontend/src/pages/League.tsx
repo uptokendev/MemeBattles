@@ -182,6 +182,27 @@ function formatEpochRangeUtc(epoch?: EpochMeta) {
   return `${start} UTC → ${end} UTC`;
 }
 
+function formatEndsIn(epoch?: EpochMeta) {
+  try {
+    if (!epoch) return "";
+    const endIso = epoch.status === "live" ? epoch.rangeEnd : epoch.epochEnd;
+    if (!endIso) return "";
+    const end = new Date(endIso).getTime();
+    if (!Number.isFinite(end)) return "";
+    const now = Date.now();
+    const diff = Math.max(0, end - now);
+    const s = Math.floor(diff / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  } catch {
+    return "";
+  }
+}
+
 export default function League({ chainId = 97 }: { chainId?: number }) {
   const navigate = useNavigate();
 
@@ -332,93 +353,147 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
     }
   }, [period, prizes]);
 
+  const endsIn = useMemo(() => formatEndsIn(epochInfo), [epochInfo]);
+
+  const prizeBreakdown = useMemo(() => {
+    const rows = LEAGUES.filter((l) => l.supports.includes(period)).map((l) => {
+      const p = prizes[l.key];
+      return { key: l.key, title: l.title, potRaw: p?.potRaw ?? "0" };
+    });
+    rows.sort((a, b) => {
+      try {
+        return Number(BigInt(b.potRaw) - BigInt(a.potRaw));
+      } catch {
+        return 0;
+      }
+    });
+    return rows;
+  }, [period, prizes]);
+
+  const liveBulletin = useMemo(() => {
+    // Phase 1: UI placeholder. We'll wire this to real-time events (Ably / indexer) in Phase 2.
+    const sample = [
+      "Live bulletin will show rank flips & big buys in real-time.",
+      "Example: Campaign X overtook Campaign Y with a big buy.",
+      "Example: Prize pool jumped from a large trade.",
+    ];
+    const idx = Math.abs((epochOffset * 13 + (period === "weekly" ? 7 : 11)) % sample.length);
+    return sample[idx];
+  }, [epochOffset, period]);
+
+  const recentLeaders = useMemo(() => {
+    // Phase 1 "Recent Wins": show the current #1 per league (top row) for the selected period.
+    const out: Array<{ league: LeagueDef; line1: string; line2?: string }> = [];
+    for (const l of LEAGUES) {
+      if (!l.supports.includes(period)) continue;
+      const items = (data[l.key] ?? []) as any[];
+      const top = items?.[0];
+      if (!top) continue;
+      if (typeof top?.campaign_address === "string") {
+        const nm = String(top?.name ?? "Unknown");
+        const sym = String(top?.symbol ?? "");
+        out.push({ league: l, line1: `${nm}${sym ? ` (${sym})` : ""}`, line2: "Currently #1" });
+        continue;
+      }
+      if (typeof top?.wallet === "string") {
+        out.push({ league: l, line1: shortAddr(top.wallet), line2: "Currently #1" });
+      }
+    }
+    return out.slice(0, 8);
+  }, [data, period]);
+
   return (
     // NOTE: TopBar is fixed-position. This page doesn't have a tall header band
     // (like the Showcase) so it needs extra top padding to avoid overlapping the
     // header actions (Create coin / Connect).
     <div className="h-full overflow-y-auto pr-2 pt-16 md:pt-16">
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-lg md:text-2xl font-semibold">Battle Leagues</h1>
-          <p className="text-xs md:text-sm text-muted-foreground">
-            Objective on‑chain leaderboards. Prize pools are funded from the <span className="font-semibold">league fee</span> inside bonding‑curve trades.
-          </p>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
-              <span className="text-muted-foreground">Total prize pool</span>
-              <span className="font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</span>
-              <span className="text-muted-foreground">· {periodLabel(period)}</span>
-            </div>
-            {typeof campaignsCreated === "number" ? (
-              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
-                <span className="text-muted-foreground">Campaigns created</span>
-                <span className="font-semibold">{campaignsCreated}</span>
-              </div>
-            ) : null}
+      {/* Hero banner */}
+      <div
+        className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/20 mb-6"
+        style={{
+          // Drop your arena / colosseum image in: public/images/league-arena.jpg
+          backgroundImage: "url(/images/league-arena.jpg)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div className="absolute inset-0 bg-background/65" />
+        <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/55 to-transparent" />
+        <div className="relative p-5 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xl md:text-3xl font-semibold tracking-tight">MemeBattles Leagues</div>
+            <div className="text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
           </div>
 
-          <div className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">
-            <span className="text-muted-foreground">Winners claim in</span>
-            <button
-              type="button"
-              onClick={() => navigate("/profile?tab=rewards")}
-              className="text-accent hover:text-accent/80 font-semibold"
-            >
-              Profile → Rewards
-            </button>
-            <span className="hidden md:inline text-muted-foreground">· appears after epoch finalizes (hourly)</span>
-            <span className="hidden md:inline text-muted-foreground">· claims expire after 90 days — unclaimed rewards roll back into the next pool</span>
+          <div className="flex flex-col items-start md:items-end gap-2">
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1">
+              {periodButtons.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriod(p)}
+                  className={
+                    "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
+                    (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {periodLabel(p)}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {epochButtons.map((b) => (
+                <button
+                  key={b.offset}
+                  type="button"
+                  onClick={() => setEpochOffset(b.offset)}
+                  className={
+                    "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
+                    (epochOffset === b.offset
+                      ? "bg-card border-border text-foreground"
+                      : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[11px] text-muted-foreground text-right">
+              <div>
+                {epochInfo ? (
+                  <>
+                    {epochInfo.status === "live" ? "Live" : "Finalized"}
+                    {endsIn ? ` · Ends in ${endsIn}` : ""}
+                  </>
+                ) : null}
+              </div>
+              <div className="hidden md:block">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
+              <div>Chain {activeChainId}</div>
+            </div>
           </div>
         </div>
+      </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex items-center gap-2">
-            {periodButtons.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPeriod(p)}
-                className={
-                  "px-3 py-2 rounded-xl border text-xs md:text-sm transition-colors " +
-                  (period === p
-                    ? "bg-card border-border text-foreground"
-                    : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-                }
-              >
-                {periodLabel(p)}
-              </button>
-            ))}
-          </div>
+      {/* KPI row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="text-xs text-muted-foreground">Total prize pool</div>
+          <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · updated hourly</div>
+        </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            {epochButtons.map((b) => (
-              <button
-                key={b.offset}
-                type="button"
-                onClick={() => setEpochOffset(b.offset)}
-                className={
-                  "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
-                  (epochOffset === b.offset
-                    ? "bg-card border-border text-foreground"
-                    : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-                }
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
+        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="text-xs text-muted-foreground">Campaigns created</div>
+          <div className="mt-1 text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · epoch stats</div>
+        </div>
 
-          <div className="text-[11px] text-muted-foreground text-right">
-            <div>
-              {epochInfo ? (
-                <>
-                  {epochInfo.status === "live" ? "Live" : "Finalized"} · {formatEpochRangeUtc(epochInfo)}
-                </>
-              ) : null}
-            </div>
-            <div>Chain {activeChainId}</div>
-          </div>
+        <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="text-xs text-muted-foreground">Live bulletin</div>
+          <div className="mt-2 text-sm font-semibold leading-snug">{liveBulletin}</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">Phase 2: realtime battle feed (rank flips, big buys, pot jumps)</div>
         </div>
       </div>
 
@@ -454,8 +529,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               className="rounded-2xl border border-border/50 bg-card/40 overflow-hidden text-left hover:bg-card/50 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40"
             >
               <div className="relative">
-                <div className="w-full aspect-square bg-black/10 flex items-center justify-center">
-                  <img src={l.image} alt={l.title} className="max-w-full max-h-full object-contain" draggable={false} />
+                <div className="w-full aspect-[4/3] bg-black/10 flex items-center justify-center">
+                  <img src={l.image} alt={l.title} className="w-full h-full object-cover" draggable={false} />
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
                 <div className="absolute left-4 right-4 bottom-3">
@@ -529,7 +604,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                     {items.map((rowAny, idx) => {
                       const rank = clampInt(idx + 1, 1, 999);
                       const rankEl = (
-                        <div className="w-7 text-sm font-semibold" style={{ color: "#affe00" }}>
+                        <div className="w-7 text-sm font-semibold text-accent">
                           {rank}
                         </div>
                       );
@@ -598,10 +673,90 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 ) : (
                   <div className="text-sm text-muted-foreground">{emptyText}</div>
                 )}
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <div className="text-[11px] text-muted-foreground">
+                    {epochInfo && epochInfo.status === "live" && endsIn ? `Ends in ${endsIn}` : ""}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-border/50 bg-card/40 text-xs font-semibold hover:bg-card/60"
+                  >
+                    View League
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Two-column block: breakdown + right rail */}
+      <div className="mt-6 grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="xl:col-span-8 rounded-2xl border border-border/50 bg-card/40 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Prize Pool Breakdown</div>
+              <div className="text-[11px] text-muted-foreground">Per-league pots for {periodLabel(period)} (sorted by size)</div>
+            </div>
+            <div className="text-[11px] text-muted-foreground">Total: {formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {prizeBreakdown.length ? (
+              prizeBreakdown.map((r) => (
+                <div key={r.key} className="flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                  <div className="text-sm font-semibold truncate">{r.title}</div>
+                  <div className="text-sm font-semibold">{formatBnbFromRaw(r.potRaw)} BNB</div>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground">No prize data yet.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="xl:col-span-4 space-y-4 xl:sticky xl:top-20 self-start">
+          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+            <div className="text-sm font-semibold">Recent Wins</div>
+            <div className="text-[11px] text-muted-foreground">Phase 1: shows the current #1 per league</div>
+            <div className="mt-3 space-y-2">
+              {recentLeaders.length ? (
+                recentLeaders.map((x) => (
+                  <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/30 px-3 py-2">
+                    <div className="text-[11px] text-muted-foreground">{x.league.title}</div>
+                    <div className="text-sm font-semibold truncate">{x.line1}</div>
+                    {x.line2 ? <div className="text-[11px] text-muted-foreground">{x.line2}</div> : null}
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground">No results yet.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border/50 bg-card/40 p-4">
+            <div className="text-sm font-semibold">Campaigns Created</div>
+            <div className="text-[11px] text-muted-foreground">Phase 1: total only · Phase 2: newest campaigns feed</div>
+            <div className="mt-3 rounded-xl border border-border/30 bg-card/30 px-3 py-3">
+              <div className="text-[11px] text-muted-foreground">{periodLabel(period)} total</div>
+              <div className="text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
+              <div className="mt-2 text-[11px] text-muted-foreground">We can wire a live feed here from the indexer (new campaign events).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-border/40 bg-card/20 px-4 py-3 text-[11px] text-muted-foreground">
+        Winners claim in{" "}
+        <button type="button" onClick={() => navigate("/profile?tab=rewards")} className="text-accent hover:text-accent/80 font-semibold">
+          Profile → Rewards
+        </button>
+        <span className="hidden md:inline"> · appears after epoch finalizes (hourly) · claims expire after 90 days — unclaimed rewards roll back into the next pool</span>
       </div>
 
       <div className="mt-6 text-xs text-muted-foreground">
