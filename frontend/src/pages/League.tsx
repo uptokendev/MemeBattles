@@ -398,26 +398,42 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   }, [data, period]);
 
   return (
-    // NOTE: TopBar is fixed-position. This page doesn't have a tall header band
-    // (like the Showcase) so it needs extra top padding to avoid overlapping the
-    // header actions (Create coin / Connect).
-    <div className="h-full overflow-y-auto pr-2 pt-16 md:pt-16">
-      {/* Hero banner */}
+    // NOTE: TopBar is fixed-position. This page needs extra top padding to avoid
+    // overlapping the header actions (Create coin / Connect).
+    <div className="relative min-h-[100dvh] pt-16 md:pt-16">
+      {/* Full-page background (fixed, no scroll) */}
       <div
-        className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/20 mb-6"
+        className="fixed inset-0 -z-10"
         style={{
-          // Drop your arena / colosseum image in: public/images/league-arena.jpg
-          backgroundImage: "url(/images/league-arena.jpg)",
+          backgroundImage: "url(/assets/league_background.png)",
           backgroundSize: "cover",
           backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
         }}
-      >
-        <div className="absolute inset-0 bg-background/65" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/55 to-transparent" />
+      />
+      <div className="fixed inset-0 -z-10 bg-background/70" />
+
+      {/* Hero banner */}
+      <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
+        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
         <div className="relative p-5 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-xl md:text-3xl font-semibold tracking-tight">MemeBattles Leagues</div>
-            <div className="text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
+            <div className="flex items-center gap-4">
+              <div className="relative shrink-0">
+                <div className="absolute -inset-3 rounded-full bg-accent/20 blur-xl" />
+                <div className="absolute -inset-10 rounded-full border border-border/30" />
+                <div className="absolute -inset-14 rounded-full border border-border/20" />
+                <div className="relative h-14 w-14 md:h-16 md:w-16 rounded-2xl border border-border/50 bg-card/40 flex items-center justify-center">
+                  <img src="/assets/logo.png" alt="MemeBattles" className="h-9 w-9 md:h-10 md:w-10" draggable={false} />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xl md:text-3xl font-semibold tracking-tight">MemeBattles Leagues</div>
+                <div className="text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-col items-start md:items-end gap-2">
@@ -488,9 +504,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">League countdowns</div>
             {live ? (
-              <div className="text-[11px] font-semibold text-red-500 animate-pulse">LIVE</div>
+              <div className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-base md:text-lg font-extrabold tracking-wide text-red-500 animate-pulse">LIVE</span>
+              </div>
             ) : (
-              <div className="text-[11px] font-semibold text-muted-foreground">FINAL</div>
+              <div className="text-sm font-semibold text-muted-foreground">FINAL</div>
             )}
           </div>
 
@@ -501,25 +520,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
           </div>
 
-          <div className="mt-3 space-y-2">
-            {LEAGUES.map((l) => {
-              const supported = l.supports.includes(period);
-              return (
-                <div key={l.key} className="flex items-center justify-between gap-3 text-[11px]">
-                  <div className="min-w-0">
-                    <div className="font-semibold truncate">{l.title}</div>
-                    {!supported ? <div className="text-muted-foreground">Runs {l.supports.map(periodLabel).join(" / ")}</div> : null}
-                  </div>
-                  <div className="shrink-0 text-right">
-                    {supported ? (
-                      <div className={"font-semibold " + (live ? "text-red-500 animate-pulse" : "text-muted-foreground")}>{live ? "LIVE" : "FINAL"}</div>
-                    ) : (
-                      <div className="text-muted-foreground">—</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="mt-3 text-[11px] text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <span>{periodLabel(period)} epoch</span>
+              <span className="font-semibold text-foreground">{epochInfo ? (epochInfo.status === "live" ? "In progress" : "Finalized") : "—"}</span>
+            </div>
+            <div className="mt-1">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
           </div>
         </div>
       </div>
