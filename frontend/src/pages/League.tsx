@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
+import leagueBg from "@/assets/league_background.png";
 
 function mulberry32(seed: number) {
   let t = seed >>> 0;
@@ -431,19 +432,20 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   return (
     // NOTE: TopBar is fixed-position. This page needs extra top padding to avoid
     // overlapping the header actions (Create coin / Connect).
-    <div className="relative min-h-[100dvh] pt-16 md:pt-16">
+    <div className="relative min-h-[100dvh] pt-16 md:pt-16 pb-10">
       {/* Full-page background (fixed, no scroll) */}
       <div
-        className="fixed inset-0 -z-10"
+        className="fixed inset-0 -z-10 pointer-events-none"
         style={{
-          backgroundImage: "url(/assets/league_background.png)",
+          // Works when the image lives in src/assets (bundled by Vite)
+          backgroundImage: `url(${leagueBg})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
           backgroundAttachment: "fixed",
         }}
       />
-      <div className="fixed inset-0 -z-10 bg-background/70" />
+      <div className="fixed inset-0 -z-10 bg-background/70 pointer-events-none" />
 
       {/* Hero banner */}
       <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
