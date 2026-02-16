@@ -454,8 +454,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           }}
         />
 
-        {/* Moving smoke (very subtle) */}
-        <div className="absolute inset-0 opacity-60 mix-blend-screen">
+        {/* Moving smoke (more visible) */}
+        <div className="absolute inset-0 opacity-90 mix-blend-screen">
           <div className="smoke-layer smoke-1" />
           <div className="smoke-layer smoke-2" />
           <div className="smoke-layer smoke-3" />
@@ -463,7 +463,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
         {/* Embers overlay */}
         <div className="absolute inset-0">
-          {Array.from({ length: 18 }).map((_, i) => (
+          {Array.from({ length: 32 }).map((_, i) => (
             <span
               key={`${emberSeed}-${i}`}
               className="ember"
@@ -471,16 +471,18 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                 left: `${(i * 37) % 100}%`,
                 animationDelay: `${(i * 0.37) % 6}s`,
                 animationDuration: `${6 + ((i * 0.29) % 6)}s`,
-                opacity: 0.22 + ((i * 13) % 10) / 100,
-                transform: `translateY(${40 + ((i * 17) % 60)}vh)`,
+                opacity: 0.34 + ((i * 13) % 18) / 100,
+                transform: `translateY(${50 + ((i * 19) % 55)}vh)`,
+                width: `${2 + (i % 3)}px`,
+                height: `${2 + (i % 3)}px`,
               }}
             />
           ))}
         </div>
       </div>
 
-        {/* Ensure content is above the fixed background */}
-       <div className="relative z-10">
+      {/* Ensure content is above the fixed background */}
+      <div className="relative z-10">
 
          {/* Hero banner */}
          <div className="relative overflow-hidden h-[150px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
@@ -563,21 +565,21 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="h-[200px] w-[200px] select-none"
+                className="mt-2 h-[150px] w-[150px] select-none"
                 draggable={false}
               />
-              <div className="-mt-4 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+              <div className="-mt-7 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
             </div>
 
             {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
-            <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
+            <div className="hidden md:flex absolute left-1/2 top-[56%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
                 className="h-[150px] w-[150px] select-none"
                 draggable={false}
               />
-              <div className="mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+              <div className="-mt-1 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
             </div>
           </div>
         </div>
@@ -940,24 +942,24 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           position:absolute;
           inset:-20%;
           background:
-            radial-gradient(closest-side at 20% 30%, rgba(255,255,255,.12), rgba(255,255,255,0) 65%),
-            radial-gradient(closest-side at 70% 45%, rgba(255,255,255,.10), rgba(255,255,255,0) 62%),
-            radial-gradient(closest-side at 45% 75%, rgba(255,255,255,.08), rgba(255,255,255,0) 60%);
-          filter: blur(28px);
-          opacity: .18;
+            radial-gradient(closest-side at 18% 28%, rgba(255,255,255,.18), rgba(255,255,255,0) 68%),
+            radial-gradient(closest-side at 72% 44%, rgba(255,255,255,.15), rgba(255,255,255,0) 66%),
+            radial-gradient(closest-side at 45% 78%, rgba(255,255,255,.12), rgba(255,255,255,0) 64%);
+          filter: blur(26px);
+          opacity: .34;
           transform: translate3d(0,0,0);
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
         .smoke-1{ animation: smokeDrift1 42s linear infinite; }
         .smoke-2{
-          opacity: .14;
-          filter: blur(36px);
+          opacity: .28;
+          filter: blur(34px);
           animation: smokeDrift2 58s linear infinite;
         }
         .smoke-3{
-          opacity: .10;
-          filter: blur(44px);
+          opacity: .22;
+          filter: blur(42px);
           animation: smokeDrift3 76s linear infinite;
         }
         @keyframes smokeDrift1{
