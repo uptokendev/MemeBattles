@@ -480,83 +480,69 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           ))}
         </div>
 
-        <div className="relative p-5 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-4">
-              <div className="relative shrink-0 pb-6">
-                <div className="absolute -inset-3 rounded-full bg-accent/20 blur-xl" />
-                <div className="absolute -inset-10 rounded-full border border-border/30" />
-                <div className="absolute -inset-14 rounded-full border border-border/20" />
-                <div className="relative h-14 w-14 md:h-16 md:w-16 rounded-2xl border border-border/50 bg-card/40 flex items-center justify-center">
-                  <img src="/assets/logo.png" alt="MemeBattles" className="h-9 w-9 md:h-10 md:w-10" draggable={false} />
-                </div>
+        <div className="relative p-5 md:p-10">
+  {/* Top controls */}
+  <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
+    <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1 w-fit">
+      {periodButtons.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => setPeriod(p)}
+          className={
+            "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
+            (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          {periodLabel(p)}
+        </button>
+      ))}
+    </div>
 
-                {/* Champion ribbon */}
-                <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2">
-                  <div className="relative">
-                    <div className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-amber-500/45 via-orange-500/45 to-amber-500/45 blur" />
-                    <div className="relative px-3.5 py-1 rounded-xl border border-amber-500/40 bg-background/70 backdrop-blur text-[10px] md:text-[11px] font-extrabold tracking-wide uppercase text-amber-200 shadow">
-                      WEEKLY LEAGUES LIVE
-                    </div>
-                  </div>
-                </div>
-              </div>
+    <div className="flex items-center gap-2 flex-wrap md:justify-end">
+      {epochButtons.map((b) => (
+        <button
+          key={b.offset}
+          type="button"
+          onClick={() => setEpochOffset(b.offset)}
+          className={
+            "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
+            (epochOffset === b.offset
+              ? "bg-card border-border text-foreground"
+              : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
+          }
+        >
+          {b.label}
+        </button>
+      ))}
+    </div>
+  </div>
 
-              <div>
-                <div className="text-xl md:text-3xl font-semibold tracking-tight">MemeBattles Leagues</div>
-                <div className="text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
-              </div>
-            </div>
-          </div>
+  {/* Center hero */}
+  <div className="mt-6 md:mt-10 flex flex-col items-center text-center">
+    <div className="relative">
+      <div className="absolute -inset-6 rounded-full bg-accent/20 blur-2xl" />
+      <div className="absolute -inset-14 rounded-full border border-border/30" />
+      <div className="absolute -inset-20 rounded-full border border-border/20" />
+      <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-3xl border border-border/50 bg-card/40 flex items-center justify-center">
+        <img src="/assets/logo.png" alt="MemeBattles" className="h-12 w-12 md:h-14 md:w-14" draggable={false} />
+      </div>
 
-          <div className="flex flex-col items-start md:items-end gap-2">
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/40 p-1">
-              {periodButtons.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPeriod(p)}
-                  className={
-                    "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
-                    (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
-                  }
-                >
-                  {periodLabel(p)}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              {epochButtons.map((b) => (
-                <button
-                  key={b.offset}
-                  type="button"
-                  onClick={() => setEpochOffset(b.offset)}
-                  className={
-                    "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
-                    (epochOffset === b.offset
-                      ? "bg-card border-border text-foreground"
-                      : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-                  }
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="text-[11px] text-muted-foreground text-right">
-              <div>
-                {epochInfo ? (
-                  <>
-                    {epochInfo.status === "live" ? "Live" : "Finalized"}
-                    {endsIn ? ` · Ends in ${endsIn}` : ""}
-                  </>
-                ) : null}
-              </div>
-              <div className="hidden md:block">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
-            </div>
+      {/* Champion ribbon */}
+      <div className="absolute left-1/2 top-full mt-3 -translate-x-1/2">
+        <div className="relative">
+          <div className="absolute -inset-[2px] rounded-xl bg-gradient-to-r from-amber-500/45 via-orange-500/45 to-amber-500/45 blur" />
+          <div className="relative px-4 py-1.5 rounded-xl border border-amber-500/40 bg-background/70 backdrop-blur text-[11px] md:text-xs font-extrabold tracking-wide uppercase text-amber-200 shadow">
+            WEEKLY LEAGUES LIVE
           </div>
         </div>
+      </div>
+    </div>
+
+    <div className="mt-10 text-2xl md:text-4xl font-semibold tracking-tight">MemeBattles Leagues</div>
+    <div className="mt-1 text-sm md:text-base text-muted-foreground">Compete. Create. Conquer.</div>
+  </div>
+</div>
       </div>
 
       {/* KPI row */}
@@ -578,8 +564,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             <div className="text-xs text-muted-foreground">League countdowns</div>
             {live ? (
               <div className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-base md:text-lg font-extrabold tracking-wide text-red-500 animate-pulse">LIVE</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-base md:text-lg font-extrabold tracking-wide text-emerald-500 animate-pulse">LIVE</span>
               </div>
             ) : (
               <div className="text-sm font-semibold text-muted-foreground">FINAL</div>
