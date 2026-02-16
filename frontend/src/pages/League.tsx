@@ -443,25 +443,26 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       />
       <div className="fixed inset-0 z-0 bg-background/70 pointer-events-none" />
 
-      {/* Ensure content is above the fixed background */}
-      <div className="relative z-10"></div>
+        {/* Ensure content is above the fixed background */}
+       <div className="relative z-10">
 
-      {/* Hero banner */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
-        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
+         {/* Hero banner */}
+         <div className="relative overflow-hidden rounded-3xl border border-border/40 bg-card/25 mb-6">
+          <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
-        {/* ultra-light ember overlay */}
-        <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-          <style>{`
-            @keyframes mb_ember_float {
-              0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
-              12% { opacity: var(--mb-ember-opacity, .35); }
-              70% { opacity: var(--mb-ember-opacity, .35); }
-              100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
-            }
-          `}</style>
-          {heroEmbers.map((p) => (
-            <span
+            {/* ultra-light ember overlay */}
+            <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+              <style>{`
+                  @keyframes mb_ember_float {
+                  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
+                  12% { opacity: var(--mb-ember-opacity, .35); }
+                  70% { opacity: var(--mb-ember-opacity, .35); }
+                  100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
+                }
+               `}
+              </style>
+                {heroEmbers.map((p) => (
+                  <span
               key={p.i}
               className="absolute rounded-full"
               style={{
@@ -871,6 +872,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             <span className="font-semibold">Crowd Favorite</span>: most UpVotes (confirmed votes).
           </li>
         </ul>
+        </div>
       </div>
     </div>
   );
