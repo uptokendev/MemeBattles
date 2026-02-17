@@ -942,24 +942,28 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           position:absolute;
           inset:-20%;
           background:
-            radial-gradient(closest-side at 18% 28%, rgba(255,255,255,.18), rgba(255,255,255,0) 68%),
-            radial-gradient(closest-side at 72% 44%, rgba(255,255,255,.15), rgba(255,255,255,0) 66%),
-            radial-gradient(closest-side at 45% 78%, rgba(255,255,255,.12), rgba(255,255,255,0) 64%);
-          filter: blur(26px);
-          opacity: .34;
+            /* dark smoke body */
+            radial-gradient(closest-side at 18% 28%, rgba(10,10,10,.38), rgba(10,10,10,0) 70%),
+            radial-gradient(closest-side at 72% 44%, rgba(10,10,10,.32), rgba(10,10,10,0) 68%),
+            radial-gradient(closest-side at 45% 78%, rgba(10,10,10,.26), rgba(10,10,10,0) 66%),
+            /* faint lighter wisps so it still reads as smoke, not a flat shadow */
+            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.07), rgba(255,255,255,0) 62%),
+            radial-gradient(closest-side at 62% 60%, rgba(255,255,255,.05), rgba(255,255,255,0) 62%);
+          filter: blur(32px) contrast(1.08);
+          opacity: .62;
           transform: translate3d(0,0,0);
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
         .smoke-1{ animation: smokeDrift1 42s linear infinite; }
         .smoke-2{
-          opacity: .28;
-          filter: blur(34px);
+          opacity: .52;
+          filter: blur(38px) contrast(1.06);
           animation: smokeDrift2 58s linear infinite;
         }
         .smoke-3{
-          opacity: .22;
-          filter: blur(42px);
+          opacity: .44;
+          filter: blur(46px) contrast(1.05);
           animation: smokeDrift3 76s linear infinite;
         }
         @keyframes smokeDrift1{
