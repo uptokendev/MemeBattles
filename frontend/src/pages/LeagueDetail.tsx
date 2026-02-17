@@ -145,6 +145,30 @@ function formatEpochRangeUtc(epoch?: EpochMeta) {
   return `${start} UTC → ${end} UTC`;
 }
 
+function formatEndsIn(epoch?: EpochMeta, nowMs?: number) {
+  if (!epoch) return "—";
+  try {
+    const end = new Date(epoch.epochEnd).getTime();
+    const now = Number.isFinite(nowMs as any) ? Number(nowMs) : Date.now();
+    let diff = Math.max(0, end - now);
+
+    const sec = Math.floor(diff / 1000);
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+
+    if (epoch.status !== "live") return "Finalized";
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  } catch {
+    return epoch?.status === "finalized" ? "Finalized" : "—";
+  }
+}
+
+
 function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
   const title = (name ? String(name) : "") || "Unknown";
   const sym = (symbol ? String(symbol) : "") || "";
@@ -207,6 +231,7 @@ export default function LeagueDetail({ chainId = 97 }: { chainId?: number }) {
   const [prize, setPrize] = useState<PrizeMeta | undefined>(undefined);
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [stats, setStats] = useState<StatsMeta | undefined>(undefined);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
   const epochButtons = useMemo(() => {
@@ -226,6 +251,13 @@ export default function LeagueDetail({ chainId = 97 }: { chainId?: number }) {
   useEffect(() => {
     setEpochOffset(0);
   }, [period]);
+
+useEffect(() => {
+    // Live countdown tick (kept lightweight)
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+
 
   useEffect(() => {
     if (!def) return;
@@ -395,43 +427,75 @@ export default function LeagueDetail({ chainId = 97 }: { chainId?: number }) {
             </div>
 
             <div className="p-4">
-              {prize ? (
+            <div className="p-4 space-y-3">
+              {/* Prize pool module (moved from main League page) */}
+              <div className="grid grid-cols-1 gap-3">
+                {/* Prize Pool */}
                 <div className="rounded-xl border border-border/40 bg-card/50 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[11px] text-muted-foreground">
                       {def.key === "perfect_run" ? "Jackpot pool (monthly · league fee only)" : "Prize pool (league fee only)"}
                     </div>
-                    <div className="text-sm font-semibold">{formatBnbFromRaw(prize.potRaw)} BNB</div>
+                    <div className="text-sm font-semibold">{prize ? `${formatBnbFromRaw(prize.potRaw)} BNB` : "—"}</div>
+                  </div>
+
+                  {prize ? (
+                    <div className="mt-2 text-[10px] text-muted-foreground">
+                      Updated hourly · computed {formatIsoTiny(prize.computedAt)} · total league fees {formatBnbFromRaw(prize.totalLeagueFeeRaw)} BNB
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      Prize metadata not available yet (indexer/API). Check <span className="font-semibold">Status</span>.
+                      <button type="button" onClick={() => navigate("/status")} className="ml-2 text-accent hover:text-accent/80 font-semibold">
+                        Open →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ends in */}
+                <div className="rounded-xl border border-border/40 bg-card/50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] text-muted-foreground">Ends in</div>
+                    <div className="text-sm font-semibold">{formatEndsIn(epochInfo, nowMs)}</div>
+                  </div>
+                  <div className="mt-2 text-[10px] text-muted-foreground">
+                    {epochInfo ? (
+                      <>
+                        Ends at {formatUtcTiny(epochInfo.epochEnd)} UTC
+                        <span className="text-muted-foreground"> · </span>
+                        <span className="text-muted-foreground">{epochInfo.status === "live" ? "Live" : "Finalized"}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </div>
+                </div>
+
+                {/* Payouts */}
+                <div className="rounded-xl border border-border/40 bg-card/50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] text-muted-foreground">Payouts</div>
+                    <div className="text-[11px] text-muted-foreground">{periodLabel(effectivePeriod)}</div>
                   </div>
 
                   <div className={"mt-2 grid gap-x-4 gap-y-1 text-[11px] " + (effectivePeriod === "weekly" ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-5")}>
                     {Array.from({ length: effectivePeriod === "weekly" ? 1 : 5 }).map((_, i) => (
                       <div key={i}>
-                        <span className="text-muted-foreground">#{i + 1}</span> <span className="font-semibold">{formatBnbFromRaw(prize.payoutsRaw?.[i] ?? "0")}</span>
+                        <span className="text-muted-foreground">#{i + 1}</span>{" "}
+                        <span className="font-semibold">{formatBnbFromRaw(prize?.payoutsRaw?.[i] ?? "0")}</span>
                       </div>
                     ))}
                   </div>
 
                   <div className="mt-2 text-[10px] text-muted-foreground">
-                    Updated hourly · computed {formatIsoTiny(prize.computedAt)} · total league fees {formatBnbFromRaw(prize.totalLeagueFeeRaw)} BNB
+                    {epochInfo ? formatEpochRangeUtc(epochInfo) : ""}
                   </div>
                 </div>
-              ) : (
-                <div className="rounded-xl border border-border/40 bg-card/20 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] text-muted-foreground">Prize pool</div>
-                    <div className="text-sm font-semibold">—</div>
-                  </div>
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    Prize metadata not available yet (indexer/API). Check <span className="font-semibold">Status</span>.
-                    <button type="button" onClick={() => navigate("/status")} className="ml-2 text-accent hover:text-accent/80 font-semibold">
-                      Open →
-                    </button>
-                  </div>
-                </div>
-              )}
+              </div>
 
-              {warning ? <div className="mt-3 text-[11px] text-muted-foreground">{warning}</div> : null}
+              {warning ? <div className="text-[11px] text-muted-foreground">{warning}</div> : null}
+            </div>
             </div>
           </div>
         </div>
