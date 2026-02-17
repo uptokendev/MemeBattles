@@ -591,7 +591,7 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_520px]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
         <div className="min-w-0 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
