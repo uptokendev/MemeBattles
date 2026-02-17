@@ -432,7 +432,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   return (
     <div className="relative w-full min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto overflow-x-hidden">
       {/* Full-page background (fixed; page content scrolls) */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden isolate">
         <div
           className="absolute inset-0"
           style={{
@@ -454,8 +454,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           }}
         />
 
-        {/* Moving smoke (dark + obvious) */}
-        <div className="absolute inset-0 opacity-95 mix-blend-multiply">
+        {/* Moving smoke (near-black, always visible across browsers) */}
+        <div className="absolute inset-0 opacity-[0.92]">
           <div className="smoke-layer smoke-1" />
           <div className="smoke-layer smoke-2" />
           <div className="smoke-layer smoke-3" />
@@ -945,29 +945,32 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         .smoke-layer{
           position:absolute;
           inset:-20%;
+          /* A base veil so smoke is visible even when gradients drift off-screen */
+          background-color: rgba(0,0,0,.22);
           background:
             /* dark smoke mass (reads on bright fire BG) */
-            radial-gradient(closest-side at 18% 28%, rgba(10,10,10,.55), rgba(10,10,10,0) 72%),
-            radial-gradient(closest-side at 72% 44%, rgba(10,10,10,.48), rgba(10,10,10,0) 70%),
-            radial-gradient(closest-side at 45% 78%, rgba(10,10,10,.42), rgba(10,10,10,0) 68%),
+            radial-gradient(closest-side at 18% 28%, rgba(0,0,0,.88), rgba(0,0,0,0) 74%),
+            radial-gradient(closest-side at 72% 44%, rgba(0,0,0,.78), rgba(0,0,0,0) 72%),
+            radial-gradient(closest-side at 45% 78%, rgba(0,0,0,.68), rgba(0,0,0,0) 70%),
             /* subtle wisps to keep it “smoke”, not flat shadow */
-            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.06), rgba(255,255,255,0) 62%),
+            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.05), rgba(255,255,255,0) 62%),
             radial-gradient(closest-side at 62% 60%, rgba(255,255,255,.04), rgba(255,255,255,0) 62%);
-          filter: blur(34px) contrast(1.10);
-          opacity: .70;
+          filter: blur(38px) contrast(1.25);
+          opacity: .92;
           transform: translate3d(0,0,0);
+          will-change: transform, opacity;
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
         .smoke-1{ animation: smokeDrift1 42s linear infinite; }
         .smoke-2{
-          opacity: .60;
-          filter: blur(40px) contrast(1.08);
+          opacity: .84;
+          filter: blur(44px) contrast(1.20);
           animation: smokeDrift2 58s linear infinite;
         }
         .smoke-3{
-          opacity: .22;
-          filter: blur(48px) contrast(1.06);
+          opacity: .76;
+          filter: blur(52px) contrast(1.18);
           animation: smokeDrift3 76s linear infinite;
         }
         @keyframes smokeDrift1{
