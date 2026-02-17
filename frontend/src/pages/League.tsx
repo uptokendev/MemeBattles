@@ -574,7 +574,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
 
             {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
-            <div className="hidden md:flex absolute left-1/2 top-[100%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
+            <div className="hidden md:flex absolute left-1/2 -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
