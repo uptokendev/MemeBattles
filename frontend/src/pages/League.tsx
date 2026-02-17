@@ -454,8 +454,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           }}
         />
 
-        {/* Moving smoke (more visible) */}
-        <div className="absolute inset-0 opacity-90 mix-blend-screen">
+        {/* Moving smoke (dark + obvious) */}
+        <div className="absolute inset-0 opacity-95 mix-blend-multiply">
           <div className="smoke-layer smoke-1" />
           <div className="smoke-layer smoke-2" />
           <div className="smoke-layer smoke-3" />
@@ -485,7 +485,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden min-h-[260px] md:min-h-[190px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+         <div className="relative overflow-hidden min-h-[320px] md:min-h-[210px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -565,10 +565,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="mt-6 h-[160px] w-[160px] select-none"
+                className="mt-10 h-[200px] w-[200px] object-contain select-none"
                 draggable={false}
               />
-              <div className="-mt-7 text-sm md:text-base text-muted-foreground">Create. Compete. Conquer.</div>
+              <div className="-mt-14 text-sm md:text-base text-muted-foreground leading-none">
+                Create. Compete. Conquer.
+              </div>
             </div>
 
             {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
@@ -576,10 +578,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="h-[150px] w-[150px] select-none"
+                className="h-[160px] w-[160px] object-contain select-none"
                 draggable={false}
               />
-              <div className="-mt-7 text-sm md:text-base text-muted-foreground leading-none">Create. Compete. Conquer.</div>
+              <div className="-mt-10 text-sm md:text-base text-muted-foreground leading-none">
+                Create. Compete. Conquer.
+              </div>
             </div>
           </div>
         </div>
@@ -942,28 +946,28 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           position:absolute;
           inset:-20%;
           background:
-            /* dark smoke body */
-            radial-gradient(closest-side at 18% 28%, rgba(10,10,10,.38), rgba(10,10,10,0) 70%),
-            radial-gradient(closest-side at 72% 44%, rgba(10,10,10,.32), rgba(10,10,10,0) 68%),
-            radial-gradient(closest-side at 45% 78%, rgba(10,10,10,.26), rgba(10,10,10,0) 66%),
-            /* faint lighter wisps so it still reads as smoke, not a flat shadow */
-            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.07), rgba(255,255,255,0) 62%),
-            radial-gradient(closest-side at 62% 60%, rgba(255,255,255,.05), rgba(255,255,255,0) 62%);
-          filter: blur(32px) contrast(1.08);
-          opacity: .62;
+            /* dark smoke mass (reads on bright fire BG) */
+            radial-gradient(closest-side at 18% 28%, rgba(10,10,10,.55), rgba(10,10,10,0) 72%),
+            radial-gradient(closest-side at 72% 44%, rgba(10,10,10,.48), rgba(10,10,10,0) 70%),
+            radial-gradient(closest-side at 45% 78%, rgba(10,10,10,.42), rgba(10,10,10,0) 68%),
+            /* subtle wisps to keep it “smoke”, not flat shadow */
+            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.06), rgba(255,255,255,0) 62%),
+            radial-gradient(closest-side at 62% 60%, rgba(255,255,255,.04), rgba(255,255,255,0) 62%);
+          filter: blur(34px) contrast(1.10);
+          opacity: .70;
           transform: translate3d(0,0,0);
           animation-timing-function: linear;
           animation-iteration-count: infinite;
         }
         .smoke-1{ animation: smokeDrift1 42s linear infinite; }
         .smoke-2{
-          opacity: .52;
-          filter: blur(38px) contrast(1.06);
+          opacity: .60;
+          filter: blur(40px) contrast(1.08);
           animation: smokeDrift2 58s linear infinite;
         }
         .smoke-3{
-          opacity: .44;
-          filter: blur(46px) contrast(1.05);
+          opacity: .22;
+          filter: blur(48px) contrast(1.06);
           animation: smokeDrift3 76s linear infinite;
         }
         @keyframes smokeDrift1{
