@@ -485,7 +485,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden min-h-[320px] md:min-h-[210px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+         <div className="relative overflow-hidden min-h-[220px] md:min-h-[210px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -574,7 +574,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </div>
 
             {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
-            <div className="hidden md:flex absolute left-1/2 top-[70%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
+            <div className="hidden md:flex absolute left-1/2 top-[75%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
