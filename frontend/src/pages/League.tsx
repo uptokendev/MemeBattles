@@ -559,8 +559,17 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
         </div>
       </div>
 
-      {/* KPI row */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
+        <div className="min-w-0 space-y-6">
+              
+          {/* KPI row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+          <div className="text-xs text-muted-foreground">Total prize pool</div>
+          <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · updated hourly</div>
+        </div>
+
         <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">League countdowns</div>
@@ -591,9 +600,7 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
-        <div className="min-w-0 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
               const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
               const items = (data[l.key] ?? []) as unknown[];
