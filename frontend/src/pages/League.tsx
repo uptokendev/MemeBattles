@@ -454,12 +454,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           }}
         />
 
-        {/* Moving smoke (near-black, always visible across browsers) */}
-        <div className="absolute inset-0 opacity-[0.92]">
-          <div className="smoke-layer smoke-1" />
-          <div className="smoke-layer smoke-2" />
-          <div className="smoke-layer smoke-3" />
-        </div>
+            {/* Moving smoke – now lighter, wispier, more movement for battle-arena feel */}
+            <div className="absolute inset-0 opacity-25 pointer-events-none">
+              <div className="smoke-layer smoke-1" />
+              <div className="smoke-layer smoke-2" />
+              <div className="smoke-layer smoke-3" />
+            </div>
 
         {/* Embers overlay */}
         <div className="absolute inset-0">
@@ -941,53 +941,65 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           100% { transform: translate3d(-24px, -110vh, 0) scale(.85); opacity: 0; }
         }
 
-        /* Smoke: large blurred gradient blobs drifting slowly */
-        .smoke-layer{
-          position:absolute;
-          inset:-20%;
-          /* A base veil so smoke is visible even when gradients drift off-screen */
-          background-color: rgba(0,0,0,.22);
-          background:
-            /* dark smoke mass (reads on bright fire BG) */
-            radial-gradient(closest-side at 18% 28%, rgba(0,0,0,.88), rgba(0,0,0,0) 74%),
-            radial-gradient(closest-side at 72% 44%, rgba(0,0,0,.78), rgba(0,0,0,0) 72%),
-            radial-gradient(closest-side at 45% 78%, rgba(0,0,0,.68), rgba(0,0,0,0) 70%),
-            /* subtle wisps to keep it “smoke”, not flat shadow */
-            radial-gradient(closest-side at 30% 35%, rgba(255,255,255,.05), rgba(255,255,255,0) 62%),
-            radial-gradient(closest-side at 62% 60%, rgba(255,255,255,.04), rgba(255,255,255,0) 62%);
-          filter: blur(38px) contrast(1.25);
-          opacity: .92;
-          transform: translate3d(0,0,0);
-          will-change: transform, opacity;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
-        }
-        .smoke-1{ animation: smokeDrift1 42s linear infinite; }
-        .smoke-2{
-          opacity: .84;
-          filter: blur(44px) contrast(1.20);
-          animation: smokeDrift2 58s linear infinite;
-        }
-        .smoke-3{
-          opacity: .76;
-          filter: blur(52px) contrast(1.18);
-          animation: smokeDrift3 76s linear infinite;
-        }
-        @keyframes smokeDrift1{
-          0% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
-          50% { transform: translate3d(3%, -2%, 0) scale(1.08); }
-          100% { transform: translate3d(-4%, 2%, 0) scale(1.05); }
-        }
-        @keyframes smokeDrift2{
-          0% { transform: translate3d(6%, -1%, 0) scale(1.12); }
-          50% { transform: translate3d(-3%, 3%, 0) scale(1.15); }
-          100% { transform: translate3d(6%, -1%, 0) scale(1.12); }
-        }
-        @keyframes smokeDrift3{
-          0% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
-          50% { transform: translate3d(2%, 2%, 0) scale(1.26); }
-          100% { transform: translate3d(-2%, -3%, 0) scale(1.22); }
-        }
+/* Smoke: lighter grayish wisps, more visible drift, rising tendency */
+.smoke-layer {
+  position: absolute;
+  inset: -30%;                   /* larger area so edges don't clip harshly */
+  background-color: transparent; /* remove dark base veil – let background fire shine through */
+  background:
+    /* Main smoke masses – warm dark gray instead of black */
+    radial-gradient(closest-side at 20% 30%, rgba(90,80,90,0.75), transparent 70%),
+    radial-gradient(closest-side at 75% 40%, rgba(80,70,85,0.70), transparent 68%),
+    radial-gradient(closest-side at 40% 75%, rgba(70,65,80,0.60), transparent 65%),
+    
+    /* Subtle brighter wisps that catch light from fire glow */
+    radial-gradient(closest-side at 35% 25%, rgba(180,170,200,0.12), transparent 60%),
+    radial-gradient(closest-side at 65% 55%, rgba(200,190,220,0.10), transparent 58%),
+    radial-gradient(closest-side at 55% 85%, rgba(160,150,180,0.08), transparent 62%);
+  
+  filter: blur(32px) contrast(1.15) brightness(1.1); /* less blur = more shape, slight glow */
+  opacity: 0.55;                /* per layer – total with wrapper ~0.14–0.20 */
+  will-change: transform, opacity;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.smoke-1 {
+  animation: smokeDrift1 65s linear infinite;
+  opacity: 0.60;
+  filter: blur(28px) contrast(1.18) brightness(1.12);
+}
+
+.smoke-2 {
+  animation: smokeDrift2 95s linear infinite;
+  opacity: 0.50;
+  filter: blur(38px) contrast(1.12) brightness(1.08);
+}
+
+.smoke-3 {
+  animation: smokeDrift3 130s linear infinite;
+  opacity: 0.45;
+  filter: blur(48px) contrast(1.08) brightness(1.05);
+}
+
+/* Bigger, slower, more organic drifts – some upward bias */
+@keyframes smokeDrift1 {
+  0%   { transform: translate3d(-18%, -10%, 0) scale(1.08); }
+  50%  { transform: translate3d( 16%,  12%, 0) scale(1.14); }
+  100% { transform: translate3d(-18%, -10%, 0) scale(1.08); }
+}
+
+@keyframes smokeDrift2 {
+  0%   { transform: translate3d( -8%, -20%, 0) scale(1.10); }
+  50%  { transform: translate3d( 12%,   5%, 0) scale(1.18); }
+  100% { transform: translate3d( -8%, -20%, 0) scale(1.10); }
+}
+
+@keyframes smokeDrift3 {
+  0%   { transform: translate3d( 10%, -15%, 0) scale(1.12); }
+  50%  { transform: translate3d(-14%,  18%, 0) scale(1.22); }
+  100% { transform: translate3d( 10%, -15%, 0) scale(1.12); }
+}
       `}</style>
     </div>
   );
