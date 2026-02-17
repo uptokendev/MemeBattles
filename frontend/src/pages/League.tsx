@@ -485,7 +485,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <div className="relative z-10">
 
          {/* Hero banner */}
-         <div className="relative overflow-hidden min-h-[220px] md:min-h-[210px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
+         <div className="relative overflow-hidden max-h-[220px] md:min-h-[210px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
 
             {/* ultra-light ember overlay */}
@@ -578,7 +578,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <img
                 src="/assets/logo.png"
                 alt="MemeBattles"
-                className="h-[160px] w-[160px] object-contain select-none"
+                className="h-[200px] w-[200px] object-contain select-none"
                 draggable={false}
               />
               <div className="-mt-10 text-sm md:text-base text-muted-foreground leading-none">
