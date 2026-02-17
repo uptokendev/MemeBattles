@@ -65,9 +65,24 @@ type EpochMeta = {
   status: "live" | "finalized";
 };
 
+type PrizeMeta = {
+  basis: "league_fee_only";
+  period: "weekly" | "monthly";
+  cutoff?: string | null;
+  rangeEnd?: string | null;
+  computedAt: string;
+  totalLeagueFeeRaw: string;
+  leagueCount: number;
+  winners: number;
+  splitBps: number[];
+  potRaw: string;
+  payoutsRaw: [string, string, string, string, string];
+};
+
 type LeagueResponse<T> = {
   items: T[];
   warning?: string;
+  prize?: PrizeMeta;
   epoch?: EpochMeta;
   stats?: { campaignsCreated?: number };
 };
@@ -217,6 +232,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
   const [data, setData] = useState<Record<string, unknown[]>>({});
   const [warnings, setWarnings] = useState<Record<string, string | undefined>>({});
+  const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
 
@@ -281,7 +297,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         const nextData: Record<string, unknown[]> = {};
         const nextWarnings: Record<string, string | undefined> = {};
 
-        let nextEpoch: EpochMeta | undefined = undefined;
+        const nextPrizes: Record<string, PrizeMeta | undefined> = {};
+let nextEpoch: EpochMeta | undefined = undefined;
 
         let nextCampaignsCreated: number | undefined = undefined;
 
@@ -289,6 +306,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           const items = Array.isArray(r?.items) ? r.items : [];
           nextData[k] = items;
           nextWarnings[k] = r?.warning;
+          nextPrizes[k] = r?.prize;
+
           if (!nextEpoch && r?.epoch) nextEpoch = r.epoch;
           if (typeof r?.stats?.campaignsCreated === "number" && typeof nextCampaignsCreated !== "number") {
             nextCampaignsCreated = r.stats.campaignsCreated;
@@ -300,7 +319,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
         setData(nextData);
         setWarnings(nextWarnings);
-      } catch (e) {
+      setPrizes(nextPrizes);
+} catch (e) {
         console.error("[League] failed to load /api/league", e);
         if (!cancelled) {
           setData({});
@@ -319,7 +339,23 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
 
     const endsIn = useMemo(() => formatEndsIn(epochInfo), [epochInfo]);
 
-  const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
+  
+
+  const totalPrizePoolRaw = useMemo(() => {
+    try {
+      const eligible = LEAGUES.filter((l) => l.supports.includes(period)).map((l) => l.key);
+      let sum = 0n;
+      for (const k of eligible) {
+        const p = prizes[k];
+        if (!p?.potRaw) continue;
+        sum += BigInt(String(p.potRaw));
+      }
+      return sum.toString();
+    } catch {
+      return "0";
+    }
+  }, [period, prizes]);
+const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
 
   // Subtle ember particles for the hero banner (deterministic per UTC day).
   const heroEmbers = useMemo(() => {
@@ -555,7 +591,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_520px]">
         <div className="min-w-0 space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
@@ -751,7 +787,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
         </div>
 
         {/* Right rail (fixed width; self-scroll) */}
-        <aside className="shrink-0 w-full lg:w-[360px]">
+        <aside className="shrink-0 w-full lg:w-[520px]">
           <div className="space-y-4 lg:sticky lg:top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto pr-1">
             <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
               <div className="text-sm font-semibold">Current #1s</div>
