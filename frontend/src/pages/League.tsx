@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
-import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, getPublicRpcUrl, getPublicRpcUrls, getTreasuryVaultAddress, isAllowedChainId } from "@/lib/chainConfig";
 import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
 
 function mulberry32(seed: number) {
@@ -222,6 +222,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const wallet = useWallet();
   const defaultChain = getDefaultChainId();
   const activeChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
+  const activeChain = (activeChainId === 56 ? 56 : 97) as 56 | 97;
 
   const [period, setPeriod] = useState<Period>("weekly");
   const [epochOffset, setEpochOffset] = useState<number>(0);
@@ -235,6 +236,13 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
+
+  // On-chain TreasuryVault balance (single global pool; does NOT depend on weekly/monthly toggle)
+  const [treasuryVaultBalanceRaw, setTreasuryVaultBalanceRaw] = useState<string>("0");
+
+  // Fixed epoch-accrued prize pool totals (independent of the UI toggle)
+  const [weeklyPoolTotalRaw, setWeeklyPoolTotalRaw] = useState<string>("0");
+  const [monthlyPoolTotalRaw, setMonthlyPoolTotalRaw] = useState<string>("0");
 
   // Prize pools are computed per-epoch from *accrued league fees* (plus rollovers)
   // via /api/league. This keeps weekly/monthly independent and stable mid-epoch.
@@ -341,27 +349,119 @@ let nextEpoch: EpochMeta | undefined = undefined;
     };
   }, [activeChainId, period, epochOffset, refreshTick]);
 
+// Load on-chain TreasuryVault balance (source of truth for the "Total prize pool" KPI).
+// Uses wallet provider when connected (avoids browser CORS issues), otherwise tries multiple public RPCs.
+useEffect(() => {
+  let cancelled = false;
+
+  const loadVault = async () => {
+    try {
+      const envVault = (getTreasuryVaultAddress(activeChain) || "").trim();
+      const vault = envVault || (activeChain === 97 ? "0xc9d3e1174983314490B32a7929ac82421E4e5707" : "");
+
+      if (!vault) {
+        if (!cancelled) setTreasuryVaultBalanceRaw("0");
+        return;
+      }
+
+      // Prefer wallet provider when connected
+      const eth = (window as any)?.ethereum;
+      if (wallet?.isConnected && eth) {
+        const provider = new ethers.BrowserProvider(eth);
+        const bal = await provider.getBalance(vault);
+        if (!cancelled) setTreasuryVaultBalanceRaw(bal.toString());
+        return;
+      }
+
+      // Fallback: try multiple public RPCs
+      const rpcs = (() => {
+        try {
+          const list = getPublicRpcUrls(activeChain);
+          if (Array.isArray(list) && list.length) return list;
+        } catch {}
+        return [getPublicRpcUrl(activeChain)];
+      })();
+
+      let lastErr: any = null;
+      for (const rpc of rpcs) {
+        try {
+          const provider = new ethers.JsonRpcProvider(rpc);
+          const bal = await provider.getBalance(vault);
+          if (!cancelled) setTreasuryVaultBalanceRaw(bal.toString());
+          return;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      console.warn("[League] all RPCs failed reading TreasuryVault", { vault, chain: activeChain, rpcs }, lastErr);
+      if (!cancelled) setTreasuryVaultBalanceRaw("0");
+    } catch (e) {
+      console.warn("[League] failed to load TreasuryVault balance", e);
+      if (!cancelled) setTreasuryVaultBalanceRaw("0");
+    }
+  };
+
+  loadVault();
+  return () => {
+    cancelled = true;
+  };
+}, [activeChain, refreshTick, wallet?.isConnected]);
+
+// Load fixed (toggle-independent) weekly + monthly epoch pools from the API.
+// These are the "accrued this epoch" pools (fee accrual + rollovers), and do not affect each other.
+useEffect(() => {
+  let cancelled = false;
+
+  const sumPools = async (targetPeriod: Period) => {
+    const cats = LEAGUES.filter((l) => l.supports.includes(targetPeriod)).map((l) => l.key);
+    let sum = 0n;
+
+    // Keep requests small; we only need prize meta.
+    await Promise.all(
+      cats.map(async (category) => {
+        try {
+          const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(
+            targetPeriod
+          )}&epochOffset=0&limit=1&category=${encodeURIComponent(category)}`;
+          const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<unknown>;
+          const pot = r?.prize?.potRaw;
+          if (pot) sum += BigInt(String(pot));
+        } catch {
+          // ignore; we'll show partial sum if some calls fail
+        }
+      })
+    );
+
+    return sum.toString();
+  };
+
+  const loadFixedTotals = async () => {
+    try {
+      const [w, m] = await Promise.all([sumPools("weekly"), sumPools("monthly")]);
+      if (cancelled) return;
+      setWeeklyPoolTotalRaw(w);
+      setMonthlyPoolTotalRaw(m);
+    } catch (e) {
+      console.warn("[League] failed to load fixed weekly/monthly totals", e);
+      if (!cancelled) {
+        setWeeklyPoolTotalRaw("0");
+        setMonthlyPoolTotalRaw("0");
+      }
+    }
+  };
+
+  loadFixedTotals();
+  return () => {
+    cancelled = true;
+  };
+}, [activeChainId, refreshTick]);
+
+
     const endsIn = useMemo(() => formatEndsIn(epochInfo), [epochInfo]);
 
-  // Total prize pool for the *selected period* = sum of per-category pots returned by the API.
-  // Each category pot already includes:
-  // - period budget split (weekly/monthly)
-  // - dust handling
-  // - per-category rollovers (expired unclaimed prizes, no-winner outcomes)
-  const totalPrizePoolRaw = useMemo(() => {
-    try {
-      const eligible = LEAGUES.filter((l) => l.supports.includes(period)).map((l) => l.key);
-      let sum = 0n;
-      for (const k of eligible) {
-        const p = prizes[k];
-        if (!p?.potRaw) continue;
-        sum += BigInt(String(p.potRaw));
-      }
-      return sum.toString();
-    } catch {
-      return "0";
-    }
-  }, [period, prizes]);
+  // Total prize pool (KPI) = on-chain TreasuryVault balance (single global pool; does not depend on weekly/monthly).
+  const totalPrizePoolRaw = useMemo(() => treasuryVaultBalanceRaw ?? "0", [treasuryVaultBalanceRaw]);
   const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
 
   // Subtle ember particles for the hero banner (deterministic per UTC day).
@@ -570,13 +670,32 @@ let nextEpoch: EpochMeta | undefined = undefined;
         <div className="min-w-0 space-y-6">
               
           {/* KPI row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Total pool in TreasuryVault (single global pool) */}
         <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Total prize pool</div>
           <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · accrues live · updated hourly</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">TreasuryVault (on-chain) · updated hourly</div>
         </div>
 
+        {/* Fixed (toggle-independent) epoch pools */}
+        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+          <div className="text-xs text-muted-foreground">Current epoch pools</div>
+
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <div className="text-sm font-semibold text-muted-foreground">Weekly</div>
+            <div className="text-xl font-semibold">{formatBnbFromRaw(weeklyPoolTotalRaw)} BNB</div>
+          </div>
+
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <div className="text-sm font-semibold text-muted-foreground">Monthly</div>
+            <div className="text-xl font-semibold">{formatBnbFromRaw(monthlyPoolTotalRaw)} BNB</div>
+          </div>
+
+          <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers · resets on epoch finalize</div>
+        </div>
+
+        {/* Countdown for selected period */}
         <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">League countdowns</div>
@@ -606,6 +725,7 @@ let nextEpoch: EpochMeta | undefined = undefined;
           </div>
         </div>
       </div>
+</div>
 
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
