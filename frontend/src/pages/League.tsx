@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
-import { getDefaultChainId, getPublicRpcUrl, getTreasuryVaultAddress, isAllowedChainId } from "@/lib/chainConfig";
+import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
 
 function mulberry32(seed: number) {
@@ -117,32 +117,6 @@ function formatBnbFromRaw(raw?: string | null) {
   }
 }
 
-// On-chain pool splitter (mirrors backend defaults).
-// Uses the *TreasuryVault current balance* as the source of truth.
-const WEEKLY_PRIZE_BUDGET_BPS = 3000; // 30%
-const MONTHLY_PRIZE_BUDGET_BPS = 7000; // 70%
-
-function leagueCountForPeriod(p: Period) {
-  // weekly: 4 categories (no perfect_run)
-  // monthly: 5 categories
-  return p === "weekly" ? 4 : 5;
-}
-
-function computeOnchainPotRaw(vaultBalRaw: string, period: Period) {
-  try {
-    const bal = BigInt(String(vaultBalRaw ?? "0"));
-    if (bal <= 0n) return "0";
-    const budgetBps = period === "weekly" ? WEEKLY_PRIZE_BUDGET_BPS : MONTHLY_PRIZE_BUDGET_BPS;
-    const budget = (bal * BigInt(budgetBps)) / 10_000n;
-    const n = BigInt(leagueCountForPeriod(period));
-    if (n <= 0n) return "0";
-    return (budget / n).toString();
-  } catch {
-    return "0";
-  }
-}
-
-
 function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
   const title = (name ? String(name) : "") || "Unknown";
   const sym = (symbol ? String(symbol) : "") || "";
@@ -248,7 +222,6 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const wallet = useWallet();
   const defaultChain = getDefaultChainId();
   const activeChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
-  const activeChain = (activeChainId === 56 ? 56 : 97) as 56 | 97;
 
   const [period, setPeriod] = useState<Period>("weekly");
   const [epochOffset, setEpochOffset] = useState<number>(0);
@@ -263,8 +236,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
   const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
 
-  // NEW: On-chain TreasuryVault balance (source of truth for Total prize pool).
-  const [treasuryVaultBalanceRaw, setTreasuryVaultBalanceRaw] = useState<string>("0");
+  // Prize pools are computed per-epoch from *accrued league fees* (plus rollovers)
+  // via /api/league. This keeps weekly/monthly independent and stable mid-epoch.
   
 
   // Past winners (Phase 1): filter state (API wiring comes next)
@@ -370,35 +343,25 @@ let nextEpoch: EpochMeta | undefined = undefined;
 
     const endsIn = useMemo(() => formatEndsIn(epochInfo), [epochInfo]);
 
-  // NEW: Load on-chain TreasuryVault balance (hourly refresh piggybacks on refreshTick).
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadVault = async () => {
-      try {
-        const vault = getTreasuryVaultAddress(activeChain);
-        if (!vault) {
-          if (!cancelled) setTreasuryVaultBalanceRaw("0");
-          return;
-        }
-        const rpc = getPublicRpcUrl(activeChain);
-        const provider = new ethers.JsonRpcProvider(rpc);
-        const bal = await provider.getBalance(vault);
-        if (!cancelled) setTreasuryVaultBalanceRaw(bal.toString());
-      } catch (e) {
-        console.warn("[League] failed to load TreasuryVault balance", e);
-        if (!cancelled) setTreasuryVaultBalanceRaw("0");
+  // Total prize pool for the *selected period* = sum of per-category pots returned by the API.
+  // Each category pot already includes:
+  // - period budget split (weekly/monthly)
+  // - dust handling
+  // - per-category rollovers (expired unclaimed prizes, no-winner outcomes)
+  const totalPrizePoolRaw = useMemo(() => {
+    try {
+      const eligible = LEAGUES.filter((l) => l.supports.includes(period)).map((l) => l.key);
+      let sum = 0n;
+      for (const k of eligible) {
+        const p = prizes[k];
+        if (!p?.potRaw) continue;
+        sum += BigInt(String(p.potRaw));
       }
-    };
-
-    loadVault();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeChain, refreshTick]);  
-
-  // Total prize pool should match on-chain TreasuryVault balance.
-  const totalPrizePoolRaw = useMemo(() => treasuryVaultBalanceRaw ?? "0", [treasuryVaultBalanceRaw]);
+      return sum.toString();
+    } catch {
+      return "0";
+    }
+  }, [period, prizes]);
   const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
 
   // Subtle ember particles for the hero banner (deterministic per UTC day).
@@ -611,7 +574,7 @@ let nextEpoch: EpochMeta | undefined = undefined;
         <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
           <div className="text-xs text-muted-foreground">Total prize pool</div>
           <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">On-chain (TreasuryVault) · updated hourly</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{periodLabel(period)} · accrues live · updated hourly</div>
         </div>
 
         <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
@@ -647,9 +610,9 @@ let nextEpoch: EpochMeta | undefined = undefined;
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
               const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
-              // Prefer deterministic on-chain derived pots, fallback to API if vault read fails.
-              const onchainPotRaw = computeOnchainPotRaw(treasuryVaultBalanceRaw, effectivePeriod);
-              const potRaw = onchainPotRaw !== "0" ? onchainPotRaw : prizes[l.key]?.potRaw;
+              // Epoch-accurate pot (computed from this period's accrued league fees + rollovers).
+              // Note: prizes[] is fetched using effectivePeriod per league above.
+              const potRaw = prizes[l.key]?.potRaw;
               const potBnb = formatBnbFromRaw(potRaw ?? "0");
 
               return (
