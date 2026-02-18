@@ -639,7 +639,7 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
                   {/* Info box (50%): prize pool only */}
                   <div className="flex-1 flex items-center justify-center px-4">
                     <div className="text-center">
-                      <div className="text-3xl md:text-4xl font-extrabold tracking-tight">{loading ? "—" : potBnb}</div>
+                      <div className="text-2xl md:text-2xl font-extrabold tracking-tight">{loading ? "—" : potBnb}</div>
                       <div className="mt-1 text-sm md:text-base font-semibold">BNB</div>
                     </div>
                   </div>
