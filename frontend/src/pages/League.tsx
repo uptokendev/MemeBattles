@@ -77,6 +77,10 @@ type PrizeMeta = {
   splitBps: number[];
   potRaw: string;
   payoutsRaw: [string, string, string, string, string];
+  rolloverRaw?: string;
+  paidRaw?: string;
+  availablePotRaw?: string;
+  availablePayoutsRaw?: [string, string, string, string, string];
 };
 
 type LeagueResponse<T> = {
@@ -413,35 +417,15 @@ useEffect(() => {
 useEffect(() => {
   let cancelled = false;
 
-  const sumPools = async (targetPeriod: Period) => {
-    const cats = LEAGUES.filter((l) => l.supports.includes(targetPeriod)).map((l) => l.key);
-    let sum = 0n;
-
-    // Keep requests small; we only need prize meta.
-    await Promise.all(
-      cats.map(async (category) => {
-        try {
-          const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(
-            targetPeriod
-          )}&epochOffset=0&limit=1&category=${encodeURIComponent(category)}`;
-          const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<unknown>;
-          const pot = r?.prize?.potRaw;
-          if (pot) sum += BigInt(String(pot));
-        } catch {
-          // ignore; we'll show partial sum if some calls fail
-        }
-      })
-    );
-
-    return sum.toString();
-  };
-
+  // Fixed totals come from a dedicated endpoint, so we don't need 9 separate calls.
+  // Totals are *available* pools: accrued + rollovers - recorded payouts.
   const loadFixedTotals = async () => {
     try {
-      const [w, m] = await Promise.all([sumPools("weekly"), sumPools("monthly")]);
+      const r = await fetch(`/api/epochPools?chainId=${encodeURIComponent(String(activeChainId))}`);
+      const j = await r.json();
       if (cancelled) return;
-      setWeeklyPoolTotalRaw(w);
-      setMonthlyPoolTotalRaw(m);
+      setWeeklyPoolTotalRaw(String(j?.weekly?.availableTotalRaw ?? "0"));
+      setMonthlyPoolTotalRaw(String(j?.monthly?.availableTotalRaw ?? "0"));
     } catch (e) {
       console.warn("[League] failed to load fixed weekly/monthly totals", e);
       if (!cancelled) {
@@ -692,7 +676,7 @@ useEffect(() => {
                     <div className="text-xl font-semibold">{formatBnbFromRaw(monthlyPoolTotalRaw)} BNB</div>
                   </div>
 
-                  <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers · resets on epoch finalize</div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers − paid out · resets each epoch</div>
                 </div>
 
                 {/* Countdown for selected period */}
@@ -730,7 +714,7 @@ useEffect(() => {
               const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
               // Epoch-accurate pot (computed from this period's accrued league fees + rollovers).
               // Note: prizes[] is fetched using effectivePeriod per league above.
-              const potRaw = prizes[l.key]?.potRaw;
+              const potRaw = prizes[l.key]?.availablePotRaw ?? prizes[l.key]?.potRaw;
               const potBnb = formatBnbFromRaw(potRaw ?? "0");
 
               return (
