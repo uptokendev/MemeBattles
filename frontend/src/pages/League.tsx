@@ -603,22 +603,13 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {LEAGUES.map((l) => {
               const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
-              const items = (data[l.key] ?? []) as unknown[];
-              const warn = warnings[l.key];
-
-              const emptyText = !l.supports.includes(period)
-                ? `This league runs ${l.supports.map(periodLabel).join(" / ")}.`
-                : "No results yet for this period.";
+              const potRaw = prizes[l.key]?.potRaw;
+              const potBnb = formatBnbFromRaw(potRaw ?? "0");
 
               return (
                 <div
                   key={l.key}
-                  onClick={(e) => {
-                    // Allow inner interactive elements (row buttons, links) to work without triggering card navigation.
-                    const el = e.target as Element | null;
-                    if (el && el.closest && el.closest("button")) return;
-                    navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
-                  }}
+                  onClick={() => navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
@@ -627,10 +618,11 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
                   }}
                   role="button"
                   tabIndex={0}
-                  className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]"
+                  className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)] h-[240px] md:h-[280px] flex flex-col"
                 >
-                  <div className="relative">
-                    <div className="w-full h-24 md:h-28 bg-black/10 flex items-center justify-center p-3">
+                  {/* Image box (50%) */}
+                  <div className="relative flex-1">
+                    <div className="absolute inset-0 bg-black/10 flex items-center justify-center p-4">
                       <img src={l.image} alt={l.title} className="max-w-full max-h-full object-contain" draggable={false} />
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
@@ -645,100 +637,11 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
                     </div>
                   </div>
 
-                  <div className="p-4">
-                    {warn ? <div className="mb-3 text-[11px] text-muted-foreground">{warn}</div> : null}
-
-                    {loading ? (
-                      <div className="text-sm text-muted-foreground">Loading...</div>
-                    ) : items.length ? (
-                      <div className="space-y-2">
-                        {items.map((rowAny, idx) => {
-                          const rank = clampInt(idx + 1, 1, 999);
-                          const rankEl = (
-                            <div className="w-7 text-sm font-semibold text-accent">
-                              {rank}
-                            </div>
-                          );
-
-                          // Per-league row content
-                          let leftEl: JSX.Element;
-                          let metricTop = "";
-                          let metricSub = "";
-                          let onClick: (() => void) | undefined;
-                          let key = "";
-
-                          if (l.key === "top_earner") {
-                            const r = rowAny as TopEarnerRow;
-                            const wallet = String(r.wallet ?? "");
-                            leftEl = <RowWallet address={wallet} />;
-                            metricTop = `${formatBnbFromRaw(String(r.profit_raw ?? "0"))} BNB`;
-                            metricSub = `${Number(r.trades_count ?? 0)} trades`;
-                            key = `${l.key}:${wallet}:${idx}`;
-                            onClick = () => {
-                              if (isAddress(wallet)) navigate(`/profile?address=${wallet}`);
-                            };
-                          } else {
-                            const row = rowAny as any;
-                            const address = String(row.campaign_address ?? "");
-                            leftEl = <RowToken logo={row.logo_uri} name={row.name} symbol={row.symbol} address={address} />;
-                            key =
-                              l.key === "biggest_hit"
-                                ? `${String(row.tx_hash ?? "")}:${String(row.log_index ?? idx)}`
-                                : `${l.key}:${address}:${idx}`;
-                            onClick = () => {
-                              if (isAddress(address)) navigate(`/token/${address}`);
-                            };
-
-                            if (l.key === "fastest_finish" || l.key === "perfect_run") {
-                              const rr = row as GraduationRow;
-                              metricTop = formatDuration(rr.duration_seconds ?? null);
-                              metricSub = `${Number(rr.unique_buyers ?? 0)} buyers`;
-                            } else if (l.key === "biggest_hit") {
-                              const rr = row as BiggestHitRow;
-                              metricTop = `${formatBnbFromRaw(rr.bnb_amount_raw)} BNB`;
-                              metricSub = `Buyer: ${isAddress(rr.buyer_address) ? shortAddr(rr.buyer_address) : "-"}`;
-                            } else if (l.key === "crowd_favorite") {
-                              const rr = row as CrowdFavoriteRow;
-                              metricTop = `${String(rr.votes_count)} votes`;
-                              metricSub = `${String(rr.unique_voters)} voters`;
-                            }
-                          }
-
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={onClick}
-                              className="w-full rounded-xl px-3 py-2 border border-border/40 hover:bg-card transition-colors text-left flex items-center gap-3"
-                            >
-                              {rankEl}
-                              <div className="min-w-0 flex-1">{leftEl}</div>
-                              <div className="text-right">
-                                <div className="text-sm font-semibold">{metricTop}</div>
-                                <div className="text-[11px] text-muted-foreground">{metricSub}</div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">{emptyText}</div>
-                    )}
-
-                    <div className="mt-4 flex items-center justify-between gap-3">
-                      <div className="text-[11px] text-muted-foreground">
-                        {epochInfo && epochInfo.status === "live" && endsIn ? `Ends in ${endsIn}` : ""}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
-                        }}
-                        className="px-3 py-2 rounded-xl border border-border/50 bg-card/40 text-xs font-semibold hover:bg-card/60"
-                      >
-                        View League
-                      </button>
+                  {/* Info box (50%): prize pool only */}
+                  <div className="flex-1 flex items-center justify-center px-4">
+                    <div className="text-center">
+                      <div className="text-3xl md:text-4xl font-extrabold tracking-tight">{loading ? "—" : potBnb}</div>
+                      <div className="mt-1 text-sm md:text-base font-semibold">BNB</div>
                     </div>
                   </div>
                 </div>
