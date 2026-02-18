@@ -630,7 +630,6 @@ const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : 
                       <div className="flex items-end justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-base md:text-lg font-semibold truncate">{l.title}</div>
-                          <div className="text-[11px] md:text-xs text-muted-foreground truncate">{l.subtitle}</div>
                         </div>
                         <div className="text-[11px] md:text-xs text-muted-foreground">{periodLabel(effectivePeriod)}</div>
                       </div>
