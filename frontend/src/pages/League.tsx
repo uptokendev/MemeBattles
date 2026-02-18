@@ -669,66 +669,64 @@ useEffect(() => {
       <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
         <div className="min-w-0 space-y-6">
               
-          {/* KPI row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Total pool in TreasuryVault (single global pool) */}
-        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
-          <div className="text-xs text-muted-foreground">Total prize pool</div>
-          <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">TreasuryVault (on-chain) · updated hourly</div>
-        </div>
+              {/* KPI row */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {/* Total pool in TreasuryVault (single global pool) */}
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                  <div className="text-xs text-muted-foreground">Total prize pool</div>
+                  <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">TreasuryVault (on-chain) · updated hourly</div>
+                </div>
 
-        {/* Fixed (toggle-independent) epoch pools */}
-        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
-          <div className="text-xs text-muted-foreground">Current epoch pools</div>
+                {/* Fixed (toggle-independent) epoch pools */}
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                  <div className="text-xs text-muted-foreground">Current epoch pools</div>
 
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <div className="text-sm font-semibold text-muted-foreground">Weekly</div>
-            <div className="text-xl font-semibold">{formatBnbFromRaw(weeklyPoolTotalRaw)} BNB</div>
-          </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-3">
+                    <div className="text-sm font-semibold text-muted-foreground">Weekly</div>
+                    <div className="text-xl font-semibold">{formatBnbFromRaw(weeklyPoolTotalRaw)} BNB</div>
+                  </div>
 
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <div className="text-sm font-semibold text-muted-foreground">Monthly</div>
-            <div className="text-xl font-semibold">{formatBnbFromRaw(monthlyPoolTotalRaw)} BNB</div>
-          </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-3">
+                    <div className="text-sm font-semibold text-muted-foreground">Monthly</div>
+                    <div className="text-xl font-semibold">{formatBnbFromRaw(monthlyPoolTotalRaw)} BNB</div>
+                  </div>
 
-          <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers · resets on epoch finalize</div>
-        </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers · resets on epoch finalize</div>
+                </div>
 
-        {/* Countdown for selected period */}
-        <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs text-muted-foreground">League countdowns</div>
-            {live ? (
-              <div className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-base md:text-lg font-extrabold tracking-wide text-emerald-500 animate-pulse">LIVE</span>
+                {/* Countdown for selected period */}
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs text-muted-foreground">League countdowns</div>
+                    {live ? (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-base md:text-lg font-extrabold tracking-wide text-emerald-500 animate-pulse">LIVE</span>
+                      </div>
+                    ) : (
+                      <div className="text-sm font-semibold text-muted-foreground">FINAL</div>
+                    )}
+                  </div>
+
+                  <div className="mt-2 flex items-baseline justify-between gap-3">
+                    <div className="text-2xl font-semibold">{endsIn ? endsIn : "—"}</div>
+                    <div className="text-[11px] text-muted-foreground text-right">
+                      <div>{endAtUtc ? `${endAtUtc} UTC` : ""}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-[11px] text-muted-foreground">
+                    <div className="flex items-center justify-between">
+                      <span>{periodLabel(period)} epoch</span>
+                      <span className="font-semibold text-foreground">{epochInfo ? (epochInfo.status === "live" ? "In progress" : "Finalized") : "—"}</span>
+                    </div>
+                    <div className="mt-1">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="text-sm font-semibold text-muted-foreground">FINAL</div>
-            )}
-          </div>
-
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <div className="text-2xl font-semibold">{endsIn ? endsIn : "—"}</div>
-            <div className="text-[11px] text-muted-foreground text-right">
-              <div>{endAtUtc ? `${endAtUtc} UTC` : ""}</div>
-            </div>
-          </div>
-
-          <div className="mt-3 text-[11px] text-muted-foreground">
-            <div className="flex items-center justify-between">
-              <span>{periodLabel(period)} epoch</span>
-              <span className="font-semibold text-foreground">{epochInfo ? (epochInfo.status === "live" ? "In progress" : "Finalized") : "—"}</span>
-            </div>
-            <div className="mt-1">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
-          </div>
-        </div>
-      </div>
-</div>
-
-<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {LEAGUES.map((l) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+              {LEAGUES.map((l) => {
               const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
               // Epoch-accurate pot (computed from this period's accrued league fees + rollovers).
               // Note: prizes[] is fetched using effectivePeriod per league above.
