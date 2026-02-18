@@ -149,6 +149,20 @@ export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
   return fallback.trim();
 }
 
+/**
+ * TreasuryVault holds the accumulated League Treasury fees (native BNB).
+ * This address is chain-specific.
+ */
+export function getTreasuryVaultAddress(chainId: SupportedChainId): string {
+  // Preferred per-chain vars
+  const perChain = (import.meta.env[`VITE_TREASURY_VAULT_ADDRESS_${chainId}`] as string | undefined) ?? "";
+  if (perChain.trim()) return perChain.trim();
+
+  // Backward-compat single var
+  const fallback = (import.meta.env.VITE_TREASURY_VAULT_ADDRESS as string | undefined) ?? "";
+  return fallback.trim();
+}
+
 export function getExplorerTxBase(chainId: SupportedChainId): string {
   return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
 }
