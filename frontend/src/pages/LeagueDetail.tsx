@@ -346,7 +346,6 @@ useEffect(() => {
           <h1 className="mt-1 text-lg md:text-2xl font-semibold truncate">{def.title}</h1>
           <p
             className="text-xs md:text-sm text-muted-foreground"
-            dangerouslySetInnerHTML={{ __html: def.subtitle }}
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card/30 text-xs md:text-sm">

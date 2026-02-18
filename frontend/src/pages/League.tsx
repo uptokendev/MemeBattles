@@ -967,6 +967,5 @@ useEffect(() => {
             }
       `}</style>
       </div>
-    </div>
   );
 }
