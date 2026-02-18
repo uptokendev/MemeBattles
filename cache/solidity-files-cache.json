@@ -2041,6 +2041,46 @@
       "artifacts": [
         "ReenteringFeeRecipient"
       ]
+    },
+    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\TreasuryVaultV2.sol": {
+      "lastModificationDate": 1771434791637,
+      "contentHash": "97cf1815ca9ddcba96437d73e6b3f649",
+      "sourceName": "contracts/TreasuryVaultV2.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "TreasuryVaultV2"
+      ]
     }
   }
 }

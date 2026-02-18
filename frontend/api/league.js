@@ -167,11 +167,17 @@ function buildClaimMessage({ chainId, recipient, period, epochStart, category, r
 }
 
 async function consumeNonce(chainId, address, nonce) {
-  const { rows } = await pool.query(
+  // (legacy) - left for reference
+  return consumeNonceWithClient(pool, chainId, address, nonce);
+}
+
+async function consumeNonceWithClient(client, chainId, address, nonce) {
+  const { rows } = await client.query(
     `SELECT nonce, expires_at, used_at
-     FROM auth_nonces
-     WHERE chain_id = $1 AND address = $2
-     LIMIT 1`,
+       FROM auth_nonces
+      WHERE chain_id = $1 AND address = $2
+      LIMIT 1
+      FOR UPDATE`,
     [chainId, address]
   );
   const row = rows[0];
@@ -181,10 +187,125 @@ async function consumeNonce(chainId, address, nonce) {
   if (!exp || Date.now() > exp) throw new Error("Nonce expired");
   if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch");
 
-  await pool.query(
+  await client.query(
     `UPDATE auth_nonces SET used_at = NOW() WHERE chain_id = $1 AND address = $2`,
     [chainId, address]
   );
+}
+
+function getRpcUrl(chainId) {
+  const perChain = String(process.env[`BSC_RPC_HTTP_${chainId}`] || "").trim();
+  if (perChain) return perChain;
+  const fallback = String(process.env.BSC_RPC_HTTP || "").trim();
+  if (fallback) return fallback;
+  throw new Error(`Missing RPC env (BSC_RPC_HTTP_${chainId})`);
+}
+
+function getTreasuryVaultV2Address(chainId) {
+  const perChain = String(process.env[`TREASURY_VAULT_V2_ADDRESS_${chainId}`] || "").trim();
+  if (perChain) return perChain;
+  const fallback = String(process.env.TREASURY_VAULT_V2_ADDRESS || "").trim();
+  if (fallback) return fallback;
+  throw new Error(`Missing TreasuryVaultV2 env (TREASURY_VAULT_V2_ADDRESS_${chainId})`);
+}
+
+function getOperatorPk() {
+  const pk = String(process.env.LEAGUE_PAYOUT_OPERATOR_PK || "").trim();
+  if (!pk) throw new Error("Missing LEAGUE_PAYOUT_OPERATOR_PK");
+  return pk;
+}
+
+
+// ---------------------------
+// Merkle claims (user-paid gas)
+// ---------------------------
+
+function periodCode(period) {
+  return period === "weekly" ? 1 : 2;
+}
+
+// Deterministic epochId used across:
+// - root publishing (rootPoster)
+// - proof generation (backend)
+// - on-chain claim() calls (frontend)
+function computeEpochId(chainId, period, epochStartSec) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const enc = coder.encode(["uint32", "uint8", "uint64"], [chainId, periodCode(period), BigInt(epochStartSec)]);
+  const h = ethers.keccak256(enc);
+  return BigInt(h);
+}
+
+function categoryHashFromString(category) {
+  // bytes32 category id: keccak256(utf8(category))
+  return ethers.keccak256(ethers.toUtf8Bytes(String(category)));
+}
+
+function leafHash({ epochId, categoryHash, rank, recipient, amountRaw }) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  const enc = coder.encode(
+    ["uint256", "bytes32", "uint8", "address", "uint256"],
+    [epochId, categoryHash, rank, recipient, BigInt(amountRaw)]
+  );
+  return ethers.keccak256(enc);
+}
+
+function hashPair(a, b) {
+  // OpenZeppelin MerkleProof uses a sorted pair hash.
+  const aa = a.toLowerCase();
+  const bb = b.toLowerCase();
+  const [x, y] = aa <= bb ? [a, b] : [b, a];
+  return ethers.keccak256(ethers.concat([x, y]));
+}
+
+function buildMerkleRoot(leaves) {
+  if (!Array.isArray(leaves) || leaves.length === 0) return ethers.ZeroHash;
+  let layer = leaves.slice();
+  while (layer.length > 1) {
+    const next = [];
+    for (let i = 0; i < layer.length; i += 2) {
+      const left = layer[i];
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i]; // duplicate last if odd
+      next.push(hashPair(left, right));
+    }
+    layer = next;
+  }
+  return layer[0];
+}
+
+function buildMerkleProof(leaves, leafIndex) {
+  if (!Array.isArray(leaves) || leaves.length === 0) return [];
+  let idx = leafIndex;
+  let layer = leaves.slice();
+  const proof = [];
+  while (layer.length > 1) {
+    const isRight = idx % 2 === 1;
+    const pairIndex = isRight ? idx - 1 : idx + 1;
+    const sibling = pairIndex < layer.length ? layer[pairIndex] : layer[idx];
+    proof.push(sibling);
+
+    const next = [];
+    for (let i = 0; i < layer.length; i += 2) {
+      const left = layer[i];
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
+      next.push(hashPair(left, right));
+    }
+    layer = next;
+    idx = Math.floor(idx / 2);
+  }
+  return proof;
+}
+
+async function sendOnchainPayout({ chainId, vaultAddress, recipient, amountRaw }) {
+  const rpc = getRpcUrl(chainId);
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const wallet = new ethers.Wallet(getOperatorPk(), provider);
+
+  const abi = [
+    "function payout(address payable to, uint256 amount) external",
+  ];
+  const vault = new ethers.Contract(vaultAddress, abi, wallet);
+  const tx = await vault.payout(recipient, amountRaw);
+  return { txHash: tx.hash };
 }
 
 function splitPotRaw(potRawBigInt) {
@@ -337,6 +458,50 @@ async function getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso) {
     } catch {
       // If the rollover table isn't deployed yet, ignore (backward compatible).
     }
+
+    // Subtract payouts already executed for this epoch (so UI can show *available* pools).
+    // This makes the displayed pools reconcile with the on-chain vault balance *after payouts*.
+    try {
+      const { rows: prows } = await pool.query(
+        `select category, coalesce(sum(amount_raw), 0)::numeric(78,0) as paid_raw
+           from public.league_epoch_payouts
+          where chain_id = $1 and period = $2 and epoch_start = $3::timestamptz
+          group by category`,
+        [chainId, periodNorm, epochStartIso]
+      );
+
+      for (const pr of prows) {
+        const cat = String(pr.category || "");
+        if (!byCategory[cat]) continue;
+        const paid = BigInt(String(pr.paid_raw ?? "0"));
+        if (paid <= 0n) continue;
+
+        const potNow = BigInt(String(byCategory[cat].potRaw ?? "0"));
+        const available = potNow > paid ? (potNow - paid) : 0n;
+        byCategory[cat] = {
+          ...byCategory[cat],
+          paidRaw: paid.toString(),
+          availablePotRaw: available.toString(),
+          availablePayoutsRaw: splitPotRaw(available)
+        };
+      }
+    } catch {
+      // If payouts table isn't deployed yet, treat as zero paid.
+    }
+
+    // Ensure available fields exist even when no payouts were recorded.
+    for (const cat of Object.keys(byCategory)) {
+      const x = byCategory[cat];
+      if (x && typeof x.availablePotRaw === "undefined") {
+        const potNow = BigInt(String(x.potRaw ?? "0"));
+        byCategory[cat] = {
+          ...x,
+          paidRaw: String(x.paidRaw ?? "0"),
+          availablePotRaw: potNow.toString(),
+          availablePayoutsRaw: splitPotRaw(potNow)
+        };
+      }
+    }
   }
 
   const data = {
@@ -364,7 +529,7 @@ export default async function handler(req, res) {
     try {
       const b = await readJson(req);
       const action = String(b.action ?? "").toLowerCase().trim();
-      if (action !== "claim") return json(res, 400, { error: "Invalid action" });
+      if (!(action === "claim" || action === "record")) return json(res, 400, { error: "Invalid action" });
 
       const chainId = Number(b.chainId);
       const period = String(b.period ?? "").toLowerCase().trim();
@@ -375,6 +540,8 @@ export default async function handler(req, res) {
       const nonce = String(b.nonce ?? "");
       const signature = String(b.signature ?? "");
 
+      const txHash = String(b.txHash ?? "").trim();
+
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
       if (!isAddress(recipient)) return json(res, 400, { error: "Invalid recipient" });
       if (!(period === "weekly" || period === "monthly")) return json(res, 400, { error: "Invalid period" });
@@ -383,65 +550,206 @@ export default async function handler(req, res) {
       if (!epochStart) return json(res, 400, { error: "epochStart missing" });
       if (!nonce) return json(res, 400, { error: "Nonce missing" });
       if (!signature) return json(res, 400, { error: "Signature missing" });
+      if (action === "record") {
+        if (!txHash || typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return json(res, 400, { error: "Invalid txHash" });
+      }
       if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
-
-      // Nonce must match the *recipient* (wallet) signing the claim.
-      await consumeNonce(chainId, recipient, nonce);
 
       const msg = buildClaimMessage({ chainId, recipient, period, epochStart, category, rank, nonce });
       const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
       if (recovered !== recipient) return json(res, 401, { error: "Invalid signature" });
 
-      // Winner must exist, and must belong to recipient.
-      const { rows: wrows } = await pool.query(
-        `SELECT epoch_end AS "epochEnd", expires_at AS "expiresAt", recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
-           FROM league_epoch_winners
-          WHERE chain_id = $1
-            AND period = $2
-            AND epoch_start = $3::timestamptz
-            AND category = $4
-            AND rank = $5
-          LIMIT 1`,
-        [chainId, period, epochStart, category, rank]
-      );
-      const w = wrows[0];
-      if (!w) return json(res, 404, { error: "Winner not found" });
-      if (String(w.recipientAddress ?? "").toLowerCase() !== recipient) {
-        return json(res, 403, { error: "Not the winner" });
+      const vaultAddress = getTreasuryVaultV2Address(chainId);
+      if (!isAddress(vaultAddress)) return json(res, 500, { error: "Server misconfigured: bad TreasuryVaultV2 address" });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        // Lock per winner slot so we can safely enforce "pay once".
+        const lockKey = `${chainId}:${period}:${epochStart}:${category}:${rank}`;
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
+
+        // Nonce must match the *recipient* (wallet) signing the claim.
+        await consumeNonceWithClient(client, chainId, recipient, nonce);
+
+        // Winner must exist, and must belong to recipient.
+        const { rows: wrows } = await client.query(
+          `SELECT epoch_end AS "epochEnd", expires_at AS "expiresAt", recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
+             FROM league_epoch_winners
+            WHERE chain_id = $1
+              AND period = $2
+              AND epoch_start = $3::timestamptz
+              AND category = $4
+              AND rank = $5
+            LIMIT 1`,
+          [chainId, period, epochStart, category, rank]
+        );
+        const w = wrows[0];
+        if (!w) {
+          await client.query("ROLLBACK");
+          return json(res, 404, { error: "Winner not found" });
+        }
+        if (String(w.recipientAddress ?? "").toLowerCase() !== recipient) {
+          await client.query("ROLLBACK");
+          return json(res, 403, { error: "Not the winner" });
+        }
+
+        // Only allow claims after epoch end.
+        const epochEndMs = w.epochEnd ? new Date(w.epochEnd).getTime() : 0;
+        if (epochEndMs && Date.now() < epochEndMs) {
+          await client.query("ROLLBACK");
+          return json(res, 400, { error: "Epoch not finalized" });
+        }
+
+        // Enforce claim expiry (default: 90 days after epoch_end)
+        const expiresMs = w.expiresAt ? new Date(w.expiresAt).getTime() : 0;
+        if (expiresMs && Date.now() > expiresMs) {
+          await client.query("ROLLBACK");
+          return json(res, 410, { error: "Claim expired" });
+        }
+
+        // If already paid, return existing tx (idempotent claim).
+        const { rows: prows } = await client.query(
+          `SELECT tx_hash AS "txHash", paid_at AS "paidAt"
+             FROM league_epoch_payouts
+            WHERE chain_id = $1 AND period = $2 AND epoch_start = $3::timestamptz AND category = $4 AND rank = $5
+            LIMIT 1`,
+          [chainId, period, epochStart, category, rank]
+        );
+        const already = prows[0];
+        if (already?.txHash) {
+          // Ensure we still record the claim for UX/history.
+          await client.query(
+            `INSERT INTO league_epoch_claims (chain_id, period, epoch_start, category, rank, recipient_address, signature)
+             VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7)
+             ON CONFLICT (chain_id, period, epoch_start, category, rank)
+             DO NOTHING`,
+            [chainId, period, epochStart, category, rank, recipient, signature]
+          );
+          await client.query("COMMIT");
+          return json(res, 200, { ok: true, claimedAt: already.paidAt ? new Date(already.paidAt).toISOString() : null, amountRaw: w.amountRaw, txHash: already.txHash });
+        }
+
+
+        // Merkle-claim flow:
+        // - action=claim  -> return proof payload; user sends on-chain claim() and pays gas
+        // - action=record -> after tx is mined, record the txHash so rewards are suppressed
+        if (action === "claim") {
+          const epochStartSec = Math.floor(new Date(epochStart).getTime() / 1000);
+          const eid = computeEpochId(chainId, period, epochStartSec);
+          const catHash = categoryHashFromString(category);
+
+          // Build the merkle set from all winners for this epoch.
+          const { rows: arows } = await client.query(
+            `SELECT category, rank, recipient_address AS "recipientAddress", amount_raw AS "amountRaw"
+               FROM league_epoch_winners
+              WHERE chain_id = $1 AND period = $2 AND epoch_start = $3::timestamptz
+              ORDER BY category ASC, rank ASC, recipient_address ASC`,
+            [chainId, period, epochStart]
+          );
+
+          if (!arows?.length) {
+            await client.query("ROLLBACK");
+            return json(res, 500, { error: "No winners for epoch" });
+          }
+
+          const leaves = [];
+          let leafIndex = -1;
+          let epochTotal = 0n;
+
+          for (let i = 0; i < arows.length; i++) {
+            const row = arows[i];
+            const rowCat = String(row.category || "").toLowerCase().trim();
+            const rowRank = Number(row.rank);
+            const rowRecipient = String(row.recipientAddress || "").toLowerCase();
+            const rowAmt = BigInt(String(row.amountRaw));
+            epochTotal += rowAmt;
+
+            const rowLeaf = leafHash({
+              epochId: eid,
+              categoryHash: categoryHashFromString(rowCat),
+              rank: rowRank,
+              recipient: rowRecipient,
+              amountRaw: rowAmt,
+            });
+
+            leaves.push(rowLeaf);
+
+            if (rowCat === category && rowRank === rank && rowRecipient === recipient) {
+              leafIndex = i;
+            }
+          }
+
+          if (leafIndex < 0) {
+            await client.query("ROLLBACK");
+            return json(res, 500, { error: "Leaf not found (winner mismatch)" });
+          }
+
+          const root = buildMerkleRoot(leaves);
+          const proof = buildMerkleProof(leaves, leafIndex);
+
+          // Record the claim request for UX/audit, but do NOT mark paid here.
+          await client.query(
+            `INSERT INTO league_epoch_claims (chain_id, period, epoch_start, category, rank, recipient_address, signature)
+             VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7)
+             ON CONFLICT (chain_id, period, epoch_start, category, rank)
+             DO NOTHING`,
+            [chainId, period, epochStart, category, rank, recipient, signature]
+          );
+
+          await client.query("COMMIT");
+          return json(res, 200, {
+            ok: true,
+            mode: "merkle",
+            vaultAddress,
+            epochId: eid.toString(),
+            epochTotal: epochTotal.toString(),
+            root,
+            categoryHash: catHash,
+            recipient,
+            rank,
+            amountRaw: String(w.amountRaw),
+            proof,
+          });
+        }
+
+        // action === "record"
+        // Record the txHash after the user successfully claimed on-chain.
+        await client.query(
+          `INSERT INTO league_epoch_claims (chain_id, period, epoch_start, category, rank, recipient_address, signature)
+           VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7)
+           ON CONFLICT (chain_id, period, epoch_start, category, rank)
+           DO NOTHING`,
+          [chainId, period, epochStart, category, rank, recipient, signature]
+        );
+
+        await client.query(
+          `INSERT INTO league_epoch_payouts (chain_id, period, epoch_start, category, rank, recipient_address, amount_raw, tx_hash)
+           VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7, $8)
+           ON CONFLICT (chain_id, period, epoch_start, category, rank)
+           DO UPDATE SET tx_hash = excluded.tx_hash, paid_at = now(), recipient_address = excluded.recipient_address, amount_raw = excluded.amount_raw`,
+          [chainId, period, epochStart, category, rank, recipient, String(w.amountRaw), txHash]
+        );
+
+        const { rows: crows } = await client.query(
+          `SELECT claimed_at AS "claimedAt"
+             FROM league_epoch_claims
+            WHERE chain_id = $1 AND period = $2 AND epoch_start = $3::timestamptz AND category = $4 AND rank = $5
+            LIMIT 1`,
+          [chainId, period, epochStart, category, rank]
+        );
+        const claimedAt = crows?.[0]?.claimedAt ? new Date(crows[0].claimedAt).toISOString() : null;
+
+        await client.query("COMMIT");
+        return json(res, 200, { ok: true, claimedAt, amountRaw: w.amountRaw, txHash });
+      } catch (e) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {}
+        throw e;
+      } finally {
+        client.release();
       }
-
-      // Optional safety: only allow claims after epoch end.
-      const epochEndMs = w.epochEnd ? new Date(w.epochEnd).getTime() : 0;
-      if (epochEndMs && Date.now() < epochEndMs) {
-        return json(res, 400, { error: "Epoch not finalized" });
-      }
-
-      // Enforce claim expiry (default: 90 days after epoch_end)
-      const expiresMs = w.expiresAt ? new Date(w.expiresAt).getTime() : 0;
-      if (expiresMs && Date.now() > expiresMs) {
-        return json(res, 410, { error: "Claim expired" });
-      }
-
-      // Record the claim (prevents double-claim)
-      await pool.query(
-        `INSERT INTO league_epoch_claims (chain_id, period, epoch_start, category, rank, recipient_address, signature)
-         VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7)
-         ON CONFLICT (chain_id, period, epoch_start, category, rank)
-         DO NOTHING`,
-        [chainId, period, epochStart, category, rank, recipient, signature]
-      );
-
-      // If already claimed, the insert is ignored. Detect it.
-      const { rows: crows } = await pool.query(
-        `SELECT claimed_at AS "claimedAt"
-           FROM league_epoch_claims
-          WHERE chain_id = $1 AND period = $2 AND epoch_start = $3::timestamptz AND category = $4 AND rank = $5
-          LIMIT 1`,
-        [chainId, period, epochStart, category, rank]
-      );
-      const claimedAt = crows?.[0]?.claimedAt ? new Date(crows[0].claimedAt).toISOString() : null;
-
-      return json(res, 200, { ok: true, claimedAt, amountRaw: w.amountRaw });
     } catch (e) {
       const msg = String(e?.message ?? "");
       const isAuth = /nonce|signature/i.test(msg);
@@ -496,7 +804,11 @@ export default async function handler(req, res) {
           winners: prizeMeta.winners,
           splitBps: prizeMeta.splitBps,
           potRaw: prizeMeta.byCategory[category].potRaw,
-          payoutsRaw: prizeMeta.byCategory[category].payoutsRaw
+          payoutsRaw: prizeMeta.byCategory[category].payoutsRaw,
+          rolloverRaw: prizeMeta.byCategory[category].rolloverRaw,
+          paidRaw: prizeMeta.byCategory[category].paidRaw,
+          availablePotRaw: prizeMeta.byCategory[category].availablePotRaw,
+          availablePayoutsRaw: prizeMeta.byCategory[category].availablePayoutsRaw
         }
       : undefined;
 

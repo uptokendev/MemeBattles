@@ -8,6 +8,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import { BrowserProvider, Contract, ethers } from "ethers";
+import { getExplorerTxBase } from "@/lib/chainConfig";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import {
   buildProfileMessage,
@@ -578,7 +579,7 @@ const Profile = () => {
 
       const toastId3 = toast.loading("Submitting claim…");
       try {
-        await submitLeagueClaim({
+        const r = await submitLeagueClaim({
           chainId,
           period: item.period,
           epochStart: item.epochStart,
@@ -588,13 +589,82 @@ const Profile = () => {
           nonce,
           signature,
         });
-      } finally {
-        toast.dismiss(toastId3);
-      }
 
-      // Remove from list (claimed prizes are suppressed)
+        // If already paid (server previously recorded a txHash), just show it.
+        const alreadyTxHash = (r as any)?.txHash;
+        if (alreadyTxHash && typeof alreadyTxHash === "string" && alreadyTxHash.startsWith("0x")) {
+          const href = `${getExplorerTxBase(chainId as any)}${alreadyTxHash}`;
+          toast.success(
+            <span>
+              Paid!{" "}
+              <a className="underline" href={href} target="_blank" rel="noreferrer">
+                View tx
+              </a>
+            </span>
+          );
+        } else if ((r as any)?.mode === "merkle") {
+          const payload = r as any;
+          const vaultAddress = String(payload.vaultAddress);
+          const epochId = payload.epochId; // bigint-as-string
+          const categoryHash = String(payload.categoryHash);
+          const amountRaw = payload.amountRaw; // bigint-as-string
+          const proof = Array.isArray(payload.proof) ? payload.proof : [];
+
+          const abi = [
+            "function claim(uint256 epochId, bytes32 category, uint8 rank, address recipient, uint256 amount, bytes32[] proof) external",
+          ];
+
+          const vault = new Contract(vaultAddress, abi, wallet.signer);
+
+          const toastIdTx = toast.loading("Confirm on-chain claim (gas fee) in your wallet…");
+          let tx: any;
+          try {
+            tx = await vault.claim(epochId, categoryHash, item.rank, recipient, amountRaw, proof);
+          } finally {
+            toast.dismiss(toastIdTx);
+          }
+
+          const toastIdWait = toast.loading("Waiting for confirmation…");
+          try {
+            await tx.wait();
+          } finally {
+            toast.dismiss(toastIdWait);
+          }
+
+          const txHash = String(tx.hash || "");
+          if (txHash && txHash.startsWith("0x")) {
+            // Record txHash so the reward is suppressed in the DB-based rewards list.
+            try {
+              await recordLeagueClaimTx({
+                chainId,
+                period: item.period,
+                epochStart: item.epochStart,
+                category: item.category,
+                rank: item.rank,
+                recipient,
+                signature,
+                txHash,
+              });
+            } catch {
+              // Non-fatal: on-chain claim is the source of truth.
+            }
+
+            const href = `${getExplorerTxBase(chainId as any)}${txHash}`;
+            toast.success(
+              <span>
+                Claimed!{" "}
+                <a className="underline" href={href} target="_blank" rel="noreferrer">
+                  View tx
+                </a>
+              </span>
+            );
+          } else {
+            toast.success("Claimed on-chain.");
+          }
+        } else {
+          toast.success("Claim prepared.");
+        }      // Remove from list (paid prizes are suppressed)
       setRewards((prev) => prev.filter((r) => `${r.period}:${r.epochStart}:${r.category}:${r.rank}` !== key));
-      toast.success("Claim recorded.");
     } catch (e: any) {
       toast.error(e?.message ?? "Claim failed.");
     } finally {

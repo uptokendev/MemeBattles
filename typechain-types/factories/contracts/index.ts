@@ -12,3 +12,4 @@ export { LaunchFactory__factory } from "./LaunchFactory__factory";
 export { LpTimelock__factory } from "./LpTimelock__factory";
 export { TreasuryRouter__factory } from "./TreasuryRouter__factory";
 export { TreasuryVault__factory } from "./TreasuryVault__factory";
+export { TreasuryVaultV2__factory } from "./TreasuryVaultV2__factory";

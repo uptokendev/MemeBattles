@@ -17,3 +17,4 @@ export type { LaunchFactory } from "./LaunchFactory";
 export type { LpTimelock } from "./LpTimelock";
 export type { TreasuryRouter } from "./TreasuryRouter";
 export type { TreasuryVault } from "./TreasuryVault";
+export type { TreasuryVaultV2 } from "./TreasuryVaultV2";

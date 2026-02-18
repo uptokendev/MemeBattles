@@ -51,7 +51,22 @@ export async function submitLeagueClaim(params: {
   recipient: string;
   nonce: string;
   signature: string;
-}): Promise<{ ok: boolean; claimedAt?: string | null; amountRaw?: string }> {
+}): Promise<
+  | { ok: true; txHash: string; claimedAt?: string | null; amountRaw?: string } // already paid path
+  | {
+      ok: true;
+      mode: "merkle";
+      vaultAddress: string;
+      epochId: string;
+      epochTotal: string;
+      root: string;
+      categoryHash: string;
+      recipient: string;
+      rank: number;
+      amountRaw: string;
+      proof: string[];
+    }
+> {
   const r = await fetch(`/api/league`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -59,6 +74,26 @@ export async function submitLeagueClaim(params: {
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j?.error || "Claim failed");
+  return j;
+}
+
+export async function recordLeagueClaimTx(params: {
+  chainId: number;
+  period: "weekly" | "monthly";
+  epochStart: string;
+  category: string;
+  rank: number;
+  recipient: string;
+  signature: string;
+  txHash: string;
+}): Promise<{ ok: boolean; txHash?: string | null }> {
+  const r = await fetch(`/api/league`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "record", ...params }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j?.error || "Record failed");
   return j;
 }
 

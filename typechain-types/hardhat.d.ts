@@ -138,6 +138,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.TreasuryVault__factory>;
     getContractFactory(
+      name: "TreasuryVaultV2",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.TreasuryVaultV2__factory>;
+    getContractFactory(
       name: "IERC20",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IERC20__factory>;
@@ -306,6 +310,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.TreasuryVault>;
     getContractAt(
+      name: "TreasuryVaultV2",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.TreasuryVaultV2>;
+    getContractAt(
       name: "IERC20",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -446,6 +455,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.TreasuryVault>;
     deployContract(
+      name: "TreasuryVaultV2",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TreasuryVaultV2>;
+    deployContract(
       name: "IERC20",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC20>;
@@ -613,6 +626,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.TreasuryVault>;
+    deployContract(
+      name: "TreasuryVaultV2",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.TreasuryVaultV2>;
     deployContract(
       name: "IERC20",
       args: any[],

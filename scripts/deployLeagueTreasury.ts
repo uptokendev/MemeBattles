@@ -22,12 +22,16 @@ async function main() {
     throw new Error("Missing PANCAKE_ROUTER env var (PancakeSwap router address).");
   }
 
-  // 1) Deploy Vault (custody) owned by Treasury Safe
-  const Vault = await ethers.getContractFactory("TreasuryVault");
-  const vault = await Vault.deploy(TREASURY_SAFE);
+  // 1) Deploy VaultV2 (custody) admin = Treasury Safe
+  // - operator: optional hot-wallet payout lane (can be 0x0 if you only use Merkle claims)
+  // - rootPoster: optional automation key to publish epoch roots (can be 0x0; multisig can publish roots too)
+  const operator = String(process.env.LEAGUE_PAYOUT_OPERATOR || ethers.ZeroAddress).trim();
+  const rootPoster = String(process.env.LEAGUE_ROOT_POSTER || ethers.ZeroAddress).trim();
+  const Vault = await ethers.getContractFactory("TreasuryVaultV2");
+  const vault = await Vault.deploy(TREASURY_SAFE, operator, rootPoster);
   await vault.waitForDeployment();
   const vaultAddr = await vault.getAddress();
-  console.log("TreasuryVault:", vaultAddr);
+  console.log("TreasuryVaultV2:", vaultAddr);
 
   // 2) Deploy Router (immutable receiver) admin = Treasury Safe
   const Router = await ethers.getContractFactory("TreasuryRouter");
@@ -52,6 +56,8 @@ async function main() {
   console.log("- Protocol fees go to:", TREASURY_SAFE);
   console.log("- League 0.25% goes to:", leagueRouterAddr, "(auto-forward to vault)");
   console.log("- League vault:", vaultAddr);
+  console.log("- League payout operator:", operator);
+  console.log("- League rootPoster:", rootPoster);
 }
 
 main().catch((e) => {

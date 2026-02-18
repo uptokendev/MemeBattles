@@ -68,5 +68,7 @@ export type { TreasuryRouter } from "./contracts/TreasuryRouter";
 export { TreasuryRouter__factory } from "./factories/contracts/TreasuryRouter__factory";
 export type { TreasuryVault } from "./contracts/TreasuryVault";
 export { TreasuryVault__factory } from "./factories/contracts/TreasuryVault__factory";
+export type { TreasuryVaultV2 } from "./contracts/TreasuryVaultV2";
+export { TreasuryVaultV2__factory } from "./factories/contracts/TreasuryVaultV2__factory";
 export type { UPVoteTreasury } from "./contracts/UPVoteTreasury.sol/UPVoteTreasury";
 export { UPVoteTreasury__factory } from "./factories/contracts/UPVoteTreasury.sol/UPVoteTreasury__factory";
