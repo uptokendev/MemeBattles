@@ -406,17 +406,17 @@ const { patchByCampaign, created } = useLeagueRealtime({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <div className="text-xs text-muted-foreground">{resultsMeta}</div>
-      </div>
+      <div className="mb-4 flex items-center justify-between gap-4 rounded-[1.15rem] border border-white/10 bg-[linear-gradient(180deg,rgba(58,62,70,0.74),rgba(17,19,23,0.92))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.34)]">
+        <div className="text-xs tracking-wide text-stone-300">{resultsMeta}</div>
+       </div>
 
       {loading && !vms.length ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
-          {Array.from({ length: 12 }).map((_, i) => (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-5 justify-items-center">
+           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
-              className="aspect-[1/2] w-full max-w-[clamp(160px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
-            />
+              className="aspect-[1/2] w-full max-w-[clamp(160px,20vw,210px)] rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(56,60,68,0.55),rgba(19,21,26,0.9))] animate-pulse"
+             />
           ))}
         </div>
       ) : err ? (
@@ -425,8 +425,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
         <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
       ) : (
         <>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
-            {vms.map((vm) => (
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-5 justify-items-center">
+             {vms.map((vm) => (
               <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />
             ))}
           </div>
@@ -434,8 +434,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
           <div ref={sentinelRef} className="h-12" />
 
           {loadingMore ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">Loading more…</div>
-          ) : nextCursor == null ? (
+            <div className="py-6 text-center text-xs text-stone-400">Loading more…</div>
+           ) : nextCursor == null ? (
             <div className="py-6 text-center text-xs text-muted-foreground">End of results</div>
           ) : null}
         </>

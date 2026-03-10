@@ -122,45 +122,47 @@ export function CampaignCard({
   return (
     <div
       className={cn(
-        "group relative flex w-full max-w-[clamp(160px,20vw,210px)] flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
-        "transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]",
-        className
+        "group relative flex w-full max-w-[clamp(160px,20vw,210px)] flex-col overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(58,62,70,0.96),rgba(17,19,23,0.99))]",
+        "shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.40),0_18px_40px_rgba(0,0,0,0.28)] transition-all hover:border-amber-400/28 hover:-translate-y-0.5 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.40),0_20px_44px_rgba(0,0,0,0.34)]",
+         className
       )}
     >
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1 bg-[linear-gradient(90deg,#f8cf45_0%,#ff9726_55%,#ff5a0d_100%)]" />
+
       {/* Image */}
       <button
         className="block w-full text-left"
         onClick={() => navigate(`/token/${addr}`)}
         aria-label={`Open ${vm.name}`}
       >
-        <div className="relative aspect-square w-full">
+        <div className="relative aspect-square w-full overflow-hidden">
           <img
             src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
             alt={vm.name}
-            className="h-full w-full object-cover bg-muted"
-            draggable={false}
+            className="h-full w-full object-cover bg-muted transition-transform duration-300 group-hover:scale-[1.04]"
+             draggable={false}
             loading="lazy"
           />
-          {/* subtle top fade */}
-          <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-transparent" />
-        </div>
+          <div className="absolute inset-0 border-b border-white/10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+         </div>
       </button>
 
       {/* Content */}
-      <div className="flex aspect-square flex-col p-4">
-        {/* Title + upvotes */}
+      <div className="flex aspect-square flex-col p-3.5 bg-[linear-gradient(180deg,rgba(62,66,74,0.14),rgba(0,0,0,0.02))]">
+         {/* Title + upvotes */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-base font-semibold truncate">{vm.name}</div>
-            <div className="text-xs text-muted-foreground truncate">{vm.symbol ? `$${vm.symbol}` : ""}</div>
-          </div>
+            <div className="text-base font-semibold uppercase tracking-[0.03em] truncate">{vm.name}</div>
+            <div className="text-xs text-stone-400 truncate">{vm.symbol ? `$${vm.symbol}` : ""}</div>
+           </div>
           <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {/* Follow ⭐ */}
             <Button
               type="button"
               variant="secondary"
               size="icon"
-              className="h-8 w-8 rounded-xl"
+              className="h-8 w-8 rounded-xl border-white/10"
               onClick={toggleFollow}
               disabled={followBusy}
               aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
@@ -182,13 +184,13 @@ export function CampaignCard({
         </div>
 
         {/* Creator + time */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-2.5 py-2">
+           <div className="flex items-center gap-2 min-w-0">
             <img
               src="/assets/profile_placeholder.png"
               alt="Creator"
               className={cn(
-                "w-7 h-7 rounded-full object-cover border border-border/60",
+                "w-7 h-7 rounded-full object-cover border border-white/15",
                 canOpenProfile ? "cursor-pointer hover:border-accent/60" : ""
               )}
               draggable={false}
@@ -210,7 +212,7 @@ export function CampaignCard({
             />
             <div
               className={cn(
-                "text-xs text-muted-foreground truncate",
+                "text-xs text-stone-300 truncate",
                 canOpenProfile ? "cursor-pointer hover:text-foreground" : ""
               )}
               role={canOpenProfile ? "button" : undefined}
@@ -232,24 +234,24 @@ export function CampaignCard({
               {vm.creator ? shortAddr(vm.creator) : "—"}
             </div>
           </div>
-          <div className="text-xs text-muted-foreground shrink-0">{timeAgoFromUnix(vm.createdAt)}</div>
-        </div>
+          <div className="text-xs text-stone-400 shrink-0">{timeAgoFromUnix(vm.createdAt)}</div>
+         </div>
 
         {/* Key stats */}
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[10px] text-muted-foreground">MCap</div>
-            <div className="text-xs font-semibold truncate">{vm.marketCapUsdLabel ?? "—"}</div>
-          </div>
+            <div className="text-[10px] uppercase tracking-[0.08em] text-stone-400">MCap</div>
+             <div className="text-xs font-semibold truncate">{vm.marketCapUsdLabel ?? "—"}</div>
+           </div>
 
           <div className="text-right">
-            <div className="text-[10px] text-muted-foreground">UpVotes (24h)</div>
-            <div className="text-xs font-semibold">{Number(vm.votes24h ?? 0)}</div>
-          </div>
+            <div className="text-[10px] uppercase tracking-[0.08em] text-stone-400">UpVotes (24h)</div>
+             <div className="text-xs font-semibold">{Number(vm.votes24h ?? 0)}</div>
+           </div>
         </div>
 
         {/* ATH bar */}
-        <div className="mt-3">
+        <div className="mt-3 rounded-xl border border-amber-400/15 bg-black/20 px-2 py-1.5">
           <AthBar
             currentLabel={vm.athLabel ?? null}
             storageKey={`ath:${String(chainIdForStorage)}:${addr}`}
