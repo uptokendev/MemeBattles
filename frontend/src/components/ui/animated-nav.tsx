@@ -82,7 +82,7 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
 
       <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-border to-transparent pointer-events-none">
         <div
-          className={`relative w-full bg-gradient-to-b from-transparent via-accent to-transparent transition-all duration-[650ms] ease-[cubic-bezier(0.68,-0.55,0.265,1.55)] ${
+          className={`relative w-full bg-gradient-to-b from-transparent via-accent to-transparent transition-all [transition-duration:650ms] [transition-timing-function:cubic-bezier(0.68,-0.55,0.265,1.55)] ${
             isPageInMenu ? 'opacity-100' : 'opacity-0'
           }`}
           style={{ 
