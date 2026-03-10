@@ -435,23 +435,25 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold">
+    <div className={cn("w-full rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(54,58,66,0.94),rgba(16,18,22,0.98))] p-3 md:p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.40),0_18px_40px_rgba(0,0,0,0.28)]", className)}>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(66,71,80,0.88),rgba(21,23,28,0.98))] px-3 py-2 text-sm font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+             <ThumbsUp className="h-4 w-4 text-accent" />
             <ThumbsUp className="h-4 w-4 text-accent" />
             Featured Campaigns
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="mt-2 text-xs text-stone-400">
             Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"}, tie-break by activity)
           </div>
         </div>
         {/* 24h / All-time toggle */}
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(43,46,53,0.92),rgba(14,16,20,0.98))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
           <Button
             type="button"
             variant={voteMode === "24h" ? "secondary" : "ghost"}
             size="sm"
+            className={voteMode === "24h" ? "min-w-[74px]" : "min-w-[74px] border border-transparent text-stone-300 hover:border-white/10 hover:text-white"}
             onClick={() => setVoteMode("24h")}
           >
             24h
@@ -460,6 +462,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             type="button"
             variant={voteMode === "all" ? "secondary" : "ghost"}
             size="sm"
+            className={voteMode === "all" ? "min-w-[74px]" : "min-w-[74px] border border-transparent text-stone-300 hover:border-white/10 hover:text-white"}
             onClick={() => setVoteMode("all")}
           >
             All-time
@@ -467,10 +470,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         </div>
 
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => scrollByCards("left")}>
+          <Button variant="outline" size="sm" className="h-10 w-10 p-0" onClick={() => scrollByCards("left")}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => scrollByCards("right")}>
+          <Button variant="outline" size="sm" className="h-10 w-10 p-0" onClick={() => scrollByCards("right")}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -479,7 +482,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       <div className="relative">
         <div
           ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-2 pr-2 snap-x snap-mandatory scroll-smooth"
+          className="flex gap-4 overflow-x-auto pb-2 pr-2 snap-x snap-mandatory scroll-smooth [scrollbar-width:none]"
           style={{ scrollbarWidth: "none" } as any}
         >
           {loading && !cards.length ? (
@@ -487,7 +490,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
               <div
                 key={i}
                 className={cn(
-                  "snap-start shrink-0 rounded-2xl border border-border/40 bg-card/40 animate-pulse",
+                  "snap-start shrink-0 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(180deg,rgba(56,60,68,0.55),rgba(19,21,26,0.9))] animate-pulse",
                   // responsive width so it never becomes tiny
                   "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
@@ -506,7 +509,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                 key={c.addr}
                 data-addr={c.addr}
                 className={cn(
-                  "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors",
+                  "group relative snap-start shrink-0 overflow-hidden rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(58,62,70,0.96),rgba(17,19,23,0.99))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_-1px_0_rgba(0,0,0,0.40),0_18px_40px_rgba(0,0,0,0.30)] hover:border-amber-400/28 transition-all",
                   // ✅ this prevents “tiny cards” on small screens
                   "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
@@ -517,24 +520,29 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
                 }}
               >
+               <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1 bg-[linear-gradient(90deg,#f8cf45_0%,#ff9726_55%,#ff5a0d_100%)]" />
+
                 {/* ATH overlay across image + data */}
-<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
-  <AthBar
-    currentLabel={c.mcapUsdLabel ?? null}
-    storageKey={`ath:${activeChainId}:${c.addr}`}
-    className="text-[10px]"
-    barWidthPx={420}
-    barMaxWidth="100%"
-  />
-</div>
+                <div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
+                  <div className="rounded-xl border border-amber-400/15 bg-black/40 px-2 py-1 backdrop-blur-sm">
+                    <AthBar
+                      currentLabel={c.mcapUsdLabel ?? null}
+                      storageKey={`ath:${activeChainId}:${c.addr}`}
+                      className="text-[10px]"
+                      barWidthPx={420}
+                      barMaxWidth="100%"
+                    />
+                  </div>
+                </div>
+
                 {/* Top: two equal squares (image + data) */}
                 <div className="grid grid-cols-2 aspect-[2/1]">
                   {/* Left: token image */}
-                  <div className="relative w-full h-full bg-black">
+                  <div className="relative w-full h-full overflow-hidden bg-black">
                     <img
                       src={c.image}
                       alt={c.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                       draggable={false}
                       onError={(e) => {
                         const img = e.currentTarget;
@@ -545,27 +553,28 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       }}
                     />
 
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 to-transparent" />
-
-                    <div className="absolute top-2 left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-black/60 border-2 border-emerald-400 text-xs font-bold text-emerald-400">
-                      {c.idx}
+                    <div className="absolute inset-0 border-r border-white/10" />
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+ 
+                    <div className="absolute top-2 left-2 h-8 min-w-8 px-2 flex items-center justify-center rounded-xl bg-[linear-gradient(180deg,rgba(28,30,36,0.95),rgba(10,12,16,0.98))] border border-amber-400/35 text-xs font-bold text-amber-300 shadow-[0_6px_16px_rgba(0,0,0,0.24)]">
+                       {c.idx}
                     </div>
                   </div>
 
                   {/* Right: data panel (same size as image) */}
-                  <div className="w-full h-full p-3 md:p-4 pb-20 flex flex-col min-w-0">
+                  <div className="w-full h-full p-3 md:p-4 pb-20 flex flex-col min-w-0 bg-[linear-gradient(180deg,rgba(60,64,72,0.18),rgba(0,0,0,0.02))]">
                     {/* Name + votes (24h) */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-base font-semibold truncate">{c.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {c.symbol ? `$${c.symbol}` : ""}
+                        <div className="text-base font-semibold uppercase tracking-[0.03em] truncate">{c.name}</div>
+                        <div className="text-xs text-stone-400 truncate">
+                           {c.symbol ? `$${c.symbol}` : ""}
                         </div>
                       </div>
 
                       {/* Votes (24h) top-right */}
-                      <div className="flex items-center gap-1 text-xs text-accent shrink-0">
-                        <Flame className="h-4 w-4" />
+                      <div className="flex items-center gap-1 rounded-lg border border-amber-400/15 bg-black/20 px-2 py-1 text-xs text-accent shrink-0">
+                         <Flame className="h-4 w-4" />
                         <span className="font-semibold">
                           {voteMode === "24h" ? c.votes24h : c.votesAll}
                         </span>
@@ -576,11 +585,11 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                     </div>
 
                     {/* Creator row under ticker */}
-                    <div className="mt-2 flex items-center gap-2 min-w-0">
-                      <img
+                    <div className="mt-3 flex items-center gap-2 min-w-0 rounded-xl border border-white/10 bg-black/20 px-2.5 py-2">
+                       <img
                         src="/assets/profile_placeholder.png"
                         alt="Creator"
-                        className="w-7 h-7 rounded-full object-cover border border-border/60"
+                        className="w-7 h-7 rounded-full object-cover border border-white/15"
                         draggable={false}
                         role="button"
                         tabIndex={0}
@@ -612,18 +621,18 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                           }
                         }}
                       >
-                        {c.creatorLabel}
+                        <span className="text-stone-300">{c.creatorLabel}</span>
                       </div>
                     </div>
 
                     
 
                     {/* Upvote + MCap row */}
-<div className="mt-3 flex items-center justify-between gap-3 w-full">
-  {/* MCap (left) */}
+<div className="mt-3 flex items-center justify-between gap-3 w-full rounded-xl border border-white/10 bg-black/20 px-2.5 py-2.5">
+   {/* MCap (left) */}
   <div className="min-w-0">
-    <div className="text-[10px] text-muted-foreground">MCap</div>
-    <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
+    <div className="text-[10px] uppercase tracking-[0.08em] text-stone-400">MCap</div>
+     <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
   </div>
 
   {/* Actions (right) */}
@@ -632,7 +641,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       type="button"
       variant="secondary"
       size="icon"
-      className="h-8 w-8 rounded-xl"
+      className="h-8 w-8 rounded-xl border-white/10"
       onClick={(e) => toggleFollow(e, c)}
       disabled={!!followBusyMap[c.addr]}
       aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
