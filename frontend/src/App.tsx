@@ -50,7 +50,7 @@ const App = () => {
           }`}
         >
           <BrowserRouter>
-            <div className="h-screen overflow-hidden bg-black flex flex-col">
+            <div className="wz-shell h-screen overflow-hidden flex flex-col">
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               {/*
@@ -59,7 +59,7 @@ const App = () => {
                 extra dead space above the hero/logo.
               */}
               {/* Allow page scrolling inside the app shell */}
-              <main className="flex-1 overflow-auto pt-4 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
+              <main className="relative z-[1] flex-1 overflow-auto pt-4 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8 wz-scrollbar">
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />
@@ -70,8 +70,7 @@ const App = () => {
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
                   <Route path="/docs" element={<Playbook />} />
-            <Route path="/playbook" element={<Playbook />} />
-            <Route path="/docs" element={<Playbook />} />
+                  <Route path="/playbook" element={<Playbook />} />
                   <Route path="/status" element={<Status />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
