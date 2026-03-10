@@ -733,7 +733,7 @@ const Profile = () => {
 
         const campaigns = (await fetchCampaigns()) ?? [];
         const mine = campaigns.filter(
-          (c) => (c.creator ?? "").toLowerCase() === account.toLowerCase()
+          (c) => (c.creator ?? "").toLowerCase() === String(viewedAddress ?? "").toLowerCase()
         );
 
         const results = await Promise.allSettled(mine.map((c) => fetchCampaignSummary(c)));
@@ -769,7 +769,7 @@ const Profile = () => {
     return () => {
       cancelled = true;
     };
-  }, [account, fetchCampaigns, fetchCampaignSummary]);
+  }, [viewedAddress, fetchCampaigns, fetchCampaignSummary]);
 
   // Load balances (native + launchpad token balances)
   useEffect(() => {
