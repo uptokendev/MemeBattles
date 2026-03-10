@@ -67,7 +67,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       : wallet.account;
 
   // Match the primary button styling used across the app
-  const topbarButtonClass = "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg";
+  const topbarButtonClass = "h-10 rounded-xl border border-[#7a531d] bg-[linear-gradient(180deg,rgba(255,201,92,0.98)_0%,rgba(255,148,28,0.94)_42%,rgba(145,74,8,0.98)_100%)] text-black font-retro text-xs md:text-sm px-3 md:px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(0,0,0,0.26),0_10px_28px_rgba(0,0,0,0.28)] hover:brightness-110";
 
   const openWalletModal = () => {
     // You can decide: allow switching wallet even when connected or not
@@ -232,12 +232,13 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="flex items-center justify-between px-4 md:px-6 py-3">
+    <div className="fixed top-0 left-0 right-0 z-40 px-2 md:px-4 pt-2">
+      <div className="mx-auto rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(55,59,67,0.94)_0%,rgba(20,22,26,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.38),0_18px_40px_rgba(0,0,0,0.30)] backdrop-blur-md">
+      <div className="flex items-center justify-between gap-3 px-3 md:px-5 py-3">
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 hover:bg-muted rounded-lg transition-colors"
+          className="lg:hidden p-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(54,58,66,0.96),rgba(18,20,24,0.98))] text-foreground transition-all hover:border-amber-400/30"
           aria-label="Toggle menu"
         >
           <Menu className="h-6 w-6" />
@@ -245,21 +246,24 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
         {/* Desktop nav */}
         <div className="hidden lg:flex items-center gap-4 flex-1">
-          <Link to="/" className="flex items-center gap-2 mr-2">
-            <img src={brandMark} alt="MemeBattles" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-base">MemeBattles</span>
+          <Link
+            to="/"
+            className="mr-1 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(69,74,82,0.96),rgba(20,22,26,0.98))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.40),0_10px_24px_rgba(0,0,0,0.24)]"
+          >
+            <img src={brandMark} alt="MemeBattles" className="h-10 w-10 rounded-xl object-cover" draggable={false} />
+            <span className="font-retro text-sm tracking-wide text-stone-100">MemeBattles</span>
           </Link>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(43,46,53,0.92),rgba(14,16,20,0.98))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.38)]">
             {navLinks.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "px-3 py-2 rounded-xl text-base font-retro transition-colors border",
+                  "px-4 py-2 rounded-xl text-sm font-retro tracking-wide transition-all border shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
                   isActive(item.path)
-                    ? "bg-card/60 border-amber-400/40 text-amber-200"
-                    : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/30"
+                    ? "border-amber-400/35 bg-[linear-gradient(180deg,rgba(255,191,74,0.96),rgba(166,86,12,0.98))] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_18px_rgba(0,0,0,0.22)]"
+                    : "border-white/5 bg-[linear-gradient(180deg,rgba(58,62,70,0.78),rgba(20,22,26,0.92))] text-stone-300 hover:border-amber-400/25 hover:text-white"
                 )}
               >
                 {item.label}
@@ -269,7 +273,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
 
         {/* Search */}
-        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6">
+        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(37,40,46,0.92),rgba(16,18,22,0.98))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.40)]">
           <SearchBar
             placeholder="Search campaigns..."
             value={searchQuery}
@@ -318,9 +322,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
             {/* Disconnect dropdown */}
             {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
+              <div className="absolute right-0 mt-2 w-36 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(46,49,57,0.98),rgba(16,18,22,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_16px_30px_rgba(0,0,0,0.30)] z-50">
                 <button
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
+                  className="w-full text-left text-xs px-3 py-2.5 rounded-xl text-stone-200 hover:bg-white/[0.05]"
                   onClick={() => {
                     wallet.disconnect();
                     setDisconnectOpen(false);
@@ -334,22 +338,23 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
         </div>
       </div>
+      </div>
 
       {/* Wallet selection modal */}
       {walletModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-2xl shadow-xl w-[90%] max-w-sm p-4 md:p-6 space-y-4">
+          <div className="w-[90%] max-w-sm rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(50,54,61,0.98),rgba(16,18,22,0.99))] p-4 md:p-6 space-y-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.40),0_20px_44px_rgba(0,0,0,0.36)]">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
+              <h2 className="text-sm md:text-base font-retro tracking-wide text-stone-100">Connect a wallet</h2>
               <button
                 onClick={() => setWalletModalOpen(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-xs text-stone-400 hover:text-white"
               >
                 Close
               </button>
             </div>
 
-            <p className="text-xs text-muted-foreground mb-2">
+            <p className="text-xs text-stone-400 mb-2">
               Select a BSC-compatible EVM wallet. You can switch between testnet and
               mainnet from your wallet settings.
             </p>
@@ -358,7 +363,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* MetaMask / Rabby / browser wallet */}
               <button
                 onClick={() => handleWalletSelect("metamask")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(63,68,76,0.92),rgba(20,22,26,0.98))] hover:border-amber-400/25 transition-all text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">MetaMask</p>
@@ -374,7 +379,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* Binance Wallet */}
               <button
                 onClick={() => handleWalletSelect("binance")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(63,68,76,0.92),rgba(20,22,26,0.98))] hover:border-amber-400/25 transition-all text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
@@ -390,7 +395,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* Generic injected fallback */}
               <button
                 onClick={() => handleWalletSelect("injected")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(63,68,76,0.92),rgba(20,22,26,0.98))] hover:border-amber-400/25 transition-all text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
@@ -401,7 +406,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </button>
             </div>
 
-            <p className="text-[10px] text-muted-foreground mt-2">
+            <p className="text-[10px] text-stone-400 mt-2">
               Make sure your selected wallet is configured for Binance Smart Chain
               (BSC mainnet or testnet, depending on your setup).
             </p>
