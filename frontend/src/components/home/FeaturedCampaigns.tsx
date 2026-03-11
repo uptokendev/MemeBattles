@@ -440,7 +440,6 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         <div className="min-w-0">
           <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(66,71,80,0.88),rgba(21,23,28,0.98))] px-3 py-2 text-sm font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
              <ThumbsUp className="h-4 w-4 text-accent" />
-            <ThumbsUp className="h-4 w-4 text-accent" />
             Featured Campaigns
           </div>
           <div className="mt-2 text-xs text-stone-400">
@@ -500,9 +499,9 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
               </div>
             ))
           ) : err ? (
-            <div className="text-sm text-muted-foreground py-8">{err}</div>
+            <div className="py-8 text-sm text-stone-400">{err}</div>
           ) : cards.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-8">No featured campaigns yet.</div>
+            <div className="py-8 text-sm text-stone-400">No featured campaigns yet.</div>
           ) : (
             cards.map((c) => (
               <div
@@ -578,7 +577,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                         <span className="font-semibold">
                           {voteMode === "24h" ? c.votes24h : c.votesAll}
                         </span>
-                        <span className="text-muted-foreground">
+                        <span className="text-stone-400">
                           {voteMode === "24h" ? "/ 24h" : "all"}
                         </span>
                       </div>
@@ -606,7 +605,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                         }}
                       />
                       <div
-                        className="text-xs text-muted-foreground truncate"
+                        className="text-xs text-stone-300 truncate"
                         role="button"
                         tabIndex={0}
                         onClick={(e) => {

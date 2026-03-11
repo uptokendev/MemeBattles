@@ -420,9 +420,9 @@ const { patchByCampaign, created } = useLeagueRealtime({
           ))}
         </div>
       ) : err ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">{err}</div>
+        <div className="py-10 text-center text-sm text-stone-400">{err}</div>
       ) : vms.length === 0 ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
+        <div className="py-10 text-center text-sm text-stone-400">No campaigns yet.</div>
       ) : (
         <>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-5 justify-items-center">
@@ -436,7 +436,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
           {loadingMore ? (
             <div className="py-6 text-center text-xs text-stone-400">Loading more…</div>
            ) : nextCursor == null ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">End of results</div>
+            <div className="py-6 text-center text-xs text-stone-400">End of results</div>
           ) : null}
         </>
       )}

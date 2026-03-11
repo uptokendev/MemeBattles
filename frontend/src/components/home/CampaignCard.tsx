@@ -238,16 +238,16 @@ export function CampaignCard({
          </div>
 
         {/* Key stats */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-2.5 py-2.5">
+           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.08em] text-stone-400">MCap</div>
-             <div className="text-xs font-semibold truncate">{vm.marketCapUsdLabel ?? "—"}</div>
-           </div>
+            <div className="text-xs font-semibold truncate">{vm.marketCapUsdLabel ?? "—"}</div>
+          </div>
 
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-[0.08em] text-stone-400">UpVotes (24h)</div>
-             <div className="text-xs font-semibold">{Number(vm.votes24h ?? 0)}</div>
-           </div>
+            <div className="text-xs font-semibold">{Number(vm.votes24h ?? 0)}</div>
+          </div>
         </div>
 
         {/* ATH bar */}
