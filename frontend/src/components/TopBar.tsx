@@ -1,10 +1,10 @@
 /**
  * Top Bar Component
- * Responsive header with search, actions, and ticker feed
+ * Responsive header with search and actions
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Shield, Swords } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -66,9 +66,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}`
       : wallet.account;
 
-  // Match the primary button styling used across the app
-  const topbarButtonClass = "h-10 rounded-xl border border-[#7a531d] bg-[linear-gradient(180deg,rgba(255,201,92,0.98)_0%,rgba(255,148,28,0.94)_42%,rgba(145,74,8,0.98)_100%)] text-black font-retro text-xs md:text-sm px-3 md:px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(0,0,0,0.26),0_10px_28px_rgba(0,0,0,0.28)] hover:brightness-110";
-
+  const topbarButtonClass =
+    "h-10 rounded-xl border border-[#7a531d] bg-[linear-gradient(180deg,rgba(255,201,92,0.98)_0%,rgba(255,148,28,0.94)_42%,rgba(145,74,8,0.98)_100%)] text-black font-retro text-xs md:text-sm px-3 md:px-4 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(0,0,0,0.28),0_12px_30px_rgba(0,0,0,0.28)] hover:brightness-110";
   const openWalletModal = () => {
     // You can decide: allow switching wallet even when connected or not
     setWalletModalOpen(true);
@@ -233,12 +232,16 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 px-2 md:px-4 pt-2">
-      <div className="mx-auto rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(55,59,67,0.94)_0%,rgba(20,22,26,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.38),0_18px_40px_rgba(0,0,0,0.30)] backdrop-blur-md">
-      <div className="flex items-center justify-between gap-3 px-3 md:px-5 py-3">
+      <div className="relative mx-auto overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(57,61,69,0.97),rgba(17,19,23,0.99))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.42),0_22px_46px_rgba(0,0,0,0.34)] backdrop-blur-md">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(0,0,0,0.16)),radial-gradient(circle_at_16%_20%,rgba(255,150,40,0.12),transparent_18%),radial-gradient(circle_at_84%_20%,rgba(255,110,0,0.10),transparent_18%),linear-gradient(135deg,transparent_0%,transparent_46%,rgba(255,255,255,0.05)_47%,transparent_48%,transparent)] bg-[length:auto,auto,auto,36px_36px]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,transparent,#f8cf45_16%,#ff9726_52%,#ff5a0d_84%,transparent)]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,170,60,0.35),transparent)]" />
+
+        <div className="flex items-center justify-between gap-3 px-3 md:px-5 py-3">
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(54,58,66,0.96),rgba(18,20,24,0.98))] text-foreground transition-all hover:border-amber-400/30"
+          className="lg:hidden p-2 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(60,65,74,0.96),rgba(18,20,24,0.98))] text-foreground transition-all hover:border-amber-400/30"
           aria-label="Toggle menu"
         >
           <Menu className="h-6 w-6" />
@@ -248,24 +251,27 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         <div className="hidden lg:flex items-center gap-4 flex-1">
           <Link
             to="/"
-            className="mr-1 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(69,74,82,0.96),rgba(20,22,26,0.98))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.40),0_10px_24px_rgba(0,0,0,0.24)]"
+            className="relative mr-1 inline-flex items-center gap-3 overflow-hidden rounded-[1.2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(69,74,82,0.96),rgba(19,21,25,0.99))] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),inset_0_-1px_0_rgba(0,0,0,0.40),0_12px_28px_rgba(0,0,0,0.24)]"
           >
+            <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,200,90,0.45),transparent)]" />
             <img src={brandMark} alt="MemeBattles" className="h-10 w-10 rounded-xl object-cover" draggable={false} />
             <span className="font-retro text-sm tracking-wide text-stone-100">MemeBattles</span>
-          </Link>
+           </Link>
 
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(43,46,53,0.92),rgba(14,16,20,0.98))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.38)]">
-            {navLinks.map((item) => (
+          <div className="relative flex items-center gap-2 rounded-[1.2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(44,48,55,0.95),rgba(14,16,20,0.99))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.40)]">
+            <div className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(135deg,transparent_0%,transparent_48%,rgba(255,255,255,0.06)_49%,transparent_50%)] [background-size:28px_28px]" />
+             {navLinks.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "px-4 py-2 rounded-xl text-sm font-retro tracking-wide transition-all border shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
+                  "relative px-4 py-2 rounded-xl text-sm font-retro tracking-wide transition-all border shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
                   isActive(item.path)
                     ? "border-amber-400/35 bg-[linear-gradient(180deg,rgba(255,191,74,0.96),rgba(166,86,12,0.98))] text-black shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_18px_rgba(0,0,0,0.22)]"
                     : "border-white/5 bg-[linear-gradient(180deg,rgba(58,62,70,0.78),rgba(20,22,26,0.92))] text-stone-300 hover:border-amber-400/25 hover:text-white"
-                )}
+                 )}
               >
+                <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.10),transparent)]" />
                 {item.label}
               </Link>
             ))}
@@ -273,8 +279,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
 
         {/* Search */}
-        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6 rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(37,40,46,0.92),rgba(16,18,22,0.98))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-1px_0_rgba(0,0,0,0.40)]">
-          <SearchBar
+        <div className="relative flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6 overflow-hidden rounded-[1.2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(36,39,45,0.96),rgba(13,15,18,0.99))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),inset_0_-1px_0_rgba(0,0,0,0.44)]">
+          <div className="pointer-events-none absolute inset-0 opacity-15 [background-image:linear-gradient(135deg,transparent_0%,transparent_48%,rgba(255,255,255,0.06)_49%,transparent_50%)] [background-size:24px_24px]" />
+           <SearchBar
             placeholder="Search campaigns..."
             value={searchQuery}
             onValueChange={(q) => {
@@ -296,22 +303,22 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             }}
           />
         </div>
-       <div className="relative flex items-center gap-2">
-        {/* Right side actions */}
-        <div className="flex items-center gap-2 md:gap-3">
-          {/* Primary CTA */}
+        <div className="relative flex items-center gap-2">
+          <div className="flex items-center gap-2 md:gap-3">
+           {/* Primary CTA */}
           <Button onClick={() => navigate("/create")} className={topbarButtonClass}>
+            <Swords className="mr-1.5 hidden sm:block h-4 w-4" />
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
           </Button>
 
-          {/* Connect wallet button with SAME style, but now opens modal */}
           <div
             className="relative"
             onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
             onMouseLeave={() => setDisconnectOpen(false)}
           >
             <Button className={topbarButtonClass} onClick={() => { if (!wallet.isConnected) { openWalletModal(); } }}>
+              <Shield className="mr-1.5 hidden sm:block h-4 w-4" />
               <span className="hidden sm:inline">
                 {wallet.isConnected ? shortAddress : "Connect wallet"}
               </span>
@@ -320,10 +327,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </span>
             </Button>
 
-            {/* Disconnect dropdown */}
             {wallet.isConnected && disconnectOpen && (
               <div className="absolute right-0 mt-2 w-36 rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(46,49,57,0.98),rgba(16,18,22,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_16px_30px_rgba(0,0,0,0.30)] z-50">
-                <button
+                 <button
                   className="w-full text-left text-xs px-3 py-2.5 rounded-xl text-stone-200 hover:bg-white/[0.05]"
                   onClick={() => {
                     wallet.disconnect();
