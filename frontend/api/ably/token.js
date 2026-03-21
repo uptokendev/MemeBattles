@@ -18,11 +18,19 @@ export default async function handler(req, res) {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 97);
     const campaign = p(q.campaign).toLowerCase();
+    const scope = p(q.scope).toLowerCase();
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(campaign)) return json(res, 400, { error: "Invalid campaign address" });
+    let channel = "";
 
-    const channel = `token:${chainId}:${campaign}`;
+    if (scope === "league") {
+      channel = `league:${chainId}`;
+    } else {
+      if (!isAddress(campaign)) {
+        return json(res, 400, { error: "Invalid campaign address" });
+      }
+      channel = `token:${chainId}:${campaign}`;
+    }
 
     // Browser only needs to SUBSCRIBE.
     // Publishing is done by your Railway indexer (server-side).
