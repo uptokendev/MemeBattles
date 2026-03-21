@@ -56,6 +56,6 @@ router.all("/upload", upload);
 router.all("/vote_counts", voteCounts);
 router.all("/votes", votes);
 
-app.use("/api", router);
+app.use("/", router);
 
 export const handler = serverless(app);

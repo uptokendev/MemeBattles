@@ -164,7 +164,7 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
     channel: entry?.channel ?? null,
     channelName: entry?.channelName ?? null,
     ready: Boolean(entry && entry.client && entry.channel),
-    missingBase: enabled && !getAuthBase,
+    missingBase: enabled && !getAuthBase(),
     cacheKey: key,
     connectionState,
     isConnected: connectionState === "connected",
