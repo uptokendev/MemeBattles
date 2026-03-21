@@ -2,7 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
-const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
+const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
+const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
+
+function getAuthBase() {
+  const raw =
+    ABLY_AUTH_BASE ||
+    (typeof window !== "undefined" ? window.location.origin : "") ||
+    REALTIME_API_BASE;
+  return String(raw || "").replace(/\/$/, "");
+}
 
 type Entry = {
   key: string;
@@ -22,7 +31,7 @@ function channelNameFor(chainId: number) {
 }
 
 function authUrlFor(chainId: number) {
-  const base = String(API_BASE || "").replace(/\/$/, "");
+  const base = getAuthBase();
   return `${base}/api/ably/token?chainId=${chainId}&scope=league`;
 }
 
@@ -111,7 +120,7 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
       setConnectionState("disabled");
       return;
     }
-    if (!API_BASE) {
+    if (!getAuthBase()) {
       setEntry(null);
       setConnectionState("missing_base");
       return;
@@ -155,7 +164,7 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
     channel: entry?.channel ?? null,
     channelName: entry?.channelName ?? null,
     ready: Boolean(entry && entry.client && entry.channel),
-    missingBase: enabled && !API_BASE,
+    missingBase: enabled && !getAuthBase,
     cacheKey: key,
     connectionState,
     isConnected: connectionState === "connected",
