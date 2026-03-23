@@ -31,7 +31,7 @@ type TickerItem = {
 };
 
 // Public brand asset (no bundler import required)
-const brandMark = "/assets/ticker.png";
+const brandMark = "/assets/logo.png";
 
 export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
@@ -245,9 +245,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
         {/* Desktop nav */}
         <div className="hidden lg:flex items-center gap-4 flex-1">
-          <Link to="/" className="flex items-center gap-2 mr-2">
-            <img src={brandMark} alt="MemeBattles" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-base">MemeBattles</span>
+          <Link to="/" className="flex items-center mr-2">
+            <img src={brandMark} alt="MemeWarzone" className="h-10 md:h-12 w-auto" draggable={false} />
           </Link>
 
           <div className="flex items-center gap-1">

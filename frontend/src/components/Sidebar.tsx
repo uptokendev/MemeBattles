@@ -9,7 +9,7 @@ import { SocialTooltip } from "./ui/social-media";
 import { navItems, socialLinks } from "@/constants/navigation";
 
 // Use public brand assets so we can swap without touching the build pipeline.
-const brandMark = "/assets/ticker.png";
+const brandMark = "/assets/logo.png";
 
 interface SidebarProps {
   mobileMenuOpen: boolean;
@@ -42,10 +42,9 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
           <X className="h-5 w-5" />
         </button>
 
-        <div className="p-6 pl-4 flex items-center gap-3">
-          <a href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3">
-            <img src={brandMark} alt="Meme Battles" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-sm">MemeBattles</span>
+        <div className="p-6 pl-4 flex items-center">
+          <a href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center">
+            <img src={brandMark} alt="MemeWarzone" className="h-10 w-auto max-w-[160px]" draggable={false} />
           </a>
         </div>
 

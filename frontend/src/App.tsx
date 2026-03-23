@@ -50,7 +50,7 @@ const App = () => {
           }`}
         >
           <BrowserRouter>
-            <div className="h-screen overflow-hidden bg-black flex flex-col">
+            <div className="h-screen overflow-hidden bg-transparent flex flex-col">
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               {/*
