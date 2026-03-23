@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { ENV } from "./env.js";
+import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel } from "./ably.js";
 import { runIndexerOnce } from "./indexer.js";
@@ -34,27 +35,54 @@ const wrap =
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 
-const allowedOrigins = new Set([
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://memebattles.vercel.app",
-  "https://meme-battles.vercel.app",
-]);
+const allowedOrigins = new Set(
+  [
+   "http://localhost:5173",
+   "http://localhost:3000",
+   "http://localhost:8080",
+   "http://localhost:8081",
+   "https://memewarzone.netlify.app",
+  "https://memewar.zone",
+  "https://www.memewar.zone",
+  ]
+    .concat(
+      String(process.env.CORS_ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+);
+
 
 function isAllowedOrigin(origin?: string) {
   if (!origin) return true; // allow non-browser (curl, server-to-server)
   if (allowedOrigins.has(origin)) return true;
 
-  // Allow Vercel preview deployments for this project:
-  // e.g. https://memebattles-git-somebranch-uptokendev.vercel.app
-  // If you have a custom pattern, adjust as needed.
   try {
     const u = new URL(origin);
     const host = u.hostname.toLowerCase();
-    if (host.endsWith(".vercel.app") && (host.includes("memebattles") || host.includes("meme-battles"))) {
+
+    // Current production/custom domains
+    if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) {
       return true;
     }
-    if (host.includes("meme-battles")) return true;
+
+    // Netlify deploy previews / branch deploys
+    if (host.endsWith(".netlify.app")) {
+      return true;
+    }
+
+    // Old Vercel previews
+    if (
+      host.endsWith(".vercel.app") &&
+      (host.includes("memebattles") || host.includes("meme-battles") || host.includes("memewar"))
+    ) {
+      return true;
+    }
+
+    if (host.includes("meme-battles") || host.includes("memebattles") || host.includes("memewar")) {
+      return true;
+    }
   } catch {
     // ignore invalid origin
   }
@@ -62,16 +90,13 @@ function isAllowedOrigin(origin?: string) {
   return false;
 }
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      cb(null, isAllowedOrigin(origin));
-    },
-    credentials: false,
-  })
-);
-app.options("*", cors());
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, cb) => cb(null, isAllowedOrigin(origin)),
+  credentials: false,
+};
 
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 // Extremely lightweight health (no DB). Safe for frequent monitoring.
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
