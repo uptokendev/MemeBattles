@@ -6,11 +6,10 @@ const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").t
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
 
 function getAuthBase() {
-  const raw =
-    ABLY_AUTH_BASE ||
-    (typeof window !== "undefined" ? window.location.origin : "") ||
-    REALTIME_API_BASE;
-  return String(raw || "").replace(/\/$/, "");
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, "");
+  }
+  return "";
 }
 
 type Entry = {
@@ -32,8 +31,7 @@ function channelNameFor(chainId: number, campaign: string) {
 }
 
 function authUrlFor(chainId: number, campaign: string) {
-  const base = getAuthBase();
-  return `${base}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`;
+  return `${getAuthBase()}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`;
 }
 
 function acquire(chainId: number, campaign: string) {
