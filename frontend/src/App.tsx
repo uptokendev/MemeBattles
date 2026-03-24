@@ -55,11 +55,10 @@ const App = () => {
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               {/*
                 TopBar is fixed-position, so main content needs top padding.
-                pt-14 (~56px) matches the TopBar height more closely and removes the
-                extra dead space above the hero/logo.
+                pt-20/pt-24 offsets the fixed TopBar so hero logos sit fully below it.
               */}
               {/* Allow page scrolling inside the app shell */}
-              <main className="flex-1 overflow-auto pt-4 px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
+              <main className="flex-1 overflow-auto pt-[4.75rem] md:pt-[5.25rem] px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
                 <Routes>
                   <Route path="/" element={<Showcase />} />
                   <Route path="/create" element={<Create />} />

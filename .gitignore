@@ -5,3 +5,6 @@ coverage
 coverage.json
 dist
 .env
+
+# Local Netlify folder
+.netlify

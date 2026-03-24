@@ -17,7 +17,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
             className="h-[10px] md:h-[10px] opacity-90"
             style={{
               background:
-                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,229,92,0.7) 25%, rgba(255,159,28,0.8) 50%, rgba(255,59,59,0.75) 75%, rgba(0,0,0,0) 100%)",
+                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(57,227,23,0.14) 18%, rgba(240,106,26,0.68) 48%, rgba(255,72,24,0.55) 72%, rgba(0,0,0,0) 100%)",
               filter: "blur(0.2px)",
             }}
           />
@@ -25,7 +25,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
             className="h-px"
             style={{
               background:
-                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(255,229,92,0.35) 25%, rgba(255,159,28,0.45) 50%, rgba(255,59,59,0.35) 75%, rgba(0,0,0,0) 100%)",
+                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(57,227,23,0.08) 18%, rgba(240,106,26,0.42) 48%, rgba(255,72,24,0.28) 72%, rgba(0,0,0,0) 100%)",
             }}
           />
         </div>
@@ -34,8 +34,8 @@ export function HeaderBand({ className }: HeaderBandProps) {
         <div className="absolute inset-0 flex items-center justify-center">
           <img
             src="/assets/logo.png"
-            alt="Meme Battles"
-            className="h-[200px] md:h-[200px] lg:h-[200px] w-auto drop-shadow-[0_0_18px_rgba(255,160,0,0.35)]"
+            alt="MemeWarzone"
+            className="h-[200px] md:h-[200px] lg:h-[200px] w-auto drop-shadow-[0_0_22px_rgba(240,106,26,0.22)]"
             draggable={false}
           />
         </div>

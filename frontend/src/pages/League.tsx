@@ -625,11 +625,11 @@ useEffect(() => {
             <div className="flex flex-col items-center text-center md:hidden">
               <img
                 src="/assets/logo.png"
-                alt="MemeBattles"
-                className="mt-10 h-[200px] w-[200px] object-contain select-none"
+                alt="MemeWarzone"
+                className="mt-2 h-[148px] w-[148px] object-contain select-none sm:h-[168px] sm:w-[168px]"
                 draggable={false}
               />
-              <div className="-mt-14 text-sm md:text-base text-muted-foreground leading-none">
+              <div className="-mt-8 text-sm md:text-base text-muted-foreground leading-none">
                 Create. Compete. Conquer.
               </div>
             </div>
@@ -638,7 +638,7 @@ useEffect(() => {
             <div className="hidden md:flex absolute left-1/2 top-[100%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
               <img
                 src="/assets/logo.png"
-                alt="MemeBattles"
+                alt="MemeWarzone"
                 className="h-[200px] w-[200px] object-contain select-none"
                 draggable={false}
               />
@@ -656,14 +656,14 @@ useEffect(() => {
               {/* KPI row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {/* Total pool in TreasuryVault (single global pool) */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
                   <div className="text-xs text-muted-foreground">Total prize pool</div>
                   <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">TreasuryVault (on-chain) · updated hourly</div>
                 </div>
 
                 {/* Fixed (toggle-independent) epoch pools */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
                   <div className="text-xs text-muted-foreground">Current epoch pools</div>
 
                   <div className="mt-2 flex items-baseline justify-between gap-3">
@@ -680,7 +680,7 @@ useEffect(() => {
                 </div>
 
                 {/* Countdown for selected period */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs text-muted-foreground">League countdowns</div>
                     {live ? (
@@ -729,7 +729,7 @@ useEffect(() => {
                   }}
                   role="button"
                   tabIndex={0}
-                  className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)] h-[240px] md:h-[280px] flex flex-col"
+                  className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.16),0_18px_50px_-22px_rgba(240,106,26,0.28)] h-[240px] md:h-[280px] flex flex-col"
                 >
                   {/* Image box (50%) */}
                   <div className="relative flex-1">
@@ -809,7 +809,7 @@ useEffect(() => {
         {/* Right rail (fixed width; self-scroll) */}
         <aside className="shrink-0 w-full lg:w-[520px]">
           <div className="space-y-4 lg:sticky lg:top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto pr-1">
-            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
               <div className="text-sm font-semibold">Current #1s</div>
               <div className="text-[11px] text-muted-foreground">The current top spot for each league</div>
               <div className="mt-3 space-y-2">
@@ -827,7 +827,7 @@ useEffect(() => {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.12),0_14px_40px_-22px_rgba(255,120,0,0.30)]">
+            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
               <div className="text-sm font-semibold">Campaigns Created</div>
               <div className="text-[11px] text-muted-foreground">Phase 1: total only · Phase 2: newest campaigns feed</div>
               <div className="mt-3 rounded-xl border border-border/30 bg-card/55 px-3 py-3">

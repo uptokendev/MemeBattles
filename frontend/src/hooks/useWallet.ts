@@ -140,21 +140,43 @@ export function useWallet(): WalletHook {
     };
   }, [bindEip1193Listeners]);
 
-  // Helper: pick a specific injected wallet
-  const pickInjected = (wallet: WalletType | undefined) => {
+  const getInjectedProviders = () => {
     const anyWindow = window as any;
     const ethereum = anyWindow.ethereum;
-    if (!ethereum) return null;
+    const seen = new Set<any>();
+    const providers: any[] = [];
 
-    const providers = ethereum.providers || [ethereum];
+    const push = (candidate: any) => {
+      if (!candidate || seen.has(candidate) || typeof candidate.request !== "function") return;
+      seen.add(candidate);
+      providers.push(candidate);
+    };
+
+    if (Array.isArray(ethereum?.providers)) {
+      ethereum.providers.forEach(push);
+    }
+
+    push(ethereum);
+    push(anyWindow.BinanceChain);
+    push(anyWindow.binanceChain);
+
+    return providers;
+  };
+
+  // Helper: pick a specific injected wallet
+  const pickInjected = (wallet: WalletType | undefined) => {
+    const providers = getInjectedProviders();
+    if (!providers.length) return null;
 
     if (wallet === "metamask") {
       return providers.find((p: any) => p.isMetaMask) || providers[0];
     }
 
     if (wallet === "binance") {
-      // Many Binance wallets expose isBinance or similar
-      return providers.find((p: any) => p.isBinance) || providers[0];
+      return (
+        providers.find((p: any) => p.isBinance || p.isBinanceChain || p?.providerInfo?.name?.toLowerCase?.().includes("binance")) ||
+        providers[0]
+      );
     }
 
     // Generic injected fallback

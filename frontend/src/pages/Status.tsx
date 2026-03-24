@@ -96,7 +96,7 @@ export default function Status() {
       <div className="max-w-5xl mx-auto">
         <Card className="bg-card/60 backdrop-blur border-border">
           <CardHeader>
-            <CardTitle className="font-retro text-lg">MemeBattles Status (Private)</CardTitle>
+            <CardTitle className="font-retro text-lg">MemeWarzone Status (Private)</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">

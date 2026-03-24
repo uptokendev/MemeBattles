@@ -144,22 +144,22 @@ const GlowingEffect = memo(
                   var(--black),
                   var(--black) calc(25% / var(--repeating-conic-gradient-times))
                 )`
-                  : `radial-gradient(circle, #7CFC00 10%, #7CFC0000 20%),
-                radial-gradient(circle at 30% 30%, #FFB6C1 8%, #FFB6C100 18%),
-                radial-gradient(circle at 70% 70%, #00FFFF 10%, #00FFFF00 20%),
-                radial-gradient(circle at 50% 80%, #FFFFE0 6%, #FFFFE000 16%),
-                radial-gradient(circle at 40% 60%, #FFFFFF 5%, #FFFFFF00 15%),
+                  : `radial-gradient(circle, rgba(57,227,23,0.85) 10%, rgba(57,227,23,0) 20%),
+                radial-gradient(circle at 30% 30%, rgba(240,106,26,0.65) 8%, rgba(240,106,26,0) 18%),
+                radial-gradient(circle at 70% 70%, rgba(255,86,32,0.7) 10%, rgba(255,86,32,0) 20%),
+                radial-gradient(circle at 50% 80%, rgba(122,139,90,0.35) 6%, rgba(122,139,90,0) 16%),
+                radial-gradient(circle at 40% 60%, rgba(255,255,255,0.18) 5%, rgba(255,255,255,0) 15%),
                 repeating-conic-gradient(
                   from 236.84deg at 50% 50%,
-                  #7CFC00 0%,
-                  #00FF00 calc(12.5% / var(--repeating-conic-gradient-times)),
-                  #32CD32 calc(25% / var(--repeating-conic-gradient-times)),
-                  #00FFFF calc(37.5% / var(--repeating-conic-gradient-times)),
-                  #9ACD32 calc(50% / var(--repeating-conic-gradient-times)),
-                  #FFB6C1 calc(62.5% / var(--repeating-conic-gradient-times)),
-                  #FFFFE0 calc(75% / var(--repeating-conic-gradient-times)),
-                  #FFFFFF calc(87.5% / var(--repeating-conic-gradient-times)),
-                  #7CFC00 calc(100% / var(--repeating-conic-gradient-times))
+                  rgba(57,227,23,0.95) 0%,
+                  rgba(122,139,90,0.9) calc(12.5% / var(--repeating-conic-gradient-times)),
+                  rgba(240,106,26,0.95) calc(25% / var(--repeating-conic-gradient-times)),
+                  rgba(255,86,32,0.9) calc(37.5% / var(--repeating-conic-gradient-times)),
+                  rgba(58,64,72,0.85) calc(50% / var(--repeating-conic-gradient-times)),
+                  rgba(240,106,26,0.85) calc(62.5% / var(--repeating-conic-gradient-times)),
+                  rgba(122,139,90,0.85) calc(75% / var(--repeating-conic-gradient-times)),
+                  rgba(255,255,255,0.22) calc(87.5% / var(--repeating-conic-gradient-times)),
+                  rgba(57,227,23,0.95) calc(100% / var(--repeating-conic-gradient-times))
                 )`,
             } as React.CSSProperties
           }

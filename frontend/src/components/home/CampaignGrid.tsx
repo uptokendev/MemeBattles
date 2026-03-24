@@ -411,11 +411,11 @@ const { patchByCampaign, created } = useLeagueRealtime({
       </div>
 
       {loading && !vms.length ? (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
+        <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
-              className="aspect-[1/2] w-full max-w-[clamp(160px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
+              className="aspect-[1/2] w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
             />
           ))}
         </div>
@@ -425,7 +425,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
         <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
       ) : (
         <>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 justify-items-center">
+          <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
             {vms.map((vm) => (
               <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />
             ))}

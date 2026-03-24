@@ -41,7 +41,7 @@ const Showcase = () => {
         <div className="-translate-y-6 md:-translate-y-14">
           {/* Mobile: show the league card above featured */}
           <div className="md:hidden mt-2 mb-5">
-            <LeagueOverlayCard className="w-full max-w-[460px] mx-auto" />
+            <LeagueOverlayCard className="w-full max-w-[420px] mx-auto" />
           </div>
 
           {/* Desktop: side-by-side so the league card has a fixed slot next to Featured */}
@@ -49,7 +49,7 @@ const Showcase = () => {
             <div className="flex-1 min-w-0">
               <FeaturedCampaigns />
             </div>
-            <div className="w-[300px] shrink-0">
+            <div className="w-[420px] shrink-0">
               <LeagueOverlayCard className="w-full" />
             </div>
           </div>

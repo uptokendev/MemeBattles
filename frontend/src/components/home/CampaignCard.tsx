@@ -122,7 +122,7 @@ export function CampaignCard({
   return (
     <div
       className={cn(
-        "group relative flex w-full max-w-[clamp(160px,20vw,210px)] flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
+        "group relative flex w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
         "transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]",
         className
       )}
@@ -147,7 +147,7 @@ export function CampaignCard({
       </button>
 
       {/* Content */}
-      <div className="flex aspect-square flex-col p-4">
+      <div className="flex aspect-square flex-col p-3 sm:p-4">
         {/* Title + upvotes */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -170,7 +170,7 @@ export function CampaignCard({
   className={cn(
     "h-4 w-4 transition-all",
     followed
-      ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+      ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
       : "text-muted-foreground/70"
   )}
 />

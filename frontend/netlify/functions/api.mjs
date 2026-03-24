@@ -56,6 +56,10 @@ router.all("/upload", upload);
 router.all("/vote_counts", voteCounts);
 router.all("/votes", votes);
 
+// Netlify Functions commonly invoke this handler with the function mount already
+// stripped from the path, so requests arrive as "/campaigns", "/featured", etc.
+// Mount at root for local Netlify Dev, and also keep "/api" for compatibility.
+app.use(router);
 app.use("/api", router);
 
 export const handler = serverless(app);

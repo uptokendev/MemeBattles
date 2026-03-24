@@ -3,7 +3,7 @@ import React from 'react';
 // --- Reusable UI Element Components ---
 
 export const DataReadout = ({ value }: { value: string }) => (
-    <div className="font-['Orbitron'] text-cyan-400 text-4xl" style={{ textShadow: '0 0 5px var(--cyan-glow)' }}>
+    <div className="font-['Orbitron'] text-accent text-4xl" style={{ textShadow: '0 0 5px var(--cyan-glow)' }}>
         {value}
     </div>
 );
@@ -40,7 +40,7 @@ export const GlowingOrb = ({ color }: { color?: string }) => (
         className="glowing-orb"
         style={{ 
             '--orb-color': color || 'var(--cyan-bright)',
-            '--orb-glow': color ? '#FF8C00' : 'var(--cyan-glow)'
+            '--orb-glow': color ? '#ff6b1a' : 'var(--cyan-glow)'
         } as React.CSSProperties}
     ></div>
 );

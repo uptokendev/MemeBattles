@@ -15,6 +15,7 @@ import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useTokenSearch } from "@/hooks/useTokenSearch";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { toast } from "sonner";
 
 interface TopBarProps {
   mobileMenuOpen: boolean;
@@ -31,7 +32,7 @@ type TickerItem = {
 };
 
 // Public brand asset (no bundler import required)
-const brandMark = "/assets/logo.png";
+const brandMark = "/assets/ticker.png";
 
 export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
@@ -67,7 +68,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       : wallet.account;
 
   // Match the primary button styling used across the app
-  const topbarButtonClass = "bg-accent hover:bg-accent/90 text-accent-foreground font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-lg";
+  const topbarButtonClass = "border border-accent/35 bg-primary/90 text-foreground hover:border-accent/60 hover:bg-primary font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.10)]";
 
   const openWalletModal = () => {
     // You can decide: allow switching wallet even when connected or not
@@ -89,9 +90,14 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     try {
       await wallet.connect(type);
       setWalletModalOpen(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      // Optional: add toast here if you want feedback
+      const message = String(e?.message ?? "Wallet connection failed");
+      toast.error(
+        message.includes("No EVM wallet found")
+          ? "No injected wallet found. On mobile, open MemeWarzone inside your wallet browser."
+          : message
+      );
     }
   };
 
@@ -231,9 +237,19 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return location.pathname.startsWith(path);
   };
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname, setMobileMenuOpen]);
+
+  useEffect(() => {
+    const onOpenWalletModal = () => setWalletModalOpen(true);
+    window.addEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
+    return () => window.removeEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
+  }, []);
+
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="flex items-center justify-between px-4 md:px-6 py-3">
+      <div className="mx-2 md:mx-4 mt-2 flex items-center justify-between rounded-2xl border border-border/70 bg-[linear-gradient(180deg,rgba(23,26,31,0.82),rgba(11,13,16,0.92))] px-4 md:px-6 py-3 shadow-[0_22px_50px_-30px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.08)] backdrop-blur-xl">
         {/* Mobile Menu Button */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -245,8 +261,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
         {/* Desktop nav */}
         <div className="hidden lg:flex items-center gap-4 flex-1">
-          <Link to="/" className="flex items-center mr-2">
-            <img src={brandMark} alt="MemeWarzone" className="h-10 md:h-12 w-auto" draggable={false} />
+          <Link to="/" className="flex items-center gap-2 mr-2">
+            <img src={brandMark} alt="MemeWarzone" className="h-10 w-10" draggable={false} />
+            <span className="font-retro text-base">MemeWarzone</span>
           </Link>
 
           <div className="flex items-center gap-1">
@@ -257,8 +274,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                 className={cn(
                   "px-3 py-2 rounded-xl text-base font-retro transition-colors border",
                   isActive(item.path)
-                    ? "bg-card/60 border-amber-400/40 text-amber-200"
-                    : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/30"
+                    ? "bg-card/80 border-accent/40 text-foreground shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_30px_-22px_rgba(240,106,26,0.35)]"
+                    : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/50"
                 )}
               >
                 {item.label}
@@ -268,7 +285,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
 
         {/* Search */}
-        <div className="flex-none w-32 sm:flex-1 sm:max-w-xs md:max-w-md mx-2 md:mx-0 lg:mx-6">
+        <div className="min-w-0 flex-none w-28 sm:flex-1 sm:max-w-xs md:max-w-md mx-1.5 md:mx-0 lg:mx-6">
           <SearchBar
             placeholder="Search campaigns..."
             value={searchQuery}
@@ -277,7 +294,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               // Also broadcast to the Home grid as an optional "filter-in-place" search.
               // Pages that don't care can ignore this event.
               try {
-                window.dispatchEvent(new CustomEvent("MemeBattles:homeSearch", { detail: String(q ?? "") }));
+                window.dispatchEvent(new CustomEvent("memebattles:homeSearch", { detail: String(q ?? "") }));
               } catch {
                 // ignore
               }
@@ -295,7 +312,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         {/* Right side actions */}
         <div className="flex items-center gap-2 md:gap-3">
           {/* Primary CTA */}
-          <Button onClick={() => navigate("/create")} className={topbarButtonClass}>
+          <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
           </Button>
@@ -317,7 +334,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
             {/* Disconnect dropdown */}
             {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
+              <div className="absolute right-0 mt-1 w-32 rounded-xl border border-border/70 bg-card/95 backdrop-blur-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] z-50">
                 <button
                   className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
                   onClick={() => {
@@ -337,7 +354,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       {/* Wallet selection modal */}
       {walletModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-2xl shadow-xl w-[90%] max-w-sm p-4 md:p-6 space-y-4">
+          <div className="bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] border border-border/80 rounded-3xl shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(240,106,26,0.10)] w-[90%] max-w-sm p-4 md:p-6 space-y-4 backdrop-blur-xl">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
               <button
@@ -357,7 +374,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* MetaMask / Rabby / browser wallet */}
               <button
                 onClick={() => handleWalletSelect("metamask")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">MetaMask</p>
@@ -373,7 +390,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* Binance Wallet */}
               <button
                 onClick={() => handleWalletSelect("binance")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
@@ -389,7 +406,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               {/* Generic injected fallback */}
               <button
                 onClick={() => handleWalletSelect("injected")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
               >
                 <div>
                   <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>

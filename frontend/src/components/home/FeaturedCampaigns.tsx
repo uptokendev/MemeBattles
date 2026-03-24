@@ -489,7 +489,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                 className={cn(
                   "snap-start shrink-0 rounded-2xl border border-border/40 bg-card/40 animate-pulse",
                   // responsive width so it never becomes tiny
-                  "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
+                  "min-w-[280px] w-[calc(100vw-2rem)] max-w-[340px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
               >
                 <div className="aspect-[2/1]" />
@@ -508,7 +508,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                 className={cn(
                   "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors",
                   // ✅ this prevents “tiny cards” on small screens
-                  "min-w-[320px] w-[92vw] max-w-[420px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
+                  "min-w-[280px] w-[calc(100vw-2rem)] max-w-[340px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
                 )}
                 role="button"
                 tabIndex={0}
@@ -638,7 +638,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
       title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
     >
-      <Star className={cn("h-4 w-4 transition-all", (followedMap[c.addr] ?? false) ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+      <Star className={cn("h-4 w-4 transition-all", (followedMap[c.addr] ?? false) ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
       : "text-muted-foreground/70")} />
     </Button>
 

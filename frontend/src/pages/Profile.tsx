@@ -348,7 +348,13 @@ const Profile = () => {
   };
 
   const handleConnect = async () => {
-    // Try common hook patterns
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
+      }
+    } catch {}
+
     if (typeof anyWallet?.connect === "function") return anyWallet.connect();
     if (typeof anyWallet?.openConnectModal === "function") return anyWallet.openConnectModal();
 

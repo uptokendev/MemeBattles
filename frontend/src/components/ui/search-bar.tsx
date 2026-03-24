@@ -167,10 +167,8 @@ const SearchBar = ({
           transition={{ duration: Math.random() * 0.8 + 0.5, ease: "easeOut" }}
           className="absolute w-3 h-3 rounded-full"
           style={{
-            background: `rgba(${Math.floor(Math.random() * 255)}, ${Math.floor(
-              Math.random() * 200
-            ) + 55}, ${Math.floor(Math.random() * 255)}, 0.8)`,
-            boxShadow: "0 0 8px rgba(255, 255, 255, 0.8)",
+            background: ["rgba(240,106,26,0.85)", "rgba(255,86,32,0.85)", "rgba(57,227,23,0.65)"][i % 3],
+            boxShadow: "0 0 10px rgba(240,106,26,0.38)",
           }}
         />
       ))
@@ -182,14 +180,14 @@ const SearchBar = ({
       <motion.form
         onSubmit={handleSubmit}
         className="relative flex items-center justify-center w-full mx-auto"
-        initial={{ width: isMobile ? "170px" : "240px" }}
+        initial={{ width: isMobile ? "148px" : "240px" }}
         animate={{
           width: isFocused
             ? isMobile
-              ? "220px"
+              ? "190px"
               : "340px"
             : isMobile
-            ? "170px"
+            ? "148px"
             : "240px",
           scale: isFocused ? 1.05 : 1,
         }}
@@ -217,10 +215,10 @@ const SearchBar = ({
               animate={{
                 opacity: 0.15,
                 background: [
-                  "linear-gradient(90deg, #f6d365 0%, #fda085 100%)",
-                  "linear-gradient(90deg, #a1c4fd 0%, #c2e9fb 100%)",
-                  "linear-gradient(90deg, #d4fc79 0%, #96e6a1 100%)",
-                  "linear-gradient(90deg, #f6d365 0%, #fda085 100%)",
+                  "linear-gradient(90deg, rgba(57,227,23,0.10) 0%, rgba(240,106,26,0.18) 48%, rgba(255,72,24,0.10) 100%)",
+                  "linear-gradient(90deg, rgba(33,38,45,0.08) 0%, rgba(240,106,26,0.16) 50%, rgba(57,227,23,0.10) 100%)",
+                  "linear-gradient(90deg, rgba(57,227,23,0.08) 0%, rgba(240,106,26,0.16) 45%, rgba(33,38,45,0.10) 100%)",
+                  "linear-gradient(90deg, rgba(57,227,23,0.10) 0%, rgba(240,106,26,0.18) 48%, rgba(255,72,24,0.10) 100%)",
                 ],
               }}
               transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
@@ -253,9 +251,9 @@ const SearchBar = ({
 
           {clickParticles}
 
-          <motion.div className="pl-4 py-3" variants={searchIconVariants} initial="initial" animate="animate">
+          <motion.div className="pl-3 sm:pl-4 py-2.5 sm:py-3" variants={searchIconVariants} initial="initial" animate="animate">
             <Search
-              size={20}
+              size={isMobile ? 18 : 20}
               strokeWidth={isFocused ? 2.5 : 2}
               className={cn(
                 "transition-all duration-300",
@@ -285,7 +283,7 @@ const SearchBar = ({
               }
             }}
             className={cn(
-              "w-full py-3 bg-transparent outline-none placeholder:text-muted-foreground font-medium text-base relative z-10",
+              "w-full py-2.5 sm:py-3 bg-transparent outline-none placeholder:text-muted-foreground font-medium text-sm sm:text-base relative z-10",
               isFocused ? "text-foreground tracking-wide" : "text-foreground/80"
             )}
           />
@@ -302,7 +300,7 @@ const SearchBar = ({
                   boxShadow: "0 10px 25px -5px hsl(var(--accent) / 0.5)",
                 }}
                 whileTap={{ scale: 0.95 }}
-                className="px-4 py-2 mr-2 text-sm font-medium rounded-full bg-accent text-accent-foreground backdrop-blur-sm transition-all shadow-lg hover:shadow-glow-accent"
+                className="px-3 sm:px-4 py-2 mr-2 text-xs sm:text-sm font-medium rounded-full border border-accent/35 bg-primary/95 text-foreground backdrop-blur-sm transition-all shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.10)] hover:border-accent/60 hover:shadow-glow-accent"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
               </motion.button>

@@ -133,7 +133,7 @@ const TokenDetails = () => {
   const ctaTabsTriggerClass =
     "rounded-xl border px-3 py-2 font-retro text-xs md:text-sm transition-colors " +
     "bg-transparent border-border/40 text-muted-foreground hover:text-foreground hover:bg-card/30 " +
-    "data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:border-amber-400/40 data-[state=active]:shadow-lg";
+    "data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:border-accent/40 data-[state=active]:shadow-lg";
 
   useEffect(() => {
     try {
@@ -1498,7 +1498,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                                 aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
                                 title={isFollowing ? "Unfollow" : "Follow"}
                               >
-                                <Star className={isFollowing ? "text-yellow-400 fill-yellow-400 scale-110 drop-shadow-[0_0_10px_rgba(250,204,21,0.45)]"
+                                <Star className={isFollowing ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
       : "text-muted-foreground/70"} />
                               </Button>
 

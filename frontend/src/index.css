@@ -17,60 +17,64 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Pure black app canvas */
-    --background: 0 0% 0%;
-    --foreground: 0 0% 98%;
+    /* Warzone palette: scorched steel, ember orange, NVG green */
+    --background: 220 20% 6%;
+    --foreground: 45 22% 94%;
 
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 98%;
+    --card: 218 16% 12%;
+    --card-foreground: 45 18% 94%;
 
-    --popover: 0 0% 5%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 220 18% 8%;
+    --popover-foreground: 45 18% 94%;
 
-    --primary: 0 0% 15%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 218 15% 15%;
+    --primary-foreground: 45 18% 94%;
 
-    --secondary: 0 0% 10%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 218 14% 18%;
+    --secondary-foreground: 45 14% 92%;
 
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 218 13% 16%;
+    --muted-foreground: 214 12% 73%;
 
-    /* brand = #af7f23 */
-    --accent: 39.43 66.67% 41.18%;
-    --accent-foreground: 0 0% 3%;
+    --accent: 23 88% 52%;
+    --accent-foreground: 45 22% 96%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 2 78% 58%;
     --destructive-foreground: 0 0% 98%;
 
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
+    --success: 109 81% 49%;
+    --success-foreground: 220 20% 8%;
 
-    --border: 0 0% 15%;
-    --input: 0 0% 12%;
-    --ring: 39.43 66.67% 41.18%;
+    --border: 218 12% 24%;
+    --input: 218 15% 14%;
+    --ring: 23 88% 52%;
 
-    --radius: 0.75rem;
+    --radius: 0.9rem;
 
-    --glow-primary: 0 0% 15%;
-    --glow-accent: 39.43 66.67% 41.18%;
-    --glow-success: 142 76% 36%;
-    
-    --sidebar-background: 0 0% 0%;
-    --sidebar-foreground: 0 0% 70%;
-    --sidebar-primary: 39.43 66.67% 41.18%;
-    --sidebar-primary-foreground: 0 0% 3%;
-    --sidebar-accent: 0 0% 8%;
-    --sidebar-accent-foreground: 81 100% 50%;
-    --sidebar-border: 0 0% 12%;
-    --sidebar-ring: 39.43 66.67% 41.18%;
+    --glow-primary: 218 15% 18%;
+    --glow-accent: 23 88% 52%;
+    --glow-success: 109 81% 49%;
+    --glow-olive: 78 21% 45%;
 
-    --bg-primary: #080808;
-    --text-primary: #E6EDF3;
-    --cyan-glow: #00BFFF;
-    --cyan-bright: #00FFFF;
-    --cyan-border: rgba(0, 191, 255, 0.3);
-    --card-bg: linear-gradient(135deg, rgba(8, 8, 8, 0.4), rgba(15, 15, 15, 0.3));
+    --sidebar-background: 220 18% 8%;
+    --sidebar-foreground: 214 13% 79%;
+    --sidebar-primary: 23 88% 52%;
+    --sidebar-primary-foreground: 45 22% 96%;
+    --sidebar-accent: 218 15% 13%;
+    --sidebar-accent-foreground: 23 88% 52%;
+    --sidebar-border: 218 12% 22%;
+    --sidebar-ring: 23 88% 52%;
+
+    --bg-primary: #0b0d10;
+    --text-primary: #f2f2ee;
+    --cyan-glow: #f06a1a;
+    --cyan-bright: #39e317;
+    --cyan-border: rgba(240, 106, 26, 0.3);
+    --card-bg: linear-gradient(160deg, rgba(19, 23, 28, 0.82), rgba(11, 13, 16, 0.92));
+
+    --ember-rgb: 240, 106, 26;
+    --nvg-rgb: 57, 227, 23;
+    --steel-rgb: 58, 64, 72;
   }
 }
 
@@ -78,12 +82,57 @@ All colors MUST be HSL.
   * {
     @apply border-border;
   }
-a:hover {
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  a:hover {
     color: hsl(var(--accent));
   }
+
   body {
     @apply bg-background text-foreground;
-    font-size: 1.125rem; /* 18px - increased by 2pt from default 16px */
+    font-size: 1.125rem;
+    position: relative;
+    background-color: #0b0d10;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      linear-gradient(180deg, rgba(5, 7, 9, 0.82) 0%, rgba(7, 9, 11, 0.78) 35%, rgba(7, 8, 10, 0.92) 100%),
+      url('/assets/background.png') center / cover no-repeat;
+    background-attachment: fixed;
+    transform: translateZ(0);
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1000px 460px at 50% 88%, rgba(var(--ember-rgb), 0.22), transparent 58%),
+      radial-gradient(560px 280px at 15% 92%, rgba(var(--ember-rgb), 0.12), transparent 62%),
+      radial-gradient(560px 280px at 85% 90%, rgba(var(--ember-rgb), 0.1), transparent 64%),
+      linear-gradient(180deg, rgba(6, 7, 9, 0.06), rgba(6, 7, 9, 0.5));
+  }
+
+  #root {
+    position: relative;
+    isolation: isolate;
+  }
+
+  ::selection {
+    background: rgba(var(--ember-rgb), 0.28);
+    color: hsl(var(--foreground));
   }
 }
 
@@ -108,7 +157,7 @@ a:hover {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(0, 255, 255, 0.5), rgba(0, 191, 255, 0.3));
+  background: linear-gradient(135deg, rgba(var(--nvg-rgb), 0.24), rgba(var(--ember-rgb), 0.42));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -138,10 +187,10 @@ a:hover {
 .holo-card:hover {
   transform: scale(1.05) translateY(-8px);
   box-shadow: 
-    0 0 30px rgba(0, 255, 255, 0.4),
-    0 0 60px rgba(0, 191, 255, 0.3),
-    0 12px 40px rgba(0, 0, 0, 0.6);
-  border-color: rgba(0, 255, 255, 0.8);
+    0 0 24px rgba(var(--ember-rgb), 0.24),
+    0 0 54px rgba(var(--ember-rgb), 0.16),
+    0 18px 40px rgba(0, 0, 0, 0.72);
+  border-color: rgba(var(--ember-rgb), 0.55);
 }
 
 .holo-card:hover::before {
@@ -175,18 +224,18 @@ a:hover {
   border: 1px solid var(--cyan-border);
   border-radius: 6px;
   transition: all 0.2s ease;
-  background: rgba(0, 191, 255, 0.05);
+  background: rgba(var(--ember-rgb), 0.08);
 }
 
 .fake-link:hover {
-  background: rgba(0, 191, 255, 0.15);
+  background: rgba(var(--ember-rgb), 0.14);
   border-color: var(--cyan-bright);
   transform: translateY(-2px);
 }
 
 .holo-button {
   padding: 0.75rem 2rem;
-  background: linear-gradient(135deg, rgba(0, 191, 255, 0.2), rgba(0, 255, 255, 0.1));
+  background: linear-gradient(135deg, rgba(var(--ember-rgb), 0.16), rgba(var(--steel-rgb), 0.18));
   border: 1px solid var(--cyan-border);
   border-radius: 8px;
   color: var(--cyan-bright);
@@ -199,16 +248,16 @@ a:hover {
 }
 
 .holo-button:hover {
-  background: linear-gradient(135deg, rgba(0, 191, 255, 0.3), rgba(0, 255, 255, 0.2));
+  background: linear-gradient(135deg, rgba(var(--ember-rgb), 0.22), rgba(var(--steel-rgb), 0.24));
   border-color: var(--cyan-bright);
-  box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+  box-shadow: 0 0 20px rgba(var(--ember-rgb), 0.28);
   transform: translateY(-2px);
 }
 
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: rgba(13, 37, 63, 0.6);
+  background: rgba(18, 22, 27, 0.8);
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--cyan-border);
@@ -373,42 +422,42 @@ a:hover {
     @apply relative z-10 rounded-full;
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.15),
-      rgba(255, 255, 255, 0.05)
+      rgba(71, 78, 88, 0.22),
+      rgba(20, 24, 29, 0.72)
     );
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(var(--ember-rgb), 0.16);
     box-shadow: 
-      0 8px 32px 0 rgba(31, 38, 135, 0.15),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
-      inset 0 -1px 0 0 rgba(0, 0, 0, 0.1);
+      0 18px 40px -28px rgba(0, 0, 0, 0.95),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      inset 0 0 0 1px rgba(var(--ember-rgb), 0.08);
   }
   
   .glass-button:hover {
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.2),
-      rgba(255, 255, 255, 0.1)
+      rgba(78, 86, 96, 0.28),
+      rgba(26, 30, 36, 0.82)
     );
     box-shadow: 
-      0 8px 32px 0 rgba(31, 38, 135, 0.25),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
-      inset 0 -1px 0 0 rgba(0, 0, 0, 0.1);
+      0 18px 40px -26px rgba(0, 0, 0, 0.98),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+      inset 0 0 0 1px rgba(var(--ember-rgb), 0.16);
   }
   
   .glass-button:active {
     transform: translateY(1px);
     box-shadow: 
-      0 4px 16px 0 rgba(31, 38, 135, 0.2),
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
-      inset 0 -1px 0 0 rgba(0, 0, 0, 0.15);
+      0 12px 24px -20px rgba(0, 0, 0, 0.95),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+      inset 0 0 0 1px rgba(var(--ember-rgb), 0.12);
   }
   
   .glass-button-shadow {
     @apply absolute inset-0 -z-10;
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.05),
+      rgba(var(--ember-rgb), 0.12),
       rgba(255, 255, 255, 0.02)
     );
     filter: blur(8px);
@@ -419,14 +468,4 @@ a:hover {
     @apply text-foreground;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
-}
-
-
-/* Global battlefield background */
-body {
-  background-image: linear-gradient(rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.58)), url('/assets/background.png');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
 }

@@ -11,9 +11,10 @@ interface NavOption {
 
 interface AnimatedNavProps {
   options: NavOption[]
+  onNavigate?: () => void
 }
 
-export default function AnimatedNav({ options }: AnimatedNavProps) {
+export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const selectedValue = location.pathname
@@ -21,9 +22,11 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
   const handleChange = (path: string) => {
     if (/^https?:\/\//i.test(path)) {
       window.open(path, "_blank", "noopener,noreferrer")
+      onNavigate?.()
       return
     }
     navigate(path)
+    onNavigate?.()
   }
 
   const makeId = (label: string) =>
@@ -68,7 +71,7 @@ export default function AnimatedNav({ options }: AnimatedNavProps) {
                 alt={option.label} 
                 className={`w-5 h-5 transition-all duration-300 ${
                   selectedValue === option.path
-                    ? "[filter:brightness(0)_saturate(100%)_invert(88%)_sepia(89%)_saturate(2686%)_hue-rotate(16deg)_brightness(104%)_contrast(104%)]"
+                    ? "[filter:brightness(0)_saturate(100%)_invert(50%)_sepia(88%)_saturate(1567%)_hue-rotate(355deg)_brightness(101%)_contrast(92%)]"
                     : "opacity-70"
                 }`}
               />
