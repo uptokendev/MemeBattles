@@ -1,4 +1,4 @@
 export const siteConfig = {
-  title: 'MemeBattles Docs',
-  mainSiteUrl: 'https://memebattles.gg'
+  title: 'MemeWarzone Docs',
+  mainSiteUrl: 'https://memewar.zone'
 }

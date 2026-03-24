@@ -43,15 +43,12 @@ export default function DocPage() {
 
   if (!raw) {
     return (
-      <div className="rounded-2xl border border-mb-border bg-mb-panel/70 p-8">
-        <h1 className="text-2xl font-bold mb-2">Page not found</h1>
-        <p className="text-mb-muted mb-6">
+      <div className="mb-panel rounded-[1.75rem] p-8">
+        <h1 className="mb-2 text-2xl font-bold">Page not found</h1>
+        <p className="mb-6 text-mb-muted">
           The route <code>{path}</code> does not exist yet.
         </p>
-        <Link
-          to="/getting-started"
-          className="inline-flex px-4 py-2 rounded-xl border border-mb-border bg-mb-panel2 hover:shadow-glow"
-        >
+        <Link to="/getting-started" className="mb-outline-button inline-flex rounded-2xl px-4 py-2.5">
           Go to Getting Started
         </Link>
       </div>
@@ -59,12 +56,15 @@ export default function DocPage() {
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_260px] gap-8">
+    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
       <article className="min-w-0">
-        <div className="rounded-2xl border border-mb-border bg-mb-panel/70 p-8">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-mb-text">{title}</h1>
-            {description && <p className="text-mb-muted mt-2">{description}</p>}
+        <div className="mb-panel rounded-[1.9rem] p-6 sm:p-8 lg:p-9">
+          <div className="mb-8 border-b border-mb-border/40 pb-6">
+            <div className="mb-3 inline-flex items-center rounded-full border border-mb-accent/30 bg-mb-panel2/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-mb-accent2 shadow-[0_0_22px_rgba(240,106,26,0.08)]">
+              MemeWarzone Docs
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-mb-text sm:text-4xl">{title}</h1>
+            {description && <p className="mt-3 max-w-3xl text-mb-muted">{description}</p>}
           </div>
 
           <div className="prose-mb text-mb-text">
@@ -80,7 +80,7 @@ export default function DocPage() {
                       .toLowerCase()
                       .replace(/[^a-z0-9\s-]/g, '')
                       .replace(/\s+/g, '-')
-                    return <h2 id={id} className="text-2xl font-semibold mt-10 mb-4" {...props} />
+                    return <h2 id={id} className="mt-12 mb-4 text-2xl font-semibold text-mb-text" {...props} />
                   },
                   h3: ({ node, ...props }) => {
                     const text = String(props.children)
@@ -88,16 +88,16 @@ export default function DocPage() {
                       .toLowerCase()
                       .replace(/[^a-z0-9\s-]/g, '')
                       .replace(/\s+/g, '-')
-                    return <h3 id={id} className="text-xl font-semibold mt-8 mb-3" {...props} />
+                    return <h3 id={id} className="mt-8 mb-3 text-xl font-semibold text-mb-text" {...props} />
                   },
-                  p: ({ node, ...props }) => <p className="leading-7 text-mb-text/95 my-4" {...props} />,
-                  ul: ({ node, ...props }) => <ul className="list-disc pl-6 my-4 space-y-2" {...props} />,
-                  ol: ({ node, ...props }) => <ol className="list-decimal pl-6 my-4 space-y-2" {...props} />,
+                  p: ({ node, ...props }) => <p className="my-4 leading-7 text-mb-text/95" {...props} />,
+                  ul: ({ node, ...props }) => <ul className="my-4 list-disc space-y-2 pl-6" {...props} />,
+                  ol: ({ node, ...props }) => <ol className="my-4 list-decimal space-y-2 pl-6" {...props} />,
                   blockquote: ({ node, ...props }) => (
-                    <blockquote className="border-l-2 border-mb-gold/60 pl-4 my-5 text-mb-muted" {...props} />
+                    <blockquote className="my-5 border-l-2 border-mb-accent/60 pl-4 text-mb-muted" {...props} />
                   ),
                   a: ({ node, ...props }) => (
-                    <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
+                    <a className="text-mb-accent2 hover:text-mb-accent2/95" target="_blank" rel="noreferrer" {...props} />
                   )
                 }}
               >
@@ -106,15 +106,15 @@ export default function DocPage() {
             )}
           </div>
 
-          <div className="mt-10 pt-6 border-t border-mb-border">
+          <div className="mt-10 border-t border-mb-border/40 pt-6">
             <PrevNext currentPath={path} />
           </div>
         </div>
       </article>
 
-      <aside className="hidden xl:block sticky top-20 h-[calc(100vh-96px)]">
-        <div className="rounded-2xl border border-mb-border bg-mb-panel/70 p-4">
-          <div className="text-xs uppercase tracking-wider text-mb-muted mb-3">On this page</div>
+      <aside className="hidden xl:block sticky top-24 h-[calc(100vh-112px)]">
+        <div className="mb-panel rounded-[1.6rem] p-4">
+          <div className="mb-3 text-xs uppercase tracking-[0.24em] text-mb-muted">On this page</div>
           <Toc items={toc} />
         </div>
       </aside>

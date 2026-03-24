@@ -10,8 +10,6 @@ type Props = {
 
 export default function FaqContent({ markdown }: Props) {
   const parsed = useMemo(() => parseFaqMarkdown(markdown), [markdown])
-
-  // Accordion behavior: one open question per category.
   const [openByCategory, setOpenByCategory] = useState<Record<string, string | null>>({})
 
   return (
@@ -21,11 +19,11 @@ export default function FaqContent({ markdown }: Props) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              p: ({ node, ...props }) => <p className="leading-7 text-mb-text/95 my-4" {...props} />,
-              ul: ({ node, ...props }) => <ul className="list-disc pl-6 my-4 space-y-2" {...props} />,
-              ol: ({ node, ...props }) => <ol className="list-decimal pl-6 my-4 space-y-2" {...props} />,
+              p: ({ node, ...props }) => <p className="my-4 leading-7 text-mb-text/95" {...props} />,
+              ul: ({ node, ...props }) => <ul className="my-4 list-disc space-y-2 pl-6" {...props} />,
+              ol: ({ node, ...props }) => <ol className="my-4 list-decimal space-y-2 pl-6" {...props} />,
               a: ({ node, ...props }) => (
-                <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
+                <a className="text-mb-accent2 hover:text-mb-accent2/95" target="_blank" rel="noreferrer" {...props} />
               )
             }}
           >
@@ -45,9 +43,9 @@ export default function FaqContent({ markdown }: Props) {
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      p: ({ node, ...props }) => <p className="leading-7 my-2" {...props} />,
+                      p: ({ node, ...props }) => <p className="my-2 leading-7" {...props} />,
                       a: ({ node, ...props }) => (
-                        <a className="text-mb-gold hover:text-mb-gold/90" target="_blank" rel="noreferrer" {...props} />
+                        <a className="text-mb-accent2 hover:text-mb-accent2/95" target="_blank" rel="noreferrer" {...props} />
                       )
                     }}
                   >
@@ -65,8 +63,8 @@ export default function FaqContent({ markdown }: Props) {
                     key={item.id}
                     id={item.id}
                     className={clsx(
-                      'rounded-2xl border bg-mb-panel/60',
-                      isOpen ? 'border-mb-gold/50 shadow-glow' : 'border-mb-border'
+                      'rounded-[1.35rem] border bg-mb-panel/60 transition-all',
+                      isOpen ? 'border-mb-accent/50 shadow-glow' : 'border-mb-border/70'
                     )}
                   >
                     <button
@@ -77,16 +75,16 @@ export default function FaqContent({ markdown }: Props) {
                           [category.id]: prev[category.id] === item.id ? null : item.id
                         }))
                       }
-                      className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left"
+                      className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
                       aria-expanded={isOpen}
                     >
                       <span className="font-semibold text-mb-text">{item.question}</span>
                       <span
                         className={clsx(
-                          'shrink-0 h-8 w-8 rounded-xl grid place-items-center border',
+                          'grid h-8 w-8 shrink-0 place-items-center rounded-xl border transition-colors',
                           isOpen
-                            ? 'border-mb-gold/50 bg-mb-panel2 text-mb-gold'
-                            : 'border-mb-border bg-mb-panel2 text-mb-muted'
+                            ? 'border-mb-accent/50 bg-[rgba(240,106,26,0.12)] text-mb-accent2'
+                            : 'border-mb-border/70 bg-mb-panel2/70 text-mb-muted'
                         )}
                         aria-hidden
                       >
@@ -96,20 +94,15 @@ export default function FaqContent({ markdown }: Props) {
 
                     {isOpen && (
                       <div className="px-5 pb-5 pt-0 text-mb-text/95">
-                        <div className="border-t border-mb-border pt-4">
+                        <div className="border-t border-mb-border/40 pt-4">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             components={{
-                              p: ({ node, ...props }) => <p className="leading-7 my-3" {...props} />,
-                              ul: ({ node, ...props }) => <ul className="list-disc pl-6 my-3 space-y-2" {...props} />,
-                              ol: ({ node, ...props }) => <ol className="list-decimal pl-6 my-3 space-y-2" {...props} />,
+                              p: ({ node, ...props }) => <p className="my-3 leading-7" {...props} />,
+                              ul: ({ node, ...props }) => <ul className="my-3 list-disc space-y-2 pl-6" {...props} />,
+                              ol: ({ node, ...props }) => <ol className="my-3 list-decimal space-y-2 pl-6" {...props} />,
                               a: ({ node, ...props }) => (
-                                <a
-                                  className="text-mb-gold hover:text-mb-gold/90"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  {...props}
-                                />
+                                <a className="text-mb-accent2 hover:text-mb-accent2/95" target="_blank" rel="noreferrer" {...props} />
                               )
                             }}
                           >

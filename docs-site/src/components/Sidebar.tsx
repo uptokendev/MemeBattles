@@ -12,7 +12,6 @@ export default function Sidebar({ onNavigate }: Props) {
   const loc = useLocation()
   const [q, setQ] = useState('')
 
-  // Accordion behavior: by default only the current section is expanded.
   const currentPath = useMemo(() => normalizePath(loc.pathname), [loc.pathname])
   const activeSectionTitle = useMemo(() => {
     const found = sidebar.find(s => s.items.some(i => i.href === currentPath))
@@ -21,7 +20,6 @@ export default function Sidebar({ onNavigate }: Props) {
 
   const [openSection, setOpenSection] = useState<string | null>(activeSectionTitle)
   useEffect(() => {
-    // Keep the active section expanded when navigating via links / deep links.
     setOpenSection(activeSectionTitle)
   }, [activeSectionTitle])
 
@@ -38,51 +36,44 @@ export default function Sidebar({ onNavigate }: Props) {
   }, [q])
 
   return (
-    <div className="h-full rounded-2xl border border-mb-border bg-mb-panel/70 overflow-hidden">
-      <div className="p-3 border-b border-mb-border">
+    <div className="mb-panel h-full overflow-hidden rounded-[1.75rem]">
+      <div className="border-b border-mb-border/60 p-3">
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Search docs…"
-          className="w-full px-3 py-2 rounded-xl bg-mb-panel2 border border-mb-border text-sm outline-none focus:ring-2 focus:ring-mb-gold/30"
+          className="mb-input w-full rounded-2xl px-3 py-2.5 text-sm"
         />
       </div>
 
-      <div className="p-3 space-y-5 overflow-auto h-[calc(100%-56px)]">
+      <div className="h-[calc(100%-64px)] space-y-5 overflow-auto p-3">
         {filtered.map(section => (
           <div key={section.title}>
             <button
               type="button"
               onClick={() => {
-                // When searching, keep all sections expanded so results are visible.
                 if (q.trim()) return
                 setOpenSection(prev => (prev === section.title ? null : section.title))
               }}
-              className="w-full flex items-center justify-between text-xs uppercase tracking-wider text-mb-muted mb-2 px-1"
+              className="mb-2 flex w-full items-center justify-between px-1 text-xs uppercase tracking-[0.24em] text-mb-muted"
               aria-expanded={q.trim() ? true : openSection === section.title}
             >
               <span>{section.title}</span>
               <span
                 className={clsx(
-                  'transition-transform',
+                  'transition-transform text-mb-accent',
                   q.trim() ? 'rotate-180' : openSection === section.title ? 'rotate-180' : 'rotate-0'
                 )}
                 aria-hidden
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path
-                    d="M6 9l6 6 6-6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                  <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </span>
             </button>
 
             {(q.trim() || openSection === section.title) && (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {section.items.map(item => (
                   <NavLink
                     key={item.href}
@@ -90,10 +81,10 @@ export default function Sidebar({ onNavigate }: Props) {
                     onClick={onNavigate}
                     className={({ isActive }) =>
                       clsx(
-                        'block px-3 py-2 rounded-xl text-sm border',
+                        'block rounded-2xl border px-3 py-2.5 text-sm transition-all',
                         isActive
-                          ? 'bg-mb-panel2 border-mb-gold/40 shadow-glow'
-                          : 'bg-transparent border-transparent hover:bg-mb-panel2/60 hover:border-mb-border'
+                          ? 'border-mb-accent/45 bg-[linear-gradient(180deg,rgba(255,138,42,0.16),rgba(240,106,26,0.08))] shadow-glow text-mb-text'
+                          : 'border-transparent bg-transparent text-mb-text/90 hover:border-mb-border/70 hover:bg-mb-panel2/70'
                       )
                     }
                   >

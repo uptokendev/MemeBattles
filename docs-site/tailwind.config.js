@@ -9,18 +9,21 @@ export default {
     extend: {
       colors: {
         mb: {
-          bg: '#0b0b0e',
-          panel: '#111116',
-          panel2: '#15151c',
-          border: 'rgba(255,255,255,0.08)',
-          text: 'rgba(255,255,255,0.92)',
-          muted: 'rgba(255,255,255,0.65)',
-          gold: '#ddab4d',
-          gold2: '#af7f23'
+          bg: '#0b0d10',
+          panel: '#14181e',
+          panel2: '#1c2128',
+          border: 'rgba(132,141,152,0.24)',
+          text: '#f2f2ee',
+          muted: '#b5bcc6',
+          accent: '#f06a1a',
+          accent2: '#ff8a2a',
+          nvg: '#39e317',
+          olive: '#7c8b5a'
         }
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(221,171,77,0.25), 0 0 30px rgba(221,171,77,0.10)'
+        glow: '0 0 0 1px rgba(240,106,26,0.18), 0 0 28px rgba(240,106,26,0.12)',
+        nvg: '0 0 0 1px rgba(57,227,23,0.16), 0 0 24px rgba(57,227,23,0.10)'
       }
     }
   },
