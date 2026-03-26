@@ -23,6 +23,7 @@ import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const App = () => {
             <div className="h-screen overflow-hidden bg-transparent flex flex-col">
               <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+              <RankPromotionListener />
               {/*
                 TopBar is fixed-position, so main content needs top padding.
                 pt-20/pt-24 offsets the fixed TopBar so hero logos sit fully below it.

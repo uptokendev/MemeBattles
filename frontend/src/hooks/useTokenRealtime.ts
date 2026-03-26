@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Ably from "ably";
 
 const API_BASE = import.meta.env.VITE_REALTIME_API_BASE as string;
+const ABLY_AUTH_BASE = import.meta.env.VITE_ABLY_AUTH_BASE as string;
 
 export type RealtimeTrade = {
   type: "trade";
@@ -76,11 +77,13 @@ export function useTokenRealtime(chainId: number, campaign: string) {
   useEffect(() => {
     if (!API_BASE || !campaign) return;
 
-    const base = String(API_BASE || "").replace(/\/$/, "");
-const client = new Ably.Realtime({
-  authUrl: `${base}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`,
-  authMethod: "GET",
-});
+    void API_BASE;
+    const authBase = String(ABLY_AUTH_BASE || (typeof window !== "undefined" ? window.location.origin : "") || "").replace(/\/$/, "");
+    if (!authBase) return;
+    const client = new Ably.Realtime({
+      authUrl: `${authBase}/api/ably/token?chainId=${chainId}&campaign=${campaign.toLowerCase()}`,
+      authMethod: "GET",
+    });
 
     const chName = tokenChannel(chainId, campaign);
     const channel = client.channels.get(chName);

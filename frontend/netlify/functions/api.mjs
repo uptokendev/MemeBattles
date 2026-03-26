@@ -3,8 +3,8 @@ import serverless from "serverless-http";
 
 import ablyToken from "../../api/ably/token.js";
 import authNonce from "../../api/auth/nonce.js";
-import campaigns from "../../api/campaigns.js";
 import campaignsUpsert from "../../api/campaigns/upsert.js";
+import campaigns from "../../api/campaigns.js";
 import comments from "../../api/comments.js";
 import diagnostics from "../../api/diagnostics.js";
 import epochPools from "../../api/epochPools.js";
@@ -21,45 +21,64 @@ import profile from "../../api/profile.js";
 import rewards from "../../api/rewards.js";
 import status from "../../api/status.js";
 import upload from "../../api/upload.js";
-import voteCounts from "../../api/vote_counts.js";
 import votes from "../../api/votes.js";
+import voteCounts from "../../api/vote_counts.js";
 
 const app = express();
 app.disable("x-powered-by");
 
-// IMPORTANT:
-// - Do NOT add express.json() globally.
-// - Your existing handlers already parse JSON themselves.
-// - /api/upload uses formidable and needs the raw request stream.
-const router = express.Router();
+app.use((req, _res, next) => {
+  const url = String(req.url || "");
+  req.url =
+    url.replace(/^\/\.netlify\/functions\/api(?=\/|$)/, "")
+      .replace(/^\/api(?=\/|$)/, "") || "/";
+  next();
+});
 
-router.all("/ably/token", ablyToken);
-router.all("/auth/nonce", authNonce);
-router.all("/campaigns/upsert", campaignsUpsert);
-router.all("/campaigns", campaigns);
-router.all("/comments", comments);
-router.all("/diagnostics", diagnostics);
-router.all("/epochPools", epochPools);
-router.all("/featured", featured);
-router.all("/follows/campaign-list", followsCampaignList);
-router.all("/follows/campaign", followsCampaign);
-router.all("/follows/user-counts", followsUserCounts);
-router.all("/follows/user-list", followsUserList);
-router.all("/follows/user", followsUser);
-router.all("/league", league);
-router.all("/leaguePayouts", leaguePayouts);
-router.all("/leagueRoot", leagueRoot);
-router.all("/profile", profile);
-router.all("/rewards", rewards);
-router.all("/status", status);
-router.all("/upload", upload);
-router.all("/vote_counts", voteCounts);
-router.all("/votes", votes);
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false }));
 
-// Netlify Functions commonly invoke this handler with the function mount already
-// stripped from the path, so requests arrive as "/campaigns", "/featured", etc.
-// Mount at root for local Netlify Dev, and also keep "/api" for compatibility.
-app.use(router);
-app.use("/api", router);
+function wrap(fn) {
+  return async (req, res, next) => {
+    try {
+      await fn(req, res);
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+app.all("/ably/token", wrap(ablyToken));
+app.all("/auth/nonce", wrap(authNonce));
+app.all("/campaigns/upsert", wrap(campaignsUpsert));
+app.all("/campaigns", wrap(campaigns));
+app.all("/comments", wrap(comments));
+app.all("/diagnostics", wrap(diagnostics));
+app.all("/epochPools", wrap(epochPools));
+app.all("/featured", wrap(featured));
+app.all("/follows/campaign-list", wrap(followsCampaignList));
+app.all("/follows/campaign", wrap(followsCampaign));
+app.all("/follows/user-counts", wrap(followsUserCounts));
+app.all("/follows/user-list", wrap(followsUserList));
+app.all("/follows/user", wrap(followsUser));
+app.all("/league", wrap(league));
+app.all("/leaguePayouts", wrap(leaguePayouts));
+app.all("/leagueRoot", wrap(leagueRoot));
+app.all("/profile", wrap(profile));
+app.all("/rewards", wrap(rewards));
+app.all("/status", wrap(status));
+app.all("/upload", wrap(upload));
+app.all("/votes", wrap(votes));
+app.all("/vote_counts", wrap(voteCounts));
+
+app.use((req, res) => {
+  res.status(404).json({ error: `Unknown API route: ${req.path}` });
+});
+
+app.use((err, _req, res, _next) => {
+  console.error("[netlify/functions/api] unhandled", err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Server error" });
+});
 
 export const handler = serverless(app);

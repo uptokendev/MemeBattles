@@ -38,6 +38,26 @@ async function consumeNonce(chainId, address, nonce) {
   );
 }
 
+async function loadRankState(chainId, address) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT current_rank AS rank,
+              previous_rank AS "previousRank",
+              rank_points AS "rankPoints",
+              updated_at AS "rankUpdatedAt"
+         FROM user_rank_state
+        WHERE chain_id = $1 AND address = $2
+        LIMIT 1`,
+      [chainId, address]
+    );
+    return rows[0] ?? null;
+  } catch (e) {
+    const code = e?.code;
+    if (code === "42P01" || code === "42703") return null;
+    throw e;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
@@ -48,14 +68,24 @@ export default async function handler(req, res) {
       if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
 
       const { rows } = await pool.query(
-        `SELECT address, chain_id AS "chainId", display_name AS "displayName", avatar_url AS "avatarUrl", bio
-         FROM user_profiles
-         WHERE chain_id = $1 AND address = $2
-         LIMIT 1`,
+        `SELECT address,
+                chain_id AS "chainId",
+                display_name AS "displayName",
+                avatar_url AS "avatarUrl",
+                bio,
+                updated_at AS "updatedAt"
+           FROM user_profiles
+          WHERE chain_id = $1 AND address = $2
+          LIMIT 1`,
         [chainId, address]
       );
 
-      return json(res, 200, { profile: rows[0] ?? null });
+      const profile = rows[0] ?? null;
+      const rankState = await loadRankState(chainId, address);
+
+      return json(res, 200, {
+        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address, displayName: null, avatarUrl: null, bio: null, updatedAt: null, ...rankState } : null,
+      });
     } catch (e) {
       // Common deployment footguns: missing table/columns after a new migration.
       // Don't break the whole frontend; return an empty profile and log the real error.

@@ -12,6 +12,10 @@ export type UserProfile = {
   bio: string | null;
   avatarUrl: string | null;
   updatedAt?: string | null;
+  rank?: string | null;
+  previousRank?: string | null;
+  rankPoints?: number | null;
+  rankUpdatedAt?: string | null;
 };
 
 const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
@@ -87,6 +91,10 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
     avatarUrl: (p.avatarUrl ?? null) as string | null,
     bio: (p.bio ?? null) as string | null,
     updatedAt: (p.updatedAt ?? null) as string | null,
+    rank: (p.rank ?? null) as string | null,
+    previousRank: (p.previousRank ?? null) as string | null,
+    rankPoints: p.rankPoints == null ? null : Number(p.rankPoints),
+    rankUpdatedAt: (p.rankUpdatedAt ?? null) as string | null,
   };
 }
 

@@ -39,12 +39,12 @@ export default async function handler(req, res) {
   const chainId = String(q.chainId || "97");
   const address = String(q.address || "").toLowerCase();
 
-  const maxBytes = kind === "avatar" ? 500 * 1024 : 2 * 1024 * 1024; // keep under Vercel body limits
-  const form = formidable({
-    multiples: false,
-    maxFileSize: maxBytes,
-    // optionally: uploadDir: "/tmp"  (formidable defaults to OS temp)
-  });
+  const maxBytes = kind === "avatar" ? 3 * 1024 * 1024 : 2 * 1024 * 1024;
+const form = formidable({
+  multiples: false,
+  maxFileSize: maxBytes,
+  maxTotalFileSize: maxBytes,
+});
 
   form.parse(req, async (err, fields, files) => {
     try {

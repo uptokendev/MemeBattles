@@ -6,6 +6,9 @@ const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").t
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
 
 function getAuthBase() {
+  if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
+    return ABLY_AUTH_BASE.replace(/\/$/, "");
+  }
   if (typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin.replace(/\/$/, "");
   }

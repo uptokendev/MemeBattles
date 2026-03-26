@@ -28,6 +28,8 @@ import {
   followUser, unfollowUser, isFollowingUser, getFollowersCount, getFollowingCount, 
   getFollowers, getFollowing, getFollowedCampaigns 
 } from '@/lib/followApi';
+import { RankBadgeCard } from '@/components/rank/RankBadgeCard';
+import { normalizeRank, readStoredRank, writeStoredRank, type RankName } from '@/lib/ranks';
 
 type ProfileTabEx = ProfileTab | "followers" | "following";
 
@@ -164,6 +166,7 @@ const Profile = () => {
   // Profile (username / bio)
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [liveRank, setLiveRank] = useState<RankName>("Recruit");
   const [editOpen, setEditOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [awaitingWallet, setAwaitingWallet] = useState(false);
@@ -291,6 +294,36 @@ const Profile = () => {
     };
   }, [viewedAddress, chainId]);
 
+  const resolvedProfileRank = useMemo<RankName>(() => {
+    const apiRankRaw = (profile as any)?.rank;
+    if (apiRankRaw) return normalizeRank(apiRankRaw);
+    if (isOwnProfile && chainId && viewedAddress) {
+      return readStoredRank(chainId, viewedAddress) ?? "Recruit";
+    }
+    return "Recruit";
+  }, [profile, isOwnProfile, chainId, viewedAddress]);
+
+  useEffect(() => {
+    setLiveRank(resolvedProfileRank);
+  }, [resolvedProfileRank]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !chainId || !viewedAddress) return;
+    writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
+  }, [isOwnProfile, chainId, viewedAddress, resolvedProfileRank]);
+
+  useEffect(() => {
+    const onRankUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<any>).detail ?? {};
+      const targetAddress = String(detail.address ?? "").trim().toLowerCase();
+      if (!viewedAddress || targetAddress !== viewedAddress.toLowerCase()) return;
+      setLiveRank(normalizeRank(detail.newRank ?? detail.rank));
+    };
+
+    window.addEventListener("mwz:rank-updated", onRankUpdated as EventListener);
+    return () => window.removeEventListener("mwz:rank-updated", onRankUpdated as EventListener);
+  }, [viewedAddress]);
+
   // Load claimable league rewards (suppresses already-claimed)
   useEffect(() => {
     let cancelled = false;
@@ -373,8 +406,8 @@ const Profile = () => {
     if (!chainId) throw new Error("ChainId is not available.");
     if (!account) throw new Error("Wallet not connected.");
 
-    const maxBytes = 500 * 1024;
-    if (file.size > maxBytes) throw new Error("Avatar must be <= 500 KB.");
+    const maxBytes = 3 * 1024 * 1024; // 3 MB
+    if (file.size > maxBytes) throw new Error("Avatar must be <= 3 MB.");
 
     const typeOk = /^(image\/png|image\/jpeg|image\/jpg|image\/webp)$/.test(file.type);
     if (!typeOk) throw new Error("Unsupported image type. Use png/jpg/webp.");
@@ -1089,51 +1122,58 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Edit Button */}
-            {isOwnProfile ? (
-              <div className="flex items-start justify-end w-full md:w-auto">
-                <Button
-                  onClick={handleEdit}
-                  className="bg-muted hover:bg-muted/80 text-foreground font-retro w-full md:w-auto"
-                >
-                  edit
-                </Button>
-                <EditProfileDialog
-                  open={editOpen}
-                  onOpenChange={setEditOpen}
-                  initialUsername={profile?.displayName ?? ""}
-                  initialBio={profile?.bio ?? ""}
-                  saving={savingProfile}
-                  onSave={handleSaveProfile}
-                />
-              </div>
-            ) : null}
+            <div className="flex w-full flex-col gap-3 md:w-[280px] md:items-end">
+              <RankBadgeCard
+                rank={liveRank}
+                subtitle={isOwnProfile ? "Your current rank" : "Current rank"}
+                className="w-full"
+              />
 
-            {!isOwnProfile && viewedAddress && (
-  <Button
-    onClick={async () => {
-      try {
-        if (isFollowing) {
-          if (!wallet?.account) throw new Error('Connect wallet');
-          await unfollowUser(wallet.account, viewedAddress, chainId ?? 0);
-          setIsFollowing(false);
-          setFollowersCount(c => c - 1);
-        } else {
-          if (!wallet?.account) throw new Error('Connect wallet');
-          await followUser(wallet.account, viewedAddress, chainId ?? 0);
-          setIsFollowing(true);
-          setFollowersCount(c => c + 1);
-        }
-      } catch (err) {
-        toast.error('Failed to update follow');
-      }
-    }}
-    variant={isFollowing ? 'outline' : 'default'}
-    className="font-retro ml-2"
-  >
-    {isFollowing ? 'Unfollow' : 'Follow'}
-  </Button>
-)}
+              {isOwnProfile ? (
+                <div className="w-full">
+                  <Button
+                    onClick={handleEdit}
+                    className="w-full bg-muted font-retro text-foreground hover:bg-muted/80"
+                  >
+                    edit
+                  </Button>
+                  <EditProfileDialog
+                    open={editOpen}
+                    onOpenChange={setEditOpen}
+                    initialUsername={profile?.displayName ?? ""}
+                    initialBio={profile?.bio ?? ""}
+                    saving={savingProfile}
+                    onSave={handleSaveProfile}
+                  />
+                </div>
+              ) : null}
+
+              {!isOwnProfile && viewedAddress && (
+                <Button
+                  onClick={async () => {
+                    try {
+                      if (isFollowing) {
+                        if (!wallet?.account) throw new Error('Connect wallet');
+                        await unfollowUser(wallet.account, viewedAddress, chainId ?? 0);
+                        setIsFollowing(false);
+                        setFollowersCount(c => c - 1);
+                      } else {
+                        if (!wallet?.account) throw new Error('Connect wallet');
+                        await followUser(wallet.account, viewedAddress, chainId ?? 0);
+                        setIsFollowing(true);
+                        setFollowersCount(c => c + 1);
+                      }
+                    } catch (err) {
+                      toast.error('Failed to update follow');
+                    }
+                  }}
+                  variant={isFollowing ? 'outline' : 'default'}
+                  className="w-full font-retro"
+                >
+                  {isFollowing ? 'Unfollow' : 'Follow'}
+                </Button>
+              )}
+            </div>
           </div>
 
 

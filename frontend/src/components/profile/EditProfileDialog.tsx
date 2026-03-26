@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -65,6 +65,9 @@ export function EditProfileDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-retro">Edit profile</DialogTitle>
+          <DialogDescription className="font-retro text-muted-foreground">
+            Set or update your public username and bio for your MemeWarzone profile.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
