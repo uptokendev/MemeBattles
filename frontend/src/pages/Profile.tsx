@@ -29,7 +29,21 @@ import {
   getFollowers, getFollowing, getFollowedCampaigns 
 } from '@/lib/followApi';
 import { RankBadgeCard } from '@/components/rank/RankBadgeCard';
-import { normalizeRank, readStoredRank, writeStoredRank, type RankName } from '@/lib/ranks';
+import RankUpModal from '@/components/rank/RankUpModal';
+import { LeagueCabinetCard } from "@/components/profile/LeagueCabinetCard";
+import {
+  clearPendingRankPromotion,
+  getRankIndex,
+  isRankUpgrade,
+  normalizeRank,
+  readPendingRankPromotion,
+  readStoredRank,
+  writePendingRankPromotion,
+  writeStoredRank,
+  type RankName,
+} from '@/lib/ranks';
+import { fetchLeagueCabinet } from "@/lib/leagueCabinetApi";
+import type { LeagueCabinet } from "@/lib/leagueCabinet";
 
 type ProfileTabEx = ProfileTab | "followers" | "following";
 
@@ -165,8 +179,14 @@ const Profile = () => {
 
   // Profile (username / bio)
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [leagueCabinet, setLeagueCabinet] = useState<LeagueCabinet | null>(null);
+  const [loadingLeagueCabinet, setLoadingLeagueCabinet] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [liveRank, setLiveRank] = useState<RankName>("Recruit");
+  const [rankPromotionModal, setRankPromotionModal] = useState<{ isOpen: boolean; rank: RankName }>({
+    isOpen: false,
+    rank: "Recruit",
+  });
   const [editOpen, setEditOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [awaitingWallet, setAwaitingWallet] = useState(false);
@@ -294,12 +314,46 @@ const Profile = () => {
     };
   }, [viewedAddress, chainId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCabinet = async () => {
+      if (!viewedAddress || !chainId) {
+        setLeagueCabinet(null);
+        return;
+      }
+
+      setLoadingLeagueCabinet(true);
+      try {
+        const cabinet = await fetchLeagueCabinet(chainId, viewedAddress);
+        if (!cancelled) setLeagueCabinet(cabinet);
+      } catch (e) {
+        console.warn("Failed to load profile cabinet", e);
+        if (!cancelled) setLeagueCabinet(null);
+      } finally {
+        if (!cancelled) setLoadingLeagueCabinet(false);
+      }
+    };
+
+    loadCabinet();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewedAddress, chainId]);
+
   const resolvedProfileRank = useMemo<RankName>(() => {
     const apiRankRaw = (profile as any)?.rank;
-    if (apiRankRaw) return normalizeRank(apiRankRaw);
-    if (isOwnProfile && chainId && viewedAddress) {
-      return readStoredRank(chainId, viewedAddress) ?? "Recruit";
+    const apiRank = apiRankRaw ? normalizeRank(apiRankRaw) : null;
+    const storedOwnRank = isOwnProfile && chainId && viewedAddress
+      ? readStoredRank(chainId, viewedAddress)
+      : null;
+
+    if (apiRank && storedOwnRank) {
+      return getRankIndex(storedOwnRank) > getRankIndex(apiRank) ? storedOwnRank : apiRank;
     }
+
+    if (apiRank) return apiRank;
+    if (storedOwnRank) return storedOwnRank;
     return "Recruit";
   }, [profile, isOwnProfile, chainId, viewedAddress]);
 
@@ -309,8 +363,39 @@ const Profile = () => {
 
   useEffect(() => {
     if (!isOwnProfile || !chainId || !viewedAddress) return;
-    writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
+
+    const storedRank = readStoredRank(chainId, viewedAddress);
+    const pendingPromotion = readPendingRankPromotion(chainId, viewedAddress);
+
+    if (!storedRank) {
+      writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
+      return;
+    }
+
+    if (isRankUpgrade(resolvedProfileRank, storedRank)) {
+      const pendingNewRank = pendingPromotion ? normalizeRank(pendingPromotion.newRank) : null;
+      if (!pendingPromotion || pendingNewRank !== resolvedProfileRank) {
+        writePendingRankPromotion(chainId, viewedAddress, storedRank, resolvedProfileRank);
+      }
+      writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
+    }
   }, [isOwnProfile, chainId, viewedAddress, resolvedProfileRank]);
+
+  useEffect(() => {
+    if (!isOwnProfile || !chainId || !viewedAddress) {
+      setRankPromotionModal({ isOpen: false, rank: "Recruit" });
+      return;
+    }
+
+    const pendingPromotion = readPendingRankPromotion(chainId, viewedAddress);
+    if (!pendingPromotion) return;
+
+    const nextRank = normalizeRank(pendingPromotion.newRank);
+    setRankPromotionModal((current) => {
+      if (current.isOpen && current.rank === nextRank) return current;
+      return { isOpen: true, rank: nextRank };
+    });
+  }, [isOwnProfile, chainId, viewedAddress]);
 
   useEffect(() => {
     const onRankUpdated = (event: Event) => {
@@ -372,6 +457,13 @@ const Profile = () => {
   const formatNumber = (value?: number | null, maxDecimals = 4): string => {
     if (value == null || !Number.isFinite(value)) return "â€”";
     return Number(value).toLocaleString(undefined, { maximumFractionDigits: maxDecimals });
+  };
+
+  const handleCloseRankPromotionModal = () => {
+    if (chainId && viewedAddress) {
+      clearPendingRankPromotion(chainId, viewedAddress);
+    }
+    setRankPromotionModal({ isOpen: false, rank: "Recruit" });
   };
 
   const handleCopyAddress = () => {
@@ -1176,6 +1268,11 @@ const Profile = () => {
             </div>
           </div>
 
+          <LeagueCabinetCard
+            cabinet={leagueCabinet}
+            loading={loadingLeagueCabinet}
+            displayName={displayName}
+          />
 
           {/* Tabs */}
           <div className="flex gap-3 md:gap-6 border-t border-border pt-4 md:pt-6 overflow-x-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
@@ -1735,6 +1832,12 @@ const Profile = () => {
         )}
 
       </div>
+
+      <RankUpModal
+        isOpen={rankPromotionModal.isOpen}
+        rank={rankPromotionModal.rank}
+        onClose={handleCloseRankPromotionModal}
+      />
     </div>
   );
 };

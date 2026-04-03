@@ -52,5 +52,7 @@ export const ENV = {
   TELEMETRY_TOKEN: process.env.TELEMETRY_TOKEN || "datraadjetochnooit1234!!",
   TELEMETRY_INTERVAL_MS: Number(process.env.TELEMETRY_INTERVAL_MS || "15000"),
 
+  RANK_EVENTS_TOKEN: process.env.RANK_EVENTS_TOKEN || "",
+
   PORT: Number(process.env.PORT || "3000")
 };

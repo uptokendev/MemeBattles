@@ -72,12 +72,16 @@ export default function RankUpModal({
           />
         </div>
 
+        <p className="mb-2 text-[11px] font-retro uppercase tracking-[0.28em] text-yellow-400/80">
+          Congratulations
+        </p>
+
         <h2 id="rank-up-title" className="mb-2 text-xl font-retro text-yellow-400 md:text-2xl">
           🔥 PROMOTED TO {resolvedRank.toUpperCase()}
         </h2>
 
         <p className="mb-6 text-sm font-retro text-muted-foreground">
-          You’ve reached a new rank in MemeWarzone.
+          Your new rank is now live on your MemeWarzone profile. Show it off.
         </p>
 
         <div className="flex flex-col gap-2">

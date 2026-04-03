@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Menu } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -352,8 +353,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       </div>
 
       {/* Wallet selection modal */}
-      {walletModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      {walletModalOpen && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] border border-border/80 rounded-3xl shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(240,106,26,0.10)] w-[90%] max-w-sm p-4 md:p-6 space-y-4 backdrop-blur-xl">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
@@ -422,7 +423,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               (BSC mainnet or testnet, depending on your setup).
             </p>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`

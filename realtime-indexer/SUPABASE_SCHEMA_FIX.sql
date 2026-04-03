@@ -97,3 +97,30 @@ CREATE INDEX IF NOT EXISTS token_comments_chain_campaign_id_idx
 
 -- Note: if you use RLS on these tables, ensure your server-side DB user (DATABASE_URL)
 -- has permissions, or disable RLS for these tables (since Vercel/Railway access via Postgres).
+
+-- ---------------------------
+-- user_rank_state
+-- ---------------------------
+CREATE TABLE IF NOT EXISTS public.user_rank_state (
+  chain_id integer NOT NULL,
+  address text NOT NULL,
+  current_rank text NOT NULL DEFAULT 'Recruit',
+  previous_rank text,
+  rank_points bigint,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (chain_id, address),
+  CONSTRAINT user_rank_state_current_rank_chk CHECK (current_rank IN ('Recruit', 'Soldier', 'Corporal', 'Captain', 'General')),
+  CONSTRAINT user_rank_state_previous_rank_chk CHECK (previous_rank IS NULL OR previous_rank IN ('Recruit', 'Soldier', 'Corporal', 'Captain', 'General'))
+);
+
+ALTER TABLE public.user_rank_state
+  ADD COLUMN IF NOT EXISTS current_rank text,
+  ADD COLUMN IF NOT EXISTS previous_rank text,
+  ADD COLUMN IF NOT EXISTS rank_points bigint,
+  ADD COLUMN IF NOT EXISTS created_at timestamptz,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+CREATE INDEX IF NOT EXISTS user_rank_state_updated_at_idx
+  ON public.user_rank_state(chain_id, updated_at DESC);
+

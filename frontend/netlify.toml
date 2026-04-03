@@ -12,7 +12,7 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-   external_node_modules = ["express", "serverless-http"]
+   external_node_modules = ["express", "serverless-http", "@resvg/resvg-js"]
 
 [[redirects]]
   from = "/api/*"

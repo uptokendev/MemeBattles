@@ -3,12 +3,13 @@ import cors from "cors";
 import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
-import { ablyRest, tokenChannel, leagueChannel } from "./ably.js";
+import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
 import { runIndexerOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
+app.use(express.json({ limit: "256kb" }));
 
 // ---------------------------------------------------------------------------
 // Minimal in-process metrics (safe to expose)
@@ -34,6 +35,39 @@ const wrap =
   (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
+
+const VALID_RANKS = ["Recruit", "Soldier", "Corporal", "Captain", "General"] as const;
+type ValidRank = (typeof VALID_RANKS)[number];
+
+function normalizeAddress(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeRank(value: unknown): ValidRank | null {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  if (!normalized) return null;
+
+  const match = VALID_RANKS.find((rank) => rank.toLowerCase() === normalized);
+  return match ?? null;
+}
+
+function rankIndex(value: unknown): number {
+  const normalized = normalizeRank(value);
+  return normalized ? VALID_RANKS.indexOf(normalized) : -1;
+}
+
+function readBearerToken(req: Request): string {
+  const authHeader = String(req.headers.authorization || "").trim();
+  if (authHeader.toLowerCase().startsWith("bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  return String(req.headers["x-rank-events-token"] || "").trim();
+}
 
 const allowedOrigins = new Set(
   [
@@ -156,6 +190,87 @@ app.get("/api/ably/token", async (req, res) => {
     return res.status(500).json({ error: e?.message || String(e) });
   }
 });
+
+app.post("/internal/user-rank-updated", wrap(async (req, res) => {
+  const expected = String(ENV.RANK_EVENTS_TOKEN || "").trim();
+  if (!expected) {
+    return res.status(503).json({ ok: false, error: "Rank events are disabled: RANK_EVENTS_TOKEN missing" });
+  }
+
+  const token = readBearerToken(req);
+  if (!token || token !== expected) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
+  const chainId = Number(req.body?.chainId || 97);
+  const address = normalizeAddress(req.body?.address ?? req.body?.userAddress ?? req.body?.wallet);
+  const requestedOldRank = normalizeRank(req.body?.oldRank ?? req.body?.previousRank);
+  const newRank = normalizeRank(req.body?.newRank ?? req.body?.rank);
+  const rankPointsRaw = req.body?.rankPoints;
+  const rankPoints = rankPointsRaw == null || rankPointsRaw === ""
+    ? null
+    : Number.isFinite(Number(rankPointsRaw))
+      ? Number(rankPointsRaw)
+      : null;
+
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ ok: false, error: "Invalid address" });
+  }
+  if (!newRank) {
+    return res.status(400).json({ ok: false, error: "Invalid newRank" });
+  }
+
+  let storedPreviousRank: ValidRank | null = null;
+  let persisted = false;
+
+  try {
+    const prev = await pool.query(
+      `select current_rank from public.user_rank_state where chain_id=$1 and address=$2 limit 1`,
+      [chainId, address]
+    );
+    storedPreviousRank = normalizeRank(prev.rows?.[0]?.current_rank ?? null);
+
+    await pool.query(
+      `insert into public.user_rank_state (chain_id, address, current_rank, previous_rank, rank_points, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, now(), now())
+       on conflict (chain_id, address)
+       do update set current_rank = excluded.current_rank,
+                     previous_rank = excluded.previous_rank,
+                     rank_points = excluded.rank_points,
+                     updated_at = now()`,
+      [chainId, address, newRank, requestedOldRank ?? storedPreviousRank, rankPoints]
+    );
+    persisted = true;
+  } catch (e: any) {
+    const code = e?.code;
+    if (code !== "42P01" && code !== "42703") {
+      throw e;
+    }
+  }
+
+  const oldRank = requestedOldRank ?? storedPreviousRank;
+
+  await publishUserRankUpdated(chainId, {
+    address,
+    oldRank,
+    newRank,
+    rankPoints,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return res.json({
+    ok: true,
+    persisted,
+    chainId,
+    address,
+    oldRank,
+    newRank,
+    promoted: oldRank ? rankIndex(newRank) > rankIndex(oldRank) : null,
+  });
+}));
 
 // ---------------------------------------------------------------------------
 // Profile Activity (v1)

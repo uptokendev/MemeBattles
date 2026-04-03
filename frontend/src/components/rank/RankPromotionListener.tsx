@@ -1,24 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useAblyLeagueChannel } from "@/hooks/useAblyLeagueChannel";
 import {
   isRankUpgrade,
   normalizeRank,
   readStoredRank,
+  writePendingRankPromotion,
   writeStoredRank,
-  type RankName,
 } from "@/lib/ranks";
-import RankUpModal from "@/components/rank/RankUpModal";
-
-type RankModalState = {
-  isOpen: boolean;
-  rank: RankName;
-};
-
-const DEFAULT_MODAL_STATE: RankModalState = {
-  isOpen: false,
-  rank: "Recruit",
-};
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -31,7 +20,6 @@ export function RankPromotionListener() {
   const account = useMemo(() => normalizeAddress(wallet.account), [wallet.account]);
   const enabled = Boolean(chainId && account);
   const { channel } = useAblyLeagueChannel({ enabled, chainId: chainId || 97 });
-  const [modal, setModal] = useState<RankModalState>(DEFAULT_MODAL_STATE);
 
   useEffect(() => {
     if (!chainId || !account) return;
@@ -57,24 +45,15 @@ export function RankPromotionListener() {
       const storedRank = readStoredRank(chainId, account) ?? "Recruit";
       const previousRank = normalizeRank(payload.oldRank ?? payload.previousRank ?? storedRank);
       const baselineRank = normalizeRank(storedRank || previousRank);
+      const upgraded = isRankUpgrade(newRank, baselineRank) || isRankUpgrade(newRank, previousRank);
 
-      writeStoredRank(chainId, account, newRank);
-
-      if (!isRankUpgrade(newRank, baselineRank) && !isRankUpgrade(newRank, previousRank)) {
-        window.dispatchEvent(
-          new CustomEvent("mwz:rank-updated", {
-            detail: {
-              address: account,
-              chainId,
-              oldRank: previousRank,
-              newRank,
-            },
-          })
-        );
-        return;
+      if (upgraded && baselineRank !== newRank) {
+        writePendingRankPromotion(chainId, account, baselineRank, newRank);
       }
 
-      if (baselineRank === newRank) return;
+      if (isRankUpgrade(newRank, baselineRank) || baselineRank === newRank || isRankUpgrade(newRank, previousRank)) {
+        writeStoredRank(chainId, account, newRank);
+      }
 
       window.dispatchEvent(
         new CustomEvent("mwz:rank-updated", {
@@ -86,8 +65,6 @@ export function RankPromotionListener() {
           },
         })
       );
-
-      setModal({ isOpen: true, rank: newRank });
     };
 
     channel.subscribe("user_rank_updated", onRankUpdated);
@@ -101,11 +78,5 @@ export function RankPromotionListener() {
     };
   }, [channel, chainId, account]);
 
-  return (
-    <RankUpModal
-      isOpen={modal.isOpen}
-      rank={modal.rank}
-      onClose={() => setModal(DEFAULT_MODAL_STATE)}
-    />
-  );
+  return null;
 }

@@ -120,3 +120,82 @@ ALTER TABLE public.user_rank_state
 CREATE INDEX IF NOT EXISTS user_rank_state_updated_at_idx
   ON public.user_rank_state(chain_id, updated_at DESC);
 
+
+-- ---------------------------
+-- league epoch winners / claims / payouts / rollovers
+-- ---------------------------
+CREATE TABLE IF NOT EXISTS public.league_epoch_winners (
+  chain_id integer NOT NULL,
+  period text NOT NULL CHECK (period IN ('weekly','monthly')),
+  epoch_start timestamptz NOT NULL,
+  epoch_end timestamptz NOT NULL,
+  category text NOT NULL,
+  rank integer NOT NULL CHECK (rank BETWEEN 1 AND 5),
+  recipient_address text NOT NULL,
+  amount_raw numeric(78,0) NOT NULL,
+  payload jsonb,
+  meta jsonb,
+  expires_at timestamptz,
+  computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (chain_id, period, epoch_start, category, rank)
+);
+
+ALTER TABLE public.league_epoch_winners
+  ADD COLUMN IF NOT EXISTS payload jsonb,
+  ADD COLUMN IF NOT EXISTS meta jsonb,
+  ADD COLUMN IF NOT EXISTS expires_at timestamptz,
+  ADD COLUMN IF NOT EXISTS computed_at timestamptz;
+
+UPDATE public.league_epoch_winners
+   SET meta = COALESCE(meta, payload, '{}'::jsonb)
+ WHERE meta IS NULL;
+
+UPDATE public.league_epoch_winners
+   SET payload = COALESCE(payload, meta, '{}'::jsonb)
+ WHERE payload IS NULL;
+
+CREATE INDEX IF NOT EXISTS league_epoch_winners_recipient_idx
+  ON public.league_epoch_winners(chain_id, recipient_address, period, epoch_start DESC);
+
+CREATE TABLE IF NOT EXISTS public.league_epoch_claims (
+  chain_id integer NOT NULL,
+  period text NOT NULL CHECK (period IN ('weekly','monthly')),
+  epoch_start timestamptz NOT NULL,
+  category text NOT NULL,
+  rank integer NOT NULL CHECK (rank BETWEEN 1 AND 5),
+  recipient_address text NOT NULL,
+  claimed_at timestamptz NOT NULL DEFAULT now(),
+  signature text,
+  PRIMARY KEY (chain_id, period, epoch_start, category, rank)
+);
+
+CREATE TABLE IF NOT EXISTS public.league_epoch_payouts (
+  chain_id integer NOT NULL,
+  period text NOT NULL CHECK (period IN ('weekly','monthly')),
+  epoch_start timestamptz NOT NULL,
+  category text NOT NULL,
+  rank integer NOT NULL CHECK (rank BETWEEN 1 AND 5),
+  recipient_address text NOT NULL,
+  amount_raw numeric(78,0) NOT NULL,
+  tx_hash text,
+  paid_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (chain_id, period, epoch_start, category, rank)
+);
+
+CREATE INDEX IF NOT EXISTS league_epoch_payouts_recipient_idx
+  ON public.league_epoch_payouts(chain_id, recipient_address, period, epoch_start DESC);
+
+CREATE TABLE IF NOT EXISTS public.league_rollovers (
+  id bigserial PRIMARY KEY,
+  chain_id integer NOT NULL,
+  period text NOT NULL CHECK (period IN ('weekly','monthly')),
+  epoch_start timestamptz NOT NULL,
+  category text NOT NULL,
+  amount_raw numeric(78,0) NOT NULL,
+  source text,
+  source_epoch_start timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS league_rollovers_epoch_idx
+  ON public.league_rollovers(chain_id, period, epoch_start DESC, category);
