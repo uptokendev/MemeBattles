@@ -476,6 +476,44 @@ async function collectSupabaseMetrics() {
   }
 }
 
+async function collectAblyStats() {
+  const key = String(process.env.ABLY_API_KEY || "");
+  if (!key || !key.includes(":")) return null;
+
+  const auth = Buffer.from(key).toString("base64");
+  const url = "https://rest.ably.io/stats?unit=day&limit=1&direction=backwards";
+
+  try {
+    const r = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: "Basic " + auth },
+      cache: "no-store",
+    });
+
+    if (!r.ok) {
+      console.error("[collectAblyStats] HTTP " + r.status);
+      return null;
+    }
+
+    const data = await r.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+
+    const s = data[0];
+    return {
+      messages_today: {
+        inbound: s?.inbound?.all?.messages?.count ?? 0,
+        outbound: s?.outbound?.all?.messages?.count ?? 0,
+      },
+      peak_connections: s?.connections?.all?.peak ?? 0,
+      channels: s?.channels?.peak ?? 0,
+      api_requests: s?.apiRequests?.succeeded ?? 0,
+    };
+  } catch (e) {
+    console.error("[collectAblyStats]", e?.message);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const want = String(process.env.DIAGNOSTICS_TOKEN || "");
@@ -1465,7 +1503,7 @@ if (!out.checks.ably?.ok) {
     // Collect detailed metrics (run in parallel)
     const [supabaseMetrics, ablyStats, railwayMetrics] = await Promise.all([
       collectSupabaseMetrics(),
-      Promise.resolve(null), // placeholder — implemented in Task 2
+      collectAblyStats(),
       Promise.resolve(null), // placeholder — implemented in Task 3
     ]);
 
