@@ -423,6 +423,59 @@ async function checkAblyServerKey() {
   };
 }
 
+async function collectSupabaseMetrics() {
+  const DATABASE_URL = process.env.DATABASE_URL || "";
+  if (!DATABASE_URL) return null;
+
+  const sslDisabled = String(process.env.PG_DISABLE_SSL || "").trim() === "1";
+  const allowSelfSigned = String(process.env.PG_SSL_ALLOW_SELF_SIGNED || "").trim() === "1";
+  let ca = null;
+  try { ca = loadOptionalCaPem(); } catch { return null; }
+
+  let host = "";
+  try { host = parseDbUrl(DATABASE_URL).host; } catch { return null; }
+
+  const ssl = sslDisabled
+    ? false
+    : ca
+      ? { ca, rejectUnauthorized: true, servername: host }
+      : allowSelfSigned
+        ? { rejectUnauthorized: false, servername: host }
+        : { rejectUnauthorized: true, servername: host };
+
+  const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl,
+    max: 1,
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
+  });
+
+  try {
+    const [sizeRes, rowsRes, connsRes] = await Promise.all([
+      pool.query("SELECT pg_database_size(current_database()) AS size"),
+      pool.query("SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC"),
+      pool.query("SELECT count(*)::int AS count FROM pg_stat_activity"),
+    ]);
+
+    const db_size_mb = Math.round((Number(sizeRes.rows[0]?.size) / (1024 * 1024)) * 100) / 100;
+    const row_counts = {};
+    for (const row of rowsRes.rows) {
+      row_counts[row.relname] = Number(row.n_live_tup);
+    }
+    const active_connections = Number(connsRes.rows[0]?.count) || 0;
+
+    // storage_size_mb deferred — Supabase Storage API doesn't expose total size via bucket listing.
+    // Would require iterating all objects. Acceptable to leave null for v1.
+    return { db_size_mb, row_counts, active_connections, storage_size_mb: null };
+  } catch (e) {
+    console.error("[collectSupabaseMetrics]", e?.message);
+    return null;
+  } finally {
+    try { await pool.end(); } catch {}
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const want = String(process.env.DIAGNOSTICS_TOKEN || "");
@@ -1408,6 +1461,19 @@ if (!out.checks.ably?.ok) {
         );
       }
     }
+
+    // Collect detailed metrics (run in parallel)
+    const [supabaseMetrics, ablyStats, railwayMetrics] = await Promise.all([
+      collectSupabaseMetrics(),
+      Promise.resolve(null), // placeholder — implemented in Task 2
+      Promise.resolve(null), // placeholder — implemented in Task 3
+    ]);
+
+    out.metrics = {
+      supabase: supabaseMetrics,
+      ably: ablyStats,
+      railway: railwayMetrics,
+    };
 
     const gates = {
       core: [
