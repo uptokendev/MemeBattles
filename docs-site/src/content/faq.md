@@ -1,6 +1,6 @@
 ---
 title: FAQ
-description: Fast answers for traders and creators.
+description: Fast answers for traders, creators, and recruiters.
 ---
 
 This page is designed to be scannable. Pick a category, open a question, and you are done.
@@ -9,19 +9,20 @@ If you are brand new, start with **[Getting Started](/getting-started)**.
 
 ## Getting Started
 
-### What is MemeBattles?
-MemeBattles is a creator-first memecoin launchpad that combines:
+### What is MemeWarzone?
+MemeWarzone is a creator-first memecoin launchpad that combines:
 - a bonding-curve launch phase
 - paid discovery (UpVotes)
 - competitive Leagues that reward creators and traders
+- a Ranking System and Recruiter Program layered on top of the core market
 
-### What do I need to use MemeBattles?
-- A Web3 wallet (e.g. MetaMask)
+### What do I need to use MemeWarzone?
+- A Web3 wallet (e.g. MetaMask or Rabby)
 - A small amount of BNB for gas
-- The official site: memebattles.gg
+- The official site: memewar.zone
 
 ### Which chain do you support?
-At launch we focus on BSC (BNB Chain). Your wallet must be on the same network as the app.
+At launch we focus on **BNB Chain**. Your wallet must be on the same network as the app.
 
 ### What is a campaign?
 A campaign is a token launch page with trading and progression to graduation.
@@ -34,7 +35,7 @@ Trading fees are **2% on buys** and **2% on sells**.
 ### Where does the trading fee go?
 From each trade amount T:
 - **0.75% of T** funds the League Treasury
-- the remaining portion goes to protocol revenue
+- the remaining portion goes to protocol revenue and other configured platform distributions
 
 ### What is the bonding curve and why does price move fast?
 During the launch phase, price is determined by a bonding curve. Early liquidity is thin and price impact is higher.
@@ -54,7 +55,7 @@ An UpVote is a paid visibility boost for a campaign.
 **0.003 BNB** per UpVote.
 
 ### Can UpVotes be refunded?
-No. An UpVote is a paid action that immediately affects ranking/visibility.
+No. An UpVote is a paid action that immediately affects ranking and visibility.
 
 ## For Creators
 
@@ -96,7 +97,30 @@ Leagues are recurring competitions (weekly/monthly) that reward performance and 
 Leagues are funded by the **0.75%** slice from trades.
 
 ### When can I claim rewards?
-Claims become available after the relevant league/epoch completes and winners are finalized.
+Claims become available after the relevant league or epoch completes and winners are finalized.
+
+## Ranking System
+
+### How do ranks work?
+Every user starts as a **Recruit** and can climb through higher military-style ranks over time.
+
+### Where do I see my rank?
+Your rank badge is shown on your **profile banner** and is meant to be a visible status signal inside the ecosystem.
+
+### What happens when I rank up?
+Rank-ups can trigger a **promotion popup** and include a **share button** so users can show the milestone publicly.
+
+## Recruiter Program
+
+### How does the Recruiter Program work?
+Recruiters bring creators and traders into MemeWarzone using a unique recruiter code. Linked activity is attributed back to the recruiter.
+
+### What does a recruiter earn?
+- **0.25%** on buys and sells from linked creators and linked traders
+- **0.30%** when a linked creator campaign graduates
+
+### What can recruiters see?
+Recruiters have a dashboard showing their squad, rankings, earnings before payout, and lifetime earnings.
 
 ## Fees and Economics
 

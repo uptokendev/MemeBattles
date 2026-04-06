@@ -7,9 +7,17 @@ export const sidebar: NavSection[] = [
     items: [
       { title: 'Introduction', href: '/introduction' },
       { title: 'Why we built this', href: '/why-we-built-this' },
-      { title: 'What is MemeBattles?', href: '/what-is-memebattles' },
+      { title: 'What is MemeWarzone?', href: '/what-is-memewarzone' },
       { title: 'What problem does it solve?', href: '/problem-we-solve' },
       { title: 'Getting Started', href: '/getting-started' },
+      { title: 'Roadmap', href: '/roadmap' }
+    ]
+  },
+  {
+    title: 'Programs & progression',
+    items: [
+      { title: 'Ranking System', href: '/ranking-system' },
+      { title: 'Recruiter Program', href: '/programs/recruiter-program' }
     ]
   },
   {
@@ -36,7 +44,7 @@ export const sidebar: NavSection[] = [
       { title: 'Troubleshooting', href: '/traders/troubleshooting' }
     ]
   },
-   {
+  {
     title: 'For creators',
     items: [
       { title: 'Overview', href: '/creators' },

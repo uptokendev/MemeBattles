@@ -3,7 +3,7 @@ title: Trading basics
 description: Buy, sell, and understand what you’re signing when you click confirm.
 ---
 
-This is the minimum you should know before placing trades on MemeBattles.
+This is the minimum you should know before placing trades on MemeWarzone.
 
 ## What you’re trading
 During the pre-graduation phase, you trade against a **bonding curve** using BNB.

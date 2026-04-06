@@ -3,7 +3,7 @@ title: For Creators
 description: Launch a campaign, reach graduation, earn as a creator, and build a real following.
 ---
 
-MemeBattles is built for **creators who want a fair launch** and a **growth loop** after launch.
+MemeWarzone is built for **creators who want a fair launch** and a **growth loop** after launch.
 
 ## Recommended order
 1. **[Create a campaign](/creators/create-a-campaign)**
@@ -13,7 +13,8 @@ MemeBattles is built for **creators who want a fair launch** and a **growth loop
 5. **[The growth loop](/creators/growth-loop)**
 
 ## What creators get that most launchpads don’t
-MemeBattles is structured so creators benefit when they succeed:
+MemeWarzone is structured so creators benefit when they succeed:
 - discovery via **UpVotes**
 - recurring attention via **Leagues**
+- additional distribution via the **Recruiter Program**
 - predictable **Treasury policy** (Owners Safe → weekly cadence)

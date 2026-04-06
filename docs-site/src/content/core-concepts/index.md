@@ -1,9 +1,9 @@
 ---
 title: Core Concepts
-description: The mental model for how MemeBattles works.
+description: The mental model for how MemeWarzone works.
 ---
 
-If you understand these concepts, everything else in MemeBattles becomes easy.
+If you understand these concepts, everything else in MemeWarzone becomes easy.
 
 ## The 60-second overview
 1. A **Creator** launches a **Campaign** (a token) in seconds.

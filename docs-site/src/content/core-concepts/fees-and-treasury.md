@@ -3,7 +3,7 @@ title: Fees & Treasury
 description: What you pay, and where it goes.
 ---
 
-MemeBattles is designed so fees don’t only reward the platform — they also fund **league prize pools** and **creator earnings**.
+MemeWarzone is designed so fees don’t only reward the platform — they also fund **league prize pools** and **creator earnings**.
 
 ## The core fees (high level)
 - **Trading**: a fee on buys and sells (currently **2% buy** and **2% sell**)

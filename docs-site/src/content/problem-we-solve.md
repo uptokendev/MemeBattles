@@ -2,7 +2,7 @@
 title: What problem does it solve?
 ---
 
-# What problem does MemeBattles solve?
+# What problem does MemeWarzone solve?
 
 Meme coins are not “serious finance”, but the **market mechanics are real** — and the incentives in most launchpads are broken.
 
@@ -36,7 +36,12 @@ Most launches are a one-and-done:
 
 **Our fix:** Leagues introduce a recurring loop (weekly/monthly epochs). The market stays active because there is always an ongoing competition.
 
-## Problem 4 — “Where does the money go?” is unclear
+## Problem 4 — Platforms rarely build identity and progression
+Users often get treated like temporary order flow instead of long-term participants.
+
+**Our fix:** MemeWarzone adds a **Ranking System** and a **Recruiter Program** so active users can build visible status, build squads, and participate in growth.
+
+## Problem 5 — “Where does the money go?” is unclear
 Users and creators deserve to understand the economics:
 
 - what fees exist

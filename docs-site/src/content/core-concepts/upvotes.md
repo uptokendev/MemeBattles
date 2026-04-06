@@ -3,7 +3,7 @@ title: UpVotes
 description: Paid discovery that moves a campaign’s visibility.
 ---
 
-**UpVotes** are MemeBattles’ discovery primitive. Instead of hidden pay-to-play listings, visibility is earned in public via on-chain UpVotes.
+**UpVotes** are MemeWarzone’ discovery primitive. Instead of hidden pay-to-play listings, visibility is earned in public via on-chain UpVotes.
 
 ## What an UpVote does
 An UpVote increases a campaign’s visibility on surfaces like:

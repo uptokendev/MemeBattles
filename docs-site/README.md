@@ -1,6 +1,6 @@
-# MemeBattles Docs Site (Framework)
+# MemeWarzone Docs Site (Framework)
 
-This folder is a **standalone GitBook-like docs frontend** meant to be deployed to a separate Vercel project (Option A), e.g. `docs.memebattles.gg`.
+This folder is a **standalone GitBook-like docs frontend** meant to be deployed to a separate Vercel project (Option A), e.g. `docs.memewar.zone`.
 
 ## Local dev
 

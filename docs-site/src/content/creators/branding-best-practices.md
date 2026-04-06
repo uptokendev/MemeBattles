@@ -31,7 +31,7 @@ Signals traders look for:
 - mods for first 24h
 - rules against impersonation
 
-## What MemeBattles rewards
+## What MemeWarzone rewards
 - UpVotes (visibility)
 - consistent trading activity (leagues/rankings)
 - shareable moments (graduation, wins)

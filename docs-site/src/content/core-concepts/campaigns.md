@@ -3,7 +3,7 @@ title: Campaigns
 description: A campaign is a token launch with a built-in trading arena.
 ---
 
-In MemeBattles, a **campaign** is the unit of creation and competition: a token launched by a creator, with a public token page where trading, discovery, and league performance are tracked.
+In MemeWarzone, a **campaign** is the unit of creation and competition: a token launched by a creator, with a public token page where trading, discovery, and league performance are tracked.
 
 A campaign combines:
 1. **Token identity** (name, ticker, image, creator)

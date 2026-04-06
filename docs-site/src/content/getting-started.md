@@ -3,7 +3,7 @@ title: Getting Started
 description: Set up your wallet, connect, and make your first trade safely.
 ---
 
-MemeBattles is a **launchpad + trading arena** on **BNB Chain**. You can trade tokens on their bonding curve, help campaigns get discovered via **UpVotes**, and compete in **Leagues**.
+MemeWarzone is a **launchpad + trading arena** on **BNB Chain**. You can trade tokens on their bonding curve, help campaigns get discovered via **UpVotes**, compete in **Leagues**, and later participate in platform progression systems like **Ranks** and the **Recruiter Program**.
 
 This guide gets you from zero → first trade with the common gotchas covered.
 
@@ -29,8 +29,8 @@ You’ll need BNB for:
 
 Any exchange that supports BNB Chain can be used. Withdraw BNB to your wallet address.
 
-## 4) Open MemeBattles and connect
-1. Go to the MemeBattles site.
+## 4) Open MemeWarzone and connect
+1. Go to the official **MemeWarzone** site.
 2. Click **Connect Wallet**.
 3. Approve the connection request in your wallet.
 
@@ -65,7 +65,7 @@ Bonding curves move the price as you trade:
 
 ## 7) Use UpVotes
 UpVotes are a paid discovery mechanic:
-- They help campaigns climb visibility/trending surfaces.
+- They help campaigns climb visibility and trending surfaces.
 - They are best used when a campaign is **early** and needs momentum.
 
 UpVotes are on-chain and require BNB.
@@ -73,7 +73,7 @@ UpVotes are on-chain and require BNB.
 ## 8) Leagues and rewards
 Leagues are competitive epochs (weekly/monthly) funded by protocol activity:
 - Campaigns and traders compete on defined metrics.
-- Winners can **claim rewards** at/after epoch finalization.
+- Winners can **claim rewards** at or after epoch finalization.
 
 If you don’t see your rewards immediately, check:
 - You’re connected with the **same wallet** that earned them.
@@ -81,9 +81,9 @@ If you don’t see your rewards immediately, check:
 
 ## Security checklist (read this)
 - **Never** share your seed phrase.
-- Bookmark the official MemeBattles domain.
+- Bookmark the official **MemeWarzone** domain.
 - Don’t trust DMs “from staff.”
-- Verify token/campaign pages—memecoins are high-risk.
+- Verify token/campaign pages — memecoins are high-risk.
 - If a wallet pop-up looks unusual, **reject** and refresh.
 
 ## Troubleshooting
