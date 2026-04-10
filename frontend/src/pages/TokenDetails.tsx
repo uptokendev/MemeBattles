@@ -1376,198 +1376,163 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
   return (
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
-      <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-5">
-        <div className="grid grid-cols-1 xl:grid-cols-[200px_minmax(0,1fr)] gap-4 md:gap-5 items-start">
-          <div className="flex xl:block justify-start">
+      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0">
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch">
+          <div className="relative min-h-[180px] bg-muted/20 xl:min-h-0">
             <img
               src={tokenData.image}
               alt={tokenData.ticker}
-              className="w-24 h-24 md:w-32 md:h-32 xl:w-[180px] xl:h-[180px] rounded-2xl object-cover ring-1 ring-border/40 border border-border/40 shadow-lg"
+              className="h-full w-full object-cover"
             />
           </div>
 
-          <div className="min-w-0 flex flex-col gap-3">
+          <div className="min-w-0 flex flex-col gap-3 p-3 md:p-4 xl:p-5">
             <div className="rounded-2xl border border-border/60 bg-muted/15 px-3 py-3 md:px-4 md:py-3">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 md:gap-3 min-w-0">
-                    <h1 className="text-lg md:text-2xl font-retro text-foreground truncate max-w-full">
-                      {tokenData.name}
-                    </h1>
-                    <span className="text-xs md:text-sm text-muted-foreground font-mono">
-                      {tokenData.ticker}
-                    </span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
-                        isDexStage
-                          ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
-                          : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
-                      }`}
-                    >
-                      {stagePill}
-                    </span>
-                  </div>
+              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:flex-nowrap xl:gap-2.5 xl:overflow-x-auto">
+                <h1 className="text-lg md:text-2xl font-retro text-foreground whitespace-nowrap">
+                  {tokenData.name}
+                </h1>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] md:text-xs text-muted-foreground">
-                    {(() => {
-                      const creator = String(campaign?.creator ?? "").trim();
-                      if (!creator) return null;
+                <span className="text-xs md:text-sm text-muted-foreground font-mono whitespace-nowrap">
+                  {tokenData.ticker}
+                </span>
 
-                      const display =
-                        (creatorProfile?.displayName
-                          ? String(creatorProfile.displayName).trim()
-                          : "") || shortenAddress(creator);
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap ${
+                    isDexStage
+                      ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
+                      : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                  }`}
+                >
+                  {stagePill}
+                </span>
 
-                      const createdLabel = campaign?.createdAt
-                        ? formatTimeAgo(campaign.createdAt)
-                        : campaign?.timeAgo
-                        ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}`
-                        : "—";
+                {(() => {
+                  const creator = String(campaign?.creator ?? "").trim();
+                  if (!creator) return null;
 
-                      const initial = display ? display.slice(0, 1).toUpperCase() : "C";
+                  const display =
+                    (creatorProfile?.displayName
+                      ? String(creatorProfile.displayName).trim()
+                      : "") || shortenAddress(creator);
 
-                      return (
-                        <>
-                          <Link
-                            to={`/profile?address=${creator}`}
-                            className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[240px]"
-                          >
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage
-                                src={creatorProfile?.avatarUrl || undefined}
-                                alt={display}
-                              />
-                              <AvatarFallback className="text-[10px]">
-                                {initial}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-foreground/90 truncate">{display}</span>
-                          </Link>
-                          <span className="hidden md:inline">•</span>
-                          <span>{createdLabel}</span>
-                        </>
-                      );
-                    })()}
+                  const createdLabel = campaign?.createdAt
+                    ? formatTimeAgo(campaign.createdAt)
+                    : campaign?.timeAgo
+                    ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}`
+                    : "—";
 
-                    <button
-                      type="button"
-                      onClick={copyAddress}
-                      className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors"
-                      title="Copy contract address"
-                    >
-                      <span className="font-mono">{shortenAddress(campaign?.token ?? "") || "—"}</span>
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
+                  const initial = display ? display.slice(0, 1).toUpperCase() : "C";
 
-                <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-end">
-                  {tokenData.hasWebsite && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 p-0 hover:bg-muted/50"
-                      onClick={() => {
-                        const url = campaign?.website;
-                        if (url) window.open(url, "_blank", "noopener,noreferrer");
-                      }}
-                    >
-                      <Globe className="h-4 w-4" />
-                    </Button>
-                  )}
-
-                  {tokenData.hasTwitter && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 p-0 hover:bg-muted/50"
-                      onClick={() => {
-                        const handle = campaign?.xAccount;
-                        if (!handle) return;
-                        const url = handle.startsWith("http")
-                          ? handle
-                          : `https://x.com/${handle.replace(/^@/, "")}`;
-                        window.open(url, "_blank", "noopener,noreferrer");
-                      }}
-                    >
-                      <img
-                        src={twitterIcon}
-                        alt="Twitter"
-                        className="h-4 w-4"
-                      />
-                    </Button>
-                  )}
-
-                  {campaignAddr ? (
+                  return (
                     <>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className="h-8 w-8 rounded-xl"
-                        onClick={toggleFollow}
-                        disabled={followBusy}
-                        aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
-                        title={isFollowing ? "Unfollow" : "Follow"}
+                      <Link
+                        to={`/profile?address=${creator}`}
+                        className="inline-flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[220px] flex-shrink-0"
                       >
-                        <Star
-                          className={
-                            isFollowing
-                              ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
-                              : "text-muted-foreground/70"
-                          }
-                        />
-                      </Button>
+                        <Avatar className="h-6 w-6">
+                          <AvatarImage
+                            src={creatorProfile?.avatarUrl || undefined}
+                            alt={display}
+                          />
+                          <AvatarFallback className="text-[10px]">
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-[11px] md:text-xs text-foreground/90 truncate">{display}</span>
+                      </Link>
 
-                      <UpvoteDialog
-                        campaignAddress={campaignAddr}
-                        buttonVariant="secondary"
-                        buttonSize="sm"
-                        className="h-8 px-3 text-xs"
-                      />
+                      <span className="text-[11px] md:text-xs text-muted-foreground whitespace-nowrap">
+                        {createdLabel}
+                      </span>
                     </>
-                  ) : null}
-                </div>
+                  );
+                })()}
+
+                <button
+                  type="button"
+                  onClick={copyAddress}
+                  className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors flex-shrink-0"
+                  title="Copy contract address"
+                >
+                  <span className="font-mono text-[11px] md:text-xs whitespace-nowrap">
+                    {shortenAddress(campaign?.token ?? "") || "—"}
+                  </span>
+                  <Copy className="h-3 w-3" />
+                </button>
+
+                {tokenData.hasWebsite && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 p-0 hover:bg-muted/50 flex-shrink-0"
+                    onClick={() => {
+                      const url = campaign?.website;
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    <Globe className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {tokenData.hasTwitter && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 p-0 hover:bg-muted/50 flex-shrink-0"
+                    onClick={() => {
+                      const handle = campaign?.xAccount;
+                      if (!handle) return;
+                      const url = handle.startsWith("http")
+                        ? handle
+                        : `https://x.com/${handle.replace(/^@/, "")}`;
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    <img
+                      src={twitterIcon}
+                      alt="Twitter"
+                      className="h-4 w-4"
+                    />
+                  </Button>
+                )}
+
+                {campaignAddr ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="h-8 w-8 rounded-xl flex-shrink-0"
+                      onClick={toggleFollow}
+                      disabled={followBusy}
+                      aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
+                      title={isFollowing ? "Unfollow" : "Follow"}
+                    >
+                      <Star
+                        className={
+                          isFollowing
+                            ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
+                            : "text-muted-foreground/70"
+                        }
+                      />
+                    </Button>
+
+                    <UpvoteDialog
+                      campaignAddress={campaignAddr}
+                      buttonVariant="secondary"
+                      buttonSize="sm"
+                      className="h-8 px-3 text-xs flex-shrink-0"
+                    />
+                  </>
+                ) : null}
               </div>
             </div>
 
             <div className="rounded-2xl border border-border/60 bg-muted/15 px-3 py-3 md:px-4 md:py-3">
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {Object.entries(tokenData.metrics).map(([key, data]) => {
-                      const ch = (data as any).change as number | null;
-                      return (
-                        <Button
-                          key={key}
-                          type="button"
-                          variant={selectedTimeframe === key ? "secondary" : "ghost"}
-                          size="sm"
-                          className="h-7 rounded-lg px-2.5 text-[10px] md:text-[11px]"
-                          onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
-                        >
-                          <span className="text-muted-foreground mr-1.5">{key}</span>
-                          <span
-                            className={
-                              ch == null
-                                ? "text-muted-foreground"
-                                : ch > 0
-                                ? "text-emerald-400"
-                                : ch < 0
-                                ? "text-red-400"
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {ch == null
-                              ? "—"
-                              : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
-                          </span>
-                        </Button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-muted/25 p-1 self-start lg:self-auto">
+                <div className="flex items-center justify-end">
+                  <div className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-muted/25 p-1">
                     <Button
                       size="sm"
                       variant={displayDenom === "USD" ? "secondary" : "ghost"}
@@ -1587,7 +1552,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:ml-auto xl:max-w-[900px] xl:grid-cols-5">
                   <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
                     <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Market cap</p>
                     <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{marketCapDisplay}</p>
@@ -1596,13 +1561,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
                     <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Price</p>
                     <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{priceDisplay}</p>
-                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">
-                      {selectedTimeframe} move {(() => {
-                        const ch = tokenData.metrics[selectedTimeframe]?.change ?? null;
-                        if (ch == null) return "—";
-                        return `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`;
-                      })()}
-                    </p>
+                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Spot</p>
                   </div>
 
                   <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
@@ -1652,7 +1611,42 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto md:justify-end">
+              <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:justify-end">
+                {!isDexStage && (
+                  <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+                    {Object.entries(tokenData.metrics).map(([key, data]) => {
+                      const ch = (data as any).change as number | null;
+                      return (
+                        <Button
+                          key={key}
+                          type="button"
+                          variant={selectedTimeframe === key ? "secondary" : "ghost"}
+                          size="sm"
+                          className="h-7 rounded-lg px-2.5 text-[10px] md:text-[11px]"
+                          onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
+                        >
+                          <span className="text-muted-foreground mr-1.5">{key}</span>
+                          <span
+                            className={
+                              ch == null
+                                ? "text-muted-foreground"
+                                : ch > 0
+                                ? "text-emerald-400"
+                                : ch < 0
+                                ? "text-red-400"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {ch == null
+                              ? "—"
+                              : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
+                          </span>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {!isDexStage && (
                   <AthBar
                     currentLabel={marketCapUsdLabel ?? undefined}
