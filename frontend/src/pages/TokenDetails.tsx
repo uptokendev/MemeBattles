@@ -1376,9 +1376,9 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
   return (
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
-      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0">
-        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch">
-          <div className="relative min-h-[180px] bg-muted/20 xl:min-h-0">
+      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[280px]">
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[280px]">
+          <div className="relative min-h-[220px] bg-muted/20 xl:min-h-[280px]">
             <img
               src={tokenData.image}
               alt={tokenData.ticker}
@@ -1386,9 +1386,9 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             />
           </div>
 
-          <div className="min-w-0 flex flex-col gap-3 p-3 md:p-4 xl:p-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-3 py-3 md:px-4 md:py-3">
-              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:flex-nowrap xl:gap-2.5 xl:overflow-x-auto">
+          <div className="min-w-0 flex flex-col justify-between gap-4 p-4 md:p-5 xl:p-6">
+            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-4 md:px-5 md:py-4 min-h-[72px]">
+              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:ml-auto xl:w-fit xl:flex-nowrap xl:justify-end xl:gap-2.5 xl:overflow-x-auto">
                 <h1 className="text-lg md:text-2xl font-retro text-foreground whitespace-nowrap">
                   {tokenData.name}
                 </h1>
@@ -1529,7 +1529,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-3 py-3 md:px-4 md:py-3">
+            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-4 md:px-5 md:py-4 min-h-[128px]">
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-end">
                   <div className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-muted/25 p-1">
@@ -1552,7 +1552,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:ml-auto xl:max-w-[900px] xl:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:ml-auto xl:w-full xl:max-w-[920px] xl:grid-cols-5">
                   <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
                     <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Market cap</p>
                     <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{marketCapDisplay}</p>
