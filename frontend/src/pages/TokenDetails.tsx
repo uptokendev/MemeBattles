@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Copy, ExternalLink, Globe, ChevronDown, Star } from "lucide-react";
+import { Copy, ExternalLink, Globe, Star } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -121,7 +121,6 @@ const TokenDetails = () => {
       return "USD";
     }
   });
-  const [metricsExpanded, setMetricsExpanded] = useState(false);
   const isMobile = window.innerWidth < 768;
 
   // Keep CTA styling consistent with TopBar (Create Coin / Connect Wallet)
@@ -194,7 +193,7 @@ const TokenDetails = () => {
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [activity, setActivity] = useState<CampaignActivity | null>(null);
-  const [activityTab, setActivityTab] = useState<"comments" | "trades">("comments");
+  const [activityTab, setActivityTab] = useState<"overview" | "comments" | "trades">("overview");
   const [curveReserveWei, setCurveReserveWei] = useState<bigint | null>(null);
 
   // UI rows for the transactions table
@@ -1376,71 +1375,38 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
   }
 
   return (
-    <div className="h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
-      {/* Main Content - Single Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4 lg:flex-1 lg:min-h-0">
-        {/* Left Column - Header, Chart & Transactions (3/4 width) */}
-        <div className="lg:col-span-3 lg:min-h-0">
-          <div className="flex flex-col gap-3 md:gap-4 lg:h-full lg:min-h-0 lg:overflow-y-auto pr-1">
-          {/* Top Header Bar */}
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-6 flex-shrink-0">
-            <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
-              {/* Token Image & Info */}
-              <div className="flex items-center gap-3 md:gap-5 flex-1 min-w-0">
+    <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 md:gap-4 items-start">
+        <div className="min-w-0 flex flex-col gap-3 md:gap-4">
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3 md:gap-4 min-w-0">
                 <img
                   src={tokenData.image}
                   alt={tokenData.ticker}
-                  className="w-12 h-12 md:w-16 md:h-16 rounded-full flex-shrink-0"
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-full flex-shrink-0 ring-1 ring-border/40"
                 />
 
-                <div className="flex flex-col gap-1.5 md:gap-2.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 md:gap-3">
-                    <h1 className="text-sm md:text-lg font-retro text-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-base md:text-xl font-retro text-foreground truncate max-w-full">
                       {tokenData.name}
                     </h1>
                     <span className="text-xs md:text-sm text-muted-foreground font-mono">
                       {tokenData.ticker}
                     </span>
-                    <Copy
-                      className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground cursor-pointer hover:text-foreground transition-colors flex-shrink-0"
-                      onClick={copyAddress}
-                    />
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                        isDexStage
+                          ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
+                          : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                      }`}
+                    >
+                      {stagePill}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1.5 md:gap-2.5">
-                    {tokenData.hasWebsite && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 md:h-7 md:w-7 p-0 hover:bg-muted/50"
-                        onClick={() => {
-                          const url = campaign?.website;
-                          if (url) window.open(url, "_blank", "noopener,noreferrer");
-                        }}
-                      >
-                        <Globe className="h-3 w-3 md:h-3.5 md:w-3.5" />
-                      </Button>
-                    )}
-                    {tokenData.hasTwitter && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 md:h-7 md:w-7 p-0 hover:bg-muted/50"
-                        onClick={() => {
-                          const handle = campaign?.xAccount;
-                          if (!handle) return;
-                          const url = handle.startsWith("http")
-                            ? handle
-                            : `https://x.com/${handle.replace(/^@/, "")}`;
-                          window.open(url, "_blank", "noopener,noreferrer");
-                        }}
-                      >
-                        <img
-                          src={twitterIcon}
-                          alt="Twitter"
-                          className="h-3 w-3 md:h-3.5 md:w-3.5"
-                        />
-                      </Button>
-                    )}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] md:text-xs text-muted-foreground">
                     {(() => {
                       const creator = String(campaign?.creator ?? "").trim();
                       if (!creator) return null;
@@ -1459,254 +1425,233 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                       const initial = display ? display.slice(0, 1).toUpperCase() : "C";
 
                       return (
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <>
                           <Link
                             to={`/profile?address=${creator}`}
-                            className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[240px]"
+                            className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[220px]"
                           >
-                            <Avatar className="h-6 w-6 md:h-7 md:w-7">
+                            <Avatar className="h-6 w-6">
                               <AvatarImage
                                 src={creatorProfile?.avatarUrl || undefined}
                                 alt={display}
                               />
-                              <AvatarFallback className="text-[10px] md:text-xs">
+                              <AvatarFallback className="text-[10px]">
                                 {initial}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="text-[10px] md:text-xs text-foreground/90 truncate">
-                              {display}
-                            </span>
+                            <span className="text-foreground/90 truncate">{display}</span>
                           </Link>
-                          <span className="text-[10px] md:text-xs text-muted-foreground">
-                            •
-                          </span>
-                          <span className="text-[10px] md:text-xs text-muted-foreground">
-                            {createdLabel}
-                          </span>
-
-                          {/* Upvote CTA */}
-                          {/* Follow + Upvote CTA */}
-                          {campaignAddr ? (
-                            <div className="flex items-center gap-2">
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="icon"
-                                className="h-6 w-6 md:h-7 md:w-7 rounded-xl"
-                                onClick={toggleFollow}
-                                disabled={followBusy}
-                                aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
-                                title={isFollowing ? "Unfollow" : "Follow"}
-                              >
-                                <Star className={isFollowing ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
-      : "text-muted-foreground/70"} />
-                              </Button>
-
-                              <UpvoteDialog
-                                campaignAddress={campaignAddr}
-                                buttonVariant="secondary"
-                                buttonSize="sm"
-                                className="h-6 md:h-7 px-2 md:px-3 text-[10px] md:text-xs"
-                              />
-                            </div>
-                          ) : null}
-                        </div>
+                          <span>•</span>
+                          <span>{createdLabel}</span>
+                        </>
                       );
                     })()}
+
+                    <button
+                      type="button"
+                      onClick={copyAddress}
+                      className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors"
+                      title="Copy contract address"
+                    >
+                      <span className="font-mono">{shortenAddress(campaign?.token ?? "") || "—"}</span>
+                      <Copy className="h-3 w-3" />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Vertical Separator - Desktop only */}
-              <div className="hidden md:block h-14 w-px bg-border/50 flex-shrink-0" />
-
-              {/* Market Cap */}
-              <div className="flex items-center justify-between md:flex-col md:gap-1.5 md:flex-1 md:min-w-0">
-                <p className="text-xs text-muted-foreground">Market cap</p>
-                <div className="flex items-center gap-2 md:gap-3">
-                  <div className="flex items-center gap-1 rounded-md bg-muted/40 p-0.5">
-                    <Button
-                      size="sm"
-                      variant={displayDenom === "USD" ? "secondary" : "ghost"}
-                      className="h-4 px-2"
-                      onClick={() => setDisplayDenom("USD")}
-                    >
-                      USD
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={displayDenom === "BNB" ? "secondary" : "ghost"}
-                      className="h-4 px-2"
-                      onClick={() => setDisplayDenom("BNB")}
-                    >
-                      BNB
-                    </Button>
-                  </div>
-
-                                    <h3 className="text-base md:text-xl font-retro text-foreground">
-                    {marketCapDisplay}
-                  </h3>
-                </div>
-              </div>
-
-              {/* Mobile: Expandable Metrics Section */}
-              {isMobile && (
-                <div className="w-full">
-                  <button
-                    onClick={() => setMetricsExpanded(!metricsExpanded)}
-                    className="w-full flex items-center justify-between py-2 px-3 bg-muted/30 rounded-lg"
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                {tokenData.hasWebsite && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 p-0 hover:bg-muted/50"
+                    onClick={() => {
+                      const url = campaign?.website;
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
                   >
-                    <span className="text-xs text-muted-foreground">More metrics</span>
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${
-                        metricsExpanded ? "rotate-180" : ""
-                      }`}
+                    <Globe className="h-4 w-4" />
+                  </Button>
+                )}
+
+                {tokenData.hasTwitter && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 p-0 hover:bg-muted/50"
+                    onClick={() => {
+                      const handle = campaign?.xAccount;
+                      if (!handle) return;
+                      const url = handle.startsWith("http")
+                        ? handle
+                        : `https://x.com/${handle.replace(/^@/, "")}`;
+                      window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    <img
+                      src={twitterIcon}
+                      alt="Twitter"
+                      className="h-4 w-4"
                     />
-                  </button>
+                  </Button>
+                )}
 
-                  {metricsExpanded && (
-                    <div className="mt-2 space-y-3 p-3 bg-muted/20 rounded-lg">
-                      {/* Time-based percentage changes */}
-                      <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(tokenData.metrics).map(([key, data]) => (
-                          <div
-                            key={key}
-                            onClick={() =>
-                              setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")
-                            }
-                            className={`cursor-pointer transition-all text-xs p-2 rounded-md ${
-                              selectedTimeframe === key
-                                ? "bg-accent/20"
-                                : "hover:bg-muted/50"
-                            }`}
-                          >
-                            <span className="text-muted-foreground">{key}</span>
-                            {(() => {
-                              const ch = (data as any).change as number | null;
-                              return (
-                                <span
-                                  className={`ml-2 font-mono ${
-                                    ch == null
-                                      ? "text-muted-foreground"
-                                      : ch > 0
-                                      ? "text-green-500"
-                                      : ch < 0
-                                      ? "text-red-500"
-                                      : "text-muted-foreground"
-                                  }`}
-                                >
-                                  {ch == null ? "—" : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
-                                </span>
-                              );
-                            })()}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Additional metrics */}
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/30">
-                        <div className="text-xs">
-                          <span className="text-muted-foreground block">Price</span>
-                          <span className="font-mono text-foreground">{priceDisplay}</span>
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground block">{liquidityLabel}</span>
-                          <span className="font-mono text-foreground">{liquidityDisplay}</span>
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground block">Volume</span>
-                          <span className="font-mono text-foreground">
-                            {volumeDisplay}
-                          </span>
-                        </div>
-                        <div className="text-xs">
-                          <span className="text-muted-foreground block">Holders</span>
-                          <span className="font-mono text-foreground">{tokenData.holders}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Desktop: Vertical Separator */}
-              <div className="hidden lg:block h-14 w-px bg-border/50 flex-shrink-0" />
-
-              {/* Desktop: Time-based Metrics & Additional Metrics */}
-              <div className="hidden lg:flex flex-col gap-4 flex-[2] min-w-0">
-                {/* Top Row - Time-based percentage changes (clickable) */}
-                <div className="flex items-center justify-between gap-4">
-                  {Object.entries(tokenData.metrics).map(([key, data]) => (
-                    <div
-                      key={key}
-                      onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
-                      className={`cursor-pointer transition-all text-xs ${
-                        selectedTimeframe === key
-                          ? "opacity-100"
-                          : "opacity-50 hover:opacity-75"
-                      }`}
+                {campaignAddr ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="h-8 w-8 rounded-xl"
+                      onClick={toggleFollow}
+                      disabled={followBusy}
+                      aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
+                      title={isFollowing ? "Unfollow" : "Follow"}
                     >
-                      <span className="text-muted-foreground">{key}</span>
-                      {(() => {
-                        const ch = (data as any).change as number | null;
-                        return (
-                          <span
-                            className={`ml-2 font-mono ${
-                              ch == null
-                                ? "text-muted-foreground"
-                                : ch < 0
-                                ? "text-red-500"
-                                : "text-green-500"
-                            }`}
-                          >
-                            {ch == null ? "—" : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  ))}
+                      <Star
+                        className={
+                          isFollowing
+                            ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
+                            : "text-muted-foreground/70"
+                        }
+                      />
+                    </Button>
+
+                    <UpvoteDialog
+                      campaignAddress={campaignAddr}
+                      buttonVariant="secondary"
+                      buttonSize="sm"
+                      className="h-8 px-3 text-xs"
+                    />
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+
+          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  {Object.entries(tokenData.metrics).map(([key, data]) => {
+                    const ch = (data as any).change as number | null;
+                    return (
+                      <Button
+                        key={key}
+                        type="button"
+                        variant={selectedTimeframe === key ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 rounded-xl px-3 text-[11px] md:text-xs"
+                        onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
+                      >
+                        <span className="text-muted-foreground mr-2">{key}</span>
+                        <span
+                          className={
+                            ch == null
+                              ? "text-muted-foreground"
+                              : ch > 0
+                              ? "text-emerald-400"
+                              : ch < 0
+                              ? "text-red-400"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {ch == null
+                            ? "—"
+                            : `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`}
+                        </span>
+                      </Button>
+                    );
+                  })}
                 </div>
 
-                {/* Bottom Row - Price, Liq, Volume, Holders */}
-                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">Price</span>
-                    <span className="ml-2 font-mono text-foreground">{priceDisplay}</span>
-                  </div>
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">{liquidityLabel}</span>
-                    <span className="ml-2 font-mono text-foreground">{liquidityDisplay}</span>
-                  </div>
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">Volume</span>
-                    <span className="ml-2 font-mono text-foreground">
-                      {volumeDisplay}
+                <div className="inline-flex items-center gap-1 rounded-xl border border-border/40 bg-muted/25 p-1 self-start lg:self-auto">
+                  <Button
+                    size="sm"
+                    variant={displayDenom === "USD" ? "secondary" : "ghost"}
+                    className="h-7 px-3 text-[11px] md:text-xs"
+                    onClick={() => setDisplayDenom("USD")}
+                  >
+                    USD
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={displayDenom === "BNB" ? "secondary" : "ghost"}
+                    className="h-7 px-3 text-[11px] md:text-xs"
+                    onClick={() => setDisplayDenom("BNB")}
+                  >
+                    BNB
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground">Market cap</p>
+                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{marketCapDisplay}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground">Price</p>
+                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{priceDisplay}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {selectedTimeframe} move {(() => {
+                      const ch = tokenData.metrics[selectedTimeframe]?.change ?? null;
+                      if (ch == null) return "—";
+                      return `${ch > 0 ? "▲" : ch < 0 ? "▼" : "•"} ${Math.abs(ch).toFixed(2)}%`;
+                    })()}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground">Volume ({selectedTimeframe})</p>
+                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{volumeDisplay}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground">{liquidityLabel}</p>
+                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{liquidityDisplay}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground">Holders</p>
+                  <p className="mt-1 text-base md:text-lg font-retro text-foreground">{tokenData.holders}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-muted-foreground">Progress</p>
+                    <span className="text-[11px] text-muted-foreground">
+                      {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
                     </span>
                   </div>
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">Holders</span>
-                    <span className="ml-2 font-mono text-foreground">{tokenData.holders}</span>
+                  <div className="mt-2 h-1.5 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
+                      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%`, minWidth: curveProgress.pct > 0 ? "1px" : undefined }}
+                    />
                   </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
                 </div>
               </div>
             </div>
           </Card>
 
-          {/* Chart */}
           <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] lg:min-h-[320px] lg:h-auto"
-style={!isMobile ? { flex: "2" } : undefined}
+            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
           >
             <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs text-muted-foreground">{chartTitle}</span>
+                <span className="text-xs text-muted-foreground">{chartTitle || "Price chart"}</span>
                 <span
-  className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
-    isDexStage
-      ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
-      : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
-  }`}
->
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                    isDexStage
+                      ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
+                      : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                  }`}
+                >
                   {stagePill}
                 </span>
               </div>
@@ -1750,438 +1695,472 @@ style={!isMobile ? { flex: "2" } : undefined}
                 )
               ) : (
                 <div className="w-full h-full min-h-[260px]">
-                <CurvePriceChart
-                  campaignAddress={campaign?.campaign}
-                  curvePointsOverride={curvePointsForUi}
-                  loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
-                  errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
-                />
+                  <CurvePriceChart
+                    campaignAddress={campaign?.campaign}
+                    curvePointsOverride={curvePointsForUi}
+                    loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
+                    errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
+                  />
                 </div>
               )}
             </div>
           </Card>
 
-          {/* Activity: Comments / Trades */}
-        <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-          <Tabs
-            value={activityTab}
-            onValueChange={(v) => setActivityTab(v as any)}
-            className="h-full flex flex-col min-h-0"
-          >
-            <TabsList className={ctaTabsListClass}>
-              <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Comments</TabsTrigger>
-              <TabsTrigger value="trades" className={ctaTabsTriggerClass}>Trades</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="comments" className="flex-1 min-h-0 overflow-y-auto">
-              {campaign?.campaign ? (
-                <TokenComments
-                  chainId={Number(wallet.chainId ?? 97)}
-                  campaignAddress={campaign.campaign}
-                  tokenAddress={campaign.token}
-                />
-              ) : (
-                <div className="text-sm text-muted-foreground">Loading comments…</div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="trades" className="flex-1 min-h-0 overflow-y-auto">
-              <div className="overflow-auto h-full">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-card/60 backdrop-blur border-b border-border">
-                    <tr>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
-                      <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
-                      <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {txs.map((tx) => {
-                      const addr = (tx.makerAddress || "").toLowerCase();
-                      const prof = addr ? makerProfiles[addr] : null;
-                      const avatar = prof?.avatarUrl || "/placeholder.svg";
-                      const label = (prof?.displayName && prof.displayName.trim().length)
-                        ? prof.displayName.trim()
-                        : tx.maker;
-
-                      const explorer = getExplorerBase(wallet.chainId);
-                      const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
-                      const txUrl = tx.txHash ? `${explorer}/tx/${tx.txHash}` : "";
-
-                      return (
-                        <tr key={tx.id} className="border-b border-border/40 hover:bg-muted/20">
-                          <td className="py-3 px-3">
-                            {tx.makerAddress ? (
-                              <Link
-                                to={`/profile?address=${tx.makerAddress}`}
-                                className="flex items-center gap-2 min-w-0"
-                              >
-                                <img
-                                  src={avatar}
-                                  alt={label}
-                                  onError={(e) => {
-                                    (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
-                                  }}
-                                  className="h-7 w-7 rounded-full ring-1 ring-border/30 flex-shrink-0"
-                                />
-                                <span className="font-mono text-foreground truncate max-w-[140px]">
-                                  {label}
-                                </span>
-                              </Link>
-                            ) : (
-                              <span className="font-mono text-muted-foreground">—</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-3">
-                            <span
-                              className={`font-medium ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}
-                            >
-                              {tx.type === "buy" ? "Buy" : "Sell"}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 font-mono text-foreground">{tx.bnb}</td>
-
-                          <td className="py-3 px-3 font-mono">
-                            <span className={tx.type === "buy" ? "text-emerald-300" : "text-red-300"}>
-                              {tx.amount}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 text-muted-foreground whitespace-nowrap">{tx.time}</td>
-
-                          <td className="py-3 px-3 text-right">
-                            {txUrl ? (
-                              <a
-                                href={txUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
-                              >
-                                {txLabel}
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {txs.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                          No trades yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </TabsContent>
-          </Tabs>
-        </Card>
-        </div>
-        </div>
-
-        {/* Right Column - Trading Panel & Stats (1/3 width) */}
-        <div className="lg:col-span-1 min-h-0">
-          <div className="flex flex-col gap-4 lg:h-full min-h-0 lg:overflow-y-auto pr-1">
-          {/* Trading Panel - 2/5 height */}
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-            <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
-            <TabsList className={ctaTabsListClass}>
-                <TabsTrigger value="buy" className={ctaTabsTriggerClass}>Buy</TabsTrigger>
-                <TabsTrigger value="sell" className={ctaTabsTriggerClass}>Sell</TabsTrigger>
+            <Tabs
+              value={activityTab}
+              onValueChange={(v) => setActivityTab(v as any)}
+              className="h-full flex flex-col min-h-0"
+            >
+              <TabsList className="grid w-full grid-cols-3 mb-3 bg-transparent p-0 h-auto gap-2">
+                <TabsTrigger value="overview" className={ctaTabsTriggerClass}>Overview</TabsTrigger>
+                <TabsTrigger value="trades" className={ctaTabsTriggerClass}>Trades</TabsTrigger>
+                <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Community</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="buy" className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground hover:bg-emerald-500/15 text-emerald-200 border-emerald-500/30" onClick={toggleTradeInputDenom}>{tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}</Button></div>
-                    <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={tradeAmount}
-                      onChange={(e) => setTradeAmount(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="0"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
+              <TabsContent value="overview" className="mt-0">
+                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
+                      <span className="text-xs text-muted-foreground">All-time</span>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">
-                      Balance:{" "}
-                      {tradeInputDenom === "BNB"
-                        ? formatBnbFromWei(bnbBalanceWei)
-                        : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Cost: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
-                    </span>
-                  </div>
-                  {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground">Est. receive: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}</p>
-                  ) : null}
-                  {quoteError ? (
-                    <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
-                  ) : null}
-                </div>
 
-                <div className="text-center text-xs text-muted-foreground">
-                  {isDexStage ? (
-                    <p>Token is graduated. Trade on DEX.</p>
-                  ) : quoteWei != null ? (
-                    <p>
-                      You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Buy volume</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Sell volume</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Net flow</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Buyers</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                        <p className="text-xs text-muted-foreground">Protocol fee rate</p>
+                        <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
                     </p>
-                  ) : (
-                    <p>Enter an amount to see the buy quote.</p>
-                  )}
-                </div>
+                  </div>
 
-                <Button
-                  onClick={handlePlaceTrade}
-                  disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
-                  className={`w-full ${topbarButtonClass} py-5`}
-                >
-                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
-                </Button>
+                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
+                      <span className="text-xs text-muted-foreground">
+                        {holderDistribution.totalHolders} holders
+                      </span>
+                    </div>
+
+                    {holderDistribution.top.length ? (
+                      <div className="space-y-3 overflow-auto min-h-0 pr-1">
+                        {holderDistribution.top.map((h, idx) => {
+                          const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
+
+                          return (
+                            <div key={h.address} className="space-y-1">
+                              <div className="flex items-center justify-between text-xs gap-2">
+                                <span className="font-mono min-w-0 truncate">
+                                  {rank != null ? `${rank}. ` : ""}
+
+                                  {h.isLp ? (
+                                    <span className="text-foreground">{h.label}</span>
+                                  ) : (
+                                    <Link
+                                      to={`/profile?address=${h.address}`}
+                                      className="text-foreground hover:underline underline-offset-4"
+                                    >
+                                      {h.label}
+                                    </Link>
+                                  )}
+                                </span>
+                                <span className="font-mono text-muted-foreground flex-shrink-0">{h.pct.toFixed(2)}%</span>
+                              </div>
+                              <Progress value={h.pct} className="h-1.5" />
+                            </div>
+                          );
+                        })}
+                        {holderDistribution.othersPct > 0 ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-mono">Others</span>
+                              <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
+                            </div>
+                            <Progress value={holderDistribution.othersPct} className="h-1.5" />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">No holder data yet.</div>
+                    )}
+
+                    <p className="text-[11px] text-muted-foreground mt-3">
+                      Estimated from bonding-curve trades (excludes transfers).
+                    </p>
+                  </div>
+                </div>
               </TabsContent>
 
-              <TabsContent value="sell" className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker})</span><Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground" onClick={toggleTradeInputDenom}>{tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}</Button></div>
-                    <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={tradeAmount}
-                      onChange={(e) => setTradeAmount(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="0"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
-                    </div>
-                  </div>
+              <TabsContent value="comments" className="mt-0">
+                {campaign?.campaign ? (
+                  <TokenComments
+                    chainId={Number(wallet.chainId ?? 97)}
+                    campaignAddress={campaign.campaign}
+                    tokenAddress={campaign.token}
+                  />
+                ) : (
+                  <div className="text-sm text-muted-foreground">Loading comments…</div>
+                )}
+              </TabsContent>
 
-                  <div className="flex gap-1 mt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                      onClick={() => {
-                        if (tokenBalanceWei == null) return;
-                        const amt = (tokenBalanceWei * 25n) / 100n;
-                        setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
-                      }}
-                    >
-                      25%
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                      onClick={() => {
-                        if (tokenBalanceWei == null) return;
-                        const amt = (tokenBalanceWei * 50n) / 100n;
-                        setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
-                      }}
-                    >
-                      50%
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                      onClick={() => {
-                        if (tokenBalanceWei == null) return;
-                        setTradeAmount(ethers.formatUnits(tokenBalanceWei, TOKEN_DECIMALS));
-                      }}
-                    >
-                      100%
-                    </Button>
-                  </div>
+              <TabsContent value="trades" className="mt-0">
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-card/60 backdrop-blur border-b border-border">
+                      <tr>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
+                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
+                        <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {txs.map((tx) => {
+                        const addr = (tx.makerAddress || "").toLowerCase();
+                        const prof = addr ? makerProfiles[addr] : null;
+                        const avatar = prof?.avatarUrl || "/placeholder.svg";
+                        const label = (prof?.displayName && prof.displayName.trim().length)
+                          ? prof.displayName.trim()
+                          : tx.maker;
 
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-muted-foreground">
-                      Balance:{" "}
-                      {tradeInputDenom === "BNB"
-                        ? formatBnbFromWei(bnbBalanceWei)
-                        : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Payout: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
-                    </span>
-                  </div>
-                  {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
-                    <p className="mt-1 text-[11px] text-muted-foreground">Est. sell: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}</p>
-                  ) : null}
+                        const explorer = getExplorerBase(wallet.chainId);
+                        const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
+                        const txUrl = tx.txHash ? `${explorer}/tx/${tx.txHash}` : "";
 
-                  {approvePending ? (
-                    <p className="mt-2 text-center text-xs text-muted-foreground">Approval in progress...</p>
-                  ) : null}
-                  {quoteError ? (
-                    <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
-                  ) : null}
+                        return (
+                          <tr key={tx.id} className="border-b border-border/40 hover:bg-muted/20">
+                            <td className="py-3 px-3">
+                              {tx.makerAddress ? (
+                                <Link
+                                  to={`/profile?address=${tx.makerAddress}`}
+                                  className="flex items-center gap-2 min-w-0"
+                                >
+                                  <img
+                                    src={avatar}
+                                    alt={label}
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+                                    }}
+                                    className="h-7 w-7 rounded-full ring-1 ring-border/30 flex-shrink-0"
+                                  />
+                                  <span className="font-mono text-foreground truncate max-w-[140px]">
+                                    {label}
+                                  </span>
+                                </Link>
+                              ) : (
+                                <span className="font-mono text-muted-foreground">—</span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span
+                                className={`font-medium ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}
+                              >
+                                {tx.type === "buy" ? "Buy" : "Sell"}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3 font-mono text-foreground">{tx.bnb}</td>
+
+                            <td className="py-3 px-3 font-mono">
+                              <span className={tx.type === "buy" ? "text-emerald-300" : "text-red-300"}>
+                                {tx.amount}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3 text-muted-foreground whitespace-nowrap">{tx.time}</td>
+
+                            <td className="py-3 px-3 text-right">
+                              {txUrl ? (
+                                <a
+                                  href={txUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
+                                >
+                                  {txLabel}
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {txs.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                            No trades yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-
-                <div className="text-center text-xs text-muted-foreground">
-                  {isDexStage ? (
-                    <p>Token is graduated. Trade on DEX.</p>
-                  ) : quoteWei != null ? (
-                    <p>
-                      You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})
-                    </p>
-                  ) : (
-                    <p>Enter an amount to see the sell quote.</p>
-                  )}
-                </div>
-
-                <Button
-                  onClick={handlePlaceTrade}
-                  disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
-                  className={`w-full ${topbarButtonClass} py-5`}
-                >
-                  {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}
-                </Button>
               </TabsContent>
             </Tabs>
           </Card>
+        </div>
 
+        <div className="xl:sticky xl:top-[88px] self-start">
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-  <div className="flex flex-col gap-3">
-    <div className="flex items-center justify-between">
-      <h3 className="text-sm font-semibold">Bonding Curve Progress</h3>
-      <span className="text-xs text-muted-foreground">
-        {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
-      </span>
-    </div>
-
-    <div className="h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
-      <div
-        className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
-        style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%`, minWidth: curveProgress.pct > 0 ? "1px" : undefined }}
-      />
-    </div>
-
-    <div className="text-xs text-muted-foreground">
-      <div className="flex items-center justify-between">
-        <span>{formatBnbFromWei(curveProgress.reserveWei ?? undefined)} in bonding curve</span>
-        <span className="text-right">
-          <span className="text-muted-foreground">Remaining:</span>{" "}
-          {remainingCurveLabel.primary}
-        </span>
-      </div>
-    </div>
-  </div>
-</Card>
-
-          {/* Flywheel Statistics - 2/5 height */}
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-            <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
-              <span className="text-xs text-muted-foreground">All-time</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-4">
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Buy volume</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Sell volume</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Net flow</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Buyers</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
-              </div>
-              <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <p className="text-xs text-muted-foreground">Protocol fee rate</p>
-                <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
-              </div>
-            </div>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">Bonding Curve Progress</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
+                  </span>
+                </div>
 
-            <p className="text-xs text-muted-foreground mt-3">
-              Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
-            </p>
-          </Card>
+                <div className="mt-3 h-2 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
+                    style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%`, minWidth: curveProgress.pct > 0 ? "1px" : undefined }}
+                  />
+                </div>
 
-          {/* Holder Distribution - 1/5 height */}
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-            <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
-              <span className="text-xs text-muted-foreground">
-                {holderDistribution.totalHolders} holders
-              </span>
-            </div>
-
-            {holderDistribution.top.length ? (
-              <div className="space-y-3 overflow-auto flex-1 min-h-0 pr-1">
-                {holderDistribution.top.map((h, idx) => {
-                  const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
-
-                  return (
-                    <div key={h.address} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-mono min-w-0">
-                          {rank != null ? `${rank}. ` : ""}
-
-                          {h.isLp ? (
-                            <span className="text-foreground">{h.label}</span>
-                          ) : (
-                            <Link
-                              to={`/profile?address=${h.address}`}
-                              className="text-foreground hover:underline underline-offset-4"
-                            >
-                              {h.label}
-                            </Link>
-                          )}
-                        </span>
-                        <span className="font-mono text-muted-foreground">{h.pct.toFixed(2)}%</span>
-                      </div>
-                      <Progress value={h.pct} className="h-1.5" />
-                    </div>
-                  );
-                })}
-                {holderDistribution.othersPct > 0 ? (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono">Others</span>
-                      <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
-                    </div>
-                    <Progress value={holderDistribution.othersPct} className="h-1.5" />
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">In curve</p>
+                    <p className="mt-1 font-mono text-foreground">{formatBnbFromWei(curveProgress.reserveWei ?? undefined)}</p>
                   </div>
-                ) : null}
+                  <div className="text-right">
+                    <p className="text-muted-foreground">Remaining</p>
+                    <p className="mt-1 font-mono text-foreground">{remainingCurveLabel.primary}</p>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">No holder data yet.</div>
-            )}
 
-            <p className="text-[11px] text-muted-foreground mt-3 flex-shrink-0">
-              Estimated from bonding-curve trades (excludes transfers).
-            </p>
+              <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-semibold">Your Position</h3>
+                  <span className="text-[11px] text-muted-foreground">Wallet view</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">BNB balance</p>
+                    <p className="mt-1 font-mono text-foreground break-words">{formatBnbFromWei(bnbBalanceWei)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Token balance</p>
+                    <p className="mt-1 font-mono text-foreground break-words">{formatTokenFromWei(tokenBalanceWei)} {tokenData.ticker}</p>
+                  </div>
+                </div>
+              </div>
+
+              <Tabs value={tradeTab} onValueChange={handleTradeTabChange}>
+                <TabsList className={ctaTabsListClass}>
+                  <TabsTrigger value="buy" className={ctaTabsTriggerClass}>Buy</TabsTrigger>
+                  <TabsTrigger value="sell" className={ctaTabsTriggerClass}>Sell</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="buy" className="space-y-3 mt-0">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-muted-foreground hover:bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                          onClick={toggleTradeInputDenom}
+                        >
+                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
+                        </Button>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={tradeAmount}
+                        onChange={(e) => setTradeAmount(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="0"
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-muted-foreground">
+                        Balance:{" "}
+                        {tradeInputDenom === "BNB"
+                          ? formatBnbFromWei(bnbBalanceWei)
+                          : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Cost: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
+                      </span>
+                    </div>
+                    {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">Est. receive: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}</p>
+                    ) : null}
+                    {quoteError ? (
+                      <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="text-center text-xs text-muted-foreground">
+                    {isDexStage ? (
+                      <p>Token is graduated. Trade on DEX.</p>
+                    ) : quoteWei != null ? (
+                      <p>
+                        You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                      </p>
+                    ) : (
+                      <p>Enter an amount to see the buy quote.</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handlePlaceTrade}
+                    disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    className={`w-full ${topbarButtonClass} py-5`}
+                  >
+                    {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="sell" className="space-y-3 mt-0">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Amount ({tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker})</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={toggleTradeInputDenom}
+                        >
+                          {tradeInputDenom === "BNB" ? `Switch to ${tokenData.ticker}` : "Switch to BNB"}
+                        </Button>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Slippage: {SLIPPAGE_PCT}%</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={tradeAmount}
+                        onChange={(e) => setTradeAmount(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 pr-20 font-mono text-base focus:outline-none focus:ring-1 focus:ring-primary"
+                        placeholder="0"
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <span className="text-xs font-mono text-muted-foreground">{tradeInputDenom === "BNB" ? "BNB" : tokenData.ticker}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1 mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs h-7"
+                        onClick={() => {
+                          if (tokenBalanceWei == null) return;
+                          const amt = (tokenBalanceWei * 25n) / 100n;
+                          setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                        }}
+                      >
+                        25%
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs h-7"
+                        onClick={() => {
+                          if (tokenBalanceWei == null) return;
+                          const amt = (tokenBalanceWei * 50n) / 100n;
+                          setTradeAmount(ethers.formatUnits(amt, TOKEN_DECIMALS));
+                        }}
+                      >
+                        50%
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs h-7"
+                        onClick={() => {
+                          if (tokenBalanceWei == null) return;
+                          setTradeAmount(ethers.formatUnits(tokenBalanceWei, TOKEN_DECIMALS));
+                        }}
+                      >
+                        100%
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-muted-foreground">
+                        Balance:{" "}
+                        {tradeInputDenom === "BNB"
+                          ? formatBnbFromWei(bnbBalanceWei)
+                          : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Payout: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
+                      </span>
+                    </div>
+                    {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
+                      <p className="mt-1 text-[11px] text-muted-foreground">Est. sell: {formatTokenFromWei(effectiveTokenWei)} {tokenData.ticker}</p>
+                    ) : null}
+
+                    {approvePending ? (
+                      <p className="mt-2 text-center text-xs text-muted-foreground">Approval in progress...</p>
+                    ) : null}
+                    {quoteError ? (
+                      <p className="mt-2 text-center text-xs text-destructive">{quoteError}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="text-center text-xs text-muted-foreground">
+                    {isDexStage ? (
+                      <p>Token is graduated. Trade on DEX.</p>
+                    ) : quoteWei != null ? (
+                      <p>
+                        You will receive ~{formatBnbFromWei(quoteWei)} (min {formatBnbFromWei((quoteWei * BigInt(100 - SLIPPAGE_PCT)) / 100n)})
+                      </p>
+                    ) : (
+                      <p>Enter an amount to see the sell quote.</p>
+                    )}
+                  </div>
+
+                  <Button
+                    onClick={handlePlaceTrade}
+                    disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    className={`w-full ${topbarButtonClass} py-5`}
+                  >
+                    {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}
+                  </Button>
+                </TabsContent>
+              </Tabs>
+            </div>
           </Card>
-          </div>
         </div>
       </div>
     </div>
