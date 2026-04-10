@@ -1376,164 +1376,170 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
   return (
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 md:gap-4 items-start">
-        <div className="min-w-0 flex flex-col gap-3 md:gap-4">
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-start gap-3 md:gap-4 min-w-0">
-                <img
-                  src={tokenData.image}
-                  alt={tokenData.ticker}
-                  className="w-14 h-14 md:w-16 md:h-16 rounded-full flex-shrink-0 ring-1 ring-border/40"
-                />
+      <Card className="relative overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-5">
+        <div className="xl:hidden mb-4">
+          <img
+            src={tokenData.image}
+            alt={tokenData.ticker}
+            className="w-24 h-24 md:w-32 md:h-32 rounded-2xl object-cover ring-1 ring-border/40 border border-border/40 shadow-lg"
+          />
+        </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-base md:text-xl font-retro text-foreground truncate max-w-full">
-                      {tokenData.name}
-                    </h1>
-                    <span className="text-xs md:text-sm text-muted-foreground font-mono">
-                      {tokenData.ticker}
-                    </span>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
-                        isDexStage
-                          ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
-                          : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
-                      }`}
-                    >
-                      {stagePill}
-                    </span>
-                  </div>
+        <div className="hidden xl:block absolute left-5 top-5">
+          <img
+            src={tokenData.image}
+            alt={tokenData.ticker}
+            className="w-[180px] h-[180px] rounded-2xl object-cover ring-1 ring-border/40 border border-border/40 shadow-lg"
+          />
+        </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] md:text-xs text-muted-foreground">
-                    {(() => {
-                      const creator = String(campaign?.creator ?? "").trim();
-                      if (!creator) return null;
-
-                      const display =
-                        (creatorProfile?.displayName
-                          ? String(creatorProfile.displayName).trim()
-                          : "") || shortenAddress(creator);
-
-                      const createdLabel = campaign?.createdAt
-                        ? formatTimeAgo(campaign.createdAt)
-                        : campaign?.timeAgo
-                        ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}`
-                        : "—";
-
-                      const initial = display ? display.slice(0, 1).toUpperCase() : "C";
-
-                      return (
-                        <>
-                          <Link
-                            to={`/profile?address=${creator}`}
-                            className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[220px]"
-                          >
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage
-                                src={creatorProfile?.avatarUrl || undefined}
-                                alt={display}
-                              />
-                              <AvatarFallback className="text-[10px]">
-                                {initial}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-foreground/90 truncate">{display}</span>
-                          </Link>
-                          <span>•</span>
-                          <span>{createdLabel}</span>
-                        </>
-                      );
-                    })()}
-
-                    <button
-                      type="button"
-                      onClick={copyAddress}
-                      className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors"
-                      title="Copy contract address"
-                    >
-                      <span className="font-mono">{shortenAddress(campaign?.token ?? "") || "—"}</span>
-                      <Copy className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
+        <div className="flex flex-col gap-3 xl:min-h-[180px] xl:pl-[208px]">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 md:gap-3 min-w-0">
+                <h1 className="text-lg md:text-2xl font-retro text-foreground truncate max-w-full">
+                  {tokenData.name}
+                </h1>
+                <span className="text-xs md:text-sm text-muted-foreground font-mono">
+                  {tokenData.ticker}
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                    isDexStage
+                      ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
+                      : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                  }`}
+                >
+                  {stagePill}
+                </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                {tokenData.hasWebsite && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0 hover:bg-muted/50"
-                    onClick={() => {
-                      const url = campaign?.website;
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    <Globe className="h-4 w-4" />
-                  </Button>
-                )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] md:text-xs text-muted-foreground">
+                {(() => {
+                  const creator = String(campaign?.creator ?? "").trim();
+                  if (!creator) return null;
 
-                {tokenData.hasTwitter && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0 hover:bg-muted/50"
-                    onClick={() => {
-                      const handle = campaign?.xAccount;
-                      if (!handle) return;
-                      const url = handle.startsWith("http")
-                        ? handle
-                        : `https://x.com/${handle.replace(/^@/, "")}`;
-                      window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    <img
-                      src={twitterIcon}
-                      alt="Twitter"
-                      className="h-4 w-4"
-                    />
-                  </Button>
-                )}
+                  const display =
+                    (creatorProfile?.displayName
+                      ? String(creatorProfile.displayName).trim()
+                      : "") || shortenAddress(creator);
 
-                {campaignAddr ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon"
-                      className="h-8 w-8 rounded-xl"
-                      onClick={toggleFollow}
-                      disabled={followBusy}
-                      aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
-                      title={isFollowing ? "Unfollow" : "Follow"}
-                    >
-                      <Star
-                        className={
-                          isFollowing
-                            ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
-                            : "text-muted-foreground/70"
-                        }
-                      />
-                    </Button>
+                  const createdLabel = campaign?.createdAt
+                    ? formatTimeAgo(campaign.createdAt)
+                    : campaign?.timeAgo
+                    ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}`
+                    : "—";
 
-                    <UpvoteDialog
-                      campaignAddress={campaignAddr}
-                      buttonVariant="secondary"
-                      buttonSize="sm"
-                      className="h-8 px-3 text-xs"
-                    />
-                  </>
-                ) : null}
+                  const initial = display ? display.slice(0, 1).toUpperCase() : "C";
+
+                  return (
+                    <>
+                      <Link
+                        to={`/profile?address=${creator}`}
+                        className="flex items-center gap-2 hover:opacity-90 transition-opacity max-w-[240px]"
+                      >
+                        <Avatar className="h-6 w-6">
+                          <AvatarImage
+                            src={creatorProfile?.avatarUrl || undefined}
+                            alt={display}
+                          />
+                          <AvatarFallback className="text-[10px]">
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-foreground/90 truncate">{display}</span>
+                      </Link>
+                      <span className="hidden md:inline">•</span>
+                      <span>{createdLabel}</span>
+                    </>
+                  );
+                })()}
+
+                <button
+                  type="button"
+                  onClick={copyAddress}
+                  className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors"
+                  title="Copy contract address"
+                >
+                  <span className="font-mono">{shortenAddress(campaign?.token ?? "") || "—"}</span>
+                  <Copy className="h-3 w-3" />
+                </button>
               </div>
             </div>
-          </Card>
 
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-3 md:p-4">
+            <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-end">
+              {tokenData.hasWebsite && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 p-0 hover:bg-muted/50"
+                  onClick={() => {
+                    const url = campaign?.website;
+                    if (url) window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  <Globe className="h-4 w-4" />
+                </Button>
+              )}
+
+              {tokenData.hasTwitter && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 p-0 hover:bg-muted/50"
+                  onClick={() => {
+                    const handle = campaign?.xAccount;
+                    if (!handle) return;
+                    const url = handle.startsWith("http")
+                      ? handle
+                      : `https://x.com/${handle.replace(/^@/, "")}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
+                >
+                  <img
+                    src={twitterIcon}
+                    alt="Twitter"
+                    className="h-4 w-4"
+                  />
+                </Button>
+              )}
+
+              {campaignAddr ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className="h-8 w-8 rounded-xl"
+                    onClick={toggleFollow}
+                    disabled={followBusy}
+                    aria-label={isFollowing ? "Unfollow campaign" : "Follow campaign"}
+                    title={isFollowing ? "Unfollow" : "Follow"}
+                  >
+                    <Star
+                      className={
+                        isFollowing
+                          ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
+                          : "text-muted-foreground/70"
+                      }
+                    />
+                  </Button>
+
+                  <UpvoteDialog
+                    campaignAddress={campaignAddr}
+                    buttonVariant="secondary"
+                    buttonSize="sm"
+                    className="h-8 px-3 text-xs"
+                  />
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border/60 bg-muted/15 px-3 py-3 md:px-4 md:py-3">
             <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {Object.entries(tokenData.metrics).map(([key, data]) => {
                     const ch = (data as any).change as number | null;
                     return (
@@ -1542,10 +1548,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                         type="button"
                         variant={selectedTimeframe === key ? "secondary" : "ghost"}
                         size="sm"
-                        className="h-8 rounded-xl px-3 text-[11px] md:text-xs"
+                        className="h-7 rounded-lg px-2.5 text-[10px] md:text-[11px]"
                         onClick={() => setSelectedTimeframe(key as "5m" | "1h" | "4h" | "24h")}
                       >
-                        <span className="text-muted-foreground mr-2">{key}</span>
+                        <span className="text-muted-foreground mr-1.5">{key}</span>
                         <span
                           className={
                             ch == null
@@ -1566,11 +1572,11 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   })}
                 </div>
 
-                <div className="inline-flex items-center gap-1 rounded-xl border border-border/40 bg-muted/25 p-1 self-start lg:self-auto">
+                <div className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-muted/25 p-1 self-start lg:self-auto">
                   <Button
                     size="sm"
                     variant={displayDenom === "USD" ? "secondary" : "ghost"}
-                    className="h-7 px-3 text-[11px] md:text-xs"
+                    className="h-6 px-2.5 text-[10px] md:text-[11px]"
                     onClick={() => setDisplayDenom("USD")}
                   >
                     USD
@@ -1578,7 +1584,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   <Button
                     size="sm"
                     variant={displayDenom === "BNB" ? "secondary" : "ghost"}
-                    className="h-7 px-3 text-[11px] md:text-xs"
+                    className="h-6 px-2.5 text-[10px] md:text-[11px]"
                     onClick={() => setDisplayDenom("BNB")}
                   >
                     BNB
@@ -1586,16 +1592,16 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground">Market cap</p>
-                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{marketCapDisplay}</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Market cap</p>
+                  <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{marketCapDisplay}</p>
                 </div>
 
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground">Price</p>
-                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{priceDisplay}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Price</p>
+                  <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{priceDisplay}</p>
+                  <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">
                     {selectedTimeframe} move {(() => {
                       const ch = tokenData.metrics[selectedTimeframe]?.change ?? null;
                       if (ch == null) return "—";
@@ -1604,335 +1610,106 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground">Volume ({selectedTimeframe})</p>
-                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{volumeDisplay}</p>
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Volume</p>
+                  <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{volumeDisplay}</p>
+                  <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Window {selectedTimeframe}</p>
                 </div>
 
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground">{liquidityLabel}</p>
-                  <p className="mt-1 text-base md:text-lg font-retro text-foreground break-words">{liquidityDisplay}</p>
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">{liquidityLabel}</p>
+                  <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{liquidityDisplay}</p>
+                  {!isDexStage ? (
+                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
+                  ) : (
+                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Stage {stagePill}</p>
+                  )}
                 </div>
 
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground">Holders</p>
-                  <p className="mt-1 text-base md:text-lg font-retro text-foreground">{tokenData.holders}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
-                </div>
-
-                <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-muted-foreground">Progress</p>
-                    <span className="text-[11px] text-muted-foreground">
-                      {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
-                    </span>
-                  </div>
-                  <div className="mt-2 h-1.5 w-full rounded-full bg-muted/30 border border-border/40 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.65),rgba(255,255,255,0.25),rgba(255,255,255,0.65))] dark:bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.08),rgba(255,255,255,0.25))]"
-                      style={{ width: `${Math.max(0, Math.min(100, curveProgress.pct))}%`, minWidth: curveProgress.pct > 0 ? "1px" : undefined }}
-                    />
-                  </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 md:col-span-1 col-span-2 md:col-start-auto">
+                  <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Holders</p>
+                  <p className="mt-1 text-sm md:text-base font-retro text-foreground">{tokenData.holders}</p>
+                  <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
                 </div>
               </div>
             </div>
-          </Card>
+          </div>
+        </div>
+      </Card>
 
-          <Card
-            className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
-          >
-            <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-xs text-muted-foreground">{chartTitle || "Price chart"}</span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
-                    isDexStage
-                      ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
-                      : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
-                  }`}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-3 md:gap-4 items-start">
+        <Card
+          className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 overflow-hidden flex flex-col min-h-[360px] h-[360px] md:min-h-[420px] md:h-[420px] xl:min-h-[520px] xl:h-[520px]"
+        >
+          <div className="flex flex-col gap-2 px-4 py-2 border-b border-border/40 bg-card/20 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs text-muted-foreground">{chartTitle || "Price chart"}</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${
+                  isDexStage
+                    ? "bg-emerald-500/25 text-emerald-200 border-emerald-500/40"
+                    : "bg-emerald-500/15 text-emerald-200 border-emerald-500/30"
+                }`}
+              >
+                {stagePill}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto md:justify-end">
+              {!isDexStage && (
+                <AthBar
+                  currentLabel={marketCapUsdLabel ?? undefined}
+                  storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
+                  className="w-full md:w-auto md:max-w-[320px]"
+                />
+              )}
+
+              {isDexStage && dexBaseUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
                 >
-                  {stagePill}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 w-full md:w-auto md:justify-end">
-                {!isDexStage && (
-                  <AthBar
-                    currentLabel={marketCapUsdLabel ?? undefined}
-                    storageKey={`ath:${String(chainIdForStorage)}:${String((campaignAddress ?? campaign?.campaign ?? "")).toLowerCase()}`}
-                    className="w-full md:w-auto md:max-w-[320px]"
-                  />
-                )}
-
-                {isDexStage && dexBaseUrl && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                    onClick={() => window.open(dexBaseUrl, "_blank", "noopener,noreferrer")}
-                  >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    DexScreener
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0">
-              {isDexStage ? (
-                chartUrl ? (
-                  <iframe
-                    src={chartUrl}
-                    title={`${tokenData.ticker} chart`}
-                    className="w-full h-full min-h-[260px] border-0"
-                    allow="clipboard-write; clipboard-read; encrypted-media;"
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full min-h-[260px] text-xs text-muted-foreground p-4">
-                    DexScreener data is not available yet.
-                  </div>
-                )
-              ) : (
-                <div className="w-full h-full min-h-[260px]">
-                  <CurvePriceChart
-                    campaignAddress={campaign?.campaign}
-                    curvePointsOverride={curvePointsForUi}
-                    loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
-                    errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
-                  />
-                </div>
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  DexScreener
+                </Button>
               )}
             </div>
-          </Card>
+          </div>
 
-          <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-            <Tabs
-              value={activityTab}
-              onValueChange={(v) => setActivityTab(v as any)}
-              className="h-full flex flex-col min-h-0"
-            >
-              <TabsList className="grid w-full grid-cols-3 mb-3 bg-transparent p-0 h-auto gap-2">
-                <TabsTrigger value="overview" className={ctaTabsTriggerClass}>Overview</TabsTrigger>
-                <TabsTrigger value="trades" className={ctaTabsTriggerClass}>Trades</TabsTrigger>
-                <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Community</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="mt-0">
-                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
-                      <span className="text-xs text-muted-foreground">All-time</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Buy volume</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Sell volume</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Net flow</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Buyers</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Protocol fee rate</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
-                      <span className="text-xs text-muted-foreground">
-                        {holderDistribution.totalHolders} holders
-                      </span>
-                    </div>
-
-                    {holderDistribution.top.length ? (
-                      <div className="space-y-3 overflow-auto min-h-0 pr-1">
-                        {holderDistribution.top.map((h, idx) => {
-                          const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
-
-                          return (
-                            <div key={h.address} className="space-y-1">
-                              <div className="flex items-center justify-between text-xs gap-2">
-                                <span className="font-mono min-w-0 truncate">
-                                  {rank != null ? `${rank}. ` : ""}
-
-                                  {h.isLp ? (
-                                    <span className="text-foreground">{h.label}</span>
-                                  ) : (
-                                    <Link
-                                      to={`/profile?address=${h.address}`}
-                                      className="text-foreground hover:underline underline-offset-4"
-                                    >
-                                      {h.label}
-                                    </Link>
-                                  )}
-                                </span>
-                                <span className="font-mono text-muted-foreground flex-shrink-0">{h.pct.toFixed(2)}%</span>
-                              </div>
-                              <Progress value={h.pct} className="h-1.5" />
-                            </div>
-                          );
-                        })}
-                        {holderDistribution.othersPct > 0 ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-mono">Others</span>
-                              <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
-                            </div>
-                            <Progress value={holderDistribution.othersPct} className="h-1.5" />
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">No holder data yet.</div>
-                    )}
-
-                    <p className="text-[11px] text-muted-foreground mt-3">
-                      Estimated from bonding-curve trades (excludes transfers).
-                    </p>
-                  </div>
+          <div className="flex-1 min-h-0">
+            {isDexStage ? (
+              chartUrl ? (
+                <iframe
+                  src={chartUrl}
+                  title={`${tokenData.ticker} chart`}
+                  className="w-full h-full min-h-[260px] border-0"
+                  allow="clipboard-write; clipboard-read; encrypted-media;"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full min-h-[260px] text-xs text-muted-foreground p-4">
+                  DexScreener data is not available yet.
                 </div>
-              </TabsContent>
-
-              <TabsContent value="comments" className="mt-0">
-                {campaign?.campaign ? (
-                  <TokenComments
-                    chainId={Number(wallet.chainId ?? 97)}
-                    campaignAddress={campaign.campaign}
-                    tokenAddress={campaign.token}
-                  />
-                ) : (
-                  <div className="text-sm text-muted-foreground">Loading comments…</div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="trades" className="mt-0">
-                <div className="overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-card/60 backdrop-blur border-b border-border">
-                      <tr>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
-                        <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
-                        <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {txs.map((tx) => {
-                        const addr = (tx.makerAddress || "").toLowerCase();
-                        const prof = addr ? makerProfiles[addr] : null;
-                        const avatar = prof?.avatarUrl || "/placeholder.svg";
-                        const label = (prof?.displayName && prof.displayName.trim().length)
-                          ? prof.displayName.trim()
-                          : tx.maker;
-
-                        const explorer = getExplorerBase(wallet.chainId);
-                        const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
-                        const txUrl = tx.txHash ? `${explorer}/tx/${tx.txHash}` : "";
-
-                        return (
-                          <tr key={tx.id} className="border-b border-border/40 hover:bg-muted/20">
-                            <td className="py-3 px-3">
-                              {tx.makerAddress ? (
-                                <Link
-                                  to={`/profile?address=${tx.makerAddress}`}
-                                  className="flex items-center gap-2 min-w-0"
-                                >
-                                  <img
-                                    src={avatar}
-                                    alt={label}
-                                    onError={(e) => {
-                                      (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
-                                    }}
-                                    className="h-7 w-7 rounded-full ring-1 ring-border/30 flex-shrink-0"
-                                  />
-                                  <span className="font-mono text-foreground truncate max-w-[140px]">
-                                    {label}
-                                  </span>
-                                </Link>
-                              ) : (
-                                <span className="font-mono text-muted-foreground">—</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <span
-                                className={`font-medium ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}
-                              >
-                                {tx.type === "buy" ? "Buy" : "Sell"}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3 font-mono text-foreground">{tx.bnb}</td>
-
-                            <td className="py-3 px-3 font-mono">
-                              <span className={tx.type === "buy" ? "text-emerald-300" : "text-red-300"}>
-                                {tx.amount}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3 text-muted-foreground whitespace-nowrap">{tx.time}</td>
-
-                            <td className="py-3 px-3 text-right">
-                              {txUrl ? (
-                                <a
-                                  href={txUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
-                                >
-                                  {txLabel}
-                                </a>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {txs.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                            No trades yet.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </Card>
-        </div>
+              )
+            ) : (
+              <div className="w-full h-full min-h-[260px]">
+                <CurvePriceChart
+                  campaignAddress={campaign?.campaign}
+                  curvePointsOverride={curvePointsForUi}
+                  loadingOverride={(curvePointsForUi?.length ?? 0) > 0 ? false : liveCurveLoading}
+                  errorOverride={(curvePointsForUi?.length ?? 0) > 0 ? null : liveCurveError}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
 
         <div className="xl:sticky xl:top-[88px] self-start">
           <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
             <div className="space-y-4">
               <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 mb-3">
                   <h3 className="text-sm font-semibold">Bonding Curve Progress</h3>
                   <span className="text-xs text-muted-foreground">
                     {curveProgress.matured ? "Matured" : `${curveProgress.pct.toFixed(2)}%`}
@@ -2163,6 +1940,227 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
           </Card>
         </div>
       </div>
+
+      <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
+        <Tabs
+          value={activityTab}
+          onValueChange={(v) => setActivityTab(v as any)}
+          className="h-full flex flex-col min-h-0"
+        >
+          <TabsList className="grid w-full grid-cols-3 mb-3 bg-transparent p-0 h-auto gap-2">
+            <TabsTrigger value="overview" className={ctaTabsTriggerClass}>Overview</TabsTrigger>
+            <TabsTrigger value="trades" className={ctaTabsTriggerClass}>Trades</TabsTrigger>
+            <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Community</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-0">
+            <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
+                  <span className="text-xs text-muted-foreground">All-time</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Buy volume</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Sell volume</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Net flow</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Buyers</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">Protocol fee rate</p>
+                    <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground mt-3">
+                  Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-border bg-muted/10 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {holderDistribution.totalHolders} holders
+                  </span>
+                </div>
+
+                {holderDistribution.top.length ? (
+                  <div className="space-y-3 overflow-auto min-h-0 pr-1">
+                    {holderDistribution.top.map((h, idx) => {
+                      const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
+
+                      return (
+                        <div key={h.address} className="space-y-1">
+                          <div className="flex items-center justify-between text-xs gap-2">
+                            <span className="font-mono min-w-0 truncate">
+                              {rank != null ? `${rank}. ` : ""}
+
+                              {h.isLp ? (
+                                <span className="text-foreground">{h.label}</span>
+                              ) : (
+                                <Link
+                                  to={`/profile?address=${h.address}`}
+                                  className="text-foreground hover:underline underline-offset-4"
+                                >
+                                  {h.label}
+                                </Link>
+                              )}
+                            </span>
+                            <span className="font-mono text-muted-foreground flex-shrink-0">{h.pct.toFixed(2)}%</span>
+                          </div>
+                          <Progress value={h.pct} className="h-1.5" />
+                        </div>
+                      );
+                    })}
+                    {holderDistribution.othersPct > 0 ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-mono">Others</span>
+                          <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
+                        </div>
+                        <Progress value={holderDistribution.othersPct} className="h-1.5" />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">No holder data yet.</div>
+                )}
+
+                <p className="text-[11px] text-muted-foreground mt-3">
+                  Estimated from bonding-curve trades (excludes transfers).
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="comments" className="mt-0">
+            {campaign?.campaign ? (
+              <TokenComments
+                chainId={Number(wallet.chainId ?? 97)}
+                campaignAddress={campaign.campaign}
+                tokenAddress={campaign.token}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground">Loading comments…</div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="trades" className="mt-0">
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card/60 backdrop-blur border-b border-border">
+                  <tr>
+                    <th className="text-left py-3 px-3 font-medium text-muted-foreground">Account</th>
+                    <th className="text-left py-3 px-3 font-medium text-muted-foreground">Type</th>
+                    <th className="text-left py-3 px-3 font-medium text-muted-foreground">BNB</th>
+                    <th className="text-left py-3 px-3 font-medium text-muted-foreground">Token</th>
+                    <th className="text-left py-3 px-3 font-medium text-muted-foreground">Time</th>
+                    <th className="text-right py-3 px-3 font-medium text-muted-foreground">Txn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txs.map((tx) => {
+                    const addr = (tx.makerAddress || "").toLowerCase();
+                    const prof = addr ? makerProfiles[addr] : null;
+                    const avatar = prof?.avatarUrl || "/placeholder.svg";
+                    const label = (prof?.displayName && prof.displayName.trim().length)
+                      ? prof.displayName.trim()
+                      : tx.maker;
+
+                    const explorer = getExplorerBase(wallet.chainId);
+                    const txLabel = tx.txHash ? `${tx.txHash.slice(0, 6)}…${tx.txHash.slice(-4)}` : "—";
+                    const txUrl = tx.txHash ? `${explorer}/tx/${tx.txHash}` : "";
+
+                    return (
+                      <tr key={tx.id} className="border-b border-border/40 hover:bg-muted/20">
+                        <td className="py-3 px-3">
+                          {tx.makerAddress ? (
+                            <Link
+                              to={`/profile?address=${tx.makerAddress}`}
+                              className="flex items-center gap-2 min-w-0"
+                            >
+                              <img
+                                src={avatar}
+                                alt={label}
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).src = "/placeholder.svg";
+                                }}
+                                className="h-7 w-7 rounded-full ring-1 ring-border/30 flex-shrink-0"
+                              />
+                              <span className="font-mono text-foreground truncate max-w-[140px]">
+                                {label}
+                              </span>
+                            </Link>
+                          ) : (
+                            <span className="font-mono text-muted-foreground">—</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span
+                            className={`font-medium ${tx.type === "buy" ? "text-emerald-400" : "text-red-400"}`}
+                          >
+                            {tx.type === "buy" ? "Buy" : "Sell"}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 font-mono text-foreground">{tx.bnb}</td>
+
+                        <td className="py-3 px-3 font-mono">
+                          <span className={tx.type === "buy" ? "text-emerald-300" : "text-red-300"}>
+                            {tx.amount}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-muted-foreground whitespace-nowrap">{tx.time}</td>
+
+                        <td className="py-3 px-3 text-right">
+                          {txUrl ? (
+                            <a
+                              href={txUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-4"
+                            >
+                              {txLabel}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {txs.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                        No trades yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </Card>
     </div>
   );
 };
