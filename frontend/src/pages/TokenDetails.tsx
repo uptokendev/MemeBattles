@@ -1376,19 +1376,19 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
   return (
     <div className="h-full w-full overflow-y-auto flex flex-col px-3 md:px-6 pt-16 md:pt-16 gap-3 md:gap-4">
-      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[280px]">
-        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[280px]">
-          <div className="relative min-h-[220px] bg-muted/20 xl:min-h-[280px]">
+      <Card className="overflow-hidden bg-card/30 backdrop-blur-md rounded-2xl border border-border p-0 xl:min-h-[220px]">
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] items-stretch xl:min-h-[220px]">
+          <div className="relative min-h-[180px] bg-muted/20 xl:min-h-[220px] overflow-hidden">
             <img
               src={tokenData.image}
               alt={tokenData.ticker}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain object-center"
             />
           </div>
 
-          <div className="min-w-0 flex flex-col justify-between gap-4 p-4 md:p-5 xl:p-6">
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-4 md:px-5 md:py-4 min-h-[72px]">
-              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:ml-auto xl:w-fit xl:flex-nowrap xl:justify-end xl:gap-2.5 xl:overflow-x-auto">
+          <div className="min-w-0 flex flex-col justify-between gap-3 p-3 md:p-4 xl:p-5">
+            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 md:px-4 md:py-3 min-h-[60px]">
+              <div className="flex flex-wrap items-center gap-2 md:gap-3 xl:flex-nowrap xl:justify-start xl:gap-2.5 xl:overflow-x-auto">
                 <h1 className="text-lg md:text-2xl font-retro text-foreground whitespace-nowrap">
                   {tokenData.name}
                 </h1>
@@ -1529,61 +1529,43 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-4 md:px-5 md:py-4 min-h-[128px]">
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-end">
-                  <div className="inline-flex items-center gap-1 rounded-lg border border-border/40 bg-muted/25 p-1">
-                    <Button
-                      size="sm"
-                      variant={displayDenom === "USD" ? "secondary" : "ghost"}
-                      className="h-6 px-2.5 text-[10px] md:text-[11px]"
-                      onClick={() => setDisplayDenom("USD")}
-                    >
-                      USD
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={displayDenom === "BNB" ? "secondary" : "ghost"}
-                      className="h-6 px-2.5 text-[10px] md:text-[11px]"
-                      onClick={() => setDisplayDenom("BNB")}
-                    >
-                      BNB
-                    </Button>
-                  </div>
+            <div className="rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 md:px-4 md:py-4 min-h-[90px]">
+              <div className="flex flex-col gap-2.2">
+                <div className="flex items-center justify-start">
                 </div>
 
-                <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:ml-auto xl:w-full xl:max-w-[920px] xl:grid-cols-5">
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
-                    <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Market cap</p>
-                    <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{marketCapDisplay}</p>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:w-full xl:max-w-[920px] xl:grid-cols-5">
+                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Market cap</p>
+                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{marketCapDisplay}</p>
                   </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
-                    <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Price</p>
-                    <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{priceDisplay}</p>
-                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Spot</p>
+                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Price</p>
+                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{priceDisplay}</p>
+                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Spot</p>
                   </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
-                    <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Volume</p>
-                    <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{volumeDisplay}</p>
-                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Window {selectedTimeframe}</p>
+                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Volume</p>
+                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{volumeDisplay}</p>
+                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Window {selectedTimeframe}</p>
                   </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
-                    <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">{liquidityLabel}</p>
-                    <p className="mt-1 text-sm md:text-base font-retro text-foreground break-words">{liquidityDisplay}</p>
+                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{liquidityLabel}</p>
+                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground break-words">{liquidityDisplay}</p>
                     {!isDexStage ? (
-                      <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
+                      <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Remaining {remainingCurveLabel.primary}</p>
                     ) : (
-                      <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Stage {stagePill}</p>
+                      <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Stage {stagePill}</p>
                     )}
                   </div>
 
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 col-span-2 md:col-span-1">
-                    <p className="text-[10px] md:text-[11px] text-muted-foreground uppercase tracking-wide">Holders</p>
-                    <p className="mt-1 text-sm md:text-base font-retro text-foreground">{tokenData.holders}</p>
-                    <p className="mt-1 text-[10px] md:text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
+                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 col-span-2 md:col-span-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Holders</p>
+                    <p className="mt-0.5 text-sm md:text-[15px] font-retro text-foreground">{tokenData.holders}</p>
+                    <p className="mt-0.5 text-[10px] md:text-[11px] text-muted-foreground">Buyers {flywheel.buyers}</p>
                   </div>
                 </div>
               </div>
@@ -1610,10 +1592,9 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   {stagePill}
                 </span>
               </div>
-
               <div className="flex flex-col gap-2 w-full md:w-auto md:flex-row md:items-center md:justify-end">
                 {!isDexStage && (
-                  <div className="flex flex-wrap items-center gap-1.5 md:justify-end">
+                  <div className="flex flex-wrap items-center gap-1.5 md:flex-nowrap md:justify-end">
                     {Object.entries(tokenData.metrics).map(([key, data]) => {
                       const ch = (data as any).change as number | null;
                       return (
@@ -1644,6 +1625,25 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                         </Button>
                       );
                     })}
+
+                    <div className="inline-flex items-center gap-0 rounded-lg border border-border/40 bg-muted/25 p-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant={displayDenom === "USD" ? "secondary" : "ghost"}
+                        className="h-6 px-2.5 text-[10px] md:text-[11px]"
+                        onClick={() => setDisplayDenom("USD")}
+                      >
+                        USD
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={displayDenom === "BNB" ? "secondary" : "ghost"}
+                        className="h-6 px-2.5 text-[10px] md:text-[11px]"
+                        onClick={() => setDisplayDenom("BNB")}
+                      >
+                        BNB
+                      </Button>
+                    </div>
                   </div>
                 )}
 
