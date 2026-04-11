@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import twitterIcon from "@/assets/social/twitter.png";
@@ -81,6 +82,26 @@ function formatTimeAgo(ts?: number | null): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
   return `${Math.floor(diff / 604800)}w ago`;
+}
+
+function readStoredString<T extends string>(key: string, fallback: T): T {
+  try {
+    const value = localStorage.getItem(key);
+    return (value as T) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readStoredStringArray(key: string, fallback: string[]): string[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 const TokenDetails = () => {
@@ -193,8 +214,34 @@ const TokenDetails = () => {
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [activity, setActivity] = useState<CampaignActivity | null>(null);
-  const [activityTab, setActivityTab] = useState<"overview" | "comments" | "trades">("overview");
+  const [activityTab, setActivityTab] = useState<"overview" | "comments" | "trades">(() => readStoredString("mwz:token:workspace-tab", "overview"));
+  const [communityTab, setCommunityTab] = useState<"chat" | "comments" | "updates">(() => readStoredString("mwz:token:community-tab", "chat"));
+  const [intelSections, setIntelSections] = useState<string[]>(() => readStoredStringArray("mwz:token:intel-sections", ["campaign", "flywheel", "holders"]));
   const [curveReserveWei, setCurveReserveWei] = useState<bigint | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mwz:token:workspace-tab", activityTab);
+    } catch {
+      // ignore
+    }
+  }, [activityTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mwz:token:community-tab", communityTab);
+    } catch {
+      // ignore
+    }
+  }, [communityTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mwz:token:intel-sections", JSON.stringify(intelSections));
+    } catch {
+      // ignore
+    }
+  }, [intelSections]);
 
   // UI rows for the transactions table
   const [txs, setTxs] = useState<TxRow[]>([]);
@@ -1709,112 +1756,199 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
               </TabsList>
 
               <TabsContent value="overview" className="mt-0">
-                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-retro text-foreground">Flywheel</h3>
-                      <span className="text-xs text-muted-foreground">All-time</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Buy volume</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Sell volume</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Net flow</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Buyers</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
-                      </div>
-                      <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                        <p className="text-xs text-muted-foreground">Protocol fee rate</p>
-                        <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-border bg-muted/10 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-retro text-foreground">Holder Distribution</h3>
-                      <span className="text-xs text-muted-foreground">
-                        {holderDistribution.totalHolders} holders
-                      </span>
-                    </div>
-
-                    {holderDistribution.top.length ? (
-                      <div className="space-y-3 overflow-auto min-h-0 pr-1">
-                        {holderDistribution.top.map((h, idx) => {
-                          const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
-
-                          return (
-                            <div key={h.address} className="space-y-1">
-                              <div className="flex items-center justify-between text-xs gap-2">
-                                <span className="font-mono min-w-0 truncate">
-                                  {rank != null ? `${rank}. ` : ""}
-
-                                  {h.isLp ? (
-                                    <span className="text-foreground">{h.label}</span>
-                                  ) : (
-                                    <Link
-                                      to={`/profile?address=${h.address}`}
-                                      className="text-foreground hover:underline underline-offset-4"
-                                    >
-                                      {h.label}
-                                    </Link>
-                                  )}
-                                </span>
-                                <span className="font-mono text-muted-foreground flex-shrink-0">{h.pct.toFixed(2)}%</span>
-                              </div>
-                              <Progress value={h.pct} className="h-1.5" />
-                            </div>
-                          );
-                        })}
-                        {holderDistribution.othersPct > 0 ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-mono">Others</span>
-                              <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
-                            </div>
-                            <Progress value={holderDistribution.othersPct} className="h-1.5" />
+                <Accordion
+                  type="multiple"
+                  value={intelSections}
+                  onValueChange={setIntelSections}
+                  className="space-y-3"
+                >
+                  <AccordionItem value="campaign" className="rounded-2xl border border-border bg-muted/10 px-4">
+                    <AccordionTrigger className="py-4 text-sm font-retro text-foreground hover:no-underline">
+                      Campaign Intel
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Creator</p>
+                          <p className="mt-1 text-sm font-retro text-foreground break-words">
+                            {creatorProfile?.displayName?.trim() || shortenAddress(campaign?.creator) || "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Deployed</p>
+                          <p className="mt-1 text-sm font-retro text-foreground">
+                            {campaign?.createdAt ? formatTimeAgo(campaign.createdAt) : campaign?.timeAgo ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}` : "—"}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Stage</p>
+                          <p className="mt-1 text-sm font-retro text-foreground">{stagePill}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Contract</p>
+                          <div className="mt-1 flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-mono text-foreground truncate">{shortenAddress(campaign?.token ?? "") || "—"}</span>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={copyAddress}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
-                        ) : null}
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Curve progress</p>
+                          <p className="mt-1 text-sm font-retro text-foreground">{curveProgress.pct.toFixed(2)}%</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Remaining to graduate</p>
+                          <p className="mt-1 text-sm font-retro text-foreground break-words">{remainingCurveLabel.primary}</p>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">No holder data yet.</div>
-                    )}
+                    </AccordionContent>
+                  </AccordionItem>
 
-                    <p className="text-[11px] text-muted-foreground mt-3">
-                      Estimated from bonding-curve trades (excludes transfers).
-                    </p>
-                  </div>
-                </div>
+                  <AccordionItem value="flywheel" className="rounded-2xl border border-border bg-muted/10 px-4">
+                    <AccordionTrigger className="py-4 text-sm font-retro text-foreground hover:no-underline">
+                      Flywheel
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4">
+                      <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Buy volume</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.buyVolume}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Sell volume</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.sellVolume}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Net flow</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.netFlow}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Protocol fees (est.)</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.feesEstimated}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Buyers</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.buyers}</p>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-muted/20 p-3">
+                          <p className="text-xs text-muted-foreground">Protocol fee rate</p>
+                          <p className="text-lg font-retro text-foreground">{flywheel.feeRate}</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-3">
+                        Volumes and buyer count come from on-chain counters when available. Fees are estimated from protocol fee basis points.
+                      </p>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="holders" className="rounded-2xl border border-border bg-muted/10 px-4">
+                    <AccordionTrigger className="py-4 text-sm font-retro text-foreground hover:no-underline">
+                      Holder Distribution
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs text-muted-foreground">{holderDistribution.totalHolders} holders</span>
+                        <span className="text-xs text-muted-foreground">Estimated from bonding-curve trades</span>
+                      </div>
+
+                      {holderDistribution.top.length ? (
+                        <div className="space-y-3 overflow-auto min-h-0 pr-1">
+                          {holderDistribution.top.map((h, idx) => {
+                            const rank = h.isLp ? null : holderDistribution.hasLp ? idx : idx + 1;
+
+                            return (
+                              <div key={h.address} className="space-y-1">
+                                <div className="flex items-center justify-between text-xs gap-2">
+                                  <span className="font-mono min-w-0 truncate">
+                                    {rank != null ? `${rank}. ` : ""}
+
+                                    {h.isLp ? (
+                                      <span className="text-foreground">{h.label}</span>
+                                    ) : (
+                                      <Link
+                                        to={`/profile?address=${h.address}`}
+                                        className="text-foreground hover:underline underline-offset-4"
+                                      >
+                                        {h.label}
+                                      </Link>
+                                    )}
+                                  </span>
+                                  <span className="font-mono text-muted-foreground flex-shrink-0">{h.pct.toFixed(2)}%</span>
+                                </div>
+                                <Progress value={h.pct} className="h-1.5" />
+                              </div>
+                            );
+                          })}
+                          {holderDistribution.othersPct > 0 ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-mono">Others</span>
+                                <span className="font-mono text-muted-foreground">{holderDistribution.othersPct.toFixed(2)}%</span>
+                              </div>
+                              <Progress value={holderDistribution.othersPct} className="h-1.5" />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">No holder data yet.</div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </TabsContent>
 
               <TabsContent value="comments" className="mt-0">
-                {campaign?.campaign ? (
-                  <TokenComments
-                    chainId={Number(wallet.chainId ?? 97)}
-                    campaignAddress={campaign.campaign}
-                    tokenAddress={campaign.token}
-                  />
-                ) : (
-                  <div className="text-sm text-muted-foreground">Loading comments…</div>
-                )}
+                <Tabs value={communityTab} onValueChange={(v) => setCommunityTab(v as any)} className="h-full flex flex-col min-h-0 gap-3">
+                  <TabsList className="grid w-full grid-cols-3 bg-transparent p-0 h-auto gap-2">
+                    <TabsTrigger value="chat" className={ctaTabsTriggerClass}>War Room</TabsTrigger>
+                    <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Comments</TabsTrigger>
+                    <TabsTrigger value="updates" className={ctaTabsTriggerClass}>Creator Updates</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="chat" className="mt-0 min-h-0">
+                    {campaign?.campaign ? (
+                      <TokenComments
+                        chainId={Number(wallet.chainId ?? 97)}
+                        campaignAddress={campaign.campaign}
+                        tokenAddress={campaign.token}
+                        mode="chat"
+                        pollIntervalMs={12000}
+                        emptyStateText="No war room messages yet. Be the first to break the silence."
+                      />
+                    ) : (
+                      <div className="text-sm text-muted-foreground">Loading chat…</div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="comments" className="mt-0 min-h-0">
+                    {campaign?.campaign ? (
+                      <TokenComments
+                        chainId={Number(wallet.chainId ?? 97)}
+                        campaignAddress={campaign.campaign}
+                        tokenAddress={campaign.token}
+                      />
+                    ) : (
+                      <div className="text-sm text-muted-foreground">Loading comments…</div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="updates" className="mt-0 min-h-0">
+                    {campaign?.campaign ? (
+                      <TokenComments
+                        chainId={Number(wallet.chainId ?? 97)}
+                        campaignAddress={campaign.campaign}
+                        tokenAddress={campaign.token}
+                        mode="updates"
+                        authorFilterAddress={campaign.creator}
+                        hideComposer
+                        pollIntervalMs={15000}
+                      />
+                    ) : (
+                      <div className="text-sm text-muted-foreground">Loading creator updates…</div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </TabsContent>
 
               <TabsContent value="trades" className="mt-0">
