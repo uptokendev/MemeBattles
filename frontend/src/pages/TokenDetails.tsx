@@ -215,7 +215,10 @@ const TokenDetails = () => {
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [activity, setActivity] = useState<CampaignActivity | null>(null);
   const [activityTab, setActivityTab] = useState<"overview" | "comments" | "trades">(() => readStoredString("mwz:token:workspace-tab", "overview"));
-  const [communityTab, setCommunityTab] = useState<"chat" | "comments" | "updates">(() => readStoredString("mwz:token:community-tab", "chat"));
+  const [communityTab, setCommunityTab] = useState<"comments" | "updates">(() => {
+    const stored = readStoredString("mwz:token:community-tab", "comments" as "comments" | "updates" | "chat");
+    return stored === "updates" ? "updates" : "comments";
+  });
   const [intelSections, setIntelSections] = useState<string[]>(() => readStoredStringArray("mwz:token:intel-sections", ["campaign", "flywheel", "holders"]));
   const [curveReserveWei, setCurveReserveWei] = useState<bigint | null>(null);
 
@@ -1900,26 +1903,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
               <TabsContent value="comments" className="mt-0">
                 <Tabs value={communityTab} onValueChange={(v) => setCommunityTab(v as any)} className="h-full flex flex-col min-h-0 gap-3">
-                  <TabsList className="grid w-full grid-cols-3 bg-transparent p-0 h-auto gap-2">
-                    <TabsTrigger value="chat" className={ctaTabsTriggerClass}>War Room</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-2 bg-transparent p-0 h-auto gap-2">
                     <TabsTrigger value="comments" className={ctaTabsTriggerClass}>Comments</TabsTrigger>
                     <TabsTrigger value="updates" className={ctaTabsTriggerClass}>Creator Updates</TabsTrigger>
                   </TabsList>
-
-                  <TabsContent value="chat" className="mt-0 min-h-0">
-                    {campaign?.campaign ? (
-                      <TokenComments
-                        chainId={Number(wallet.chainId ?? 97)}
-                        campaignAddress={campaign.campaign}
-                        tokenAddress={campaign.token}
-                        mode="chat"
-                        pollIntervalMs={12000}
-                        emptyStateText="No war room messages yet. Be the first to break the silence."
-                      />
-                    ) : (
-                      <div className="text-sm text-muted-foreground">Loading chat…</div>
-                    )}
-                  </TabsContent>
 
                   <TabsContent value="comments" className="mt-0 min-h-0">
                     {campaign?.campaign ? (
@@ -2284,6 +2271,28 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                 </TabsContent>
               </Tabs>
             </div>
+          </Card>
+
+          <Card className="mt-3 bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold">War Room</h3>
+                <p className="text-[11px] text-muted-foreground">Live campaign chat</p>
+              </div>
+            </div>
+
+            {campaign?.campaign ? (
+              <TokenComments
+                chainId={Number(wallet.chainId ?? 97)}
+                campaignAddress={campaign.campaign}
+                tokenAddress={campaign.token}
+                mode="chat"
+                pollIntervalMs={12000}
+                emptyStateText="No war room messages yet. Be the first to break the silence."
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground">Loading chat…</div>
+            )}
           </Card>
         </div>
       </div>

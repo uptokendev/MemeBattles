@@ -1,0 +1,213 @@
+﻿Diagnose log at 2026-04-11T10:05:28Z
+
+AppPath: C:\Program Files\Git\mingw64\bin\git-credential-manager.exe
+InstallDir: C:\Program Files\Git\mingw64\bin\
+Version: 2.6.1+786ab03440ddc82e807a97c0e540f5247e44cec6
+
+------------
+Diagnostic: Environment
+Skipped: False
+Success: True
+Exception: None
+Log:
+OSType: Windows
+OSVersion: 10.0 (build 26100)
+Reading environment variables... OK
+ Variables:
+HOMEPATH=\Users\patri
+GIT_PAGER=more.com
+COMPUTERNAME=DESKTOP-CR6E3KK
+DriverData=C:\Windows\System32\Drivers\DriverData
+GIT_TRACE2_PARENT_SID=cf89f4fa-0cbb-47de-965e-a485f11a354f
+CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files
+OneDrive=C:\Users\patri\OneDrive
+CODEX_THREAD_ID=019d7bf2-ce88-7ea1-aff2-da169313361a
+SESSIONNAME=Console
+GIT_CONFIG_KEY_0=safe.directory
+TMP=C:\Users\patri\AppData\Local\Temp
+LC_CTYPE=C.UTF-8
+USERDOMAIN=DESKTOP-CR6E3KK
+PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PY;.PYW;.CPL
+VSCODE_IPC_HOOK=\\.\pipe\97e99767-1.109.3-main-sock
+SystemDrive=C:
+GIT_EXEC_PATH=C:/Program Files/Git/mingw64/libexec/git-core
+TEMP=C:\Users\patri\AppData\Local\Temp
+LOCALAPPDATA=C:\Users\patri\AppData\Local
+MSYSTEM=MINGW64
+TERM=xterm-256color
+PROCESSOR_IDENTIFIER=AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD
+PSModulePath=C:\Users\patri\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules
+ProgramData=C:\ProgramData
+windir=C:\WINDOWS
+LESS=
+EFC_5504_1592913036=1
+PROCESSOR_REVISION=7100
+GIT_CONFIG_VALUE_0=E:\Network\Zakelijk\MemeBattles
+PROCESSOR_LEVEL=23
+NUMBER_OF_PROCESSORS=16
+TMPDIR=C:\Users\patri\AppData\Local\Temp
+GIT_CONFIG_COUNT=1
+ProgramFiles(x86)=C:\Program Files (x86)
+PUBLIC=C:\Users\Public
+VSCODE_NLS_CONFIG={"userLocale":"en-us","osLocale":"en-us","resolvedLanguage":"en","defaultMessagesFile":"C:\\Users\\patri\\AppData\\Local\\Programs\\Microsoft VS Code\\b6a47e94e3\\resources\\app\\out\\nls.messages.json","locale":"en-us","availableLanguages":{}}
+CommonProgramFiles=C:\Program Files (x86)\Common Files
+VSCODE_ESM_ENTRYPOINT=vs/workbench/api/node/extensionHostProcess
+CHROME_CRASHPAD_PIPE_NAME=\\.\pipe\crashpad_34448_VJTWLLSEXXKWSQLX
+CODEX_SANDBOX_NETWORK_DISABLED=1
+PLINK_PROTOCOL=ssh
+COLORTERM=truecolor
+ProgramFiles=C:\Program Files (x86)
+PATH=C:/Program Files/Git/mingw64/libexec/git-core;C:\Program Files\Git\mingw64\bin;C:\Program Files\Git\usr\bin;C:\Users\patri\bin;C:\Users\patri\.codex\tmp\arg0\codex-arg0EJjWMe;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Python314\Scripts\;C:\Python314\;C:\Python312\Scripts\;C:\Python312\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Git\cmd;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Users\patri\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Program Files\nodejs\;C:\ProgramData\chocolatey\bin;C:\Program Files\PostgreSQL\18\bin;C:\Program Files\PostgreSQL\18\bin\psql.exe;C:\Program Files\PostgreSQL\18\pgAdmin 4\runtime\psql.exe;C:\Users\patri\.cargo\bin;C:\Users\patri\AppData\Local\Microsoft\WindowsApps;C:\Users\patri\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Users\patri\AppData\Roaming\npm;C:\Users\patri\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\patri\AppData\Local\GitHubDesktop\bin;c:\Users\patri\.vscode\extensions\openai.chatgpt-26.325.31654-win32-x64\bin\windows-x86_64
+ChocolateyInstall=C:\ProgramData\chocolatey
+DEBUG=release
+VSCODE_CODE_CACHE_PATH=C:\Users\patri\AppData\Roaming\Code\CachedData\b6a47e94e326b5c209d118cf0f994d6065585705
+ProgramW6432=C:\Program Files
+NVM_SYMLINK=C:\nvm4w\nodejs
+NVM_HOME=C:\Users\patri\AppData\Local\nvm
+HOME=C:\Users\patri
+VSCODE_HANDLES_UNCAUGHT_ERRORS=true
+CODEX_INTERNAL_ORIGINATOR_OVERRIDE=codex_vscode
+CommonProgramW6432=C:\Program Files\Common Files
+LOGONSERVER=\\DESKTOP-CR6E3KK
+VSCODE_CWD=C:\Users\patri\AppData\Local\Programs\Microsoft VS Code
+USERPROFILE=C:\Users\patri
+SystemRoot=C:\WINDOWS
+USERDOMAIN_ROAMINGPROFILE=DESKTOP-CR6E3KK
+APPDATA=C:\Users\patri\AppData\Roaming
+HOMEDRIVE=C:
+RUST_LOG=warn
+VSCODE_PID=34448
+OPENSSL_CONF=C:\Program Files\PostgreSQL\psqlODBC\etc\openssl.cnf
+ELECTRON_RUN_AS_NODE=1
+USERNAME=patri
+PROCESSOR_ARCHITEW6432=AMD64
+PROCESSOR_ARCHITECTURE=x86
+OS=Windows_NT
+ComSpec=C:\WINDOWS\system32\cmd.exe
+ChocolateyLastPathUpdate=134059847370649818
+PAGER=more.com
+VSCODE_CRASH_REPORTER_PROCESS_TYPE=extensionHost
+OneDriveConsumer=C:\Users\patri\OneDrive
+ALLUSERSPROFILE=C:\ProgramData
+
+
+------------
+Diagnostic: File system
+Skipped: False
+Success: True
+Exception: None
+Log:
+Temporary directory is 'C:\Users\patri\AppData\Local\Temp\'...
+Checking basic file I/O...
+Writing to temporary file 'C:\Users\patri\AppData\Local\Temp\d2bc4eb483720e82ac46fd89'... OK
+Reading from temporary file 'C:\Users\patri\AppData\Local\Temp\d2bc4eb483720e82ac46fd89'... OK
+Deleting temporary file 'C:\Users\patri\AppData\Local\Temp\d2bc4eb483720e82ac46fd89'... OK
+Testing IFileSystem instance...
+UserHomePath: C:\Users\CodexSandboxOffline
+UserDataDirectoryPath: C:\Users\CodexSandboxOffline\.gcm
+GetCurrentDirectory(): E:\Network\Zakelijk\MemeBattles
+
+------------
+Diagnostic: Networking
+Skipped: False
+Success: False
+Exception:
+System.Net.Http.HttpRequestException: An error occurred while sending the request. ---> System.Net.WebException: The underlying connection was closed: An unexpected error occurred on a receive. ---> System.ComponentModel.Win32Exception: No credentials are available in the security package
+   at System.Net.SSPIWrapper.AcquireCredentialsHandle(SSPIInterface SecModule, String package, CredentialUse intent, SecureCredential2 scc)
+   at System.Net.Security.SecureChannel.AcquireCredentialsHandle(CredentialUse credUsage, SecureCredential2& secureCredential)
+   at System.Net.Security.SecureChannel.AcquireCredentialsHandle(CredentialUse credUsage, X509Certificate2 selectedCert, Flags flags)
+   at System.Net.Security.SecureChannel.AcquireClientCredentials(Byte[]& thumbPrint)
+   at System.Net.Security.SecureChannel.GenerateToken(Byte[] input, Int32 offset, Int32 count, Byte[]& output)
+   at System.Net.Security.SecureChannel.NextMessage(Byte[] incoming, Int32 offset, Int32 count)
+   at System.Net.Security.SslState.StartSendBlob(Byte[] incoming, Int32 count, AsyncProtocolRequest asyncRequest, Boolean renegotiation)
+   at System.Net.Security.SslState.ForceAuthentication(Boolean receiveFirst, Byte[] buffer, AsyncProtocolRequest asyncRequest, Boolean renegotiation)
+   at System.Net.Security.SslState.ProcessAuthentication(LazyAsyncResult lazyResult)
+   at System.Net.TlsStream.CallProcessAuthentication(Object state)
+   at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state, Boolean preserveSyncCtx)
+   at System.Threading.ExecutionContext.Run(ExecutionContext executionContext, ContextCallback callback, Object state, Boolean preserveSyncCtx)
+   at System.Threading.ExecutionContext.Run(ExecutionContext executionContext, ContextCallback callback, Object state)
+   at System.Net.TlsStream.ProcessAuthentication(LazyAsyncResult result)
+   at System.Net.TlsStream.BeginWrite(Byte[] buffer, Int32 offset, Int32 size, AsyncCallback asyncCallback, Object asyncState)
+   at System.Net.TlsStream.UnsafeBeginWrite(Byte[] buffer, Int32 offset, Int32 size, AsyncCallback asyncCallback, Object asyncState)
+   at System.Net.PooledStream.UnsafeBeginWrite(Byte[] buffer, Int32 offset, Int32 size, AsyncCallback callback, Object state)
+   at System.Net.ConnectStream.WriteHeaders(Boolean async)
+   --- End of inner exception stack trace ---
+   at System.Net.HttpWebRequest.EndGetResponse(IAsyncResult asyncResult)
+   at System.Net.Http.HttpClientHandler.GetResponseCallback(IAsyncResult ar)
+   --- End of inner exception stack trace ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter`1.GetResult()
+   at GitCredentialManager.Diagnostics.NetworkingDiagnostic.<RunInternalAsync>d__4.MoveNext()
+--- End of stack trace from previous location where exception was thrown ---
+   at System.Runtime.CompilerServices.TaskAwaiter.ThrowForNonSuccess(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   at System.Runtime.CompilerServices.TaskAwaiter`1.GetResult()
+   at GitCredentialManager.Diagnostics.Diagnostic.<RunAsync>d__6.MoveNext()
+Log:
+Checking networking and HTTP stack...
+Creating HTTP client... OK
+IsNetworkAvailable: True
+Sending HEAD request to http://example.com...Sending HEAD request to https://example.com... OK
+
+------------
+Diagnostic: Git
+Skipped: False
+Success: True
+Exception: None
+Log:
+Getting Git version... OK
+Git version is '2.51.0.windows.1'
+Locating current repository...Git repository at 'E:/Network/Zakelijk/MemeBattles/.git'
+ OK
+Listing all Git configuration... OK
+Git configuration:
+file:C:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:C:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:C:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:C:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:C:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:C:/Program Files/Git/etc/gitconfig	core.editor="C:\\Program Files\\Notepad++\\notepad++.exe" -multiInst -notabbar -nosession -noPlugin
+file:C:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:C:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:C:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:C:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Users/patri/.gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:C:/Users/patri/.gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:C:/Users/patri/.gitconfig	filter.lfs.process=git-lfs filter-process
+file:C:/Users/patri/.gitconfig	filter.lfs.required=true
+file:C:/Users/patri/.gitconfig	user.name=uptokendev
+file:C:/Users/patri/.gitconfig	user.email=uptokendev@gmail.com
+file:C:/Users/patri/.gitconfig	gui.recentrepo=E:/Network/Zakelijk/UP
+file:.git/config	core.repositoryformatversion=0
+file:.git/config	core.filemode=false
+file:.git/config	core.bare=false
+file:.git/config	core.logallrefupdates=true
+file:.git/config	core.symlinks=false
+file:.git/config	core.ignorecase=true
+file:.git/config	remote.origin.url=https://github.com/uptokendev/MemeBattles.git
+file:.git/config	remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+file:.git/config	branch.main.remote=origin
+file:.git/config	branch.main.vscode-merge-base=origin/main
+file:.git/config	branch.main.merge=refs/heads/main
+file:.git/config	branch.prod.remote=origin
+file:.git/config	branch.prod.merge=refs/heads/prod
+file:.git/config	branch.prod.vscode-merge-base=origin/prod
+command line:	safe.directory=E:\Network\Zakelijk\MemeBattles
+
+
+------------
+Diagnostic: Credential storage
+Skipped: False
+Success: True
+Exception: None
+Log:
+ICredentialStore instance is of type: CredentialStore
+Writing test credential... OK
+Reading test credential... OK
+Deleting test credential... OK
+
