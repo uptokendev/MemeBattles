@@ -14,7 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        'retro': ['Pixeboy', 'monospace', 'sans-serif'],
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        retro: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",

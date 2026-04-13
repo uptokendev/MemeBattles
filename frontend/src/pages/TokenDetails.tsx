@@ -22,6 +22,7 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { TokenComments } from "@/components/token/TokenComments";
+import { TokenWarRoom } from "@/components/token/TokenWarRoom";
 import { AthBar } from "@/components/token/AthBar";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { useWallet } from "@/contexts/WalletContext";
@@ -2282,13 +2283,9 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             </div>
 
             {campaign?.campaign ? (
-              <TokenComments
+              <TokenWarRoom
                 chainId={Number(wallet.chainId ?? 97)}
                 campaignAddress={campaign.campaign}
-                tokenAddress={campaign.token}
-                mode="chat"
-                pollIntervalMs={12000}
-                emptyStateText="No war room messages yet. Be the first to break the silence."
               />
             ) : (
               <div className="text-sm text-muted-foreground">Loading chat…</div>
