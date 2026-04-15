@@ -1,20 +1,45 @@
 ---
-title: For Creators
-description: Launch a campaign, reach graduation, earn as a creator, and build a real following.
+title: Creator Overview
+description: How creators use MemeWarzone to prepare campaigns, launch tokens, build attention, and earn at graduation.
 ---
 
-MemeWarzone is built for **creators who want a fair launch** and a **growth loop** after launch.
+Creators are the supply side of MemeWarzone.
 
-## Recommended order
-1. **[Create a campaign](/creators/create-a-campaign)**
-2. **[Branding & best practices](/creators/branding-best-practices)**
-3. **[Graduation: what happens](/creators/graduation)**
-4. **[Creator earnings](/creators/creator-earnings)**
-5. **[The growth loop](/creators/growth-loop)**
+A creator launches a campaign, brings attention, rallies a community, and fights to graduate.
 
-## What creators get that most launchpads don’t
-MemeWarzone is structured so creators benefit when they succeed:
-- discovery via **UpVotes**
-- recurring attention via **Leagues**
-- additional distribution via the **Recruiter Program**
-- predictable **Treasury policy** (Owners Safe → weekly cadence)
+## Creator path
+
+1. Prepare your campaign.
+2. Add clean branding and official links.
+3. Build attention before deployment.
+4. Deploy when live mode opens.
+5. Push bonding-curve activity.
+6. Compete in Leagues and discovery rankings.
+7. Graduate at 50 BNB.
+8. Earn creator payout from the graduation split.
+
+## What creators can earn
+
+Creators can earn from:
+
+- creator payout at graduation
+- visibility from League wins
+- community growth
+- future campaign credibility
+
+At the minimum 50 BNB graduation threshold, the example creator payout is **9.8 BNB** after the 2% finalize fee and 80/20 remaining split.
+
+Read: **[Creator earnings](/creators/creator-earnings)**.
+
+## What creators should avoid
+
+Creators should avoid:
+
+- fake promises
+- multiple conflicting links
+- silent launches
+- misleading token claims
+- pretending UpVotes equal safety
+- using unofficial support channels
+
+Trust compounds across launches. Deployer and creator history should become part of how the market judges future campaigns.

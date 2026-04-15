@@ -1,124 +1,61 @@
 ---
 title: Roadmap
-description: What is already ready, what still needs to be finalized for launch, and what comes after.
+description: The practical build path for MemeWarzone from Prepare Mode to full live battlefield.
 ---
 
-MemeWarzone is being built in phases. The core platform is already far along, with the launch stack, trading loop, discovery systems, and competition layer designed to go live together.
+This roadmap is written as a product direction guide, not a promise of exact delivery dates beyond the announced Prepare Mode opening.
 
-**Status legend**
-- ✅ = implemented / ready for launch
-- 🟡 = planned before launch / still being finalized
-- 🔜 = post-launch roadmap
+## Phase 1 — Prepare Mode
 
-## Foundation & setup
-✅ Branding direction defined  
-✅ Docs structure in place  
-✅ Domain secured  
-✅ Social media accounts created  
-✅ First testnet run completed  
-🟡 Full platform stress test  
-🟡 Final launch hardening and monitoring pass  
+Prepare Mode opens on **May 12**.
 
-## Prepare Mode
-🟡 Prepare Mode  
-- Creators can prepare campaigns before full launch  
-- Traders can create profiles and position early  
-- Recruiters can set up and start building their squad  
-- Early momentum can build before the platform goes fully live  
+Main goals:
 
-## Token Launchpad
-✅ Token Creation  
-- Create a token with metadata, branding, and launch setup  
+- onboard creators before live launch
+- open recruiter applications and squad building
+- let users understand campaigns, Leagues, fees, and safety rules
+- prepare campaign pages and launch assets
 
-✅ Bonding Curve System  
-- Dynamic pricing based on supply and demand during the launch phase  
+## Phase 2 — Live deployment
 
-✅ Auto-Gradation / DEX Migration  
-- Campaigns automatically graduate once the threshold is reached  
+When the live switch is flipped:
 
-✅ Real-Time Progress  
-- Live bonding-curve progress and campaign tracking  
+- prepared creators can deploy campaigns
+- bonding-curve trading opens
+- campaign activity starts feeding rankings
+- UpVotes become part of discovery
+- League tracking begins
 
-✅ Creator Attribution  
-- Creator tracking, visibility, and recognition across campaigns  
+## Phase 3 — Competition loops
 
-✅ Fair Launch Structure  
-- Transparent mechanics designed around anti-rug principles  
+After live deployment, the platform focuses on repeatable events:
 
-## Trading System
-✅ Buy / Sell Trading  
-- Instant trading during the bonding-curve phase  
+- weekly League winners
+- monthly League finals
+- Crowd Favorite battles
+- recruiter leaderboards
+- Warzone Airdrop Treasury drops
+- public social moments around wins and graduations
 
-✅ Real-Time Pricing  
-- Dynamic pricing updates based on curve activity  
+## Phase 4 — Protection and visibility upgrades
 
-✅ Transaction History  
-- Full trade logging and activity history  
+The platform should continue expanding trust signals:
 
-✅ Quick Amount Buttons  
-- Fast preset trade amounts for easier participation  
+- deployer history
+- creator launch history
+- graduation rate
+- top-holder concentration visibility
+- unique buyers vs volume
+- suspicious activity flags
+- clearer safety education
 
-✅ Wallet Integration  
-- Wallet connect and trading flow on BNB Chain  
+## Phase 5 — Scale and automation
 
-✅ Live Charts & Analytics  
-- Real-time campaign data, market stats, and performance tracking  
+As activity grows, MemeWarzone can expand automation around:
 
-## Discovery & competition
-✅ UpVote System  
-- Paid discovery that directly affects visibility and ranking  
-
-✅ Featured Campaign System  
-- Competitive exposure based on activity and support  
-
-✅ League System  
-- Weekly and monthly on-chain competitions  
-
-✅ Prize Pool Mechanics  
-- Self-funding league treasury driven by platform activity  
-
-✅ Leaderboards  
-- Competitive rankings across campaigns and users  
-
-✅ Past Winners / Ongoing Competition Structure  
-- Recurring competition loops that keep the platform active  
-
-## Launch-ready but still to add
-🟡 Ranking System  
-- Military-style user progression  
-- Badge progression on profile  
-- Rank-up moments and social sharing  
-- Additional status and recognition inside the ecosystem  
-
-🟡 Recruiter Program  
-- Recruit creators and traders with a unique code  
-- Squad dashboard, rankings, and earnings tracking  
-- Fee participation tied to linked users and campaigns  
-
-## Launch
-🚀 Full MemeWarzone launch  
-- All documented core platform features live  
-- Ranking System live  
-- Recruiter Program live  
-- Prepare Mode active as part of the launch flow  
-- MemeWarzone goes live as a full competitive meme launch ecosystem  
-
-## Near future
-🔜 Live Stream Creators  
-- Give creators direct live exposure on-platform  
-
-🔜 More Token Contracts to Choose From  
-- More launch options and flexibility for creators  
-
-🔜 Professional TradingView Integration  
-- Advanced charting and deeper trader tooling  
-
-## Further ahead
-🔜 Custom Token Deploy  
-- More advanced token deployment options  
-
-🔜 Trading Academy  
-- Education for creators and traders  
-
-🔜 Charity Program  
-- User-curated charity initiatives built into the ecosystem  
+- real-time homepage updates
+- campaign alerts
+- League winner broadcasts
+- recruiter squad dashboards
+- reward claim flows
+- monitoring and diagnostics

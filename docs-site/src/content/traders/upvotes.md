@@ -1,32 +1,35 @@
 ---
-title: UpVotes for traders
-description: When to UpVote, what it changes, and how to interpret UpVotes.
+title: UpVotes for Traders
+description: How traders can use UpVotes to support campaigns and influence discovery.
 ---
 
-UpVotes are paid discovery. They can be used by anyone — traders, creators, communities.
+Traders can use UpVotes to support campaigns they believe deserve visibility.
 
-If you haven’t read the base concept, start here: **[Core Concepts → UpVotes](/core-concepts/upvotes)**.
+Each UpVote costs **0.003 BNB**.
 
-## Why traders UpVote
-Traders UpVote for two reasons:
-1. **Visibility**: push a campaign into more eyes (more volume can mean more volatility)
-2. **Coordination**: communities signal “we’re behind this” on-chain
+## Why a trader might UpVote
 
-## When UpVotes tend to work best
-- The campaign is early and competing for attention
-- The campaign has a real community pushing content + holders
-- There is a clear narrative (memes without narrative die fast)
+A trader may UpVote because they want to:
 
-## When UpVotes are usually wasted
-- The campaign already has huge volume and is already visible
-- You’re trying to “buy a pump” without a community behind it
+- push a campaign higher in discovery
+- help a community rally
+- compete for Crowd Favorite
+- signal attention to other users
 
-## Interpreting UpVotes as a signal
-UpVotes show that someone spent BNB for attention, but:
-- it’s not verification
-- it’s not a quality score
-- it can be gamed
+## What an UpVote does not mean
 
-Use it as *one* data point, not as your thesis.
+An UpVote is not a guarantee of safety or future price.
 
-Next: **[Leagues](/traders/leagues)**.
+UpVoting a campaign does not remove:
+
+- creator risk
+- market risk
+- volatility risk
+- sell pressure risk
+- smart contract risk
+
+## UpVotes and Leagues
+
+UpVotes are connected to the **Crowd Favorite** League category.
+
+Campaigns with strong community support can use UpVotes as part of their visibility battle.

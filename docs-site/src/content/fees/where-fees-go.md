@@ -1,21 +1,52 @@
 ---
-title: Where fees go
-description: League Treasury vs protocol revenue vs creator payout.
+title: Where Fees Go
+description: How MemeWarzone routes fees across Leagues, protocol revenue, recruiters, treasury, and airdrop systems.
 ---
 
-## Trading (buy/sell)
-- 2% buy, 2% sell
-- from each trade amount T:
-  - League Treasury: 0.0075 × T
-  - Protocol revenue: 0.0125 × T
+MemeWarzone fee routing is designed to support the whole battlefield, not only the platform owner.
 
-## UpVotes
-- 0.003 BNB per UpVote → protocol revenue
+## Trading fees
 
-## Graduation
-- 2% finalize fee → protocol revenue
-- remainder split:
-  - 80% liquidity
-  - 20% creator payout
+Every buy and sell has a **2% fee**.
 
-See: **[Treasury](/treasury)**.
+A key fixed component is:
+
+- **0.75% of trade notional** → League Treasury
+
+The remaining configured fee flow can support:
+
+- protocol revenue
+- recruiter rewards when a user is linked
+- Warzone Airdrop Treasury when no recruiter is linked
+- operations and treasury reserves
+
+## League Treasury
+
+The League Treasury funds recurring competition.
+
+This creates a flywheel:
+
+1. trading volume creates League inflow
+2. League prizes create competition
+3. competition creates content and attention
+4. attention brings more trading volume
+
+## Recruiter routing
+
+When a user is linked to a recruiter, part of eligible activity can generate recruiter rewards.
+
+This rewards recruiters who bring real creators and traders into the platform.
+
+## No recruiter routing
+
+When a user has no recruiter, the recruiter-style fee flow can support the Warzone Airdrop Treasury instead.
+
+That gives active smaller creators and traders a shot at weekly BNB drops.
+
+## Protocol revenue
+
+Protocol revenue should route to the Owners Safe, not personal wallets.
+
+This keeps platform revenue under treasury governance instead of direct individual custody.
+
+Read: **[Treasury structure](/treasury)**.

@@ -1,57 +1,68 @@
 ---
-title: Ranking System
-description: Military-style progression that turns platform activity into visible status.
+title: Ranking System & Profiles
+description: How MemeWarzone status, profiles, badges, trophies, and social progression fit into the platform.
 ---
 
-The **Ranking System** gives users visible progression inside MemeWarzone.
+MemeWarzone is not only about single trades.
 
-It is designed to reward participation, consistency, and contribution to the ecosystem — not just one isolated trade or one lucky campaign.
+The ranking system turns activity into visible status.
 
-## What it does
-- Turns activity into **progression**
-- Gives users a visible **rank badge**
-- Makes progression part of the social layer of the platform
-- Creates recognizable status inside profiles, leaderboards, and the wider MemeWarzone ecosystem
+## What rankings can show
 
-## Starting point
-Every user starts as a **Recruit**.
+User profiles can display:
 
-From there, users can climb through higher military-style ranks as they build activity and reputation on the platform.
+- rank badges
+- League trophies
+- creator history
+- trader history
+- recruiter status
+- squad metrics
+- campaign participation
+- shareable wins
 
-## How rank is presented
-Rank is not hidden in a menu. It is meant to be visible.
+## Why profiles matter
 
-- Your current rank badge is shown on your **profile banner**
-- Rank acts as a clear status signal across the platform
-- Higher ranks create stronger social proof for active users
+Profiles make reputation visible.
 
-## Rank-up moments
-Promotions are meant to feel meaningful.
+That matters because users want to know:
 
-When a user ranks up:
-- they receive a **promotion popup / notification**
-- the promotion is presented as a milestone moment
-- a **share button** can be used so users can show off the promotion publicly
+- who creates serious campaigns
+- who repeatedly rugs or abandons launches
+- who wins Leagues
+- who builds active squads
+- who actually participates
 
-This helps turn progression into a growth mechanic instead of keeping it private.
+## Creator reputation
 
-## Why the ranking system exists
-Most launchpads treat users like temporary flow.
+Creator profiles can help show:
 
-MemeWarzone treats users like participants inside a competitive ecosystem.
+- previous launches
+- graduation rate
+- sell-through behavior
+- past League wins
+- activity history
 
-The Ranking System adds:
-- identity
-- progression
-- retention
-- bragging rights
-- more reasons to come back
+## Trader reputation
 
-## Design principle
-The system is intentionally simple from the user side:
-- start as a Recruit
-- stay active
-- rank up over time
-- gain visible status and shareable progression
+Trader profiles can help show:
 
-As the product expands, ranking can be used more deeply across profile surfaces, leaderboards, unlocks, and social moments.
+- League wins
+- claim history
+- rank progression
+- campaign participation
+
+## Recruiter reputation
+
+Recruiter profiles can help show:
+
+- squad size
+- active creators
+- active traders
+- linked graduations
+- leaderboard position
+
+## Social moments
+
+Rank-ups, League wins, graduations, and recruiter milestones should become shareable moments.
+
+This turns user progress into content for the wider warzone.

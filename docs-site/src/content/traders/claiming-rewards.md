@@ -1,30 +1,41 @@
 ---
-title: Claiming rewards
-description: How to claim league rewards (and why claims are wallet-bound).
+title: Claiming Rewards
+description: How eligible traders and creators should think about League claims and reward drops.
 ---
 
-Rewards are claimable on-chain. That means:
-- the claiming wallet must be the wallet that earned the reward
-- you need a bit of BNB for gas
+Some MemeWarzone rewards may become claimable after League epochs, reward drops, or other campaign events.
 
-## Step-by-step
-1. Connect the wallet that earned the reward.
-2. Open the **Leagues** section or the campaign/league page showing your reward.
-3. If a **Claim** button is available, click it.
-4. Confirm the transaction in your wallet.
-5. Wait for confirmation; the reward will arrive after the tx is mined.
+## Claim only from official pages
 
-## Why rewards are wallet-bound
-Wallet-bound claims are safer because they:
-- reduce manual payouts
-- prevent reward redirection
-- make rewards provable on-chain
+Always claim through official MemeWarzone pages.
 
-## Troubleshooting
-**I don’t see a claim button:**
-- the epoch may not be finalized yet
-- you may be on the wrong wallet
+Never trust:
 
-**Claim tx fails:**
-- check you have enough BNB for gas
-- retry after a short wait if the chain is congested
+- random DM claim links
+- fake support accounts
+- unofficial “airdrop checker” pages
+- Telegram or Discord links from unknown users
+
+## League claims
+
+League rewards are connected to weekly and monthly competition results.
+
+Claims may have eligibility windows and expiry rules.
+
+Read: **[Epochs & prizes](/leagues/epochs-and-prizes)**.
+
+## Airdrop claims
+
+Warzone Airdrop Treasury drops are designed for active smaller creators and traders who are not already dominating the top League positions.
+
+Read: **[Warzone Airdrops](/leagues/airdrops)**.
+
+## Claim safety checklist
+
+Before claiming:
+
+- verify the domain
+- verify the wallet prompt
+- read what the transaction does
+- never approve unknown tokens or contracts blindly
+- ask in official channels if unsure

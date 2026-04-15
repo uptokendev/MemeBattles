@@ -1,49 +1,62 @@
 ---
-title: Create a campaign (step-by-step)
-description: From idea → live campaign in minutes.
+title: Create a Campaign
+description: What creators should prepare before launching a MemeWarzone campaign.
 ---
 
-## Before you click Create
-Have these ready:
-- **Name + symbol**
-- **Logo** (square PNG)
-- **One-liner** (8–12 words)
-- **Links**: X/Twitter, Telegram, website
-- **Launch plan** (first 24h)
+A strong campaign starts before deployment.
 
-## Step 1 — Connect your wallet
-Connect the wallet you want as **creator wallet** and confirm you’re on the supported chain.
+The more complete and credible your setup is, the easier it is for traders and communities to understand what they are joining.
 
-## Step 2 — Open Create Campaign
-Click **Create** and fill:
-- name / symbol
-- logo / banner
-- description
-- social links
+## Before you create
 
-## Step 3 — Set identity (important)
-Traders judge legitimacy in seconds:
-- clarity > cleverness
-- real description (not “next 100x”)
-- official socials so users can verify it’s you
+Prepare these assets:
 
-## Step 4 — Understand the economics (simple)
-Campaign trades on a **bonding curve**, then **graduates** at a fixed threshold.
+- token name
+- ticker
+- logo
+- banner or header image
+- short description
+- website or landing page, if available
+- X account
+- Telegram or Discord
+- launch announcement copy
+- recruiter link, if you are connected to a recruiter
 
-Read:
-- **[Bonding Curve](/core-concepts/bonding-curve)**
-- **[Graduation](/core-concepts/graduation)**
+## Campaign description
 
-## Step 5 — Deploy
-Confirm the wallet transaction.
+Your description should explain:
 
-After confirmation:
-- campaign appears in the grid
-- trading starts immediately
-- it can be UpVoted and compete in Leagues
+- what the meme is
+- why people should care
+- what community you are building
+- where official updates happen
+- what users should never trust
 
-## Step 6 — 15-minute launch hygiene
-1. Pin official campaign link (X + Telegram)
-2. Post one canonical link (avoid fake copies)
-3. Ask community to UpVote early
-4. Be present in chat for the first hour
+Keep it direct. Meme traders scan fast.
+
+## Links
+
+Use one canonical link per channel.
+
+Bad launch pages usually have scattered, inconsistent, or suspicious links.
+
+Good launch pages make it obvious where official communication happens.
+
+## Prepare Mode behavior
+
+During Prepare Mode, creators can prepare the campaign before full live deployment.
+
+When the platform flips live, prepared creators can deploy campaigns into the active warzone.
+
+## Launch checklist
+
+Before going live, confirm:
+
+- name and ticker are correct
+- logo is final
+- links are official
+- socials are active
+- community knows the launch plan
+- you understand graduation economics
+- you understand League categories
+- you are not relying on hidden promotion

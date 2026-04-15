@@ -1,21 +1,57 @@
 ---
-title: Creator earnings
-description: What you earn, when you earn it, and how claiming works.
+title: Creator Earnings
+description: How creators can earn from successful MemeWarzone graduations.
 ---
 
-## 1) Graduation payout
+Creator earnings are tied to successful graduation.
+
+MemeWarzone is designed so creators can earn meaningful value when they bring enough demand to graduate a campaign.
+
+## Graduation threshold
+
+A campaign graduates at **50 BNB**.
+
+At graduation, a **2% finalize fee** is taken before the remaining amount is split.
+
+## Creator payout formula
+
 At graduation:
-- 2% finalize fee
-- then 80% liquidity / 20% creator payout
 
-Minimum at threshold:
-- creator receives **9.8 BNB**
+1. Raised liquidity reaches the threshold.
+2. Finalize fee is taken.
+3. Remaining liquidity is split:
+   - **80%** to LP
+   - **20%** to creator payout
 
-## 2) League prizes (if applicable)
-Depending on league rules, creators may be eligible for additional rewards.
+## Minimum example
 
-## Claiming
-Claims are wallet-based:
-- ensure you’re connected with the creator wallet
-- ensure correct network
-- retry if indexing lags
+At 50 BNB raised:
+
+| Item | Amount |
+| --- | ---: |
+| Raised liquidity | 50 BNB |
+| Finalize fee, 2% | 1 BNB |
+| Remaining | 49 BNB |
+| Creator payout, 20% | 9.8 BNB |
+| LP liquidity, 80% | 39.2 BNB |
+
+## Why creators are paid
+
+Creators are not just deployers.
+
+A strong creator brings:
+
+- narrative
+- content
+- community
+- traffic
+- attention
+- launch energy
+
+The creator payout rewards successful campaign execution while still leaving most remaining liquidity for LP.
+
+## Repeat launches
+
+Future versions of reputation and profile systems should make creator history visible.
+
+That means each launch can affect the next one. Responsible creators can build credibility over time.

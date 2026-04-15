@@ -1,170 +1,93 @@
 ---
 title: FAQ
-description: Fast answers for traders, creators, and recruiters.
+description: Fast answers for creators, traders, recruiters, and new MemeWarzone users.
 ---
-
-This page is designed to be scannable. Pick a category, open a question, and you are done.
-
-If you are brand new, start with **[Getting Started](/getting-started)**.
 
 ## Getting Started
 
 ### What is MemeWarzone?
-MemeWarzone is a creator-first memecoin launchpad that combines:
-- a bonding-curve launch phase
-- paid discovery (UpVotes)
-- competitive Leagues that reward creators and traders
-- a Ranking System and Recruiter Program layered on top of the core market
+MemeWarzone is a creator-first meme launchpad on BNB Chain with bonding-curve launches, UpVotes, Leagues, recruiter squads, and reward drops.
 
-### What do I need to use MemeWarzone?
-- A Web3 wallet (e.g. MetaMask or Rabby)
-- A small amount of BNB for gas
-- The official site: memewar.zone
+### When does Prepare Mode open?
+Prepare Mode opens on **May 12**.
 
-### Which chain do you support?
-At launch we focus on **BNB Chain**. Your wallet must be on the same network as the app.
+### What is Prepare Mode?
+Prepare Mode is the pre-live phase where creators prepare campaigns, recruiters build squads, and users learn the platform before full live deployment.
+
+### Which chain does MemeWarzone use?
+MemeWarzone is built for **BNB Chain**.
+
+## Campaigns
 
 ### What is a campaign?
-A campaign is a token launch page with trading and progression to graduation.
+A campaign is the launch page and trading environment for a meme token on MemeWarzone.
 
-## Trading
+### What is the graduation threshold?
+The graduation threshold is **50 BNB**.
 
-### What fees do I pay when trading?
-Trading fees are **2% on buys** and **2% on sells**.
+### What happens at graduation?
+A 2% finalize fee is taken, then the remaining liquidity is split: **80% LP** and **20% creator payout**.
 
-### Where does the trading fee go?
-From each trade amount T:
-- **0.75% of T** funds the League Treasury
-- the remaining portion goes to protocol revenue and other configured platform distributions
+### How much can a creator earn at minimum graduation?
+At 50 BNB raised, the example creator payout is **9.8 BNB** after the finalize fee.
 
-### What is the bonding curve and why does price move fast?
-During the launch phase, price is determined by a bonding curve. Early liquidity is thin and price impact is higher.
+## Fees
 
-### Why did my trade fail?
-Most common reasons:
-- slippage too low during volatility
-- not enough BNB for gas
-- RPC congestion
+### What are the trading fees?
+Buys and sells have a **2% fee**.
 
-## UpVotes
-
-### What is an UpVote?
-An UpVote is a paid visibility boost for a campaign.
+### How much goes to the League Treasury?
+**0.75% of every buy and sell** goes to the League Treasury.
 
 ### How much does an UpVote cost?
-**0.003 BNB** per UpVote.
+An UpVote costs **0.003 BNB**.
 
-### Can UpVotes be refunded?
-No. An UpVote is a paid action that immediately affects ranking and visibility.
+### Are UpVotes refundable?
+No. UpVotes are paid visibility actions.
 
-## For Creators
+## Leagues
 
-### How do I create a campaign?
-Use the **Create** flow in the app and follow this guide: **[Create a campaign](/creators/create-a-campaign)**.
+### What are the League categories?
+The main categories are **Perfect Run**, **Fastest Finish**, **Biggest Hit**, **Top Earner**, and **Crowd Favorite**.
 
-### Do I need KYC?
-No KYC is required by default. Traders will still judge credibility by your socials and launch behavior.
+### When do weekly Leagues reset?
+Weekly epochs run from **Monday 00:00 UTC to next Monday 00:00 UTC**.
 
-### What makes a good launch?
-Short version:
-- clear identity (logo, name, socials)
-- one canonical link
-- active community presence in the first hour
+### When do monthly Leagues reset?
+Monthly epochs run from the **1st day of the month 00:00 UTC to the 1st day of the next month 00:00 UTC**.
 
-See: **[Branding & best practices](/creators/branding-best-practices)**.
+### What is the monthly Top 5 split?
+The planned monthly split is **40% / 25% / 15% / 12% / 8%**.
 
-## Graduation
+## Airdrops
 
-### What is graduation?
-Graduation is the milestone where a campaign reaches **50 BNB raised** and transitions from launch phase to post-graduation liquidity.
+### What is the Warzone Airdrop Treasury?
+It is a reward pool designed to give active smaller creators and traders a chance at weekly BNB drops.
 
-### What is the finalize fee?
-At graduation a **2% finalize fee** is taken from the raised amount before the liquidity split.
+### Is it the same as Leagues?
+No. Leagues reward top competitive performance. Airdrops are meant to support active smaller fighters too.
 
-### What does the creator receive at graduation?
-After the 2% finalize fee, the remainder is split:
-- **80%** to liquidity
-- **20%** to the creator
+### Can whales farm the airdrop pool?
+The intended design should use eligibility rules, volume caps, and exclusions to stop whales from dominating a system built for smaller users.
 
-At the 50 BNB threshold, that means the creator receives **9.8 BNB**.
+## Recruiters
 
-## Leagues and Rewards
+### What do recruiters earn?
+Recruiters can earn **0.25%** from linked creator/trader buys and sells, plus **0.30%** from linked creator graduation activity, subject to final implementation rules.
 
-### What are Leagues?
-Leagues are recurring competitions (weekly/monthly) that reward performance and create ongoing attention for campaigns.
+### What link format should recruiters use?
+The preferred format is `/r/CODE`. The universal format is `?ref=CODE`.
 
-### How are prize pools funded?
-Leagues are funded by the **0.75%** slice from trades.
+### What happens if a referred user has not connected a wallet yet?
+The platform should preserve the recruiter code so attribution can apply when the wallet is later connected.
 
-### When can I claim rewards?
-Claims become available after the relevant league or epoch completes and winners are finalized.
+## Safety
 
-## Ranking System
+### Does MemeWarzone remove all risk?
+No. Meme tokens are high risk. The platform can improve transparency and mechanics, but it cannot remove market, creator, or smart contract risk.
 
-### How do ranks work?
-Every user starts as a **Recruit** and can climb through higher military-style ranks over time.
+### Does an UpVote mean a token is safe?
+No. An UpVote is a paid visibility signal only.
 
-### Where do I see my rank?
-Your rank badge is shown on your **profile banner** and is meant to be a visible status signal inside the ecosystem.
-
-### What happens when I rank up?
-Rank-ups can trigger a **promotion popup** and include a **share button** so users can show the milestone publicly.
-
-## Recruiter Program
-
-### How does the Recruiter Program work?
-Recruiters bring creators and traders into MemeWarzone using a unique recruiter code. Linked activity is attributed back to the recruiter.
-
-### What does a recruiter earn?
-- **0.25%** on buys and sells from linked creators and linked traders
-- **0.30%** when a linked creator campaign graduates
-
-### What can recruiters see?
-Recruiters have a dashboard showing their squad, rankings, earnings before payout, and lifetime earnings.
-
-## Fees and Economics
-
-### Can you summarize all fees?
-- Trading: 2% buy, 2% sell
-- UpVote: 0.003 BNB
-- Graduation finalize: 2% of raised
-
-### Where do protocol revenues go?
-Protocol revenue flows to the **Owners Safe** first and is distributed on a weekly cadence. See: **[Treasury](/treasury)**.
-
-## Treasury and Transparency
-
-### What is the Owners Safe?
-The Owners Safe is the main multisig treasury that receives protocol revenues.
-
-### What is the Ops Safe?
-Ops Safe is a capped operations wallet (held around 50 BNB) used for predictable operating expenses.
-
-### How often do you distribute revenue?
-Weekly, using a fixed policy (top up Ops Safe to its target, retain buffer, distribute the remainder).
-
-## Security and Safety
-
-### Is this risky?
-Yes. Memecoins are highly volatile and you should assume you can lose your entire position.
-
-### How do I avoid scams and fake links?
-- do not trust DMs
-- use only official links
-- verify the creator's official socials
-
-See: **[Avoid scams](/security/avoid-scams)**.
-
-### Do you have a status page?
-Not yet. It is planned. Until then, rely on official announcements.
-
-## Troubleshooting
-
-### I do not see my claim yet
-Common reasons:
-- the league epoch is not finalized
-- indexer lag during high activity
-- you are on the wrong network
-
-### The UI is not updating
-Hard refresh, confirm wallet network, and try again. During congestion, on-chain confirmations can lag.
+### Where should I claim rewards?
+Only through official MemeWarzone pages. Never trust random DM claim links.

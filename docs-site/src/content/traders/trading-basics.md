@@ -1,47 +1,47 @@
 ---
-title: Trading basics
-description: Buy, sell, and understand what you’re signing when you click confirm.
+title: Trading Basics
+description: The practical basics traders should know before buying or selling MemeWarzone campaigns.
 ---
 
-This is the minimum you should know before placing trades on MemeWarzone.
+Trading on MemeWarzone starts during the bonding-curve phase.
 
-## What you’re trading
-During the pre-graduation phase, you trade against a **bonding curve** using BNB.
-- There is no order book.
-- Your trade changes the price.
+This phase can be fast, volatile, and competitive.
 
-If you haven’t yet, read **[Bonding Curve](/core-concepts/bonding-curve)**.
+## Before you trade
 
-## Buying (step-by-step)
-1. Open a campaign page.
-2. Enter the amount of BNB you want to spend.
-3. Review the quote (expected tokens, price impact).
-4. Confirm the transaction in your wallet.
+Make sure you understand:
 
-## Selling (step-by-step)
-1. Open the same campaign page.
-2. Enter the amount of tokens you want to sell.
-3. Review the expected BNB output.
-4. Confirm in your wallet.
+- which chain you are on
+- how much BNB you are spending
+- the buy/sell fee
+- your slippage settings
+- whether the campaign has reliable links
+- where the campaign is in the lifecycle
 
-## Slippage, price impact, and failed tx
-**Price impact** is the price movement caused by your own trade. Large orders move the curve more.
+## Fees
 
-**Slippage** is your tolerance for the quote changing between click and confirmation.
+Buys and sells have a **2% fee**.
 
-If a trade fails:
-- the market may have moved
-- your slippage may be too low
-- you may not have enough BNB for gas
+From every buy and sell, **0.75% of trade notional** routes to the League Treasury.
 
-## Gas basics (BNB)
-Every on-chain action costs gas. Keep a small BNB buffer so you can:
-- buy/sell
-- UpVote
-- claim rewards
+Read: **[Fee model](/fees)**.
 
-## Fees (high level)
-Trades include a fee on buys and sells. Fees also help fund leagues and creator earnings.
-See **[Fees & Treasury](/core-concepts/fees-and-treasury)**.
+## Slippage
 
-Next: **[Bonding curve: trader view](/traders/bonding-curve)**.
+During volatile launches, trades can fail if slippage is too low.
+
+Never blindly raise slippage without understanding the risk. High slippage can produce worse fills than expected.
+
+## Graduation risk
+
+Campaigns near graduation can move quickly.
+
+Understand what happens at 50 BNB before trading near that threshold.
+
+Read: **[Graduation](/platform/graduation)**.
+
+## Chat risk
+
+The War Room can be useful, but it can also be noisy.
+
+Do not treat chat hype as verification. Always check official campaign data and links.

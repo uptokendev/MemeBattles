@@ -1,21 +1,41 @@
 ---
-title: For Traders
-description: How to trade campaigns, manage risk, and claim rewards.
+title: Trader Overview
+description: How traders use MemeWarzone to discover campaigns, trade bonding curves, compete in Leagues, and claim rewards.
 ---
 
-This section is written for people who want to **buy/sell tokens**, follow momentum, and compete for rewards.
+Traders are the front-line fighters of MemeWarzone.
 
-## Recommended order
-1. **[Trading basics](/traders/trading-basics)**
-2. **[Bonding curve: trader view](/traders/bonding-curve)**
-3. **[UpVotes: how to use them](/traders/upvotes)**
-4. **[Leagues: how you win](/traders/leagues)**
-5. **[Claiming rewards](/traders/claiming-rewards)**
+They discover campaigns, trade the bonding curve, support launches, push UpVotes, compete in Leagues, and may qualify for reward drops.
 
-## Quick risk reminder
-Meme tokens are high-risk instruments. Expect:
-- extreme volatility
-- low-liquidity swings (especially early on a curve)
-- copycats and social-engineered scams
+## Trader path
 
-Trade accordingly.
+1. Browse campaigns.
+2. Check campaign details and links.
+3. Understand bonding-curve risk.
+4. Trade only what you can afford to lose.
+5. Watch League categories.
+6. Use UpVotes if you want to support visibility.
+7. Claim eligible rewards through official pages.
+
+## What traders can earn
+
+Traders can earn from:
+
+- successful trades
+- League prizes
+- Warzone Airdrop Treasury drops
+- status and ranking progression
+
+## What traders should watch
+
+Before trading, review:
+
+- creator/deployer information
+- campaign links
+- trading activity
+- holder concentration when available
+- unique buyers vs volume when available
+- whether graduation is close
+- chat behavior in the War Room
+
+A campaign can be active and still be risky.

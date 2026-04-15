@@ -1,96 +1,77 @@
 ---
 title: Getting Started
-description: Set up your wallet, connect, and make your first trade safely.
+description: A simple first-read guide for creators, traders, and recruiters entering MemeWarzone.
 ---
 
-MemeWarzone is a **launchpad + trading arena** on **BNB Chain**. You can trade tokens on their bonding curve, help campaigns get discovered via **UpVotes**, compete in **Leagues**, and later participate in platform progression systems like **Ranks** and the **Recruiter Program**.
+This guide explains the normal path through MemeWarzone.
 
-This guide gets you from zero → first trade with the common gotchas covered.
+## 1. Choose your role
 
-## What you need
-- A crypto wallet (recommended: **Rabby** or **MetaMask**)
-- A small amount of **BNB** for network fees (“gas”)
-- A safe browsing setup (bookmark the official domain, avoid fake links)
+MemeWarzone has three primary user paths.
 
-## 1) Install a wallet
-1. Install **Rabby** (recommended) or **MetaMask**.
-2. Create a new wallet.
-3. **Write down your seed phrase offline** (paper / password manager). Never share it.
+### Creator
 
-## 2) Connect to BNB Chain
-Most wallets can auto-detect BNB Chain. If not:
-- In your wallet, add/switch network to **BNB Chain**.
+You create a campaign, prepare your token page, bring your community, and fight to graduate.
 
-## 3) Get BNB (gas + trading)
-You’ll need BNB for:
-- **Gas** (every on-chain action costs a small fee)
-- **Trades** (campaigns are bought/sold against BNB)
-- **UpVotes** (paid discovery)
+Start here:
 
-Any exchange that supports BNB Chain can be used. Withdraw BNB to your wallet address.
+- **[Prepare Mode](/prepare-mode)**
+- **[Create a campaign](/creators/create-a-campaign)**
+- **[Creator earnings](/creators/creator-earnings)**
 
-## 4) Open MemeWarzone and connect
-1. Go to the official **MemeWarzone** site.
-2. Click **Connect Wallet**.
-3. Approve the connection request in your wallet.
+### Trader
 
-**Safety tip:** always verify you’re on the correct domain before connecting.
+You find campaigns, trade during the bonding-curve phase, compete in Leagues, and claim rewards when eligible.
 
-## 5) Find a campaign
-On the homepage you’ll typically see:
-- **New** / **Trending** / **Ending Soon**
-- A campaign grid with stats like market cap, volume, and bonding-curve progress
+Start here:
 
-Click a campaign to open the token page:
-- Chart + recent trades
-- Buy/Sell panel
-- UpVote button
-- League info (if active)
+- **[Trading basics](/traders/trading-basics)**
+- **[Bonding curve](/platform/bonding-curve)**
+- **[Leagues](/leagues)**
 
-## 6) Buy and sell (basic flow)
-### Buy
-1. Enter the amount of BNB you want to spend.
-2. Check **price impact / expected output**.
-3. Confirm in your wallet.
+### Recruiter
 
-### Sell
-1. Enter the amount of tokens you want to sell.
-2. Review the expected BNB output.
-3. Confirm in your wallet.
+You build a squad by bringing creators and traders into the platform through your recruiter link.
 
-### Slippage and “price impact”
-Bonding curves move the price as you trade:
-- Bigger orders usually mean **more price impact**.
-- If a transaction fails, you may need **slightly higher slippage** (especially in fast markets).
+Start here:
 
-## 7) Use UpVotes
-UpVotes are a paid discovery mechanic:
-- They help campaigns climb visibility and trending surfaces.
-- They are best used when a campaign is **early** and needs momentum.
+- **[Recruiter Program](/programs/recruiter-program)**
+- **[Attribution & links](/programs/attribution-and-links)**
 
-UpVotes are on-chain and require BNB.
+## 2. Understand the launch lifecycle
 
-## 8) Leagues and rewards
-Leagues are competitive epochs (weekly/monthly) funded by protocol activity:
-- Campaigns and traders compete on defined metrics.
-- Winners can **claim rewards** at or after epoch finalization.
+A campaign moves through a clear lifecycle:
 
-If you don’t see your rewards immediately, check:
-- You’re connected with the **same wallet** that earned them.
-- The epoch has ended/finalized.
+1. **Prepare** — creator sets up campaign before live deployment.
+2. **Deploy** — campaign becomes active on the platform.
+3. **Bonding curve** — traders buy and sell before DEX liquidity.
+4. **Graduation** — campaign reaches the graduation threshold.
+5. **LP creation** — liquidity is deployed and the token enters the DEX stage.
+6. **Claims and rewards** — eligible League and reward claims become available.
 
-## Security checklist (read this)
-- **Never** share your seed phrase.
-- Bookmark the official **MemeWarzone** domain.
-- Don’t trust DMs “from staff.”
-- Verify token/campaign pages — memecoins are high-risk.
-- If a wallet pop-up looks unusual, **reject** and refresh.
+Read: **[Campaign lifecycle](/platform/campaign-lifecycle)**.
 
-## Troubleshooting
-**Tx stuck / pending:** wait a few minutes; if it doesn’t confirm, your wallet may let you speed up / cancel.
+## 3. Know the main numbers
 
-**Wrong chain:** switch to **BNB Chain** in your wallet and retry.
+| Item | Value |
+| --- | --- |
+| Chain | BNB Chain |
+| Buy fee | 2% |
+| Sell fee | 2% |
+| League Treasury share | 0.75% of every buy and sell |
+| UpVote price | 0.003 BNB |
+| Graduation threshold | 50 BNB |
+| Finalize fee | 2% of raised liquidity before LP |
+| Post-finalize split | 80% LP / 20% creator payout |
 
-**Balance not updating:** refresh the page; if it’s still wrong, check the transaction status in your wallet.
+## 4. Use only official links
 
-Next: read **Core Concepts** so the bonding curve + graduation mechanics make sense before you size a trade.
+The main site is:
+
+`https://memewar.zone`
+
+The official docs are:
+
+`https://docs.memewar.zone`
+
+Never trust links from random DMs. Always verify the domain before connecting a wallet.
