@@ -55,7 +55,7 @@ export function buildProfileMessage(args: {
   const name = String(args.displayName ?? "").trim().slice(0, 32);
   const avatar = String(args.avatarUrl ?? "").trim().slice(0, 200);
   return [
-    "MemeBattles Profile",
+    "MemeWarzone Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${args.chainId}`,
     `Address: ${normalizeAddress(args.address)}`,
