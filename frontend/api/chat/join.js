@@ -1,59 +1,70 @@
-import { badMethod, json, readJson } from "../../server/http.js";
+import { pool } from "../../server/db.js";
+import { badMethod, json, readJson, isAddress } from "../../server/http.js";
 import {
-  createSessionToken,
-  getProfile,
+  loadUserProfile,
+  makeSessionToken,
   hashToken,
-  normalizeCampaignAddress,
-  normalizeWalletAddress,
-  resolveRole,
-  validChainId,
+  normalizeAddress,
+  resolveCampaignRole,
   verifyJoinSignature,
 } from "./_lib.js";
-import { pool } from "../../server/db.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return badMethod(res);
-  res.setHeader("cache-control", "no-store");
 
   try {
     const body = await readJson(req);
-    const chainId = validChainId(body.chainId);
-    const campaignAddress = normalizeCampaignAddress(body.campaignAddress);
-    const walletAddress = normalizeWalletAddress(body.walletAddress || body.address);
-    const nonce = String(body.nonce ?? "").trim();
-    const signature = String(body.signature ?? "").trim();
-    const message = String(body.message ?? "");
+    const chainId = Number(body.chainId);
+    const campaignAddress = normalizeAddress(body.campaignAddress);
+    const address = normalizeAddress(body.address);
+    const nonce = String(body.nonce ?? "");
+    const signature = String(body.signature ?? "");
 
-    if (!chainId) return json(res, 400, { error: "Invalid chainId" });
-    if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
-    if (!walletAddress) return json(res, 400, { error: "Invalid walletAddress" });
-    if (!nonce) return json(res, 400, { error: "Nonce missing" });
-    if (!signature) return json(res, 400, { error: "Signature missing" });
+    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+    if (!isAddress(campaignAddress)) return json(res, 400, { error: "Invalid campaignAddress" });
+    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
 
-    verifyJoinSignature({ chainId, campaignAddress, walletAddress, nonce, signature, message });
+    await verifyJoinSignature({ chainId, address, campaignAddress, nonce, signature });
 
-    const profile = await getProfile(chainId, walletAddress);
-    const role = await resolveRole(chainId, campaignAddress, walletAddress);
-    const token = createSessionToken();
-    const tokenHash = hashToken(token);
-    const displayName = profile.displayName || null;
-    const avatarUrl = profile.avatarUrl || null;
-    const expiresHours = 12;
+    const profile = await loadUserProfile(chainId, address);
+    const role = await resolveCampaignRole(chainId, campaignAddress, address);
+    const sessionToken = makeSessionToken();
+    const tokenHash = hashToken(sessionToken);
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
 
-    const { rows } = await pool.query(
-      `INSERT INTO chat_sessions (wallet_address, token_hash, display_name, avatar_url, role, expires_at)
-       VALUES ($1, $2, $3, $4, $5, NOW() + ($6::text || ' hours')::interval)
-       RETURNING expires_at AS "expiresAt"`,
-      [walletAddress, tokenHash, displayName, avatarUrl, role, String(expiresHours)]
+    await pool.query(
+      `INSERT INTO chat_sessions (
+         wallet_address,
+         display_name,
+         avatar_url,
+         role,
+         token_hash,
+         expires_at
+       ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        address,
+        profile?.displayName ?? null,
+        profile?.avatarUrl ?? null,
+        role,
+        tokenHash,
+        expiresAt,
+      ]
     );
 
     return json(res, 200, {
-      sessionToken: token,
-      expiresAt: rows[0]?.expiresAt ?? null,
-      profile: { walletAddress, displayName, avatarUrl, role },
+      sessionToken,
+      expiresAt: expiresAt.toISOString(),
+      profile: {
+        walletAddress: address,
+        displayName: profile?.displayName ?? null,
+        avatarUrl: profile?.avatarUrl ?? null,
+        role,
+      },
     });
   } catch (e) {
+    const msg = String(e?.message ?? "");
+    const authish = /nonce|signature|invalid|expired/i.test(msg);
     console.error("[api/chat/join]", e);
-    return json(res, e?.statusCode || 500, { error: e?.statusCode ? e.message : "Server error" });
+    return json(res, authish ? 401 : 500, { error: authish ? msg : "Server error" });
   }
 }

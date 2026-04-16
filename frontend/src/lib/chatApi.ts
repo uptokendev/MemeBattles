@@ -1,56 +1,70 @@
-import type { JsonRpcSigner } from "ethers";
+import { requestNonce } from "@/lib/profileApi";
 
-export type WarRoomRole = "trader" | "creator" | "recruiter" | "mod";
+export type ChatRole = "trader" | "creator" | "recruiter" | "mod";
 
-export type WarRoomProfile = {
+export type ChatProfile = {
   walletAddress: string;
-  displayName?: string | null;
-  avatarUrl?: string | null;
-  role?: WarRoomRole | string | null;
-};
-
-export type WarRoomMessage = {
-  id: string;
-  chainId: number;
-  campaignAddress: string;
-  walletAddress: string;
-  displayName?: string | null;
-  avatarUrl?: string | null;
-  role?: WarRoomRole | string | null;
-  message: string;
-  createdAt: string;
-  clientNonce?: string | null;
-  replyToId?: string | null;
-  pending?: boolean;
-  failed?: boolean;
+  displayName: string | null;
+  avatarUrl: string | null;
+  role: ChatRole;
 };
 
 export type ChatSession = {
   sessionToken: string;
-  expiresAt?: string | null;
-  profile?: WarRoomProfile | null;
+  expiresAt: string;
+  profile: ChatProfile;
 };
 
-const CHAT_SESSION_PREFIX = "mwz_chat_session";
+export type ChatMessage = {
+  id: string;
+  walletAddress: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  role: ChatRole;
+  message: string;
+  createdAt: string;
+  replyToId?: string | null;
+  clientNonce?: string | null;
+  pending?: boolean;
+  failed?: boolean;
+};
 
-function apiPath(path: string) {
-  return `/api/chat/${path.replace(/^\//, "")}`;
+const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
+const API_BASE = rawBase.replace(/\/$/, "");
+
+function buildUrl(pathWithQuery: string): string {
+  if (API_BASE && /^https?:\/\//i.test(API_BASE)) {
+    return `${API_BASE}${pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`}`;
+  }
+  return new URL(pathWithQuery, window.location.origin).toString();
 }
 
-function sessionKey(chainId: number, campaignAddress: string, walletAddress: string) {
-  return `${CHAT_SESSION_PREFIX}:${chainId}:${campaignAddress.toLowerCase()}:${walletAddress.toLowerCase()}`;
-}
-
-export function getStoredChatSession(chainId: number, campaignAddress: string, walletAddress: string): ChatSession | null {
-  if (typeof window === "undefined" || !walletAddress) return null;
+async function readJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) return null;
   try {
-    const raw = window.sessionStorage.getItem(sessionKey(chainId, campaignAddress, walletAddress));
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeAddress(addr?: string | null): string {
+  return String(addr ?? "").trim().toLowerCase();
+}
+
+export function storageKey(chainId: number, campaignAddress: string, walletAddress?: string | null) {
+  return `mwz:chat:session:${chainId}:${normalizeAddress(campaignAddress)}:${normalizeAddress(walletAddress)}`;
+}
+
+export function loadStoredChatSession(chainId: number, campaignAddress: string, walletAddress?: string | null): ChatSession | null {
+  try {
+    const raw = sessionStorage.getItem(storageKey(chainId, campaignAddress, walletAddress));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ChatSession;
-    if (!parsed?.sessionToken) return null;
-    const expires = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
-    if (expires && Date.now() > expires - 60_000) {
-      clearStoredChatSession(chainId, campaignAddress, walletAddress);
+    const expiresAt = parsed?.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+    if (!parsed?.sessionToken || !expiresAt || expiresAt <= Date.now()) {
+      sessionStorage.removeItem(storageKey(chainId, campaignAddress, walletAddress));
       return null;
     }
     return parsed;
@@ -59,111 +73,145 @@ export function getStoredChatSession(chainId: number, campaignAddress: string, w
   }
 }
 
-export function storeChatSession(chainId: number, campaignAddress: string, walletAddress: string, session: ChatSession) {
-  if (typeof window === "undefined" || !walletAddress || !session?.sessionToken) return;
-  window.sessionStorage.setItem(sessionKey(chainId, campaignAddress, walletAddress), JSON.stringify(session));
+export function saveStoredChatSession(chainId: number, campaignAddress: string, walletAddress: string, session: ChatSession) {
+  try {
+    sessionStorage.setItem(storageKey(chainId, campaignAddress, walletAddress), JSON.stringify(session));
+  } catch {
+    // ignore
+  }
 }
 
-export function clearStoredChatSession(chainId: number, campaignAddress: string, walletAddress: string) {
-  if (typeof window === "undefined" || !walletAddress) return;
-  window.sessionStorage.removeItem(sessionKey(chainId, campaignAddress, walletAddress));
+export function clearStoredChatSession(chainId: number, campaignAddress: string, walletAddress?: string | null) {
+  try {
+    sessionStorage.removeItem(storageKey(chainId, campaignAddress, walletAddress));
+  } catch {
+    // ignore
+  }
 }
 
-export function buildChatJoinMessage(params: {
+export function buildChatJoinMessage(args: {
   chainId: number;
+  address: string;
   campaignAddress: string;
-  walletAddress: string;
   nonce: string;
 }) {
   return [
-    "MemeWarzone War Room",
-    "Action: CHAT_SESSION_CREATE",
-    `ChainId: ${Number(params.chainId)}`,
-    `Wallet: ${params.walletAddress.toLowerCase()}`,
-    `Campaign: ${params.campaignAddress.toLowerCase()}`,
-    `Nonce: ${params.nonce}`,
+    "MemeBattles War Room",
+    "Action: CHAT_JOIN",
+    `ChainId: ${args.chainId}`,
+    `Address: ${normalizeAddress(args.address)}`,
+    `Campaign: ${normalizeAddress(args.campaignAddress)}`,
+    `Nonce: ${args.nonce}`,
   ].join("\n");
 }
 
-export async function joinChatSession(params: {
+export async function joinChatSession(args: {
   chainId: number;
   campaignAddress: string;
   walletAddress: string;
-  signer: JsonRpcSigner;
-}) {
-  const nonce = `${Date.now()}-${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`;
-  const message = buildChatJoinMessage({ ...params, nonce });
-  const signature = await params.signer.signMessage(message);
+  signMessage: (message: string) => Promise<string>;
+}): Promise<ChatSession> {
+  const nonce = await requestNonce(args.chainId, args.walletAddress);
+  const message = buildChatJoinMessage({
+    chainId: args.chainId,
+    address: args.walletAddress,
+    campaignAddress: args.campaignAddress,
+    nonce,
+  });
+  const signature = await args.signMessage(message);
 
-  const res = await fetch(apiPath("join"), {
+  const res = await fetch(buildUrl("/api/chat/join"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      chainId: params.chainId,
-      campaignAddress: params.campaignAddress,
-      walletAddress: params.walletAddress,
+      chainId: args.chainId,
+      campaignAddress: normalizeAddress(args.campaignAddress),
+      address: normalizeAddress(args.walletAddress),
       nonce,
-      message,
       signature,
     }),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Could not join War Room");
-  storeChatSession(params.chainId, params.campaignAddress, params.walletAddress, data);
-  return data as ChatSession;
+
+  if (!res.ok) {
+    const j = await readJson(res);
+    throw new Error(j?.error || `Failed to join chat (${res.status})`);
+  }
+
+  const j = await readJson(res);
+  const session: ChatSession = {
+    sessionToken: String(j?.sessionToken ?? ""),
+    expiresAt: String(j?.expiresAt ?? ""),
+    profile: {
+      walletAddress: normalizeAddress(j?.profile?.walletAddress ?? args.walletAddress),
+      displayName: (j?.profile?.displayName ?? null) as string | null,
+      avatarUrl: (j?.profile?.avatarUrl ?? null) as string | null,
+      role: ((j?.profile?.role ?? "trader") as ChatRole),
+    },
+  };
+  if (!session.sessionToken) throw new Error("Session token missing");
+  return session;
 }
 
-export async function fetchChatHistory(params: {
+export async function fetchChatHistory(args: {
   chainId: number;
   campaignAddress: string;
-  before?: string | null;
+  beforeId?: string | number | null;
   limit?: number;
-}) {
-  const qs = new URLSearchParams({
-    chainId: String(params.chainId),
-    campaignAddress: params.campaignAddress,
-    limit: String(params.limit ?? 50),
+}): Promise<{ items: ChatMessage[]; nextBeforeId: string | null }> {
+  const params = new URLSearchParams({
+    chainId: String(args.chainId),
+    campaignAddress: normalizeAddress(args.campaignAddress),
+    limit: String(args.limit ?? 50),
   });
-  if (params.before) qs.set("before", params.before);
-  const res = await fetch(apiPath(`history?${qs.toString()}`));
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Could not load War Room history");
-  return data as { messages: WarRoomMessage[]; nextCursor?: string | null };
+  if (args.beforeId != null) params.set("beforeId", String(args.beforeId));
+
+  const res = await fetch(buildUrl(`/api/chat/history?${params.toString()}`), { method: "GET" });
+  if (!res.ok) {
+    const j = await readJson(res);
+    throw new Error(j?.error || `Failed to load chat (${res.status})`);
+  }
+
+  const j = await readJson(res);
+  return {
+    items: Array.isArray(j?.items) ? (j.items as ChatMessage[]) : [],
+    nextBeforeId: j?.nextBeforeId == null ? null : String(j.nextBeforeId),
+  };
 }
 
-export async function sendChatMessage(params: {
+export async function sendChatMessage(args: {
   chainId: number;
   campaignAddress: string;
-  sessionToken: string;
   message: string;
   clientNonce: string;
-}) {
-  const res = await fetch(apiPath("send"), {
+  sessionToken: string;
+}): Promise<ChatMessage> {
+  const res = await fetch(buildUrl("/api/chat/send"), {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${params.sessionToken}`,
+      authorization: `Bearer ${args.sessionToken}`,
     },
     body: JSON.stringify({
-      chainId: params.chainId,
-      campaignAddress: params.campaignAddress,
-      message: params.message,
-      clientNonce: params.clientNonce,
+      chainId: args.chainId,
+      campaignAddress: normalizeAddress(args.campaignAddress),
+      message: args.message,
+      clientNonce: args.clientNonce,
     }),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Could not send message");
-  return data.message as WarRoomMessage;
+
+  if (!res.ok) {
+    const j = await readJson(res);
+    throw new Error(j?.error || `Failed to send message (${res.status})`);
+  }
+
+  const j = await readJson(res);
+  return j?.item as ChatMessage;
 }
 
-export function realtimeTokenUrl(params: {
-  chainId: number;
-  campaignAddress: string;
-  sessionToken: string;
-}) {
-  const qs = new URLSearchParams({
-    chainId: String(params.chainId),
-    campaignAddress: params.campaignAddress,
+export function buildRealtimeAuthUrl(chainId: number, campaignAddress: string) {
+  const params = new URLSearchParams({
+    chainId: String(chainId),
+    campaignAddress: normalizeAddress(campaignAddress),
   });
-  return apiPath(`realtime-token?${qs.toString()}`);
+  return buildUrl(`/api/chat/realtime-token?${params.toString()}`);
 }

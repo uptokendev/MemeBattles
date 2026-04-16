@@ -23,7 +23,7 @@ export function buildLeagueClaimMessage(args: {
 }): string {
   const { chainId, recipient, period, epochStart, category, rank, nonce } = args;
   return [
-    "MemeWarzone League",
+    "MemeBattles League",
     "Action: LEAGUE_CLAIM",
     `ChainId: ${chainId}`,
     `Recipient: ${recipient.toLowerCase()}`,

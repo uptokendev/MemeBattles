@@ -158,7 +158,7 @@ export function AthBar({ currentLabel, storageKey, className, barWidthPx, barMax
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
               width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
-              // MemeWarzone look: yellow -> orange -> red, with subtle vertical "block" stripes.
+              // MemeBattles look: yellow -> orange -> red, with subtle vertical "block" stripes.
               background:
                 "linear-gradient(90deg, #80350f 0%, #f06a1a 55%, #ff4b24 100%)",
               transition: "width 350ms ease",

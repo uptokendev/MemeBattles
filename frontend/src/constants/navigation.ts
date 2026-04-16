@@ -22,12 +22,12 @@ export const navItems: NavItem[] = [
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
   { icon: userIcon, label: "Profile", path: "/profile" },
-  { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone" },
+  { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
 ];
 
 export const socialLinks: SocialItem[] = [
   {
-    href: "https://twitter.com/memewarzone",
+    href: "https://twitter.com/_MemeBattles",
     ariaLabel: "X",
     tooltip: "X",
     color: "#000000",
