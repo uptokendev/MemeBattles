@@ -1,459 +1,386 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Ably from "ably";
-import { toast } from "sonner";
-import { useWallet } from "@/contexts/WalletContext";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { JsonRpcSigner } from "ethers";
 import {
-  buildRealtimeAuthUrl,
   clearStoredChatSession,
   fetchChatHistory,
+  getStoredChatSession,
   joinChatSession,
-  loadStoredChatSession,
-  normalizeAddress,
-  saveStoredChatSession,
+  realtimeTokenUrl,
   sendChatMessage,
-  type ChatMessage,
   type ChatSession,
+  type WarRoomMessage,
 } from "@/lib/chatApi";
 
-const SCROLL_NEAR_BOTTOM_PX = 96;
-const TYPING_IDLE_MS = 1400;
-
-type PresenceView = {
-  count: number;
-  typingNames: string[];
+type UseWarRoomParams = {
+  chainId: number;
+  campaignAddress: string;
+  walletAddress?: string | null;
+  signer?: JsonRpcSigner | null;
+  connectWallet?: () => Promise<void>;
 };
 
-async function readJson(res: Response) {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+function makeNonce() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function roomChannelName(chainId: number, campaignAddress: string) {
-  return `warroom:${chainId}:${normalizeAddress(campaignAddress)}`;
-}
-
-function shortAddress(addr?: string | null) {
-  const value = String(addr ?? "").trim();
-  if (!value) return "Unknown";
-  return value.length > 10 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
-}
-
-function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
-  const byKey = new Map<string, ChatMessage>();
-
-  const add = (item: ChatMessage) => {
-    const idKey = item.id ? `id:${String(item.id)}` : "";
-    const nonceKey = item.clientNonce ? `nonce:${item.clientNonce}` : "";
-
-    if (idKey && byKey.has(idKey)) {
-      byKey.set(idKey, { ...byKey.get(idKey)!, ...item, pending: false, failed: false });
-      return;
-    }
-
-    if (nonceKey && byKey.has(nonceKey)) {
-      const existing = byKey.get(nonceKey)!;
-      const merged = { ...existing, ...item, pending: false, failed: false };
-      byKey.set(nonceKey, merged);
-      if (idKey) byKey.set(idKey, merged);
-      return;
-    }
-
-    const merged = { ...item };
-    if (idKey) byKey.set(idKey, merged);
-    if (nonceKey) byKey.set(nonceKey, merged);
-    if (!idKey && !nonceKey) byKey.set(`fallback:${prev.length}:${incoming.length}:${Math.random()}`, merged);
+function normalizeMessage(input: WarRoomMessage): WarRoomMessage {
+  const id = String(input.id || (input.clientNonce ? `optimistic:${input.clientNonce}` : makeNonce()));
+  return {
+    ...input,
+    id,
+    chainId: Number(input.chainId),
+    campaignAddress: String(input.campaignAddress || "").toLowerCase(),
+    walletAddress: String(input.walletAddress || "").toLowerCase(),
+    clientNonce: input.clientNonce || null,
   };
-
-  prev.forEach(add);
-  incoming.forEach(add);
-
-  const seen = new Set<ChatMessage>();
-  const flat = Array.from(byKey.values()).filter((item) => {
-    if (seen.has(item)) return false;
-    seen.add(item);
-    return true;
-  });
-
-  flat.sort((a, b) => {
-    const at = new Date(a.createdAt ?? 0).getTime();
-    const bt = new Date(b.createdAt ?? 0).getTime();
-    if (at !== bt) return at - bt;
-    return String(a.id).localeCompare(String(b.id));
-  });
-  return flat;
 }
 
-export function useWarRoom(args: { chainId: number; campaignAddress: string }) {
-  const { chainId, campaignAddress } = args;
-  const wallet = useWallet();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [sending, setSending] = useState(false);
+function isSameMessage(a: WarRoomMessage, b: WarRoomMessage) {
+  const aId = String(a.id || "");
+  const bId = String(b.id || "");
+  if (aId && bId && aId === bId) return true;
+
+  const aNonce = a.clientNonce ? String(a.clientNonce) : "";
+  const bNonce = b.clientNonce ? String(b.clientNonce) : "";
+  if (aNonce && bNonce && aNonce === bNonce) return true;
+
+  // Last-resort guard for messages that arrive without a nonce from a legacy deploy.
+  if (
+    a.walletAddress?.toLowerCase?.() === b.walletAddress?.toLowerCase?.() &&
+    String(a.message ?? "").trim() === String(b.message ?? "").trim()
+  ) {
+    const at = Date.parse(String(a.createdAt || ""));
+    const bt = Date.parse(String(b.createdAt || ""));
+    if (Number.isFinite(at) && Number.isFinite(bt) && Math.abs(at - bt) < 2500) return true;
+  }
+
+  return false;
+}
+
+function mergeOne(list: WarRoomMessage[], nextRaw: WarRoomMessage) {
+  const next = normalizeMessage(nextRaw);
+  const idx = list.findIndex((item) => isSameMessage(item, next));
+
+  if (idx >= 0) {
+    const copy = [...list];
+    copy[idx] = {
+      ...copy[idx],
+      ...next,
+      // A server/realtime copy should clear optimistic state.
+      pending: next.pending ?? false,
+      failed: next.failed ?? false,
+    };
+    return copy;
+  }
+
+  return [...list, next].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
+function mergeMany(existing: WarRoomMessage[], incoming: WarRoomMessage[]) {
+  return incoming.reduce((acc, msg) => mergeOne(acc, msg), existing);
+}
+
+export function useWarRoom({ chainId, campaignAddress, walletAddress, signer, connectWallet }: UseWarRoomParams) {
+  const [messages, setMessages] = useState<WarRoomMessage[]>([]);
   const [input, setInput] = useState("");
-  const [nextBeforeId, setNextBeforeId] = useState<string | null>(null);
   const [session, setSession] = useState<ChatSession | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [onlineCount, setOnlineCount] = useState(0);
-  const [typingNames, setTypingNames] = useState<string[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [typingWallets, setTypingWallets] = useState<string[]>([]);
   const [isNearBottom, setIsNearBottom] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const listRef = useRef<HTMLDivElement | null>(null);
-  const sessionRef = useRef<ChatSession | null>(null);
-  const ablyRef = useRef<Ably.Realtime | null>(null);
+  const ablyRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
-  const presenceTypingRef = useRef(false);
-  const typingIdleTimerRef = useRef<number | null>(null);
+  const sessionRef = useRef<ChatSession | null>(null);
+  const nearBottomRef = useRef(true);
+  const typingTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
 
-  const normalizedCampaign = useMemo(() => normalizeAddress(campaignAddress), [campaignAddress]);
-  const normalizedWallet = useMemo(() => normalizeAddress(wallet.account), [wallet.account]);
-  const hasMore = Boolean(nextBeforeId);
+  const normalizedCampaign = useMemo(() => String(campaignAddress || "").toLowerCase(), [campaignAddress]);
+  const normalizedWallet = useMemo(() => String(walletAddress || "").toLowerCase(), [walletAddress]);
+  const roomChannelName = useMemo(() => `warroom:${Number(chainId)}:${normalizedCampaign}`, [chainId, normalizedCampaign]);
 
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
-
-  useEffect(() => {
-    if (!wallet.account) {
-      setSession(null);
-      return;
-    }
-    setSession(loadStoredChatSession(chainId, normalizedCampaign, wallet.account));
-  }, [chainId, normalizedCampaign, wallet.account]);
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+  const jumpToBottom = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior });
+    el.scrollTop = el.scrollHeight;
+    nearBottomRef.current = true;
+    setIsNearBottom(true);
+    setUnreadCount(0);
   }, []);
 
-  const recomputeNearBottom = useCallback(() => {
+  const onScroll = useCallback(() => {
     const el = listRef.current;
-    if (!el) return true;
-    const delta = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return delta <= SCROLL_NEAR_BOTTOM_PX;
-  }, []);
-
-  const updatePresenceView = useCallback(async () => {
-    const channel = channelRef.current;
-    if (!channel?.presence) {
-      setOnlineCount(0);
-      setTypingNames([]);
-      return;
-    }
-
-    try {
-      const members = await channel.presence.get();
-      const unique = new Map<string, any>();
-      for (const member of members || []) {
-        const key = String(member.clientId || member.connectionId || "");
-        if (!key) continue;
-        unique.set(key, member);
-      }
-      const view: PresenceView = { count: unique.size, typingNames: [] };
-      unique.forEach((member) => {
-        const data = member.data || {};
-        if (data.typing) {
-          const label = String(data.displayName || shortAddress(member.clientId));
-          view.typingNames.push(label);
-        }
-      });
-      setOnlineCount(view.count);
-      setTypingNames(view.typingNames.slice(0, 3));
-    } catch {
-      // ignore transient presence errors
-    }
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    nearBottomRef.current = near;
+    setIsNearBottom(near);
+    if (near) setUnreadCount(0);
   }, []);
 
   const ensureSession = useCallback(async () => {
-    if (sessionRef.current && new Date(sessionRef.current.expiresAt).getTime() > Date.now()) {
-      return sessionRef.current;
+    if (!normalizedWallet) {
+      if (connectWallet) await connectWallet();
+      throw new Error("Connect wallet to use War Room.");
+    }
+    if (!signer) throw new Error("Wallet signer is not ready yet.");
+
+    const cached = getStoredChatSession(chainId, normalizedCampaign, normalizedWallet);
+    if (cached?.sessionToken) {
+      sessionRef.current = cached;
+      setSession(cached);
+      return cached;
     }
 
-    if (!wallet.account) {
-      await wallet.connect();
-    }
-    if (!wallet.signer || !wallet.account) {
-      throw new Error("Connect your wallet to join chat.");
-    }
-
-    const nextSession = await joinChatSession({
+    const fresh = await joinChatSession({
       chainId,
       campaignAddress: normalizedCampaign,
-      walletAddress: wallet.account,
-      signMessage: (message) => wallet.signer!.signMessage(message),
+      walletAddress: normalizedWallet,
+      signer,
     });
+    sessionRef.current = fresh;
+    setSession(fresh);
+    return fresh;
+  }, [chainId, normalizedCampaign, normalizedWallet, signer, connectWallet]);
 
-    saveStoredChatSession(chainId, normalizedCampaign, wallet.account, nextSession);
-    setSession(nextSession);
-    sessionRef.current = nextSession;
-    return nextSession;
-  }, [wallet, chainId, normalizedCampaign]);
-
-  const loadLatest = useCallback(async () => {
-    if (!normalizedCampaign) return;
+  useEffect(() => {
+    mountedRef.current = true;
     setLoading(true);
-    try {
-      const result = await fetchChatHistory({ chainId, campaignAddress: normalizedCampaign, limit: 50 });
-      setMessages(result.items);
-      setNextBeforeId(result.nextBeforeId);
-      requestAnimationFrame(() => scrollToBottom());
-    } catch (e: any) {
-      toast(e?.message || "Failed to load chat");
-    } finally {
-      setLoading(false);
-    }
-  }, [chainId, normalizedCampaign, scrollToBottom]);
+    setMessages([]);
+    setNextCursor(null);
+    setError(null);
 
-  const loadOlder = useCallback(async () => {
-    if (!nextBeforeId || loadingOlder) return;
-    const el = listRef.current;
-    const previousHeight = el?.scrollHeight ?? 0;
-    setLoadingOlder(true);
-    try {
-      const result = await fetchChatHistory({
-        chainId,
-        campaignAddress: normalizedCampaign,
-        beforeId: nextBeforeId,
-        limit: 50,
-      });
-      setMessages((prev) => mergeMessages(result.items, prev));
-      setNextBeforeId(result.nextBeforeId);
-      requestAnimationFrame(() => {
-        if (!el) return;
-        const nextHeight = el.scrollHeight;
-        el.scrollTop = nextHeight - previousHeight + el.scrollTop;
-      });
-    } catch (e: any) {
-      toast(e?.message || "Failed to load older messages");
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [chainId, normalizedCampaign, nextBeforeId, loadingOlder]);
-
-  useEffect(() => {
-    void loadLatest();
-  }, [loadLatest]);
-
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const nearBottom = recomputeNearBottom();
-      setIsNearBottom(nearBottom);
-      if (nearBottom) setUnreadCount(0);
-    };
-    onScroll();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [recomputeNearBottom, messages.length]);
-
-  useEffect(() => {
-    const authUrl = buildRealtimeAuthUrl(chainId, normalizedCampaign);
-    const client = new Ably.Realtime({
-      authCallback: async (_params: any, callback: any) => {
-        try {
-          const headers: Record<string, string> = {};
-          if (sessionRef.current?.sessionToken) {
-            headers.authorization = `Bearer ${sessionRef.current.sessionToken}`;
-          }
-          const res = await fetch(authUrl, { method: "GET", headers });
-          if (!res.ok) {
-            const j = await readJson(res);
-            throw new Error(j?.error || `Realtime auth failed (${res.status})`);
-          }
-          callback(null, await res.json());
-        } catch (err) {
-          callback(err, null);
-        }
-      },
-      authMethod: "GET",
-      autoConnect: true,
-    });
-
-    const channel = client.channels.get(roomChannelName(chainId, normalizedCampaign));
-    ablyRef.current = client;
-    channelRef.current = channel;
-
-    const onMessage = (msg: any) => {
-      const item = msg?.data as ChatMessage | undefined;
-      if (!item) return;
-      const shouldStick = recomputeNearBottom();
-      setMessages((prev) => mergeMessages(prev, [item]));
-      requestAnimationFrame(() => {
-        if (shouldStick) {
-          scrollToBottom("smooth");
-        } else {
-          setUnreadCount((count) => count + 1);
-        }
-      });
-    };
-
-    const onPresence = () => {
-      void updatePresenceView();
-    };
-
-    channel.subscribe("message:new", onMessage);
-    try { channel.attach(); } catch {}
-    try {
-      channel.presence.subscribe("enter", onPresence);
-      channel.presence.subscribe("leave", onPresence);
-      channel.presence.subscribe("update", onPresence);
-    } catch {
-      // ignore
-    }
-
-    const enterPresence = async () => {
-      if (!sessionRef.current?.sessionToken || !wallet.account) {
-        await updatePresenceView();
-        return;
-      }
-      try {
-        await channel.presence.enter({
-          displayName: sessionRef.current.profile.displayName || shortAddress(wallet.account),
-          role: sessionRef.current.profile.role,
-          typing: false,
-        });
-      } catch {
-        // ignore until authorized session exists
-      }
-      await updatePresenceView();
-    };
-
-    void enterPresence();
+    fetchChatHistory({ chainId, campaignAddress: normalizedCampaign, limit: 50 })
+      .then((data) => {
+        if (!mountedRef.current) return;
+        setMessages(mergeMany([], data.messages || []));
+        setNextCursor(data.nextCursor || null);
+        requestAnimationFrame(jumpToBottom);
+      })
+      .catch((e) => mountedRef.current && setError(e?.message || "Could not load War Room"))
+      .finally(() => mountedRef.current && setLoading(false));
 
     return () => {
-      if (typingIdleTimerRef.current) {
-        window.clearTimeout(typingIdleTimerRef.current);
-        typingIdleTimerRef.current = null;
-      }
-      try { channel.presence.unsubscribe("enter", onPresence); } catch {}
-      try { channel.presence.unsubscribe("leave", onPresence); } catch {}
-      try { channel.presence.unsubscribe("update", onPresence); } catch {}
-      try { channel.unsubscribe("message:new", onMessage); } catch {}
-      try { channel.presence.leave(); } catch {}
-      try { client.close(); } catch {}
-      channelRef.current = null;
-      ablyRef.current = null;
-      presenceTypingRef.current = false;
+      mountedRef.current = false;
     };
-  }, [chainId, normalizedCampaign, session?.sessionToken, wallet.account, recomputeNearBottom, scrollToBottom, updatePresenceView]);
-
-  const updateTypingState = useCallback(async (typing: boolean) => {
-    const channel = channelRef.current;
-    const currentSession = sessionRef.current;
-    if (!channel?.presence || !currentSession?.sessionToken || !wallet.account) return;
-    if (presenceTypingRef.current === typing) return;
-    presenceTypingRef.current = typing;
-    try {
-      await channel.presence.update({
-        displayName: currentSession.profile.displayName || shortAddress(wallet.account),
-        role: currentSession.profile.role,
-        typing,
-      });
-    } catch {
-      // ignore
-    }
-  }, [wallet.account]);
+  }, [chainId, normalizedCampaign, jumpToBottom]);
 
   useEffect(() => {
-    if (!session?.sessionToken || !wallet.account) return;
-    const trimmed = input.trim();
-    if (!trimmed) {
-      void updateTypingState(false);
+    if (!normalizedWallet) {
+      setSession(null);
+      sessionRef.current = null;
       return;
     }
-    void updateTypingState(true);
-    if (typingIdleTimerRef.current) window.clearTimeout(typingIdleTimerRef.current);
-    typingIdleTimerRef.current = window.setTimeout(() => {
-      void updateTypingState(false);
-    }, TYPING_IDLE_MS);
-    return () => {
-      if (typingIdleTimerRef.current) {
-        window.clearTimeout(typingIdleTimerRef.current);
-        typingIdleTimerRef.current = null;
+    const cached = getStoredChatSession(chainId, normalizedCampaign, normalizedWallet);
+    setSession(cached);
+    sessionRef.current = cached;
+  }, [chainId, normalizedCampaign, normalizedWallet]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function connectRealtime() {
+      if (!session?.sessionToken || !normalizedCampaign) return;
+
+      const ably = new Ably.Realtime({
+        authCallback: async (_params: any, callback: any) => {
+          try {
+            const res = await fetch(
+              realtimeTokenUrl({ chainId, campaignAddress: normalizedCampaign, sessionToken: session.sessionToken }),
+              { headers: { authorization: `Bearer ${session.sessionToken}` } }
+            );
+            const tokenRequest = await res.json();
+            if (!res.ok) throw new Error(tokenRequest?.error || "Realtime auth failed");
+            callback(null, tokenRequest);
+          } catch (e: any) {
+            callback(e, null);
+          }
+        },
+      });
+
+      if (cancelled) {
+        ably.close();
+        return;
       }
-    };
-  }, [input, session?.sessionToken, wallet.account, updateTypingState]);
 
-  const send = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || sending) return;
+      ablyRef.current = ably;
+      const channel = ably.channels.get(roomChannelName);
+      channelRef.current = channel;
 
-    try {
-      setSending(true);
-      const activeSession = await ensureSession();
-      const clientNonce = typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-      const optimistic: ChatMessage = {
-        id: `tmp:${clientNonce}`,
-        walletAddress: normalizeAddress(wallet.account || activeSession.profile.walletAddress),
-        displayName: activeSession.profile.displayName,
-        avatarUrl: activeSession.profile.avatarUrl,
-        role: activeSession.profile.role,
-        message: trimmed,
-        createdAt: new Date().toISOString(),
-        clientNonce,
-        pending: true,
+      const onMessage = (msg: any) => {
+        const data = msg.data as WarRoomMessage;
+        if (!data) return;
+        setMessages((current) => mergeOne(current, data));
+        if (nearBottomRef.current) {
+          requestAnimationFrame(jumpToBottom);
+        } else if (String(data.walletAddress || "").toLowerCase() !== normalizedWallet) {
+          setUnreadCount((n) => n + 1);
+        }
       };
 
-      setMessages((prev) => mergeMessages(prev, [optimistic]));
-      setInput("");
-      requestAnimationFrame(() => scrollToBottom("smooth"));
-      void updateTypingState(false);
+      const updatePresence = async () => {
+        try {
+          const members = await channel.presence.get();
+          if (cancelled) return;
+          const unique = new Set(members.map((m) => String(m.clientId || m.id || "")).filter(Boolean));
+          setOnlineCount(unique.size);
+          const typing = members
+            .filter((m) => (m.data as any)?.typing)
+            .map((m) => String(m.clientId || ""))
+            .filter((id) => id && id.toLowerCase() !== normalizedWallet);
+          setTypingWallets(Array.from(new Set(typing)).slice(0, 3));
+        } catch {
+          // ignore presence read failures; messages still work
+        }
+      };
 
+      channel.subscribe("message:new", onMessage);
+      channel.presence.subscribe("enter", updatePresence);
+      channel.presence.subscribe("leave", updatePresence);
+      channel.presence.subscribe("update", updatePresence);
+
+      try {
+        await channel.presence.enter({ typing: false });
+        await updatePresence();
+      } catch {
+        // presence is nice-to-have
+      }
+    }
+
+    connectRealtime();
+
+    return () => {
+      cancelled = true;
+      const channel = channelRef.current;
+      if (channel) {
+        try { channel.unsubscribe(); } catch {}
+        try { channel.presence.leave(); } catch {}
+      }
+      channelRef.current = null;
+      if (ablyRef.current) {
+        try { ablyRef.current.close(); } catch {}
+      }
+      ablyRef.current = null;
+      setOnlineCount(0);
+      setTypingWallets([]);
+    };
+  }, [chainId, normalizedCampaign, normalizedWallet, roomChannelName, session?.sessionToken, jumpToBottom]);
+
+  const loadOlder = useCallback(async () => {
+    if (!nextCursor) return;
+    const el = listRef.current;
+    const beforeHeight = el?.scrollHeight ?? 0;
+    const data = await fetchChatHistory({ chainId, campaignAddress: normalizedCampaign, before: nextCursor, limit: 50 });
+    setMessages((current) => mergeMany(data.messages || [], current));
+    setNextCursor(data.nextCursor || null);
+    requestAnimationFrame(() => {
+      const currentEl = listRef.current;
+      if (!currentEl) return;
+      currentEl.scrollTop = currentEl.scrollHeight - beforeHeight;
+    });
+  }, [chainId, normalizedCampaign, nextCursor]);
+
+  const sendTyping = useCallback((typing: boolean) => {
+    const channel = channelRef.current;
+    if (!channel) return;
+    try {
+      channel.presence.update({ typing });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    sendTyping(Boolean(value.trim()));
+    if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = window.setTimeout(() => sendTyping(false), 1800);
+  }, [sendTyping]);
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+
+    setError(null);
+    setSending(true);
+    sendTyping(false);
+
+    const clientNonce = makeNonce();
+    const now = new Date().toISOString();
+    const optimistic: WarRoomMessage = {
+      id: `optimistic:${clientNonce}`,
+      chainId,
+      campaignAddress: normalizedCampaign,
+      walletAddress: normalizedWallet,
+      displayName: sessionRef.current?.profile?.displayName || null,
+      avatarUrl: sessionRef.current?.profile?.avatarUrl || null,
+      role: sessionRef.current?.profile?.role || "trader",
+      message: text,
+      createdAt: now,
+      clientNonce,
+      pending: true,
+    };
+
+    setInput("");
+    setMessages((current) => mergeOne(current, optimistic));
+    requestAnimationFrame(jumpToBottom);
+
+    try {
+      const activeSession = sessionRef.current || await ensureSession();
       const saved = await sendChatMessage({
         chainId,
         campaignAddress: normalizedCampaign,
-        message: trimmed,
-        clientNonce,
         sessionToken: activeSession.sessionToken,
+        message: text,
+        clientNonce,
       });
-
-      setMessages((prev) => mergeMessages(prev, [saved]));
+      setMessages((current) => mergeOne(current, { ...saved, clientNonce, pending: false, failed: false }));
+      requestAnimationFrame(jumpToBottom);
     } catch (e: any) {
-      const message = e?.message || "Failed to send message";
-      toast(message);
-      setMessages((prev) => prev.map((item) => item.pending ? { ...item, pending: false, failed: true } : item));
-      if (/unauthorized/i.test(String(message))) {
-        clearStoredChatSession(chainId, normalizedCampaign, wallet.account);
+      if (/session/i.test(String(e?.message || "")) && normalizedWallet) {
+        clearStoredChatSession(chainId, normalizedCampaign, normalizedWallet);
         setSession(null);
         sessionRef.current = null;
       }
+      setMessages((current) =>
+        current.map((m) => (m.clientNonce === clientNonce ? { ...m, pending: false, failed: true } : m))
+      );
+      setError(e?.message || "Could not send message");
     } finally {
       setSending(false);
     }
-  }, [input, sending, ensureSession, wallet.account, chainId, normalizedCampaign, scrollToBottom, updateTypingState]);
+  }, [chainId, ensureSession, input, jumpToBottom, normalizedCampaign, normalizedWallet, sending, sendTyping]);
 
-  const jumpToBottom = useCallback(() => {
-    scrollToBottom("smooth");
-    setUnreadCount(0);
-  }, [scrollToBottom]);
+  const typingLabel = useMemo(() => {
+    if (!typingWallets.length) return "";
+    if (typingWallets.length === 1) return `${typingWallets[0].slice(0, 6)}…${typingWallets[0].slice(-4)} is typing`;
+    return `${typingWallets.length} soldiers are typing`;
+  }, [typingWallets]);
 
   return {
-    wallet,
     messages,
-    loading,
-    loadingOlder,
-    sending,
     input,
-    setInput,
-    send,
-    listRef,
-    loadOlder,
-    hasMore,
-    onlineCount,
-    typingNames,
-    unreadCount,
-    isNearBottom,
-    jumpToBottom,
-    ensureSession,
+    setInput: handleInputChange,
+    loading,
+    sending,
+    error,
     session,
+    onlineCount,
+    typingLabel,
+    listRef,
+    isNearBottom,
+    unreadCount,
+    hasMore: Boolean(nextCursor),
+    onScroll,
+    jumpToBottom,
+    loadOlder,
+    sendMessage,
   };
 }

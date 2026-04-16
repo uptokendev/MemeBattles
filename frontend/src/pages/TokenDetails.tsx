@@ -2274,23 +2274,18 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             </div>
           </Card>
 
-          <Card className="mt-3 bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div>
-                <h3 className="text-sm font-semibold">War Room</h3>
-                <p className="text-[11px] text-muted-foreground">Live campaign chat</p>
-              </div>
-            </div>
-
+          <div className="mt-3">
             {campaign?.campaign ? (
               <TokenWarRoom
                 chainId={Number(wallet.chainId ?? 97)}
                 campaignAddress={campaign.campaign}
               />
             ) : (
-              <div className="text-sm text-muted-foreground">Loading chat…</div>
+              <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
+                <div className="text-sm text-muted-foreground">Loading chat…</div>
+              </Card>
             )}
-          </Card>
+          </div>
         </div>
       </div>
     </div>
