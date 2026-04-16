@@ -1,54 +1,35 @@
 import Ably from "ably";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
-import { getBearerToken, lookupChatSession, normalizeAddress, roomChannelName } from "./_lib.js";
-
-function p(v) {
-  return String(v ?? "").trim().replace(/^['"]|['"]$/g, "");
-}
-
-function resolveAblyApiKey() {
-  const raw = p(process.env.ABLY_API_KEY);
-  const keyName = p(process.env.ABLY_API_KEY_NAME || process.env.ABLY_KEY_NAME);
-  const keySecret = p(process.env.ABLY_API_KEY_SECRET || process.env.ABLY_KEY_SECRET);
-
-  if (raw.includes(":")) return raw;
-  if (raw && keySecret) return `${raw}:${keySecret}`;
-  if (keyName && keySecret) return `${keyName}:${keySecret}`;
-  return raw;
-}
+import { badMethod, getQuery, json } from "../../server/http.js";
+import { channelName, normalizeCampaignAddress, requireSession, resolveAblyApiKey, validChainId } from "./_lib.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
   res.setHeader("cache-control", "no-store");
 
   try {
-    const ablyKey = resolveAblyApiKey();
-    if (!ablyKey) return json(res, 500, { error: "Server misconfigured: ABLY_API_KEY missing" });
-
+    const session = await requireSession(req);
     const q = getQuery(req);
-    const chainId = Number(q.chainId);
-    const campaignAddress = normalizeAddress(q.campaignAddress);
+    const chainId = validChainId(q.chainId);
+    const campaignAddress = normalizeCampaignAddress(q.campaignAddress);
+    if (!chainId) return json(res, 400, { error: "Invalid chainId" });
+    if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
 
-    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(campaignAddress)) return json(res, 400, { error: "Invalid campaignAddress" });
+    const key = resolveAblyApiKey();
+    if (!key || !key.includes(":")) {
+      return json(res, 500, { error: "Server misconfigured: ABLY_API_KEY missing or invalid" });
+    }
 
-    const sessionToken = getBearerToken(req);
-    const session = sessionToken ? await lookupChatSession(sessionToken) : null;
-    const channel = roomChannelName(chainId, campaignAddress);
-    const capability = {
-      [channel]: session ? ["subscribe", "presence"] : ["subscribe"],
-    };
-
-    const ably = new Ably.Rest({ key: ablyKey });
+    const channel = channelName(chainId, campaignAddress);
+    const ably = new Ably.Rest({ key });
     const tokenRequest = await ably.auth.createTokenRequest({
       ttl: 60 * 60 * 1000,
-      capability,
-      clientId: session?.walletAddress ? normalizeAddress(session.walletAddress) : undefined,
+      clientId: session.walletAddress,
+      capability: { [channel]: ["subscribe", "presence"] },
     });
 
     return json(res, 200, tokenRequest);
   } catch (e) {
     console.error("[api/chat/realtime-token]", e);
-    return json(res, 500, { error: "Server error" });
+    return json(res, e?.statusCode || 500, { error: e?.statusCode ? e.message : "Server error" });
   }
 }
