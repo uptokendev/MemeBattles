@@ -8,3 +8,6 @@ dist
 
 # Local Netlify folder
 .netlify
+
+# Local archive accidentally created at repo root
+frontend.zip
