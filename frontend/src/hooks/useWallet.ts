@@ -10,158 +10,178 @@ type WalletHook = {
   chainId?: number;
   connecting: boolean;
   connect: (wallet?: WalletType) => Promise<void>;
-  disconnect: () => void;
+  disconnect: () => Promise<void>;
   isConnected: boolean;
 };
 
-type InjectedProvider = {
-  request?: (args: { method: string; params?: any[] }) => Promise<any>;
-  on?: (event: string, listener: (...args: any[]) => void) => void;
-  removeListener?: (event: string, listener: (...args: any[]) => void) => void;
-  isMetaMask?: boolean;
-  isRabby?: boolean;
-  isBraveWallet?: boolean;
-  isBinance?: boolean;
-  isBinanceChain?: boolean;
-  providerInfo?: { name?: string; rdns?: string };
-  selectedProvider?: InjectedProvider;
-  providers?: InjectedProvider[];
-};
+const SELECTED_WALLET_KEY = "mwz:selected_wallet";
+const DISCONNECTED_KEY = "mwz:wallet:disconnected";
+const LEGACY_CONNECTED_KEY = "mwz_wallet_connected";
 
-const WALLET_CONNECTED_KEY = "mwz_wallet_connected";
-const WALLET_TYPE_KEY = "mwz_wallet_type";
-const WALLET_DISCONNECTED_KEY = "mwz_wallet_disconnected";
-const CHAT_SESSION_PREFIX = "mwz_chat_session";
-
-function getAnyWindow() {
-  return typeof window === "undefined" ? ({} as any) : (window as any);
+function normalizeHexAddress(value?: string | null): string {
+  const v = String(value ?? "").trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(v) ? v.toLowerCase() : "";
 }
 
-function isRequestProvider(value: any): value is InjectedProvider {
-  return Boolean(value && typeof value.request === "function");
-}
-
-function providerName(provider: InjectedProvider) {
-  return String(provider.providerInfo?.name || provider.providerInfo?.rdns || "").toLowerCase();
-}
-
-function isMetaMaskLike(provider: InjectedProvider) {
-  const name = providerName(provider);
-  return Boolean(
-    provider.isMetaMask ||
-      provider.isRabby ||
-      name.includes("metamask") ||
-      name.includes("rabby")
-  );
-}
-
-function isBinanceLike(provider: InjectedProvider) {
-  const name = providerName(provider);
-  return Boolean(
-    provider.isBinance ||
-      provider.isBinanceChain ||
-      name.includes("binance") ||
-      name.includes("bnb")
-  );
-}
-
-function safeLocalStorageGet(key: string) {
+function clearWarRoomSessionCache() {
+  if (typeof window === "undefined") return;
   try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function safeLocalStorageSet(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function safeLocalStorageRemove(key: string) {
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearWarRoomSessions() {
-  try {
-    const stores = [window.sessionStorage, window.localStorage].filter(Boolean);
-    for (const store of stores) {
-      const keys: string[] = [];
-      for (let i = 0; i < store.length; i += 1) {
-        const key = store.key(i);
-        if (key?.startsWith(CHAT_SESSION_PREFIX)) keys.push(key);
+    const toDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key) continue;
+      if (
+        key.startsWith("mwz:warroom:") ||
+        key.startsWith("mwz:chat:") ||
+        key.startsWith("mwz:tokenchat:")
+      ) {
+        toDelete.push(key);
       }
-      keys.forEach((key) => store.removeItem(key));
     }
+    toDelete.forEach((key) => window.localStorage.removeItem(key));
   } catch {
-    // ignore storage failures
+    // ignore storage errors
   }
 }
 
-function getInjectedProviders(): InjectedProvider[] {
-  const anyWindow = getAnyWindow();
-  const ethereum = anyWindow.ethereum as InjectedProvider | undefined;
-  const seen = new Set<any>();
-  const providers: InjectedProvider[] = [];
+function getProviderMeta(provider: any) {
+  const info = provider?.providerInfo ?? provider?.info ?? provider?.metadata ?? {};
+  const name = String(info?.name ?? provider?.name ?? provider?._walletName ?? "").toLowerCase();
+  const rdns = String(info?.rdns ?? provider?.rdns ?? provider?._rdns ?? "").toLowerCase();
+  return { name, rdns };
+}
 
-  const push = (candidate: any) => {
-    if (!isRequestProvider(candidate) || seen.has(candidate)) return;
-    seen.add(candidate);
-    providers.push(candidate);
-  };
+function isLikelyBinance(provider: any) {
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(
+    provider?.isBinance ||
+      provider?.isBinanceChain ||
+      name.includes("binance") ||
+      rdns.includes("binance")
+  );
+}
 
-  // Modern multi-wallet injection normally exposes ethereum.providers.
-  if (Array.isArray(ethereum?.providers)) ethereum.providers.forEach(push);
+function isLikelyCryptoDotCom(provider: any) {
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(
+    provider?.isCryptoCom ||
+      name.includes("crypto.com") ||
+      name.includes("defi wallet") ||
+      rdns.includes("crypto")
+  );
+}
 
-  // Some wallets expose a selected provider behind the aggregate object.
-  push(ethereum?.selectedProvider);
+function isLikelyCoinbase(provider: any) {
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(provider?.isCoinbaseWallet || name.includes("coinbase") || rdns.includes("coinbase"));
+}
 
-  // EIP-6963 libraries/wallets sometimes expose providerMap or detected lists.
-  const providerMap = (ethereum as any)?.providerMap;
-  if (providerMap && typeof providerMap.values === "function") {
-    Array.from(providerMap.values()).forEach(push);
+function isLikelyTrust(provider: any) {
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(provider?.isTrust || provider?.isTrustWallet || name.includes("trust") || rdns.includes("trust"));
+}
+
+function isLikelyRabby(provider: any) {
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(provider?.isRabby || name.includes("rabby") || rdns.includes("rabby"));
+}
+
+function isAllowedMetaMaskFamily(provider: any) {
+  if (!provider || typeof provider.request !== "function") return false;
+  if (isLikelyBinance(provider) || isLikelyCryptoDotCom(provider) || isLikelyCoinbase(provider) || isLikelyTrust(provider)) {
+    return false;
   }
-  if (Array.isArray((ethereum as any)?.detected)) (ethereum as any).detected.forEach(push);
+  const { name, rdns } = getProviderMeta(provider);
+  return Boolean(
+    provider?.isMetaMask ||
+      provider?._metamask ||
+      isLikelyRabby(provider) ||
+      name.includes("metamask") ||
+      rdns.includes("metamask")
+  );
+}
 
-  push(anyWindow.BinanceChain);
-  push(anyWindow.binanceChain);
-  push(ethereum);
+function dedupeProviders(candidates: any[]) {
+  const seen = new Set<any>();
+  const out: any[] = [];
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate) || typeof candidate.request !== "function") continue;
+    seen.add(candidate);
+    out.push(candidate);
+  }
+  return out;
+}
+
+function getInjectedProviders() {
+  if (typeof window === "undefined") return [];
+  const anyWindow = window as any;
+  const ethereum = anyWindow.ethereum;
+  const providers = dedupeProviders([
+    ...(Array.isArray(ethereum?.providers) ? ethereum.providers : []),
+    ethereum,
+    anyWindow.BinanceChain,
+    anyWindow.binanceChain,
+  ]);
+
+  providers.sort((a, b) => {
+    const score = (p: any) => {
+      if (isLikelyBinance(p)) return 50;
+      if (isAllowedMetaMaskFamily(p) && !isLikelyRabby(p)) return 40;
+      if (isLikelyRabby(p)) return 35;
+      if (isLikelyCoinbase(p)) return 20;
+      if (isLikelyCryptoDotCom(p)) return 10;
+      return 0;
+    };
+    return score(b) - score(a);
+  });
 
   return providers;
 }
 
-function pickInjected(wallet: WalletType | undefined): InjectedProvider | null {
+function pickInjected(wallet: WalletType | undefined, preferredType?: WalletType | null) {
+  const target = wallet ?? preferredType ?? undefined;
   const providers = getInjectedProviders();
   if (!providers.length) return null;
 
-  if (wallet === "metamask") {
-    return providers.find(isMetaMaskLike) || null;
+  if (target === "metamask") {
+    return providers.find((p) => isAllowedMetaMaskFamily(p) && !isLikelyRabby(p))
+      || providers.find((p) => isAllowedMetaMaskFamily(p))
+      || null;
   }
 
-  if (wallet === "binance") {
-    return providers.find(isBinanceLike) || null;
+  if (target === "binance") {
+    return providers.find((p) => isLikelyBinance(p)) || null;
   }
 
-  return providers.find((p) => !isBinanceLike(p)) || providers[0] || null;
+  if (target === "injected") {
+    return providers.find((p) => !isLikelyBinance(p)) || providers[0] || null;
+  }
+
+  return null;
 }
 
-function parseChainId(value: any): number | undefined {
+async function choosePrimaryAccount(selectedProvider: any, accounts: string[]) {
+  const normalized = accounts.map((a) => normalizeHexAddress(a)).filter(Boolean);
+  const selectedAddress = normalizeHexAddress(selectedProvider?.selectedAddress);
+  if (selectedAddress && normalized.includes(selectedAddress)) return selectedAddress;
+
   try {
-    if (typeof value === "number") return value;
-    if (typeof value === "bigint") return Number(value);
-    if (typeof value === "string" && value.startsWith("0x")) return Number(BigInt(value));
-    if (typeof value === "string") return Number(value);
+    const fromEthAccounts = await selectedProvider.request({ method: "eth_accounts" });
+    const active = Array.isArray(fromEthAccounts)
+      ? fromEthAccounts.map((a: string) => normalizeHexAddress(a)).filter(Boolean)
+      : [];
+    if (selectedAddress && active.includes(selectedAddress)) return selectedAddress;
+    if (active[0]) return active[0];
   } catch {
-    return undefined;
+    // ignore
   }
-  return undefined;
+
+  return normalized[0] ?? "";
+}
+
+function dispatchOpenWalletModal() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
 }
 
 export function useWallet(): WalletHook {
@@ -170,202 +190,214 @@ export function useWallet(): WalletHook {
   const [account, setAccount] = useState("");
   const [chainId, setChainId] = useState<number>();
   const [connecting, setConnecting] = useState(false);
-
-  const eip1193Ref = useRef<InjectedProvider | null>(null);
+  const eip1193Ref = useRef<any>(null);
+  const selectedWalletTypeRef = useRef<WalletType | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const connectedRef = useRef(false);
-  const selectedWalletRef = useRef<WalletType | undefined>(undefined);
 
-  const hardResetState = useCallback(() => {
-    setAccount("");
-    setSigner(null);
-    setProvider(null);
-    setChainId(undefined);
-  }, []);
-
-  const refreshFromProvider = useCallback(async (selectedProvider?: InjectedProvider | null, options?: { hydrateAccount?: boolean }) => {
-    const source = selectedProvider || eip1193Ref.current || pickInjected(selectedWalletRef.current) || pickInjected("injected");
-    if (!source || typeof source.request !== "function") return;
-
-    eip1193Ref.current = source;
-
-    const browserProvider = new BrowserProvider(source as any);
-    setProvider(browserProvider);
-
-    try {
-      const rawChainId = await source.request({ method: "eth_chainId" });
-      setChainId(parseChainId(rawChainId));
-    } catch {
-      try {
-        const network = await browserProvider.getNetwork();
-        setChainId(Number(network.chainId));
-      } catch {
-        setChainId(undefined);
-      }
-    }
-
-    if (!options?.hydrateAccount && !connectedRef.current) return;
-
-    try {
-      const accounts: string[] = await source.request({ method: "eth_accounts" });
-      const primary = accounts?.[0] || "";
-      setAccount(primary);
-      if (!primary) {
-        setSigner(null);
-        return;
-      }
-      const nextSigner = await browserProvider.getSigner();
-      setSigner(nextSigner);
-    } catch {
-      setSigner(null);
-    }
-  }, []);
-
-  const bindEip1193Listeners = useCallback((selectedProvider: InjectedProvider) => {
+  const bindEip1193Listeners = useCallback((selectedProvider: any) => {
     cleanupRef.current?.();
     cleanupRef.current = null;
 
-    const anyWindow = getAnyWindow();
-    const ethereum = anyWindow.ethereum as InjectedProvider | undefined;
-    const targets = new Set<InjectedProvider>();
-    if (isRequestProvider(ethereum)) targets.add(ethereum);
-    if (isRequestProvider(selectedProvider)) targets.add(selectedProvider);
+    if (!selectedProvider?.on) return;
 
-    const offHandlers: Array<() => void> = [];
+    const rebuildState = async () => {
+      try {
+        const bp = new BrowserProvider(selectedProvider);
+        setProvider(bp);
+        const network = await bp.getNetwork();
+        setChainId(Number(network.chainId));
+        const accounts = await selectedProvider.request({ method: "eth_accounts" });
+        const chosen = await choosePrimaryAccount(selectedProvider, Array.isArray(accounts) ? accounts : []);
+        setAccount(chosen);
+        if (!chosen) {
+          setSigner(null);
+          clearWarRoomSessionCache();
+          return;
+        }
+        const nextSigner = await bp.getSigner();
+        setSigner(nextSigner);
+      } catch {
+        setSigner(null);
+      }
+    };
 
-    const onAccountsChanged = (accounts: string[] = []) => {
-      const primary = accounts?.[0] || "";
-
-      if (!primary) {
-        hardResetState();
-        connectedRef.current = false;
-        safeLocalStorageRemove(WALLET_CONNECTED_KEY);
-        clearWarRoomSessions();
+    const onAccountsChanged = async (accounts: string[]) => {
+      const chosen = await choosePrimaryAccount(selectedProvider, Array.isArray(accounts) ? accounts : []);
+      setAccount((prev) => {
+        if (prev && chosen && prev.toLowerCase() !== chosen.toLowerCase()) {
+          clearWarRoomSessionCache();
+        }
+        return chosen;
+      });
+      if (!chosen) {
+        setSigner(null);
+        clearWarRoomSessionCache();
         return;
       }
-
-      connectedRef.current = true;
-      safeLocalStorageSet(WALLET_CONNECTED_KEY, "1");
-      safeLocalStorageRemove(WALLET_DISCONNECTED_KEY);
-      setAccount(primary);
-      refreshFromProvider(selectedProvider, { hydrateAccount: true }).catch(() => setSigner(null));
+      try {
+        const bp = new BrowserProvider(selectedProvider);
+        setProvider(bp);
+        const nextSigner = await bp.getSigner();
+        setSigner(nextSigner);
+      } catch {
+        setSigner(null);
+      }
     };
 
-    const onChainChanged = (hexChainId: string) => {
-      setChainId(parseChainId(hexChainId));
-      refreshFromProvider(selectedProvider, { hydrateAccount: connectedRef.current }).catch(() => undefined);
+    const onChainChanged = async (hexChainId: string) => {
+      try {
+        setChainId(Number(BigInt(hexChainId)));
+      } catch {
+        setChainId(undefined);
+      }
+      await rebuildState();
     };
 
-    for (const target of targets) {
-      if (!target?.on) continue;
-      target.on("accountsChanged", onAccountsChanged);
-      target.on("chainChanged", onChainChanged);
-      offHandlers.push(() => {
-        target.removeListener?.("accountsChanged", onAccountsChanged);
-        target.removeListener?.("chainChanged", onChainChanged);
-      });
-    }
-
-    const onFocusOrVisibility = () => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromProvider(selectedProvider, { hydrateAccount: connectedRef.current }).catch(() => undefined);
+    const onVisibilityOrFocus = async () => {
+      await rebuildState();
     };
 
-    window.addEventListener("focus", onFocusOrVisibility);
-    document.addEventListener("visibilitychange", onFocusOrVisibility);
-    offHandlers.push(() => window.removeEventListener("focus", onFocusOrVisibility));
-    offHandlers.push(() => document.removeEventListener("visibilitychange", onFocusOrVisibility));
+    selectedProvider.on("accountsChanged", onAccountsChanged);
+    selectedProvider.on("chainChanged", onChainChanged);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
 
     cleanupRef.current = () => {
-      offHandlers.forEach((off) => {
-        try {
-          off();
-        } catch {
-          // ignore listener cleanup failures
-        }
-      });
+      try {
+        selectedProvider.removeListener?.("accountsChanged", onAccountsChanged);
+        selectedProvider.removeListener?.("chainChanged", onChainChanged);
+      } catch {
+        // ignore
+      }
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, [hardResetState, refreshFromProvider]);
+  }, []);
 
-  useEffect(() => {
+  const hydrateSelectedProvider = useCallback(async () => {
     if (typeof window === "undefined") return;
+    const explicitlyDisconnected = window.localStorage.getItem(DISCONNECTED_KEY) === "1";
+    if (explicitlyDisconnected) return;
 
-    const previouslyConnected = safeLocalStorageGet(WALLET_CONNECTED_KEY) === "1";
-    const wasDisconnected = safeLocalStorageGet(WALLET_DISCONNECTED_KEY) === "1";
-    const savedWallet = safeLocalStorageGet(WALLET_TYPE_KEY) as WalletType | null;
-    const selected = pickInjected(savedWallet || "metamask") || pickInjected("injected");
-
+    const storedType = window.localStorage.getItem(SELECTED_WALLET_KEY) as WalletType | null;
+    selectedWalletTypeRef.current = storedType;
+    const selected = pickInjected(undefined, storedType);
     if (!selected) return;
 
-    selectedWalletRef.current = savedWallet || undefined;
-    eip1193Ref.current = selected;
-    bindEip1193Listeners(selected);
+    try {
+      const accounts = await selected.request({ method: "eth_accounts" });
+      const chosen = await choosePrimaryAccount(selected, Array.isArray(accounts) ? accounts : []);
+      if (!chosen) return;
 
-    // Always hydrate read-only provider/chain. Only hydrate an account if the
-    // app has an active frontend wallet session. This prevents local disconnect
-    // from instantly reconnecting the last browser-authorized wallet.
-    connectedRef.current = previouslyConnected && !wasDisconnected;
-    refreshFromProvider(selected, { hydrateAccount: connectedRef.current }).catch(() => undefined);
+      eip1193Ref.current = selected;
+      bindEip1193Listeners(selected);
 
+      const bp = new BrowserProvider(selected);
+      setProvider(bp);
+      setAccount(chosen);
+      const nextSigner = await bp.getSigner();
+      setSigner(nextSigner);
+      const network = await bp.getNetwork();
+      setChainId(Number(network.chainId));
+      window.localStorage.removeItem(DISCONNECTED_KEY);
+    } catch {
+      // do not auto-connect on failures
+    }
+  }, [bindEip1193Listeners]);
+
+  useEffect(() => {
+    void hydrateSelectedProvider();
     return () => {
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
-  }, [bindEip1193Listeners, refreshFromProvider]);
+  }, [hydrateSelectedProvider]);
 
-  const connect = useCallback(async (wallet?: WalletType) => {
-    if (typeof window === "undefined") throw new Error("No browser environment detected.");
+  const connect = useCallback(
+    async (wallet?: WalletType) => {
+      if (typeof window === "undefined") {
+        throw new Error("No browser environment detected.");
+      }
 
-    const selected = pickInjected(wallet);
-    if (!selected) {
-      if (wallet === "metamask") throw new Error("MetaMask/Rabby was not found. Choose another EVM wallet or install MetaMask.");
-      if (wallet === "binance") throw new Error("Binance Wallet was not found. Choose another EVM wallet or install Binance Wallet.");
-      throw new Error("No EVM wallet found. Please install MetaMask, Binance Wallet, Rabby, or another BSC-capable wallet.");
-    }
+      if (!wallet) {
+        dispatchOpenWalletModal();
+        return;
+      }
 
-    setConnecting(true);
-    try {
-      selectedWalletRef.current = wallet;
-      eip1193Ref.current = selected;
-      bindEip1193Listeners(selected);
+      const selected = pickInjected(wallet);
+      if (!selected) {
+        throw new Error("No matching wallet found. Please install MetaMask, Rabby, or Binance Wallet.");
+      }
 
-      const accounts: string[] = await selected.request!({ method: "eth_requestAccounts" });
-      const primary = accounts?.[0] || "";
-      if (!primary) throw new Error("No accounts returned from wallet.");
-
-      connectedRef.current = true;
-      safeLocalStorageSet(WALLET_CONNECTED_KEY, "1");
-      safeLocalStorageRemove(WALLET_DISCONNECTED_KEY);
-      if (wallet) safeLocalStorageSet(WALLET_TYPE_KEY, wallet);
-      else safeLocalStorageRemove(WALLET_TYPE_KEY);
-
-      const browserProvider = new BrowserProvider(selected as any);
-      setProvider(browserProvider);
-      setAccount(primary);
-      setSigner(await browserProvider.getSigner());
-
+      setConnecting(true);
       try {
-        const rawChainId = await selected.request!({ method: "eth_chainId" });
-        setChainId(parseChainId(rawChainId));
-      } catch {
+        if (wallet === "metamask" && typeof selected.request === "function") {
+          try {
+            await selected.request({
+              method: "wallet_requestPermissions",
+              params: [{ eth_accounts: {} }],
+            });
+          } catch {
+            // some wallets do not support this; continue
+          }
+        }
+
+        const accounts: string[] = await selected.request({ method: "eth_requestAccounts" });
+        const chosen = await choosePrimaryAccount(selected, Array.isArray(accounts) ? accounts : []);
+        if (!chosen) {
+          throw new Error("No wallet account returned.");
+        }
+
+        eip1193Ref.current = selected;
+        selectedWalletTypeRef.current = wallet;
+        bindEip1193Listeners(selected);
+
+        const browserProvider = new BrowserProvider(selected);
+        setProvider(browserProvider);
+        setAccount(chosen);
+        const nextSigner = await browserProvider.getSigner();
+        setSigner(nextSigner);
         const network = await browserProvider.getNetwork();
         setChainId(Number(network.chainId));
-      }
-    } finally {
-      setConnecting(false);
-    }
-  }, [bindEip1193Listeners]);
 
-  const disconnect = useCallback(() => {
-    connectedRef.current = false;
-    selectedWalletRef.current = undefined;
+        window.localStorage.setItem(SELECTED_WALLET_KEY, wallet);
+        window.localStorage.removeItem(DISCONNECTED_KEY);
+        window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [bindEip1193Listeners]
+  );
+
+  const disconnect = useCallback(async () => {
+    const selected = eip1193Ref.current;
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+
+    if (selected?.request) {
+      try {
+        await selected.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch {
+        // most injected wallets either do not support this or ignore it
+      }
+    }
+
     eip1193Ref.current = null;
-    safeLocalStorageRemove(WALLET_CONNECTED_KEY);
-    safeLocalStorageRemove(WALLET_TYPE_KEY);
-    safeLocalStorageSet(WALLET_DISCONNECTED_KEY, "1");
-    clearWarRoomSessions();
-    hardResetState();
-  }, [hardResetState]);
+    setAccount("");
+    setSigner(null);
+    setProvider(null);
+    setChainId(undefined);
+    clearWarRoomSessionCache();
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(DISCONNECTED_KEY, "1");
+      window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
+    }
+  }, []);
 
   return useMemo(
     () => ({
@@ -376,7 +408,7 @@ export function useWallet(): WalletHook {
       connecting,
       connect,
       disconnect,
-      isConnected: Boolean(account),
+      isConnected: Boolean(account && signer),
     }),
     [provider, signer, account, chainId, connecting, connect, disconnect]
   );

@@ -319,12 +319,17 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
           </Button>
 
           {/* Connect wallet button with SAME style, but now opens modal */}
-          <div
-            className="relative"
-            onMouseEnter={() => wallet.isConnected && setDisconnectOpen(true)}
-            onMouseLeave={() => setDisconnectOpen(false)}
-          >
-            <Button className={topbarButtonClass} onClick={() => { if (!wallet.isConnected) { openWalletModal(); } }}>
+          <div className="relative">
+            <Button
+              className={topbarButtonClass}
+              onClick={() => {
+                if (!wallet.isConnected) {
+                  openWalletModal();
+                  return;
+                }
+                setDisconnectOpen((prev) => !prev);
+              }}
+            >
               <span className="hidden sm:inline">
                 {wallet.isConnected ? shortAddress : "Connect wallet"}
               </span>
@@ -333,13 +338,21 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               </span>
             </Button>
 
-            {/* Disconnect dropdown */}
             {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-1 w-32 rounded-xl border border-border/70 bg-card/95 backdrop-blur-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] z-50">
+              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-border/70 bg-card/95 backdrop-blur-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] z-50 overflow-hidden">
                 <button
                   className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
                   onClick={() => {
-                    wallet.disconnect();
+                    setDisconnectOpen(false);
+                    openWalletModal();
+                  }}
+                >
+                  Change wallet
+                </button>
+                <button
+                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
+                  onClick={async () => {
+                    await wallet.disconnect();
                     setDisconnectOpen(false);
                   }}
                 >

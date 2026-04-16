@@ -1,59 +1,65 @@
 import { badMethod, json, readJson } from "../../server/http.js";
 import {
-  createSessionToken,
-  getProfile,
-  hashToken,
-  normalizeCampaignAddress,
-  normalizeWalletAddress,
-  resolveRole,
-  validChainId,
-  verifyJoinSignature,
+  consumeNonce,
+  createChatSession,
+  ensureAuthNonceSchema,
+  ensureChatSchema,
+  fetchProfile,
+  normalizeAddress,
+  verifyChatSessionSignature,
 } from "./_lib.js";
-import { pool } from "../../server/db.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return badMethod(res);
-  res.setHeader("cache-control", "no-store");
-
   try {
-    const body = await readJson(req);
-    const chainId = validChainId(body.chainId);
-    const campaignAddress = normalizeCampaignAddress(body.campaignAddress);
-    const walletAddress = normalizeWalletAddress(body.walletAddress || body.address);
-    const nonce = String(body.nonce ?? "").trim();
-    const signature = String(body.signature ?? "").trim();
-    const message = String(body.message ?? "");
+    await ensureAuthNonceSchema();
+    await ensureChatSchema();
 
-    if (!chainId) return json(res, 400, { error: "Invalid chainId" });
+    const b = await readJson(req);
+    const chainId = Number(b.chainId);
+    const campaignAddress = normalizeAddress(b.campaignAddress);
+    const address = normalizeAddress(b.address);
+    const nonce = String(b.nonce ?? "").trim();
+    const signature = String(b.signature ?? "").trim();
+
+    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
     if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
-    if (!walletAddress) return json(res, 400, { error: "Invalid walletAddress" });
+    if (!address) return json(res, 400, { error: "Invalid address" });
     if (!nonce) return json(res, 400, { error: "Nonce missing" });
     if (!signature) return json(res, 400, { error: "Signature missing" });
 
-    verifyJoinSignature({ chainId, campaignAddress, walletAddress, nonce, signature, message });
+    await consumeNonce(chainId, address, nonce);
+    const recovered = verifyChatSessionSignature({ chainId, address, campaignAddress, nonce, signature });
+    if (recovered !== address) return json(res, 401, { error: "Invalid signature" });
 
-    const profile = await getProfile(chainId, walletAddress);
-    const role = await resolveRole(chainId, campaignAddress, walletAddress);
-    const token = createSessionToken();
-    const tokenHash = hashToken(token);
-    const displayName = profile.displayName || null;
-    const avatarUrl = profile.avatarUrl || null;
-    const expiresHours = 12;
-
-    const { rows } = await pool.query(
-      `INSERT INTO chat_sessions (wallet_address, token_hash, display_name, avatar_url, role, expires_at)
-       VALUES ($1, $2, $3, $4, $5, NOW() + ($6::text || ' hours')::interval)
-       RETURNING expires_at AS "expiresAt"`,
-      [walletAddress, tokenHash, displayName, avatarUrl, role, String(expiresHours)]
-    );
+    const profile = await fetchProfile(chainId, address);
+    const role = normalizeAddress(b.creatorAddress) === address ? "creator" : "trader";
+    const session = await createChatSession({
+      chainId,
+      campaignAddress,
+      walletAddress: address,
+      displayName: profile?.display_name ?? null,
+      avatarUrl: profile?.avatar_url ?? null,
+      role,
+    });
 
     return json(res, 200, {
-      sessionToken: token,
-      expiresAt: rows[0]?.expiresAt ?? null,
-      profile: { walletAddress, displayName, avatarUrl, role },
+      sessionToken: session.rawToken,
+      expiresAt: session.expiresAt,
+      profile: {
+        walletAddress: address,
+        displayName: profile?.display_name ?? null,
+        avatarUrl: profile?.avatar_url ?? null,
+        role,
+      },
     });
   } catch (e) {
+    const msg = String(e?.message ?? "");
+    const status = /nonce|signature/i.test(msg) ? 401 : 500;
     console.error("[api/chat/join]", e);
-    return json(res, e?.statusCode || 500, { error: e?.statusCode ? e.message : "Server error" });
+    return json(res, status, {
+      error: status === 401 ? msg : "Server error",
+      details: process.env.NODE_ENV !== "production" ? msg : undefined,
+    });
   }
 }

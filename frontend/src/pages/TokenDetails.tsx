@@ -194,7 +194,7 @@ const TokenDetails = () => {
     if (!campaignAddr) return;
     if (!wallet.account) {
       toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
-      try { await wallet.connect(); } catch {}
+      try { window.dispatchEvent(new CustomEvent("memebattles:openWalletModal")); } catch {}
       return;
     }
     if (followBusy) return;
@@ -1259,7 +1259,8 @@ if (!wallet.signer || !wallet.account) {
     title: "Connect wallet",
     description: "Please connect your wallet to trade.",
   });
-  await wallet.connect();
+  window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+  return;
 }
 if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
@@ -2274,18 +2275,24 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             </div>
           </Card>
 
-          <div className="mt-3">
+          <Card className="mt-3 bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold">War Room</h3>
+                <p className="text-[11px] text-muted-foreground">Live campaign chat</p>
+              </div>
+            </div>
+
             {campaign?.campaign ? (
               <TokenWarRoom
                 chainId={Number(wallet.chainId ?? 97)}
                 campaignAddress={campaign.campaign}
+                creatorAddress={campaign.creator}
               />
             ) : (
-              <Card className="bg-card/30 backdrop-blur-md rounded-2xl border border-border p-4">
-                <div className="text-sm text-muted-foreground">Loading chat…</div>
-              </Card>
+              <div className="text-sm text-muted-foreground">Loading chat…</div>
             )}
-          </div>
+          </Card>
         </div>
       </div>
     </div>

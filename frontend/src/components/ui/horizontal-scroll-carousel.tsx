@@ -9,7 +9,7 @@ import { getActiveChainId } from "@/lib/chainConfig";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
-import { useWallet } from "@/hooks/useWallet";
+import { useWallet } from "@/contexts/WalletContext";
 
 // ---- Types ----
 type CarouselCard = {

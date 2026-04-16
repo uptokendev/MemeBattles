@@ -187,7 +187,8 @@ export function TokenComments({
       if (!canPost) return;
 
       if (!wallet.account) {
-        await wallet.connect();
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
       }
       if (!wallet.signer || !wallet.account) {
         toast("Connect your wallet to comment.");
@@ -276,7 +277,7 @@ export function TokenComments({
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => wallet.connect()}
+                      onClick={() => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"))}
                       disabled={posting}
                     >
                       Connect wallet

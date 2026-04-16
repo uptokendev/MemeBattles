@@ -358,7 +358,8 @@ useEffect(() => {
         );
       }
       if (!wallet.signer) {
-        await wallet.connect();
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
       }
       if (!wallet.signer) {
         fail("Wallet not connected", "Please connect your wallet to upvote.");

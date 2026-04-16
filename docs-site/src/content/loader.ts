@@ -13,6 +13,7 @@ type PageIndex = Record<string, string>
 
 const routeAliases: Record<string, string> = {
   '/what-is-memewarzone': '/introduction',
+  '/what-is-memebattles': '/introduction',
   '/why-we-built-this': '/introduction',
   '/problem-we-solve': '/introduction',
   '/concepts': '/platform/campaign-lifecycle',

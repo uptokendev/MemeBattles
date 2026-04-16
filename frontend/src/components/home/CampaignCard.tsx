@@ -93,7 +93,8 @@ export function CampaignCard({
     if (!wallet.account) {
       toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
       try {
-        await wallet.connect();
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+        return;
       } catch {}
       return;
     }
