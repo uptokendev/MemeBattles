@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 /// @notice Malicious/native receiver used in tests to probe reentrancy safety.
 ///

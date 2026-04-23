@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -29,6 +29,8 @@ contract LaunchFactory is Ownable {
     error LiquidityBps();
     error NotLive();
     error AlreadyLive();
+    error FactoryLocked();
+    error InvalidRouteProfile();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -68,10 +70,15 @@ contract LaunchFactory is Ownable {
 
     uint256 private constant MAX_BPS = 10_000;
     uint256 private constant MAX_CREATOR_INIT_BUY = 1 ether;
+    uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
+    uint8 public constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
+    uint8 public constant ROUTE_PROFILE_OG_LINKED = 2;
 
     LaunchConfig public config;
     address public feeRecipient;
     uint256 public protocolFeeBps;
+    uint8 public tradeRouteProfile;
+    uint8 public finalizeRouteProfile;
 
     /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
     bool public live;
@@ -99,7 +106,14 @@ contract LaunchFactory is Ownable {
     event FeeRecipientUpdated(address indexed newRecipient);
     event RouterUpdated(address indexed newRouter);
     event ProtocolFeeUpdated(uint256 newFeeBps);
+    event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
     event LiveEnabled(uint64 at);
+
+
+    modifier whenMutable() {
+        if (_campaigns.length != 0) revert FactoryLocked();
+        _;
+    }
 
     constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
         if (router_ == address(0)) revert RouterZero();
@@ -119,6 +133,8 @@ contract LaunchFactory is Ownable {
         feeRecipient = msg.sender;
         // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
         protocolFeeBps = 200;
+        tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
+        finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
         campaignImplementation = address(new LaunchCampaign());
     }
@@ -192,7 +208,9 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             lpReceiver: DEAD,
             feeRecipient: feeRecipient,
             creator: msg.sender,
-            factory: address(this)
+            factory: address(this),
+            tradeRouteProfile: tradeRouteProfile,
+            finalizeRouteProfile: finalizeRouteProfile
         });
 
         address clone = Clones.clone(campaignImplementation);
@@ -243,29 +261,38 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         );
     }
 
-    function setConfig(LaunchConfig calldata newConfig) external onlyOwner {
+    function setConfig(LaunchConfig calldata newConfig) external onlyOwner whenMutable {
         _validateConfig(newConfig);
         config = newConfig;
         emit ConfigUpdated(newConfig);
     }
 
-    function setRouter(address newRouter) external onlyOwner {
+    function setRouter(address newRouter) external onlyOwner whenMutable {
         if (newRouter == address(0)) revert RouterZero();
         router = newRouter;
         emit RouterUpdated(newRouter);
     }
 
-    function setFeeRecipient(address newRecipient) external onlyOwner {
+    function setFeeRecipient(address newRecipient) external onlyOwner whenMutable {
         if (newRecipient == address(0)) revert RecipientZero();
         feeRecipient = newRecipient;
         emit FeeRecipientUpdated(newRecipient);
     }
 
-    function setProtocolFee(uint256 newProtocolFeeBps) external onlyOwner {
+    function setProtocolFee(uint256 newProtocolFeeBps) external onlyOwner whenMutable {
         if (newProtocolFeeBps > 1000) revert FeeTooHigh();
         if (newProtocolFeeBps < LEAGUE_FEE_BPS) revert FeeTooLowForLeague();
         protocolFeeBps = newProtocolFeeBps;
         emit ProtocolFeeUpdated(newProtocolFeeBps);
+    }
+
+    function setRouteProfiles(uint8 newTradeRouteProfile, uint8 newFinalizeRouteProfile) external onlyOwner whenMutable {
+        if (!_isValidRouteProfile(newTradeRouteProfile) || !_isValidRouteProfile(newFinalizeRouteProfile)) {
+            revert InvalidRouteProfile();
+        }
+        tradeRouteProfile = newTradeRouteProfile;
+        finalizeRouteProfile = newFinalizeRouteProfile;
+        emit RouteProfilesUpdated(newTradeRouteProfile, newFinalizeRouteProfile);
     }
 
     function campaignsCount() external view returns (uint256) {
@@ -295,6 +322,13 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         for (uint256 i = 0; i < size; i++) {
             page[i] = _campaigns[offset + i];
         }
+    }
+
+    function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
+        return
+            profile == ROUTE_PROFILE_STANDARD_LINKED ||
+            profile == ROUTE_PROFILE_STANDARD_UNLINKED ||
+            profile == ROUTE_PROFILE_OG_LINKED;
     }
 
     function _validateConfig(LaunchConfig memory newConfig) internal pure {

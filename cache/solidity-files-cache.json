@@ -1,9 +1,49 @@
 {
   "_format": "hh-sol-cache-2",
   "files": {
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\interfaces\\IPancakeRouter02.sol": {
-      "lastModificationDate": 1769364665961,
-      "contentHash": "b1c54753c929bb25d7b82dc3f09c9244",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\CommunityRewardsVault.sol": {
+      "lastModificationDate": 1776948539211,
+      "contentHash": "c1d720a505eca48d3b2786905b66cd6f",
+      "sourceName": "contracts/CommunityRewardsVault.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "CommunityRewardsVault"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\interfaces\\IPancakeRouter02.sol": {
+      "lastModificationDate": 1776948539215,
+      "contentHash": "c7b0796934cfba719caf6fa691cafe08",
       "sourceName": "contracts/interfaces/IPancakeRouter02.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -35,602 +75,15 @@
       },
       "imports": [],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
         "IPancakeRouter02"
       ]
     },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\mocks\\MockRouter.sol": {
-      "lastModificationDate": 1769637561131,
-      "contentHash": "bb0df6f7f8b1fbb8a2b14cbd376df2a7",
-      "sourceName": "contracts/mocks/MockRouter.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
-        "../interfaces/IPancakeRouter02.sol"
-      ],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "MockRouter"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1769638392990,
-      "contentHash": "fb637bdcc0bde3be468fe6bbe390685f",
-      "sourceName": "contracts/LaunchCampaign.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
-        "@openzeppelin/contracts/access/Ownable.sol",
-        "@openzeppelin/contracts/utils/math/Math.sol",
-        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
-        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
-        "./token/LaunchToken.sol",
-        "./interfaces/IPancakeRouter02.sol"
-      ],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "LaunchCampaign"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\token\\LaunchToken.sol": {
-      "lastModificationDate": 1769364665972,
-      "contentHash": "6b036cd21f009c361d487200cebbde0f",
-      "sourceName": "contracts/token/LaunchToken.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/token/ERC20/ERC20.sol",
-        "@openzeppelin/contracts/access/Ownable.sol"
-      ],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "LaunchToken"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\test\\FactoryCaller.sol": {
-      "lastModificationDate": 1769543748046,
-      "contentHash": "e4c6b0f3bf5b2f53ae4f1b5f8616d38d",
-      "sourceName": "contracts/test/FactoryCaller.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "../LaunchCampaign.sol"
-      ],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "FactoryCaller"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1769637546322,
-      "contentHash": "751ea841cff95795ebc38e6f8cddb508",
-      "sourceName": "contracts/LaunchFactory.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/access/Ownable.sol",
-        "./LaunchCampaign.sol",
-        "@openzeppelin/contracts/proxy/Clones.sol"
-      ],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "LaunchFactory"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\mocks\\MockERC20.sol": {
-      "lastModificationDate": 1769637561123,
-      "contentHash": "f75915b68c2b8d31a52e710a835bffd8",
-      "sourceName": "contracts/mocks/MockERC20.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/token/ERC20/ERC20.sol"
-      ],
-      "versionPragmas": [
-        "^0.8.19"
-      ],
-      "artifacts": [
-        "MockERC20"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\LpTimelock.sol": {
-      "lastModificationDate": 1769637544594,
-      "contentHash": "d3abd4576504889d62792e73315f0172",
-      "sourceName": "contracts/LpTimelock.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [
-        "@openzeppelin/contracts/token/ERC20/IERC20.sol"
-      ],
-      "versionPragmas": [
-        "^0.8.19"
-      ],
-      "artifacts": [
-        "LpTimelock"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\ITreasuryVault.sol": {
-      "lastModificationDate": 1769637546315,
-      "contentHash": "3118ced42ae8295e65f58abb385aa01a",
-      "sourceName": "contracts/ITreasuryVault.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.24"
-      ],
-      "artifacts": [
-        "ITreasuryVault"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\mocks\\MockFeeOnTransferERC20.sol": {
-      "lastModificationDate": 1769637561127,
-      "contentHash": "b34c39ecc5efcf25cb94407d3901f4fe",
-      "sourceName": "contracts/mocks/MockFeeOnTransferERC20.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.20"
-      ],
-      "artifacts": [
-        "MockFeeOnTransferERC20"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\mocks\\RevertingReceiver.sol": {
-      "lastModificationDate": 1769637561136,
-      "contentHash": "0d5951b3635c64393019811a5e2101e5",
-      "sourceName": "contracts/mocks/RevertingReceiver.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.24"
-      ],
-      "artifacts": [
-        "RevertingReceiver"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\TreasuryRouter.sol": {
-      "lastModificationDate": 1769637546326,
-      "contentHash": "539d21c590fd6cbe602c26080a45fc8b",
-      "sourceName": "contracts/TreasuryRouter.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.24"
-      ],
-      "artifacts": [
-        "TreasuryRouter"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\TreasuryVault.sol": {
-      "lastModificationDate": 1769637546330,
-      "contentHash": "5db1f89040183e442f5e1ad31094c14d",
-      "sourceName": "contracts/TreasuryVault.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.24"
-      ],
-      "artifacts": [
-        "TreasuryVault"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\UPMEME\\contracts\\UPVoteTreasury.sol": {
-      "lastModificationDate": 1769637544607,
-      "contentHash": "2656eaf104d0a87e7914b32c7744d82b",
-      "sourceName": "contracts/UPVoteTreasury.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.20"
-      ],
-      "artifacts": [
-        "IERC20",
-        "Ownable",
-        "SafeERC20",
-        "UPVoteTreasury"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\interfaces\\IPancakeRouter02.sol": {
-      "lastModificationDate": 1771165744838,
-      "contentHash": "b1c54753c929bb25d7b82dc3f09c9244",
-      "sourceName": "contracts/interfaces/IPancakeRouter02.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "IPancakeRouter02"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\MockRouter.sol": {
-      "lastModificationDate": 1771179504605,
-      "contentHash": "91fc49cc2aa4d65dc9bbf4431b5afd96",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockRouter.sol": {
+      "lastModificationDate": 1776948539215,
+      "contentHash": "4d3524bd5c62ad10a838c24f509f2c8a",
       "sourceName": "contracts/mocks/MockRouter.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -667,14 +120,94 @@
         "./MockV2Pair.sol"
       ],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
         "MockRouter"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\IERC20.sol": {
-      "lastModificationDate": 1767368767926,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockV2Factory.sol": {
+      "lastModificationDate": 1776948539216,
+      "contentHash": "2ed7cb36579c246c5430255c0005d07e",
+      "sourceName": "contracts/mocks/MockV2Factory.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockV2Factory"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockV2Pair.sol": {
+      "lastModificationDate": 1776948539216,
+      "contentHash": "fcb0297104097b5551a1af21ef7af680",
+      "sourceName": "contracts/mocks/MockV2Pair.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockV2Pair"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\IERC20.sol": {
+      "lastModificationDate": 1776948622289,
       "contentHash": "9261adf6457863de3e9892f51317ec89",
       "sourceName": "@openzeppelin/contracts/token/ERC20/IERC20.sol",
       "solcConfig": {
@@ -713,8 +246,8 @@
         "IERC20"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC20.sol": {
-      "lastModificationDate": 1767368767925,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC20.sol": {
+      "lastModificationDate": 1776948622286,
       "contentHash": "68620db2da7583d9a4919096ac77f577",
       "sourceName": "@openzeppelin/contracts/interfaces/IERC20.sol",
       "solcConfig": {
@@ -753,8 +286,8 @@
       ],
       "artifacts": []
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC1363.sol": {
-      "lastModificationDate": 1767368767917,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC1363.sol": {
+      "lastModificationDate": 1776948622278,
       "contentHash": "a7fd0f05e36b0d0a21c75340c9c639ec",
       "sourceName": "@openzeppelin/contracts/interfaces/IERC1363.sol",
       "solcConfig": {
@@ -796,8 +329,8 @@
         "IERC1363"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC165.sol": {
-      "lastModificationDate": 1767368767920,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\interfaces\\IERC165.sol": {
+      "lastModificationDate": 1776948622281,
       "contentHash": "947853028399b7de34bcc3704ee06e99",
       "sourceName": "@openzeppelin/contracts/interfaces/IERC165.sol",
       "solcConfig": {
@@ -836,8 +369,8 @@
       ],
       "artifacts": []
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\introspection\\IERC165.sol": {
-      "lastModificationDate": 1767368767921,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\introspection\\IERC165.sol": {
+      "lastModificationDate": 1776948622282,
       "contentHash": "7074c93b1ea0a122063f26ddd1db1032",
       "sourceName": "@openzeppelin/contracts/utils/introspection/IERC165.sol",
       "solcConfig": {
@@ -876,8 +409,8 @@
         "IERC165"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\utils\\SafeERC20.sol": {
-      "lastModificationDate": 1767368767995,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\utils\\SafeERC20.sol": {
+      "lastModificationDate": 1776948622381,
       "contentHash": "1fb9edee1d763745a62d0b1954998792",
       "sourceName": "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
       "solcConfig": {
@@ -919,9 +452,9 @@
         "SafeERC20"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1771165744833,
-      "contentHash": "01ad81c1357e32c5883e9af72b5cf665",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchCampaign.sol": {
+      "lastModificationDate": 1776948539212,
+      "contentHash": "b4e4af07509a5e55e4d09d3a0ac5f4ac",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -961,15 +494,16 @@
         "./interfaces/IPancakeRouter02.sol"
       ],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
+        "IPhase1TreasuryRouter",
         "LaunchCampaign"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\token\\LaunchToken.sol": {
-      "lastModificationDate": 1771165744871,
-      "contentHash": "6b036cd21f009c361d487200cebbde0f",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\token\\LaunchToken.sol": {
+      "lastModificationDate": 1776948539217,
+      "contentHash": "15c135f75c8320ca41c47a6469f5fa32",
       "sourceName": "contracts/token/LaunchToken.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1004,54 +538,14 @@
         "@openzeppelin/contracts/access/Ownable.sol"
       ],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
         "LaunchToken"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\ReentrancyGuard.sol": {
-      "lastModificationDate": 1767368767988,
-      "contentHash": "190613e556d509d9e9a0ea43dc5d891d",
-      "sourceName": "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.20"
-      ],
-      "artifacts": [
-        "ReentrancyGuard"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\access\\Ownable.sol": {
-      "lastModificationDate": 1767368767977,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\access\\Ownable.sol": {
+      "lastModificationDate": 1776948622353,
       "contentHash": "d3c790edc9ccf808a17c5a6cd13614fd",
       "sourceName": "@openzeppelin/contracts/access/Ownable.sol",
       "solcConfig": {
@@ -1092,8 +586,48 @@
         "Ownable"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\math\\Math.sol": {
-      "lastModificationDate": 1767368767964,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\ReentrancyGuard.sol": {
+      "lastModificationDate": 1776948622373,
+      "contentHash": "190613e556d509d9e9a0ea43dc5d891d",
+      "sourceName": "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ReentrancyGuard"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\math\\Math.sol": {
+      "lastModificationDate": 1776948622330,
       "contentHash": "5ec781e33d3a9ac91ffdc83d94420412",
       "sourceName": "@openzeppelin/contracts/utils/math/Math.sol",
       "solcConfig": {
@@ -1135,8 +669,8 @@
         "Math"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\ERC20.sol": {
-      "lastModificationDate": 1767368767800,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\ERC20.sol": {
+      "lastModificationDate": 1776948622184,
       "contentHash": "59dfce11284f2636db261df9b6a18f81",
       "sourceName": "@openzeppelin/contracts/token/ERC20/ERC20.sol",
       "solcConfig": {
@@ -1180,8 +714,8 @@
         "ERC20"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\Context.sol": {
-      "lastModificationDate": 1767368767645,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Context.sol": {
+      "lastModificationDate": 1776948622095,
       "contentHash": "67bfbc07588eb8683b3fd8f6f909563e",
       "sourceName": "@openzeppelin/contracts/utils/Context.sol",
       "solcConfig": {
@@ -1220,8 +754,8 @@
         "Context"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\interfaces\\draft-IERC6093.sol": {
-      "lastModificationDate": 1767368767709,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\interfaces\\draft-IERC6093.sol": {
+      "lastModificationDate": 1776948622139,
       "contentHash": "5041977bbe908de2e6ed0270447f79ad",
       "sourceName": "@openzeppelin/contracts/interfaces/draft-IERC6093.sol",
       "solcConfig": {
@@ -1262,8 +796,8 @@
         "IERC721Errors"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\extensions\\IERC20Metadata.sol": {
-      "lastModificationDate": 1767368767928,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\token\\ERC20\\extensions\\IERC20Metadata.sol": {
+      "lastModificationDate": 1776948622291,
       "contentHash": "513778b30d2750f5d2b9b19bbcf748a5",
       "sourceName": "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol",
       "solcConfig": {
@@ -1304,8 +838,8 @@
         "IERC20Metadata"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\Panic.sol": {
-      "lastModificationDate": 1767368767983,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Panic.sol": {
+      "lastModificationDate": 1776948622363,
       "contentHash": "2133dc13536b4a6a98131e431fac59e1",
       "sourceName": "@openzeppelin/contracts/utils/Panic.sol",
       "solcConfig": {
@@ -1344,8 +878,8 @@
         "Panic"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\math\\SafeCast.sol": {
-      "lastModificationDate": 1767368767992,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\math\\SafeCast.sol": {
+      "lastModificationDate": 1776948622380,
       "contentHash": "2adca1150f58fc6f3d1f0a0f22ee7cca",
       "sourceName": "@openzeppelin/contracts/utils/math/SafeCast.sol",
       "solcConfig": {
@@ -1384,9 +918,9 @@
         "SafeCast"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\test\\FactoryCaller.sol": {
-      "lastModificationDate": 1771165744865,
-      "contentHash": "e4c6b0f3bf5b2f53ae4f1b5f8616d38d",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\test\\FactoryCaller.sol": {
+      "lastModificationDate": 1776948539217,
+      "contentHash": "decf2a4f1584312f9063ed87035e0885",
       "sourceName": "contracts/test/FactoryCaller.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1420,15 +954,15 @@
         "../LaunchCampaign.sol"
       ],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
         "FactoryCaller"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1771198100077,
-      "contentHash": "d5bb4f61727496f03559fe2a8f038be9",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchFactory.sol": {
+      "lastModificationDate": 1776948539212,
+      "contentHash": "47334a49314d169ab949c5715fc44ce2",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1464,14 +998,14 @@
         "@openzeppelin/contracts/proxy/Clones.sol"
       ],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
         "LaunchFactory"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\proxy\\Clones.sol": {
-      "lastModificationDate": 1767368767640,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\proxy\\Clones.sol": {
+      "lastModificationDate": 1776948622092,
       "contentHash": "1dd02316d75b8147282bef56d72f21f0",
       "sourceName": "@openzeppelin/contracts/proxy/Clones.sol",
       "solcConfig": {
@@ -1513,8 +1047,8 @@
         "Clones"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\Create2.sol": {
-      "lastModificationDate": 1767368767648,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Create2.sol": {
+      "lastModificationDate": 1776948622096,
       "contentHash": "841323ddbb94316c3f9ae8a19ce080ff",
       "sourceName": "@openzeppelin/contracts/utils/Create2.sol",
       "solcConfig": {
@@ -1555,8 +1089,8 @@
         "Create2"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\node_modules\\@openzeppelin\\contracts\\utils\\Errors.sol": {
-      "lastModificationDate": 1767368767866,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Errors.sol": {
+      "lastModificationDate": 1776948622227,
       "contentHash": "6b5eac2b85500c3012977849cfd633d8",
       "sourceName": "@openzeppelin/contracts/utils/Errors.sol",
       "solcConfig": {
@@ -1595,8 +1129,8 @@
         "Errors"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\MockERC20.sol": {
-      "lastModificationDate": 1771165744844,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockERC20.sol": {
+      "lastModificationDate": 1776941088915,
       "contentHash": "f75915b68c2b8d31a52e710a835bffd8",
       "sourceName": "contracts/mocks/MockERC20.sol",
       "solcConfig": {
@@ -1637,8 +1171,8 @@
         "MockERC20"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\LpTimelock.sol": {
-      "lastModificationDate": 1771165744809,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LpTimelock.sol": {
+      "lastModificationDate": 1776941088818,
       "contentHash": "d3abd4576504889d62792e73315f0172",
       "sourceName": "contracts/LpTimelock.sol",
       "solcConfig": {
@@ -1679,8 +1213,8 @@
         "LpTimelock"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\ITreasuryVault.sol": {
-      "lastModificationDate": 1771165744795,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\ITreasuryVault.sol": {
+      "lastModificationDate": 1776941088801,
       "contentHash": "3118ced42ae8295e65f58abb385aa01a",
       "sourceName": "contracts/ITreasuryVault.sol",
       "solcConfig": {
@@ -1719,8 +1253,48 @@
         "ITreasuryVault"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\MockFeeOnTransferERC20.sol": {
-      "lastModificationDate": 1771165744846,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\AcceptingReceiver.sol": {
+      "lastModificationDate": 1776948539215,
+      "contentHash": "3afe50149d44294bbdf6956cc232b6f8",
+      "sourceName": "contracts/mocks/AcceptingReceiver.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "AcceptingReceiver"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockFeeOnTransferERC20.sol": {
+      "lastModificationDate": 1776941088923,
       "contentHash": "b34c39ecc5efcf25cb94407d3901f4fe",
       "sourceName": "contracts/mocks/MockFeeOnTransferERC20.sol",
       "solcConfig": {
@@ -1759,10 +1333,10 @@
         "MockFeeOnTransferERC20"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\MockV2Factory.sol": {
-      "lastModificationDate": 1771165744858,
-      "contentHash": "605a387cf7a4921570ca919f32b41640",
-      "sourceName": "contracts/mocks/MockV2Factory.sol",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\ReenteringFeeRecipient.sol": {
+      "lastModificationDate": 1776948539217,
+      "contentHash": "fff48cd23b15e36e24b2305e28112f9f",
+      "sourceName": "contracts/mocks/ReenteringFeeRecipient.sol",
       "solcConfig": {
         "version": "0.8.24",
         "settings": {
@@ -1793,54 +1367,14 @@
       },
       "imports": [],
       "versionPragmas": [
-        "0.8.24"
+        "^0.8.24"
       ],
       "artifacts": [
-        "MockV2Factory"
+        "ReenteringFeeRecipient"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\MockV2Pair.sol": {
-      "lastModificationDate": 1771165744855,
-      "contentHash": "0156b636037707a5567e6b479951aaab",
-      "sourceName": "contracts/mocks/MockV2Pair.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "MockV2Pair"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\RevertingReceiver.sol": {
-      "lastModificationDate": 1771165744853,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\RevertingReceiver.sol": {
+      "lastModificationDate": 1776941088978,
       "contentHash": "0d5951b3635c64393019811a5e2101e5",
       "sourceName": "contracts/mocks/RevertingReceiver.sol",
       "solcConfig": {
@@ -1879,9 +1413,133 @@
         "RevertingReceiver"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\TreasuryRouter.sol": {
-      "lastModificationDate": 1771165744811,
-      "contentHash": "539d21c590fd6cbe602c26080a45fc8b",
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\NativeTreasuryVaultBase.sol": {
+      "lastModificationDate": 1776948539213,
+      "contentHash": "bc2a0e10a5269a55da5b43527d70a6bb",
+      "sourceName": "contracts/NativeTreasuryVaultBase.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "NativeTreasuryVaultBase"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\RecruiterRewardsVault.sol": {
+      "lastModificationDate": 1776948539213,
+      "contentHash": "50e199fd348efc656b329261051655d6",
+      "sourceName": "contracts/RecruiterRewardsVault.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./NativeTreasuryVaultBase.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "RecruiterRewardsVault"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\ProtocolRevenueVault.sol": {
+      "lastModificationDate": 1776948539213,
+      "contentHash": "9f4e8e6bbab4d6dcd668cfe2740a6362",
+      "sourceName": "contracts/ProtocolRevenueVault.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./NativeTreasuryVaultBase.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ProtocolRevenueVault"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\TreasuryRouter.sol": {
+      "lastModificationDate": 1776948539214,
+      "contentHash": "3559ecdf6113dd52084c5b0f3887e7d8",
       "sourceName": "contracts/TreasuryRouter.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1916,11 +1574,12 @@
         "^0.8.24"
       ],
       "artifacts": [
+        "ICommunityRewardsVault",
         "TreasuryRouter"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\TreasuryVault.sol": {
-      "lastModificationDate": 1771165744828,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\TreasuryVault.sol": {
+      "lastModificationDate": 1776941088858,
       "contentHash": "5db1f89040183e442f5e1ad31094c14d",
       "sourceName": "contracts/TreasuryVault.sol",
       "solcConfig": {
@@ -1959,8 +1618,132 @@
         "TreasuryVault"
       ]
     },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\UPVoteTreasury.sol": {
-      "lastModificationDate": 1771165744831,
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\TreasuryVaultV2.sol": {
+      "lastModificationDate": 1776948539214,
+      "contentHash": "1123279b6657e4416b0d1bc631ad0d24",
+      "sourceName": "contracts/TreasuryVaultV2.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "TreasuryVaultV2"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\cryptography\\MerkleProof.sol": {
+      "lastModificationDate": 1776948622331,
+      "contentHash": "d57b0dba03e8cc7942bf797fc9fe1d29",
+      "sourceName": "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./Hashes.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "MerkleProof"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\cryptography\\Hashes.sol": {
+      "lastModificationDate": 1776948622258,
+      "contentHash": "073b9c3ce7bc358a876ed2b3479db88c",
+      "sourceName": "@openzeppelin/contracts/utils/cryptography/Hashes.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Hashes"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\UPVoteTreasury.sol": {
+      "lastModificationDate": 1776941088873,
       "contentHash": "3f16c268cf28b7c0d87f1fd97d4dc256",
       "sourceName": "contracts/UPVoteTreasury.sol",
       "solcConfig": {
@@ -2000,86 +1783,6 @@
         "Ownable",
         "SafeERC20",
         "UPVoteTreasury"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\mocks\\ReenteringFeeRecipient.sol": {
-      "lastModificationDate": 1771179449463,
-      "contentHash": "2ffffd265530d73ea74a43f7952099ed",
-      "sourceName": "contracts/mocks/ReenteringFeeRecipient.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "0.8.24"
-      ],
-      "artifacts": [
-        "ReenteringFeeRecipient"
-      ]
-    },
-    "E:\\Network\\Zakelijk\\MemeBattles\\contracts\\TreasuryVaultV2.sol": {
-      "lastModificationDate": 1771434791637,
-      "contentHash": "97cf1815ca9ddcba96437d73e6b3f649",
-      "sourceName": "contracts/TreasuryVaultV2.sol",
-      "solcConfig": {
-        "version": "0.8.24",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 1
-          },
-          "viaIR": true,
-          "metadata": {
-            "bytecodeHash": "none"
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.24"
-      ],
-      "artifacts": [
-        "TreasuryVaultV2"
       ]
     }
   }

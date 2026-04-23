@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -9,6 +9,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+
+interface IPhase1TreasuryRouter {
+    function route(uint8 kind, uint8 profile) external payable;
+}
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
@@ -36,10 +40,17 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         address feeRecipient;
         address creator;
         address factory;
+        uint8 tradeRouteProfile;
+        uint8 finalizeRouteProfile;
     }
 
     uint256 private constant WAD = 1e18;
     uint256 private constant MAX_BPS = 10_000;
+    uint8 private constant ROUTE_KIND_TRADE = 0;
+    uint8 private constant ROUTE_KIND_FINALIZE = 1;
+    uint8 private constant ROUTE_PROFILE_STANDARD_LINKED = 0;
+    uint8 private constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
+    uint8 private constant ROUTE_PROFILE_OG_LINKED = 2;
 
     LaunchToken public token;
     IERC20 private tokenInterface;
@@ -49,6 +60,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     address public leagueReceiver;
     uint256 public leagueFeeBps;
     address public lpReceiver;
+    uint8 public tradeRouteProfile;
+    uint8 public finalizeRouteProfile;
 
     string public logoURI;
     string public xAccount;
@@ -81,6 +94,7 @@ uint256 public totalSellVolumeWei;
 uint256 public buyersCount;
 mapping(address => bool) public hasBought;
 mapping(address => uint256) public pendingNative;
+uint256 public pendingNativeTotal;
 
     event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost);
     event TokensSold(address indexed seller, uint256 amountIn, uint256 payout);
@@ -121,6 +135,8 @@ function initialize(InitParams memory params) external {
     require(params.leagueFeeBps <= params.protocolFeeBps, "league>protocol");
     require(params.leagueReceiver != address(0), "league receiver zero");
     require(bytes(params.logoURI).length > 0, "logo uri");
+    require(_isValidRouteProfile(params.tradeRouteProfile), "trade route profile");
+    require(_isValidRouteProfile(params.finalizeRouteProfile), "finalize route profile");
 
     // set owner to creator
     _transferOwnership(params.creator);
@@ -142,6 +158,8 @@ function initialize(InitParams memory params) external {
         ? params.creator
         : params.lpReceiver;
     router = IPancakeRouter02(params.router);
+    tradeRouteProfile = params.tradeRouteProfile;
+    finalizeRouteProfile = params.finalizeRouteProfile;
 
     totalSupply = params.totalSupply;
     curveSupply = (params.totalSupply * params.curveBps) / MAX_BPS;
@@ -190,6 +208,47 @@ receive() external payable {}
         if (leagueFeeWei > totalFeeWei) leagueFeeWei = totalFeeWei;
 
         protocolNetFeeWei = totalFeeWei - leagueFeeWei;
+    }
+
+    function _useUnifiedRewardRouter() internal view returns (bool) {
+        address receiver = feeRecipient;
+        if (receiver == address(0) || receiver != leagueReceiver) return false;
+
+        uint256 size;
+        assembly {
+            size := extcodesize(receiver)
+        }
+        return size > 0;
+    }
+
+    function _routeFeeOrSendLegacy(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount) internal {
+        if (feeAmount == 0) return;
+
+        if (_useUnifiedRewardRouter()) {
+            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, _routeProfileForKind(routeKind));
+            return;
+        }
+
+        if (routeKind == ROUTE_KIND_FINALIZE) {
+            if (feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), feeAmount);
+            return;
+        }
+
+        (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(feeBaseAmount);
+        if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
+        if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+    }
+
+    function _routeProfileForKind(uint8 routeKind) internal view returns (uint8) {
+        if (routeKind == ROUTE_KIND_FINALIZE) return finalizeRouteProfile;
+        return tradeRouteProfile;
+    }
+
+    function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
+        return
+            profile == ROUTE_PROFILE_STANDARD_LINKED ||
+            profile == ROUTE_PROFILE_STANDARD_UNLINKED ||
+            profile == ROUTE_PROFILE_OG_LINKED;
     }
 
     function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
@@ -283,10 +342,7 @@ if (!hasBought[msg.sender]) {
         tokenInterface.safeTransfer(msg.sender, amountOut);
 
         if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+            _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
         }
 
         if (msg.value > total) {
@@ -295,7 +351,7 @@ if (!hasBought[msg.sender]) {
 
         // Auto-finalize (graduate) immediately once the campaign becomes eligible.
         // This matches pump.fun / gra.fun style behavior: the completion trade triggers LP deployment.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
             _finalize(0, 0, msg.sender);
         }
 
@@ -333,10 +389,7 @@ if (!hasBought[msg.sender]) {
         tokenInterface.safeTransfer(msg.sender, tokensOut);
 
         if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+            _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
         }
 
         if (msg.value > total) {
@@ -344,7 +397,7 @@ if (!hasBought[msg.sender]) {
         }
 
         // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
             _finalize(0, 0, msg.sender);
         }
 
@@ -383,10 +436,7 @@ if (!hasBought[msg.sender]) {
         tokenInterface.safeTransfer(recipient, amountOut);
 
         if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+            _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
         }
 
         if (msg.value > total) {
@@ -394,7 +444,7 @@ if (!hasBought[msg.sender]) {
         }
 
         // Auto-finalize (graduate) immediately once eligible (factory initial buy can trigger this too).
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
             _finalize(0, 0, recipient);
         }
 
@@ -435,10 +485,7 @@ if (!hasBought[msg.sender]) {
         tokenInterface.safeTransfer(recipient, tokensOut);
 
         if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+            _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
         }
 
         if (msg.value > total) {
@@ -446,7 +493,7 @@ if (!hasBought[msg.sender]) {
         }
 
         // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
             _finalize(0, 0, recipient);
         }
 
@@ -463,6 +510,7 @@ if (!hasBought[msg.sender]) {
         require(amountIn > 0, "zero amount");
         require(amountIn <= sold, "exceeds sold");
         uint256 gross = _quoteSellNoFee(amountIn);
+        require(gross <= _availableNativeBalance(), "insolvent");
         uint256 fee = _fee(gross);
         payout = gross - fee; // net to seller
         require(payout >= minPayout, "slippage");
@@ -471,10 +519,7 @@ if (!hasBought[msg.sender]) {
         tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
 
         if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(gross);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+            _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, gross);
         }
         _sendNative(msg.sender, payout);
 
@@ -486,13 +531,21 @@ if (!hasBought[msg.sender]) {
     }
 
     function claimPendingNative() external nonReentrant returns (uint256 amount) {
-    amount = pendingNative[msg.sender];
-    require(amount > 0, "no pending");
-    pendingNative[msg.sender] = 0;
-    (bool ok, ) = payable(msg.sender).call{value: amount}("");
-    require(ok, "claim failed");
-    emit NativeClaimed(msg.sender, amount);
-}
+        amount = pendingNative[msg.sender];
+        require(amount > 0, "no pending");
+
+        pendingNative[msg.sender] = 0;
+        pendingNativeTotal -= amount;
+
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        if (!ok) {
+            pendingNative[msg.sender] = amount;
+            pendingNativeTotal += amount;
+            revert("claim failed");
+        }
+
+        emit NativeClaimed(msg.sender, amount);
+    }
 
     /// @notice Creator-controlled manual finalize (emergency/backstop only).
     /// @dev Normal flow auto-finalizes inside the completion buy transaction.
@@ -511,7 +564,7 @@ if (!hasBought[msg.sender]) {
     {
         require(!launched, "finalized");
         require(
-            sold == curveSupply || address(this).balance >= graduationTarget,
+            sold == curveSupply || _availableNativeBalance() >= graduationTarget,
             "threshold"
         );
         launched = true;
@@ -520,13 +573,13 @@ if (!hasBought[msg.sender]) {
         // Take protocol fee from the total raised BNB BEFORE creating liquidity.
         // This ensures the fee is taken from the full raise (and therefore affects both
         // LP funding and creator payout proportionally).
-        uint256 balanceBefore = address(this).balance;
+        uint256 balanceBefore = _availableNativeBalance();
         uint256 protocolFee = (balanceBefore * protocolFeeBps) / MAX_BPS;
         if (protocolFee > 0 && feeRecipient != address(0)) {
-            _sendNativeFee(payable(feeRecipient), protocolFee);
+            _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, balanceBefore);
         }
 
-        uint256 remainingAfterFee = address(this).balance;
+        uint256 remainingAfterFee = _availableNativeBalance();
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 tokensForLp = liquiditySupply;
 
@@ -561,7 +614,7 @@ if (!hasBought[msg.sender]) {
         }
 
         // Whatever BNB remains after LP provision (and any LP budget refund) goes to the creator.
-        uint256 creatorPayout = address(this).balance;
+        uint256 creatorPayout = _availableNativeBalance();
         if (creatorPayout > 0) {
             _sendNative(owner(), creatorPayout);
         }
@@ -590,15 +643,27 @@ if (!hasBought[msg.sender]) {
     }
 
     function _sendNativeFee(address payable to, uint256 value) private {
-    if (value == 0) return;
-    (bool ok, ) = to.call{value: value}("");
-    if (!ok) {
-        pendingNative[to] += value;
-        emit NativeEscrowed(to, value);
-    }
-}
+        if (value == 0) return;
 
-function _sendNative(address to, uint256 value) private {
+        (bool ok, ) = to.call{value: value}("");
+        if (!ok) {
+            pendingNative[to] += value;
+            pendingNativeTotal += value;
+            emit NativeEscrowed(to, value);
+        }
+    }
+
+    function _availableNativeBalance() internal view returns (uint256) {
+        uint256 balance = address(this).balance;
+        uint256 reserved = pendingNativeTotal;
+        if (reserved >= balance) {
+            return 0;
+        }
+        return balance - reserved;
+    }
+
+    function _sendNative(address to, uint256 value) private {
+        if (value == 0) return;
         (bool success, ) = to.call{value: value}("");
         require(success, "transfer failed");
     }

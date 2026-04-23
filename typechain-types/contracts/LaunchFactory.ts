@@ -138,12 +138,16 @@ export interface LaunchFactoryInterface extends Interface {
       | "MAX_BASE_PRICE"
       | "MAX_GRADUATION_TARGET"
       | "MAX_PRICE_SLOPE"
+      | "ROUTE_PROFILE_OG_LINKED"
+      | "ROUTE_PROFILE_STANDARD_LINKED"
+      | "ROUTE_PROFILE_STANDARD_UNLINKED"
       | "campaignImplementation"
       | "campaignsCount"
       | "config"
       | "createCampaign"
       | "enableLive"
       | "feeRecipient"
+      | "finalizeRouteProfile"
       | "getCampaign"
       | "getCampaignPage"
       | "leagueReceiver"
@@ -156,7 +160,9 @@ export interface LaunchFactoryInterface extends Interface {
       | "setConfig"
       | "setFeeRecipient"
       | "setProtocolFee"
+      | "setRouteProfiles"
       | "setRouter"
+      | "tradeRouteProfile"
       | "transferOwnership"
   ): FunctionFragment;
 
@@ -168,6 +174,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "LiveEnabled"
       | "OwnershipTransferred"
       | "ProtocolFeeUpdated"
+      | "RouteProfilesUpdated"
       | "RouterUpdated"
   ): EventFragment;
 
@@ -189,6 +196,18 @@ export interface LaunchFactoryInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "ROUTE_PROFILE_OG_LINKED",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "ROUTE_PROFILE_STANDARD_LINKED",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "ROUTE_PROFILE_STANDARD_UNLINKED",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "campaignImplementation",
     values?: undefined
   ): string;
@@ -207,6 +226,10 @@ export interface LaunchFactoryInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "feeRecipient",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "finalizeRouteProfile",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -249,8 +272,16 @@ export interface LaunchFactoryInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "setRouteProfiles",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setRouter",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "tradeRouteProfile",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "transferOwnership",
@@ -275,6 +306,18 @@ export interface LaunchFactoryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "ROUTE_PROFILE_OG_LINKED",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "ROUTE_PROFILE_STANDARD_LINKED",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "ROUTE_PROFILE_STANDARD_UNLINKED",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "campaignImplementation",
     data: BytesLike
   ): Result;
@@ -290,6 +333,10 @@ export interface LaunchFactoryInterface extends Interface {
   decodeFunctionResult(functionFragment: "enableLive", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeRecipient",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "finalizeRouteProfile",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -328,7 +375,15 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "setProtocolFee",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRouteProfiles",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "setRouter", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "tradeRouteProfile",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "transferOwnership",
     data: BytesLike
@@ -427,6 +482,25 @@ export namespace ProtocolFeeUpdatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace RouteProfilesUpdatedEvent {
+  export type InputTuple = [
+    tradeRouteProfile: BigNumberish,
+    finalizeRouteProfile: BigNumberish
+  ];
+  export type OutputTuple = [
+    tradeRouteProfile: bigint,
+    finalizeRouteProfile: bigint
+  ];
+  export interface OutputObject {
+    tradeRouteProfile: bigint;
+    finalizeRouteProfile: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace RouterUpdatedEvent {
   export type InputTuple = [newRouter: AddressLike];
   export type OutputTuple = [newRouter: string];
@@ -492,6 +566,12 @@ export interface LaunchFactory extends BaseContract {
 
   MAX_PRICE_SLOPE: TypedContractMethod<[], [bigint], "view">;
 
+  ROUTE_PROFILE_OG_LINKED: TypedContractMethod<[], [bigint], "view">;
+
+  ROUTE_PROFILE_STANDARD_LINKED: TypedContractMethod<[], [bigint], "view">;
+
+  ROUTE_PROFILE_STANDARD_UNLINKED: TypedContractMethod<[], [bigint], "view">;
+
   campaignImplementation: TypedContractMethod<[], [string], "view">;
 
   campaignsCount: TypedContractMethod<[], [bigint], "view">;
@@ -521,6 +601,8 @@ export interface LaunchFactory extends BaseContract {
   enableLive: TypedContractMethod<[], [void], "nonpayable">;
 
   feeRecipient: TypedContractMethod<[], [string], "view">;
+
+  finalizeRouteProfile: TypedContractMethod<[], [bigint], "view">;
 
   getCampaign: TypedContractMethod<
     [id: BigNumberish],
@@ -574,11 +656,19 @@ export interface LaunchFactory extends BaseContract {
     "nonpayable"
   >;
 
+  setRouteProfiles: TypedContractMethod<
+    [newTradeRouteProfile: BigNumberish, newFinalizeRouteProfile: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   setRouter: TypedContractMethod<
     [newRouter: AddressLike],
     [void],
     "nonpayable"
   >;
+
+  tradeRouteProfile: TypedContractMethod<[], [bigint], "view">;
 
   transferOwnership: TypedContractMethod<
     [newOwner: AddressLike],
@@ -604,6 +694,15 @@ export interface LaunchFactory extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "MAX_PRICE_SLOPE"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "ROUTE_PROFILE_OG_LINKED"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "ROUTE_PROFILE_STANDARD_LINKED"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "ROUTE_PROFILE_STANDARD_UNLINKED"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "campaignImplementation"
@@ -641,6 +740,9 @@ export interface LaunchFactory extends BaseContract {
   getFunction(
     nameOrSignature: "feeRecipient"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "finalizeRouteProfile"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "getCampaign"
   ): TypedContractMethod<
@@ -702,8 +804,18 @@ export interface LaunchFactory extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "setRouteProfiles"
+  ): TypedContractMethod<
+    [newTradeRouteProfile: BigNumberish, newFinalizeRouteProfile: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "setRouter"
   ): TypedContractMethod<[newRouter: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "tradeRouteProfile"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
@@ -749,6 +861,13 @@ export interface LaunchFactory extends BaseContract {
     ProtocolFeeUpdatedEvent.InputTuple,
     ProtocolFeeUpdatedEvent.OutputTuple,
     ProtocolFeeUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RouteProfilesUpdated"
+  ): TypedContractEvent<
+    RouteProfilesUpdatedEvent.InputTuple,
+    RouteProfilesUpdatedEvent.OutputTuple,
+    RouteProfilesUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "RouterUpdated"
@@ -823,6 +942,17 @@ export interface LaunchFactory extends BaseContract {
       ProtocolFeeUpdatedEvent.InputTuple,
       ProtocolFeeUpdatedEvent.OutputTuple,
       ProtocolFeeUpdatedEvent.OutputObject
+    >;
+
+    "RouteProfilesUpdated(uint8,uint8)": TypedContractEvent<
+      RouteProfilesUpdatedEvent.InputTuple,
+      RouteProfilesUpdatedEvent.OutputTuple,
+      RouteProfilesUpdatedEvent.OutputObject
+    >;
+    RouteProfilesUpdated: TypedContractEvent<
+      RouteProfilesUpdatedEvent.InputTuple,
+      RouteProfilesUpdatedEvent.OutputTuple,
+      RouteProfilesUpdatedEvent.OutputObject
     >;
 
     "RouterUpdated(address)": TypedContractEvent<

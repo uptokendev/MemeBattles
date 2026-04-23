@@ -271,6 +271,46 @@ describe("LaunchFactory", function () {
     ).to.be.revertedWithCustomError(factory, "InvalidCurveBps");
   });
 
+
+  it("locks economic and routing setters after the first campaign exists", async () => {
+    const { factory, owner, creator, alice } = await deployCoreFixture();
+
+    await factory.connect(creator).createCampaign({
+      name: "Locked",
+      symbol: "LCK",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: 0n,
+    } as any);
+
+    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(
+      ethers.ZeroAddress,
+      ethers.ZeroAddress
+    );
+
+    await expect(factory.connect(owner).setRouter(await newRouter.getAddress()))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress()))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setProtocolFee(123n))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setConfig({
+      totalSupply: 1n,
+      curveBps: 5000n,
+      liquidityTokenBps: 4000n,
+      basePrice: 1n,
+      priceSlope: 1n,
+      graduationTarget: 1n,
+      liquidityBps: 8000n,
+    })).to.be.revertedWithCustomError(factory, "FactoryLocked");
+  });
+
   it("createCampaign: rejects override params above bounds", async () => {
     const { factory, creator, owner } = await deployCoreFixture();
 
