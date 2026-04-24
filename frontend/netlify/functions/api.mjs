@@ -33,6 +33,33 @@ import voteCounts from "../../api/vote_counts.js";
 const app = express();
 app.disable("x-powered-by");
 
+// CORS: allow the MW admin dashboard (and local dev) to call /api/*.
+// Tokenized endpoints (e.g. /api/diagnostics) gate access; CORS just
+// relaxes the browser same-origin check.
+const ALLOWED_ORIGINS = new Set([
+  "https://command-center.memewar.zone",
+  "http://localhost:5173",
+  "http://localhost:8888",
+]);
+
+app.use((req, res, next) => {
+  const origin = String(req.headers.origin || "");
+  if (ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, x-diagnostics-token"
+    );
+  }
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use((req, _res, next) => {
   const url = String(req.url || "");
   req.url =
