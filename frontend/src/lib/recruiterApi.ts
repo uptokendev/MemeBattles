@@ -169,6 +169,40 @@ export type WalletRewardSummary = {
   materializedAt: string | null;
 };
 
+export type RecruiterSignupStatus = {
+  walletAddress: string;
+  isRecruiter: boolean;
+  recruiter: RecruiterSummary | null;
+  canStartSignup: boolean;
+  signupApiAvailable: boolean;
+};
+
+export type RecruiterCodeAvailability = {
+  code: string;
+  isAvailable: boolean | null;
+  checkedVia: "signup-endpoint" | "summary-fallback" | "unavailable";
+  message: string | null;
+};
+
+export type RecruiterSignupNonceResponse = {
+  nonce: string;
+};
+
+export type RecruiterSignupPayload = {
+  walletAddress: string;
+  chainId?: number | null;
+  displayName: string;
+  desiredCode: string;
+  email: string;
+  telegram: string;
+  discord: string;
+  xHandle: string;
+  pitch: string;
+  acceptTerms: boolean;
+  nonce: string;
+  signature: string;
+};
+
 function buildQuery(params: Record<string, string | number | null | undefined>) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -226,4 +260,187 @@ export async function fetchWalletRewardClaims(walletAddress: string, limit = 50,
   const res = await fetch(`/api/rewards/me/claims${buildQuery({ address: walletAddress, limit, program })}`);
   const json = await parseJson(res);
   return Array.isArray(json?.claims) ? json.claims : [];
+}
+
+function normalizeWalletAddress(walletAddress: string): string {
+  return String(walletAddress || "").trim().toLowerCase();
+}
+
+function normalizeRecruiterCode(code: string): string {
+  return String(code || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export function buildRecruiterSignupMessage(input: {
+  walletAddress: string;
+  chainId?: number | null;
+  nonce: string;
+  displayName: string;
+  desiredCode: string;
+  email: string;
+  telegram: string;
+  discord: string;
+  xHandle: string;
+  pitch: string;
+}) {
+  return [
+    "MemeWarzone Recruiter Signup",
+    "Action: RECRUITER_SIGNUP",
+    `Wallet: ${normalizeWalletAddress(input.walletAddress)}`,
+    `ChainId: ${input.chainId ?? ""}`,
+    `Nonce: ${String(input.nonce || "").trim()}`,
+    "",
+    `DisplayName: ${String(input.displayName || "").trim()}`,
+    `DesiredCode: ${normalizeRecruiterCode(input.desiredCode)}`,
+    `Email: ${String(input.email || "").trim()}`,
+    `Telegram: ${String(input.telegram || "").trim()}`,
+    `Discord: ${String(input.discord || "").trim()}`,
+    `X: ${String(input.xHandle || "").trim()}`,
+    "",
+    `Pitch: ${String(input.pitch || "").trim()}`,
+  ].join("\n");
+}
+
+export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
+  const normalized = normalizeWalletAddress(walletAddress);
+
+  try {
+    const res = await fetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
+    if (res.ok) {
+      const json = await parseJson(res);
+      return {
+        walletAddress: normalized,
+        isRecruiter: Boolean(json?.isRecruiter),
+        recruiter: (json?.recruiter ?? null) as RecruiterSummary | null,
+        canStartSignup: Boolean(json?.canStartSignup ?? !json?.isRecruiter),
+        signupApiAvailable: true,
+      };
+    }
+
+    if (res.status !== 404) {
+      await parseJson(res);
+    }
+  } catch {
+    // Fall through to the summary-based fallback.
+  }
+
+  try {
+    const recruiter = await fetchRecruiterSummaryByWallet(normalized);
+    return {
+      walletAddress: normalized,
+      isRecruiter: true,
+      recruiter,
+      canStartSignup: false,
+      signupApiAvailable: false,
+    };
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    if (message.includes("404") || message.toLowerCase().includes("not found")) {
+      return {
+        walletAddress: normalized,
+        isRecruiter: false,
+        recruiter: null,
+        canStartSignup: true,
+        signupApiAvailable: false,
+      };
+    }
+    throw error;
+  }
+}
+
+export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
+  const normalized = normalizeRecruiterCode(code);
+  if (!normalized) {
+    return {
+      code: normalized,
+      isAvailable: null,
+      checkedVia: "unavailable",
+      message: "Enter a recruiter code to check availability.",
+    };
+  }
+
+  try {
+    const res = await fetch(`/api/recruiter-signup/code-availability${buildQuery({ code: normalized })}`);
+    if (res.ok) {
+      const json = await parseJson(res);
+      return {
+        code: normalized,
+        isAvailable: typeof json?.isAvailable === "boolean" ? Boolean(json.isAvailable) : null,
+        checkedVia: "signup-endpoint",
+        message: json?.message ? String(json.message) : null,
+      };
+    }
+
+    if (res.status !== 404) {
+      await parseJson(res);
+    }
+  } catch {
+    // Fall through to the summary-based fallback.
+  }
+
+  try {
+    await fetchRecruiterSummary(normalized);
+    return {
+      code: normalized,
+      isAvailable: false,
+      checkedVia: "summary-fallback",
+      message: "This recruiter code is already taken.",
+    };
+  } catch (error: any) {
+    const message = String(error?.message || "");
+    if (message.includes("404") || message.toLowerCase().includes("not found")) {
+      return {
+        code: normalized,
+        isAvailable: true,
+        checkedVia: "summary-fallback",
+        message: "This recruiter code looks available.",
+      };
+    }
+
+    return {
+      code: normalized,
+      isAvailable: null,
+      checkedVia: "unavailable",
+      message: "We could not verify code availability right now.",
+    };
+  }
+}
+
+export async function requestRecruiterSignupNonce(walletAddress: string): Promise<RecruiterSignupNonceResponse> {
+  const normalized = normalizeWalletAddress(walletAddress);
+  const res = await fetch("/api/recruiter-signup/nonce", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ walletAddress: normalized }),
+  });
+
+  if (res.status === 404) {
+    throw new Error("Recruiter signup is not enabled on this environment yet.");
+  }
+
+  const json = await parseJson(res);
+  if (!json?.nonce) throw new Error("Recruiter signup nonce missing from response.");
+  return { nonce: String(json.nonce) };
+}
+
+export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
+  const res = await fetch("/api/recruiter-signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      walletAddress: normalizeWalletAddress(payload.walletAddress),
+      desiredCode: normalizeRecruiterCode(payload.desiredCode),
+    }),
+  });
+
+  if (res.status === 404) {
+    throw new Error("Recruiter signup submission is not enabled on this environment yet.");
+  }
+
+  return parseJson(res);
 }

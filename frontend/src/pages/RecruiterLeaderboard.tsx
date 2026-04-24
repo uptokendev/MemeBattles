@@ -94,7 +94,7 @@ export default function RecruiterLeaderboard() {
 
           <div className="flex flex-wrap gap-3">
             <Button asChild className="font-retro">
-              <Link to="/recruiter-dashboard">
+              <Link to="/profile?tab=recruiter">
                 Recruiter Dashboard
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>

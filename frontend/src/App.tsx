@@ -21,7 +21,9 @@ import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
+import Recruiter from "./pages/Recruiter";
 import RecruiterProfile from "./pages/RecruiterProfile";
+import RecruiterSignup from "./pages/RecruiterSignup";
 import RecruiterReferral from "./pages/RecruiterReferral";
 import AirdropOverview from "./pages/AirdropOverview";
 import AirdropWinners from "./pages/AirdropWinners";
@@ -33,6 +35,7 @@ import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
+import { Footer } from "@/components/layout/Footer";
 
 const queryClient = new QueryClient();
 
@@ -80,6 +83,8 @@ const App = () => {
                     <Route path="/profile" element={<Profile />} />
                     <Route path="/airdrops" element={<AirdropOverview />} />
                     <Route path="/airdrops/winners" element={<AirdropWinners />} />
+                    <Route path="/recruiter" element={<Recruiter />} />
+                    <Route path="/recruiter/signup" element={<RecruiterSignup />} />
                     <Route path="/recruiters" element={<RecruiterLeaderboard />} />
                     <Route path="/recruiters/:code" element={<RecruiterProfile />} />
                     <Route path="/recruiter-dashboard" element={<RecruiterDashboard />} />
@@ -94,6 +99,7 @@ const App = () => {
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
+                  <Footer />
                 </main>
               </div>
             </BrowserRouter>

@@ -33,6 +33,20 @@ type TickerItem = {
 // Public brand asset (no bundler import required)
 const brandMark = "/assets/ticker.png";
 
+function navPathMatches(currentPathname: string, currentSearch: string, target: string): boolean {
+  try {
+    const url = new URL(target, "https://memewarzone.local");
+    if (url.pathname !== currentPathname) return false;
+    for (const [key, value] of url.searchParams.entries()) {
+      if (new URLSearchParams(currentSearch).get(key) !== value) return false;
+    }
+    return true;
+  } catch {
+    if (target === "/") return currentPathname === "/";
+    return currentPathname.startsWith(target);
+  }
+}
+
 export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -79,10 +93,10 @@ const navLinks = useMemo(
     { label: "Launchpad", path: "/" },
     { label: "Create Coin", path: "/create" },
     { label: "Battle Leagues", path: "/battle-leagues" },
-    { label: "Airdrops", path: "/airdrops" },
-    { label: "Squads", path: "/squads" },
-    { label: "Recruiters", path: "/recruiters" },
-    { label: "Profile", path: "/profile" },
+    { label: "Airdrops", path: "/profile?tab=airdrops" },
+    { label: "Squads", path: "/profile?tab=squad" },
+    { label: "Recruiters", path: "/profile?tab=recruiter" },
+    { label: "Profile", path: "/profile?tab=balances" },
     { label: "Docs", path: "/docs" },
   ],
   []
@@ -219,8 +233,7 @@ const navLinks = useMemo(
   }, [tickerItems]);
 
   const isActive = (path: string) => {
-    if (path === "/") return location.pathname === "/";
-    return location.pathname.startsWith(path);
+    return navPathMatches(location.pathname, location.search, path);
   };
 
   useEffect(() => {

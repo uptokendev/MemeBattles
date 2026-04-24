@@ -1,4 +1,7 @@
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 type HeaderBandProps = {
   className?: string;
@@ -32,12 +35,25 @@ export function HeaderBand({ className }: HeaderBandProps) {
 
         {/* centered logo */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <img
-            src="/assets/logo.png"
-            alt="MemeWarzone"
-            className="h-[200px] md:h-[200px] lg:h-[200px] w-auto drop-shadow-[0_0_22px_rgba(240,106,26,0.22)]"
-            draggable={false}
-          />
+          <div className="flex flex-col items-center gap-4">
+            <img
+              src="/assets/logo.png"
+              alt="MemeWarzone"
+              className="h-[150px] md:h-[160px] lg:h-[168px] w-auto drop-shadow-[0_0_22px_rgba(240,106,26,0.22)]"
+              draggable={false}
+            />
+            <div className="flex flex-col items-center gap-2 px-4 text-center">
+              <p className="max-w-xl text-sm text-muted-foreground md:text-base">
+                Build your squad before the battlefield opens.
+              </p>
+              <Button asChild size="sm" className="font-retro">
+                <Link to="/recruiter">
+                  Become a Recruiter
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

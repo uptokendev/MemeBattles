@@ -99,7 +99,7 @@ export default function SquadLeaderboard() {
           </div>
 
           <Button asChild className="font-retro">
-            <Link to="/squad-dashboard">
+            <Link to="/profile?tab=squad">
               Squad dashboard
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

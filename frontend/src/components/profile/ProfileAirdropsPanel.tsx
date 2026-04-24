@@ -5,9 +5,19 @@ import { ArrowRight, Gift, Sparkles, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
-import { useWallet } from "@/contexts/WalletContext";
 import { fetchWalletRewardSummary, type WalletRewardSummary } from "@/lib/recruiterApi";
-import { fetchAirdropWinners, fetchWalletRewardEligibility, type AirdropWinner, type WalletEligibilityItem } from "@/lib/rewardProgramsApi";
+import {
+  fetchAirdropWinners,
+  fetchWalletRewardEligibility,
+  type AirdropWinner,
+  type WalletEligibilityItem,
+} from "@/lib/rewardProgramsApi";
+
+type ProfileAirdropsPanelProps = {
+  account: string | null;
+  isConnected: boolean;
+  isOwnProfile: boolean;
+};
 
 function formatBnb(raw: string): string {
   try {
@@ -30,14 +40,15 @@ function getLatestEligibility(items: WalletEligibilityItem[], program: string): 
 
 function EligibilityCard(props: { title: string; item: WalletEligibilityItem | null; claimableAmount: string }) {
   const { title, item, claimableAmount } = props;
+
   return (
     <Card className="border-border/60 bg-card/65 p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
-          <h2 className="mt-1 font-retro text-xl text-foreground">
+          <h3 className="mt-1 font-retro text-xl text-foreground">
             {item ? (item.isEligible ? "Eligible this week" : "Not eligible this week") : "No weekly result yet"}
-          </h2>
+          </h3>
         </div>
         <Gift className="h-4 w-4 text-amber-200" />
       </div>
@@ -58,7 +69,10 @@ function EligibilityCard(props: { title: string; item: WalletEligibilityItem | n
         {item?.reasonCodes?.length ? (
           <div className="mt-3 flex flex-wrap gap-2">
             {item.reasonCodes.map((reason) => (
-              <span key={reason} className="rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-foreground">
+              <span
+                key={reason}
+                className="rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-foreground"
+              >
                 {reason.replace(/_/g, " ")}
               </span>
             ))}
@@ -71,10 +85,7 @@ function EligibilityCard(props: { title: string; item: WalletEligibilityItem | n
   );
 }
 
-export default function AirdropOverview() {
-  const wallet = useWallet();
-  const account = wallet.account || "";
-
+export function ProfileAirdropsPanel({ account, isConnected, isOwnProfile }: ProfileAirdropsPanelProps) {
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
   const [eligibility, setEligibility] = useState<WalletEligibilityItem[]>([]);
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
@@ -89,16 +100,17 @@ export default function AirdropOverview() {
     void (async () => {
       try {
         const [winnerItems, rewardSummary, eligibilityItems] = await Promise.all([
-          fetchAirdropWinners({ limit: 12 }).catch(() => []),
+          fetchAirdropWinners({ limit: 6 }).catch(() => []),
           account ? fetchWalletRewardSummary(account).catch(() => null) : Promise.resolve(null),
           account ? fetchWalletRewardEligibility(account, 20).catch(() => []) : Promise.resolve([]),
         ]);
+
         if (cancelled) return;
         setWinners(Array.isArray(winnerItems) ? winnerItems : []);
         setSummary(rewardSummary);
         setEligibility(Array.isArray(eligibilityItems) ? eligibilityItems : []);
       } catch (err: any) {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop overview"));
+        if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop state"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -111,47 +123,55 @@ export default function AirdropOverview() {
 
   const traderEligibility = getLatestEligibility(eligibility, "airdrop_trader");
   const creatorEligibility = getLatestEligibility(eligibility, "airdrop_creator");
-  const totals = useMemo(() => ({
-    traderClaimable: summary?.claimableByProgram?.airdrop_trader ?? "0",
-    creatorClaimable: summary?.claimableByProgram?.airdrop_creator ?? "0",
-    totalClaimable: summary?.totalClaimableAmount ?? "0",
-  }), [summary]);
 
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 py-8">
-      <Card className="overflow-hidden border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(253,224,71,0.18),transparent_40%),linear-gradient(180deg,rgba(18,22,28,0.94),rgba(9,12,16,0.98))] p-6 md:p-8">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-3xl space-y-3">
-            <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Warzone BNB Airdrops</p>
-            <h1 className="font-retro text-3xl text-foreground md:text-5xl">
-              Weekly trader and creator draws, published from backend state.
-            </h1>
-            <p className="text-sm text-muted-foreground md:text-base">
-              Eligibility, cooldowns, Battle League exclusions, winner selection, and claimable balances are all sourced from the reward engine. This page reads the same state the ledger and draws use.
-            </p>
-          </div>
+  const totals = useMemo(
+    () => ({
+      traderClaimable: summary?.claimableByProgram?.airdrop_trader ?? "0",
+      creatorClaimable: summary?.claimableByProgram?.airdrop_creator ?? "0",
+      totalClaimable: summary?.totalClaimableAmount ?? "0",
+    }),
+    [summary],
+  );
 
-          <div className="flex flex-wrap gap-3">
-            <Button asChild variant="outline" className="font-retro">
-              <Link to="/airdrops/winners">
-                Public winners
-                <Trophy className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-            {account ? (
-              <Button asChild className="font-retro">
-                <Link to="/profile?tab=airdrops">
-                  Review claimable rewards
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            ) : (
-              <ConnectWalletButton />
-            )}
-          </div>
+  if (!isOwnProfile) {
+    return (
+      <Card className="border-border/60 bg-card/65 p-6">
+        <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Airdrops</p>
+        <h3 className="mt-2 font-retro text-2xl text-foreground">Wallet-specific airdrop state is private to your profile.</h3>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Public winner publication still lives on the standalone winners page, but eligibility and claimable balances only render on your own connected profile.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Button asChild variant="outline" className="font-retro">
+            <Link to="/airdrops/winners">
+              Public winners
+              <Trophy className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
         </div>
       </Card>
+    );
+  }
 
+  if (!isConnected || !account) {
+    return (
+      <Card className="border-border/60 bg-card/65 p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Airdrops</p>
+            <h3 className="mt-2 font-retro text-2xl text-foreground">Connect to inspect your trader and creator eligibility.</h3>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Your claimable totals, reason codes, and recent published winners are all available here once your wallet is connected.
+            </p>
+          </div>
+          <ConnectWalletButton />
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/60 bg-card/70 p-5">
           <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Trader claimable</p>
@@ -162,25 +182,12 @@ export default function AirdropOverview() {
           <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(totals.creatorClaimable)} BNB</p>
         </Card>
         <Card className="border-border/60 bg-card/70 p-5">
-          <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Total wallet rewards</p>
+          <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Total claimable</p>
           <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(totals.totalClaimable)} BNB</p>
         </Card>
       </div>
 
-      {!wallet.isConnected || !account ? (
-        <Card className="border-border/60 bg-card/65 p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Wallet required</p>
-              <h2 className="mt-1 font-retro text-2xl text-foreground">Connect to inspect your airdrop eligibility.</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Once connected, we’ll show your latest trader and creator eligibility state, public reason codes, and any claimable airdrop rewards.
-              </p>
-            </div>
-            <ConnectWalletButton />
-          </div>
-        </Card>
-      ) : loading ? (
+      {loading ? (
         <Card className="border-border/60 bg-card/65 px-6 py-12 text-center text-sm text-muted-foreground">
           Loading airdrop state...
         </Card>
@@ -196,12 +203,20 @@ export default function AirdropOverview() {
       )}
 
       <Card className="border-border/60 bg-card/65 p-6">
-        <div className="flex items-center gap-3">
-          <Sparkles className="h-4 w-4 text-amber-200" />
-          <div>
-            <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recent winners</p>
-            <h2 className="mt-1 font-retro text-xl text-foreground">Published draw results</h2>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-4 w-4 text-amber-200" />
+            <div>
+              <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recent winners</p>
+              <h3 className="mt-1 font-retro text-xl text-foreground">Published draw preview</h3>
+            </div>
           </div>
+          <Button asChild variant="outline" className="font-retro">
+            <Link to="/airdrops/winners">
+              All winners
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
         </div>
 
         <div className="mt-5 space-y-3">
@@ -215,7 +230,7 @@ export default function AirdropOverview() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="font-retro text-sm text-foreground">
-                      {winner.walletAddress} · {winner.program === "airdrop_trader" ? "Trader" : "Creator"} draw
+                      {winner.program === "airdrop_trader" ? "Trader" : "Creator"} draw · {winner.walletAddress}
                     </p>
                     <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                       Epoch #{winner.epochId} · winner #{winner.winnerRank}

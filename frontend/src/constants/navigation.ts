@@ -21,10 +21,10 @@ export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
-  { icon: Gift, label: "Airdrops", path: "/airdrops" },
-  { icon: Shield, label: "Squads", path: "/squads" },
-  { icon: userIcon, label: "Recruiters", path: "/recruiters" },
-  { icon: userIcon, label: "Profile", path: "/profile" },
+  { icon: Gift, label: "Airdrops", path: "/profile?tab=airdrops" },
+  { icon: Shield, label: "Squads", path: "/profile?tab=squad" },
+  { icon: userIcon, label: "Recruiters", path: "/profile?tab=recruiter" },
+  { icon: userIcon, label: "Profile", path: "/profile?tab=balances" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
 ];
 

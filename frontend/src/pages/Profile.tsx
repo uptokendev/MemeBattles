@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ProfileTab } from "@/types/profile";
+import { isProfileTab, ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
@@ -44,8 +44,9 @@ import {
 } from '@/lib/ranks';
 import { fetchLeagueCabinet } from "@/lib/leagueCabinetApi";
 import type { LeagueCabinet } from "@/lib/leagueCabinet";
-
-type ProfileTabEx = ProfileTab | "followers" | "following";
+import { ProfileAirdropsPanel } from "@/components/profile/ProfileAirdropsPanel";
+import { ProfileSquadPanel } from "@/components/profile/ProfileSquadPanel";
+import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
 
 type TokenBalanceRow = {
   campaignAddress: string;
@@ -140,14 +141,14 @@ const Profile = () => {
   );
 
   const account: string | null = isConnected ? (wallet.account ?? null) : null;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const addressParam = searchParams.get("address");
   const tabParam = searchParams.get("tab");
   const viewedAddress: string | null = addressParam ? addressParam : account;
   const isOwnProfile = Boolean(account && viewedAddress && account.toLowerCase() === viewedAddress.toLowerCase());
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
-  const [activeTab, setActiveTab] = useState<ProfileTabEx>("balances");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
   const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
 
   // Rewards (league winnings)
@@ -203,23 +204,11 @@ const Profile = () => {
   const [followedCards, setFollowedCards] = useState<any[]>([]);
   const [loadingFollows, setLoadingFollows] = useState(true);
 
-  // Optional: allow deep-linking to a tab (e.g. /profile?tab=rewards)
   useEffect(() => {
     const t = String(tabParam ?? "").toLowerCase().trim();
     if (!t) return;
-    if (t === "rewards") setActiveTab("rewards");
-    if (t === "balances") setActiveTab("balances");
-    if (t === "coins") setActiveTab("coins");
-    if (t === "activity" || t === "replies") setActiveTab("replies");
-    if (t === "followers") setActiveTab("followers");
-    if (t === "following") setActiveTab("following");
-    if (t === "notifications") setActiveTab("notifications");
-  }, [tabParam]);
-
-  // Allow deep-linking: /profile?tab=rewards
-  useEffect(() => {
-    const t = String(tabParam ?? "").toLowerCase().trim();
-    if (t === "rewards") setActiveTab("rewards");
+    const normalized = t === "activity" ? "replies" : t;
+    if (isProfileTab(normalized)) setActiveTab(normalized);
   }, [tabParam]);
 
   useEffect(() => {
@@ -273,13 +262,13 @@ const Profile = () => {
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);
 
-  // Optional deep-linking: /profile?tab=rewards
-  useEffect(() => {
-    const t = String(tabParam ?? "").toLowerCase().trim();
-    if (!t) return;
-    const allowed: ProfileTabEx[] = ["balances", "coins", "replies", "rewards", "notifications", "followers", "following"];
-    if (allowed.includes(t as ProfileTab)) setActiveTab(t as ProfileTab);
-  }, [tabParam]);
+  const handleTabChange = (tab: ProfileTab) => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    next.set("tab", tab);
+    if (addressParam) next.set("address", addressParam);
+    setSearchParams(next);
+  };
 
   // Load profile from backend (username/bio/avatar) if configured
   useEffect(() => {
@@ -1281,13 +1270,16 @@ const Profile = () => {
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
               { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
+              { id: "airdrops" as ProfileTab, label: "Airdrops", badge: null },
+              { id: "squad" as ProfileTab, label: "Squad", badge: null },
+              { id: "recruiter" as ProfileTab, label: "Recruiter", badge: null },
+              { id: "followers" as ProfileTab, label: "Followers", badge: null },
+              { id: "following" as ProfileTab, label: "Following", badge: null },
               { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
-              { id: "followers" as ProfileTabEx, label: "Followers", badge: null },
-              { id: "following" as ProfileTabEx, label: "Following", badge: null },
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`relative font-retro text-xs md:text-sm transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? "text-accent border-b-2 border-accent pb-2"
@@ -1529,6 +1521,30 @@ const Profile = () => {
               </>
             )}
           </div>
+        )}
+
+        {activeTab === "airdrops" && (
+          <ProfileAirdropsPanel
+            account={account}
+            isConnected={isConnected}
+            isOwnProfile={isOwnProfile}
+          />
+        )}
+
+        {activeTab === "squad" && (
+          <ProfileSquadPanel
+            account={account}
+            isConnected={isConnected}
+            isOwnProfile={isOwnProfile}
+          />
+        )}
+
+        {activeTab === "recruiter" && (
+          <ProfileRecruiterPanel
+            account={account}
+            isConnected={isConnected}
+            isOwnProfile={isOwnProfile}
+          />
         )}
 
         {/* COINS TAB: Tokens you invested in */}
