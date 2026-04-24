@@ -74,16 +74,19 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     setWalletModalOpen(true);
   };
 
-  const navLinks = useMemo(
-    () => [
-      { label: "Launchpad", path: "/" },
-      { label: "Create Coin", path: "/create" },
-      { label: "Battle Leagues", path: "/battle-leagues" },
-      { label: "Profile", path: "/profile" },
-      { label: "Docs", path: "/docs" },
-    ],
-    []
-  );
+const navLinks = useMemo(
+  () => [
+    { label: "Launchpad", path: "/" },
+    { label: "Create Coin", path: "/create" },
+    { label: "Battle Leagues", path: "/battle-leagues" },
+    { label: "Airdrops", path: "/airdrops" },
+    { label: "Squads", path: "/squads" },
+    { label: "Recruiters", path: "/recruiters" },
+    { label: "Profile", path: "/profile" },
+    { label: "Docs", path: "/docs" },
+  ],
+  []
+);
   // Load campaigns for ticker (handled by your launchpadClient)
   useEffect(() => {
     let cancelled = false;
