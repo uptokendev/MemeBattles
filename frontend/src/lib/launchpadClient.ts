@@ -195,7 +195,8 @@ async function getLogsChunked(
 
 // ---------------- Hook ----------------
 export function useLaunchpad() {
-  const { provider: walletProvider, signer, chainId: walletChainId } = useWallet() as any;
+  const wallet = useWallet() as any;
+  const { provider: walletProvider, signer, chainId: walletChainId } = wallet;
 
   const activeChainId = useMemo<SupportedChainId>(() => {
     return getActiveChainId(walletChainId) as SupportedChainId;

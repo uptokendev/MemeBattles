@@ -4,20 +4,18 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import { Menu } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useWallet, type WalletType } from "@/contexts/WalletContext";
+import { useWallet } from "@/contexts/WalletContext";
+import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useTokenSearch } from "@/hooks/useTokenSearch";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { toast } from "sonner";
-
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
@@ -86,22 +84,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     ],
     []
   );
-
-  const handleWalletSelect = async (type: WalletType) => {
-    try {
-      await wallet.connect(type);
-      setWalletModalOpen(false);
-    } catch (e: any) {
-      console.error(e);
-      const message = String(e?.message ?? "Wallet connection failed");
-      toast.error(
-        message.includes("No EVM wallet found")
-          ? "No injected wallet found. On mobile, open MemeWarzone inside your wallet browser."
-          : message
-      );
-    }
-  };
-
   // Load campaigns for ticker (handled by your launchpadClient)
   useEffect(() => {
     let cancelled = false;
@@ -364,81 +346,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
         </div>
       </div>
-
       {/* Wallet selection modal */}
-      {walletModalOpen && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] border border-border/80 rounded-3xl shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(240,106,26,0.10)] w-[90%] max-w-sm p-4 md:p-6 space-y-4 backdrop-blur-xl">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm md:text-base font-retro">Connect a wallet</h2>
-              <button
-                onClick={() => setWalletModalOpen(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Close
-              </button>
-            </div>
-
-            <p className="text-xs text-muted-foreground mb-2">
-              Select a BSC-compatible EVM wallet. You can switch between testnet and
-              mainnet from your wallet settings.
-            </p>
-
-            <div className="space-y-2">
-              {/* MetaMask / Rabby / browser wallet */}
-              <button
-                onClick={() => handleWalletSelect("metamask")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">MetaMask</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Browser wallet (Rabby etc.) on BSC
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span>EVM</span>
-                </div>
-              </button>
-
-              {/* Binance Wallet */}
-              <button
-                onClick={() => handleWalletSelect("binance")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">Binance Wallet</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Official Binance extension for BSC
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  <span>BSC</span>
-                </div>
-              </button>
-
-              {/* Generic injected fallback */}
-              <button
-                onClick={() => handleWalletSelect("injected")}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl border border-border/70 bg-card/85 hover:border-accent/35 hover:bg-card transition-colors text-left"
-              >
-                <div>
-                  <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Any injected BSC-compatible wallet
-                  </p>
-                </div>
-              </button>
-            </div>
-
-            <p className="text-[10px] text-muted-foreground mt-2">
-              Make sure your selected wallet is configured for Binance Smart Chain
-              (BSC mainnet or testnet, depending on your setup).
-            </p>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
 
       <style>{`
         @keyframes scroll {
