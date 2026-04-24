@@ -6,6 +6,19 @@ import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
 import { runIndexerOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
+import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
+import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
+import { createExclusionFlag, listEligibilityResults, listExclusionFlags, processRewardEligibilityForEpoch, resolveExclusionFlag } from "./rewards/eligibility.js";
+import { AIRDROP_DRAW_PROGRAMS, AIRDROP_DRAW_STATUSES, listAirdropDraws, listAirdropWinners, publishAirdropDraw, runAirdropDrawForEpoch } from "./rewards/airdrops.js";
+import { listRecruiterLeaderboard } from "./rewards/recruiterLeaderboard.js";
+import { ELIGIBILITY_PROGRAMS, EXCLUSION_FLAG_SEVERITIES, ELIGIBILITY_REASON_CODES } from "./rewards/reasonCodes.js";
+import { listRecruiterAdminActions, listRecruiterClaimableSettlements, recordRecruiterAdminAction, RECRUITER_ADMIN_ACTION_TYPES } from "./rewards/recruiterAdmin.js";
+import { listClaimRollovers, listRewardClaims, recordRewardClaim, REWARD_PROGRAMS } from "./rewards/ledger.js";
+import { CLAIM_REMINDER_KINDS, CLAIM_REMINDER_STATUSES, listClaimReminderDeliveries, listClaimReminderStates, processClaimReminders } from "./rewards/reminders.js";
+import { getRewardClaimVaultPosture, getRewardPublicationState, getRewardRoutingDiagnostics, listRewardAdminActions, listRewardEpochProcessorStatuses, listRewardOpsAlerts, recordRewardAdminAction, setRewardPublicationState } from "./rewards/rewardOps.js";
+import { createCampaignRouteAuthorization, createTradeRouteAuthorization, getRouteAuthorityAddress, getWalletRouteSnapshot } from "./rewards/routing.js";
+import { getRewardAdminEpochSummary, getRecruiterSummaryByCode, getRecruiterSummaryByWalletAddress, getSquadSummaryByRecruiterCode, getWalletRewardSummary, listRecruiterClosureDiagnostics, listRecruiterSummaries, listRewardAdminEpochSummaries, listRewardProgramEpochReconciliations, listSquadSummaries, listWalletEligibilityHistory, listWalletRewardHistory } from "./rewards/readModels.js";
+import { getSquadAllocationPreview } from "./rewards/squads.js";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 const app = express();
@@ -37,10 +50,134 @@ const wrap =
   };
 
 const VALID_RANKS = ["Recruit", "Soldier", "Corporal", "Captain", "General"] as const;
+const VALID_RECRUITER_STATUSES = ["active", "inactive", "closed", "suspended"] as const;
 type ValidRank = (typeof VALID_RANKS)[number];
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+const PRIVATE_PUBLIC_REASON_CODES = new Set([
+  "SELF_TRADING",
+  "COMMON_CONTROL_CLUSTER",
+  "CIRCULAR_TRADING",
+  "WALLET_SPLITTING",
+  "CREATOR_FUNDED_FAKE_DEMAND",
+  "RECRUITER_FARMING_LOOP",
+]);
+
+function uniqStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function sanitizePublicReasonCodes(values: unknown): string[] {
+  const rawCodes = Array.isArray(values) ? values.map((value) => String(value)) : [];
+  const safeCodes = rawCodes.filter((code) => !PRIVATE_PUBLIC_REASON_CODES.has(code));
+  if (rawCodes.some((code) => PRIVATE_PUBLIC_REASON_CODES.has(code))) {
+    safeCodes.push("REVIEW_REQUIRED");
+  }
+  return uniqStrings(safeCodes.filter((code) => (ELIGIBILITY_REASON_CODES as readonly string[]).includes(code)));
+}
+
+function toPublicWalletRewardSummary(summary: NonNullable<Awaited<ReturnType<typeof getWalletRewardSummary>>>) {
+  return {
+    walletAddress: summary.walletAddress,
+    pendingByProgram: summary.pendingByProgram,
+    claimableByProgram: summary.claimableByProgram,
+    claimedByProgram: summary.claimedByProgram,
+    totalClaimableAmount: summary.totalClaimableAmount,
+    claimedLifetimeAmount: summary.claimedLifetimeAmount,
+    lastClaimedAt: summary.lastClaimedAt,
+    materializedAt: summary.materializedAt,
+  };
+}
+
+function toPublicWalletHistoryItem(item: any) {
+  return {
+    id: item.id,
+    epochId: item.epochId,
+    chainId: item.chainId,
+    epochType: item.epochType,
+    startAt: item.startAt,
+    endAt: item.endAt,
+    program: item.program,
+    grossAmount: item.grossAmount,
+    netAmount: item.netAmount,
+    status: item.status,
+    claimableAt: item.claimableAt,
+    claimDeadlineAt: item.claimDeadlineAt,
+    claimedAt: item.claimedAt,
+    expiredAt: item.expiredAt,
+    cancelledAt: item.cancelledAt,
+    claim: item.claim
+      ? {
+          id: item.claim.id,
+          claimedAmount: item.claim.claimedAmount,
+          claimTxHash: item.claim.claimTxHash,
+          claimedAt: item.claim.claimedAt,
+          status: item.claim.status,
+        }
+      : null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+function toPublicRewardClaim(claim: any) {
+  return {
+    id: claim.id,
+    walletAddress: claim.walletAddress,
+    epochId: claim.epochId,
+    program: claim.program,
+    claimedAmount: claim.claimedAmount,
+    claimTxHash: claim.claimTxHash,
+    claimedAt: claim.claimedAt,
+    status: claim.status,
+    createdAt: claim.createdAt,
+    updatedAt: claim.updatedAt,
+  };
+}
+
+function toPublicEligibilityItem(item: any) {
+  return {
+    id: item.id,
+    epochId: item.epochId,
+    chainId: item.chainId,
+    epochType: item.epochType,
+    startAt: item.startAt,
+    endAt: item.endAt,
+    program: item.program,
+    isEligible: item.isEligible,
+    reasonCodes: sanitizePublicReasonCodes(item.reasonCodes),
+    computedAt: item.computedAt,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+function toPublicAttributionState(state: Awaited<ReturnType<typeof getWalletAttributionState>>) {
+  return {
+    walletAddress: state.walletAddress,
+    hasActivity: state.hasActivity,
+    recruiterLinkState: state.recruiterLinkState,
+    recruiterCode: state.recruiter?.code ?? null,
+    recruiterDisplayName: state.recruiter?.displayName ?? null,
+    recruiterIsOg: Boolean(state.recruiter?.isOg),
+    squadState: state.squadState,
+  };
+}
+
+async function requirePublishedResource(
+  res: Response,
+  resourceType: "airdrop_winners" | "recruiter_leaderboard" | "squad_leaderboard",
+  resourceKey = "default",
+): Promise<boolean> {
+  const state = await getRewardPublicationState(resourceType, resourceKey);
+  if (!state.isPublished) {
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
+  return true;
 }
 
 function normalizeRank(value: unknown): ValidRank | null {
@@ -59,6 +196,22 @@ function normalizeRank(value: unknown): ValidRank | null {
 function rankIndex(value: unknown): number {
   const normalized = normalizeRank(value);
   return normalized ? VALID_RANKS.indexOf(normalized) : -1;
+}
+
+function requireInternalAuth(req: Request, res: Response): boolean {
+  const expected = String(ENV.RANK_EVENTS_TOKEN || "").trim();
+  if (!expected) {
+    res.status(503).json({ ok: false, error: "Internal endpoints are disabled: RANK_EVENTS_TOKEN missing" });
+    return false;
+  }
+
+  const token = readBearerToken(req);
+  if (!token || token !== expected) {
+    res.status(401).json({ ok: false, error: "Unauthorized" });
+    return false;
+  }
+
+  return true;
 }
 
 function readBearerToken(req: Request): string {
@@ -192,15 +345,7 @@ app.get("/api/ably/token", async (req, res) => {
 });
 
 app.post("/internal/user-rank-updated", wrap(async (req, res) => {
-  const expected = String(ENV.RANK_EVENTS_TOKEN || "").trim();
-  if (!expected) {
-    return res.status(503).json({ ok: false, error: "Rank events are disabled: RANK_EVENTS_TOKEN missing" });
-  }
-
-  const token = readBearerToken(req);
-  if (!token || token !== expected) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
+  if (!requireInternalAuth(req, res)) return;
 
   const chainId = Number(req.body?.chainId || 97);
   const address = normalizeAddress(req.body?.address ?? req.body?.userAddress ?? req.body?.wallet);
@@ -275,6 +420,1071 @@ app.post("/internal/user-rank-updated", wrap(async (req, res) => {
 // ---------------------------------------------------------------------------
 // Profile Activity (v1)
 // ---------------------------------------------------------------------------
+
+app.get("/internal/attribution/wallet/:wallet", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const walletAddress = normalizeAddress(req.params.wallet);
+  const state = await getWalletAttributionState(walletAddress);
+  res.json({ ok: true, state });
+}));
+
+app.post("/internal/recruiters/upsert", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  const statusRaw = String(req.body?.status || "active").trim().toLowerCase();
+  if (!(VALID_RECRUITER_STATUSES as readonly string[]).includes(statusRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiter status" });
+  }
+
+  const recruiter = await createOrUpdateRecruiter({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    code: req.body?.code,
+    displayName: req.body?.displayName ?? null,
+    isOg: Boolean(req.body?.isOg),
+    status: statusRaw as (typeof VALID_RECRUITER_STATUSES)[number],
+  });
+
+  const adminAction = await recordRecruiterAdminAction({
+    recruiterId: recruiter.id,
+    walletAddress: recruiter.walletAddress,
+    actionType: "recruiter_upsert",
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    detailsJson: {
+      code: recruiter.code,
+      displayName: recruiter.displayName,
+      isOg: recruiter.isOg,
+      status: recruiter.status,
+    },
+  });
+
+  res.json({ ok: true, recruiter, adminAction });
+}));
+
+app.post("/internal/attribution/referral/capture", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  let recruiterId = Number(req.body?.recruiterId || 0);
+  if (!Number.isFinite(recruiterId) || recruiterId <= 0) {
+    const recruiterCode = String(req.body?.recruiterCode || req.body?.code || "").trim();
+    if (!recruiterCode) {
+      return res.status(400).json({ ok: false, error: "recruiterId or recruiterCode required" });
+    }
+    const recruiter = await resolveRecruiterByCode(recruiterCode);
+    if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter not found" });
+    recruiterId = recruiter.id;
+  }
+
+  const referral = await captureReferralWindow({
+    recruiterId,
+    walletAddress: req.body?.walletAddress ?? null,
+    clientFingerprint: req.body?.clientFingerprint ?? null,
+    sessionToken: req.body?.sessionToken ?? null,
+    expiresAt: req.body?.expiresAt ? new Date(String(req.body.expiresAt)) : undefined,
+    metadata: req.body?.metadata ?? null,
+  });
+
+  res.json({ ok: true, referral });
+}));
+
+app.post("/internal/attribution/wallet-connect", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const result = await linkWalletOnConnect({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    sessionToken: req.body?.sessionToken ?? null,
+    clientFingerprint: req.body?.clientFingerprint ?? null,
+    linkedAt: req.body?.linkedAt ? new Date(String(req.body.linkedAt)) : undefined,
+  });
+  res.json({ ok: true, ...result });
+}));
+
+app.post("/internal/attribution/link", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  let recruiterId = Number(req.body?.recruiterId || 0);
+  if (!Number.isFinite(recruiterId) || recruiterId <= 0) {
+    const recruiterCode = String(req.body?.recruiterCode || req.body?.code || "").trim();
+    if (!recruiterCode) {
+      return res.status(400).json({ ok: false, error: "recruiterId or recruiterCode required" });
+    }
+    const recruiter = await resolveRecruiterByCode(recruiterCode);
+    if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter not found" });
+    recruiterId = recruiter.id;
+  }
+
+  const result = await linkWalletToRecruiter({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    recruiterId,
+    linkSource: (String(req.body?.linkSource || "manual").trim() || "manual") as any,
+    linkedAt: req.body?.linkedAt ? new Date(String(req.body.linkedAt)) : undefined,
+  });
+  res.json({ ok: true, ...result });
+}));
+
+app.post("/internal/recruiters/:recruiterId/status", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const recruiterId = Number(req.params.recruiterId || 0);
+  const statusRaw = String(req.body?.status || "").trim().toLowerCase();
+  if (!Number.isFinite(recruiterId) || recruiterId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiterId" });
+  }
+  if (!(VALID_RECRUITER_STATUSES as readonly string[]).includes(statusRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiter status" });
+  }
+
+  const result = await setRecruiterStatus({
+    recruiterId,
+    status: statusRaw as (typeof VALID_RECRUITER_STATUSES)[number],
+    detachMembers: Boolean(req.body?.detachMembers),
+    detachReason: req.body?.detachReason ?? null,
+    changedAt: req.body?.changedAt ? new Date(String(req.body.changedAt)) : undefined,
+  });
+
+  const adminAction = await recordRecruiterAdminAction({
+    recruiterId,
+    walletAddress: result.recruiter.walletAddress,
+    actionType: "status_change",
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? req.body?.detachReason ?? null,
+    detailsJson: {
+      status: result.recruiter.status,
+      detachMembers: Boolean(req.body?.detachMembers),
+      detachReason: req.body?.detachReason ?? null,
+      detachedWalletCount: result.detachedWalletCount,
+    },
+  });
+
+  res.json({ ok: true, ...result, adminAction });
+}));
+
+app.post("/internal/recruiters/:recruiterId/og-tag", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const recruiterId = Number(req.params.recruiterId || 0);
+  if (!Number.isFinite(recruiterId) || recruiterId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiterId" });
+  }
+
+  const recruiter = await setRecruiterOgStatus({
+    recruiterId,
+    isOg: Boolean(req.body?.isOg),
+  });
+
+  const adminAction = await recordRecruiterAdminAction({
+    recruiterId,
+    walletAddress: recruiter.walletAddress,
+    actionType: "og_tag_update",
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    detailsJson: {
+      isOg: recruiter.isOg,
+      code: recruiter.code,
+    },
+  });
+
+  res.json({ ok: true, recruiter, adminAction });
+}));
+
+app.post("/internal/recruiters/dispute-override", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  let recruiterId = Number(req.body?.recruiterId || 0);
+  if (!Number.isFinite(recruiterId) || recruiterId <= 0) {
+    const recruiterCode = String(req.body?.recruiterCode || req.body?.code || "").trim();
+    if (!recruiterCode) {
+      return res.status(400).json({ ok: false, error: "recruiterId or recruiterCode required" });
+    }
+    const recruiter = await resolveRecruiterByCode(recruiterCode);
+    if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter not found" });
+    recruiterId = recruiter.id;
+  }
+
+  const result = await applyRecruiterDisputeOverride({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    recruiterId,
+    linkedAt: req.body?.linkedAt ? new Date(String(req.body.linkedAt)) : undefined,
+    reason: req.body?.detachReason ?? req.body?.reason ?? null,
+  });
+
+  const adminAction = await recordRecruiterAdminAction({
+    recruiterId: result.recruiter.id,
+    walletAddress: result.state.walletAddress,
+    actionType: "dispute_override",
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? req.body?.detachReason ?? null,
+    detailsJson: {
+      previousRecruiterId: result.previousRecruiter?.id ?? null,
+      previousRecruiterCode: result.previousRecruiter?.code ?? null,
+      recruiterId: result.recruiter.id,
+      recruiterCode: result.recruiter.code,
+      recruiterLinkState: result.state.recruiterLinkState,
+      squadState: result.state.squadState,
+      hasActivity: result.state.hasActivity,
+    },
+  });
+
+  res.json({ ok: true, ...result, adminAction });
+}));
+
+app.get("/internal/recruiters/admin-actions", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const recruiterId = req.query.recruiterId != null && String(req.query.recruiterId).trim() !== "" ? Number(req.query.recruiterId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const recruiterCode = req.query.recruiterCode ? String(req.query.recruiterCode) : null;
+  const actionType = req.query.actionType != null && String(req.query.actionType).trim() !== "" ? String(req.query.actionType).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (recruiterId != null && !Number.isFinite(recruiterId)) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiterId" });
+  }
+  if (actionType != null && !(RECRUITER_ADMIN_ACTION_TYPES as readonly string[]).includes(actionType)) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiter admin action type" });
+  }
+
+  const items = await listRecruiterAdminActions({
+    recruiterId,
+    walletAddress,
+    recruiterCode,
+    actionType: actionType as any,
+    limit,
+  });
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/recruiters/claimable-settlements", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const recruiterId = req.query.recruiterId != null && String(req.query.recruiterId).trim() !== "" ? Number(req.query.recruiterId) : null;
+  const recruiterCode = req.query.recruiterCode ? String(req.query.recruiterCode) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (recruiterId != null && !Number.isFinite(recruiterId)) {
+    return res.status(400).json({ ok: false, error: "Invalid recruiterId" });
+  }
+  if (chainId != null && !Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+
+  const items = await listRecruiterClaimableSettlements({
+    epochId,
+    recruiterId,
+    recruiterCode,
+    walletAddress,
+    chainId,
+    limit,
+  });
+  res.json({ ok: true, items });
+}));
+
+app.post("/api/recruiters/:code/referral/capture", wrap(async (req, res) => {
+  const recruiter = await resolveRecruiterByCode(req.params.code);
+  if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter not found" });
+
+  const metadata = req.body?.metadata && typeof req.body.metadata === "object" ? req.body.metadata : {};
+  const referral = await captureReferralWindow({
+    recruiterId: recruiter.id,
+    walletAddress: req.body?.walletAddress ?? null,
+    clientFingerprint: req.body?.clientFingerprint ?? null,
+    sessionToken: req.body?.sessionToken ?? null,
+    metadata: { source: "public_referral_capture", ...metadata },
+  });
+
+  res.json({
+    ok: true,
+    recruiter: {
+      code: recruiter.code,
+      displayName: recruiter.displayName,
+      isOg: recruiter.isOg,
+      status: recruiter.status,
+    },
+    referral,
+  });
+}));
+
+app.get("/api/recruiters", wrap(async (req, res) => {
+  if (!(await requirePublishedResource(res, "recruiter_leaderboard"))) return;
+  const limit = Math.min(Number(req.query.limit || 100), 200);
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const leaderboard = await listRecruiterLeaderboard({ status, limit });
+  res.json({ ok: true, recruiters: leaderboard.recruiters, weights: leaderboard.weights });
+}));
+
+app.post("/api/attribution/wallet-connect", wrap(async (req, res) => {
+  const result = await linkWalletOnConnect({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    sessionToken: req.body?.sessionToken ?? null,
+    clientFingerprint: req.body?.clientFingerprint ?? null,
+    linkedAt: req.body?.linkedAt ? new Date(String(req.body.linkedAt)) : undefined,
+  });
+
+  res.json({
+    ok: true,
+    changed: result.changed,
+    errorCode: result.errorCode,
+    state: toPublicAttributionState(result.state),
+  });
+}));
+
+app.get("/api/attribution/wallet/:wallet", wrap(async (req, res) => {
+  const walletAddress = normalizeAddress(req.params.wallet);
+  const state = await getWalletAttributionState(walletAddress);
+  res.json({ ok: true, state: toPublicAttributionState(state) });
+}));
+
+app.get("/api/recruiter-routing/wallet/:wallet", wrap(async (req, res) => {
+  const walletAddress = normalizeAddress(req.params.wallet);
+  const routing = await getWalletRouteSnapshot(walletAddress);
+  res.json({ ok: true, routing, routeAuthority: getRouteAuthorityAddress() });
+}));
+
+app.post("/api/recruiter-routing/trade-authorization", wrap(async (req, res) => {
+  const authorization = await createTradeRouteAuthorization({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    campaignAddress: req.body?.campaignAddress ?? req.body?.campaign,
+    chainId: Number(req.body?.chainId),
+  });
+  res.json({ ok: true, authorization, routeAuthority: getRouteAuthorityAddress() });
+}));
+
+app.post("/api/recruiter-routing/create-authorization", wrap(async (req, res) => {
+  const authorization = await createCampaignRouteAuthorization({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    factoryAddress: req.body?.factoryAddress ?? req.body?.factory,
+    chainId: Number(req.body?.chainId),
+  });
+  res.json({ ok: true, authorization, routeAuthority: getRouteAuthorityAddress() });
+}));
+
+app.get("/internal/rewards/epochs/current", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const chainId = Number(req.query.chainId || 97);
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+
+  const epoch = await getCurrentWeeklyRewardEpoch(chainId);
+  res.json({ ok: true, epoch });
+}));
+
+app.get("/internal/rewards/epochs", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const chainId = Number(req.query.chainId || 97);
+  const limit = Math.min(Number(req.query.limit || 20), 100);
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+
+  const epochs = await listRewardEpochs(chainId, limit);
+  res.json({ ok: true, epochs });
+}));
+
+app.get("/internal/rewards/events", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const chainId = Number(req.query.chainId || 97);
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+
+  const events = await listRewardEvents({
+    chainId,
+    epochId,
+    campaignAddress: req.query.campaignAddress ? String(req.query.campaignAddress) : null,
+    walletAddress: req.query.walletAddress ? String(req.query.walletAddress) : null,
+    txHash: req.query.txHash ? String(req.query.txHash) : null,
+    limit,
+  });
+
+  res.json({ ok: true, events });
+}));
+
+app.get("/internal/rewards/eligibility", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const programRaw = req.query.program != null ? String(req.query.program).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (programRaw != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(programRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid eligibility program" });
+  }
+
+  const results = await listEligibilityResults({
+    epochId,
+    walletAddress,
+    program: (programRaw as any) ?? null,
+    limit,
+  });
+  res.json({ ok: true, results });
+}));
+
+app.get("/internal/rewards/exclusions", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const programRaw = req.query.program != null ? String(req.query.program).trim() : null;
+  const severityRaw = req.query.severity != null ? String(req.query.severity).trim() : null;
+  const onlyOpen = String(req.query.onlyOpen || "true").trim().toLowerCase() !== "false";
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (programRaw != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(programRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusion program" });
+  }
+  if (severityRaw != null && !(EXCLUSION_FLAG_SEVERITIES as readonly string[]).includes(severityRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusion severity" });
+  }
+
+  const flags = await listExclusionFlags({
+    epochId,
+    walletAddress,
+    program: (programRaw as any) ?? null,
+    severity: (severityRaw as any) ?? null,
+    onlyOpen,
+    limit,
+  });
+  res.json({ ok: true, flags });
+}));
+
+app.post("/internal/rewards/exclusions", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.body?.epochId != null && String(req.body.epochId).trim() !== "" ? Number(req.body.epochId) : null;
+  const programRaw = req.body?.program != null && String(req.body.program).trim() !== "" ? String(req.body.program).trim() : null;
+  const severityRaw = String(req.body?.severity || "").trim();
+  const flagTypeRaw = String(req.body?.flagType || "").trim();
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (programRaw != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(programRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusion program" });
+  }
+  if (!(EXCLUSION_FLAG_SEVERITIES as readonly string[]).includes(severityRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusion severity" });
+  }
+  if (!(ELIGIBILITY_REASON_CODES as readonly string[]).includes(flagTypeRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusion flag type" });
+  }
+
+  const flag = await createExclusionFlag({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    epochId,
+    program: (programRaw as any) ?? null,
+    flagType: flagTypeRaw as any,
+    severity: severityRaw as any,
+    detailsJson: req.body?.detailsJson ?? req.body?.details ?? null,
+    metadata: req.body?.metadata ?? null,
+  });
+  const adminAction = await recordRewardAdminAction({
+    actionType: "exclusion_create",
+    resourceType: "exclusion_flag",
+    resourceKey: String(flag.id),
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    detailsJson: {
+      epochId,
+      program: (programRaw as any) ?? null,
+      flagType: flagTypeRaw,
+      severity: severityRaw,
+      walletAddress: flag.walletAddress,
+    },
+  });
+  res.json({ ok: true, flag, adminAction });
+}));
+
+app.post("/internal/rewards/exclusions/:exclusionFlagId/resolve", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const exclusionFlagId = Number(req.params.exclusionFlagId || 0);
+  if (!Number.isFinite(exclusionFlagId) || exclusionFlagId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid exclusionFlagId" });
+  }
+
+  const flag = await resolveExclusionFlag({
+    exclusionFlagId,
+    resolvedBy: req.body?.resolvedBy ?? null,
+    resolutionNote: req.body?.resolutionNote ?? null,
+    resolvedAt: req.body?.resolvedAt ? new Date(String(req.body.resolvedAt)) : undefined,
+  });
+  if (!flag) return res.status(404).json({ ok: false, error: "Exclusion flag not found" });
+  const adminAction = await recordRewardAdminAction({
+    actionType: "exclusion_resolve",
+    resourceType: "exclusion_flag",
+    resourceKey: String(flag.id),
+    actedBy: req.body?.resolvedBy ?? null,
+    reason: req.body?.resolutionNote ?? null,
+    detailsJson: {
+      walletAddress: flag.walletAddress,
+      resolvedAt: flag.resolvedAt,
+      resolutionNote: flag.resolutionNote,
+    },
+  });
+  res.json({ ok: true, flag, adminAction });
+}));
+
+app.post("/internal/rewards/epochs/:epochId/process-eligibility", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = Number(req.params.epochId || 0);
+  if (!Number.isFinite(epochId) || epochId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+
+  const result = await processRewardEligibilityForEpoch(epochId);
+  res.json({ ok: true, ...result });
+}));
+
+app.get("/internal/rewards/claims", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const programRaw = req.query.program != null ? String(req.query.program).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (programRaw != null && !(REWARD_PROGRAMS as readonly string[]).includes(programRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid reward program" });
+  }
+
+  const claims = await listRewardClaims({
+    epochId,
+    walletAddress,
+    program: (programRaw as any) ?? null,
+    limit,
+  });
+  res.json({ ok: true, claims });
+}));
+
+app.post("/internal/rewards/claims/record", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = Number(req.body?.epochId || 0);
+  const programRaw = String(req.body?.program || "").trim();
+  if (!Number.isFinite(epochId) || epochId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (!(REWARD_PROGRAMS as readonly string[]).includes(programRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid reward program" });
+  }
+
+  const result = await recordRewardClaim({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    epochId,
+    program: programRaw as any,
+    claimTxHash: req.body?.claimTxHash ?? null,
+    claimedAt: req.body?.claimedAt ? new Date(String(req.body.claimedAt)) : undefined,
+    metadata: req.body?.metadata ?? null,
+  });
+  res.json({ ok: true, ...result });
+}));
+
+app.get("/internal/rewards/reminders", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const reminderKindRaw = req.query.reminderKind != null ? String(req.query.reminderKind).trim() : null;
+  const statusRaw = req.query.status != null ? String(req.query.status).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (reminderKindRaw != null && !(CLAIM_REMINDER_KINDS as readonly string[]).includes(reminderKindRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid reminder kind" });
+  }
+  if (statusRaw != null && !(CLAIM_REMINDER_STATUSES as readonly string[]).includes(statusRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid reminder status" });
+  }
+
+  const reminders = await listClaimReminderStates({
+    walletAddress,
+    reminderKind: (reminderKindRaw as any) ?? null,
+    status: (statusRaw as any) ?? null,
+    limit,
+  });
+  res.json({ ok: true, reminders });
+}));
+
+app.get("/internal/rewards/reminders/deliveries", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const reminderStateId = req.query.reminderStateId != null && String(req.query.reminderStateId).trim() !== "" ? Number(req.query.reminderStateId) : null;
+  const reminderKindRaw = req.query.reminderKind != null ? String(req.query.reminderKind).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (reminderStateId != null && !Number.isFinite(reminderStateId)) {
+    return res.status(400).json({ ok: false, error: "Invalid reminderStateId" });
+  }
+  if (reminderKindRaw != null && !(CLAIM_REMINDER_KINDS as readonly string[]).includes(reminderKindRaw)) {
+    return res.status(400).json({ ok: false, error: "Invalid reminder kind" });
+  }
+
+  const deliveries = await listClaimReminderDeliveries({
+    walletAddress,
+    reminderStateId,
+    reminderKind: (reminderKindRaw as any) ?? null,
+    limit,
+  });
+  res.json({ ok: true, deliveries });
+}));
+
+app.post("/internal/rewards/reminders/process", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const limit = req.body?.limit != null ? Number(req.body.limit) : undefined;
+  if (limit != null && (!Number.isFinite(limit) || limit <= 0)) {
+    return res.status(400).json({ ok: false, error: "Invalid limit" });
+  }
+
+  const result = await processClaimReminders(
+    req.body?.asOf ? new Date(String(req.body.asOf)) : new Date(),
+    limit != null ? Math.min(limit, 500) : undefined,
+  );
+  res.json({ ok: true, ...result });
+}));
+
+app.get("/internal/rewards/rollovers", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const fromLedgerEntryId = req.query.fromLedgerEntryId != null && String(req.query.fromLedgerEntryId).trim() !== "" ? Number(req.query.fromLedgerEntryId) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (fromLedgerEntryId != null && !Number.isFinite(fromLedgerEntryId)) {
+    return res.status(400).json({ ok: false, error: "Invalid fromLedgerEntryId" });
+  }
+  if (program != null && !(REWARD_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ ok: false, error: "Invalid reward program" });
+  }
+  const rollovers = await listClaimRollovers({ fromLedgerEntryId, program: program as any, limit });
+  res.json({ ok: true, rollovers });
+}));
+
+
+app.get("/internal/rewards/read-models/wallet/:wallet", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const summary = await getWalletRewardSummary(req.params.wallet);
+  if (!summary) return res.status(404).json({ ok: false, error: "Wallet reward summary not found" });
+  res.json({ ok: true, summary });
+}));
+
+app.get("/internal/rewards/read-models/recruiters", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const limit = Math.min(Number(req.query.limit || 100), 200);
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const recruiters = await listRecruiterSummaries({ status, limit });
+  res.json({ ok: true, recruiters });
+}));
+
+app.get("/internal/rewards/read-models/recruiters/:code", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const recruiter = await getRecruiterSummaryByCode(req.params.code);
+  if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter summary not found" });
+  res.json({ ok: true, recruiter });
+}));
+
+app.get("/internal/rewards/read-models/squads", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const limit = Math.min(Number(req.query.limit || 100), 200);
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const squads = await listSquadSummaries({ status, limit });
+  res.json({ ok: true, squads });
+}));
+
+app.get("/internal/rewards/read-models/squads/:recruiterCode", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const squad = await getSquadSummaryByRecruiterCode(req.params.recruiterCode);
+  if (!squad) return res.status(404).json({ ok: false, error: "Squad summary not found" });
+  res.json({ ok: true, squad });
+}));
+
+app.get("/internal/rewards/admin/epochs", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : null;
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  if (chainId != null && !Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+  const epochs = await listRewardAdminEpochSummaries({ chainId, status, limit });
+  res.json({ ok: true, epochs });
+}));
+
+app.get("/internal/rewards/admin/epochs/:epochId", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = Number(req.params.epochId || 0);
+  if (!Number.isFinite(epochId) || epochId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  const epoch = await getRewardAdminEpochSummary(epochId);
+  if (!epoch) return res.status(404).json({ ok: false, error: "Reward admin epoch summary not found" });
+  res.json({ ok: true, epoch });
+}));
+
+app.get("/internal/rewards/admin/reconciliations", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (program != null && !(REWARD_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ ok: false, error: "Invalid reward program" });
+  }
+  const items = await listRewardProgramEpochReconciliations({ epochId, program: program as any, limit });
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/rewards/admin/closures", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const items = await listRecruiterClosureDiagnostics({ status, limit });
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/rewards/airdrops/draws", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (program != null && !(AIRDROP_DRAW_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ ok: false, error: "Invalid airdrop program" });
+  }
+  if (status != null && !(AIRDROP_DRAW_STATUSES as readonly string[]).includes(status)) {
+    return res.status(400).json({ ok: false, error: "Invalid draw status" });
+  }
+  const items = await listAirdropDraws({ epochId, program: program as any, status: status as any, limit });
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/rewards/airdrops/winners", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (program != null && !(AIRDROP_DRAW_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ ok: false, error: "Invalid airdrop program" });
+  }
+  const items = await listAirdropWinners({ epochId, program: program as any, walletAddress, limit });
+  res.json({ ok: true, items });
+}));
+
+app.post("/internal/rewards/airdrops/epochs/:epochId/draws/run", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = Number(req.params.epochId || 0);
+  const program = req.body?.program != null && String(req.body.program).trim() !== "" ? String(req.body.program).trim() : null;
+  const publish = Boolean(req.body?.publish);
+  if (!Number.isFinite(epochId) || epochId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid epochId" });
+  }
+  if (program != null && !(AIRDROP_DRAW_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ ok: false, error: "Invalid airdrop program" });
+  }
+
+  const programs = program ? [program as any] : [...AIRDROP_DRAW_PROGRAMS];
+  const results = [];
+  for (const currentProgram of programs) {
+    const result = await runAirdropDrawForEpoch({
+      epochId,
+      program: currentProgram,
+      seed: req.body?.seed ?? null,
+      createdBy: req.body?.actedBy ?? null,
+      publish,
+    });
+    results.push(result);
+    await recordRewardAdminAction({
+      actionType: "draw_run",
+      resourceType: "airdrop_draw",
+      resourceKey: String(result.draw.id),
+      actedBy: req.body?.actedBy ?? null,
+      reason: req.body?.reason ?? null,
+      detailsJson: {
+        epochId,
+        program: currentProgram,
+        drawId: result.draw.id,
+        published: publish,
+        winnerCount: result.winners.length,
+      },
+    });
+    if (publish) {
+      await recordRewardAdminAction({
+        actionType: "draw_publish",
+        resourceType: "airdrop_draw",
+        resourceKey: String(result.draw.id),
+        actedBy: req.body?.actedBy ?? null,
+        reason: req.body?.reason ?? null,
+        detailsJson: {
+          epochId,
+          program: currentProgram,
+          drawId: result.draw.id,
+        },
+      });
+    }
+  }
+
+  res.json({ ok: true, results });
+}));
+
+app.post("/internal/rewards/airdrops/draws/:drawId/publish", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const drawId = Number(req.params.drawId || 0);
+  if (!Number.isFinite(drawId) || drawId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid drawId" });
+  }
+  const draw = await publishAirdropDraw(drawId, req.body?.actedBy ?? null);
+  if (!draw) return res.status(404).json({ ok: false, error: "Draw not found" });
+  await recordRewardAdminAction({
+    actionType: "draw_publish",
+    resourceType: "airdrop_draw",
+    resourceKey: String(draw.id),
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    detailsJson: {
+      epochId: draw.epochId,
+      program: draw.program,
+      drawId: draw.id,
+    },
+  });
+  res.json({ ok: true, draw });
+}));
+
+app.get("/internal/rewards/publications", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const resourceType = req.query.resourceType != null && String(req.query.resourceType).trim() !== "" ? String(req.query.resourceType).trim() : null;
+  const resourceKey = req.query.resourceKey != null && String(req.query.resourceKey).trim() !== "" ? String(req.query.resourceKey).trim() : "default";
+  if (resourceType == null) {
+    const states = await Promise.all([
+      getRewardPublicationState("airdrop_winners"),
+      getRewardPublicationState("recruiter_leaderboard"),
+      getRewardPublicationState("squad_leaderboard"),
+    ]);
+    return res.json({ ok: true, items: states });
+  }
+  if (!["airdrop_winners", "recruiter_leaderboard", "squad_leaderboard"].includes(resourceType)) {
+    return res.status(400).json({ ok: false, error: "Invalid resourceType" });
+  }
+  const item = await getRewardPublicationState(resourceType as any, resourceKey);
+  res.json({ ok: true, item });
+}));
+
+app.post("/internal/rewards/publications", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const resourceType = String(req.body?.resourceType || "").trim();
+  const resourceKey = String(req.body?.resourceKey || "default").trim() || "default";
+  if (!["airdrop_winners", "recruiter_leaderboard", "squad_leaderboard"].includes(resourceType)) {
+    return res.status(400).json({ ok: false, error: "Invalid resourceType" });
+  }
+  const state = await setRewardPublicationState({
+    resourceType: resourceType as any,
+    resourceKey,
+    isPublished: Boolean(req.body?.isPublished),
+    changedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    metadataJson: req.body?.metadataJson ?? null,
+  });
+  const adminAction = await recordRewardAdminAction({
+    actionType: "publication_change",
+    resourceType,
+    resourceKey,
+    actedBy: req.body?.actedBy ?? null,
+    reason: req.body?.reason ?? null,
+    detailsJson: {
+      isPublished: state.isPublished,
+      metadataJson: state.metadataJson,
+    },
+  });
+  res.json({ ok: true, state, adminAction });
+}));
+
+app.get("/internal/rewards/ops/routing", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : 97;
+  if (!Number.isFinite(chainId)) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+  const diagnostics = await getRewardRoutingDiagnostics(chainId);
+  res.json({ ok: true, diagnostics });
+}));
+
+app.get("/internal/rewards/ops/claim-vault", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const posture = await getRewardClaimVaultPosture();
+  res.json({ ok: true, posture });
+}));
+
+app.get("/internal/rewards/ops/epoch-status", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const limit = Math.min(Number(req.query.limit || 20), 100);
+  const items = await listRewardEpochProcessorStatuses(limit);
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/rewards/ops/alerts", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const items = await listRewardOpsAlerts();
+  res.json({ ok: true, items });
+}));
+
+app.get("/internal/rewards/ops/admin-actions", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const resourceType = req.query.resourceType != null && String(req.query.resourceType).trim() !== "" ? String(req.query.resourceType).trim() : null;
+  const actionType = req.query.actionType != null && String(req.query.actionType).trim() !== "" ? String(req.query.actionType).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const items = await listRewardAdminActions({ resourceType, actionType, limit });
+  res.json({ ok: true, items });
+}));
+
+app.get("/api/rewards/me", wrap(async (req, res) => {
+  const address = String(req.query.address || "").trim().toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+  const summary = await getWalletRewardSummary(address);
+  if (!summary) return res.status(404).json({ error: "Wallet reward summary not found" });
+  res.json(toPublicWalletRewardSummary(summary));
+}));
+
+app.get("/api/rewards/me/history", wrap(async (req, res) => {
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+  const items = await listWalletRewardHistory(address, { limit, program: program as any });
+  res.json({ items: items.map(toPublicWalletHistoryItem) });
+}));
+
+app.get("/api/rewards/me/claims", wrap(async (req, res) => {
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ error: "Invalid epochId" });
+  }
+  if (program != null && !(REWARD_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ error: "Invalid reward program" });
+  }
+  const items = await listRewardClaims({ walletAddress: address, epochId, program: program as any, limit });
+  const claims = items.map(toPublicRewardClaim);
+  res.json({ items: claims, claims });
+}));
+
+app.get("/api/rewards/me/eligibility", wrap(async (req, res) => {
+  const address = String(req.query.address || "").trim().toLowerCase();
+  const limit = Math.min(Number(req.query.limit || 50), 200);
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  if (!/^0x[a-f0-9]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+  if (program != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ error: "Invalid eligibility program" });
+  }
+  const items = await listWalletEligibilityHistory(address, { limit, program: program as any });
+  res.json({ items: items.map(toPublicEligibilityItem) });
+}));
+
+app.get("/api/airdrops/winners", wrap(async (req, res) => {
+  if (!(await requirePublishedResource(res, "airdrop_winners"))) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ error: "Invalid epochId" });
+  }
+  if (program != null && !(AIRDROP_DRAW_PROGRAMS as readonly string[]).includes(program)) {
+    return res.status(400).json({ error: "Invalid airdrop program" });
+  }
+  const items = await listAirdropWinners({ epochId, program: program as any, walletAddress, publishedOnly: true, limit });
+  res.json({ items });
+}));
+
+app.get("/api/squads", wrap(async (req, res) => {
+  if (!(await requirePublishedResource(res, "squad_leaderboard"))) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ error: "Invalid epochId" });
+  }
+  const preview = await getSquadAllocationPreview(epochId ?? null);
+  res.json({
+    ok: true,
+    epoch: preview.epoch,
+    globalPoolAmount: preview.globalPoolAmount,
+    carryoverAmount: preview.carryoverAmount,
+    squads: preview.leaderboard,
+  });
+}));
+
+app.get("/api/squads/members", wrap(async (req, res) => {
+  if (!(await requirePublishedResource(res, "squad_leaderboard"))) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const recruiterCode = req.query.recruiterCode != null && String(req.query.recruiterCode).trim() !== "" ? String(req.query.recruiterCode).trim().toLowerCase() : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress).trim().toLowerCase() : null;
+  const limit = Math.min(Number(req.query.limit || 200), 500);
+  if (epochId != null && !Number.isFinite(epochId)) {
+    return res.status(400).json({ error: "Invalid epochId" });
+  }
+  const preview = await getSquadAllocationPreview(epochId ?? null);
+  const items = preview.members
+    .filter((member) => !recruiterCode || String(member.recruiterCode ?? "").toLowerCase() === recruiterCode)
+    .filter((member) => !walletAddress || member.walletAddress === walletAddress)
+    .slice(0, limit);
+  res.json({ ok: true, epoch: preview.epoch, items });
+}));
+
+app.get("/api/recruiters/:code/summary", wrap(async (req, res) => {
+  const recruiter = await getRecruiterSummaryByCode(req.params.code);
+  if (!recruiter) return res.status(404).json({ error: "Recruiter summary not found" });
+  res.json(recruiter);
+}));
+
+app.get("/api/recruiters/wallet/:wallet/summary", wrap(async (req, res) => {
+  const recruiter = await getRecruiterSummaryByWalletAddress(req.params.wallet);
+  if (!recruiter) return res.status(404).json({ error: "Recruiter summary not found" });
+  res.json(recruiter);
+}));
+
+app.get("/api/recruiters/:code/replacements", wrap(async (req, res) => {
+  const recruiter = await getRecruiterSummaryByCode(req.params.code);
+  if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter summary not found" });
+
+  const limit = Math.min(Number(req.query.limit || 5), 20);
+  const replacements = (await listRecruiterSummaries({ status: "active", limit: limit + 1 }))
+    .filter((item) => item.code.toLowerCase() !== recruiter.code.toLowerCase())
+    .slice(0, limit);
+
+  res.json({
+    ok: true,
+    recruiter: {
+      recruiterId: recruiter.recruiterId,
+      code: recruiter.code,
+      displayName: recruiter.displayName,
+      status: recruiter.status,
+      closedAt: recruiter.closedAt,
+    },
+    replacements,
+  });
+}));
+
+app.get("/api/squads/:recruiterCode/summary", wrap(async (req, res) => {
+  if (!(await requirePublishedResource(res, "squad_leaderboard"))) return;
+  const squad = await getSquadSummaryByRecruiterCode(req.params.recruiterCode);
+  if (!squad) return res.status(404).json({ error: "Squad summary not found" });
+  res.json(squad);
+}));
+
 // Trades activity (bonding curve buys/sells) for a wallet.
 // GET /api/activity/trades?chainId=97&address=0x...&limit=50&cursor=BLOCK:LOG
 app.get("/api/activity/trades", wrap(async (req, res) => {

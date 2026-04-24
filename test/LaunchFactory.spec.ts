@@ -205,6 +205,56 @@ describe("LaunchFactory", function () {
     ).to.be.revertedWithCustomError(factory, "InitBuyTooLarge");
   });
 
+  it("createCampaignAuthorized applies signer-approved recruiter route profiles", async () => {
+    const { factory, creator, owner } = await deployCoreFixture();
+    await factory.connect(owner).setRouteAuthority(await owner.getAddress());
+
+    const req = {
+      name: "RecruiterToken",
+      symbol: "RCRT",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: 0n,
+    };
+
+    const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const digest = ethers.solidityPackedKeccak256(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
+      [
+        "MWZ_CREATE_ROUTE_AUTH",
+        chainId,
+        await factory.getAddress(),
+        await creator.getAddress(),
+        2,
+        2,
+        deadline,
+      ]
+    );
+    const signature = await owner.signMessage(ethers.getBytes(digest));
+
+    await factory.connect(creator).createCampaignAuthorized(
+      req as any,
+      {
+        tradeRouteProfile: 2,
+        finalizeRouteProfile: 2,
+        deadline,
+        signature,
+      }
+    );
+
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    expect(await campaign.tradeRouteProfile()).to.eq(2n);
+    expect(await campaign.finalizeRouteProfile()).to.eq(2n);
+  });
+
   it("owner-only setters with validation + events", async () => {
     const { factory, owner, alice } = await deployCoreFixture();
 
@@ -269,6 +319,46 @@ describe("LaunchFactory", function () {
         liquidityBps: 8000n,
       })
     ).to.be.revertedWithCustomError(factory, "InvalidCurveBps");
+  });
+
+
+  it("locks economic and routing setters after the first campaign exists", async () => {
+    const { factory, owner, creator, alice } = await deployCoreFixture();
+
+    await factory.connect(creator).createCampaign({
+      name: "Locked",
+      symbol: "LCK",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: 0n,
+    } as any);
+
+    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(
+      ethers.ZeroAddress,
+      ethers.ZeroAddress
+    );
+
+    await expect(factory.connect(owner).setRouter(await newRouter.getAddress()))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress()))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setProtocolFee(123n))
+      .to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setConfig({
+      totalSupply: 1n,
+      curveBps: 5000n,
+      liquidityTokenBps: 4000n,
+      basePrice: 1n,
+      priceSlope: 1n,
+      graduationTarget: 1n,
+      liquidityBps: 8000n,
+    })).to.be.revertedWithCustomError(factory, "FactoryLocked");
   });
 
   it("createCampaign: rejects override params above bounds", async () => {

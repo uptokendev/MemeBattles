@@ -10,6 +10,11 @@ import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerklePr
 ///         1) Optional capped "operator" payouts (hot-wallet execution) with per-tx + daily caps + pause.
 ///         2) Trust-minimized user-claimed payouts via Merkle roots (users pay gas; contract pays recipients).
 ///            A low-privilege "rootPoster" can publish epoch roots; claims are bounded by epoch totals and caps.
+///
+///         Security posture:
+///         - Both payout lanes start paused by default.
+///         - Unlimited caps are not allowed for active lanes.
+///         - A lane may only be unpaused once its role + caps are explicitly configured.
 contract TreasuryVaultV2 {
     address public immutable multisig;
     address public operator;
@@ -18,13 +23,13 @@ contract TreasuryVaultV2 {
     address public rootPoster;
 
     // Safety controls
-    uint256 public maxPayoutPerTx;   // 0 = unlimited
-    uint256 public dailyPayoutCap;   // 0 = unlimited
+    uint256 public maxPayoutPerTx;
+    uint256 public dailyPayoutCap;
     bool public payoutsPaused;
 
     // Claim safety controls
-    uint256 public maxClaimPerTx;    // 0 = unlimited
-    uint256 public maxEpochTotal;    // 0 = unlimited (cap enforced when setting a root)
+    uint256 public maxClaimPerTx;
+    uint256 public maxEpochTotal;
     bool public claimsPaused;
 
     // Merkle roots per epochId
@@ -34,8 +39,8 @@ contract TreasuryVaultV2 {
     mapping(uint256 => mapping(bytes32 => bool)) public epochLeafClaimed;
 
     // Daily accounting
-    uint256 public lastDay;          // block.timestamp / 1 days
-    uint256 public dailySpent;       // total paid out for lastDay
+    uint256 public lastDay;
+    uint256 public dailySpent;
 
     event OperatorUpdated(address indexed operator);
     event RootPosterUpdated(address indexed rootPoster);
@@ -69,9 +74,14 @@ contract TreasuryVaultV2 {
         multisig = _multisig;
         operator = _operator;
         rootPoster = _rootPoster;
+        payoutsPaused = true;
+        claimsPaused = true;
         lastDay = block.timestamp / 1 days;
+
         emit OperatorUpdated(_operator);
         emit RootPosterUpdated(_rootPoster);
+        emit PayoutsPaused(true);
+        emit ClaimsPaused(true);
     }
 
     receive() external payable {}
@@ -97,6 +107,9 @@ contract TreasuryVaultV2 {
 
     /// @notice Admin: pause/unpause operator payouts.
     function setPayoutsPaused(bool paused) external onlyMultisig {
+        if (!paused) {
+            _requirePayoutLaneConfigured();
+        }
         payoutsPaused = paused;
         emit PayoutsPaused(paused);
     }
@@ -110,6 +123,9 @@ contract TreasuryVaultV2 {
 
     /// @notice Admin: pause/unpause Merkle claims.
     function setClaimsPaused(bool paused) external onlyMultisig {
+        if (!paused) {
+            _requireClaimLaneConfigured();
+        }
         claimsPaused = paused;
         emit ClaimsPaused(paused);
     }
@@ -148,9 +164,7 @@ contract TreasuryVaultV2 {
         bytes32 root = epochRoot[epochId];
         require(root != bytes32(0), "root not set");
         require(amount <= address(this).balance, "insufficient");
-        if (maxClaimPerTx != 0) {
-            require(amount <= maxClaimPerTx, "maxClaimPerTx");
-        }
+        require(amount <= maxClaimPerTx, "maxClaimPerTx");
 
         bytes32 leaf = keccak256(abi.encode(epochId, category, rank, recipient, amount));
         require(!epochLeafClaimed[epochId][leaf], "already claimed");
@@ -172,21 +186,15 @@ contract TreasuryVaultV2 {
         require(to != address(0), "to=0");
         require(amount > 0, "amount=0");
         require(amount <= address(this).balance, "insufficient");
+        require(amount <= maxPayoutPerTx, "maxPayoutPerTx");
 
-        if (maxPayoutPerTx != 0) {
-            require(amount <= maxPayoutPerTx, "maxPayoutPerTx");
-        }
-
-        // Reset dailySpent if a new day has started
         uint256 d = block.timestamp / 1 days;
         if (d != lastDay) {
             lastDay = d;
             dailySpent = 0;
         }
 
-        if (dailyPayoutCap != 0) {
-            require(dailySpent + amount <= dailyPayoutCap, "dailyPayoutCap");
-        }
+        require(dailySpent + amount <= dailyPayoutCap, "dailyPayoutCap");
         dailySpent += amount;
 
         (bool ok, ) = to.call{value: amount}("");
@@ -201,5 +209,17 @@ contract TreasuryVaultV2 {
         (bool ok, ) = to.call{value: amount}("");
         require(ok, "transfer failed");
         emit Withdraw(to, amount);
+    }
+
+    function _requirePayoutLaneConfigured() internal view {
+        require(operator != address(0), "operator=0");
+        require(maxPayoutPerTx != 0, "maxPayoutPerTx=0");
+        require(dailyPayoutCap != 0, "dailyPayoutCap=0");
+    }
+
+    function _requireClaimLaneConfigured() internal view {
+        require(rootPoster != address(0), "rootPoster=0");
+        require(maxClaimPerTx != 0, "maxClaimPerTx=0");
+        require(maxEpochTotal != 0, "maxEpochTotal=0");
     }
 }

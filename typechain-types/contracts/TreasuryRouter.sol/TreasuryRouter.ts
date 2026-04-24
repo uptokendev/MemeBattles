@@ -21,7 +21,31 @@ import type {
   TypedLogDescription,
   TypedListener,
   TypedContractMethod,
-} from "../common";
+} from "../../common";
+
+export declare namespace TreasuryRouter {
+  export type RouteAmountsStruct = {
+    league: BigNumberish;
+    recruiter: BigNumberish;
+    airdrop: BigNumberish;
+    squad: BigNumberish;
+    protocol: BigNumberish;
+  };
+
+  export type RouteAmountsStructOutput = [
+    league: bigint,
+    recruiter: bigint,
+    airdrop: bigint,
+    squad: bigint,
+    protocol: bigint
+  ] & {
+    league: bigint;
+    recruiter: bigint;
+    airdrop: bigint;
+    squad: bigint;
+    protocol: bigint;
+  };
+}
 
 export interface TreasuryRouterInterface extends Interface {
   getFunction(
@@ -29,20 +53,32 @@ export interface TreasuryRouterInterface extends Interface {
       | "acceptVault"
       | "activeVault"
       | "admin"
+      | "communityRewardsVault"
       | "forward"
       | "forwardingPaused"
       | "pendingSince"
       | "pendingVault"
+      | "previewRoute"
       | "proposeVault"
+      | "protocolRevenueVault"
+      | "recruiterRewardsVault"
+      | "route"
+      | "setCommunityRewardsVault"
       | "setForwardingPaused"
+      | "setProtocolRevenueVault"
+      | "setRecruiterRewardsVault"
       | "upgradeDelay"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
+      | "CommunityRewardsVaultUpdated"
       | "ForwardFailed"
       | "Forwarded"
       | "ForwardingPaused"
+      | "ProtocolRevenueVaultUpdated"
+      | "RecruiterRewardsVaultUpdated"
+      | "RouteExecuted"
       | "VaultActivated"
       | "VaultProposed"
   ): EventFragment;
@@ -56,6 +92,10 @@ export interface TreasuryRouterInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "admin", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "communityRewardsVault",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "forward", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "forwardingPaused",
@@ -70,12 +110,40 @@ export interface TreasuryRouterInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "previewRoute",
+    values: [BigNumberish, BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "proposeVault",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "protocolRevenueVault",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "recruiterRewardsVault",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "route",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setCommunityRewardsVault",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setForwardingPaused",
     values: [boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setProtocolRevenueVault",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setRecruiterRewardsVault",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "upgradeDelay",
@@ -91,6 +159,10 @@ export interface TreasuryRouterInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "admin", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "communityRewardsVault",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "forward", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "forwardingPaused",
@@ -105,7 +177,24 @@ export interface TreasuryRouterInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "previewRoute",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "proposeVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "protocolRevenueVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "recruiterRewardsVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "route", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setCommunityRewardsVault",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -113,9 +202,30 @@ export interface TreasuryRouterInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "setProtocolRevenueVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRecruiterRewardsVault",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "upgradeDelay",
     data: BytesLike
   ): Result;
+}
+
+export namespace CommunityRewardsVaultUpdatedEvent {
+  export type InputTuple = [oldVault: AddressLike, newVault: AddressLike];
+  export type OutputTuple = [oldVault: string, newVault: string];
+  export interface OutputObject {
+    oldVault: string;
+    newVault: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
 }
 
 export namespace ForwardFailedEvent {
@@ -149,6 +259,69 @@ export namespace ForwardingPausedEvent {
   export type OutputTuple = [paused: boolean];
   export interface OutputObject {
     paused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ProtocolRevenueVaultUpdatedEvent {
+  export type InputTuple = [oldVault: AddressLike, newVault: AddressLike];
+  export type OutputTuple = [oldVault: string, newVault: string];
+  export interface OutputObject {
+    oldVault: string;
+    newVault: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RecruiterRewardsVaultUpdatedEvent {
+  export type InputTuple = [oldVault: AddressLike, newVault: AddressLike];
+  export type OutputTuple = [oldVault: string, newVault: string];
+  export interface OutputObject {
+    oldVault: string;
+    newVault: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RouteExecutedEvent {
+  export type InputTuple = [
+    kind: BigNumberish,
+    profile: BigNumberish,
+    amountIn: BigNumberish,
+    leagueAmount: BigNumberish,
+    recruiterAmount: BigNumberish,
+    airdropAmount: BigNumberish,
+    squadAmount: BigNumberish,
+    protocolAmount: BigNumberish
+  ];
+  export type OutputTuple = [
+    kind: bigint,
+    profile: bigint,
+    amountIn: bigint,
+    leagueAmount: bigint,
+    recruiterAmount: bigint,
+    airdropAmount: bigint,
+    squadAmount: bigint,
+    protocolAmount: bigint
+  ];
+  export interface OutputObject {
+    kind: bigint;
+    profile: bigint;
+    amountIn: bigint;
+    leagueAmount: bigint;
+    recruiterAmount: bigint;
+    airdropAmount: bigint;
+    squadAmount: bigint;
+    protocolAmount: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -231,6 +404,8 @@ export interface TreasuryRouter extends BaseContract {
 
   admin: TypedContractMethod<[], [string], "view">;
 
+  communityRewardsVault: TypedContractMethod<[], [string], "view">;
+
   forward: TypedContractMethod<[], [void], "nonpayable">;
 
   forwardingPaused: TypedContractMethod<[], [boolean], "view">;
@@ -239,7 +414,29 @@ export interface TreasuryRouter extends BaseContract {
 
   pendingVault: TypedContractMethod<[], [string], "view">;
 
+  previewRoute: TypedContractMethod<
+    [amount: BigNumberish, kind: BigNumberish, profile: BigNumberish],
+    [TreasuryRouter.RouteAmountsStructOutput],
+    "view"
+  >;
+
   proposeVault: TypedContractMethod<
+    [newVault: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  protocolRevenueVault: TypedContractMethod<[], [string], "view">;
+
+  recruiterRewardsVault: TypedContractMethod<[], [string], "view">;
+
+  route: TypedContractMethod<
+    [kind: BigNumberish, profile: BigNumberish],
+    [TreasuryRouter.RouteAmountsStructOutput],
+    "payable"
+  >;
+
+  setCommunityRewardsVault: TypedContractMethod<
     [newVault: AddressLike],
     [void],
     "nonpayable"
@@ -247,6 +444,18 @@ export interface TreasuryRouter extends BaseContract {
 
   setForwardingPaused: TypedContractMethod<
     [paused: boolean],
+    [void],
+    "nonpayable"
+  >;
+
+  setProtocolRevenueVault: TypedContractMethod<
+    [newVault: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  setRecruiterRewardsVault: TypedContractMethod<
+    [newVault: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -267,6 +476,9 @@ export interface TreasuryRouter extends BaseContract {
     nameOrSignature: "admin"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "communityRewardsVault"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "forward"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
@@ -279,15 +491,51 @@ export interface TreasuryRouter extends BaseContract {
     nameOrSignature: "pendingVault"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "previewRoute"
+  ): TypedContractMethod<
+    [amount: BigNumberish, kind: BigNumberish, profile: BigNumberish],
+    [TreasuryRouter.RouteAmountsStructOutput],
+    "view"
+  >;
+  getFunction(
     nameOrSignature: "proposeVault"
+  ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "protocolRevenueVault"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "recruiterRewardsVault"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "route"
+  ): TypedContractMethod<
+    [kind: BigNumberish, profile: BigNumberish],
+    [TreasuryRouter.RouteAmountsStructOutput],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "setCommunityRewardsVault"
   ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setForwardingPaused"
   ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "setProtocolRevenueVault"
+  ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setRecruiterRewardsVault"
+  ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "upgradeDelay"
   ): TypedContractMethod<[], [bigint], "view">;
 
+  getEvent(
+    key: "CommunityRewardsVaultUpdated"
+  ): TypedContractEvent<
+    CommunityRewardsVaultUpdatedEvent.InputTuple,
+    CommunityRewardsVaultUpdatedEvent.OutputTuple,
+    CommunityRewardsVaultUpdatedEvent.OutputObject
+  >;
   getEvent(
     key: "ForwardFailed"
   ): TypedContractEvent<
@@ -310,6 +558,27 @@ export interface TreasuryRouter extends BaseContract {
     ForwardingPausedEvent.OutputObject
   >;
   getEvent(
+    key: "ProtocolRevenueVaultUpdated"
+  ): TypedContractEvent<
+    ProtocolRevenueVaultUpdatedEvent.InputTuple,
+    ProtocolRevenueVaultUpdatedEvent.OutputTuple,
+    ProtocolRevenueVaultUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RecruiterRewardsVaultUpdated"
+  ): TypedContractEvent<
+    RecruiterRewardsVaultUpdatedEvent.InputTuple,
+    RecruiterRewardsVaultUpdatedEvent.OutputTuple,
+    RecruiterRewardsVaultUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RouteExecuted"
+  ): TypedContractEvent<
+    RouteExecutedEvent.InputTuple,
+    RouteExecutedEvent.OutputTuple,
+    RouteExecutedEvent.OutputObject
+  >;
+  getEvent(
     key: "VaultActivated"
   ): TypedContractEvent<
     VaultActivatedEvent.InputTuple,
@@ -325,6 +594,17 @@ export interface TreasuryRouter extends BaseContract {
   >;
 
   filters: {
+    "CommunityRewardsVaultUpdated(address,address)": TypedContractEvent<
+      CommunityRewardsVaultUpdatedEvent.InputTuple,
+      CommunityRewardsVaultUpdatedEvent.OutputTuple,
+      CommunityRewardsVaultUpdatedEvent.OutputObject
+    >;
+    CommunityRewardsVaultUpdated: TypedContractEvent<
+      CommunityRewardsVaultUpdatedEvent.InputTuple,
+      CommunityRewardsVaultUpdatedEvent.OutputTuple,
+      CommunityRewardsVaultUpdatedEvent.OutputObject
+    >;
+
     "ForwardFailed(address,uint256)": TypedContractEvent<
       ForwardFailedEvent.InputTuple,
       ForwardFailedEvent.OutputTuple,
@@ -356,6 +636,39 @@ export interface TreasuryRouter extends BaseContract {
       ForwardingPausedEvent.InputTuple,
       ForwardingPausedEvent.OutputTuple,
       ForwardingPausedEvent.OutputObject
+    >;
+
+    "ProtocolRevenueVaultUpdated(address,address)": TypedContractEvent<
+      ProtocolRevenueVaultUpdatedEvent.InputTuple,
+      ProtocolRevenueVaultUpdatedEvent.OutputTuple,
+      ProtocolRevenueVaultUpdatedEvent.OutputObject
+    >;
+    ProtocolRevenueVaultUpdated: TypedContractEvent<
+      ProtocolRevenueVaultUpdatedEvent.InputTuple,
+      ProtocolRevenueVaultUpdatedEvent.OutputTuple,
+      ProtocolRevenueVaultUpdatedEvent.OutputObject
+    >;
+
+    "RecruiterRewardsVaultUpdated(address,address)": TypedContractEvent<
+      RecruiterRewardsVaultUpdatedEvent.InputTuple,
+      RecruiterRewardsVaultUpdatedEvent.OutputTuple,
+      RecruiterRewardsVaultUpdatedEvent.OutputObject
+    >;
+    RecruiterRewardsVaultUpdated: TypedContractEvent<
+      RecruiterRewardsVaultUpdatedEvent.InputTuple,
+      RecruiterRewardsVaultUpdatedEvent.OutputTuple,
+      RecruiterRewardsVaultUpdatedEvent.OutputObject
+    >;
+
+    "RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
+      RouteExecutedEvent.InputTuple,
+      RouteExecutedEvent.OutputTuple,
+      RouteExecutedEvent.OutputObject
+    >;
+    RouteExecuted: TypedContractEvent<
+      RouteExecutedEvent.InputTuple,
+      RouteExecutedEvent.OutputTuple,
+      RouteExecutedEvent.OutputObject
     >;
 
     "VaultActivated(address,address)": TypedContractEvent<

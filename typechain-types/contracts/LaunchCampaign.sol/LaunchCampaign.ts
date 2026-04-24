@@ -21,7 +21,7 @@ import type {
   TypedLogDescription,
   TypedListener,
   TypedContractMethod,
-} from "../common";
+} from "../../common";
 
 export declare namespace LaunchCampaign {
   export type InitParamsStruct = {
@@ -46,6 +46,8 @@ export declare namespace LaunchCampaign {
     feeRecipient: AddressLike;
     creator: AddressLike;
     factory: AddressLike;
+    tradeRouteProfile: BigNumberish;
+    finalizeRouteProfile: BigNumberish;
   };
 
   export type InitParamsStructOutput = [
@@ -69,7 +71,9 @@ export declare namespace LaunchCampaign {
     lpReceiver: string,
     feeRecipient: string,
     creator: string,
-    factory: string
+    factory: string,
+    tradeRouteProfile: bigint,
+    finalizeRouteProfile: bigint
   ] & {
     name: string;
     symbol: string;
@@ -92,6 +96,8 @@ export declare namespace LaunchCampaign {
     feeRecipient: string;
     creator: string;
     factory: string;
+    tradeRouteProfile: bigint;
+    finalizeRouteProfile: bigint;
   };
 }
 
@@ -100,8 +106,10 @@ export interface LaunchCampaignInterface extends Interface {
     nameOrSignature:
       | "basePrice"
       | "buyExactBnb"
+      | "buyExactBnbAuthorized"
       | "buyExactBnbFor"
       | "buyExactTokens"
+      | "buyExactTokensAuthorized"
       | "buyExactTokensFor"
       | "buyersCount"
       | "claimPendingNative"
@@ -112,6 +120,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "factory"
       | "feeRecipient"
       | "finalize"
+      | "finalizeRouteProfile"
       | "finalizedAt"
       | "graduationTarget"
       | "hasBought"
@@ -125,6 +134,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "lpReceiver"
       | "owner"
       | "pendingNative"
+      | "pendingNativeTotal"
       | "priceSlope"
       | "protocolFeeBps"
       | "quoteBuyExactBnb"
@@ -133,11 +143,13 @@ export interface LaunchCampaignInterface extends Interface {
       | "renounceOwnership"
       | "router"
       | "sellExactTokens"
+      | "sellExactTokensAuthorized"
       | "sold"
       | "token"
       | "totalBuyVolumeWei"
       | "totalSellVolumeWei"
       | "totalSupply"
+      | "tradeRouteProfile"
       | "transferOwnership"
       | "website"
       | "xAccount"
@@ -159,12 +171,20 @@ export interface LaunchCampaignInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "buyExactBnbAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BytesLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "buyExactBnbFor",
     values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "buyExactTokens",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "buyExactTokensAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "buyExactTokensFor",
@@ -199,6 +219,10 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "finalize",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "finalizeRouteProfile",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "finalizedAt",
@@ -244,6 +268,10 @@ export interface LaunchCampaignInterface extends Interface {
     values: [AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "pendingNativeTotal",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "priceSlope",
     values?: undefined
   ): string;
@@ -272,6 +300,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "sellExactTokens",
     values: [BigNumberish, BigNumberish]
   ): string;
+  encodeFunctionData(
+    functionFragment: "sellExactTokensAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
+  ): string;
   encodeFunctionData(functionFragment: "sold", values?: undefined): string;
   encodeFunctionData(functionFragment: "token", values?: undefined): string;
   encodeFunctionData(
@@ -287,6 +319,10 @@ export interface LaunchCampaignInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "tradeRouteProfile",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "transferOwnership",
     values: [AddressLike]
   ): string;
@@ -299,11 +335,19 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "buyExactBnbAuthorized",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "buyExactBnbFor",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "buyExactTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "buyExactTokensAuthorized",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -338,6 +382,10 @@ export interface LaunchCampaignInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "finalize", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "finalizeRouteProfile",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "finalizedAt",
     data: BytesLike
   ): Result;
@@ -371,6 +419,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "pendingNative",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "pendingNativeTotal",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "priceSlope", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
@@ -397,6 +449,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "sellExactTokens",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "sellExactTokensAuthorized",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "sold", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token", data: BytesLike): Result;
   decodeFunctionResult(
@@ -409,6 +465,10 @@ export interface LaunchCampaignInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "totalSupply",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "tradeRouteProfile",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -573,6 +633,17 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
 
+  buyExactBnbAuthorized: TypedContractMethod<
+    [
+      minTokensOut: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+
   buyExactBnbFor: TypedContractMethod<
     [recipient: AddressLike, minTokensOut: BigNumberish],
     [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
@@ -581,6 +652,18 @@ export interface LaunchCampaign extends BaseContract {
 
   buyExactTokens: TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
+    [bigint],
+    "payable"
+  >;
+
+  buyExactTokensAuthorized: TypedContractMethod<
+    [
+      amountOut: BigNumberish,
+      maxCost: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
     [bigint],
     "payable"
   >;
@@ -613,6 +696,8 @@ export interface LaunchCampaign extends BaseContract {
     "nonpayable"
   >;
 
+  finalizeRouteProfile: TypedContractMethod<[], [bigint], "view">;
+
   finalizedAt: TypedContractMethod<[], [bigint], "view">;
 
   graduationTarget: TypedContractMethod<[], [bigint], "view">;
@@ -642,6 +727,8 @@ export interface LaunchCampaign extends BaseContract {
   owner: TypedContractMethod<[], [string], "view">;
 
   pendingNative: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
+  pendingNativeTotal: TypedContractMethod<[], [bigint], "view">;
 
   priceSlope: TypedContractMethod<[], [bigint], "view">;
 
@@ -681,6 +768,18 @@ export interface LaunchCampaign extends BaseContract {
     "nonpayable"
   >;
 
+  sellExactTokensAuthorized: TypedContractMethod<
+    [
+      amountIn: BigNumberish,
+      minPayout: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [bigint],
+    "nonpayable"
+  >;
+
   sold: TypedContractMethod<[], [bigint], "view">;
 
   token: TypedContractMethod<[], [string], "view">;
@@ -690,6 +789,8 @@ export interface LaunchCampaign extends BaseContract {
   totalSellVolumeWei: TypedContractMethod<[], [bigint], "view">;
 
   totalSupply: TypedContractMethod<[], [bigint], "view">;
+
+  tradeRouteProfile: TypedContractMethod<[], [bigint], "view">;
 
   transferOwnership: TypedContractMethod<
     [newOwner: AddressLike],
@@ -716,6 +817,18 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
   getFunction(
+    nameOrSignature: "buyExactBnbAuthorized"
+  ): TypedContractMethod<
+    [
+      minTokensOut: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+  getFunction(
     nameOrSignature: "buyExactBnbFor"
   ): TypedContractMethod<
     [recipient: AddressLike, minTokensOut: BigNumberish],
@@ -726,6 +839,19 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "buyExactTokens"
   ): TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
+    [bigint],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "buyExactTokensAuthorized"
+  ): TypedContractMethod<
+    [
+      amountOut: BigNumberish,
+      maxCost: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
     [bigint],
     "payable"
   >;
@@ -767,6 +893,9 @@ export interface LaunchCampaign extends BaseContract {
     [[bigint, bigint] & { usedTokens: bigint; usedBnb: bigint }],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "finalizeRouteProfile"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "finalizedAt"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -811,6 +940,9 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "pendingNative"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
+    nameOrSignature: "pendingNativeTotal"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "priceSlope"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -849,6 +981,19 @@ export interface LaunchCampaign extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "sellExactTokensAuthorized"
+  ): TypedContractMethod<
+    [
+      amountIn: BigNumberish,
+      minPayout: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "sold"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -862,6 +1007,9 @@ export interface LaunchCampaign extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "totalSupply"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "tradeRouteProfile"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "transferOwnership"

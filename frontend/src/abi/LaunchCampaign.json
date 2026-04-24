@@ -1,112 +1,36 @@
 {
   "abi": [
     {
-      "inputs": [
-        {
-          "components": [
-            {
-              "internalType": "string",
-              "name": "name",
-              "type": "string"
-            },
-            {
-              "internalType": "string",
-              "name": "symbol",
-              "type": "string"
-            },
-            {
-              "internalType": "string",
-              "name": "logoURI",
-              "type": "string"
-            },
-            {
-              "internalType": "string",
-              "name": "xAccount",
-              "type": "string"
-            },
-            {
-              "internalType": "string",
-              "name": "website",
-              "type": "string"
-            },
-            {
-              "internalType": "string",
-              "name": "extraLink",
-              "type": "string"
-            },
-            {
-              "internalType": "uint256",
-              "name": "totalSupply",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "curveBps",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "liquidityTokenBps",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "basePrice",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "priceSlope",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "graduationTarget",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "liquidityBps",
-              "type": "uint256"
-            },
-            {
-              "internalType": "uint256",
-              "name": "protocolFeeBps",
-              "type": "uint256"
-            },
-            {
-              "internalType": "address",
-              "name": "router",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "lpReceiver",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "feeRecipient",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "creator",
-              "type": "address"
-            },
-            {
-              "internalType": "address",
-              "name": "factory",
-              "type": "address"
-            }
-          ],
-          "internalType": "struct LaunchCampaign.InitParams",
-          "name": "params",
-          "type": "tuple"
-        }
-      ],
+      "inputs": [],
       "stateMutability": "nonpayable",
       "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "ECDSAInvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "length",
+          "type": "uint256"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureLength",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "s",
+          "type": "bytes32"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureS",
+      "type": "error"
     },
     {
       "inputs": [
@@ -181,6 +105,44 @@
         }
       ],
       "name": "CampaignFinalized",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "beneficiary",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "NativeClaimed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "beneficiary",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "NativeEscrowed",
       "type": "event"
     },
     {
@@ -269,6 +231,98 @@
       "inputs": [
         {
           "internalType": "uint256",
+          "name": "minTokensOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "buyExactBnb",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalSpent",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "minTokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "buyExactBnbAuthorized",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalSpent",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "minTokensOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "buyExactBnbFor",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalSpent",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
           "name": "amountOut",
           "type": "uint256"
         },
@@ -290,6 +344,74 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxCost",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "buyExactTokensAuthorized",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "cost",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxCost",
+          "type": "uint256"
+        }
+      ],
+      "name": "buyExactTokensFor",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "total",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "buyersCount",
       "outputs": [
@@ -300,6 +422,19 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "claimPendingNative",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -411,6 +546,19 @@
     },
     {
       "inputs": [],
+      "name": "finalizeRouteProfile",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "finalizedAt",
       "outputs": [
         {
@@ -455,6 +603,136 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "symbol",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "logoURI",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "xAccount",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "website",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "extraLink",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "totalSupply",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "curveBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "liquidityTokenBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "basePrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceSlope",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "graduationTarget",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "liquidityBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "protocolFeeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "leagueFeeBps",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "leagueReceiver",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "router",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "lpReceiver",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "feeRecipient",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "creator",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "factory",
+              "type": "address"
+            },
+            {
+              "internalType": "uint8",
+              "name": "tradeRouteProfile",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint8",
+              "name": "finalizeRouteProfile",
+              "type": "uint8"
+            }
+          ],
+          "internalType": "struct LaunchCampaign.InitParams",
+          "name": "params",
+          "type": "tuple"
+        }
+      ],
+      "name": "initialize",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "launched",
       "outputs": [
@@ -462,6 +740,32 @@
           "internalType": "bool",
           "name": "",
           "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "leagueFeeBps",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "leagueReceiver",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
         }
       ],
       "stateMutability": "view",
@@ -533,6 +837,38 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "pendingNative",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pendingNativeTotal",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "priceSlope",
       "outputs": [
@@ -552,6 +888,35 @@
         {
           "internalType": "uint256",
           "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "totalInWei",
+          "type": "uint256"
+        }
+      ],
+      "name": "quoteBuyExactBnb",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalCostWei",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "feeWei",
           "type": "uint256"
         }
       ],
@@ -641,6 +1006,45 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "minPayout",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "sellExactTokensAuthorized",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "payout",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "sold",
       "outputs": [
@@ -700,6 +1104,19 @@
           "internalType": "uint256",
           "name": "",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "tradeRouteProfile",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
         }
       ],
       "stateMutability": "view",
