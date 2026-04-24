@@ -453,8 +453,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1776948539212,
-      "contentHash": "b4e4af07509a5e55e4d09d3a0ac5f4ac",
+      "lastModificationDate": 1776991352124,
+      "contentHash": "6abca20905d930daca70cf79c7221c98",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -487,6 +487,8 @@
       "imports": [
         "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
         "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/cryptography/ECDSA.sol",
+        "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol",
         "@openzeppelin/contracts/utils/math/Math.sol",
         "@openzeppelin/contracts/token/ERC20/IERC20.sol",
         "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
@@ -498,6 +500,7 @@
       ],
       "artifacts": [
         "IPhase1TreasuryRouter",
+        "IRouteAuthoritySource",
         "LaunchCampaign"
       ]
     },
@@ -919,7 +922,7 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\test\\FactoryCaller.sol": {
-      "lastModificationDate": 1776948539217,
+      "lastModificationDate": 1776986736911,
       "contentHash": "decf2a4f1584312f9063ed87035e0885",
       "sourceName": "contracts/test/FactoryCaller.sol",
       "solcConfig": {
@@ -961,8 +964,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1776948539212,
-      "contentHash": "47334a49314d169ab949c5715fc44ce2",
+      "lastModificationDate": 1776991288536,
+      "contentHash": "7b69f9ddb950842b734182543c864c9d",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -994,6 +997,8 @@
       },
       "imports": [
         "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/cryptography/ECDSA.sol",
+        "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol",
         "./LaunchCampaign.sol",
         "@openzeppelin/contracts/proxy/Clones.sol"
       ],
@@ -1454,8 +1459,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\RecruiterRewardsVault.sol": {
-      "lastModificationDate": 1776948539213,
-      "contentHash": "50e199fd348efc656b329261051655d6",
+      "lastModificationDate": 1776992085602,
+      "contentHash": "44fd7ff4205be3877a0633e863c1bb6f",
       "sourceName": "contracts/RecruiterRewardsVault.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1783,6 +1788,174 @@
         "Ownable",
         "SafeERC20",
         "UPVoteTreasury"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\cryptography\\MessageHashUtils.sol": {
+      "lastModificationDate": 1776948622340,
+      "contentHash": "260f3968eefa3bbd30520cff5384cd93",
+      "sourceName": "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "../Strings.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "MessageHashUtils"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\cryptography\\ECDSA.sol": {
+      "lastModificationDate": 1776948622148,
+      "contentHash": "81de029d56aa803972be03c5d277cb6c",
+      "sourceName": "@openzeppelin/contracts/utils/cryptography/ECDSA.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "ECDSA"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Strings.sol": {
+      "lastModificationDate": 1776948622397,
+      "contentHash": "d8f70caf0e0c77dc908176ed44812fb7",
+      "sourceName": "@openzeppelin/contracts/utils/Strings.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./math/Math.sol",
+        "./math/SafeCast.sol",
+        "./math/SignedMath.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Strings"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\math\\SignedMath.sol": {
+      "lastModificationDate": 1776948622385,
+      "contentHash": "ae3528afb8bdb0a7dcfba5b115ee8074",
+      "sourceName": "@openzeppelin/contracts/utils/math/SignedMath.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./SafeCast.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "SignedMath"
       ]
     }
   }

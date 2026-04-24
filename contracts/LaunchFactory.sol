@@ -2,11 +2,15 @@
 pragma solidity ^0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {LaunchCampaign} from "./LaunchCampaign.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
+    using ECDSA for bytes32;
+
     // Custom errors to reduce deployed bytecode size (BSC testnet enforces the 24KB limit).
     error RouterZero();
     error NameEmpty();
@@ -31,6 +35,9 @@ contract LaunchFactory is Ownable {
     error AlreadyLive();
     error FactoryLocked();
     error InvalidRouteProfile();
+    error RouteAuthorityZero();
+    error RouteAuthorizationExpired();
+    error InvalidRouteAuthorization();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -68,6 +75,13 @@ contract LaunchFactory is Ownable {
         uint256 initialBuyBnbWei; // optional: buy tokens for the creator using exact BNB in the create tx
     }
 
+    struct RouteAuthorization {
+        uint8 tradeRouteProfile;
+        uint8 finalizeRouteProfile;
+        uint64 deadline;
+        bytes signature;
+    }
+
     uint256 private constant MAX_BPS = 10_000;
     uint256 private constant MAX_CREATOR_INIT_BUY = 1 ether;
     uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
@@ -79,6 +93,7 @@ contract LaunchFactory is Ownable {
     uint256 public protocolFeeBps;
     uint8 public tradeRouteProfile;
     uint8 public finalizeRouteProfile;
+    address public routeAuthority;
 
     /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
     bool public live;
@@ -107,6 +122,7 @@ contract LaunchFactory is Ownable {
     event RouterUpdated(address indexed newRouter);
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
+    event RouteAuthorityUpdated(address indexed newAuthority);
     event LiveEnabled(uint64 at);
 
 
@@ -173,6 +189,24 @@ contract LaunchFactory is Ownable {
         payable
         returns (address campaignAddr, address tokenAddr)
     {
+        return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
+    }
+
+    function createCampaignAuthorized(CampaignRequest calldata req, RouteAuthorization calldata routeAuth)
+        external
+        payable
+        returns (address campaignAddr, address tokenAddr)
+    {
+        _verifyRouteAuthorization(msg.sender, routeAuth);
+        return _createCampaign(req, routeAuth.tradeRouteProfile, routeAuth.finalizeRouteProfile);
+    }
+
+    function _createCampaign(
+        CampaignRequest calldata req,
+        uint8 campaignTradeRouteProfile,
+        uint8 campaignFinalizeRouteProfile
+    ) internal returns (address campaignAddr, address tokenAddr)
+    {
         if (!live) revert NotLive();
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
@@ -209,8 +243,8 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this),
-            tradeRouteProfile: tradeRouteProfile,
-            finalizeRouteProfile: finalizeRouteProfile
+            tradeRouteProfile: campaignTradeRouteProfile,
+            finalizeRouteProfile: campaignFinalizeRouteProfile
         });
 
         address clone = Clones.clone(campaignImplementation);
@@ -295,8 +329,40 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         emit RouteProfilesUpdated(newTradeRouteProfile, newFinalizeRouteProfile);
     }
 
+    function setRouteAuthority(address newAuthority) external onlyOwner {
+        routeAuthority = newAuthority;
+        emit RouteAuthorityUpdated(newAuthority);
+    }
+
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
+    }
+
+    function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal view {
+        address authority = routeAuthority;
+        if (authority == address(0)) revert RouteAuthorityZero();
+        if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
+        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) {
+            revert InvalidRouteProfile();
+        }
+
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(
+                abi.encodePacked(
+                    "MWZ_CREATE_ROUTE_AUTH",
+                    block.chainid,
+                    address(this),
+                    creator,
+                    routeAuth.tradeRouteProfile,
+                    routeAuth.finalizeRouteProfile,
+                    routeAuth.deadline
+                )
+            )
+        );
+
+        if (digest.recover(routeAuth.signature) != authority) {
+            revert InvalidRouteAuthorization();
+        }
     }
 
     function getCampaign(uint256 id) external view returns (CampaignInfo memory) {

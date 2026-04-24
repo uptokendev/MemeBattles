@@ -24,17 +24,101 @@ import type {
 } from "../common";
 
 export interface RecruiterRewardsVaultInterface extends Interface {
-  getFunction(nameOrSignature: "admin" | "withdraw"): FunctionFragment;
+  getFunction(
+    nameOrSignature:
+      | "admin"
+      | "dailyPayoutCap"
+      | "dailySpent"
+      | "lastDay"
+      | "maxPayoutPerTx"
+      | "operator"
+      | "payout"
+      | "payoutsPaused"
+      | "setOperator"
+      | "setPayoutCaps"
+      | "setPayoutsPaused"
+      | "withdraw"
+  ): FunctionFragment;
 
-  getEvent(nameOrSignatureOrTopic: "Deposit" | "Withdraw"): EventFragment;
+  getEvent(
+    nameOrSignatureOrTopic:
+      | "Deposit"
+      | "OperatorUpdated"
+      | "Payout"
+      | "PayoutCapsUpdated"
+      | "PayoutsPaused"
+      | "Withdraw"
+  ): EventFragment;
 
   encodeFunctionData(functionFragment: "admin", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "dailyPayoutCap",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "dailySpent",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "lastDay", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "maxPayoutPerTx",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "operator", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "payout",
+    values: [AddressLike, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "payoutsPaused",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setOperator",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setPayoutCaps",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setPayoutsPaused",
+    values: [boolean]
+  ): string;
   encodeFunctionData(
     functionFragment: "withdraw",
     values: [AddressLike, BigNumberish]
   ): string;
 
   decodeFunctionResult(functionFragment: "admin", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "dailyPayoutCap",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "dailySpent", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "lastDay", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "maxPayoutPerTx",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "operator", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "payout", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "payoutsPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setOperator",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setPayoutCaps",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setPayoutsPaused",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "withdraw", data: BytesLike): Result;
 }
 
@@ -49,6 +133,59 @@ export namespace DepositEvent {
     from: string;
     amount: bigint;
     newBalance: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace OperatorUpdatedEvent {
+  export type InputTuple = [operator: AddressLike];
+  export type OutputTuple = [operator: string];
+  export interface OutputObject {
+    operator: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PayoutEvent {
+  export type InputTuple = [to: AddressLike, amount: BigNumberish];
+  export type OutputTuple = [to: string, amount: bigint];
+  export interface OutputObject {
+    to: string;
+    amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PayoutCapsUpdatedEvent {
+  export type InputTuple = [
+    maxPayoutPerTx: BigNumberish,
+    dailyPayoutCap: BigNumberish
+  ];
+  export type OutputTuple = [maxPayoutPerTx: bigint, dailyPayoutCap: bigint];
+  export interface OutputObject {
+    maxPayoutPerTx: bigint;
+    dailyPayoutCap: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PayoutsPausedEvent {
+  export type InputTuple = [paused: boolean];
+  export type OutputTuple = [paused: boolean];
+  export interface OutputObject {
+    paused: boolean;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -123,6 +260,42 @@ export interface RecruiterRewardsVault extends BaseContract {
 
   admin: TypedContractMethod<[], [string], "view">;
 
+  dailyPayoutCap: TypedContractMethod<[], [bigint], "view">;
+
+  dailySpent: TypedContractMethod<[], [bigint], "view">;
+
+  lastDay: TypedContractMethod<[], [bigint], "view">;
+
+  maxPayoutPerTx: TypedContractMethod<[], [bigint], "view">;
+
+  operator: TypedContractMethod<[], [string], "view">;
+
+  payout: TypedContractMethod<
+    [to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  payoutsPaused: TypedContractMethod<[], [boolean], "view">;
+
+  setOperator: TypedContractMethod<
+    [newOperator: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  setPayoutCaps: TypedContractMethod<
+    [newMaxPayoutPerTx: BigNumberish, newDailyPayoutCap: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setPayoutsPaused: TypedContractMethod<
+    [paused: boolean],
+    [void],
+    "nonpayable"
+  >;
+
   withdraw: TypedContractMethod<
     [to: AddressLike, amount: BigNumberish],
     [void],
@@ -137,6 +310,44 @@ export interface RecruiterRewardsVault extends BaseContract {
     nameOrSignature: "admin"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "dailyPayoutCap"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "dailySpent"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "lastDay"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "maxPayoutPerTx"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "operator"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "payout"
+  ): TypedContractMethod<
+    [to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "payoutsPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "setOperator"
+  ): TypedContractMethod<[newOperator: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setPayoutCaps"
+  ): TypedContractMethod<
+    [newMaxPayoutPerTx: BigNumberish, newDailyPayoutCap: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setPayoutsPaused"
+  ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "withdraw"
   ): TypedContractMethod<
     [to: AddressLike, amount: BigNumberish],
@@ -150,6 +361,34 @@ export interface RecruiterRewardsVault extends BaseContract {
     DepositEvent.InputTuple,
     DepositEvent.OutputTuple,
     DepositEvent.OutputObject
+  >;
+  getEvent(
+    key: "OperatorUpdated"
+  ): TypedContractEvent<
+    OperatorUpdatedEvent.InputTuple,
+    OperatorUpdatedEvent.OutputTuple,
+    OperatorUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "Payout"
+  ): TypedContractEvent<
+    PayoutEvent.InputTuple,
+    PayoutEvent.OutputTuple,
+    PayoutEvent.OutputObject
+  >;
+  getEvent(
+    key: "PayoutCapsUpdated"
+  ): TypedContractEvent<
+    PayoutCapsUpdatedEvent.InputTuple,
+    PayoutCapsUpdatedEvent.OutputTuple,
+    PayoutCapsUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "PayoutsPaused"
+  ): TypedContractEvent<
+    PayoutsPausedEvent.InputTuple,
+    PayoutsPausedEvent.OutputTuple,
+    PayoutsPausedEvent.OutputObject
   >;
   getEvent(
     key: "Withdraw"
@@ -169,6 +408,50 @@ export interface RecruiterRewardsVault extends BaseContract {
       DepositEvent.InputTuple,
       DepositEvent.OutputTuple,
       DepositEvent.OutputObject
+    >;
+
+    "OperatorUpdated(address)": TypedContractEvent<
+      OperatorUpdatedEvent.InputTuple,
+      OperatorUpdatedEvent.OutputTuple,
+      OperatorUpdatedEvent.OutputObject
+    >;
+    OperatorUpdated: TypedContractEvent<
+      OperatorUpdatedEvent.InputTuple,
+      OperatorUpdatedEvent.OutputTuple,
+      OperatorUpdatedEvent.OutputObject
+    >;
+
+    "Payout(address,uint256)": TypedContractEvent<
+      PayoutEvent.InputTuple,
+      PayoutEvent.OutputTuple,
+      PayoutEvent.OutputObject
+    >;
+    Payout: TypedContractEvent<
+      PayoutEvent.InputTuple,
+      PayoutEvent.OutputTuple,
+      PayoutEvent.OutputObject
+    >;
+
+    "PayoutCapsUpdated(uint256,uint256)": TypedContractEvent<
+      PayoutCapsUpdatedEvent.InputTuple,
+      PayoutCapsUpdatedEvent.OutputTuple,
+      PayoutCapsUpdatedEvent.OutputObject
+    >;
+    PayoutCapsUpdated: TypedContractEvent<
+      PayoutCapsUpdatedEvent.InputTuple,
+      PayoutCapsUpdatedEvent.OutputTuple,
+      PayoutCapsUpdatedEvent.OutputObject
+    >;
+
+    "PayoutsPaused(bool)": TypedContractEvent<
+      PayoutsPausedEvent.InputTuple,
+      PayoutsPausedEvent.OutputTuple,
+      PayoutsPausedEvent.OutputObject
+    >;
+    PayoutsPaused: TypedContractEvent<
+      PayoutsPausedEvent.InputTuple,
+      PayoutsPausedEvent.OutputTuple,
+      PayoutsPausedEvent.OutputObject
     >;
 
     "Withdraw(address,uint256,uint256)": TypedContractEvent<

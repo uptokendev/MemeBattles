@@ -5,6 +5,7 @@ import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCallback, useMemo, useRef } from "react";
 import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
+import { fetchCampaignCreateAuthorization, fetchCampaignTradeAuthorization } from "@/lib/recruiterApi";
 import { getReadProvider } from "@/lib/readProvider";
 
 // Public endpoints can be very sensitive to getLogs volume.
@@ -596,8 +597,11 @@ try {
       })();
 
       const valueToSend = initialBuyBnbWei;
+      if (!wallet.account) throw new Error("Wallet not connected");
+      const authResponse = await fetchCampaignCreateAuthorization(wallet.account, wallet.chainId);
+      const auth = authResponse.authorization;
 
-      const tx = await writer.createCampaign(
+      const tx = await writer.createCampaignAuthorized(
         {
         name: params.name,
         symbol: params.symbol,
@@ -611,6 +615,12 @@ try {
         lpReceiver: params.lpReceiver || ethers.ZeroAddress,
         initialBuyBnbWei: initialBuyBnbWei,
         },
+        {
+          tradeRouteProfile: auth.tradeRouteProfileId,
+          finalizeRouteProfile: auth.finalizeRouteProfileId,
+          deadline: Math.floor(new Date(auth.validUntil).getTime() / 1000),
+          signature: auth.signature,
+        },
         await legacyGasOverrides({ value: valueToSend })
       );
 
@@ -618,35 +628,55 @@ try {
       emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash });
       return receipt;
     },
-    [getFactoryWrite, getFactoryRead, activeChainId]
+    [getFactoryWrite, getFactoryRead, activeChainId, wallet.account, wallet.chainId]
   );
 
   const buyTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
 
       if (!signer) throw new Error("Wallet not connected");
+      if (!wallet.account) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
+      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, wallet.chainId);
+      const auth = authResponse.authorization;
 
-      const tx = await campaign.buyExactTokens(amountWei, maxCostWei, await legacyGasOverrides({ value: maxCostWei }));
+      const tx = await campaign.buyExactTokensAuthorized(
+        amountWei,
+        maxCostWei,
+        auth.routeProfileId,
+        Math.floor(new Date(auth.validUntil).getTime() / 1000),
+        auth.signature,
+        await legacyGasOverrides({ value: maxCostWei })
+      );
       const receipt = await tx.wait();
       emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
       return receipt;
     },
-    [signer, activeChainId]
+    [signer, activeChainId, wallet.account, wallet.chainId]
   );
 
   const sellTokens = useCallback(
     async (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => {
 
       if (!signer) throw new Error("Wallet not connected");
+      if (!wallet.account) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
+      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, wallet.chainId);
+      const auth = authResponse.authorization;
 
-      const tx = await campaign.sellExactTokens(amountWei, minAmountWei, await legacyGasOverrides());
+      const tx = await campaign.sellExactTokensAuthorized(
+        amountWei,
+        minAmountWei,
+        auth.routeProfileId,
+        Math.floor(new Date(auth.validUntil).getTime() / 1000),
+        auth.signature,
+        await legacyGasOverrides()
+      );
       const receipt = await tx.wait();
       emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
       return receipt;
     },
-    [signer, activeChainId]
+    [signer, activeChainId, wallet.account, wallet.chainId]
   );
 
   const finalizeCampaign = useCallback(

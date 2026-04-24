@@ -58,6 +58,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Create2__factory>;
     getContractFactory(
+      name: "ECDSA",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ECDSA__factory>;
+    getContractFactory(
       name: "MerkleProof",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MerkleProof__factory>;
@@ -78,6 +82,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
     getContractFactory(
+      name: "Strings",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.Strings__factory>;
+    getContractFactory(
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.CommunityRewardsVault__factory>;
@@ -93,6 +101,10 @@ declare module "hardhat/types/runtime" {
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IPhase1TreasuryRouter__factory>;
+    getContractFactory(
+      name: "IRouteAuthoritySource",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IRouteAuthoritySource__factory>;
     getContractFactory(
       name: "LaunchCampaign",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -242,6 +254,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.Create2>;
     getContractAt(
+      name: "ECDSA",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ECDSA>;
+    getContractAt(
       name: "MerkleProof",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -267,6 +284,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ReentrancyGuard>;
     getContractAt(
+      name: "Strings",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.Strings>;
+    getContractAt(
       name: "CommunityRewardsVault",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -286,6 +308,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    getContractAt(
+      name: "IRouteAuthoritySource",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IRouteAuthoritySource>;
     getContractAt(
       name: "LaunchCampaign",
       address: string | ethers.Addressable,
@@ -447,6 +474,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Create2>;
     deployContract(
+      name: "ECDSA",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ECDSA>;
+    deployContract(
       name: "MerkleProof",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MerkleProof>;
@@ -467,6 +498,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "Strings",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Strings>;
+    deployContract(
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
@@ -482,6 +517,10 @@ declare module "hardhat/types/runtime" {
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    deployContract(
+      name: "IRouteAuthoritySource",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRouteAuthoritySource>;
     deployContract(
       name: "LaunchCampaign",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -631,6 +670,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Create2>;
     deployContract(
+      name: "ECDSA",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ECDSA>;
+    deployContract(
       name: "MerkleProof",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -656,6 +700,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
     deployContract(
+      name: "Strings",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Strings>;
+    deployContract(
       name: "CommunityRewardsVault",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -675,6 +724,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    deployContract(
+      name: "IRouteAuthoritySource",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRouteAuthoritySource>;
     deployContract(
       name: "LaunchCampaign",
       args: any[],

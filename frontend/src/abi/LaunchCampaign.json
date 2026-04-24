@@ -6,6 +6,33 @@
       "type": "constructor"
     },
     {
+      "inputs": [],
+      "name": "ECDSAInvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "length",
+          "type": "uint256"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureLength",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "s",
+          "type": "bytes32"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureS",
+      "type": "error"
+    },
+    {
       "inputs": [
         {
           "internalType": "address",
@@ -227,6 +254,45 @@
     {
       "inputs": [
         {
+          "internalType": "uint256",
+          "name": "minTokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "buyExactBnbAuthorized",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokensOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "totalSpent",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "address",
           "name": "recipient",
           "type": "address"
@@ -267,6 +333,45 @@
         }
       ],
       "name": "buyExactTokens",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "cost",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxCost",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "buyExactTokensAuthorized",
       "outputs": [
         {
           "internalType": "uint256",
@@ -890,6 +995,45 @@
         }
       ],
       "name": "sellExactTokens",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "payout",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "minPayout",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint8",
+          "name": "routeProfile",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint64",
+          "name": "routeDeadline",
+          "type": "uint64"
+        },
+        {
+          "internalType": "bytes",
+          "name": "routeSignature",
+          "type": "bytes"
+        }
+      ],
+      "name": "sellExactTokensAuthorized",
       "outputs": [
         {
           "internalType": "uint256",

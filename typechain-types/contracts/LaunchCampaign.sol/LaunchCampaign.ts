@@ -106,8 +106,10 @@ export interface LaunchCampaignInterface extends Interface {
     nameOrSignature:
       | "basePrice"
       | "buyExactBnb"
+      | "buyExactBnbAuthorized"
       | "buyExactBnbFor"
       | "buyExactTokens"
+      | "buyExactTokensAuthorized"
       | "buyExactTokensFor"
       | "buyersCount"
       | "claimPendingNative"
@@ -141,6 +143,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "renounceOwnership"
       | "router"
       | "sellExactTokens"
+      | "sellExactTokensAuthorized"
       | "sold"
       | "token"
       | "totalBuyVolumeWei"
@@ -168,12 +171,20 @@ export interface LaunchCampaignInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "buyExactBnbAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BytesLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "buyExactBnbFor",
     values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "buyExactTokens",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "buyExactTokensAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(
     functionFragment: "buyExactTokensFor",
@@ -289,6 +300,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "sellExactTokens",
     values: [BigNumberish, BigNumberish]
   ): string;
+  encodeFunctionData(
+    functionFragment: "sellExactTokensAuthorized",
+    values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
+  ): string;
   encodeFunctionData(functionFragment: "sold", values?: undefined): string;
   encodeFunctionData(functionFragment: "token", values?: undefined): string;
   encodeFunctionData(
@@ -320,11 +335,19 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "buyExactBnbAuthorized",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "buyExactBnbFor",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "buyExactTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "buyExactTokensAuthorized",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -424,6 +447,10 @@ export interface LaunchCampaignInterface extends Interface {
   decodeFunctionResult(functionFragment: "router", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "sellExactTokens",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "sellExactTokensAuthorized",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "sold", data: BytesLike): Result;
@@ -606,6 +633,17 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
 
+  buyExactBnbAuthorized: TypedContractMethod<
+    [
+      minTokensOut: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+
   buyExactBnbFor: TypedContractMethod<
     [recipient: AddressLike, minTokensOut: BigNumberish],
     [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
@@ -614,6 +652,18 @@ export interface LaunchCampaign extends BaseContract {
 
   buyExactTokens: TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
+    [bigint],
+    "payable"
+  >;
+
+  buyExactTokensAuthorized: TypedContractMethod<
+    [
+      amountOut: BigNumberish,
+      maxCost: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
     [bigint],
     "payable"
   >;
@@ -718,6 +768,18 @@ export interface LaunchCampaign extends BaseContract {
     "nonpayable"
   >;
 
+  sellExactTokensAuthorized: TypedContractMethod<
+    [
+      amountIn: BigNumberish,
+      minPayout: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [bigint],
+    "nonpayable"
+  >;
+
   sold: TypedContractMethod<[], [bigint], "view">;
 
   token: TypedContractMethod<[], [string], "view">;
@@ -755,6 +817,18 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
   getFunction(
+    nameOrSignature: "buyExactBnbAuthorized"
+  ): TypedContractMethod<
+    [
+      minTokensOut: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
+    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
+    "payable"
+  >;
+  getFunction(
     nameOrSignature: "buyExactBnbFor"
   ): TypedContractMethod<
     [recipient: AddressLike, minTokensOut: BigNumberish],
@@ -765,6 +839,19 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "buyExactTokens"
   ): TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
+    [bigint],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "buyExactTokensAuthorized"
+  ): TypedContractMethod<
+    [
+      amountOut: BigNumberish,
+      maxCost: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
     [bigint],
     "payable"
   >;
@@ -890,6 +977,19 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "sellExactTokens"
   ): TypedContractMethod<
     [amountIn: BigNumberish, minPayout: BigNumberish],
+    [bigint],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "sellExactTokensAuthorized"
+  ): TypedContractMethod<
+    [
+      amountIn: BigNumberish,
+      minPayout: BigNumberish,
+      routeProfile: BigNumberish,
+      routeDeadline: BigNumberish,
+      routeSignature: BytesLike
+    ],
     [bigint],
     "nonpayable"
   >;

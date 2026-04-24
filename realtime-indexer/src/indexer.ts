@@ -1,10 +1,12 @@
 import { ethers } from "ethers";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
-import { LAUNCH_FACTORY_ABI, LAUNCH_CAMPAIGN_ABI, UP_VOTE_TREASURY_ABI } from "./abis.js";
+import { LAUNCH_FACTORY_ABI, LAUNCH_CAMPAIGN_ABI, TREASURY_ROUTER_ABI, UP_VOTE_TREASURY_ABI } from "./abis.js";
 import { TIMEFRAMES, bucketStart, TF } from "./timeframes.js";
 import { publishTrade, publishCandle, publishStats, publishLeague } from "./ably.js";
 import { createLeagueFeedPublisher } from "./leagueFeed.js";
+import { recordCampaignCreatedActivity, recordTradeActivity } from "./rewards/attribution.js";
+import { upsertRewardEvent } from "./rewards/ingest.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -293,6 +295,12 @@ async function upsertCampaign(
   createdBlock: number,
   createdAtChain: Date | null = null
 ) {
+  const normalizedCampaign = campaign.toLowerCase();
+  const existed = await pool.query(
+    `select 1 from public.campaigns where chain_id=$1 and campaign_address=$2 limit 1`,
+    [chainId, normalizedCampaign]
+  );
+
   // NOTE: campaigns lives in the *indexer* DB.
   // It is used for discovery + scanning and is separate from user-profile tables.
   // Current schema expects creator_address to be NOT NULL.
@@ -326,7 +334,7 @@ async function upsertCampaign(
     [
       chainId,
       (factoryAddress ? factoryAddress.toLowerCase() : null),
-      campaign.toLowerCase(),
+      normalizedCampaign,
       token.toLowerCase(),
       creator.toLowerCase(),
       name,
@@ -335,6 +343,14 @@ async function upsertCampaign(
       createdAtChain
     ]
   );
+
+  if (!existed.rowCount) {
+    try {
+      await recordCampaignCreatedActivity(creator, createdAtChain ?? new Date());
+    } catch (e) {
+      console.warn("[phase2-attribution] campaign activity mark failed", { chainId, campaign: normalizedCampaign, creator }, e);
+    }
+  }
 
   cacheCampaignInfo(chainId, campaign, {
     tokenAddress: token ? token.toLowerCase() : null,
@@ -406,7 +422,7 @@ async function insertTrade(row: {
   const bnbAmount = toDec18(row.bnbRaw);
   const priceBnb = tokenAmount > 0 ? bnbAmount / tokenAmount : null;
 
-  await pool.query(
+  const inserted = await pool.query(
     `insert into public.curve_trades(
         chain_id,campaign_address,tx_hash,log_index,block_number,block_time,
         side,wallet,token_amount_raw,bnb_amount_raw,token_amount,bnb_amount,price_bnb
@@ -428,6 +444,14 @@ async function insertTrade(row: {
       priceBnb
     ]
   );
+
+  if ((inserted.rowCount ?? 0) > 0) {
+    try {
+      await recordTradeActivity(row.wallet, row.blockTime);
+    } catch (e) {
+      console.warn("[phase2-attribution] trade activity mark failed", { chainId: row.chainId, campaign: row.campaign, wallet: row.wallet }, e);
+    }
+  }
 
   await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
 
@@ -888,6 +912,94 @@ async function scanVoteTreasuryRange(
 // on-chain campaign registry (campaignsCount/getCampaign) and upsert any missing
 // rows into public.campaigns.
 //
+async function resolveTreasuryRouterAddress(
+  provider: ethers.JsonRpcProvider,
+  chain: ChainCfg
+): Promise<string | null> {
+  if (!chain.factoryAddress) return null;
+
+  try {
+    const factory = new ethers.Contract(chain.factoryAddress, LAUNCH_FACTORY_ABI, provider);
+    const router = String(await factory.router());
+    return /^0x[a-fA-F0-9]{40}$/.test(router) ? router.toLowerCase() : null;
+  } catch (e) {
+    console.warn("resolveTreasuryRouterAddress failed", { chainId: chain.chainId }, e);
+    return null;
+  }
+}
+
+async function scanRouterRange(
+  provider: ethers.JsonRpcProvider,
+  chain: ChainCfg,
+  routerAddress: string,
+  fromBlock: number,
+  toBlock: number
+) {
+  const iface = new ethers.Interface(TREASURY_ROUTER_ABI);
+  const routeFrag = iface.getEvent("RouteExecuted");
+  if (!routeFrag) throw new Error("Event RouteExecuted not found in TREASURY_ROUTER_ABI");
+  const routeTopic = routeFrag.topicHash;
+
+  const cursor = "rewards-router";
+  const step = ENV.LOG_CHUNK_SIZE;
+
+  for (let start = fromBlock; start <= toBlock; start += step) {
+    const end = Math.min(toBlock, start + step - 1);
+
+    const logs = await getLogsSafe(provider, {
+      address: routerAddress,
+      fromBlock: start,
+      toBlock: end,
+      topics: [routeTopic]
+    });
+
+    if (logs.length) {
+      const blockNums = Array.from(new Set(logs.map((l) => l.blockNumber)));
+      const blockTimes = new Map<number, Date>();
+      for (const bn of blockNums) {
+        const b = await provider.getBlock(bn);
+        blockTimes.set(bn, new Date(Number(b?.timestamp || 0) * 1000));
+      }
+
+      logs.sort((a, b) => a.blockNumber - b.blockNumber || ((a.index ?? 0) - (b.index ?? 0)));
+
+      for (const log of logs) {
+        const parsed = iface.parseLog(log);
+        if (!parsed) continue;
+
+        const kind = Number((parsed.args as any).kind);
+        const profile = Number((parsed.args as any).profile);
+        const amountIn = (parsed.args as any).amountIn as bigint;
+        const leagueAmount = (parsed.args as any).leagueAmount as bigint;
+        const recruiterAmount = (parsed.args as any).recruiterAmount as bigint;
+        const airdropAmount = (parsed.args as any).airdropAmount as bigint;
+        const squadAmount = (parsed.args as any).squadAmount as bigint;
+        const protocolAmount = (parsed.args as any).protocolAmount as bigint;
+
+        await upsertRewardEvent({
+          chainId: chain.chainId,
+          txHash: log.transactionHash,
+          logIndex: log.index ?? 0,
+          blockNumber: log.blockNumber,
+          occurredAt: blockTimes.get(log.blockNumber) || new Date(0),
+          routeKind: kind === 1 ? "finalize" : "trade",
+          routeProfile: profile === 2 ? "og_linked" : profile === 1 ? "standard_unlinked" : "standard_linked",
+          leagueAmount,
+          recruiterAmount,
+          airdropAmount,
+          squadAmount,
+          protocolAmount,
+          rawAmount: amountIn,
+          sourceContract: routerAddress,
+          sourceEvent: "RouteExecuted",
+        });
+      }
+    }
+
+    await setStateMax(chain.chainId, cursor, end + 1);
+  }
+}
+
 async function syncFactoryCampaignsByCall(
   provider: ethers.JsonRpcProvider,
   chain: ChainCfg
@@ -1327,6 +1439,24 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
       } catch (e) {
         console.error("scanCampaign error (all RPCs failed)", { chainId: chain.chainId, campaign }, e);
       }
+    }
+
+    // ---------------- Reward routing scan ----------------
+    try {
+      const routerAddress = await withProviderRetry((p) => resolveTreasuryRouterAddress(p, chain));
+      if (routerAddress) {
+        const cursor = "rewards-router";
+        const state = await getState(chain.chainId, cursor);
+        const baselineStart = computeStartBlock(chain, target, state);
+        const windowStart = Math.max(0, target - opts.lookbackBlocks);
+        const from = opts.mode === "repair"
+          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+          : Math.max(baselineStart, windowStart);
+
+        await withProviderRetry((p) => scanRouterRange(p, chain, routerAddress, from, target));
+      }
+    } catch (e) {
+      console.error("scanRewardRoutes error (all RPCs failed)", { chainId: chain.chainId }, e);
     }
   }
 }

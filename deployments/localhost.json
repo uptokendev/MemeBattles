@@ -1,0 +1,44 @@
+{
+  "network": "localhost",
+  "chainId": 31337,
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "router": "0xD99D1c33F9fC3444f8101754aBC46c52416550D1",
+  "treasurySafe": "0x13ad79765e14927df2c554d9662bbe539e89c8e8",
+  "upgradeDelaySeconds": 172800,
+  "protocolFeeBps": "200",
+  "leaguePayoutOperator": "0x0000000000000000000000000000000000000000",
+  "leagueRootPoster": "0x0000000000000000000000000000000000000000",
+  "leaguePayoutMaxPerTx": null,
+  "leaguePayoutDailyCap": null,
+  "leagueClaimMaxPerTx": null,
+  "leagueClaimMaxEpochTotal": null,
+  "enableLeaguePayouts": false,
+  "enableLeagueClaims": false,
+  "canAdminConfigure": false,
+  "contracts": {
+    "LeagueTreasury": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "TreasuryVaultV2": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "TreasuryRouter": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "RecruiterRewardsVault": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+    "CommunityRewardsVault": "0x9A676e781A523b5d0C0e43731313A708CB607508",
+    "ProtocolRevenueVault": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
+    "LaunchFactory": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
+    "UPVoteTreasury": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+  },
+  "routing": {
+    "activeLeagueVault": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "recruiterRewardsVault": null,
+    "communityRewardsVault": null,
+    "protocolRevenueVault": null,
+    "factoryFeeRecipient": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "factoryTradeRouteProfile": 1,
+    "factoryFinalizeRouteProfile": 1,
+    "unifiedRouterModeActive": true
+  },
+  "postDeployActions": [
+    "TreasuryRouter.setRecruiterRewardsVault(0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82)",
+    "TreasuryRouter.setCommunityRewardsVault(0x9A676e781A523b5d0C0e43731313A708CB607508)",
+    "TreasuryRouter.setProtocolRevenueVault(0x0B306BF915C4d645ff596e518fAf3F9669b97016)",
+    "CommunityRewardsVault.setRouter(0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0)"
+  ]
+}

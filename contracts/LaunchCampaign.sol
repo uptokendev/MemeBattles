@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -14,9 +16,14 @@ interface IPhase1TreasuryRouter {
     function route(uint8 kind, uint8 profile) external payable;
 }
 
+interface IRouteAuthoritySource {
+    function routeAuthority() external view returns (address);
+}
+
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
 
     struct InitParams {
         string name;
@@ -222,10 +229,19 @@ receive() external payable {}
     }
 
     function _routeFeeOrSendLegacy(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount) internal {
+        _routeFeeOrSendLegacyWithProfile(feeAmount, routeKind, feeBaseAmount, _routeProfileForKind(routeKind));
+    }
+
+    function _routeFeeOrSendLegacyWithProfile(
+        uint256 feeAmount,
+        uint8 routeKind,
+        uint256 feeBaseAmount,
+        uint8 routeProfile
+    ) internal {
         if (feeAmount == 0) return;
 
         if (_useUnifiedRewardRouter()) {
-            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, _routeProfileForKind(routeKind));
+            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile);
             return;
         }
 
@@ -249,6 +265,33 @@ receive() external payable {}
             profile == ROUTE_PROFILE_STANDARD_LINKED ||
             profile == ROUTE_PROFILE_STANDARD_UNLINKED ||
             profile == ROUTE_PROFILE_OG_LINKED;
+    }
+
+    function _verifyTradeRouteAuthorization(
+        address actor,
+        uint8 routeProfile,
+        uint64 deadline,
+        bytes calldata signature
+    ) internal view {
+        require(deadline >= block.timestamp, "route auth expired");
+        require(_isValidRouteProfile(routeProfile), "trade route profile");
+        address authority = IRouteAuthoritySource(factory).routeAuthority();
+        require(authority != address(0), "route auth unavailable");
+
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(
+                abi.encodePacked(
+                    "MWZ_ROUTE_TRADE_AUTH",
+                    block.chainid,
+                    address(this),
+                    actor,
+                    routeProfile,
+                    deadline
+                )
+            )
+        );
+
+        require(digest.recover(signature) == authority, "bad route auth");
     }
 
     function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
@@ -359,6 +402,48 @@ if (!hasBought[msg.sender]) {
         return total;
     }
 
+    function buyExactTokensAuthorized(
+        uint256 amountOut,
+        uint256 maxCost,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external payable nonReentrant returns (uint256 cost) {
+        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        require(!launched, "campaign launched");
+        require(amountOut > 0, "zero amount");
+        require(sold + amountOut <= curveSupply, "sold out");
+        uint256 costNoFee = _quoteBuyNoFee(amountOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total <= maxCost, "slippage");
+        require(msg.value >= total, "insufficient value");
+
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[msg.sender]) {
+            hasBought[msg.sender] = true;
+            buyersCount += 1;
+        }
+
+        sold += amountOut;
+        tokenInterface.safeTransfer(msg.sender, amountOut);
+
+        if (fee > 0) {
+            _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, costNoFee, routeProfile);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
+            _finalize(0, 0, msg.sender);
+        }
+
+        emit TokensPurchased(msg.sender, amountOut, total);
+        return total;
+    }
+
     /// @notice Buy as many tokens as possible for the exact msg.value provided (incl. protocol fee).
     /// @param minTokensOut Minimum acceptable tokens (slippage protection).
     function buyExactBnb(uint256 minTokensOut)
@@ -397,6 +482,49 @@ if (!hasBought[msg.sender]) {
         }
 
         // Auto-finalize (graduate) immediately once eligible.
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
+            _finalize(0, 0, msg.sender);
+        }
+
+        emit TokensPurchased(msg.sender, tokensOut, total);
+        return (tokensOut, total);
+    }
+
+    function buyExactBnbAuthorized(
+        uint256 minTokensOut,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external payable nonReentrant returns (uint256 tokensOut, uint256 totalSpent) {
+        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        require(!launched, "campaign launched");
+        (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
+        require(tokensOut > 0, "zero amount");
+        require(tokensOut >= minTokensOut, "slippage");
+        require(sold + tokensOut <= curveSupply, "sold out");
+
+        uint256 costNoFee = _quoteBuyNoFee(tokensOut);
+        uint256 fee = _fee(costNoFee);
+        uint256 total = costNoFee + fee;
+        require(total == totalSpent, "quote mismatch");
+
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[msg.sender]) {
+            hasBought[msg.sender] = true;
+            buyersCount += 1;
+        }
+
+        sold += tokensOut;
+        tokenInterface.safeTransfer(msg.sender, tokensOut);
+
+        if (fee > 0) {
+            _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, costNoFee, routeProfile);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
         if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
             _finalize(0, 0, msg.sender);
         }
@@ -524,6 +652,37 @@ if (!hasBought[msg.sender]) {
         _sendNative(msg.sender, payout);
 
         // Phase 2 counters (volume excludes protocol fee)
+        totalSellVolumeWei += gross;
+
+        emit TokensSold(msg.sender, amountIn, payout);
+        return payout;
+    }
+
+    function sellExactTokensAuthorized(
+        uint256 amountIn,
+        uint256 minPayout,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external nonReentrant returns (uint256 payout) {
+        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        require(!launched, "campaign launched");
+        require(amountIn > 0, "zero amount");
+        require(amountIn <= sold, "exceeds sold");
+        uint256 gross = _quoteSellNoFee(amountIn);
+        require(gross <= _availableNativeBalance(), "insolvent");
+        uint256 fee = _fee(gross);
+        payout = gross - fee; // net to seller
+        require(payout >= minPayout, "slippage");
+
+        sold -= amountIn;
+        tokenInterface.safeTransferFrom(msg.sender, address(this), amountIn);
+
+        if (fee > 0) {
+            _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, gross, routeProfile);
+        }
+        _sendNative(msg.sender, payout);
+
         totalSellVolumeWei += gross;
 
         emit TokensSold(msg.sender, amountIn, payout);

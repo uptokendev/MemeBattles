@@ -32,6 +32,7 @@ async function deployPhase1RoutingFixture() {
   const Factory = await ethers.getContractFactory("LaunchFactory");
   const factory = await Factory.deploy(await dexRouter.getAddress(), await treasuryRouter.getAddress());
   await factory.connect(owner).setFeeRecipient(await treasuryRouter.getAddress());
+  await factory.connect(owner).setRouteAuthority(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
@@ -56,6 +57,28 @@ async function deployPhase1RoutingFixture() {
     communityVault,
     factory,
   };
+}
+
+async function signTradeRouteAuthorization(params: {
+  signer: any;
+  campaignAddress: string;
+  actor: string;
+  routeProfile: number;
+  deadline: bigint;
+  chainId: bigint;
+}) {
+  const digest = ethers.solidityPackedKeccak256(
+    ["string", "uint256", "address", "address", "uint8", "uint64"],
+    [
+      "MWZ_ROUTE_TRADE_AUTH",
+      params.chainId,
+      params.campaignAddress,
+      params.actor,
+      params.routeProfile,
+      params.deadline,
+    ]
+  );
+  return params.signer.signMessage(ethers.getBytes(digest));
 }
 
 async function createCampaignViaPhase1RouterFixture(tradeRouteProfile = 1, finalizeRouteProfile = 1) {
@@ -311,6 +334,48 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await getBalance(await recruiterVault.getAddress())) - recruiterBeforeFinalize).to.equal(expectedFinalize.recruiter);
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeFinalize).to.equal(expectedFinalize.protocol);
     expect((await communityVault.squadPoolBalance()) - squadBeforeFinalize).to.equal(expectedFinalize.squad);
+  });
+
+  it("routes authorized trade fees per wallet without changing the campaign default profile", async () => {
+    const { campaign, alice, owner, treasuryRouter, recruiterVault, protocolVault, communityVault } =
+      await loadFixture(createCampaignViaPhase1RouterFixture);
+
+    const amountOut = ethers.parseEther("10");
+    const buyTotal = await campaign.quoteBuyExactTokens(amountOut);
+    const base = await campaign.basePrice();
+    const slope = await campaign.priceSlope();
+    const feeBps = await campaign.protocolFeeBps();
+    const sold0 = await campaign.sold();
+    const { fee } = quoteBuyExactTokens(
+      BigInt(sold0),
+      BigInt(amountOut),
+      BigInt(base),
+      BigInt(slope),
+      BigInt(feeBps)
+    );
+
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
+    const signature = await signTradeRouteAuthorization({
+      signer: owner,
+      campaignAddress: await campaign.getAddress(),
+      actor: await alice.getAddress(),
+      routeProfile: 0,
+      deadline,
+      chainId,
+    });
+    const expectedTrade = await treasuryRouter.previewRoute(fee, 0, 0);
+
+    const recruiterBeforeTrade = await getBalance(await recruiterVault.getAddress());
+    const protocolBeforeTrade = await getBalance(await protocolVault.getAddress());
+    const squadBeforeTrade = await communityVault.squadPoolBalance();
+
+    await campaign.connect(alice).buyExactTokensAuthorized(amountOut, buyTotal, 0, deadline, signature, { value: buyTotal });
+
+    expect((await getBalance(await recruiterVault.getAddress())) - recruiterBeforeTrade).to.equal(expectedTrade.recruiter);
+    expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeTrade).to.equal(expectedTrade.protocol);
+    expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
+    expect(await campaign.tradeRouteProfile()).to.equal(1n);
   });
 
 });

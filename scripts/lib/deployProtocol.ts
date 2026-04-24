@@ -98,8 +98,13 @@ export async function deployProtocol() {
   const claimMaxEpochTotal = bigintEnv("LEAGUE_CLAIM_MAX_EPOCH_TOTAL");
   const enableLeaguePayouts = boolEnv("ENABLE_LEAGUE_PAYOUTS", false);
   const enableLeagueClaims = boolEnv("ENABLE_LEAGUE_CLAIMS", false);
+  const recruiterPayoutOperator = String(process.env.RECRUITER_PAYOUT_OPERATOR ?? ethers.ZeroAddress).trim();
+  const recruiterPayoutMaxPerTx = bigintEnv("RECRUITER_PAYOUT_MAX_PER_TX");
+  const recruiterPayoutDailyCap = bigintEnv("RECRUITER_PAYOUT_DAILY_CAP");
+  const enableRecruiterPayouts = boolEnv("ENABLE_RECRUITER_PAYOUTS", false);
   const tradeRouteProfile = routeProfileEnv("PHASE1_TRADE_ROUTE_PROFILE", 1);
   const finalizeRouteProfile = routeProfileEnv("PHASE1_FINALIZE_ROUTE_PROFILE", 1);
+  const routeAuthority = String(process.env.ROUTE_AUTHORITY_ADDRESS ?? "").trim();
 
   console.log(`Network: ${network.name}`);
   console.log(`Chain ID: ${net.chainId.toString()}`);
@@ -116,11 +121,17 @@ export async function deployProtocol() {
   console.log("League claim max epoch total:", claimMaxEpochTotal?.toString() ?? "unset");
   console.log("Enable league payouts:", enableLeaguePayouts);
   console.log("Enable league claims:", enableLeagueClaims);
+  console.log("Recruiter payout operator:", recruiterPayoutOperator);
+  console.log("Recruiter payout max/tx:", recruiterPayoutMaxPerTx?.toString() ?? "unset");
+  console.log("Recruiter payout daily cap:", recruiterPayoutDailyCap?.toString() ?? "unset");
+  console.log("Enable recruiter payouts:", enableRecruiterPayouts);
   console.log("Factory trade route profile:", tradeRouteProfile);
   console.log("Factory finalize route profile:", finalizeRouteProfile);
+  console.log("Route authority:", routeAuthority || "unset");
 
   const canAdminConfigure = treasurySafe.toLowerCase() === deployerAddress.toLowerCase();
   console.log("Can configure admin-owned routing immediately:", canAdminConfigure);
+  const postDeployActions: string[] = [];
 
   const Vault = await ethers.getContractFactory("TreasuryVaultV2");
   const vault = await Vault.deploy(treasurySafe, operator, rootPoster);
@@ -164,6 +175,36 @@ export async function deployProtocol() {
   const recruiterVaultAddress = await recruiterVault.getAddress();
   console.log("RecruiterRewardsVault:", recruiterVaultAddress);
 
+  if (canAdminConfigure) {
+    if (recruiterPayoutOperator !== ethers.ZeroAddress && (await recruiterVault.operator()).toLowerCase() !== recruiterPayoutOperator.toLowerCase()) {
+      const tx = await recruiterVault.setOperator(recruiterPayoutOperator);
+      await tx.wait();
+      console.log("Recruiter payout operator set:", recruiterPayoutOperator);
+    }
+
+    if (recruiterPayoutMaxPerTx !== undefined || recruiterPayoutDailyCap !== undefined) {
+      const tx = await recruiterVault.setPayoutCaps(recruiterPayoutMaxPerTx ?? 0n, recruiterPayoutDailyCap ?? 0n);
+      await tx.wait();
+      console.log("Configured recruiter payout caps");
+    }
+
+    if (enableRecruiterPayouts) {
+      const tx = await recruiterVault.setPayoutsPaused(false);
+      await tx.wait();
+      console.log("Unpaused recruiter operator payout lane");
+    }
+  } else {
+    if (recruiterPayoutOperator !== ethers.ZeroAddress) {
+      postDeployActions.push(`RecruiterRewardsVault.setOperator(${recruiterPayoutOperator})`);
+    }
+    if (recruiterPayoutMaxPerTx !== undefined || recruiterPayoutDailyCap !== undefined) {
+      postDeployActions.push(`RecruiterRewardsVault.setPayoutCaps(${recruiterPayoutMaxPerTx ?? 0n}, ${recruiterPayoutDailyCap ?? 0n})`);
+    }
+    if (enableRecruiterPayouts) {
+      postDeployActions.push("RecruiterRewardsVault.setPayoutsPaused(false)");
+    }
+  }
+
   const CommunityVault = await ethers.getContractFactory("CommunityRewardsVault");
   const communityVault = await CommunityVault.deploy(
     treasurySafe,
@@ -178,8 +219,6 @@ export async function deployProtocol() {
   await protocolVault.waitForDeployment();
   const protocolVaultAddress = await protocolVault.getAddress();
   console.log("ProtocolRevenueVault:", protocolVaultAddress);
-
-  const postDeployActions: string[] = [];
 
   if (canAdminConfigure) {
     let tx = await leagueRouter.setRecruiterRewardsVault(recruiterVaultAddress);
@@ -219,6 +258,12 @@ export async function deployProtocol() {
     console.log("Factory route profiles set:", { tradeRouteProfile, finalizeRouteProfile });
   }
 
+  if (routeAuthority && (await factory.routeAuthority()).toLowerCase() !== routeAuthority.toLowerCase()) {
+    const tx = await factory.setRouteAuthority(routeAuthority);
+    await tx.wait();
+    console.log("Factory route authority set:", routeAuthority);
+  }
+
   if ((await factory.protocolFeeBps()) !== protocolFeeBps) {
     const tx = await factory.setProtocolFee(protocolFeeBps);
     await tx.wait();
@@ -247,6 +292,10 @@ export async function deployProtocol() {
     leagueClaimMaxEpochTotal: claimMaxEpochTotal?.toString() ?? null,
     enableLeaguePayouts,
     enableLeagueClaims,
+    recruiterPayoutOperator,
+    recruiterPayoutMaxPerTx: recruiterPayoutMaxPerTx?.toString() ?? null,
+    recruiterPayoutDailyCap: recruiterPayoutDailyCap?.toString() ?? null,
+    enableRecruiterPayouts,
     canAdminConfigure,
     contracts: {
       LeagueTreasury: vaultAddress,
@@ -261,11 +310,16 @@ export async function deployProtocol() {
     routing: {
       activeLeagueVault: vaultAddress,
       recruiterRewardsVault: canAdminConfigure ? recruiterVaultAddress : null,
+      recruiterPayoutOperator: recruiterPayoutOperator !== ethers.ZeroAddress ? recruiterPayoutOperator : null,
+      recruiterPayoutMaxPerTx: recruiterPayoutMaxPerTx?.toString() ?? null,
+      recruiterPayoutDailyCap: recruiterPayoutDailyCap?.toString() ?? null,
+      recruiterPayoutsEnabled: canAdminConfigure ? enableRecruiterPayouts : null,
       communityRewardsVault: canAdminConfigure ? communityVaultAddress : null,
       protocolRevenueVault: canAdminConfigure ? protocolVaultAddress : null,
       factoryFeeRecipient: leagueRouterAddress,
       factoryTradeRouteProfile: tradeRouteProfile,
       factoryFinalizeRouteProfile: finalizeRouteProfile,
+      factoryRouteAuthority: routeAuthority || null,
       unifiedRouterModeActive: true,
     },
     postDeployActions,
@@ -284,6 +338,7 @@ export async function deployProtocol() {
   console.log("\nPhase 1 routing topology:");
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
+  console.log("- Factory route authority:", routeAuthority || "(not set)");
   console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
   console.log("- Recruiter-directed slices -> RecruiterRewardsVault:", recruiterVaultAddress);
   console.log("- Community slices -> CommunityRewardsVault:", communityVaultAddress);

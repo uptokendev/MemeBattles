@@ -2,4 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export { IPhase1TreasuryRouter__factory } from "./IPhase1TreasuryRouter__factory";
+export { IRouteAuthoritySource__factory } from "./IRouteAuthoritySource__factory";
 export { LaunchCampaign__factory } from "./LaunchCampaign__factory";

@@ -23,6 +23,33 @@
     },
     {
       "inputs": [],
+      "name": "ECDSAInvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "length",
+          "type": "uint256"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureLength",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "s",
+          "type": "bytes32"
+        }
+      ],
+      "name": "ECDSAInvalidSignatureS",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "FactoryLocked",
       "type": "error"
     },
@@ -70,6 +97,11 @@
     {
       "inputs": [],
       "name": "InvalidCurveBps",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRouteAuthorization",
       "type": "error"
     },
     {
@@ -147,6 +179,16 @@
     {
       "inputs": [],
       "name": "RefundFail",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RouteAuthorityZero",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "RouteAuthorizationExpired",
       "type": "error"
     },
     {
@@ -323,6 +365,19 @@
         }
       ],
       "name": "ProtocolFeeUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newAuthority",
+          "type": "address"
+        }
+      ],
+      "name": "RouteAuthorityUpdated",
       "type": "event"
     },
     {
@@ -612,6 +667,114 @@
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "symbol",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "logoURI",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "xAccount",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "website",
+              "type": "string"
+            },
+            {
+              "internalType": "string",
+              "name": "extraLink",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "basePrice",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "priceSlope",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "graduationTarget",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "lpReceiver",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "initialBuyBnbWei",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct LaunchFactory.CampaignRequest",
+          "name": "req",
+          "type": "tuple"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "tradeRouteProfile",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint8",
+              "name": "finalizeRouteProfile",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint64",
+              "name": "deadline",
+              "type": "uint64"
+            },
+            {
+              "internalType": "bytes",
+              "name": "signature",
+              "type": "bytes"
+            }
+          ],
+          "internalType": "struct LaunchFactory.RouteAuthorization",
+          "name": "routeAuth",
+          "type": "tuple"
+        }
+      ],
+      "name": "createCampaignAuthorized",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "campaignAddr",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "tokenAddr",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "enableLive",
       "outputs": [],
@@ -881,6 +1044,19 @@
     },
     {
       "inputs": [],
+      "name": "routeAuthority",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "router",
       "outputs": [
         {
@@ -964,6 +1140,19 @@
         }
       ],
       "name": "setProtocolFee",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newAuthority",
+          "type": "address"
+        }
+      ],
+      "name": "setRouteAuthority",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

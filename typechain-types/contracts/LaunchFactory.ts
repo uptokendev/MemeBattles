@@ -92,6 +92,25 @@ export declare namespace LaunchFactory {
     initialBuyBnbWei: bigint;
   };
 
+  export type RouteAuthorizationStruct = {
+    tradeRouteProfile: BigNumberish;
+    finalizeRouteProfile: BigNumberish;
+    deadline: BigNumberish;
+    signature: BytesLike;
+  };
+
+  export type RouteAuthorizationStructOutput = [
+    tradeRouteProfile: bigint,
+    finalizeRouteProfile: bigint,
+    deadline: bigint,
+    signature: string
+  ] & {
+    tradeRouteProfile: bigint;
+    finalizeRouteProfile: bigint;
+    deadline: bigint;
+    signature: string;
+  };
+
   export type CampaignInfoStruct = {
     campaign: AddressLike;
     token: AddressLike;
@@ -145,6 +164,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "campaignsCount"
       | "config"
       | "createCampaign"
+      | "createCampaignAuthorized"
       | "enableLive"
       | "feeRecipient"
       | "finalizeRouteProfile"
@@ -156,10 +176,12 @@ export interface LaunchFactoryInterface extends Interface {
       | "protocolFeeBps"
       | "quoteInitialBuyTotal"
       | "renounceOwnership"
+      | "routeAuthority"
       | "router"
       | "setConfig"
       | "setFeeRecipient"
       | "setProtocolFee"
+      | "setRouteAuthority"
       | "setRouteProfiles"
       | "setRouter"
       | "tradeRouteProfile"
@@ -174,6 +196,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "LiveEnabled"
       | "OwnershipTransferred"
       | "ProtocolFeeUpdated"
+      | "RouteAuthorityUpdated"
       | "RouteProfilesUpdated"
       | "RouterUpdated"
   ): EventFragment;
@@ -221,6 +244,13 @@ export interface LaunchFactoryInterface extends Interface {
     values: [LaunchFactory.CampaignRequestStruct]
   ): string;
   encodeFunctionData(
+    functionFragment: "createCampaignAuthorized",
+    values: [
+      LaunchFactory.CampaignRequestStruct,
+      LaunchFactory.RouteAuthorizationStruct
+    ]
+  ): string;
+  encodeFunctionData(
     functionFragment: "enableLive",
     values?: undefined
   ): string;
@@ -258,6 +288,10 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "renounceOwnership",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "routeAuthority",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "router", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "setConfig",
@@ -270,6 +304,10 @@ export interface LaunchFactoryInterface extends Interface {
   encodeFunctionData(
     functionFragment: "setProtocolFee",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setRouteAuthority",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setRouteProfiles",
@@ -330,6 +368,10 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "createCampaign",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "createCampaignAuthorized",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "enableLive", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeRecipient",
@@ -365,6 +407,10 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "routeAuthority",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "router", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "setConfig", data: BytesLike): Result;
   decodeFunctionResult(
@@ -373,6 +419,10 @@ export interface LaunchFactoryInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setProtocolFee",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRouteAuthority",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -475,6 +525,18 @@ export namespace ProtocolFeeUpdatedEvent {
   export type OutputTuple = [newFeeBps: bigint];
   export interface OutputObject {
     newFeeBps: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RouteAuthorityUpdatedEvent {
+  export type InputTuple = [newAuthority: AddressLike];
+  export type OutputTuple = [newAuthority: string];
+  export interface OutputObject {
+    newAuthority: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -598,6 +660,15 @@ export interface LaunchFactory extends BaseContract {
     "payable"
   >;
 
+  createCampaignAuthorized: TypedContractMethod<
+    [
+      req: LaunchFactory.CampaignRequestStruct,
+      routeAuth: LaunchFactory.RouteAuthorizationStruct
+    ],
+    [[string, string] & { campaignAddr: string; tokenAddr: string }],
+    "payable"
+  >;
+
   enableLive: TypedContractMethod<[], [void], "nonpayable">;
 
   feeRecipient: TypedContractMethod<[], [string], "view">;
@@ -636,6 +707,8 @@ export interface LaunchFactory extends BaseContract {
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
+  routeAuthority: TypedContractMethod<[], [string], "view">;
+
   router: TypedContractMethod<[], [string], "view">;
 
   setConfig: TypedContractMethod<
@@ -652,6 +725,12 @@ export interface LaunchFactory extends BaseContract {
 
   setProtocolFee: TypedContractMethod<
     [newProtocolFeeBps: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setRouteAuthority: TypedContractMethod<
+    [newAuthority: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -735,6 +814,16 @@ export interface LaunchFactory extends BaseContract {
     "payable"
   >;
   getFunction(
+    nameOrSignature: "createCampaignAuthorized"
+  ): TypedContractMethod<
+    [
+      req: LaunchFactory.CampaignRequestStruct,
+      routeAuth: LaunchFactory.RouteAuthorizationStruct
+    ],
+    [[string, string] & { campaignAddr: string; tokenAddr: string }],
+    "payable"
+  >;
+  getFunction(
     nameOrSignature: "enableLive"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
@@ -784,6 +873,9 @@ export interface LaunchFactory extends BaseContract {
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "routeAuthority"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "router"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -803,6 +895,9 @@ export interface LaunchFactory extends BaseContract {
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "setRouteAuthority"
+  ): TypedContractMethod<[newAuthority: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setRouteProfiles"
   ): TypedContractMethod<
@@ -861,6 +956,13 @@ export interface LaunchFactory extends BaseContract {
     ProtocolFeeUpdatedEvent.InputTuple,
     ProtocolFeeUpdatedEvent.OutputTuple,
     ProtocolFeeUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RouteAuthorityUpdated"
+  ): TypedContractEvent<
+    RouteAuthorityUpdatedEvent.InputTuple,
+    RouteAuthorityUpdatedEvent.OutputTuple,
+    RouteAuthorityUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "RouteProfilesUpdated"
@@ -942,6 +1044,17 @@ export interface LaunchFactory extends BaseContract {
       ProtocolFeeUpdatedEvent.InputTuple,
       ProtocolFeeUpdatedEvent.OutputTuple,
       ProtocolFeeUpdatedEvent.OutputObject
+    >;
+
+    "RouteAuthorityUpdated(address)": TypedContractEvent<
+      RouteAuthorityUpdatedEvent.InputTuple,
+      RouteAuthorityUpdatedEvent.OutputTuple,
+      RouteAuthorityUpdatedEvent.OutputObject
+    >;
+    RouteAuthorityUpdated: TypedContractEvent<
+      RouteAuthorityUpdatedEvent.InputTuple,
+      RouteAuthorityUpdatedEvent.OutputTuple,
+      RouteAuthorityUpdatedEvent.OutputObject
     >;
 
     "RouteProfilesUpdated(uint8,uint8)": TypedContractEvent<

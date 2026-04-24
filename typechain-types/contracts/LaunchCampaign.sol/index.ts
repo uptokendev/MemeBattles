@@ -2,4 +2,5 @@
 /* tslint:disable */
 /* eslint-disable */
 export type { IPhase1TreasuryRouter } from "./IPhase1TreasuryRouter";
+export type { IRouteAuthoritySource } from "./IRouteAuthoritySource";
 export type { LaunchCampaign } from "./LaunchCampaign";

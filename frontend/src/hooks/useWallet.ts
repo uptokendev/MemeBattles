@@ -1,5 +1,6 @@
 import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { syncWalletRecruiterAttribution } from "@/lib/recruiterApi";
 
 export type WalletType = "metamask" | "binance" | "injected";
 
@@ -194,6 +195,15 @@ export function useWallet(): WalletHook {
   const selectedWalletTypeRef = useRef<WalletType | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
+  const syncRecruiterAttribution = useCallback(async (walletAddress: string) => {
+    if (!walletAddress) return;
+    try {
+      await syncWalletRecruiterAttribution(walletAddress);
+    } catch {
+      // Best-effort sync. Do not block wallet UX on attribution API issues.
+    }
+  }, []);
+
   const bindEip1193Listeners = useCallback((selectedProvider: any) => {
     cleanupRef.current?.();
     cleanupRef.current = null;
@@ -214,6 +224,7 @@ export function useWallet(): WalletHook {
           clearWarRoomSessionCache();
           return;
         }
+        void syncRecruiterAttribution(chosen);
         const nextSigner = await bp.getSigner();
         setSigner(nextSigner);
       } catch {
@@ -234,6 +245,7 @@ export function useWallet(): WalletHook {
         clearWarRoomSessionCache();
         return;
       }
+      void syncRecruiterAttribution(chosen);
       try {
         const bp = new BrowserProvider(selectedProvider);
         setProvider(bp);
@@ -272,7 +284,7 @@ export function useWallet(): WalletHook {
       window.removeEventListener("focus", onVisibilityOrFocus);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, []);
+  }, [syncRecruiterAttribution]);
 
   const hydrateSelectedProvider = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -295,6 +307,7 @@ export function useWallet(): WalletHook {
       const bp = new BrowserProvider(selected);
       setProvider(bp);
       setAccount(chosen);
+      void syncRecruiterAttribution(chosen);
       const nextSigner = await bp.getSigner();
       setSigner(nextSigner);
       const network = await bp.getNetwork();
@@ -303,7 +316,7 @@ export function useWallet(): WalletHook {
     } catch {
       // do not auto-connect on failures
     }
-  }, [bindEip1193Listeners]);
+  }, [bindEip1193Listeners, syncRecruiterAttribution]);
 
   useEffect(() => {
     void hydrateSelectedProvider();
@@ -355,6 +368,7 @@ export function useWallet(): WalletHook {
         const browserProvider = new BrowserProvider(selected);
         setProvider(browserProvider);
         setAccount(chosen);
+        void syncRecruiterAttribution(chosen);
         const nextSigner = await browserProvider.getSigner();
         setSigner(nextSigner);
         const network = await browserProvider.getNetwork();
@@ -367,7 +381,7 @@ export function useWallet(): WalletHook {
         setConnecting(false);
       }
     },
-    [bindEip1193Listeners]
+    [bindEip1193Listeners, syncRecruiterAttribution]
   );
 
   const disconnect = useCallback(async () => {
