@@ -1,17 +1,19 @@
 ---
 title: Epochs & Prizes
-description: How weekly and monthly League timing, payouts, and claims work.
+description: How weekly and monthly League timing, payouts, prize pools, and claims work.
 ---
 
 Leagues run in fixed epochs.
 
-Fixed timing makes the competition easier to understand and easier to broadcast.
+Fixed timing makes competition easier to understand and easier to broadcast.
 
 ## Weekly epoch
 
 Weekly epochs run:
 
-**Monday 00:00 UTC → next Monday 00:00 UTC**
+```txt
+Monday 00:00 UTC to next Monday 00:00 UTC
+```
 
 Weekly Leagues are designed for frequent competition and regular winner moments.
 
@@ -19,7 +21,9 @@ Weekly Leagues are designed for frequent competition and regular winner moments.
 
 Monthly epochs run:
 
-**1st day of the month 00:00 UTC → 1st day of the next month 00:00 UTC**
+```txt
+1st day of the month 00:00 UTC to 1st day of the next month 00:00 UTC
+```
 
 Monthly Leagues are designed to feel bigger and more prestigious.
 
@@ -39,13 +43,15 @@ The planned monthly Top 5 prize split is:
 
 Weekly prizes can start smaller and scale as platform volume grows.
 
-The prize style should be realistic at launch, then grow with volume and treasury inflow.
+The prize style should be realistic at launch, then grow with volume and LeagueTreasury inflow.
 
 ## Claims and expiry
 
-Reward claims should have clear windows.
+League and reward claims should have clear windows.
 
-A 90-day claim expiry has been discussed as the operating direction, with expired claims rolling back into the relevant reward pool or treasury logic.
+For the unified reward ledger, the standard claim deadline is 7 days after epoch end.
+
+Read: **[Epochs & Claims](/rewards/epochs-and-claims)**.
 
 ## Rollover logic
 

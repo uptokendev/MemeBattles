@@ -1,61 +1,64 @@
 ---
 title: Roadmap
-description: The practical build path for MemeWarzone from Prepare Mode to full live battlefield.
+description: The high-level MemeWarzone rollout direction.
 ---
 
-This roadmap is written as a product direction guide, not a promise of exact delivery dates beyond the announced Prepare Mode opening.
+MemeWarzone is rolling out as a competitive on-chain ecosystem.
 
-## Phase 1 — Prepare Mode
+The roadmap focuses on campaign activation, routing, rewards, transparency, and long-term user progression.
 
-Prepare Mode opens on **May 12**.
+## Prepare Mode
 
-Main goals:
+Prepare Mode opens the door for:
 
-- onboard creators before live launch
-- open recruiter applications and squad building
-- let users understand campaigns, Leagues, fees, and safety rules
-- prepare campaign pages and launch assets
+- creator campaign preparation
+- recruiter onboarding
+- squad building
+- early user education
+- docs and safety guidance
 
-## Phase 2 — Live deployment
+## Live campaign system
 
-When the live switch is flipped:
+The live system brings:
 
-- prepared creators can deploy campaigns
-- bonding-curve trading opens
-- campaign activity starts feeding rankings
-- UpVotes become part of discovery
-- League tracking begins
+- campaign deployment
+- bonding-curve trading
+- UpVotes
+- 50 BNB graduation threshold
+- 2.00% finalize fee
+- 80/20 post-finalize split
 
-## Phase 3 — Competition loops
+## Routing and rewards
 
-After live deployment, the platform focuses on repeatable events:
+Core incentive systems include:
 
-- weekly League winners
-- monthly League finals
-- Crowd Favorite battles
-- recruiter leaderboards
-- Warzone Airdrop Treasury drops
-- public social moments around wins and graduations
+- TreasuryRouter fee routing
+- LeagueTreasury funding
+- RecruiterRewardsVault
+- CommunityRewardsVault
+- Squad Pool
+- Warzone BNB Airdrops
+- weekly epochs and claims
 
-## Phase 4 — Protection and visibility upgrades
+## Trust and transparency
 
-The platform should continue expanding trust signals:
+Trust work includes:
 
-- deployer history
-- creator launch history
-- graduation rate
-- top-holder concentration visibility
-- unique buyers vs volume
-- suspicious activity flags
-- clearer safety education
+- public leaderboards
+- public winner pages
+- private reward dashboards
+- anti-abuse reason codes
+- no dev-wallet protocol revenue custody
+- multisig treasury policy
 
-## Phase 5 — Scale and automation
+## Long-term direction
 
-As activity grows, MemeWarzone can expand automation around:
+Future iterations can expand:
 
-- real-time homepage updates
-- campaign alerts
-- League winner broadcasts
-- recruiter squad dashboards
-- reward claim flows
-- monitoring and diagnostics
+- creator reputation
+- richer profile pages
+- League categories
+- squad analytics
+- recruiter tooling
+- reward transparency
+- campaign safety signals

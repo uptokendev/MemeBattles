@@ -1,28 +1,27 @@
 ---
 title: Fees & Treasury
-description: What you pay, and where it goes.
+description: Legacy core-concepts page for the current fee routing and treasury model.
 ---
 
-MemeWarzone is designed so fees don’t only reward the platform — they also fund **league prize pools** and **creator earnings**.
+The current fee and treasury model is documented in the main Fees & Treasury section.
 
-## The core fees (high level)
-- **Trading**: a fee on buys and sells (currently **2% buy** and **2% sell**)
-- **UpVotes**: a fixed on-chain fee (currently **0.003 BNB**)
-- **Graduation**: a finalize fee at graduation (currently **2%**)
+Read:
 
-## League Treasury share (simple)
-A portion of each trade is routed to the **League Treasury** to fund prizes (currently **0.75% of trade notional**).
+- **[Economic Model](/economics)**
+- **[Fee Model](/fees)**
+- **[Fee Routing](/fees/fee-routing)**
+- **[Treasury Structure](/treasury)**
 
-## Prize pool budgeting (fair & predictable)
-- **30% of League fees** fund **weekly** rewards (4 categories, 1 winner each).
-- **70% of League fees** fund **monthly** rewards (5 categories, top 5 each).
-- Monthly budget is split **equally** between all 5 leagues (including **Perfect Run**, which is monthly-only).
+## Quick facts
 
-## Treasury model (plain English)
-Protocol revenue is designed to flow into secure custody and be distributed on a clear schedule:
-- **Owners Safe**: main revenue custody (multisig)
-- **Ops Safe**: capped operational wallet
+| Mechanic | Value |
+| --- | ---: |
+| Buy fee | 2.00% |
+| Sell fee | 2.00% |
+| Finalize fee | 2.00% |
+| LeagueTreasury trade share | 0.75% |
+| Standard recruiter trade share | 0.25% |
+| Standard recruiter finalize share | 0.30% |
+| Squad Pool share | 0.05% |
 
-This keeps “operating cash” small and limits blast radius if an ops wallet is compromised.
-
-Next: **[Claims](/core-concepts/claims)**.
+Protocol revenue is the remainder after TreasuryRouter routes reward allocations.

@@ -1,15 +1,12 @@
 ---
 title: Claims
-description: How winners claim league rewards.
+description: Legacy League claims page pointing to the unified Epochs & Claims system.
 ---
 
-## Who can claim
-Only the wallet that earned a reward can claim it.
+MemeWarzone uses a unified claim-based reward model.
 
-## When you can claim
-Claims become available once the epoch is **finalized** (after the cutoff) and the winners are computed.
+Weekly reward epochs close Monday 00:00 UTC. After an epoch is processed and published, eligible rewards become claimable through official dashboard/profile flows.
 
-## Claim expiry
-Claims remain available for **90 days after epoch end**.
+The standard reward claim window is 7 days after epoch end.
 
-If a claim expires, the unclaimed amount is rolled back into the next epoch's prize pool.
+Read the current claims page: **[Epochs & Claims](/rewards/epochs-and-claims)**.

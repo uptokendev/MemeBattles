@@ -1,15 +1,13 @@
 ---
 title: Protection Model
-description: The user-facing safety and transparency direction for MemeWarzone.
+description: The user-facing safety, treasury, routing, claim, and transparency model for MemeWarzone.
 ---
 
-MemeWarzone should not be another blind launchpad.
+MemeWarzone should not be a blind campaign market.
 
-The protection model combines contract rules, visible reputation, launch limits, and user education.
+The protection model combines contract rules, router-enforced fee splits, visible reputation, launch limits, claim-based payouts, and user education.
 
 ## Core safety principles
-
-The platform should make important risk signals visible instead of hiding them.
 
 Users should be able to evaluate:
 
@@ -19,6 +17,32 @@ Users should be able to evaluate:
 - whether graduation happened cleanly
 - whether holder concentration looks dangerous
 - whether activity is broad or fake-looking
+- where fees route
+- which rewards are claimable
+
+## Router-enforced splits
+
+TreasuryRouter enforces fee routing before protocol revenue is defined.
+
+That matters because reward allocations are not manually decided after the fact. The router sends funds into League, recruiter, airdrop, Squad Pool, and protocol revenue buckets according to route profile.
+
+## No dev-wallet custody
+
+Protocol revenue should not flow directly to developer wallets.
+
+ProtocolRevenueVault feeds treasury policy, and Owners Safe/Ops Safe separation keeps operating funds away from personal wallet custody.
+
+## Claim-based payout safety
+
+Rewards are claim-based.
+
+This reduces operational risk because the system can:
+
+- process eligibility before payout
+- apply anti-abuse checks
+- show users what they are claiming
+- avoid automatic payout spam
+- keep claims auditable
 
 ## User-facing protections
 
@@ -26,7 +50,7 @@ Important protection categories include:
 
 - anti-rug launch mechanics
 - LP handling visibility
-- auto-finalize rules
+- finalize rules
 - creator/deployer reputation
 - creator cooldowns
 - campaign caps
@@ -35,30 +59,16 @@ Important protection categories include:
 - suspicious activity flags
 - scam-link education
 
-## Anti-rug direction
+## Anti-abuse
 
-The platform should make it harder for creators to create hidden, manual, trust-based traps.
+Reward systems must filter fake activity.
 
-Important mechanics include:
+Wash trading, self-trading, common-control wallets, wallet splitting, circular trading, and recruiter farming loops can be excluded from rewards.
 
-- clear graduation rules
-- transparent fee math
-- LP creation rules
-- visible campaign history
-- no personal wallet custody of protocol revenue
-
-## Anti-bot and anti-bundle direction
-
-Premium or stricter campaign modes can add stronger launch protections over time, such as:
-
-- first-minute wallet caps
-- anti-bundle detection
-- suspicious cluster flags
-- creator-linked wallet warnings
-- no-sell windows for creator-linked wallets where technically enforceable
+Read: **[Anti-Abuse System](/security/anti-abuse)**.
 
 ## Wording discipline
 
 Security claims must match the actual implementation.
 
-Do not market a feature as “guaranteed” unless the contracts, frontend, and operations enforce it.
+Do not market a feature as guaranteed unless contracts, frontend, indexing, and operations enforce it.

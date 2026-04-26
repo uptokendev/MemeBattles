@@ -5,7 +5,13 @@ description: A simple first-read guide for creators, traders, and recruiters ent
 
 This guide explains the normal path through MemeWarzone.
 
-## 1. Choose your role
+## 1. Understand the ecosystem
+
+MemeWarzone is a competitive on-chain ecosystem for meme campaigns.
+
+Start with **[How MemeWarzone Works](/how-memewarzone-works)** if you want the whole loop in one page.
+
+## 2. Choose your role
 
 MemeWarzone has three primary user paths.
 
@@ -31,47 +37,56 @@ Start here:
 
 ### Recruiter
 
-You build a squad by bringing creators and traders into the platform through your recruiter link.
+You bring creators and traders into the platform through your recruiter link and build a squad around real activity.
 
 Start here:
 
 - **[Recruiter Program](/programs/recruiter-program)**
 - **[Attribution & links](/programs/attribution-and-links)**
+- **[Squad Pool](/rewards/squad-pool)**
 
-## 2. Understand the launch lifecycle
+## 3. Understand the campaign lifecycle
 
 A campaign moves through a clear lifecycle:
 
-1. **Prepare** — creator sets up campaign before live deployment.
-2. **Deploy** — campaign becomes active on the platform.
-3. **Bonding curve** — traders buy and sell before DEX liquidity.
-4. **Graduation** — campaign reaches the graduation threshold.
-5. **LP creation** — liquidity is deployed and the token enters the DEX stage.
-6. **Claims and rewards** — eligible League and reward claims become available.
+1. Prepare: creator sets up campaign before live deployment.
+2. Deploy: campaign becomes active on the platform.
+3. Bonding curve: traders buy and sell before DEX liquidity.
+4. Graduation: campaign reaches the 50 BNB graduation threshold.
+5. LP creation: 80% of remaining raised liquidity goes to LP.
+6. Creator payout: 20% of remaining raised liquidity goes to the creator.
+7. Claims and rewards: eligible rewards become claimable after epochs publish.
 
-Read: **[Campaign lifecycle](/platform/campaign-lifecycle)**.
+Read: **[Campaign System](/platform/campaign-lifecycle)**.
 
-## 3. Know the main numbers
+## 4. Know the main numbers
 
 | Item | Value |
-| --- | --- |
+| --- | ---: |
 | Chain | BNB Chain |
-| Buy fee | 2% |
-| Sell fee | 2% |
-| League Treasury share | 0.75% of every buy and sell |
+| Buy fee | 2.00% |
+| Sell fee | 2.00% |
+| Finalize fee | 2.00% |
+| LeagueTreasury share | 0.75% of every buy and sell |
+| Standard recruiter trade share | 0.25% |
+| Standard recruiter finalize share | 0.30% |
+| Squad Pool share | 0.05% |
 | UpVote price | 0.003 BNB |
 | Graduation threshold | 50 BNB |
-| Finalize fee | 2% of raised liquidity before LP |
 | Post-finalize split | 80% LP / 20% creator payout |
 
-## 4. Use only official links
+## 5. Use only official links
 
 The main site is:
 
-`https://memewar.zone`
+```txt
+https://memewar.zone
+```
 
 The official docs are:
 
-`https://docs.memewar.zone`
+```txt
+https://docs.memewar.zone
+```
 
 Never trust links from random DMs. Always verify the domain before connecting a wallet.

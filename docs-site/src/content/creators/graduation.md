@@ -1,29 +1,31 @@
 ---
-title: Graduation (what happens, what you receive)
-description: The graduation moment is where creator-first economics kick in.
+title: Graduation for Creators
+description: What creators receive when a campaign graduates.
 ---
 
+Graduation is where creator economics settle.
+
 ## Threshold
-- **Graduation happens at 50 BNB raised**
-- a **finalize** action executes
 
-## Finalize fee
-- **2% of raised liquidity** (taken before liquidity is created)
+- Graduation happens at 50 BNB raised.
+- A finalize action executes.
+- A 2.00% finalize fee is taken before liquidity is created.
 
-Example at threshold:
-- Raised: 50 BNB
-- Fee: 2% × 50 = **1.0 BNB**
-- Remaining: 49 BNB
+## Example at threshold
 
-## Split after fee
-- **80% → liquidity pool**
-- **20% → creator payout**
-
-Example at threshold:
-- Creator: 20% × 49 = **9.8 BNB**
-- Liquidity: 80% × 49 = **39.2 BNB**
+| Item | Amount |
+| --- | ---: |
+| Raised liquidity | 50 BNB |
+| Finalize fee, 2.00% | 1 BNB |
+| Remaining | 49 BNB |
+| Creator payout, 20% | 9.8 BNB |
+| LP liquidity, 80% | 39.2 BNB |
 
 ## What to do immediately
-- announce “Graduated ✅”
-- pin updated trading link
+
+- announce graduation through official channels
+- pin the updated trading link
 - watch for impersonators
+- remind users to verify the official campaign page
+
+Read: **[Graduation](/platform/graduation)**.

@@ -4,54 +4,56 @@ title: What problem does it solve?
 
 # What problem does MemeWarzone solve?
 
-Meme coins are not “serious finance”, but the **market mechanics are real** — and the incentives in most launchpads are broken.
+Meme coins are not serious finance, but the market mechanics are real, and the incentives in many launch markets are broken.
 
-Here’s what we’re fixing.
+Here is what MemeWarzone fixes.
 
-## Problem 1 — Creators get squeezed
+## Problem 1: creators get squeezed
+
 On many platforms creators:
 
 - pay to launch
 - pay to promote
-- fight for visibility against bots + paid shillers
+- fight for visibility against bots and paid shillers
 - end up with little upside unless they become full-time marketers
 
-**Our fix:** discovery + distribution designed for creators: **UpVotes** + **Leagues** create repeat exposure and winner spotlights, which drives followers and repeat traffic.
+**Our fix:** discovery and distribution designed for creators. UpVotes and Leagues create repeat exposure and winner spotlights, which can drive followers and repeat traffic.
 
-## Problem 2 — Discovery is opaque and gameable
+## Problem 2: discovery is opaque and gameable
+
 Trending pages are often:
 
 - a black box
 - dominated by insiders
 - manipulated through off-chain deals
 
-**Our fix:** UpVotes are an explicit action. You can see campaigns earn visibility through community support.
+**Our fix:** UpVotes are an explicit action. Users can see campaigns earn visibility through community support.
 
-## Problem 3 — There’s no durable game loop
-Most launches are a one-and-done:
+## Problem 3: there is no durable game loop
 
-- a spike
-- then attention moves on
-- the platform still earns, but the ecosystem decays
+Most meme campaigns get one spike, then attention moves on.
 
-**Our fix:** Leagues introduce a recurring loop (weekly/monthly epochs). The market stays active because there is always an ongoing competition.
+**Our fix:** Leagues, recruiters, squads, airdrops, and weekly epochs introduce a recurring loop. The market stays active because there is always an ongoing competition.
 
-## Problem 4 — Platforms rarely build identity and progression
+## Problem 4: platforms rarely build identity and progression
+
 Users often get treated like temporary order flow instead of long-term participants.
 
-**Our fix:** MemeWarzone adds a **Ranking System** and a **Recruiter Program** so active users can build visible status, build squads, and participate in growth.
+**Our fix:** MemeWarzone adds profiles, rankings, recruiter attribution, and squads so active users can build visible status.
 
-## Problem 5 — “Where does the money go?” is unclear
-Users and creators deserve to understand the economics:
+## Problem 5: where the money goes is unclear
+
+Users and creators deserve to understand:
 
 - what fees exist
 - why they exist
-- how they are used
+- how they route
+- how protocol revenue is defined
 
-**Our fix:** we document fee flows, treasury roles, and distribution policy in plain language.
+**Our fix:** TreasuryRouter routes fees into clear reward buckets before protocol revenue is counted.
 
 Next reads:
 
-- **Fees** → the full fee model and examples
-- **Treasury** → Owners/Ops safes and distribution policy
-- **Leagues** → how prize pools and claims work
+- **[Fee Routing](/fees/fee-routing)**
+- **[Treasury Structure](/treasury)**
+- **[Leagues](/leagues)**

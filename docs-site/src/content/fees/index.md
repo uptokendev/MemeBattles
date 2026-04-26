@@ -1,49 +1,56 @@
 ---
 title: Fee Model
-description: The main MemeWarzone fee numbers and what each fee is designed to fund.
+description: The main MemeWarzone fee numbers and how the fee envelope funds routing, rewards, and protocol revenue.
 ---
 
-MemeWarzone uses simple, visible platform fees.
+MemeWarzone uses simple visible fees.
+
+The user-facing numbers stay stable while TreasuryRouter handles the internal routing.
 
 ## Main numbers
 
 | Fee / mechanic | Value |
 | --- | ---: |
-| Buy fee | 2% |
-| Sell fee | 2% |
-| League Treasury share | 0.75% of every buy and sell |
+| Buy fee | 2.00% |
+| Sell fee | 2.00% |
+| Finalize fee | 2.00% |
 | UpVote price | 0.003 BNB |
 | Graduation threshold | 50 BNB |
-| Finalize fee | 2% of raised liquidity before LP |
 | Post-finalize split | 80% LP / 20% creator payout |
 
-## Why fees exist
+## Trading fees
 
-Fees are used to fund:
+Every buy and sell has a 2.00% fee.
 
-- platform operations
-- League prize pools
-- recruiter rewards
-- reward drops for smaller active users
-- treasury buffers
-- audits, infrastructure, and growth
+From every buy and sell, 0.75% of trade notional routes to LeagueTreasury. The remaining 1.25% routes based on the wallet's attribution profile:
 
-## Trading fee
+- linked standard recruiter
+- unlinked
+- linked OG recruiter
 
-Every buy and sell has a **2% fee**.
-
-From every trade, **0.75% of trade notional** routes to the League Treasury.
-
-The remaining configured portions support protocol revenue, recruiter attribution, and other platform routing rules.
-
-## UpVote fee
-
-An UpVote costs **0.003 BNB**.
-
-UpVotes are paid visibility actions. They are not refundable and do not mean the platform endorses a campaign.
+Read: **[Fee Routing](/fees/fee-routing)**.
 
 ## Finalize fee
 
-When a campaign graduates, a **2% finalize fee** is taken from raised liquidity before LP creation and creator payout calculation.
+When a campaign graduates, a 2.00% finalize fee is taken from raised liquidity before LP creation and creator payout calculation.
 
-Read: **[Graduation](/platform/graduation)**.
+Finalize routing can fund recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue. It does not route to LeagueTreasury.
+
+## UpVote fee
+
+An UpVote costs 0.003 BNB.
+
+UpVotes are paid visibility actions. They are not refundable and do not mean the platform endorses a campaign.
+
+## Why fees exist
+
+Fees support:
+
+- League prize pools
+- recruiter rewards
+- Squad Pool rewards
+- Warzone BNB Airdrops
+- protocol revenue
+- treasury operations, audits, infrastructure, and growth
+
+Reward systems do not add extra user fees. They are funded by routing the existing fee envelope.

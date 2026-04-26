@@ -6,6 +6,7 @@ export const sidebar: NavSection[] = [
     title: 'Start here',
     items: [
       { title: 'Introduction', href: '/introduction' },
+      { title: 'How MemeWarzone Works', href: '/how-memewarzone-works' },
       { title: 'Getting Started', href: '/getting-started' },
       { title: 'Prepare Mode', href: '/prepare-mode' },
       { title: 'Roadmap', href: '/roadmap' }
@@ -14,11 +15,21 @@ export const sidebar: NavSection[] = [
   {
     title: 'Platform basics',
     items: [
-      { title: 'Campaign Lifecycle', href: '/platform/campaign-lifecycle' },
+      { title: 'Campaign System', href: '/platform/campaign-lifecycle' },
       { title: 'Bonding Curve', href: '/platform/bonding-curve' },
       { title: 'Graduation', href: '/platform/graduation' },
       { title: 'UpVotes', href: '/platform/upvotes' },
+      { title: 'Leagues', href: '/leagues' },
       { title: 'War Room Chat', href: '/platform/war-room' }
+    ]
+  },
+  {
+    title: 'Rewards & incentives',
+    items: [
+      { title: 'Squad Pool', href: '/rewards/squad-pool' },
+      { title: 'Warzone BNB Airdrops', href: '/rewards/warzone-airdrops' },
+      { title: 'Epochs & Claims', href: '/rewards/epochs-and-claims' },
+      { title: 'Dashboard & Rewards UX', href: '/rewards/dashboard-ux' }
     ]
   },
   {
@@ -40,26 +51,20 @@ export const sidebar: NavSection[] = [
     ]
   },
   {
-    title: 'Leagues & airdrops',
-    items: [
-      { title: 'Leagues Overview', href: '/leagues' },
-      { title: 'League Categories', href: '/leagues/categories' },
-      { title: 'Epochs & Prizes', href: '/leagues/epochs-and-prizes' },
-      { title: 'Warzone Airdrops', href: '/leagues/airdrops' }
-    ]
-  },
-  {
     title: 'Recruiter Program',
     items: [
       { title: 'Program Overview', href: '/programs/recruiter-program' },
       { title: 'Attribution & Links', href: '/programs/attribution-and-links' },
-      { title: 'Dashboard & Payouts', href: '/programs/dashboard-and-payouts' }
+      { title: 'Dashboard & Payouts', href: '/programs/dashboard-and-payouts' },
+      { title: 'OG Recruiters', href: '/programs/og-recruiters' }
     ]
   },
   {
     title: 'Fees & treasury',
     items: [
+      { title: 'Economic Model', href: '/economics' },
       { title: 'Fee Model', href: '/fees' },
+      { title: 'Fee Routing', href: '/fees/fee-routing' },
       { title: 'Where Fees Go', href: '/fees/where-fees-go' },
       { title: 'Fee Examples', href: '/fees/examples' },
       { title: 'Treasury Structure', href: '/treasury' },
@@ -67,9 +72,11 @@ export const sidebar: NavSection[] = [
     ]
   },
   {
-    title: 'Security & safety',
+    title: 'Security & trust',
     items: [
       { title: 'Protection Model', href: '/security/protection-model' },
+      { title: 'Anti-Abuse System', href: '/security/anti-abuse' },
+      { title: 'Transparency', href: '/security/transparency' },
       { title: 'Avoid Scams', href: '/security/avoid-scams' },
       { title: 'Risk Disclosure', href: '/security/risk-disclosure' },
       { title: 'Incident Response', href: '/security/incident-response' }

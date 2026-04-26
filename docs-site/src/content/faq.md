@@ -6,7 +6,7 @@ description: Fast answers for creators, traders, recruiters, and new MemeWarzone
 ## Getting Started
 
 ### What is MemeWarzone?
-MemeWarzone is a creator-first meme launchpad on BNB Chain with bonding-curve launches, UpVotes, Leagues, recruiter squads, and reward drops.
+MemeWarzone is a competitive on-chain ecosystem for meme campaigns on BNB Chain. It combines campaigns, bonding-curve trading, UpVotes, Leagues, recruiters, squads, Warzone BNB Airdrops, fee routing, and claim-based rewards.
 
 ### When does Prepare Mode open?
 Prepare Mode opens on **May 12**.
@@ -26,60 +26,60 @@ A campaign is the launch page and trading environment for a meme token on MemeWa
 The graduation threshold is **50 BNB**.
 
 ### What happens at graduation?
-A 2% finalize fee is taken, then the remaining liquidity is split: **80% LP** and **20% creator payout**.
+A 2.00% finalize fee is taken, then the remaining liquidity is split: **80% LP** and **20% creator payout**.
 
 ### How much can a creator earn at minimum graduation?
 At 50 BNB raised, the example creator payout is **9.8 BNB** after the finalize fee.
 
-## Fees
+## Fees and routing
 
 ### What are the trading fees?
-Buys and sells have a **2% fee**.
+Buys and sells have a **2.00% fee**.
 
-### How much goes to the League Treasury?
-**0.75% of every buy and sell** goes to the League Treasury.
+### How much goes to LeagueTreasury?
+**0.75% of every buy and sell** goes to LeagueTreasury.
 
-### How much does an UpVote cost?
-An UpVote costs **0.003 BNB**.
+### What is TreasuryRouter?
+TreasuryRouter is the single fee-routing entry point. It routes fee flows into LeagueTreasury, RecruiterRewardsVault, CommunityRewardsVault, and ProtocolRevenueVault.
 
-### Are UpVotes refundable?
-No. UpVotes are paid visibility actions.
+### Does the reward system add extra user fees?
+No. Recruiter, Squad Pool, Airdrop, and League allocations come from the existing 2.00% fee envelope.
 
-## Leagues
+### What is protocol revenue?
+Protocol revenue is the remainder after reward routing.
 
-### What are the League categories?
-The main categories are **Perfect Run**, **Fastest Finish**, **Biggest Hit**, **Top Earner**, and **Crowd Favorite**.
+## Recruiters and squads
 
-### When do weekly Leagues reset?
-Weekly epochs run from **Monday 00:00 UTC to next Monday 00:00 UTC**.
+### What do standard recruiters earn?
+Standard recruiters can earn **0.25%** from linked buy/sell activity and **0.30%** from linked creator finalize activity.
 
-### When do monthly Leagues reset?
-Monthly epochs run from the **1st day of the month 00:00 UTC to the 1st day of the next month 00:00 UTC**.
+### What do OG recruiters earn?
+OG recruiters can earn **0.30%** from linked buy/sell activity and **0.35%** from linked creator finalize activity.
 
-### What is the monthly Top 5 split?
-The planned monthly split is **40% / 25% / 15% / 12% / 8%**.
+### What is the Squad Pool?
+The Squad Pool is a contribution-based weekly reward system for eligible members of recruiter-connected squads. It is not an equal split.
 
 ## Airdrops
 
-### What is the Warzone Airdrop Treasury?
-It is a reward pool designed to give active smaller creators and traders a chance at weekly BNB drops.
+### What are Warzone BNB Airdrops?
+Warzone BNB Airdrops are weekly BNB reward opportunities for eligible active smaller creators and traders.
+
+### How are Airdrops funded?
+They are funded by unlinked recruiter and squad slices, plus expired airdrop rewards.
 
 ### Is it the same as Leagues?
-No. Leagues reward top competitive performance. Airdrops are meant to support active smaller fighters too.
+No. Leagues reward top competitive performance. Airdrops give active smaller fighters a capped, weighted random chance at rewards.
 
-### Can whales farm the airdrop pool?
-The intended design should use eligibility rules, volume caps, and exclusions to stop whales from dominating a system built for smaller users.
+## Claims
 
-## Recruiters
+### When do weekly reward epochs reset?
+Weekly reward epochs close **Monday 00:00 UTC**.
 
-### What do recruiters earn?
-Recruiters can earn **0.25%** from linked creator/trader buys and sells, plus **0.30%** from linked creator graduation activity, subject to final implementation rules.
+### How long is the claim window?
+The standard claim deadline is **7 days after epoch end**.
 
-### What link format should recruiters use?
-The preferred format is `/r/CODE`. The universal format is `?ref=CODE`.
-
-### What happens if a referred user has not connected a wallet yet?
-The platform should preserve the recruiter code so attribution can apply when the wallet is later connected.
+### Where should I claim rewards?
+Only through official MemeWarzone pages. Never trust random DM claim links.
 
 ## Safety
 
@@ -89,5 +89,5 @@ No. Meme tokens are high risk. The platform can improve transparency and mechani
 ### Does an UpVote mean a token is safe?
 No. An UpVote is a paid visibility signal only.
 
-### Where should I claim rewards?
-Only through official MemeWarzone pages. Never trust random DM claim links.
+### How does MemeWarzone handle abuse?
+Reward systems can exclude wash trading, self-trading, circular trading, wallet splitting, common-control wallets, creator-funded fake demand, and recruiter farming loops.

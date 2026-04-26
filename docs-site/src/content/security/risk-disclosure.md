@@ -1,6 +1,6 @@
 ---
 title: Risk Disclosure
-description: The plain-English risks of trading meme campaigns and participating in launchpad markets.
+description: The plain-English risks of trading meme campaigns and participating in competitive on-chain markets.
 ---
 
 Meme tokens are high risk.
@@ -53,6 +53,6 @@ Risks include:
 
 ## Reward risk
 
-League and airdrop rewards depend on final rules, eligibility, available pools, and claim windows.
+League, recruiter, Squad Pool, and Warzone BNB Airdrop rewards depend on final rules, eligibility, available pools, anti-abuse checks, and claim windows.
 
 Do not trade solely because you expect a reward.

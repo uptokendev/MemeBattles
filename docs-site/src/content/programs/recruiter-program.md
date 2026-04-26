@@ -1,63 +1,100 @@
 ---
 title: Recruiter Program
-description: How recruiters build squads and earn from linked creators and traders.
+description: How recruiters bring creators and traders into MemeWarzone, earn from linked activity, build squads, and claim rewards.
 ---
 
-The Recruiter Program lets approved recruiters build squads of creators and traders.
+The Recruiter Program rewards approved recruiters who bring real creators and traders into MemeWarzone.
 
-Recruiters are not passive promoters. They are battlefield operators who bring users into MemeWarzone and help the ecosystem grow.
+Recruiters are growth operators. They onboard users, help squads stay active, and create distribution around campaigns.
+
+## What is a recruiter?
+
+A recruiter is an approved wallet with:
+
+- a unique recruiter code
+- a shareable link
+- a public profile
+- recruiter dashboard access
+- linked creators and traders
+- eligibility for recruiter rewards
+
+The preferred short link format is:
+
+```txt
+https://memewar.zone/r/CODE
+```
+
+The universal parameter format is:
+
+```txt
+https://memewar.zone/?ref=CODE
+```
+
+## How linking works
+
+When a user arrives through a recruiter link, MemeWarzone captures the referral code before wallet connect.
+
+That pre-connect referral window persists for 30 days. When the user connects a wallet, the platform can attach that wallet to the recruiter if no stronger existing state blocks the link.
+
+After the wallet has first activity, the link locks. This protects recruiters from losing already-active users and prevents users from repeatedly switching links to farm incentives.
 
 ## What recruiters earn
 
-Approved recruiters can earn:
+Recruiter rewards come from the existing 2.00% fee envelope.
 
-| Linked user/action | Recruiter earning |
-| --- | ---: |
-| Linked creator trading activity | 0.25% on buys and sells |
-| Linked trader trading activity | 0.25% on buys and sells |
-| Linked creator graduation | 0.30% graduation-related share |
+| Linked activity | Standard recruiter | OG recruiter |
+| --- | ---: | ---: |
+| Buy / sell | 0.25% | 0.30% |
+| Creator finalize | 0.30% | 0.35% |
 
-These rewards are designed as lifetime revenue share while linked users keep using the platform, subject to final platform rules and implementation.
+OG override is carved out of protocol revenue. It does not add an extra fee for users.
 
-## Why it matters
+## Weekly claims
 
-Recruiters help MemeWarzone acquire:
+Recruiter rewards settle through weekly reward epochs.
 
-- creators
-- traders
-- communities
-- launch attention
-- social distribution
+After an epoch is processed and published, eligible recruiter rewards become claimable through the recruiter dashboard/profile flow.
 
-Instead of paying random one-off shills, MemeWarzone gives serious recruiters a long-term reason to build real squads.
+The standard claim window is 7 days after epoch end. Expired recruiter rewards return to the Squad Pool path.
 
-## Who should apply
+## Recruiter lifecycle
 
-The program is best for:
+Recruiters can move through lifecycle states:
 
-- KOLs
-- community builders
-- Telegram/Discord operators
-- meme coin callers
-- creator scouts
-- active promoters who can actually onboard users
+| State | Meaning |
+| --- | --- |
+| Active | Recruiter can receive attribution and rewards |
+| Inactive | Recruiter may remain visible but may lose reward eligibility |
+| Closed | Recruiter no longer receives new rewards |
+| Detached | Linked users can become detached according to platform policy |
 
-## Recruiter vs regular user
+Inactivity, abuse, or closure can detach users from a recruiter. Detachment is tracked so dashboards can explain the current state.
 
-A recruiter is not just someone sitting in chat waiting for payment.
+## Recruiter leaderboard
 
-A recruiter should actively:
+Public recruiter leaderboards can show:
 
-- bring creators
-- bring traders
-- help them understand the platform
-- keep the squad engaged
-- create social activity around launches
+- recruiter code
+- display name
+- OG status
+- active squad size
+- linked creators
+- linked traders
+- routed activity
+- reward totals where public
 
-## Application flow
+Leaderboard moments help turn growth work into visible status.
 
-Recruiters should apply through the official MemeWarzone site.
+## Public profiles
 
-After approval, they receive access to their recruiter dashboard and share link.
+Recruiter profiles can show:
 
-Read: **[Attribution & links](/programs/attribution-and-links)**.
+- code and share link
+- public squad stats
+- historical performance
+- linked graduations
+- leaderboard rank
+
+Private wallet-level attribution details and risk analytics should not be exposed publicly.
+
+Read next: **[Attribution & Links](/programs/attribution-and-links)** and **[OG Recruiters](/programs/og-recruiters)**.
