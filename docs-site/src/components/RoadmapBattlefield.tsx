@@ -1,21 +1,48 @@
 import { roadmapMilestones } from '../content/roadmapData'
 
+const statusLabel: Record<string, string> = {
+  completed: 'Completed',
+  incoming: 'Incoming',
+  scheduled: 'Scheduled',
+  planned: 'Planned',
+  future: 'Future Front'
+}
+
 export default function RoadmapBattlefield() {
   return (
-    <section className="mb-panel rounded-[1.9rem] p-6 mb-8">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">Battlefield Roadmap</h2>
-        <p className="text-mb-muted">Scroll through the MemeWarzone campaign from first idea to full domination.</p>
+    <section className="roadmap-battlefield mb-8" aria-label="MemeWarzone battlefield roadmap">
+      <div className="roadmap-battlefield__scan" aria-hidden="true" />
+
+      <div className="roadmap-battlefield__header">
+        <div>
+          <p className="roadmap-battlefield__eyebrow">Battlefield campaign map</p>
+          <h2>From first war plan to launchpad domination</h2>
+          <p>
+            Scroll left to right through the MemeWarzone campaign route. Every checkpoint marks a real milestone.
+          </p>
+        </div>
+        <div className="roadmap-battlefield__hint" aria-hidden="true">
+          Scroll →
+        </div>
       </div>
 
-      <div className="roadmap-scroll">
+      <div className="roadmap-scroll" role="region" tabIndex={0}>
         <div className="roadmap-track">
-          {roadmapMilestones.map((m) => (
-            <div key={m.id} className={`roadmap-node roadmap-node--${m.status}`}>
+          <div className="roadmap-route-line" aria-hidden="true" />
+
+          {roadmapMilestones.map((m, i) => (
+            <a
+              key={m.id}
+              href={`#${m.id}`}
+              className={`roadmap-node roadmap-node--${m.status}`}
+              style={{ ['--i' as any]: i }}
+            >
+              <span className="roadmap-beacon" />
               <span className="roadmap-month">{m.month}</span>
               <strong className="roadmap-title">{m.title}</strong>
               <p className="roadmap-text">{m.shortText}</p>
-            </div>
+              <span className="roadmap-status">{statusLabel[m.status]}</span>
+            </a>
           ))}
         </div>
       </div>
