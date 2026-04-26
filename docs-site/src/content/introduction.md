@@ -1,52 +1,50 @@
 ---
 title: Introduction
-description: The fast path to understanding MemeWarzone: what it is, who it is for, and how the system creates recurring battles instead of one-off launches.
+description: The fast path to understanding MemeWarzone as a competitive on-chain ecosystem with campaigns, rewards, routing, and weekly battles.
 ---
 
-MemeWarzone is a creator-first meme launchpad on BNB Chain.
+MemeWarzone is a competitive on-chain ecosystem for meme campaigns on BNB Chain.
 
-The platform combines token launches, bonding-curve trading, creator rewards, paid discovery, recruiter squads, weekly/monthly Leagues, and BNB reward drops into one competitive battlefield.
+It combines bonding-curve campaigns, creator rewards, paid discovery, Leagues, recruiter attribution, Squad Pool rewards, Warzone BNB Airdrops, and claim-based reward flows into one recurring battlefield.
 
-The goal is simple: make launches more transparent, more competitive, and more rewarding for the people who actually create, trade, recruit, and show up every day.
+The goal is simple: every real action should help the system grow.
 
 ## The core idea
 
-Most launchpads focus on one action: launch a token fast.
+Most meme campaign tools focus on one moment: create a token and hope attention shows up.
 
-MemeWarzone turns that launch into an ongoing warzone:
+MemeWarzone turns that moment into an ongoing system:
 
 - creators launch campaigns and fight for attention
-- traders compete for upside and League rewards
-- recruiters build squads of creators and traders
-- smaller active fighters get chances at weekly BNB drops
-- the platform uses clear fees to fund rewards, operations, and growth
+- traders compete for upside, League prizes, and reward eligibility
+- recruiters bring real creators and traders into the ecosystem
+- squads compete through contribution-based rewards
+- smaller active fighters get chances at weekly Warzone BNB Airdrops
+- fees route through TreasuryRouter into reward buckets and protocol revenue
 
-The result is not just a token factory. It is a recurring game loop around meme launches.
+The result is not just a token factory. It is a recurring game loop around meme campaigns.
 
 ## Who it is for
 
 | Role | What they do | What they can earn |
 | --- | --- | --- |
 | Creators | Launch campaigns, build communities, push attention | Creator graduation payout, visibility, League wins |
-| Traders | Trade bonding curves and post-graduation markets | Trading upside, League prizes, reward drops |
-| Recruiters | Bring creators and traders into the warzone | Lifetime fee share from linked activity |
+| Traders | Trade bonding curves and support campaigns | Trading upside, League prizes, airdrops, Squad Pool rewards |
+| Recruiters | Bring creators and traders into MemeWarzone | Recruiter rewards from linked activity |
+| Squads | Compete as recruiter-connected groups | Squad Pool rewards and public ranking |
 | Communities | Rally around campaigns, UpVote, raid, compete | Discovery, status, rewards, momentum |
 
-## Why it matters
+## Why MemeWarzone is different
 
-The meme launch market has a trust problem.
+MemeWarzone is built around recurring competition:
 
-Users are tired of fake hype, silent deployers, sniper-dominated launches, hidden incentives, and platforms that only reward the biggest wallets.
-
-MemeWarzone is built around a different set of incentives:
-
-- visible campaign activity
-- transparent paid discovery
-- creator economics at graduation
-- recurring League events
-- recruiter attribution
-- smaller-fighter airdrop rewards
-- treasury flows that do not depend on personal wallets
+- not one-time launches
+- weekly and monthly epochs
+- self-funding incentives
+- transparent fee routing
+- claim-based rewards
+- public leaderboards and winner pages
+- private dashboard views for eligibility and claims
 
 ## Current launch phase
 
@@ -54,4 +52,4 @@ MemeWarzone opens **Prepare Mode on May 12**.
 
 Prepare Mode lets creators, recruiters, and early users prepare before full live deployment. When the platform flips live, prepared creators can deploy their campaigns into the active warzone.
 
-Start with **[Getting Started](/getting-started)**, then read **[Prepare Mode](/prepare-mode)**.
+Start with **[How MemeWarzone Works](/how-memewarzone-works)**, then read **[Getting Started](/getting-started)**.

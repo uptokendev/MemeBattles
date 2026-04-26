@@ -44,6 +44,7 @@ import {
 } from '@/lib/ranks';
 import { fetchLeagueCabinet } from "@/lib/leagueCabinetApi";
 import type { LeagueCabinet } from "@/lib/leagueCabinet";
+import { REALTIME_API_BASE } from "@/lib/realtimeApi";
 import { ProfileAirdropsPanel } from "@/components/profile/ProfileAirdropsPanel";
 import { ProfileSquadPanel } from "@/components/profile/ProfileSquadPanel";
 import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
@@ -74,8 +75,6 @@ type ActivityTradeRow = {
   campaignSymbol: string | null;
   logoUri: string | null;
 };
-
-const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 const ERC20_ABI_MIN = [
   {
@@ -1262,6 +1261,37 @@ const Profile = () => {
             loading={loadingLeagueCabinet}
             displayName={displayName}
           />
+
+          {(!addressParam || isOwnProfile) && (
+            <div className="rounded-2xl border border-border bg-card/30 p-4 md:p-6">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs md:text-sm font-retro text-muted-foreground">Incentive Hub</p>
+                  <p className="font-retro text-sm md:text-base text-foreground">
+                    Your wallet-specific Airdrops, Squad, and Recruiter tools live inside Profile now.
+                  </p>
+                  <p className="text-xs md:text-sm text-muted-foreground">
+                    The top bar still keeps public shortcuts, but the personal reward surfaces are here.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("airdrops")}>
+                    My Airdrops
+                  </Button>
+                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("squad")}>
+                    My Squad
+                  </Button>
+                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("recruiter")}>
+                    Recruiter
+                  </Button>
+                  <Button className="font-retro" onClick={() => navigate("/recruiter/signup")}>
+                    Become a Recruiter
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="flex gap-3 md:gap-6 border-t border-border pt-4 md:pt-6 overflow-x-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">

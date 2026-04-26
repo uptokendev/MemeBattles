@@ -17,18 +17,30 @@ Make sure you understand:
 - your slippage settings
 - whether the campaign has reliable links
 - where the campaign is in the lifecycle
+- whether you are linked to a recruiter or squad
 
 ## Fees
 
-Buys and sells have a **2% fee**.
+Buys and sells have a 2.00% fee.
 
-From every buy and sell, **0.75% of trade notional** routes to the League Treasury.
+From every buy and sell, 0.75% of trade notional routes to LeagueTreasury. Other slices route to recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue based on attribution profile.
 
-Read: **[Fee model](/fees)**.
+Read: **[Fee Routing](/fees/fee-routing)**.
+
+## Reward eligibility
+
+Trading can affect:
+
+- League standings
+- Warzone BNB Airdrop eligibility
+- Squad Pool score
+- profile and ranking history
+
+Reward eligibility is subject to caps and anti-abuse checks. Do not trade solely because you expect a reward.
 
 ## Slippage
 
-During volatile launches, trades can fail if slippage is too low.
+During volatile campaigns, trades can fail if slippage is too low.
 
 Never blindly raise slippage without understanding the risk. High slippage can produce worse fills than expected.
 

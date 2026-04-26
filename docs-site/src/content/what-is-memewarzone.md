@@ -4,26 +4,29 @@ title: What is MemeWarzone?
 
 # What is MemeWarzone?
 
-MemeWarzone is a **meme launchpad** where every token launch becomes a **campaign** inside a competitive arena.
+MemeWarzone is a competitive on-chain ecosystem where every meme token campaign becomes part of a recurring arena.
 
 Think of it as:
 
-- **Launchpad**: create a token and start a public sale quickly
-- **Market**: trade the token while the price follows a bonding curve
-- **Discovery layer**: UpVotes push campaigns into featured positions
+- **Campaign system**: creators prepare and launch public meme campaigns
+- **Market**: traders buy and sell through a bonding curve before graduation
+- **Discovery layer**: UpVotes push campaigns into visible competition
 - **Competition layer**: Leagues run on epochs and distribute prizes
-- **Progression layer**: ranks and recruiters turn participation into visible status and ecosystem growth
+- **Incentive layer**: recruiters, squads, and Warzone BNB Airdrops turn activity into rewards
+- **Progression layer**: ranks, profiles, and leaderboards make participation visible
 
-## The campaign lifecycle (high level)
+## The campaign lifecycle
 
-1. **Create** — a creator launches a campaign (token + bonding curve)
-2. **Trade** — users buy/sell against the curve, price updates transparently
-3. **UpVote** — the community boosts visibility for campaigns they support
-4. **Graduate** — once the campaign hits the graduation threshold, it finalizes and transitions to post-graduation liquidity
-5. **Compete** — campaigns and traders participate in leagues, rankings, and ecosystem progression
+1. **Create**: a creator launches a campaign with token and bonding curve.
+2. **Trade**: users buy and sell against the curve.
+3. **UpVote**: the community boosts visibility for campaigns they support.
+4. **Graduate**: the campaign reaches 50 BNB, finalizes, and creates liquidity.
+5. **Compete**: campaigns, traders, recruiters, and squads participate in epochs, rankings, and rewards.
+6. **Claim**: eligible users claim rewards through official dashboard/profile flows.
 
-If you're looking for specifics:
+If you are looking for specifics:
 
-- lifecycle mechanics → **How it works → Launch lifecycle**
-- pricing → **How it works → Bonding curve**
-- post-threshold transition → **How it works → Graduation**
+- full flow: **[How MemeWarzone Works](/how-memewarzone-works)**
+- lifecycle mechanics: **[Campaign System](/platform/campaign-lifecycle)**
+- pricing: **[Bonding Curve](/platform/bonding-curve)**
+- post-threshold transition: **[Graduation](/platform/graduation)**

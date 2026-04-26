@@ -1,9 +1,9 @@
 ---
-title: Campaign Lifecycle
-description: The full path from prepared campaign to bonding curve, graduation, liquidity, and rewards.
+title: Campaign System
+description: The full path from prepared campaign to bonding curve, graduation, liquidity, rewards, and reputation.
 ---
 
-A campaign is the core launch object in MemeWarzone.
+A campaign is the core object in MemeWarzone.
 
 It is not just a token. It is the campaign page, trading phase, visibility battle, creator reputation, League participation, and reward history around that token.
 
@@ -34,11 +34,12 @@ During the bonding-curve phase:
 
 - traders buy and sell through the campaign contract
 - price moves according to the curve
-- trading fees apply
+- the 2.00% trading fee applies
+- TreasuryRouter routes fee flows
 - League metrics begin tracking
 - UpVotes can push visibility
 
-This is the highest-intensity phase of a launch.
+This is the highest-intensity phase of a campaign.
 
 Read: **[Bonding curve](/platform/bonding-curve)**.
 
@@ -46,14 +47,15 @@ Read: **[Bonding curve](/platform/bonding-curve)**.
 
 A campaign graduates when it reaches the graduation threshold.
 
-The graduation threshold is **50 BNB**.
+The graduation threshold is 50 BNB.
 
 At graduation:
 
-- the finalize fee is taken
+- the 2.00% finalize fee is taken
+- TreasuryRouter routes the finalize fee
 - remaining liquidity is split
-- LP liquidity is created
-- creator payout is calculated
+- 80% of remaining liquidity becomes LP liquidity
+- 20% of remaining liquidity becomes creator payout
 - the campaign enters the DEX stage
 
 Read: **[Graduation](/platform/graduation)**.
@@ -62,14 +64,17 @@ Read: **[Graduation](/platform/graduation)**.
 
 After graduation, the token has liquidity outside the bonding curve.
 
-This is where the campaign moves from launch battle into broader market trading.
+This is where the campaign moves from early battlefield into broader market trading.
 
 ## 6. Claims and rewards
 
 Eligible users may later claim rewards from:
 
 - League prizes
-- Warzone Airdrop Treasury drops
-- other campaign or platform reward systems
+- recruiter rewards
+- Squad Pool rewards
+- Warzone BNB Airdrops
 
 Claims should always be made through official MemeWarzone pages only.
+
+Read: **[Epochs & Claims](/rewards/epochs-and-claims)**.

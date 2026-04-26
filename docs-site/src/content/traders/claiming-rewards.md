@@ -1,9 +1,11 @@
 ---
 title: Claiming Rewards
-description: How eligible traders and creators should think about League claims and reward drops.
+description: How eligible users claim League, recruiter, Squad Pool, and Warzone BNB Airdrop rewards safely.
 ---
 
-Some MemeWarzone rewards may become claimable after League epochs, reward drops, or other campaign events.
+MemeWarzone rewards are claim-based.
+
+Eligible users claim through official MemeWarzone dashboard or profile pages after an epoch is processed and published.
 
 ## Claim only from official pages
 
@@ -13,22 +15,39 @@ Never trust:
 
 - random DM claim links
 - fake support accounts
-- unofficial “airdrop checker” pages
+- unofficial airdrop checker pages
 - Telegram or Discord links from unknown users
 
-## League claims
+## Weekly claims
 
-League rewards are connected to weekly and monthly competition results.
+Most reward programs run on weekly epochs.
 
-Claims may have eligibility windows and expiry rules.
+Weekly reward epochs close Monday 00:00 UTC. After processing and publication, eligible rewards become claimable.
 
-Read: **[Epochs & prizes](/leagues/epochs-and-prizes)**.
+The standard claim window is 7 days after epoch end.
 
-## Airdrop claims
+Read: **[Epochs & Claims](/rewards/epochs-and-claims)**.
 
-Warzone Airdrop Treasury drops are designed for active smaller creators and traders who are not already dominating the top League positions.
+## What can become claimable
 
-Read: **[Warzone Airdrops](/leagues/airdrops)**.
+Depending on eligibility, users may see:
+
+- recruiter rewards
+- Squad Pool rewards
+- Warzone BNB Airdrops
+- League-related rewards
+
+The dashboard should show pending, claimable, claimed, expired, and rolled-over states.
+
+## Expired claims
+
+Expired rewards stay inside the ecosystem:
+
+| Reward type | Expiry destination |
+| --- | --- |
+| Recruiter rewards | Squad Pool |
+| Squad Pool rewards | Squad Pool |
+| Warzone BNB Airdrops | Airdrop treasury |
 
 ## Claim safety checklist
 

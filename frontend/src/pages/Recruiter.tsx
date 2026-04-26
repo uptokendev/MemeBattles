@@ -16,7 +16,7 @@ export default function Recruiter() {
   useEffect(() => {
     let cancelled = false;
     if (!account) {
-      setRecruiter(null);
+      setStatus(null);
       return;
     }
 

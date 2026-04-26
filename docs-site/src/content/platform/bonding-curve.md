@@ -1,11 +1,11 @@
 ---
 title: Bonding Curve
-description: How pre-graduation MemeWarzone trading works and why early-stage price movement can be intense.
+description: How pre-graduation MemeWarzone trading works and how trading fees route into the ecosystem.
 ---
 
 Before graduation, campaigns trade through a bonding curve.
 
-A bonding curve is a pricing mechanism where the token price changes as users buy and sell through the campaign contract.
+A bonding curve is a pricing mechanism where token price changes as users buy and sell through the campaign contract.
 
 ## Why MemeWarzone uses it
 
@@ -13,11 +13,12 @@ The bonding-curve phase gives every campaign an initial battlefield before DEX l
 
 It allows:
 
-- fast launches
+- fast campaign activation
 - visible early demand
 - transparent campaign progress
 - graduation based on actual raised liquidity
 - League tracking during the most competitive phase
+- reward routing from real trading activity
 
 ## What traders should know
 
@@ -47,8 +48,8 @@ Creators should focus on:
 
 ## Fees during bonding
 
-Buy and sell fees are **2%**.
+Buy and sell fees are 2.00%.
 
-From every buy and sell, **0.75% of trade notional** routes to the League Treasury.
+From every buy and sell, 0.75% of trade notional routes to LeagueTreasury. Other slices can route to recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue based on attribution profile.
 
-Read: **[Fee model](/fees)**.
+Read: **[Fee Routing](/fees/fee-routing)**.

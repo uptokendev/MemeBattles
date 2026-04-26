@@ -249,6 +249,11 @@ function isAllowedOrigin(origin?: string) {
     const u = new URL(origin);
     const host = u.hostname.toLowerCase();
 
+    // Local frontend dev / preview ports.
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+      return true;
+    }
+
     // Current production/custom domains
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) {
       return true;

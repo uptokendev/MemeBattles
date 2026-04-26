@@ -1,3 +1,5 @@
+import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+
 type InternalHeaders = {
   authorization?: string;
 };
@@ -105,7 +107,7 @@ export type RewardPublicationState = {
 };
 
 export async function fetchWalletRewardEligibility(walletAddress: string, limit = 20, program?: string | null): Promise<WalletEligibilityItem[]> {
-  const res = await fetch(`/api/rewards/me/eligibility${buildQuery({ address: walletAddress, limit, program })}`);
+  const res = await fetch(buildRealtimeApiUrl(`/api/rewards/me/eligibility${buildQuery({ address: walletAddress, limit, program })}`));
   const json = await parseJson(res);
   return Array.isArray(json?.items) ? json.items as WalletEligibilityItem[] : [];
 }
@@ -116,13 +118,13 @@ export async function fetchAirdropWinners(params: {
   walletAddress?: string | null;
   limit?: number;
 } = {}): Promise<AirdropWinner[]> {
-  const res = await fetch(`/api/airdrops/winners${buildQuery(params)}`);
+  const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/winners${buildQuery(params)}`));
   const json = await parseJson(res);
   return Array.isArray(json?.items) ? json.items as AirdropWinner[] : [];
 }
 
 export async function fetchSquadLeaderboard(epochId?: number | null) {
-  const res = await fetch(`/api/squads${buildQuery({ epochId })}`);
+  const res = await fetch(buildRealtimeApiUrl(`/api/squads${buildQuery({ epochId })}`));
   return parseJson(res);
 }
 
@@ -132,12 +134,12 @@ export async function fetchSquadMembers(params: {
   walletAddress?: string | null;
   limit?: number;
 }) {
-  const res = await fetch(`/api/squads/members${buildQuery(params)}`);
+  const res = await fetch(buildRealtimeApiUrl(`/api/squads/members${buildQuery(params)}`));
   return parseJson(res);
 }
 
 export async function fetchInternalRewardPublications(token: string) {
-  const res = await fetch("/internal/rewards/publications", {
+  const res = await fetch(buildRealtimeApiUrl("/internal/rewards/publications"), {
     headers: authHeaders(token),
   });
   return parseJson(res);
@@ -150,7 +152,7 @@ export async function updateInternalRewardPublication(token: string, body: {
   actedBy?: string | null;
   reason?: string | null;
 }) {
-  const res = await fetch("/internal/rewards/publications", {
+  const res = await fetch(buildRealtimeApiUrl("/internal/rewards/publications"), {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -162,35 +164,35 @@ export async function updateInternalRewardPublication(token: string, body: {
 }
 
 export async function fetchInternalRewardRoutingDiagnostics(token: string, chainId?: number | null) {
-  const res = await fetch(`/internal/rewards/ops/routing${buildQuery({ chainId })}`, {
+  const res = await fetch(buildRealtimeApiUrl(`/internal/rewards/ops/routing${buildQuery({ chainId })}`), {
     headers: authHeaders(token),
   });
   return parseJson(res);
 }
 
 export async function fetchInternalRewardClaimVault(token: string) {
-  const res = await fetch("/internal/rewards/ops/claim-vault", {
+  const res = await fetch(buildRealtimeApiUrl("/internal/rewards/ops/claim-vault"), {
     headers: authHeaders(token),
   });
   return parseJson(res);
 }
 
 export async function fetchInternalRewardEpochStatus(token: string, limit = 20) {
-  const res = await fetch(`/internal/rewards/ops/epoch-status${buildQuery({ limit })}`, {
+  const res = await fetch(buildRealtimeApiUrl(`/internal/rewards/ops/epoch-status${buildQuery({ limit })}`), {
     headers: authHeaders(token),
   });
   return parseJson(res);
 }
 
 export async function fetchInternalRewardAlerts(token: string) {
-  const res = await fetch("/internal/rewards/ops/alerts", {
+  const res = await fetch(buildRealtimeApiUrl("/internal/rewards/ops/alerts"), {
     headers: authHeaders(token),
   });
   return parseJson(res);
 }
 
 export async function fetchInternalRewardAdminActions(token: string, limit = 50) {
-  const res = await fetch(`/internal/rewards/ops/admin-actions${buildQuery({ limit })}`, {
+  const res = await fetch(buildRealtimeApiUrl(`/internal/rewards/ops/admin-actions${buildQuery({ limit })}`), {
     headers: authHeaders(token),
   });
   return parseJson(res);
@@ -202,7 +204,7 @@ export async function fetchInternalAirdropDraws(token: string, params: {
   status?: string | null;
   limit?: number;
 } = {}) {
-  const res = await fetch(`/internal/rewards/airdrops/draws${buildQuery(params)}`, {
+  const res = await fetch(buildRealtimeApiUrl(`/internal/rewards/airdrops/draws${buildQuery(params)}`), {
     headers: authHeaders(token),
   });
   return parseJson(res);
@@ -215,7 +217,7 @@ export async function runInternalAirdropDraw(token: string, epochId: number, bod
   actedBy?: string | null;
   reason?: string | null;
 }) {
-  const res = await fetch(`/internal/rewards/airdrops/epochs/${encodeURIComponent(String(epochId))}/draws/run`, {
+  const res = await fetch(buildRealtimeApiUrl(`/internal/rewards/airdrops/epochs/${encodeURIComponent(String(epochId))}/draws/run`), {
     method: "POST",
     headers: {
       "content-type": "application/json",
