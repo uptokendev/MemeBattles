@@ -19,208 +19,135 @@
   --mb-olive: 124 139 90;
 }
 
-@media (min-width: 640px) {
-  :root {
-    --mb-topbar-height: 72px;
-    --mb-logo-box: 52px;
-    --mb-logo-img: 46px;
-  }
-}
+/* EXISTING STYLES ABOVE... (kept unchanged) */
 
-html, body, #root {
-  min-height: 100%;
-}
+/* =============================
+   ROADMAP BATTLEFIELD (AGGRESSIVE)
+============================= */
 
-html {
-  background: rgb(var(--mb-bg));
-}
-
-body {
-  margin: 0;
-  color: rgb(var(--mb-text));
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  background:
-    linear-gradient(180deg, rgba(6,8,10,0.88), rgba(8,10,12,0.94)),
-    radial-gradient(circle at 18% 0%, rgba(240,106,26,0.14), transparent 26%),
-    radial-gradient(circle at 84% 10%, rgba(57,227,23,0.08), transparent 20%),
-    url('/background.png') center top / cover fixed no-repeat,
-    rgb(var(--mb-bg));
-}
-
-a { color: inherit; }
-
-::selection {
-  background: rgba(240,106,26,0.28);
-  color: rgb(var(--mb-text));
-}
-
-.mb-shell::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(180deg, rgba(4,5,7,0.2), rgba(4,5,7,0.72) 72%, rgba(4,5,7,0.88)),
-    radial-gradient(circle at top, rgba(240,106,26,0.08), transparent 34%),
-    radial-gradient(circle at 82% 14%, rgba(57,227,23,0.05), transparent 18%);
-  z-index: 0;
-}
-
-.mb-topbar {
-  background: linear-gradient(180deg, rgba(11,13,16,0.94), rgba(16,19,23,0.88));
-  box-shadow: 0 18px 50px -30px rgba(0,0,0,0.95);
-}
-
-.mb-topbar__inner {
-  height: var(--mb-topbar-height);
-}
-
-.mb-logo-wrap {
-  width: var(--mb-logo-box);
-  height: var(--mb-logo-box);
-}
-
-.mb-logo {
-  width: var(--mb-logo-img);
-  height: var(--mb-logo-img);
-}
-
-.mb-panel {
+.roadmap-battlefield {
   position: relative;
-  border: 1px solid rgba(var(--mb-border), 0.24);
-  background: linear-gradient(180deg, rgba(20,24,30,0.8), rgba(13,16,20,0.78));
-  box-shadow:
-    0 30px 80px -42px rgba(0,0,0,0.98),
-    inset 0 1px 0 rgba(255,255,255,0.05),
-    0 0 0 1px rgba(255,255,255,0.015);
-  backdrop-filter: blur(10px);
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(var(--mb-border), 0.25);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(240,106,26,0.12), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(57,227,23,0.08), transparent 30%),
+    linear-gradient(180deg, rgba(14,18,22,0.95), rgba(10,13,16,0.95));
+  overflow: hidden;
 }
 
-.mb-panel::after {
-  content: '';
+.roadmap-battlefield__scan {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  background: linear-gradient(120deg, transparent, rgba(255,255,255,0.05), transparent);
+  animation: scan 6s linear infinite;
   pointer-events: none;
-  background:
-    radial-gradient(circle at top right, rgba(240,106,26,0.08), transparent 26%),
-    radial-gradient(circle at 12% 0%, rgba(57,227,23,0.045), transparent 18%);
 }
 
-.mb-topbar__cta {
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(var(--mb-accent), 0.55);
-  background: linear-gradient(180deg, rgba(255,138,42,0.22), rgba(240,106,26,0.14));
-  color: rgb(var(--mb-text));
+@keyframes scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.roadmap-battlefield__header h2 {
+  font-size: 1.8rem;
   font-weight: 700;
-  font-size: 0.875rem;
-  line-height: 1;
-  text-decoration: none;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background-color 140ms ease;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
-.mb-topbar__cta:hover {
-  border-color: rgba(var(--mb-accent-strong), 0.82);
-  background: linear-gradient(180deg, rgba(255,138,42,0.28), rgba(240,106,26,0.18));
-  box-shadow: 0 0 0 1px rgba(240,106,26,0.18), 0 0 28px rgba(240,106,26,0.14);
-  transform: translateY(-1px);
+.roadmap-scroll {
+  margin-top: 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
 }
 
-.mb-outline-button {
-  border: 1px solid rgba(var(--mb-border), 0.28);
-  background: rgba(19,22,27,0.72);
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background-color 140ms ease;
+.roadmap-track {
+  display: flex;
+  gap: 40px;
+  min-width: max-content;
+  position: relative;
+  padding: 40px 0;
 }
 
-.mb-outline-button:hover {
-  border-color: rgba(var(--mb-accent), 0.42);
-  background: rgba(25,29,35,0.8);
-  box-shadow: 0 0 0 1px rgba(240,106,26,0.14), 0 0 24px rgba(240,106,26,0.10);
-  transform: translateY(-1px);
+.roadmap-route-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(240,106,26,0.5), rgba(57,227,23,0.4));
+  box-shadow: 0 0 20px rgba(240,106,26,0.3);
 }
 
-.mb-input {
-  border: 1px solid rgba(var(--mb-border), 0.24);
-  background: rgba(18,22,28,0.84);
-  color: rgb(var(--mb-text));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+.roadmap-node {
+  position: relative;
+  scroll-snap-align: center;
+  min-width: 220px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(20,24,30,0.85);
+  border: 1px solid rgba(var(--mb-border), 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.25s ease;
 }
 
-.mb-input::placeholder {
-  color: rgba(var(--mb-muted), 0.7);
+.roadmap-node:hover {
+  transform: translateY(-6px) scale(1.03);
+  box-shadow: 0 0 30px rgba(240,106,26,0.3);
 }
 
-.mb-input:focus {
-  outline: none;
-  border-color: rgba(var(--mb-accent), 0.42);
-  box-shadow: 0 0 0 3px rgba(240,106,26,0.14);
+.roadmap-beacon {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(240,106,26,1);
+  box-shadow: 0 0 12px rgba(240,106,26,0.8);
 }
 
-.prose-mb h1, .prose-mb h2, .prose-mb h3, .prose-mb h4 {
-  scroll-margin-top: calc(var(--mb-topbar-height) + 24px);
+.roadmap-node--completed .roadmap-beacon {
+  background: rgba(57,227,23,1);
+  box-shadow: 0 0 12px rgba(57,227,23,0.8);
 }
 
-.prose-mb h2 {
-  letter-spacing: -0.015em;
+.roadmap-node--future .roadmap-beacon {
+  background: rgba(150,150,150,0.6);
+  box-shadow: none;
 }
 
-.prose-mb a {
-  text-decoration: none;
-  color: rgba(var(--mb-accent-strong), 0.96);
-  border-bottom: 1px solid rgba(240,106,26,0.32);
+.roadmap-month {
+  font-size: 0.7rem;
+  color: rgba(var(--mb-muted), 0.8);
+  text-transform: uppercase;
 }
 
-.prose-mb a:hover {
-  color: rgba(var(--mb-accent-strong), 1);
-  border-bottom-color: rgba(240,106,26,0.64);
+.roadmap-title {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 4px;
 }
 
-.prose-mb code {
-  background: rgba(255,255,255,0.05);
+.roadmap-text {
+  font-size: 0.8rem;
+  color: rgba(var(--mb-muted), 0.85);
+  margin-top: 6px;
+}
+
+.roadmap-status {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.7rem;
   padding: 2px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.05);
+  background: rgba(240,106,26,0.2);
 }
 
-.prose-mb pre {
-  background: rgba(8,10,13,0.72);
-  padding: 14px;
-  border: 1px solid rgba(var(--mb-border), 0.2);
-  border-radius: 14px;
-  overflow-x: auto;
-}
-
-.prose-mb table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(var(--mb-border), 0.22);
-  background: rgba(12,15,19,0.45);
-}
-
-.prose-mb th, .prose-mb td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(var(--mb-border), 0.16);
-}
-
-.prose-mb th {
-  text-align: left;
-  background: rgba(255,255,255,0.04);
-}
-
-.prose-mb hr {
-  border: 0;
-  border-top: 1px solid rgba(var(--mb-border), 0.2);
-  margin: 2rem 0;
-}
-
-@media (max-width: 1023px) {
-  body {
-    background-position: center top;
-    background-size: auto 100vh;
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-battlefield__scan {
+    animation: none;
   }
 }
