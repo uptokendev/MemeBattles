@@ -389,11 +389,14 @@ a { color: inherit; }
 
 .roadmap-node--completed .roadmap-beacon,
 .roadmap-node--completed .roadmap-status {
-  background: rgba(var(--mb-nvg), 0.92);
-  color: rgba(2,8,5,0.95);
+  background: rgba(57, 227, 23, 0.16);
+  border: 1px solid rgba(57, 227, 23, 0.42);
+  color: rgb(57, 227, 23);
+  box-shadow: 0 0 18px rgba(57, 227, 23, 0.18);
 }
 
 .roadmap-node--completed .roadmap-beacon {
+  background: rgb(var(--mb-nvg));
   box-shadow: 0 0 0 7px rgba(57,227,23,0.10), 0 0 24px rgba(57,227,23,0.62);
 }
 
