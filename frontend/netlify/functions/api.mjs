@@ -29,7 +29,7 @@ import status from "../../api/status.js";
 import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
-import { routingCreateAuthorization, routingTradeAuthorization } from "../../api/dev-fix/route-auth.js";
+import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "../../api/dev-fix/route-auth.js";
 import {
   airdropWinners,
   attributionWallet,
@@ -136,11 +136,12 @@ app.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
 app.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
 app.all("/attribution/wallet/:wallet", wrap(attributionWallet));
 
-// DEV-FIX-API Phase 2: real route-auth signature responses when the
-// route-authority private key is configured in the server environment.
+// DEV-FIX-API Phase 2/3: route-auth signature responses and status checks.
+app.all("/routing/status", wrap(routingStatus));
 app.all("/routing/create-authorization", wrap(routingCreateAuthorization));
 app.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 // Temporary backwards-compatible aliases for current frontend clients.
+app.all("/recruiter-routing/status", wrap(routingStatus));
 app.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 app.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
 
