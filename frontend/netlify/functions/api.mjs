@@ -29,6 +29,7 @@ import status from "../../api/status.js";
 import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
+import { routingCreateAuthorization, routingTradeAuthorization } from "../../api/dev-fix/route-auth.js";
 import {
   airdropWinners,
   attributionWallet,
@@ -54,8 +55,6 @@ import {
   rewardsEligibility,
   rewardsHistory,
   rewardsMe,
-  routingCreateAuthorization,
-  routingTradeAuthorization,
   squadMembers,
   squadSummary,
   squadsLeaderboard,
@@ -116,7 +115,7 @@ app.all("/vote_counts", wrap(voteCounts));
 
 // DEV-FIX-API Phase 1: route alignment stubs.
 // These routes intentionally return JSON-safe empty states until the real
-// reward/recruiter/squad persistence and route signer are implemented.
+// reward/recruiter/squad persistence is implemented.
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
 app.all("/rewards/me/claims", wrap(rewardsClaims));
@@ -137,6 +136,8 @@ app.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
 app.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
 app.all("/attribution/wallet/:wallet", wrap(attributionWallet));
 
+// DEV-FIX-API Phase 2: real route-auth signature responses when the
+// route-authority private key is configured in the server environment.
 app.all("/routing/create-authorization", wrap(routingCreateAuthorization));
 app.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 // Temporary backwards-compatible aliases for current frontend clients.
