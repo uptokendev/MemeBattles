@@ -19,8 +19,15 @@ export const sidebar: NavSection[] = [
       { title: 'Bonding Curve', href: '/platform/bonding-curve' },
       { title: 'Graduation', href: '/platform/graduation' },
       { title: 'UpVotes', href: '/platform/upvotes' },
-      { title: 'Leagues', href: '/leagues' },
       { title: 'War Room Chat', href: '/platform/war-room' }
+    ]
+  },
+  {
+    title: 'Battle Leagues',
+    items: [
+      { title: 'Leagues Overview', href: '/leagues' },
+      { title: 'League Categories', href: '/leagues/categories' },
+      { title: 'Epochs & Prizes', href: '/leagues/epochs-and-prizes' }
     ]
   },
   {
@@ -29,7 +36,7 @@ export const sidebar: NavSection[] = [
       { title: 'Squad Pool', href: '/rewards/squad-pool' },
       { title: 'Warzone BNB Airdrops', href: '/rewards/warzone-airdrops' },
       { title: 'Epochs & Claims', href: '/rewards/epochs-and-claims' },
-      { title: 'Dashboard & Rewards UX', href: '/rewards/dashboard-ux' }
+      { title: 'Reward Dashboard', href: '/rewards/dashboard-ux' }
     ]
   },
   {

@@ -8,7 +8,6 @@ import { getPageByPath, normalizePath } from '../content/loader'
 import { parseFrontmatter } from '../lib/frontmatter'
 import FaqContent from './FaqContent'
 import { buildFaqToc, parseFaqMarkdown } from '../lib/faq'
-import RoadmapBattlefield from './RoadmapBattlefield'
 
 export default function DocPage() {
   const loc = useLocation()
@@ -67,8 +66,6 @@ export default function DocPage() {
             <h1 className="text-3xl font-bold tracking-tight text-mb-text sm:text-4xl">{title}</h1>
             {description && <p className="mt-3 max-w-3xl text-mb-muted">{description}</p>}
           </div>
-
-          {path === '/roadmap' && <RoadmapBattlefield />}
 
           <div className="prose-mb text-mb-text">
             {path === '/faq' ? (
