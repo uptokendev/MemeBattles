@@ -8,6 +8,7 @@ This document tracks the API routes that the frontend expects on the `dev` branc
 - `stub`: Phase 1 route-alignment handler that returns JSON-safe empty state or clear not-implemented response.
 - `alias`: temporary compatibility route. Prefer the canonical route in new code.
 - `internal`: protected ops route requiring an internal bearer token.
+- `signer`: Phase 2 handler that returns a real contract-compatible signature when the route-authority private key is configured.
 
 ## Core existing routes
 
@@ -59,14 +60,41 @@ These routes now resolve to JSON instead of falling through to `Unknown API rout
 | `/api/recruiters/:code/referral/capture` | stub | Acknowledges route but does not persist attribution yet. |
 | `/api/attribution/wallet-connect` | stub | Returns unlinked/solo wallet state. |
 | `/api/attribution/wallet/:wallet` | stub | Returns unlinked/solo wallet state. |
-| `/api/routing/create-authorization` | stub | Returns 503 until real route signer is implemented. |
-| `/api/routing/trade-authorization` | stub | Returns 503 until real route signer is implemented. |
-| `/api/recruiter-routing/create-authorization` | alias | Temporary alias to `/api/routing/create-authorization`. |
-| `/api/recruiter-routing/trade-authorization` | alias | Temporary alias to `/api/routing/trade-authorization`. |
 | `/api/recruiter-signup/status` | stub | Returns signup available for non-recruiter wallet. |
 | `/api/recruiter-signup/code-availability` | stub | Route wired, persistence not implemented. |
 | `/api/recruiter-signup/nonce` | stub | Returns 503 until nonce storage is implemented. |
 | `/api/recruiter-signup` | stub | Returns 503 until signup submission is implemented. |
+
+## Phase 2 route authorization routes
+
+These routes use `frontend/api/dev-fix/route-auth.js` and generate Solidity-compatible signatures when a route-authority private key is configured.
+
+| Route | Status | Notes |
+|---|---:|---|
+| `/api/routing/create-authorization` | signer | Signs `MWZ_CREATE_ROUTE_AUTH` for `LaunchFactory.createCampaignAuthorized`. |
+| `/api/routing/trade-authorization` | signer | Signs `MWZ_ROUTE_TRADE_AUTH` for `LaunchCampaign` authorized buy/sell. |
+| `/api/recruiter-routing/create-authorization` | alias | Temporary alias to `/api/routing/create-authorization`. |
+| `/api/recruiter-routing/trade-authorization` | alias | Temporary alias to `/api/routing/trade-authorization`. |
+
+Required environment variable, one of:
+
+```txt
+ROUTE_AUTHORITY_PRIVATE_KEY
+MWZ_ROUTE_AUTHORITY_PRIVATE_KEY
+ROUTE_AUTH_PRIVATE_KEY
+```
+
+Optional environment variables:
+
+```txt
+ROUTE_AUTH_TTL_SECONDS=600
+DEFAULT_TRADE_ROUTE_PROFILE_ID=1
+DEFAULT_FINALIZE_ROUTE_PROFILE_ID=1
+```
+
+Current default is `StandardUnlinked` (`1`) for both trade and finalize routing until attribution persistence is implemented. This prevents false recruiter/OG attribution while still allowing valid authorized contract calls.
+
+The public `routeAuthority` returned by the API must match the `LaunchFactory.routeAuthority()` address on-chain, or the contract will reject the signature.
 
 ## Internal reward ops routes
 
@@ -85,9 +113,10 @@ The frontend currently calls `/internal/rewards/*` via `buildRealtimeApiUrl`. In
 
 ## Next implementation priorities
 
-1. Replace `/api/routing/create-authorization` and `/api/routing/trade-authorization` stubs with real signed responses.
-2. Replace attribution stubs with session/wallet persistence.
-3. Replace reward summary/history/claims/eligibility stubs with DB-backed ledger reads.
-4. Replace recruiter and squad stubs with DB-backed views.
-5. Move frontend internal reward ops calls from `/internal/rewards/*` to `/api/internal/rewards/*` for consistency.
-6. Rename/refactor legacy `/api/rewards` to `/api/rewards/league` once callers are updated.
+1. Configure the route-authority private key in Netlify/Railway and confirm the API `routeAuthority` matches `LaunchFactory.routeAuthority()`.
+2. Smoke-test create, buy, and sell against dev/testnet.
+3. Replace attribution stubs with session/wallet persistence.
+4. Replace reward summary/history/claims/eligibility stubs with DB-backed ledger reads.
+5. Replace recruiter and squad stubs with DB-backed views.
+6. Move frontend internal reward ops calls from `/internal/rewards/*` to `/api/internal/rewards/*` for consistency.
+7. Rename/refactor legacy `/api/rewards` to `/api/rewards/league` once callers are updated.
