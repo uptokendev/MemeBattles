@@ -29,6 +29,37 @@ import status from "../../api/status.js";
 import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
+import {
+  airdropWinners,
+  attributionWallet,
+  attributionWalletConnect,
+  internalAirdropDrawRun,
+  internalAirdropDraws,
+  internalRewardAdminActions,
+  internalRewardAlerts,
+  internalRewardClaimVault,
+  internalRewardEpochStatus,
+  internalRewardPublications,
+  internalRewardRouting,
+  recruiterReferralCapture,
+  recruiterReplacements,
+  recruiterSignupCodeAvailability,
+  recruiterSignupNonce,
+  recruiterSignupStatus,
+  recruiterSignupSubmit,
+  recruiterSummary,
+  recruiterWalletSummary,
+  recruiters,
+  rewardsClaims,
+  rewardsEligibility,
+  rewardsHistory,
+  rewardsMe,
+  routingCreateAuthorization,
+  routingTradeAuthorization,
+  squadMembers,
+  squadSummary,
+  squadsLeaderboard,
+} from "../../api/dev-fix/stubs.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -82,6 +113,50 @@ app.all("/status", wrap(status));
 app.all("/upload", wrap(upload));
 app.all("/votes", wrap(votes));
 app.all("/vote_counts", wrap(voteCounts));
+
+// DEV-FIX-API Phase 1: route alignment stubs.
+// These routes intentionally return JSON-safe empty states until the real
+// reward/recruiter/squad persistence and route signer are implemented.
+app.all("/rewards/me", wrap(rewardsMe));
+app.all("/rewards/me/history", wrap(rewardsHistory));
+app.all("/rewards/me/claims", wrap(rewardsClaims));
+app.all("/rewards/me/eligibility", wrap(rewardsEligibility));
+
+app.all("/airdrops/winners", wrap(airdropWinners));
+
+app.all("/squads", wrap(squadsLeaderboard));
+app.all("/squads/members", wrap(squadMembers));
+app.all("/squads/:code/summary", wrap(squadSummary));
+
+app.all("/recruiters", wrap(recruiters));
+app.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
+app.all("/recruiters/:code/summary", wrap(recruiterSummary));
+app.all("/recruiters/:code/replacements", wrap(recruiterReplacements));
+app.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
+
+app.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
+app.all("/attribution/wallet/:wallet", wrap(attributionWallet));
+
+app.all("/routing/create-authorization", wrap(routingCreateAuthorization));
+app.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
+// Temporary backwards-compatible aliases for current frontend clients.
+app.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
+app.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
+
+app.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
+app.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
+app.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
+app.all("/recruiter-signup", wrap(recruiterSignupSubmit));
+
+// Preferred API namespace for internal reward ops.
+app.all("/internal/rewards/publications", wrap(internalRewardPublications));
+app.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
+app.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
+app.all("/internal/rewards/ops/epoch-status", wrap(internalRewardEpochStatus));
+app.all("/internal/rewards/ops/alerts", wrap(internalRewardAlerts));
+app.all("/internal/rewards/ops/admin-actions", wrap(internalRewardAdminActions));
+app.all("/internal/rewards/airdrops/draws", wrap(internalAirdropDraws));
+app.all("/internal/rewards/airdrops/epochs/:epochId/draws/run", wrap(internalAirdropDrawRun));
 
 app.use((req, res) => {
   res.status(404).json({ error: `Unknown API route: ${req.path}` });
