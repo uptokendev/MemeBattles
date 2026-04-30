@@ -70,7 +70,7 @@ export async function fetchCampaignCreateAuthorization(walletAddress: string, wa
   const factoryAddress = getFactoryAddress(chainId);
   if (!factoryAddress) throw new Error(`Factory address missing for chain ${chainId}`);
 
-  const res = await fetch(buildRealtimeApiUrl("/api/recruiter-routing/create-authorization"), {
+  const res = await fetch(buildRealtimeApiUrl("/api/routing/create-authorization"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -88,7 +88,7 @@ export async function fetchCampaignTradeAuthorization(
   walletChainId?: number | null,
 ) {
   const chainId = getActiveChainId(walletChainId);
-  const res = await fetch(buildRealtimeApiUrl("/api/recruiter-routing/trade-authorization"), {
+  const res = await fetch(buildRealtimeApiUrl("/api/routing/trade-authorization"), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
