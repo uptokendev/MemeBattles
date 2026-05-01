@@ -46,7 +46,6 @@ const App = () => {
 
   const handleLoadComplete = () => {
     setIsLoading(false);
-    // Delay showing content slightly for smooth transition
     setTimeout(() => setShowContent(true), 100);
   };
 
@@ -63,20 +62,14 @@ const App = () => {
             }`}
           >
             <BrowserRouter>
-              <div className="h-screen overflow-hidden bg-transparent flex flex-col">
+              <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
-                {/*
-                  TopBar is fixed-position, so main content needs top padding.
-                  pt-20/pt-24 offsets the fixed TopBar so hero logos sit fully below it.
-                */}
-                {/* Allow page scrolling inside the app shell */}
-                <main className="flex-1 overflow-auto pt-[4.75rem] md:pt-[5.25rem] px-4 md:px-6 lg:px-8 pb-4 md:pb-6 lg:pb-8">
+                <main className="flex-1 overflow-auto pt-[5.1rem] md:pt-[5.4rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
-                    {/* New naming (keep old paths as aliases) */}
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
@@ -96,7 +89,6 @@ const App = () => {
                     <Route path="/playbook" element={<Playbook />} />
                     <Route path="/docs" element={<Playbook />} />
                     <Route path="/status" element={<Status />} />
-                    {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                   <Footer />
