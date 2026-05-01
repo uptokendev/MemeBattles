@@ -2,7 +2,7 @@ import { getAllowedChainIds, getChainParams, getDefaultChainId, getFactoryAddres
 
 export type LaunchpadWriteReadiness = {
   ready: boolean;
-  reason: "ready" | "wallet_disconnected" | "wrong_chain" | "missing_factory";
+  reason: "ready" | "wallet_disconnected" | "wrong_chain" | "missing_factory" | "writes_disabled";
   activeChainId: SupportedChainId;
   walletChainId?: number;
   factoryAddress: string;
@@ -11,6 +11,16 @@ export type LaunchpadWriteReadiness = {
   actionLabel?: string;
   targetChainId?: SupportedChainId;
 };
+
+function envFlag(name: string, fallback = false): boolean {
+  const raw = String((import.meta.env as Record<string, unknown>)[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
+export function launchpadWritesEnabled(): boolean {
+  return envFlag("VITE_LAUNCHPAD_WRITES_ENABLED", false);
+}
 
 export function getLaunchpadWriteReadiness({
   isConnected,
@@ -48,6 +58,18 @@ export function getLaunchpadWriteReadiness({
       message: `Switch to a supported BNB Chain network before using launchpad actions. Supported chain IDs: ${allowed}.`,
       actionLabel: `Switch to ${getChainParams(defaultChainId).chainName}`,
       targetChainId: defaultChainId,
+    };
+  }
+
+  if (!launchpadWritesEnabled()) {
+    return {
+      ready: false,
+      reason: "writes_disabled",
+      activeChainId,
+      walletChainId: walletChainId || undefined,
+      factoryAddress,
+      title: "Prepare Mode not enabled yet",
+      message: `Launchpad write actions are disabled for this deploy. After the new contracts are deployed and verified, set VITE_LAUNCHPAD_WRITES_ENABLED=true to enable create, buy, sell, and finalize actions.`,
     };
   }
 
