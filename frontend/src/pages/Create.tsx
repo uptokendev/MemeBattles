@@ -10,6 +10,8 @@ import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { TokenCategory } from "@/types/token";
+import { LaunchpadReadinessNotice } from "@/components/launchpad/LaunchpadReadinessNotice";
+import { useLaunchpadWriteReadiness } from "@/hooks/useLaunchpadWriteReadiness";
 
 // NEW: import wallet + launchpad client
 import { useWallet } from "@/contexts/WalletContext";
@@ -46,6 +48,7 @@ const Create = () => {
   // NEW: hooks for wallet + contracts
   const wallet = useWallet();
   const { createCampaign, fetchCampaigns } = useLaunchpad();
+  const launchpadReadiness = useLaunchpadWriteReadiness();
 
   // Optional creator initial buy (tokens, 18 decimals) performed in the same tx.
   const [initialBuyBnb, setInitialBuyBnb] = useState("");
@@ -87,6 +90,11 @@ const Create = () => {
     // Require wallet connection
     if (!wallet.isConnected) {
       toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (!launchpadReadiness.ready) {
+      toast.error(launchpadReadiness.message || launchpadReadiness.title);
       return;
     }
 
@@ -202,6 +210,7 @@ const Create = () => {
   };
 
   const isProjectDisabled = formData.category === "project";
+  const isCreateDisabled = isProjectDisabled || !launchpadReadiness.ready;
 
   return (
     <>
@@ -246,6 +255,10 @@ const Create = () => {
             >
               <Link to="/playbook">Read Playbook</Link>
             </Button>
+          </div>
+
+          <div className="mb-4 md:mb-6">
+            <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
           </div>
 
           {/* Main Form Card */}
@@ -479,14 +492,14 @@ const Create = () => {
               <div className="pt-4">
                 <Button
                   type="submit"
-                  disabled={isProjectDisabled}
+                  disabled={isCreateDisabled}
                   className={`w-full font-retro text-xl md:text-2xl py-6 md:py-8 rounded-2xl shadow-lg transition-all ${
-                    isProjectDisabled
+                    isCreateDisabled
                       ? "bg-muted text-muted-foreground cursor-not-allowed"
                       : "bg-accent hover:bg-accent/90 text-accent-foreground shadow-accent/20"
                   }`}
                 >
-                  Create Coin
+                  {launchpadReadiness.ready ? "Create Coin" : launchpadReadiness.title}
                 </Button>
               </div>
             </form>
