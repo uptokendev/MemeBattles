@@ -15,7 +15,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
           <div className="h-10 w-10 rounded-full border border-success/50 flex items-center justify-center text-success bg-black/45">⌖</div>
         </div>
 
-        <div className="absolute left-5 top-4 hidden md:block mwz-panel px-4 py-3 min-w-[250px]">
+        <div className="absolute left-[5px] top-[5px] bottom-[5px] hidden md:flex items-center mwz-panel px-4 min-w-[250px]">
           <div className="mwz-section-title text-xs leading-6">
             <div>MWZ-TERMINAL V2.4.1</div>
             <div>COMMAND NODE: ONLINE</div>
