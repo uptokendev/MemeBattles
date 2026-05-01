@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 
@@ -22,8 +24,16 @@ function normalizeCode(value) {
     .slice(0, 32);
 }
 
+function normalizeText(value, max = 280) {
+  return String(value || "").trim().slice(0, max);
+}
+
 function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
+}
+
+function makeNonce() {
+  return crypto.randomBytes(16).toString("hex");
 }
 
 function publicState({ walletAddress, state = null, recruiter = null }) {
@@ -66,6 +76,25 @@ function recruiterSummaryShape(recruiter, extra = {}) {
     updatedAt: recruiter.updated_at || null,
     materializedAt: new Date().toISOString(),
   };
+}
+
+function buildRecruiterSignupMessage({ chainId, walletAddress, nonce, displayName, desiredCode, email, telegram, discord, xHandle, pitch }) {
+  return [
+    "MemeWarzone Recruiter Signup",
+    "Action: RECRUITER_SIGNUP",
+    `Wallet: ${walletAddress}`,
+    `ChainId: ${chainId ?? ""}`,
+    `Nonce: ${String(nonce || "").trim()}`,
+    "",
+    `DisplayName: ${normalizeText(displayName, 40)}`,
+    `DesiredCode: ${normalizeCode(desiredCode)}`,
+    `Email: ${normalizeText(email, 120)}`,
+    `Telegram: ${normalizeText(telegram, 80)}`,
+    `Discord: ${normalizeText(discord, 80)}`,
+    `X: ${normalizeText(xHandle, 80)}`,
+    "",
+    `Pitch: ${normalizeText(pitch, 1000)}`,
+  ].join("\n");
 }
 
 async function findRecruiterByCode(code) {
@@ -142,6 +171,39 @@ async function getRecruiterStats(recruiterId) {
     activeSquadMemberCount: squadRows[0]?.active_squad_member_count || 0,
     latestLinkedActivityAt: linkRows[0]?.latest_linked_activity_at || null,
   };
+}
+
+async function saveSignupNonce({ chainId, walletAddress, nonce }) {
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  await pool.query(
+    `insert into public.auth_nonces (chain_id, address, nonce, expires_at)
+     values ($1, $2, $3, $4)
+     on conflict (chain_id, address)
+     do update set nonce = excluded.nonce, expires_at = excluded.expires_at, used_at = null`,
+    [chainId, walletAddress, nonce, expiresAt],
+  );
+  return expiresAt;
+}
+
+async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
+  const { rows } = await pool.query(
+    `select nonce, expires_at, used_at
+       from public.auth_nonces
+      where chain_id = $1 and address = $2
+      limit 1`,
+    [chainId, walletAddress],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Nonce not found. Request a new signup nonce and try again.");
+  if (row.used_at) throw new Error("Nonce already used. Request a new signup nonce and try again.");
+  if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch. Request a new signup nonce and try again.");
+  const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (!exp || Date.now() > exp) throw new Error("Nonce expired. Request a new signup nonce and try again.");
+
+  await pool.query(
+    `update public.auth_nonces set used_at = now() where chain_id = $1 and address = $2`,
+    [chainId, walletAddress],
+  );
 }
 
 export async function recruiterReferralCapture(req, res) {
@@ -404,6 +466,179 @@ export async function recruiters(req, res) {
   } catch (error) {
     console.error("[api/recruiters]", error);
     if (schemaMissing(error)) return json(res, 200, { recruiters: [], warning: "Canonical reward attribution schema has not been applied yet." });
+    return json(res, 500, { error: "Server error" });
+  }
+}
+
+export async function recruiterSignupStatus(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+
+  try {
+    const q = getQuery(req);
+    const walletAddress = normalizeAddress(q.walletAddress);
+    if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
+
+    const recruiter = await findRecruiterByWallet(walletAddress);
+    return json(res, 200, {
+      walletAddress,
+      isRecruiter: Boolean(recruiter),
+      recruiter: recruiter ? recruiterSummaryShape(recruiter, await getRecruiterStats(recruiter.id)) : null,
+      canStartSignup: !recruiter,
+      signupApiAvailable: true,
+    });
+  } catch (error) {
+    console.error("[api/recruiter signup status]", error);
+    if (schemaMissing(error)) {
+      const q = getQuery(req);
+      return json(res, 200, {
+        walletAddress: normalizeAddress(q.walletAddress),
+        isRecruiter: false,
+        recruiter: null,
+        canStartSignup: true,
+        signupApiAvailable: false,
+        warning: "Canonical reward attribution schema has not been applied yet.",
+      });
+    }
+    return json(res, 500, { error: "Server error" });
+  }
+}
+
+export async function recruiterSignupCodeAvailability(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+
+  try {
+    const q = getQuery(req);
+    const code = normalizeCode(q.code);
+    if (!code || code.length < 2) {
+      return json(res, 200, {
+        code,
+        isAvailable: false,
+        checkedVia: "signup-endpoint",
+        message: "Use at least 2 lowercase letters, numbers, dashes, or underscores.",
+      });
+    }
+
+    const existing = await findRecruiterByCode(code);
+    return json(res, 200, {
+      code,
+      isAvailable: !existing,
+      checkedVia: "signup-endpoint",
+      message: existing ? "This recruiter code is already taken." : "This recruiter code is available.",
+    });
+  } catch (error) {
+    console.error("[api/recruiter signup code availability]", error);
+    if (schemaMissing(error)) {
+      const q = getQuery(req);
+      return json(res, 200, {
+        code: normalizeCode(q.code),
+        isAvailable: null,
+        checkedVia: "unavailable",
+        message: "Canonical reward attribution schema has not been applied yet.",
+      });
+    }
+    return json(res, 500, { error: "Server error" });
+  }
+}
+
+export async function recruiterSignupNonce(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+
+  try {
+    const body = await readJson(req);
+    const walletAddress = normalizeAddress(body.walletAddress);
+    const chainId = Number(body.chainId || 97);
+    if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
+    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+
+    const nonce = makeNonce();
+    const expiresAt = await saveSignupNonce({ chainId, walletAddress, nonce });
+    return json(res, 200, { nonce, expiresAt: expiresAt.toISOString() });
+  } catch (error) {
+    console.error("[api/recruiter signup nonce]", error);
+    if (schemaMissing(error)) return json(res, 503, { error: "Canonical reward attribution schema has not been applied yet." });
+    return json(res, 500, { error: "Server error" });
+  }
+}
+
+export async function recruiterSignupSubmit(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+
+  try {
+    const body = await readJson(req);
+    const walletAddress = normalizeAddress(body.walletAddress);
+    const chainId = Number(body.chainId || 97);
+    const desiredCode = normalizeCode(body.desiredCode);
+    const displayName = normalizeText(body.displayName, 40);
+    const email = normalizeText(body.email, 120);
+    const pitch = normalizeText(body.pitch, 1000);
+    const nonce = String(body.nonce || "").trim();
+    const signature = String(body.signature || "").trim();
+
+    if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
+    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+    if (!displayName) return json(res, 400, { error: "Display name is required" });
+    if (!desiredCode || desiredCode.length < 2) return json(res, 400, { error: "Recruiter code is invalid" });
+    if (!email) return json(res, 400, { error: "Email is required" });
+    if (!pitch) return json(res, 400, { error: "Pitch is required" });
+    if (!body.acceptTerms) return json(res, 400, { error: "Recruiter terms must be accepted" });
+    if (!nonce) return json(res, 400, { error: "Nonce missing" });
+    if (!signature) return json(res, 400, { error: "Signature missing" });
+
+    const existingWallet = await findRecruiterByWallet(walletAddress);
+    if (existingWallet) return json(res, 409, { error: "This wallet is already a recruiter" });
+
+    const existingCode = await findRecruiterByCode(desiredCode);
+    if (existingCode) return json(res, 409, { error: "This recruiter code is already taken" });
+
+    await consumeSignupNonce({ chainId, walletAddress, nonce });
+
+    const message = buildRecruiterSignupMessage({
+      chainId,
+      walletAddress,
+      nonce,
+      displayName,
+      desiredCode,
+      email,
+      telegram: body.telegram,
+      discord: body.discord,
+      xHandle: body.xHandle,
+      pitch,
+    });
+    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+    if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
+
+    const { rows } = await pool.query(
+      `insert into public.recruiters (wallet_address, code, display_name, is_og, status, metadata)
+       values ($1, $2, $3, false, 'active', $4::jsonb)
+       returning id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at`,
+      [
+        walletAddress,
+        desiredCode,
+        displayName,
+        JSON.stringify({
+          signup: {
+            email,
+            telegram: normalizeText(body.telegram, 80),
+            discord: normalizeText(body.discord, 80),
+            xHandle: normalizeText(body.xHandle, 80),
+            pitch,
+            acceptedTermsAt: new Date().toISOString(),
+          },
+        }),
+      ],
+    );
+
+    const recruiter = rows[0];
+    return json(res, 200, {
+      ok: true,
+      recruiter: recruiterSummaryShape(recruiter),
+    });
+  } catch (error) {
+    console.error("[api/recruiter signup submit]", error);
+    const message = String(error?.message || "");
+    if (/nonce|signature/i.test(message)) return json(res, 401, { error: message });
+    if (schemaMissing(error)) return json(res, 503, { error: "Canonical reward attribution schema has not been applied yet." });
+    if (error?.code === "23505") return json(res, 409, { error: "Recruiter wallet or code already exists" });
     return json(res, 500, { error: "Server error" });
   }
 }
