@@ -32,6 +32,16 @@ function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
 }
 
+function envFlag(name, fallback = false) {
+  const raw = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
+function preliveRecruitersAreOg() {
+  return envFlag("PRELIVE_RECRUITERS_ARE_OG", true);
+}
+
 function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
 }
@@ -607,14 +617,16 @@ export async function recruiterSignupSubmit(req, res) {
     const recovered = ethers.verifyMessage(message, signature).toLowerCase();
     if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
 
+    const isOg = preliveRecruitersAreOg();
     const { rows } = await pool.query(
       `insert into public.recruiters (wallet_address, code, display_name, is_og, status, metadata)
-       values ($1, $2, $3, false, 'active', $4::jsonb)
+       values ($1, $2, $3, $4, 'active', $5::jsonb)
        returning id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at`,
       [
         walletAddress,
         desiredCode,
         displayName,
+        isOg,
         JSON.stringify({
           signup: {
             email,
@@ -623,6 +635,7 @@ export async function recruiterSignupSubmit(req, res) {
             xHandle: normalizeText(body.xHandle, 80),
             pitch,
             acceptedTermsAt: new Date().toISOString(),
+            preliveOg: isOg,
           },
         }),
       ],
