@@ -38,7 +38,65 @@ async function mirrorTokenMetadata(req, body) {
 
   if (!Number.isFinite(chainId) || (!campaignAddress && !tokenAddress)) return;
 
+  const metadata = JSON.stringify({
+    mirroredAt: new Date().toISOString(),
+    rawSource: "campaigns_upsert",
+  });
+
   try {
+    const existing = await pool.query(
+      `select id
+         from public.token_metadata_registry
+        where chain_id = $1
+          and (
+            ($2::text is not null and lower(campaign_address) = $2::text)
+            or ($3::text is not null and lower(token_address) = $3::text)
+          )
+        order by id asc
+        limit 1`,
+      [chainId, campaignAddress || null, tokenAddress || null],
+    );
+
+    if (existing.rows[0]?.id) {
+      await pool.query(
+        `update public.token_metadata_registry
+            set campaign_address = coalesce($2, campaign_address),
+                token_address = coalesce($3, token_address),
+                creator_address = coalesce($4, creator_address),
+                name = coalesce(nullif($5, ''), name),
+                symbol = coalesce(nullif($6, ''), symbol),
+                description = coalesce($7, description),
+                logo_uri = coalesce($8, logo_uri),
+                metadata_uri = coalesce($9, metadata_uri),
+                external_url = coalesce($10, external_url),
+                website = coalesce($11, website),
+                x_account = coalesce($12, x_account),
+                telegram = coalesce($13, telegram),
+                discord = coalesce($14, discord),
+                source = 'campaigns_upsert',
+                metadata = metadata || $15::jsonb
+          where id = $1`,
+        [
+          existing.rows[0].id,
+          campaignAddress || null,
+          tokenAddress || null,
+          creatorAddress || null,
+          name || null,
+          symbol || null,
+          description,
+          logoUri,
+          metadataUri,
+          externalUrl,
+          website,
+          xAccount,
+          telegram,
+          discord,
+          metadata,
+        ],
+      );
+      return;
+    }
+
     await pool.query(
       `insert into public.token_metadata_registry (
          chain_id,
@@ -60,23 +118,7 @@ async function mirrorTokenMetadata(req, body) {
        ) values (
          $1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14, 'campaigns_upsert', $15::jsonb
-       )
-       on conflict (chain_id, lower(campaign_address))
-       where campaign_address is not null
-       do update set
-         token_address = coalesce(excluded.token_address, public.token_metadata_registry.token_address),
-         creator_address = coalesce(excluded.creator_address, public.token_metadata_registry.creator_address),
-         name = coalesce(nullif(excluded.name, ''), public.token_metadata_registry.name),
-         symbol = coalesce(nullif(excluded.symbol, ''), public.token_metadata_registry.symbol),
-         description = coalesce(excluded.description, public.token_metadata_registry.description),
-         logo_uri = coalesce(excluded.logo_uri, public.token_metadata_registry.logo_uri),
-         metadata_uri = coalesce(excluded.metadata_uri, public.token_metadata_registry.metadata_uri),
-         external_url = coalesce(excluded.external_url, public.token_metadata_registry.external_url),
-         website = coalesce(excluded.website, public.token_metadata_registry.website),
-         x_account = coalesce(excluded.x_account, public.token_metadata_registry.x_account),
-         telegram = coalesce(excluded.telegram, public.token_metadata_registry.telegram),
-         discord = coalesce(excluded.discord, public.token_metadata_registry.discord),
-         metadata = public.token_metadata_registry.metadata || excluded.metadata`,
+       )`,
       [
         chainId,
         campaignAddress || null,
@@ -92,10 +134,7 @@ async function mirrorTokenMetadata(req, body) {
         xAccount,
         telegram,
         discord,
-        JSON.stringify({
-          mirroredAt: new Date().toISOString(),
-          rawSource: "campaigns_upsert",
-        }),
+        metadata,
       ],
     );
   } catch (error) {
