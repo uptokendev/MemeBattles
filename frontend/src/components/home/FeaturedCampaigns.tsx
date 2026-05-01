@@ -334,7 +334,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       <div className="relative">
         <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth" style={{ scrollbarWidth: "none" } as React.CSSProperties}>
           {loading && !cards.length ? (
-            Array.from({ length: 4 }).map((_, i) => <div key={i} className="mwz-card h-[214px] min-w-[360px] animate-pulse" />)
+            Array.from({ length: 4 }).map((_, i) => <div key={i} className="mwz-card h-[204px] min-w-[420px] animate-pulse" />)
           ) : err ? (
             <div className="mwz-muted py-8 text-sm">{err}</div>
           ) : cards.length === 0 ? (
@@ -344,7 +344,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
               <div
                 key={c.addr}
                 data-addr={c.addr}
-                className="mwz-card snap-start grid min-w-[330px] max-w-[430px] w-[calc(100vw-2.5rem)] sm:w-[390px] md:w-[430px] grid-cols-[48%_52%] overflow-hidden rounded-none"
+                className="mwz-card snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none"
                 role="button"
                 tabIndex={0}
                 onClick={() => navigate(`/token/${c.addr}`)}
@@ -352,7 +352,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
                 }}
               >
-                <div className="relative aspect-square min-h-[210px] bg-black border-r border-success/25">
+                <div className="relative h-full min-h-[204px] bg-black border-r border-success/25">
                   <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
                   <img
                     src={c.image}
