@@ -23,15 +23,6 @@ export function HeaderBand({ className }: HeaderBandProps) {
           </div>
         </div>
 
-        <div className="absolute right-36 top-4 hidden lg:block mwz-panel px-4 py-3 min-w-[228px]">
-          <div className="mwz-section-title text-xs leading-5">
-            <div>SYSTEM STATUS</div>
-            <div>NET: SECURE</div>
-            <div>WALLET: CONNECTED</div>
-            <div>BLOCKCHAIN: SYNCED</div>
-          </div>
-        </div>
-
         <div className="absolute right-8 top-2 hidden lg:block scale-[0.88] origin-top-right">
           <div className="mwz-radar">
             <div className="mwz-radar-sweep" />
