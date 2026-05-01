@@ -20,6 +20,13 @@ import type React from "react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+function formatFileSize(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(2)} MB`;
+}
+
 const Create = () => {
   const {
     formData,
@@ -84,6 +91,13 @@ const Create = () => {
     // Require image
     if (!formData.imagePreview || !formData.image) {
       toast.error("Please upload a token image");
+      return;
+    }
+
+    if (formData.image.size > MAX_LOGO_UPLOAD_BYTES) {
+      toast.error(
+        `Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 2 MB.`,
+      );
       return;
     }
 
@@ -309,6 +323,9 @@ const Create = () => {
                     disabled={isProjectDisabled}
                   />
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Max upload size: 2 MB. Use a compressed PNG, JPG, or WebP for best results.
+                </p>
               </div>
 
               {/* Token Name */}
