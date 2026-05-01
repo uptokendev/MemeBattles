@@ -1,7 +1,4 @@
 import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 type HeaderBandProps = {
   className?: string;
@@ -10,50 +7,48 @@ type HeaderBandProps = {
 export function HeaderBand({ className }: HeaderBandProps) {
   return (
     <div className={cn("relative w-full", className)}>
-      {/* Glow strip / separator */}
-      {/* Slightly shorter hero height to reduce dead space above Featured grid */}
-      <div className="relative h-[200px] md:h-[200px] lg:h-[200px] overflow-hidden">
+      <div className="mwz-hud-frame relative h-[132px] md:h-[150px] lg:h-[158px] overflow-hidden px-5 md:px-7">
+        <div className="absolute inset-0 mwz-stat-grid opacity-70" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(57,255,79,0.13),transparent_34%),linear-gradient(90deg,rgba(0,0,0,0.68),transparent_35%,transparent_65%,rgba(0,0,0,0.68))]" />
 
-        {/* horizontal highlight band */}
-        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2">
-          <div
-            className="h-[10px] md:h-[10px] opacity-90"
-            style={{
-              background:
-                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(57,227,23,0.14) 18%, rgba(240,106,26,0.68) 48%, rgba(255,72,24,0.55) 72%, rgba(0,0,0,0) 100%)",
-              filter: "blur(0.2px)",
-            }}
-          />
-          <div
-            className="h-px"
-            style={{
-              background:
-                "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(57,227,23,0.08) 18%, rgba(240,106,26,0.42) 48%, rgba(255,72,24,0.28) 72%, rgba(0,0,0,0) 100%)",
-            }}
-          />
+        <div className="absolute left-5 top-4 hidden md:block mwz-panel p-4 min-w-[250px]">
+          <div className="mwz-section-title text-xs leading-6">
+            <div>MWZ-TERMINAL V2.4.1</div>
+            <div>COMMAND NODE: ONLINE</div>
+            <div>SECURE LINK: ESTABLISHED</div>
+          </div>
         </div>
 
-        {/* centered logo */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <img
-              src="/assets/logo.png"
-              alt="MemeWarzone"
-              className="h-[150px] md:h-[160px] lg:h-[168px] w-auto drop-shadow-[0_0_22px_rgba(240,106,26,0.22)]"
-              draggable={false}
-            />
-            <div className="flex flex-col items-center gap-2 px-4 text-center">
-              <p className="max-w-xl text-sm text-muted-foreground md:text-base">
-                Build your squad before the battlefield opens.
-              </p>
-              <Button asChild size="sm" className="font-retro">
-                <Link to="/recruiter">
-                  Become a Recruiter
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
+        <div className="absolute right-36 top-4 hidden lg:block mwz-panel p-4 min-w-[228px]">
+          <div className="mwz-section-title text-xs leading-6">
+            <div>SYSTEM STATUS</div>
+            <div>NET: SECURE</div>
+            <div>WALLET: CONNECTED</div>
+            <div>BLOCKCHAIN: SYNCED</div>
           </div>
+        </div>
+
+        <div className="absolute right-8 top-3 hidden lg:block">
+          <div className="mwz-radar">
+            <div className="mwz-radar-sweep" />
+          </div>
+        </div>
+
+        <div className="absolute inset-x-[15%] top-1/2 -translate-y-1/2 hidden md:flex items-center justify-between opacity-80">
+          <div className="h-10 w-10 rounded-full border border-success/50 flex items-center justify-center text-success">⌖</div>
+          <div className="h-px flex-1 mx-5 bg-[repeating-linear-gradient(90deg,rgba(57,255,79,0.6)_0_5px,transparent_5px_9px)]" />
+          <div className="h-10 w-10 rounded-full border border-success/50 flex items-center justify-center text-success">⌖</div>
+        </div>
+
+        <div className="mwz-scan-line" />
+
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <img
+            src="/assets/logo.png"
+            alt="MemeWarzone"
+            className="h-[112px] md:h-[132px] lg:h-[142px] w-auto drop-shadow-[0_0_24px_rgba(57,255,79,0.22)]"
+            draggable={false}
+          />
         </div>
       </div>
     </div>
