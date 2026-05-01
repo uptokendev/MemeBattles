@@ -11,6 +11,15 @@ function cleanAddress(value) {
   return isAddress(raw) ? raw : "";
 }
 
+function schemaMissing(error) {
+  return error?.code === "42P01" || error?.code === "42703";
+}
+
+function safeMetadata(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value;
+}
+
 function absoluteUrl(req, path) {
   const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim() || "https";
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
@@ -24,6 +33,7 @@ function campaignUrl(req, chainId, campaignAddress, tokenAddress) {
 }
 
 function metadataPayload(req, row) {
+  const metadata = safeMetadata(row.metadata);
   const chainId = Number(row.chain_id);
   const campaignAddress = row.campaign_address ? String(row.campaign_address).toLowerCase() : null;
   const tokenAddress = row.token_address ? String(row.token_address).toLowerCase() : null;
@@ -33,11 +43,11 @@ function metadataPayload(req, row) {
   return {
     name: row.name || row.symbol || "MemeWarzone Token",
     symbol: row.symbol || "MWZ",
-    description: row.description || row.metadata?.description || "Launched on MemeWarzone.",
+    description: row.description || metadata.description || "Launched on MemeWarzone.",
     image: logoUri,
     image_url: logoUri,
     external_url: externalUrl,
-    animation_url: row.metadata?.animation_url || null,
+    animation_url: metadata.animation_url || null,
     attributes: [
       { trait_type: "Launchpad", value: "MemeWarzone" },
       { trait_type: "Chain ID", value: chainId },
@@ -59,41 +69,76 @@ function metadataPayload(req, row) {
   };
 }
 
-async function findMetadata({ chainId, address }) {
-  const registry = await pool.query(
-    `select *
-       from public.token_metadata_registry
-      where chain_id = $1
-        and (lower(campaign_address) = $2 or lower(token_address) = $2)
-      limit 1`,
-    [chainId, address],
-  );
-  if (registry.rows[0]) return registry.rows[0];
+async function findRegistryMetadata({ chainId, address }) {
+  try {
+    const registry = await pool.query(
+      `select chain_id,
+              campaign_address,
+              token_address,
+              creator_address,
+              name,
+              symbol,
+              description,
+              logo_uri,
+              metadata_uri,
+              external_url,
+              website,
+              x_account,
+              telegram,
+              discord,
+              source,
+              metadata
+         from public.token_metadata_registry
+        where chain_id = $1
+          and (lower(campaign_address) = $2 or lower(token_address) = $2)
+        limit 1`,
+      [chainId, address],
+    );
+    return registry.rows[0] || null;
+  } catch (error) {
+    if (schemaMissing(error)) return null;
+    console.warn("[api/token-metadata] registry lookup failed; falling back to campaigns", error);
+    return null;
+  }
+}
 
-  const campaigns = await pool.query(
-    `select chain_id,
-            campaign_address,
-            token_address,
-            creator_address,
-            name,
-            symbol,
-            null::text as description,
-            logo_uri,
-            null::text as metadata_uri,
-            null::text as external_url,
-            website,
-            x_account,
-            null::text as telegram,
-            null::text as discord,
-            'campaigns'::text as source,
-            '{}'::jsonb as metadata
-       from public.campaigns
-      where chain_id = $1
-        and (lower(campaign_address) = $2 or lower(token_address) = $2)
-      limit 1`,
-    [chainId, address],
-  );
-  return campaigns.rows[0] || null;
+async function findCampaignMetadata({ chainId, address }) {
+  try {
+    const campaigns = await pool.query(
+      `select chain_id,
+              campaign_address,
+              token_address,
+              creator_address,
+              name,
+              symbol,
+              null::text as description,
+              logo_uri,
+              null::text as metadata_uri,
+              null::text as external_url,
+              null::text as website,
+              null::text as x_account,
+              null::text as telegram,
+              null::text as discord,
+              'campaigns'::text as source,
+              '{}'::jsonb as metadata
+         from public.campaigns
+        where chain_id = $1
+          and (lower(campaign_address) = $2 or lower(token_address) = $2)
+        limit 1`,
+      [chainId, address],
+    );
+    return campaigns.rows[0] || null;
+  } catch (error) {
+    if (schemaMissing(error)) return null;
+    console.warn("[api/token-metadata] campaign lookup failed", error);
+    return null;
+  }
+}
+
+async function findMetadata({ chainId, address }) {
+  const registry = await findRegistryMetadata({ chainId, address });
+  if (registry) return registry;
+  return findCampaignMetadata({ chainId, address });
 }
 
 export default async function handler(req, res) {
