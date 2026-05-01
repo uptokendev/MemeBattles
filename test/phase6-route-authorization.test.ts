@@ -4,6 +4,7 @@ import { ethers } from "hardhat";
 const STANDARD_LINKED = 0;
 const STANDARD_UNLINKED = 1;
 const OG_LINKED = 2;
+const TEST_METADATA_URI = "https://metadata.memewar.zone/97/0xtest.json";
 
 async function signCreateRouteAuth({
   signer,
@@ -89,6 +90,7 @@ async function deployFixture() {
     name: "MemeWarzone Test",
     symbol: "MWZT",
     logoURI: "ipfs://logo",
+    metadataURI: TEST_METADATA_URI,
     xAccount: "",
     website: "",
     extraLink: "",
@@ -143,6 +145,9 @@ async function createAuthorizedCampaign(fixture: Awaited<ReturnType<typeof deplo
     })
     .find((parsed: any) => parsed?.name === "CampaignCreated");
   if (!event) throw new Error("CampaignCreated not found");
+
+  expect(event.args.logoURI).to.equal(request.logoURI);
+  expect(event.args.metadataURI).to.equal(request.metadataURI);
 
   const campaignAddress = event.args.campaign;
   const campaign = await ethers.getContractAt("LaunchCampaign", campaignAddress);
