@@ -1,9 +1,16 @@
 import { ethers } from "ethers";
+import { pool } from "../../server/db.js";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 
 const ROUTE_PROFILE_STANDARD_LINKED = 0;
 const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
 const ROUTE_PROFILE_OG_LINKED = 2;
+
+const ROUTE_PROFILE_NAMES = {
+  [ROUTE_PROFILE_STANDARD_LINKED]: "standard_linked",
+  [ROUTE_PROFILE_STANDARD_UNLINKED]: "standard_unlinked",
+  [ROUTE_PROFILE_OG_LINKED]: "og_linked",
+};
 
 const VALID_PROFILES = new Set([
   ROUTE_PROFILE_STANDARD_LINKED,
@@ -26,10 +33,18 @@ function normalizeAddress(value) {
   return isAddress(raw) ? ethers.getAddress(raw) : "";
 }
 
+function normalizeDbWallet(value) {
+  return normalizeAddress(value).toLowerCase();
+}
+
 function parsePositiveInt(value, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.trunc(n);
+}
+
+function schemaMissing(error) {
+  return error?.code === "42P01" || error?.code === "42703";
 }
 
 function getRouteAuthorityPrivateKey() {
@@ -58,9 +73,6 @@ function readRouteProfileEnv(key, fallback) {
 }
 
 function getDefaultRouteProfiles() {
-  // Until attribution persistence exists, default to StandardUnlinked.
-  // This is safest because it routes community reward slices without falsely
-  // assigning recruiter/OG-linked activity.
   const tradeRouteProfileId = readRouteProfileEnv(
     "DEFAULT_TRADE_ROUTE_PROFILE_ID",
     ROUTE_PROFILE_STANDARD_UNLINKED,
@@ -125,6 +137,127 @@ async function readOnchainRouteAuthority({ chainId, factoryAddress }) {
   }
 }
 
+async function readWalletAttributionState(walletAddress) {
+  const dbWallet = normalizeDbWallet(walletAddress);
+  if (!dbWallet) return { state: null, error: "Invalid wallet address" };
+
+  try {
+    const { rows } = await pool.query(
+      `select wallet_address,
+              recruiter_id,
+              recruiter_code,
+              recruiter_display_name,
+              recruiter_is_og,
+              recruiter_status,
+              recruiter_link_state,
+              squad_state,
+              has_activity,
+              locked_at,
+              materialized_at
+         from public.wallet_attribution_states
+        where wallet_address = $1
+        limit 1`,
+      [dbWallet],
+    );
+    return { state: rows[0] || null, error: null };
+  } catch (error) {
+    if (schemaMissing(error)) return { state: null, error: "Attribution schema missing" };
+    console.error("[api/routing attribution lookup]", error);
+    return { state: null, error: "Attribution lookup failed" };
+  }
+}
+
+function isActiveLinkedState(state) {
+  if (!state?.recruiter_id) return false;
+  if (state.recruiter_status !== "active") return false;
+  const linkState = String(state.recruiter_link_state || "").toLowerCase();
+  return linkState === "linked_unlocked" || linkState === "linked_locked";
+}
+
+function buildDecision({ walletAddress, attributionState, attributionError }) {
+  if (attributionError) {
+    const { tradeRouteProfileId, finalizeRouteProfileId } = getDefaultRouteProfiles();
+    return {
+      tradeRouteProfileId,
+      finalizeRouteProfileId,
+      routeProfileId: tradeRouteProfileId,
+      decision: {
+        profile: ROUTE_PROFILE_NAMES[tradeRouteProfileId] || "standard_unlinked",
+        routeProfileId: tradeRouteProfileId,
+        finalizeRouteProfileId,
+        walletAddress,
+        recruiterId: null,
+        recruiterCode: null,
+        recruiterDisplayName: null,
+        recruiterIsOg: false,
+        recruiterStatus: null,
+        recruiterLinkState: null,
+        squadState: null,
+        source: "safe_fallback",
+        reason: `${attributionError}; using safe fallback route profile.`,
+      },
+    };
+  }
+
+  if (!isActiveLinkedState(attributionState)) {
+    const state = attributionState || {};
+    return {
+      tradeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+      finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+      routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+      decision: {
+        profile: ROUTE_PROFILE_NAMES[ROUTE_PROFILE_STANDARD_UNLINKED],
+        routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+        finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+        walletAddress,
+        recruiterId: state.recruiter_id ? Number(state.recruiter_id) : null,
+        recruiterCode: state.recruiter_code || null,
+        recruiterDisplayName: state.recruiter_display_name || null,
+        recruiterIsOg: Boolean(state.recruiter_is_og),
+        recruiterStatus: state.recruiter_status || null,
+        recruiterLinkState: state.recruiter_link_state || "unlinked",
+        squadState: state.squad_state || "solo",
+        source: "wallet_attribution_states",
+        reason: state.recruiter_id
+          ? "Wallet is not linked to an active eligible recruiter; using StandardUnlinked."
+          : "Wallet has no active recruiter link; using StandardUnlinked.",
+      },
+    };
+  }
+
+  const routeProfileId = attributionState.recruiter_is_og
+    ? ROUTE_PROFILE_OG_LINKED
+    : ROUTE_PROFILE_STANDARD_LINKED;
+
+  return {
+    tradeRouteProfileId: routeProfileId,
+    finalizeRouteProfileId: routeProfileId,
+    routeProfileId,
+    decision: {
+      profile: ROUTE_PROFILE_NAMES[routeProfileId],
+      routeProfileId,
+      finalizeRouteProfileId: routeProfileId,
+      walletAddress,
+      recruiterId: Number(attributionState.recruiter_id),
+      recruiterCode: attributionState.recruiter_code,
+      recruiterDisplayName: attributionState.recruiter_display_name || null,
+      recruiterIsOg: Boolean(attributionState.recruiter_is_og),
+      recruiterStatus: attributionState.recruiter_status,
+      recruiterLinkState: attributionState.recruiter_link_state,
+      squadState: attributionState.squad_state,
+      source: "wallet_attribution_states",
+      reason: attributionState.recruiter_is_og
+        ? "Wallet is linked to an active OG recruiter; using OgLinked."
+        : "Wallet is linked to an active recruiter; using StandardLinked.",
+    },
+  };
+}
+
+async function getRouteDecision(walletAddress) {
+  const { state, error } = await readWalletAttributionState(walletAddress);
+  return buildDecision({ walletAddress, attributionState: state, attributionError: error });
+}
+
 async function signCreateAuthorization({ signer, chainId, factoryAddress, creator, tradeRouteProfileId, finalizeRouteProfileId, deadline }) {
   const digest = ethers.solidityPackedKeccak256(
     ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
@@ -172,6 +305,9 @@ export async function routingStatus(req, res) {
     routeAuthority.toLowerCase() === onchain.routeAuthority.toLowerCase()
   );
 
+  const walletAddress = normalizeAddress(q.walletAddress);
+  const routeDecision = walletAddress ? await getRouteDecision(walletAddress) : null;
+
   return json(res, 200, {
     ok: Boolean(signer && (!onchain.routeAuthority || matchesOnchain)),
     signerConfigured: Boolean(signer),
@@ -182,9 +318,11 @@ export async function routingStatus(req, res) {
     matchesOnchain,
     onchainError: onchain.error,
     profiles: {
-      tradeRouteProfileId,
-      finalizeRouteProfileId,
+      defaultTradeRouteProfileId: tradeRouteProfileId,
+      defaultFinalizeRouteProfileId: finalizeRouteProfileId,
+      routeProfileNames: ROUTE_PROFILE_NAMES,
     },
+    routeDecision: routeDecision?.decision || null,
     ttlSeconds: parsePositiveInt(process.env.ROUTE_AUTH_TTL_SECONDS, 10 * 60),
   });
 }
@@ -204,7 +342,7 @@ export async function routingCreateAuthorization(req, res) {
   if (!factoryAddress) return json(res, 400, { error: "Invalid or missing factoryAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
 
-  const { tradeRouteProfileId, finalizeRouteProfileId } = getDefaultRouteProfiles();
+  const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
   const signature = await signCreateAuthorization({
     signer,
@@ -224,10 +362,7 @@ export async function routingCreateAuthorization(req, res) {
       signature,
     },
     routeAuthority: signer.address,
-    decision: {
-      profile: "standard_unlinked",
-      reason: "Attribution persistence is not implemented yet; defaulting to standard unlinked routing.",
-    },
+    decision,
   });
 }
 
@@ -246,8 +381,7 @@ export async function routingTradeAuthorization(req, res) {
   if (!campaignAddress) return json(res, 400, { error: "Invalid or missing campaignAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
 
-  const { tradeRouteProfileId } = getDefaultRouteProfiles();
-  const routeProfileId = tradeRouteProfileId;
+  const { routeProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
   const signature = await signTradeAuthorization({
     signer,
@@ -265,9 +399,6 @@ export async function routingTradeAuthorization(req, res) {
       signature,
     },
     routeAuthority: signer.address,
-    decision: {
-      profile: "standard_unlinked",
-      reason: "Attribution persistence is not implemented yet; defaulting to standard unlinked routing.",
-    },
+    decision,
   });
 }
