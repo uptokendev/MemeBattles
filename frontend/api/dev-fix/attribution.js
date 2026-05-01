@@ -26,21 +26,51 @@ function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
 }
 
-function publicState({ walletAddress, recruiter = null, attribution = null }) {
+function publicState({ walletAddress, state = null, recruiter = null }) {
   return {
     walletAddress,
-    hasActivity: Boolean(attribution?.has_activity),
-    recruiterLinkState: attribution?.link_state || (recruiter ? "linked" : "unlinked"),
-    recruiterCode: recruiter?.code || attribution?.recruiter_code || null,
-    recruiterDisplayName: recruiter?.display_name || null,
-    recruiterIsOg: Boolean(recruiter?.is_og),
-    squadState: attribution?.squad_state || (recruiter ? "member" : "solo"),
+    hasActivity: Boolean(state?.has_activity),
+    recruiterLinkState: state?.recruiter_link_state || (recruiter ? "linked_unlocked" : "unlinked"),
+    recruiterCode: state?.recruiter_code || recruiter?.code || null,
+    recruiterDisplayName: state?.recruiter_display_name || recruiter?.display_name || null,
+    recruiterIsOg: Boolean(state?.recruiter_is_og ?? recruiter?.is_og),
+    squadState: state?.squad_state || (recruiter ? "in_squad" : "solo"),
+  };
+}
+
+function recruiterSummaryShape(recruiter, extra = {}) {
+  return {
+    recruiterId: Number(recruiter.id),
+    walletAddress: recruiter.wallet_address,
+    code: recruiter.code,
+    displayName: recruiter.display_name,
+    isOg: Boolean(recruiter.is_og),
+    status: recruiter.status,
+    closedAt: recruiter.closed_at,
+    linkedWalletCount: Number(extra.linkedWalletCount || 0),
+    linkedCreatorsCount: Number(extra.linkedCreatorsCount || 0),
+    linkedTradersCount: Number(extra.linkedTradersCount || 0),
+    activeSquadMemberCount: Number(extra.activeSquadMemberCount || 0),
+    referredEventCount: Number(extra.referredEventCount || 0),
+    referredVolumeRaw: String(extra.referredVolumeRaw || "0"),
+    recruiterRouteAmountRaw: String(extra.recruiterRouteAmountRaw || "0"),
+    lastReferredEventAt: extra.lastReferredEventAt || null,
+    latestLinkedActivityAt: extra.latestLinkedActivityAt || null,
+    pendingEarningsRaw: String(extra.pendingEarningsRaw || "0"),
+    claimableEarningsRaw: String(extra.claimableEarningsRaw || "0"),
+    totalEarnedRaw: String(extra.totalEarnedRaw || "0"),
+    claimedLifetimeRaw: String(extra.claimedLifetimeRaw || "0"),
+    lastClaimedAt: extra.lastClaimedAt || null,
+    weightedScore: Number(extra.weightedScore || 0),
+    createdAt: recruiter.created_at || null,
+    updatedAt: recruiter.updated_at || null,
+    materializedAt: new Date().toISOString(),
   };
 }
 
 async function findRecruiterByCode(code) {
   const { rows } = await pool.query(
-    `select id, chain_id, wallet_address, code, display_name, is_og, status, closed_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
        from public.recruiters
       where lower(code) = lower($1)
       limit 1`,
@@ -51,56 +81,67 @@ async function findRecruiterByCode(code) {
 
 async function findRecruiterByWallet(walletAddress) {
   const { rows } = await pool.query(
-    `select id, chain_id, wallet_address, code, display_name, is_og, status, closed_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
        from public.recruiters
-      where lower(wallet_address) = lower($1)
+      where wallet_address = lower($1)
       limit 1`,
     [walletAddress],
   );
   return rows[0] || null;
 }
 
-async function findWalletAttribution(walletAddress) {
+async function findWalletAttributionState(walletAddress) {
   const { rows } = await pool.query(
     `select *
-       from public.wallet_attributions
-      where lower(wallet_address) = lower($1)
+       from public.wallet_attribution_states
+      where wallet_address = lower($1)
       limit 1`,
     [walletAddress],
   );
   return rows[0] || null;
 }
 
-async function findLatestSession({ sessionToken, clientFingerprint }) {
-  if (sessionToken) {
-    const { rows } = await pool.query(
-      `select s.*, r.code, r.display_name, r.is_og, r.status
-         from public.recruiter_referral_sessions s
-         left join public.recruiters r on r.id = s.recruiter_id
-        where s.session_token = $1
-          and s.expires_at > now()
-        order by s.captured_at desc
-        limit 1`,
-      [sessionToken],
-    );
-    if (rows[0]) return rows[0];
-  }
+async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress }) {
+  const { rows } = await pool.query(
+    `select w.*, r.code, r.display_name, r.is_og, r.status
+       from public.wallet_referral_attribution_windows w
+       join public.recruiters r on r.id = w.recruiter_id
+      where w.consumed_at is null
+        and w.expires_at > now()
+        and (
+          ($1::text is not null and w.session_token = $1::text)
+          or ($2::text is not null and w.client_fingerprint = $2::text)
+          or ($3::text is not null and w.wallet_address = $3::text)
+        )
+      order by w.captured_at desc, w.id desc
+      limit 1`,
+    [sessionToken || null, clientFingerprint || null, walletAddress || null],
+  );
+  return rows[0] || null;
+}
 
-  if (clientFingerprint) {
-    const { rows } = await pool.query(
-      `select s.*, r.code, r.display_name, r.is_og, r.status
-         from public.recruiter_referral_sessions s
-         left join public.recruiters r on r.id = s.recruiter_id
-        where s.client_fingerprint = $1
-          and s.expires_at > now()
-        order by s.captured_at desc
-        limit 1`,
-      [clientFingerprint],
-    );
-    if (rows[0]) return rows[0];
-  }
+async function getRecruiterStats(recruiterId) {
+  const [{ rows: linkRows }, { rows: squadRows }] = await Promise.all([
+    pool.query(
+      `select count(*)::int as linked_wallet_count,
+              max(linked_at) as latest_linked_activity_at
+         from public.wallet_recruiter_links
+        where recruiter_id = $1 and is_active = true`,
+      [recruiterId],
+    ),
+    pool.query(
+      `select count(*)::int as active_squad_member_count
+         from public.wallet_squad_memberships
+        where recruiter_id = $1 and is_active = true`,
+      [recruiterId],
+    ),
+  ]);
 
-  return null;
+  return {
+    linkedWalletCount: linkRows[0]?.linked_wallet_count || 0,
+    activeSquadMemberCount: squadRows[0]?.active_squad_member_count || 0,
+    latestLinkedActivityAt: linkRows[0]?.latest_linked_activity_at || null,
+  };
 }
 
 export async function recruiterReferralCapture(req, res) {
@@ -114,8 +155,9 @@ export async function recruiterReferralCapture(req, res) {
     const walletAddress = normalizeAddress(body.walletAddress) || null;
 
     if (!code) return json(res, 400, { error: "Missing recruiter code" });
-    if (!sessionToken) return json(res, 400, { error: "Missing sessionToken" });
-    if (!clientFingerprint) return json(res, 400, { error: "Missing clientFingerprint" });
+    if (!sessionToken && !clientFingerprint && !walletAddress) {
+      return json(res, 400, { error: "Missing attribution identifier" });
+    }
 
     const recruiter = await findRecruiterByCode(code);
     if (!recruiter || recruiter.status !== "active") {
@@ -123,26 +165,18 @@ export async function recruiterReferralCapture(req, res) {
     }
 
     await pool.query(
-      `insert into public.recruiter_referral_sessions (
-         recruiter_id, recruiter_code, session_token, client_fingerprint, wallet_address, user_agent, metadata_json, updated_at
-       ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, now())
-       on conflict (session_token)
-       do update set
-         recruiter_id = excluded.recruiter_id,
-         recruiter_code = excluded.recruiter_code,
-         client_fingerprint = excluded.client_fingerprint,
-         wallet_address = coalesce(excluded.wallet_address, public.recruiter_referral_sessions.wallet_address),
-         user_agent = excluded.user_agent,
-         expires_at = now() + interval '30 days',
-         updated_at = now()`,
+      `insert into public.wallet_referral_attribution_windows (
+         wallet_address, recruiter_id, client_fingerprint, session_token, expires_at, metadata, updated_at
+       ) values ($1, $2, $3, $4, now() + interval '30 days', $5::jsonb, now())`,
       [
-        recruiter.id,
-        recruiter.code,
-        sessionToken,
-        clientFingerprint,
         walletAddress,
-        String(req.headers?.["user-agent"] || "").slice(0, 300),
-        JSON.stringify({ source: "frontend_referral_capture" }),
+        recruiter.id,
+        clientFingerprint || null,
+        sessionToken || null,
+        JSON.stringify({
+          source: "frontend_referral_capture",
+          userAgent: String(req.headers?.["user-agent"] || "").slice(0, 300),
+        }),
       ],
     );
 
@@ -159,7 +193,7 @@ export async function recruiterReferralCapture(req, res) {
     if (schemaMissing(error)) {
       return json(res, 200, {
         captured: false,
-        warning: "Reward attribution schema has not been applied yet.",
+        warning: "Canonical reward attribution schema has not been applied yet.",
       });
     }
     return json(res, 500, { error: "Server error" });
@@ -177,66 +211,76 @@ export async function attributionWalletConnect(req, res) {
 
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
 
-    const existing = await findWalletAttribution(walletAddress);
-    if (existing?.has_activity || existing?.locked_at || existing?.link_state === "linked") {
-      const recruiter = existing.recruiter_id
-        ? await findRecruiterByCode(existing.recruiter_code)
-        : null;
+    await pool.query(
+      `insert into public.wallet_profiles (wallet_address)
+       values ($1)
+       on conflict (wallet_address)
+       do update set updated_at = now()`,
+      [walletAddress],
+    );
+
+    const existingState = await findWalletAttributionState(walletAddress);
+    if (
+      existingState?.recruiter_id ||
+      existingState?.has_activity ||
+      existingState?.recruiter_link_state === "linked_locked"
+    ) {
       return json(res, 200, {
-        linked: false,
-        locked: Boolean(existing.has_activity || existing.locked_at),
-        state: publicState({ walletAddress, recruiter, attribution: existing }),
-        reason: "Existing wallet attribution is locked or already linked.",
+        linked: Boolean(existingState?.recruiter_id),
+        locked: Boolean(existingState?.has_activity || existingState?.locked_at),
+        state: publicState({ walletAddress, state: existingState }),
+        reason: "Existing canonical wallet attribution is already linked or locked.",
       });
     }
 
-    const session = await findLatestSession({ sessionToken, clientFingerprint });
-    const recruiter = session?.recruiter_id ? await findRecruiterByCode(session.recruiter_code) : null;
+    const window = await findLatestWindow({ sessionToken, clientFingerprint, walletAddress });
+    const recruiter = window?.recruiter_id ? await findRecruiterByCode(window.code) : null;
 
-    if (!session || !recruiter || recruiter.status !== "active") {
-      await pool.query(
-        `insert into public.wallet_attributions (wallet_address, link_state, squad_state, source_session_token, source_client_fingerprint, updated_at)
-         values ($1, 'unlinked', 'solo', $2, $3, now())
-         on conflict (lower(wallet_address))
-         do update set
-           source_session_token = coalesce(excluded.source_session_token, public.wallet_attributions.source_session_token),
-           source_client_fingerprint = coalesce(excluded.source_client_fingerprint, public.wallet_attributions.source_client_fingerprint),
-           updated_at = now()`,
-        [walletAddress, sessionToken || null, clientFingerprint || null],
-      );
-
+    if (!window || !recruiter || recruiter.status !== "active") {
       return json(res, 200, {
         linked: false,
         state: publicState({ walletAddress }),
-        reason: "No active referral session found for this wallet.",
+        reason: "No active referral attribution window found for this wallet.",
       });
     }
 
-    await pool.query(
-      `insert into public.wallet_attributions (
-         wallet_address, recruiter_id, recruiter_code, link_state, squad_state, linked_at,
-         source_session_token, source_client_fingerprint, updated_at
-       ) values ($1, $2, $3, 'linked', 'member', now(), $4, $5, now())
-       on conflict (lower(wallet_address))
-       do update set
-         recruiter_id = excluded.recruiter_id,
-         recruiter_code = excluded.recruiter_code,
-         link_state = 'linked',
-         squad_state = 'member',
-         linked_at = coalesce(public.wallet_attributions.linked_at, now()),
-         source_session_token = excluded.source_session_token,
-         source_client_fingerprint = excluded.source_client_fingerprint,
-         updated_at = now()
-       where public.wallet_attributions.has_activity = false
-         and public.wallet_attributions.locked_at is null
-         and public.wallet_attributions.link_state <> 'linked'`,
-      [walletAddress, recruiter.id, recruiter.code, sessionToken || null, clientFingerprint || null],
-    );
+    await pool.query("BEGIN");
+    try {
+      await pool.query(
+        `insert into public.wallet_recruiter_links (wallet_address, recruiter_id, link_source)
+         values ($1, $2, 'referral_cookie')
+         on conflict (wallet_address) where is_active = true
+         do nothing`,
+        [walletAddress, recruiter.id],
+      );
 
-    const updated = await findWalletAttribution(walletAddress);
+      await pool.query(
+        `insert into public.wallet_squad_memberships (wallet_address, recruiter_id)
+         values ($1, $2)
+         on conflict (wallet_address) where is_active = true
+         do nothing`,
+        [walletAddress, recruiter.id],
+      );
+
+      await pool.query(
+        `update public.wallet_referral_attribution_windows
+            set wallet_address = coalesce(wallet_address, $1),
+                consumed_at = now(),
+                updated_at = now()
+          where id = $2`,
+        [walletAddress, window.id],
+      );
+
+      await pool.query("COMMIT");
+    } catch (error) {
+      await pool.query("ROLLBACK");
+      throw error;
+    }
+
+    const updatedState = await findWalletAttributionState(walletAddress);
     return json(res, 200, {
-      linked: updated?.link_state === "linked",
-      state: publicState({ walletAddress, recruiter, attribution: updated }),
+      linked: Boolean(updatedState?.recruiter_id),
+      state: publicState({ walletAddress, state: updatedState, recruiter }),
     });
   } catch (error) {
     console.error("[api/attribution wallet-connect]", error);
@@ -246,7 +290,7 @@ export async function attributionWalletConnect(req, res) {
       return json(res, 200, {
         linked: false,
         state: publicState({ walletAddress }),
-        warning: "Reward attribution schema has not been applied yet.",
+        warning: "Canonical reward attribution schema has not been applied yet.",
       });
     }
     return json(res, 500, { error: "Server error" });
@@ -260,11 +304,9 @@ export async function attributionWallet(req, res) {
     const walletAddress = normalizeAddress(req.params?.wallet);
     if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
 
-    const attribution = await findWalletAttribution(walletAddress);
-    const recruiter = attribution?.recruiter_code ? await findRecruiterByCode(attribution.recruiter_code) : null;
-
+    const state = await findWalletAttributionState(walletAddress);
     return json(res, 200, {
-      state: publicState({ walletAddress, recruiter, attribution }),
+      state: publicState({ walletAddress, state }),
       materializedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -273,7 +315,7 @@ export async function attributionWallet(req, res) {
       const walletAddress = normalizeAddress(req.params?.wallet);
       return json(res, 200, {
         state: publicState({ walletAddress }),
-        warning: "Reward attribution schema has not been applied yet.",
+        warning: "Canonical reward attribution schema has not been applied yet.",
       });
     }
     return json(res, 500, { error: "Server error" });
@@ -290,33 +332,8 @@ export async function recruiterWalletSummary(req, res) {
     const recruiter = await findRecruiterByWallet(wallet);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
 
-    return json(res, 200, {
-      recruiterId: Number(recruiter.id),
-      walletAddress: recruiter.wallet_address,
-      code: recruiter.code,
-      displayName: recruiter.display_name,
-      isOg: Boolean(recruiter.is_og),
-      status: recruiter.status,
-      closedAt: recruiter.closed_at,
-      linkedWalletCount: 0,
-      linkedCreatorsCount: 0,
-      linkedTradersCount: 0,
-      activeSquadMemberCount: 0,
-      referredEventCount: 0,
-      referredVolumeRaw: "0",
-      recruiterRouteAmountRaw: "0",
-      lastReferredEventAt: null,
-      latestLinkedActivityAt: null,
-      pendingEarningsRaw: "0",
-      claimableEarningsRaw: "0",
-      totalEarnedRaw: "0",
-      claimedLifetimeRaw: "0",
-      lastClaimedAt: null,
-      weightedScore: 0,
-      createdAt: recruiter.created_at || null,
-      updatedAt: recruiter.updated_at || null,
-      materializedAt: new Date().toISOString(),
-    });
+    const stats = await getRecruiterStats(recruiter.id);
+    return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
     console.error("[api/recruiter wallet summary]", error);
     if (schemaMissing(error)) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
@@ -334,33 +351,8 @@ export async function recruiterSummary(req, res) {
     const recruiter = await findRecruiterByCode(code);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
 
-    return json(res, 200, {
-      recruiterId: Number(recruiter.id),
-      walletAddress: recruiter.wallet_address,
-      code: recruiter.code,
-      displayName: recruiter.display_name,
-      isOg: Boolean(recruiter.is_og),
-      status: recruiter.status,
-      closedAt: recruiter.closed_at,
-      linkedWalletCount: 0,
-      linkedCreatorsCount: 0,
-      linkedTradersCount: 0,
-      activeSquadMemberCount: 0,
-      referredEventCount: 0,
-      referredVolumeRaw: "0",
-      recruiterRouteAmountRaw: "0",
-      lastReferredEventAt: null,
-      latestLinkedActivityAt: null,
-      pendingEarningsRaw: "0",
-      claimableEarningsRaw: "0",
-      totalEarnedRaw: "0",
-      claimedLifetimeRaw: "0",
-      lastClaimedAt: null,
-      weightedScore: 0,
-      createdAt: recruiter.created_at || null,
-      updatedAt: recruiter.updated_at || null,
-      materializedAt: new Date().toISOString(),
-    });
+    const stats = await getRecruiterStats(recruiter.id);
+    return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
     console.error("[api/recruiter summary]", error);
     if (schemaMissing(error)) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
@@ -377,41 +369,33 @@ export async function recruiters(req, res) {
     const status = String(q.status || "active").trim().toLowerCase();
 
     const { rows } = await pool.query(
-      `select id, chain_id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
-         from public.recruiters
-        where ($1::text = 'all' or status = $1::text)
-        order by is_og desc, created_at asc
+      `select r.id,
+              r.wallet_address,
+              r.code,
+              r.display_name,
+              r.is_og,
+              r.status,
+              r.closed_at,
+              r.created_at,
+              r.updated_at,
+              count(distinct l.wallet_address)::int as linked_wallet_count,
+              count(distinct s.wallet_address)::int as active_squad_member_count,
+              max(l.linked_at) as latest_linked_activity_at
+         from public.recruiters r
+         left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true
+         left join public.wallet_squad_memberships s on s.recruiter_id = r.id and s.is_active = true
+        where ($1::text = 'all' or r.status = $1::text)
+        group by r.id
+        order by r.is_og desc, linked_wallet_count desc, r.created_at asc
         limit $2`,
       [status || "active", limit],
     );
 
     return json(res, 200, {
-      recruiters: rows.map((r) => ({
-        recruiterId: Number(r.id),
-        walletAddress: r.wallet_address,
-        code: r.code,
-        displayName: r.display_name,
-        isOg: Boolean(r.is_og),
-        status: r.status,
-        closedAt: r.closed_at,
-        linkedWalletCount: 0,
-        linkedCreatorsCount: 0,
-        linkedTradersCount: 0,
-        activeSquadMemberCount: 0,
-        referredEventCount: 0,
-        referredVolumeRaw: "0",
-        recruiterRouteAmountRaw: "0",
-        lastReferredEventAt: null,
-        latestLinkedActivityAt: null,
-        pendingEarningsRaw: "0",
-        claimableEarningsRaw: "0",
-        totalEarnedRaw: "0",
-        claimedLifetimeRaw: "0",
-        lastClaimedAt: null,
-        weightedScore: 0,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-        materializedAt: new Date().toISOString(),
+      recruiters: rows.map((r) => recruiterSummaryShape(r, {
+        linkedWalletCount: r.linked_wallet_count,
+        activeSquadMemberCount: r.active_squad_member_count,
+        latestLinkedActivityAt: r.latest_linked_activity_at,
       })),
       limit,
       status,
@@ -419,7 +403,7 @@ export async function recruiters(req, res) {
     });
   } catch (error) {
     console.error("[api/recruiters]", error);
-    if (schemaMissing(error)) return json(res, 200, { recruiters: [], warning: "Reward attribution schema has not been applied yet." });
+    if (schemaMissing(error)) return json(res, 200, { recruiters: [], warning: "Canonical reward attribution schema has not been applied yet." });
     return json(res, 500, { error: "Server error" });
   }
 }
