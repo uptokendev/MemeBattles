@@ -302,7 +302,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
       </div>
 
-      <div className="hidden xl:flex mx-4 mt-1 h-5 overflow-hidden text-[10px] uppercase tracking-[0.18em] mwz-muted">
+      <div className="hidden xl:flex mx-4 mt-3 h-5 overflow-hidden text-[10px] uppercase tracking-[0.18em] mwz-muted">
         <div className="flex animate-[scroll_45s_linear_infinite] whitespace-nowrap gap-8 pr-8">
           {(tickerLoading || tickerBaseLoop.length === 0 ? [{ key: "loading", symbol: "MWZ", subtitle: "COMMAND FEED ONLINE", hot: true, route: "/" }] : tickerBaseLoop).concat(tickerBaseLoop).map((item, idx) => (
             <button key={`${item.key}-${idx}`} type="button" onClick={() => navigate(item.route)} className="inline-flex items-center gap-2 hover:text-[var(--mwz-orange)]">
