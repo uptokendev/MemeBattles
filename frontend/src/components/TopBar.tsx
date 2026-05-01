@@ -22,15 +22,14 @@ interface TopBarProps {
 }
 
 type TickerItem = {
-  key: string; // campaign address (or unique)
+  key: string;
   symbol: string;
   logoURI?: string;
-  subtitle: string; // e.g. "Price 0.0123 BNB" or "Live"
+  subtitle: string;
   hot: boolean;
-  route: string; // where to navigate on click
+  route: string;
 };
 
-// Public brand asset (no bundler import required)
 const brandMark = "/assets/ticker.png";
 
 function navPathMatches(currentPathname: string, currentSearch: string, target: string): boolean {
@@ -56,56 +55,45 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [allCampaigns, setAllCampaigns] = useState<CampaignInfo[]>([]);
 
   const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
 
-  // Ticker feed state
   const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
-  const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<
-    Record<string, CampaignMetrics | null>
-  >({});
+  const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<Record<string, CampaignMetrics | null>>({});
   const [tickerLoading, setTickerLoading] = useState(true);
 
-  const { results: searchResults, loading: searchLoading, error: searchError } = useTokenSearch(
-    searchQuery,
-    allCampaigns,
-    { limit: 10, debounceMs: 250 }
-  );
+  const { results: searchResults, loading: searchLoading, error: searchError } = useTokenSearch(searchQuery, allCampaigns, {
+    limit: 10,
+    debounceMs: 250,
+  });
 
-  const shortAddress =
-    wallet.account && wallet.account.length > 8
-      ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}`
-      : wallet.account;
+  const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
 
-  // Match the primary button styling used across the app
-  const topbarButtonClass = "border border-accent/35 bg-primary/90 text-foreground hover:border-accent/60 hover:bg-primary font-retro text-xs md:text-sm px-3 md:px-4 py-2 rounded-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.10)]";
+  const topbarButtonClass = "mwz-button h-10 px-3 md:px-5 text-xs md:text-sm font-retro";
 
   const openWalletModal = () => {
-    // You can decide: allow switching wallet even when connected or not
     setWalletModalOpen(true);
   };
 
-const navLinks = useMemo(
-  () => [
-    { label: "Launchpad", path: "/" },
-    { label: "Create Coin", path: "/create" },
-    { label: "Battle Leagues", path: "/battle-leagues" },
-    { label: "Profile", path: "/profile?tab=balances" },
-    { label: "Docs", path: "/docs" },
-  ],
-  []
-);
-  // Load campaigns for ticker (handled by your launchpadClient)
+  const navLinks = useMemo(
+    () => [
+      { label: "Launchpad", path: "/" },
+      { label: "Create Coin", path: "/create" },
+      { label: "Battle Leagues", path: "/battle-leagues" },
+      { label: "Profile", path: "/profile?tab=balances" },
+      { label: "Docs", path: "/docs" },
+    ],
+    []
+  );
+
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       try {
         setTickerLoading(true);
-
         const campaigns = await fetchCampaigns();
         const all = campaigns ?? [];
         const top = all.slice(0, 12);
@@ -114,10 +102,7 @@ const navLinks = useMemo(
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
-        // Best-effort metrics per campaign (don’t block UI if some fail)
-        const results = await Promise.allSettled(
-          top.map((c) => fetchCampaignMetrics(c.campaign))
-        );
+        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
 
         if (cancelled) return;
 
@@ -145,7 +130,6 @@ const navLinks = useMemo(
     };
   }, [fetchCampaigns, fetchCampaignMetrics]);
 
-  // Build ticker items from campaigns + metrics
   const tickerItems: TickerItem[] = useMemo(() => {
     const formatCompactUsd = (n: number) => {
       if (!Number.isFinite(n)) return "—";
@@ -168,7 +152,6 @@ const navLinks = useMemo(
     const formatMarketCap = (m: CampaignMetrics | null | undefined) => {
       if (!m) return "MC —";
       try {
-        // Match the bonding-curve chart semantics: circulating = net sold tokens.
         const circulating: bigint = (m as any).sold ?? 0n;
         const priceWeiPerToken: bigint = (m as any).currentPrice ?? 0n;
         if (circulating <= 0n || priceWeiPerToken <= 0n) return "MC —";
@@ -192,7 +175,6 @@ const navLinks = useMemo(
       .filter((c) => c && typeof c.symbol === "string" && c.symbol.length > 0)
       .map((c) => {
         const metrics = tickerMetricsByCampaign[c.campaign.toLowerCase()] ?? null;
-
         const sold = (() => {
           try {
             const v = (metrics as any)?.sold;
@@ -216,22 +198,16 @@ const navLinks = useMemo(
       });
   }, [tickerCampaigns, tickerMetricsByCampaign, bnbUsd]);
 
-  // Ensure the scrolling band is always long enough, even if we only have a few campaigns.
   const tickerBaseLoop: TickerItem[] = useMemo(() => {
     if (!tickerItems || tickerItems.length === 0) return [];
-
-    const MIN_ITEMS = 18; // tweak if you want more density on desktop
+    const MIN_ITEMS = 18;
     const target = Math.max(MIN_ITEMS, tickerItems.length);
-
     const out: TickerItem[] = [];
     while (out.length < target) out.push(...tickerItems);
-
     return out.slice(0, target);
   }, [tickerItems]);
 
-  const isActive = (path: string) => {
-    return navPathMatches(location.pathname, location.search, path);
-  };
+  const isActive = (path: string) => navPathMatches(location.pathname, location.search, path);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -245,34 +221,23 @@ const navLinks = useMemo(
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="mx-2 md:mx-4 mt-2 flex items-center justify-between rounded-2xl border border-border/70 bg-[linear-gradient(180deg,rgba(23,26,31,0.82),rgba(11,13,16,0.92))] px-4 md:px-6 py-3 shadow-[0_22px_50px_-30px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.08)] backdrop-blur-xl">
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 hover:bg-muted rounded-lg transition-colors"
-          aria-label="Toggle menu"
-        >
-          <Menu className="h-6 w-6" />
+      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-2 px-3 md:px-5 py-2.5 min-h-[66px]">
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden mwz-button p-2" aria-label="Toggle menu">
+          <Menu className="h-5 w-5" />
         </button>
 
-        {/* Desktop nav */}
-        <div className="hidden lg:flex items-center gap-4 flex-1">
-          <Link to="/" className="flex items-center gap-2 mr-2">
-            <img src={brandMark} alt="MemeWarzone" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-base">MemeWarzone</span>
+        <div className="hidden lg:flex items-center gap-5 flex-1 min-w-0">
+          <Link to="/" className="flex items-center gap-2 mr-2 shrink-0">
+            <img src={brandMark} alt="MemeWarzone" className="h-10 w-10 object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
+            <span className="mwz-section-title text-base">MemeWarzone</span>
           </Link>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 min-w-0">
             {navLinks.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
-                className={cn(
-                  "px-3 py-2 rounded-xl text-base font-retro transition-colors border",
-                  isActive(item.path)
-                    ? "bg-card/80 border-accent/40 text-foreground shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_30px_-22px_rgba(240,106,26,0.35)]"
-                    : "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-card/50"
-                )}
+                className={cn("mwz-nav-link px-3 py-2 text-sm font-retro whitespace-nowrap", isActive(item.path) && "mwz-nav-link-active")}
               >
                 {item.label}
               </Link>
@@ -280,15 +245,12 @@ const navLinks = useMemo(
           </div>
         </div>
 
-        {/* Search */}
-        <div className="min-w-0 flex-none w-28 sm:flex-1 sm:max-w-xs md:max-w-md mx-1.5 md:mx-0 lg:mx-6">
+        <div className="min-w-0 flex-1 lg:flex-none lg:w-[340px] xl:w-[420px] mx-1 lg:mx-4">
           <SearchBar
             placeholder="Search campaigns..."
             value={searchQuery}
             onValueChange={(q) => {
               setSearchQuery(q);
-              // Also broadcast to the Home grid as an optional "filter-in-place" search.
-              // Pages that don't care can ignore this event.
               try {
                 window.dispatchEvent(new CustomEvent("memebattles:homeSearch", { detail: String(q ?? "") }));
               } catch {
@@ -304,16 +266,13 @@ const navLinks = useMemo(
             }}
           />
         </div>
-       <div className="relative flex items-center gap-2">
-        {/* Right side actions */}
-        <div className="flex items-center gap-2 md:gap-3">
-          {/* Primary CTA */}
+
+        <div className="relative flex items-center gap-2 shrink-0">
           <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
           </Button>
 
-          {/* Connect wallet button with SAME style, but now opens modal */}
           <div className="relative">
             <Button
               className={topbarButtonClass}
@@ -325,41 +284,36 @@ const navLinks = useMemo(
                 setDisconnectOpen((prev) => !prev);
               }}
             >
-              <span className="hidden sm:inline">
-                {wallet.isConnected ? shortAddress : "Connect wallet"}
-              </span>
-              <span className="sm:hidden">
-                {wallet.isConnected ? "Wallet" : "Connect"}
-              </span>
+              <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
+              <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
             </Button>
 
             {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-1 w-40 rounded-xl border border-border/70 bg-card/95 backdrop-blur-xl shadow-[0_18px_40px_-28px_rgba(0,0,0,0.95)] z-50 overflow-hidden">
-                <button
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
-                  onClick={() => {
-                    setDisconnectOpen(false);
-                    openWalletModal();
-                  }}
-                >
+              <div className="absolute right-0 mt-2 w-44 mwz-panel z-50 overflow-hidden p-1">
+                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
                   Change wallet
                 </button>
-                <button
-                  className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
-                  onClick={async () => {
-                    await wallet.disconnect();
-                    setDisconnectOpen(false);
-                  }}
-                >
+                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
                   Disconnect
                 </button>
               </div>
             )}
           </div>
         </div>
+      </div>
+
+      <div className="hidden xl:flex mx-4 mt-1 h-5 overflow-hidden text-[10px] uppercase tracking-[0.18em] mwz-muted">
+        <div className="flex animate-[scroll_45s_linear_infinite] whitespace-nowrap gap-8 pr-8">
+          {(tickerLoading || tickerBaseLoop.length === 0 ? [{ key: "loading", symbol: "MWZ", subtitle: "COMMAND FEED ONLINE", hot: true, route: "/" }] : tickerBaseLoop).concat(tickerBaseLoop).map((item, idx) => (
+            <button key={`${item.key}-${idx}`} type="button" onClick={() => navigate(item.route)} className="inline-flex items-center gap-2 hover:text-[var(--mwz-orange)]">
+              <span className={item.hot ? "mwz-orange" : ""}>▰</span>
+              <span>${item.symbol}</span>
+              <span>{item.subtitle}</span>
+            </button>
+          ))}
         </div>
       </div>
-      {/* Wallet selection modal */}
+
       <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
 
       <style>{`
