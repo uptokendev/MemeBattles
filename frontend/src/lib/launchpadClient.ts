@@ -31,6 +31,7 @@ export type CampaignInfo = {
   name: string;
   symbol: string;
   logoURI: string;
+  metadataURI?: string;
   xAccount: string;
   website: string;
   extraLink: string;
@@ -193,6 +194,12 @@ async function getLogsChunked(
   return logs;
 }
 
+function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): string {
+  const address = String(tokenOrCampaignAddress || "").trim().toLowerCase();
+  if (address && ethers.isAddress(address)) return `/api/token-metadata/${chainId}/${address}`;
+  return "";
+}
+
 // ---------------- Hook ----------------
 export function useLaunchpad() {
   const wallet = useWallet() as any;
@@ -263,6 +270,7 @@ export function useLaunchpad() {
         name: c.name,
         symbol: c.symbol,
         logoURI: c.logoURI,
+        metadataURI: c.metadataURI,
         xAccount: c.xAccount,
         website: c.website,
         extraLink: c.extraLink,
@@ -569,6 +577,7 @@ try {
       name: string;
       symbol: string;
       logoURI: string;
+      metadataURI?: string;
       xAccount: string;
       website: string;
       extraLink: string;
@@ -602,11 +611,13 @@ try {
       const authResponse = await fetchCampaignCreateAuthorization(wallet.account, wallet.chainId);
       const auth = authResponse.authorization;
 
+      const metadataURI = params.metadataURI || buildMetadataURI(activeChainId);
       const tx = await writer.createCampaignAuthorized(
         {
         name: params.name,
         symbol: params.symbol,
         logoURI: params.logoURI,
+        metadataURI,
         xAccount: params.xAccount,
         website: params.website,
         extraLink: params.extraLink,
@@ -629,7 +640,7 @@ try {
       emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash });
       return receipt;
     },
-    [getFactoryWrite, getFactoryRead, activeChainId, wallet.account, wallet.chainId]
+    [getFactoryWrite, activeChainId, wallet.account, wallet.chainId]
   );
 
   const buyTokens = useCallback(
