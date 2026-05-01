@@ -85,6 +85,10 @@ body::after {
     0 22px 45px -32px rgba(0, 0, 0, 0.95);
 }
 
+.mwz-hud-frame {
+  overflow: visible;
+}
+
 .mwz-hud-frame::before,
 .mwz-panel::before,
 .mwz-card::before {
@@ -115,7 +119,13 @@ body::after {
     inset 0 0 0 1px rgba(57, 255, 79, 0.16),
     0 0 24px rgba(57, 255, 79, 0.16),
     0 0 18px rgba(255, 153, 0, 0.08);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
+}
+
+.mwz-hud-frame .snap-x {
+  padding-top: 0.5rem;
+  margin-top: -0.5rem;
+  padding-bottom: 0.75rem;
 }
 
 .mwz-button {
