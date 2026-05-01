@@ -150,7 +150,7 @@ async function createAuthorizedCampaign(fixture: Awaited<ReturnType<typeof deplo
 }
 
 describe("Phase 6 route authorization alignment", function () {
-  it("uses the backend route-profile ID order in factory, campaign, and treasury", async function () {
+  it("uses the backend route-profile ID order in factory and treasury", async function () {
     const fixture = await deployFixture();
     const { factory, treasury } = fixture;
 
@@ -252,6 +252,9 @@ describe("Phase 6 route authorization alignment", function () {
 
     const amountOut = ethers.parseEther("1000");
     const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const protocolFeeBps = await campaign.protocolFeeBps();
+    const feeAmount = (maxCost * protocolFeeBps) / (10_000n + protocolFeeBps);
+    const routeAmounts = await treasury.previewRoute(feeAmount, 0, OG_LINKED);
     const deadline = await currentDeadline();
     const signature = await signTradeRouteAuth({
       signer: routeAuthority,
@@ -266,7 +269,16 @@ describe("Phase 6 route authorization alignment", function () {
       campaign.connect(trader).buyExactTokensAuthorized(amountOut, maxCost, OG_LINKED, deadline, signature, { value: maxCost }),
     )
       .to.emit(treasury, "RouteExecuted")
-      .withArgs(0, OG_LINKED, await campaign.protocolFeeBps().then((bps: bigint) => (maxCost * bps) / (10_000n + bps)), 0, 0, 0, 0, 0);
+      .withArgs(
+        0,
+        OG_LINKED,
+        feeAmount,
+        routeAmounts.league,
+        routeAmounts.recruiter,
+        routeAmounts.airdrop,
+        routeAmounts.squad,
+        routeAmounts.protocol,
+      );
   });
 
   it("rejects trade authorization for the wrong actor", async function () {
