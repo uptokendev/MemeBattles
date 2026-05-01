@@ -6,7 +6,7 @@ type HeaderBandProps = {
 
 export function HeaderBand({ className }: HeaderBandProps) {
   return (
-    <div className={cn("relative w-full", className)}>
+    <div className={cn("mwz-hud-frame w-full", className)}>
       <div className="relative h-[124px] md:h-[142px] lg:h-[154px] overflow-visible px-5 md:px-7">
         <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-[linear-gradient(90deg,transparent,rgba(57,255,79,0.45),rgba(57,255,79,0.7),rgba(57,255,79,0.45),transparent)] shadow-[0_0_18px_rgba(57,255,79,0.28)]" />
         <div className="absolute inset-x-[15%] top-1/2 -translate-y-1/2 hidden md:flex items-center justify-between opacity-80">
