@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
@@ -7,7 +7,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import { useWallet } from "@/contexts/WalletContext";
 import { useToast } from "@/hooks/use-toast";
 import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
-import { ChevronLeft, ChevronRight, Flame, ThumbsUp, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, Star, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
@@ -19,7 +19,6 @@ type FeaturedItemApi = {
   campaignAddress: string;
   tokenAddress?: string | null;
   creatorAddress?: string | null;
-  // Optional profile fields (may or may not be present depending on API version)
   creatorName?: string | null;
   creatorUsername?: string | null;
   username?: string | null;
@@ -31,6 +30,23 @@ type FeaturedItemApi = {
   votes24h?: number | null;
   votesAllTime?: number | null;
   marketcapBnb?: string | null;
+};
+
+type FeaturedCardVM = {
+  idx: number;
+  chainId: number;
+  addr: string;
+  name: string;
+  symbol: string;
+  creator: string;
+  creatorLabel: string;
+  createdAt?: number;
+  votes24h: number;
+  votesAll: number;
+  rankVotes: number;
+  activitySec: number;
+  mcapUsdLabel: string | null;
+  image: string;
 };
 
 function formatCompactUsd(value: number): string {
@@ -57,21 +73,26 @@ function isEvmAddress(addr?: string | null) {
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const wallet = useWallet();
   const { toast } = useToast();
-  const [followedMap, setFollowedMap] = useState<Record<string, boolean>>({});
-  const [followBusyMap, setFollowBusyMap] = useState<Record<string, boolean>>({});
-
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
-  const [refetchNonce, setRefetchNonce] = useState(0);
+  const { price: bnbUsd } = useBnbUsdPrice(true);
   const [voteMode, setVoteMode] = useState<"24h" | "all">("24h");
+  const [refetchNonce, setRefetchNonce] = useState(0);
+  const [items, setItems] = useState<FeaturedItemApi[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
+  const [profilesByAddr, setProfilesByAddr] = useState<Record<string, UserProfile | null>>({});
+  const [followedMap, setFollowedMap] = useState<Record<string, boolean>>({});
+  const [followBusyMap, setFollowBusyMap] = useState<Record<string, boolean>>({});
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const { patchByCampaign } = useLeagueRealtime({
-  enabled: true,
-  chainId: activeChainId,
-  fallbackMs: 25000,
-  onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
- });
-  const { price: bnbUsd } = useBnbUsdPrice(true);
+    enabled: true,
+    chainId: activeChainId,
+    fallbackMs: 25000,
+    onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
+  });
 
   const goProfile = (creatorAddr?: string) => {
     const a = (creatorAddr ?? "").trim();
@@ -79,31 +100,18 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     navigate(`/profile?address=${encodeURIComponent(a)}`);
   };
 
-  const [items, setItems] = useState<FeaturedItemApi[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // On-chain logo hydration cache (same idea as CampaignGrid)
-  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
-  const [profilesByAddr, setProfilesByAddr] = useState<Record<string, UserProfile | null>>({});
-
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const anchorAddrRef = useRef<string | null>(null);
-  const prevOrderKeyRef = useRef<string>("");
-
-  // Immediately refresh featured sorting after a confirmed tx (upvote/buy/sell/finalize).
   useEffect(() => {
-    const onRefresh = (e: any) => {
-      const d = e?.detail ?? {};
+    const onRefresh = (e: Event) => {
+      const d = (e as CustomEvent<{ chainId?: number }>).detail ?? {};
       const cid = Number(d.chainId ?? NaN);
       if (Number.isFinite(cid) && cid !== activeChainId) return;
       setRefetchNonce((n) => n + 1);
     };
-    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as any);
-    window.addEventListener("memebattles:txConfirmed", onRefresh as any);
+    window.addEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
+    window.addEventListener("memebattles:txConfirmed", onRefresh as EventListener);
     return () => {
-      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as any);
-      window.removeEventListener("memebattles:txConfirmed", onRefresh as any);
+      window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
+      window.removeEventListener("memebattles:txConfirmed", onRefresh as EventListener);
     };
   }, [activeChainId]);
 
@@ -113,19 +121,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       setLoading(true);
       setErr(null);
       try {
-        // Avoid edge/browser caching so vote counts/order refresh immediately after tx confirmation.
-        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, {
-          cache: "no-store" as any,
-        });
+        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
         const j = await r.json();
         if (!mounted) return;
         setItems(Array.isArray(j.items) ? j.items : []);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!mounted) return;
-        setErr(e?.message ?? "Failed to load featured");
+        setErr(String((e as { message?: string })?.message ?? "Failed to load featured"));
       } finally {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
     return () => {
@@ -133,10 +137,8 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [activeChainId, refetchNonce]);
 
-  // Hydrate missing logos from chain if DB didn’t have logoUri (mirrors CampaignGrid)
   useEffect(() => {
     let cancelled = false;
-
     const missing = (items || [])
       .map((it) => String(it.campaignAddress ?? "").toLowerCase())
       .filter((addr) => addr && !logoCache[addr])
@@ -150,19 +152,11 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
 
     (async () => {
       try {
-        const pairs = await Promise.all(
-          missing.map(async (addr) => {
-            const uri = await fetchCampaignLogoURI(addr);
-            return [addr, uri] as const;
-          })
-        );
+        const pairs = await Promise.all(missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr)] as const));
         if (cancelled) return;
-
         setLogoCache((prev) => {
           const next = { ...prev };
-          for (const [addr, uri] of pairs) {
-            if (uri) next[addr] = uri;
-          }
+          for (const [addr, uri] of pairs) if (uri) next[addr] = uri;
           return next;
         });
       } catch {
@@ -175,44 +169,28 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [items, logoCache, fetchCampaignLogoURI]);
 
-
-  // Hydrate creator profiles (username/displayName) so we can show username instead of short address
   useEffect(() => {
     let cancelled = false;
-
-    const unique = Array.from(
-      new Set(
-        (items || [])
-          .map((it) => String(it.creatorAddress ?? "").trim().toLowerCase())
-          .filter((a) => isEvmAddress(a))
-      )
-    );
-
+    const unique = Array.from(new Set((items || []).map((it) => String(it.creatorAddress ?? "").trim().toLowerCase()).filter((a) => isEvmAddress(a))));
     const missing = unique.filter((a) => profilesByAddr[a] === undefined);
     if (!missing.length) return;
 
     (async () => {
-      try {
-        const results = await Promise.all(
-          missing.map(async (addr) => {
-            try {
-              const p = await fetchUserProfile(activeChainId, addr);
-              return [addr, p] as const;
-            } catch {
-              return [addr, null] as const;
-            }
-          })
-        );
-        if (cancelled) return;
-
-        setProfilesByAddr((prev) => {
-          const next = { ...prev };
-          for (const [addr, p] of results) next[addr] = p;
-          return next;
-        });
-      } catch {
-        // non-fatal
-      }
+      const results = await Promise.all(
+        missing.map(async (addr) => {
+          try {
+            return [addr, await fetchUserProfile(activeChainId, addr)] as const;
+          } catch {
+            return [addr, null] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setProfilesByAddr((prev) => {
+        const next = { ...prev };
+        for (const [addr, p] of results) next[addr] = p;
+        return next;
+      });
     })();
 
     return () => {
@@ -220,153 +198,52 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [items, activeChainId, profilesByAddr]);
 
-  const cards = useMemo(() => {
+  const cards: FeaturedCardVM[] = useMemo(() => {
     const mapped = items.map((it, idx) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
-      const patch = patchByCampaign[addr];
-
-      const createdAt = it.createdAtChain
-        ? Math.floor(new Date(it.createdAtChain).getTime() / 1000)
-        : undefined;
-
-      const votes24h = Number((patch as any)?.votes24h ?? (it as any)?.votes24h ?? 0);
-      const votesAll = Number(
-        (patch as any)?.votesAllTime ??
-          (patch as any)?.votesAll ??
-          (it as any)?.votesAllTime ??
-          (it as any)?.votes_all_time ??
-          0
-      );
+      const patch = patchByCampaign[addr] ?? {};
+      const createdAt = it.createdAtChain ? Math.floor(new Date(it.createdAtChain).getTime() / 1000) : undefined;
+      const votes24h = Number((patch as { votes24h?: number }).votes24h ?? it.votes24h ?? 0);
+      const votesAll = Number((patch as { votesAllTime?: number; votesAll?: number }).votesAllTime ?? (patch as { votesAll?: number }).votesAll ?? it.votesAllTime ?? 0);
       const rankVotes = voteMode === "24h" ? votes24h : votesAll;
-
-      // Pump.fun-like: sort by "most recent activity" (vote or trade)
-      const activitySec =
-        (typeof (patch as any)?.lastActivityAt === "number" ? (patch as any).lastActivityAt : null) ??
-        (typeof (it as any)?.lastActivityAt === "number" ? (it as any).lastActivityAt : null) ??
-        (typeof (it as any)?.last_activity_at === "number" ? (it as any).last_activity_at : null) ??
-        (it as any)?.lastActivityAt ??
-        null;
-      
-      const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
+      const activitySec = Number((patch as { lastActivityAt?: number }).lastActivityAt ?? 0);
+      const mcapBnb = Number((patch as { marketcapBnb?: string | number }).marketcapBnb ?? it.marketcapBnb ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
-
       const rawLogo = it.logoUri || logoCache[addr] || null;
       const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
-
       const creatorAddr = String(it.creatorAddress ?? "");
       const creatorKey = creatorAddr ? creatorAddr.trim().toLowerCase() : "";
       const profile = creatorKey ? profilesByAddr[creatorKey] ?? null : null;
-
       const profileDisplayName = (profile?.displayName ?? "").trim();
-
-      const maybeUsernameRaw =
-        (it as any).creatorUsername ??
-        (it as any).username ??
-        (it as any).creatorName ??
-        (it as any).creator?.username ??
-        (it as any).creatorProfile?.username ??
-        (it as any).profile?.username ??
-        (it as any).creatorProfile?.displayName ??
-        (it as any).profile?.displayName ??
-        null;
-
-      const usernameRaw =
-        profileDisplayName ||
-        (typeof maybeUsernameRaw === "string" && maybeUsernameRaw.trim().length > 0
-          ? maybeUsernameRaw.trim()
-          : "");
-
-      const creatorName = usernameRaw
-        ? usernameRaw.startsWith("@")
-          ? usernameRaw
-          : `@${usernameRaw}`
-        : null;
-
-      const creatorLabel = creatorName ? creatorName : creatorAddr ? shortAddr(creatorAddr) : "—";
+      const usernameRaw = profileDisplayName || it.creatorUsername || it.username || it.creatorName || "";
+      const creatorLabel = usernameRaw ? (String(usernameRaw).startsWith("@") ? String(usernameRaw) : `@${usernameRaw}`) : creatorAddr ? shortAddr(creatorAddr) : "—";
 
       return {
         idx: idx + 1,
-        chainId: Number((it as any).chainId ?? 0) || 0,
+        chainId: Number(it.chainId ?? 0) || activeChainId,
         addr,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
         creator: creatorAddr,
-        creatorName,
         creatorLabel,
         createdAt,
         votes24h,
         votesAll,
         rankVotes,
-        activitySec: typeof activitySec === "number" && Number.isFinite(activitySec) ? activitySec : 0,
+        activitySec,
         mcapUsdLabel,
         image: resolved,
       };
     });
 
-    // Sort live on every realtime patch (both tabs)
     mapped.sort((a, b) => {
-      // RULE: higher selected votes ranks higher
       if (b.rankVotes !== a.rankVotes) return b.rankVotes - a.rankVotes;
-      // Tie-break: newest activity first (pump.fun feel)
       if (b.activitySec !== a.activitySec) return b.activitySec - a.activitySec;
       return (b.createdAt ?? 0) - (a.createdAt ?? 0);
     });
 
-    // Re-number badges after sort
     return mapped.map((c, i) => ({ ...c, idx: i + 1 }));
-  }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr]);
-
-  // Keep the carousel viewport stable when the order changes (avoid "jumping" left/right).
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const orderKey = cards.map((c) => c.addr).join("|");
-    const prevKey = prevOrderKeyRef.current;
-    prevOrderKeyRef.current = orderKey;
-
-    // Only adjust on actual reorders (not first render).
-    if (!prevKey || prevKey === orderKey) return;
-
-    // If user is at far-left, don't fight them.
-    if (el.scrollLeft <= 2) {
-      anchorAddrRef.current = null;
-      return;
-    }
-
-    // Determine current leftmost visible card BEFORE we scroll-adjust.
-    // We use the current scrollLeft and child offsets.
-    const children = Array.from(el.children) as HTMLElement[];
-    const left = el.scrollLeft + 4; // small padding
-    let anchor: string | null = null;
-
-    for (const child of children) {
-      const start = child.offsetLeft;
-      const end = start + child.offsetWidth;
-      if (end > left) {
-        anchor = child.getAttribute("data-addr");
-        break;
-      }
-    }
-
-    if (!anchor) return;
-    anchorAddrRef.current = anchor;
-
-    // After DOM reorders, scroll the same anchor card back into view.
-    // Use rAF to ensure layout has settled.
-    requestAnimationFrame(() => {
-      const el2 = scrollRef.current;
-      if (!el2) return;
-      const target = el2.querySelector<HTMLElement>(`[data-addr="${anchor}"]`);
-      if (!target) return;
-
-      const desiredLeft = target.offsetLeft - 4;
-      // Jump without animation to avoid visible sliding.
-      el2.scrollTo({ left: desiredLeft, behavior: "auto" as any });
-    });
-  }, [cards]);
-
-
+  }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr, voteMode, activeChainId]);
 
   useEffect(() => {
     let alive = true;
@@ -380,8 +257,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         await Promise.all(
           cards.map(async (c) => {
             try {
-              const v = await isFollowingCampaign(wallet.account!, c.addr, c.chainId);
-              next[c.addr] = !!v;
+              next[c.addr] = await isFollowingCampaign(wallet.account!, c.addr, c.chainId);
             } catch {
               next[c.addr] = false;
             }
@@ -397,120 +273,78 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     };
   }, [wallet.account, cards]);
 
-  const toggleFollow = async (e: any, c: any) => {
+  const toggleFollow = async (e: React.MouseEvent, c: FeaturedCardVM) => {
     e.stopPropagation();
     if (!c?.addr) return;
-
     if (!wallet.account) {
       toast({ title: "Connect wallet", description: "Connect your wallet to follow campaigns." });
-      try {
-        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
-        return;
-      } catch {}
+      window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
       return;
     }
 
-    const key = String(c.addr).toLowerCase();
+    const key = c.addr.toLowerCase();
     if (followBusyMap[key]) return;
-
     const nextVal = !(followedMap[key] ?? false);
     setFollowBusyMap((m) => ({ ...m, [key]: true }));
-    setFollowedMap((m) => ({ ...m, [key]: nextVal })); // optimistic
+    setFollowedMap((m) => ({ ...m, [key]: nextVal }));
 
     try {
       if (nextVal) await followCampaign(wallet.account, key, c.chainId);
       else await unfollowCampaign(wallet.account, key, c.chainId);
-    } catch (err: any) {
-      // rollback
+    } catch (error: unknown) {
       setFollowedMap((m) => ({ ...m, [key]: !nextVal }));
-      toast({ title: "Follow failed", description: String(err?.message ?? err ?? "Unknown error") });
+      toast({ title: "Follow failed", description: String((error as { message?: string })?.message ?? error ?? "Unknown error") });
     } finally {
       setFollowBusyMap((m) => ({ ...m, [key]: false }));
     }
   };
+
   const scrollByCards = (dir: "left" | "right") => {
     const el = scrollRef.current;
     if (!el) return;
-    const amount = Math.max(320, Math.floor(el.clientWidth * 0.9));
+    const amount = Math.max(360, Math.floor(el.clientWidth * 0.88));
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   };
 
   return (
-    <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold">
-            <ThumbsUp className="h-4 w-4 text-accent" />
+    <div className={cn("mwz-hud-frame w-full px-3 py-3", className)}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="inline-flex items-center gap-2 mwz-section-title text-sm md:text-base">
+            <ThumbsUp className="h-4 w-4" />
             Featured Campaigns
           </div>
-          <div className="text-xs text-muted-foreground">
+          <div className="hidden md:block text-xs uppercase tracking-[0.16em] mwz-muted">
             Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"}, tie-break by activity)
           </div>
         </div>
-        {/* 24h / All-time toggle */}
-        <div className="hidden md:flex items-center gap-1">
-          <Button
-            type="button"
-            variant={voteMode === "24h" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setVoteMode("24h")}
-          >
-            24h
-          </Button>
-          <Button
-            type="button"
-            variant={voteMode === "all" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => setVoteMode("all")}
-          >
-            All-time
-          </Button>
-        </div>
 
-        <div className="hidden md:flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => scrollByCards("left")}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip h-8 px-3", voteMode === "24h" && "mwz-chip-active")} onClick={() => setVoteMode("24h")}>24H</Button>
+          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip h-8 px-3", voteMode === "all" && "mwz-chip-active")} onClick={() => setVoteMode("all")}>All-Time</Button>
+          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex h-8 w-10 p-0" onClick={() => scrollByCards("left")}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => scrollByCards("right")}>
+          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex h-8 w-10 p-0" onClick={() => scrollByCards("right")}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       <div className="relative">
-        <div
-          ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-2 pr-2 snap-x snap-mandatory scroll-smooth"
-          style={{ scrollbarWidth: "none" } as any}
-        >
+        <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth" style={{ scrollbarWidth: "none" } as React.CSSProperties}>
           {loading && !cards.length ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "snap-start shrink-0 rounded-2xl border border-border/40 bg-card/40 animate-pulse",
-                  // responsive width so it never becomes tiny
-                  "min-w-[280px] w-[calc(100vw-2rem)] max-w-[340px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
-                )}
-              >
-                <div className="aspect-[2/1]" />
-                <div className="h-10 border-t border-border/40" />
-              </div>
-            ))
+            Array.from({ length: 4 }).map((_, i) => <div key={i} className="mwz-card h-[214px] min-w-[360px] animate-pulse" />)
           ) : err ? (
-            <div className="text-sm text-muted-foreground py-8">{err}</div>
+            <div className="mwz-muted py-8 text-sm">{err}</div>
           ) : cards.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-8">No featured campaigns yet.</div>
+            <div className="mwz-muted py-8 text-sm">No featured campaigns yet.</div>
           ) : (
             cards.map((c) => (
               <div
                 key={c.addr}
                 data-addr={c.addr}
-                className={cn(
-                  "snap-start shrink-0 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm overflow-hidden hover:border-accent/50 transition-colors",
-                  // ✅ this prevents “tiny cards” on small screens
-                  "min-w-[280px] w-[calc(100vw-2rem)] max-w-[340px] sm:w-[360px] sm:max-w-[360px] md:w-[420px] md:max-w-[420px]"
-                )}
+                className="mwz-card snap-start grid min-w-[330px] max-w-[430px] w-[calc(100vw-2.5rem)] sm:w-[390px] md:w-[430px] grid-cols-[48%_52%] overflow-hidden rounded-none"
                 role="button"
                 tabIndex={0}
                 onClick={() => navigate(`/token/${c.addr}`)}
@@ -518,137 +352,111 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                   if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
                 }}
               >
-                {/* ATH overlay across image + data */}
-<div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2 pointer-events-none">
-  <AthBar
-    currentLabel={c.mcapUsdLabel ?? null}
-    storageKey={`ath:${activeChainId}:${c.addr}`}
-    className="text-[10px]"
-    barWidthPx={420}
-    barMaxWidth="100%"
-  />
-</div>
-                {/* Top: two equal squares (image + data) */}
-                <div className="grid grid-cols-2 aspect-[2/1]">
-                  {/* Left: token image */}
-                  <div className="relative w-full h-full bg-black">
-                    <img
-                      src={c.image}
-                      alt={c.name}
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                      onError={(e) => {
-                        const img = e.currentTarget;
-                        if (!img.dataset.fallback) {
-                          img.dataset.fallback = "1";
-                          img.src = "/placeholder.svg";
-                        }
-                      }}
-                    />
+                <div className="relative aspect-square min-h-[210px] bg-black border-r border-success/25">
+                  <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
+                  <img
+                    src={c.image}
+                    alt={c.name}
+                    className="h-full w-full object-cover"
+                    draggable={false}
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      if (!img.dataset.fallback) {
+                        img.dataset.fallback = "1";
+                        img.src = "/placeholder.svg";
+                      }
+                    }}
+                  />
+                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_42%,rgba(0,0,0,0.68))]" />
+                  <div className="absolute left-2 top-2 z-30 flex h-8 min-w-8 items-center justify-center border border-success/70 bg-black/75 px-2 text-lg text-success shadow-[0_0_14px_rgba(57,255,79,0.18)]">
+                    {c.idx}
+                  </div>
+                </div>
 
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 to-transparent" />
-
-                    <div className="absolute top-2 left-2 h-7 min-w-7 px-2 flex items-center justify-center rounded-full bg-black/60 border-2 border-emerald-400 text-xs font-bold text-emerald-400">
-                      {c.idx}
+                <div className="relative flex min-w-0 flex-col p-3 pb-11">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="mwz-section-title truncate text-lg leading-none">{c.name}</div>
+                      <div className="mt-1 truncate text-sm text-success/70">{c.symbol ? `$${c.symbol}` : ""}</div>
+                    </div>
+                    <div className="inline-flex items-center gap-1 text-xs text-orange-400 shrink-0">
+                      <Flame className="h-4 w-4" />
+                      <span>{voteMode === "24h" ? c.votes24h : c.votesAll}</span>
+                      <span>{voteMode === "24h" ? "/24h" : "all"}</span>
                     </div>
                   </div>
 
-                  {/* Right: data panel (same size as image) */}
-                  <div className="w-full h-full p-3 md:p-4 pb-20 flex flex-col min-w-0">
-                    {/* Name + votes (24h) */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-base font-semibold truncate">{c.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {c.symbol ? `$${c.symbol}` : ""}
-                        </div>
-                      </div>
+                  <div className="mt-3 flex items-center gap-2 min-w-0">
+                    <img
+                      src="/assets/profile_placeholder.png"
+                      alt="Creator"
+                      className="h-7 w-7 rounded-full border border-success/35 object-cover hover:border-orange-400/70"
+                      draggable={false}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goProfile(c.creator);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          goProfile(c.creator);
+                        }
+                      }}
+                    />
+                    <div
+                      className="truncate text-xs text-success/65 hover:text-orange-400"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goProfile(c.creator);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          goProfile(c.creator);
+                        }
+                      }}
+                    >
+                      {c.creatorLabel}
+                    </div>
+                  </div>
 
-                      {/* Votes (24h) top-right */}
-                      <div className="flex items-center gap-1 text-xs text-accent shrink-0">
-                        <Flame className="h-4 w-4" />
-                        <span className="font-semibold">
-                          {voteMode === "24h" ? c.votes24h : c.votesAll}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {voteMode === "24h" ? "/ 24h" : "all"}
-                        </span>
-                      </div>
+                  <div className="mt-4 flex items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">MCap</div>
+                      <div className="truncate text-sm text-success">{c.mcapUsdLabel ?? "—"}</div>
                     </div>
 
-                    {/* Creator row under ticker */}
-                    <div className="mt-2 flex items-center gap-2 min-w-0">
-                      <img
-                        src="/assets/profile_placeholder.png"
-                        alt="Creator"
-                        className="w-7 h-7 rounded-full object-cover border border-border/60"
-                        draggable={false}
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          goProfile(c.creator);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            goProfile(c.creator);
-                          }
-                        }}
-                      />
-                      <div
-                        className="text-xs text-muted-foreground truncate"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          goProfile(c.creator);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            goProfile(c.creator);
-                          }
-                        }}
+                    <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn("mwz-button h-8 w-8", followedMap[c.addr] && "mwz-button-active")}
+                        onClick={(e) => toggleFollow(e, c)}
+                        disabled={!!followBusyMap[c.addr]}
+                        aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
+                        title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
                       >
-                        {c.creatorLabel}
-                      </div>
+                        <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/75")} />
+                      </Button>
+                      <UpvoteDialog campaignAddress={c.addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
                     </div>
+                  </div>
 
-                    
+                  <div className="mt-auto pt-4">
+                    <div className="h-2 border border-success/30 bg-black/70 p-[1px]">
+                      <div className="h-full w-[92%] bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]" />
+                    </div>
+                  </div>
 
-                    {/* Upvote + MCap row */}
-<div className="mt-3 flex items-center justify-between gap-3 w-full">
-  {/* MCap (left) */}
-  <div className="min-w-0">
-    <div className="text-[10px] text-muted-foreground">MCap</div>
-    <div className="text-sm font-semibold truncate">{c.mcapUsdLabel ?? "—"}</div>
-  </div>
-
-  {/* Actions (right) */}
-  <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-    <Button
-      type="button"
-      variant="secondary"
-      size="icon"
-      className="h-8 w-8 rounded-xl"
-      onClick={(e) => toggleFollow(e, c)}
-      disabled={!!followBusyMap[c.addr]}
-      aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
-      title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
-    >
-      <Star className={cn("h-4 w-4 transition-all", (followedMap[c.addr] ?? false) ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
-      : "text-muted-foreground/70")} />
-    </Button>
-
-    <UpvoteDialog campaignAddress={c.addr} />
-  </div>
-</div>
-
-                    {/* Spacer so content doesn't hug AthBar overlay */}
-                    <div className="flex-1" />
+                  <div className="absolute inset-x-3 bottom-2 pointer-events-none">
+                    <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${activeChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
                   </div>
                 </div>
               </div>
