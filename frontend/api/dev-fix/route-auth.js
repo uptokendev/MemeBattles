@@ -166,65 +166,40 @@ async function readWalletAttributionState(walletAddress) {
     return { state: null, error: "Attribution lookup failed" };
   }
 }
+async function readRecruiterWallet(walletAddress) {
+  const dbWallet = normalizeDbWallet(walletAddress);
+  if (!dbWallet) return { recruiter: null, error: "Invalid wallet address" };
 
+  try {
+    const { rows } = await pool.query(
+      `select id,
+              wallet_address,
+              code,
+              display_name,
+              is_og,
+              status,
+              closed_at,
+              created_at,
+              updated_at
+         from public.recruiters
+        where wallet_address = $1
+        limit 1`,
+      [dbWallet],
+    );
+    return { recruiter: rows[0] || null, error: null };
+  } catch (error) {
+    if (schemaMissing(error)) return { recruiter: null, error: "Attribution schema missing" };
+    console.error("[api/routing recruiter wallet lookup]", error);
+    return { recruiter: null, error: "Recruiter wallet lookup failed" };
+  }
+}
 function isActiveLinkedState(state) {
   if (!state?.recruiter_id) return false;
   if (state.recruiter_status !== "active") return false;
   const linkState = String(state.recruiter_link_state || "").toLowerCase();
   return linkState === "linked_unlocked" || linkState === "linked_locked";
 }
-
-function buildDecision({ walletAddress, attributionState, attributionError }) {
-  if (attributionError) {
-    const { tradeRouteProfileId, finalizeRouteProfileId } = getDefaultRouteProfiles();
-    return {
-      tradeRouteProfileId,
-      finalizeRouteProfileId,
-      routeProfileId: tradeRouteProfileId,
-      decision: {
-        profile: ROUTE_PROFILE_NAMES[tradeRouteProfileId] || "standard_unlinked",
-        routeProfileId: tradeRouteProfileId,
-        finalizeRouteProfileId,
-        walletAddress,
-        recruiterId: null,
-        recruiterCode: null,
-        recruiterDisplayName: null,
-        recruiterIsOg: false,
-        recruiterStatus: null,
-        recruiterLinkState: null,
-        squadState: null,
-        source: "safe_fallback",
-        reason: `${attributionError}; using safe fallback route profile.`,
-      },
-    };
-  }
-
-  if (!isActiveLinkedState(attributionState)) {
-    const state = attributionState || {};
-    return {
-      tradeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
-      finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
-      routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
-      decision: {
-        profile: ROUTE_PROFILE_NAMES[ROUTE_PROFILE_STANDARD_UNLINKED],
-        routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
-        finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
-        walletAddress,
-        recruiterId: state.recruiter_id ? Number(state.recruiter_id) : null,
-        recruiterCode: state.recruiter_code || null,
-        recruiterDisplayName: state.recruiter_display_name || null,
-        recruiterIsOg: Boolean(state.recruiter_is_og),
-        recruiterStatus: state.recruiter_status || null,
-        recruiterLinkState: state.recruiter_link_state || "unlinked",
-        squadState: state.squad_state || "solo",
-        source: "wallet_attribution_states",
-        reason: state.recruiter_id
-          ? "Wallet is not linked to an active eligible recruiter; using StandardUnlinked."
-          : "Wallet has no active recruiter link; using StandardUnlinked.",
-      },
-    };
-  }
-
+function buildLinkedDecision({ walletAddress, attributionState }) {
   const routeProfileId = attributionState.recruiter_is_og
     ? ROUTE_PROFILE_OG_LINKED
     : ROUTE_PROFILE_STANDARD_LINKED;
@@ -253,11 +228,146 @@ function buildDecision({ walletAddress, attributionState, attributionError }) {
   };
 }
 
-async function getRouteDecision(walletAddress) {
-  const { state, error } = await readWalletAttributionState(walletAddress);
-  return buildDecision({ walletAddress, attributionState: state, attributionError: error });
+function buildSelfRecruiterDecision({ walletAddress, recruiterWallet }) {
+  const routeProfileId = recruiterWallet.is_og
+    ? ROUTE_PROFILE_OG_LINKED
+    : ROUTE_PROFILE_STANDARD_LINKED;
+
+  return {
+    tradeRouteProfileId: routeProfileId,
+    finalizeRouteProfileId: routeProfileId,
+    routeProfileId,
+    decision: {
+      profile: ROUTE_PROFILE_NAMES[routeProfileId],
+      routeProfileId,
+      finalizeRouteProfileId: routeProfileId,
+      walletAddress,
+      recruiterId: Number(recruiterWallet.id),
+      recruiterCode: recruiterWallet.code,
+      recruiterDisplayName: recruiterWallet.display_name || null,
+      recruiterIsOg: Boolean(recruiterWallet.is_og),
+      recruiterStatus: recruiterWallet.status,
+      recruiterLinkState: "self_recruiter_wallet",
+      squadState: "self_recruiter_wallet",
+      source: "recruiters.wallet_address",
+      reason: recruiterWallet.is_og
+        ? "Wallet owns an active OG recruiter code; using OgLinked."
+        : "Wallet owns an active recruiter code; using StandardLinked.",
+    },
+  };
 }
 
+function buildUnlinkedDecision({
+  walletAddress,
+  attributionState = null,
+  recruiterWallet = null,
+  reason = null,
+  source = null,
+}) {
+  const state = attributionState || {};
+
+  return {
+    tradeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+    finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+    routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+    decision: {
+      profile: ROUTE_PROFILE_NAMES[ROUTE_PROFILE_STANDARD_UNLINKED],
+      routeProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+      finalizeRouteProfileId: ROUTE_PROFILE_STANDARD_UNLINKED,
+      walletAddress,
+      recruiterId: state.recruiter_id ? Number(state.recruiter_id) : null,
+      recruiterCode: state.recruiter_code || recruiterWallet?.code || null,
+      recruiterDisplayName: state.recruiter_display_name || recruiterWallet?.display_name || null,
+      recruiterIsOg: Boolean(state.recruiter_is_og ?? recruiterWallet?.is_og),
+      recruiterStatus: state.recruiter_status || recruiterWallet?.status || null,
+      recruiterLinkState:
+        state.recruiter_link_state || (recruiterWallet ? "self_recruiter_inactive" : "unlinked"),
+      squadState: state.squad_state || "solo",
+      source: source || (recruiterWallet ? "recruiters.wallet_address" : "wallet_attribution_states"),
+      reason: reason || "Wallet has no active recruiter link; using StandardUnlinked.",
+    },
+  };
+}
+
+function buildDecision({
+  walletAddress,
+  attributionState,
+  attributionError,
+  recruiterWallet,
+  recruiterWalletError,
+}) {
+  if (attributionError && recruiterWalletError) {
+    const { tradeRouteProfileId, finalizeRouteProfileId } = getDefaultRouteProfiles();
+
+    return {
+      tradeRouteProfileId,
+      finalizeRouteProfileId,
+      routeProfileId: tradeRouteProfileId,
+      decision: {
+        profile: ROUTE_PROFILE_NAMES[tradeRouteProfileId] || "standard_unlinked",
+        routeProfileId: tradeRouteProfileId,
+        finalizeRouteProfileId,
+        walletAddress,
+        recruiterId: null,
+        recruiterCode: null,
+        recruiterDisplayName: null,
+        recruiterIsOg: false,
+        recruiterStatus: null,
+        recruiterLinkState: null,
+        squadState: null,
+        source: "safe_fallback",
+        reason: `${attributionError}; ${recruiterWalletError}; using safe fallback route profile.`,
+      },
+    };
+  }
+
+  if (isActiveLinkedState(attributionState)) {
+    return buildLinkedDecision({ walletAddress, attributionState });
+  }
+
+  if (recruiterWallet?.status === "active") {
+    return buildSelfRecruiterDecision({ walletAddress, recruiterWallet });
+  }
+
+  if (recruiterWallet) {
+    return buildUnlinkedDecision({
+      walletAddress,
+      attributionState,
+      recruiterWallet,
+      reason: "Wallet owns a recruiter code, but it is not active; using StandardUnlinked.",
+    });
+  }
+
+  if (attributionState?.recruiter_id) {
+    return buildUnlinkedDecision({
+      walletAddress,
+      attributionState,
+      recruiterWallet,
+      reason: "Wallet is not linked to an active eligible recruiter; using StandardUnlinked.",
+    });
+  }
+
+  return buildUnlinkedDecision({
+    walletAddress,
+    attributionState,
+    recruiterWallet,
+  });
+}
+
+async function getRouteDecision(walletAddress) {
+  const [{ state, error }, { recruiter, error: recruiterWalletError }] = await Promise.all([
+    readWalletAttributionState(walletAddress),
+    readRecruiterWallet(walletAddress),
+  ]);
+
+  return buildDecision({
+    walletAddress,
+    attributionState: state,
+    attributionError: error,
+    recruiterWallet: recruiter,
+    recruiterWalletError,
+  });
+}
 async function signCreateAuthorization({ signer, chainId, factoryAddress, creator, tradeRouteProfileId, finalizeRouteProfileId, deadline }) {
   const digest = ethers.solidityPackedKeccak256(
     ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
