@@ -29,11 +29,17 @@ import status from "../../api/status.js";
 import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
+import {
+  attributionWallet,
+  attributionWalletConnect,
+  recruiterReferralCapture,
+  recruiterSummary,
+  recruiterWalletSummary,
+  recruiters,
+} from "../../api/dev-fix/attribution.js";
 import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "../../api/dev-fix/route-auth.js";
 import {
   airdropWinners,
-  attributionWallet,
-  attributionWalletConnect,
   internalAirdropDrawRun,
   internalAirdropDraws,
   internalRewardAdminActions,
@@ -42,15 +48,11 @@ import {
   internalRewardEpochStatus,
   internalRewardPublications,
   internalRewardRouting,
-  recruiterReferralCapture,
   recruiterReplacements,
   recruiterSignupCodeAvailability,
   recruiterSignupNonce,
   recruiterSignupStatus,
   recruiterSignupSubmit,
-  recruiterSummary,
-  recruiterWalletSummary,
-  recruiters,
   rewardsClaims,
   rewardsEligibility,
   rewardsHistory,
@@ -115,7 +117,7 @@ app.all("/vote_counts", wrap(voteCounts));
 
 // DEV-FIX-API Phase 1: route alignment stubs.
 // These routes intentionally return JSON-safe empty states until the real
-// reward/recruiter/squad persistence is implemented.
+// reward/squad persistence is implemented.
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
 app.all("/rewards/me/claims", wrap(rewardsClaims));
@@ -127,6 +129,7 @@ app.all("/squads", wrap(squadsLeaderboard));
 app.all("/squads/members", wrap(squadMembers));
 app.all("/squads/:code/summary", wrap(squadSummary));
 
+// DEV-FIX-API Phase 4: DB-backed recruiter and attribution routes.
 app.all("/recruiters", wrap(recruiters));
 app.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
 app.all("/recruiters/:code/summary", wrap(recruiterSummary));
