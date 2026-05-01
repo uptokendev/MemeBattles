@@ -55,6 +55,7 @@ contract LaunchFactory is Ownable {
         string name;
         string symbol;
         string logoURI;
+        string metadataURI;
         string xAccount;
         string website;
         string extraLink;
@@ -65,6 +66,7 @@ contract LaunchFactory is Ownable {
         string name;
         string symbol;
         string logoURI;
+        string metadataURI;
         string xAccount;
         string website;
         string extraLink;
@@ -115,7 +117,9 @@ contract LaunchFactory is Ownable {
         address indexed token,
         address creator,
         string name,
-        string symbol
+        string symbol,
+        string logoURI,
+        string metadataURI
     );
     event ConfigUpdated(LaunchConfig newConfig);
     event FeeRecipientUpdated(address indexed newRecipient);
@@ -260,6 +264,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
                 name: req.name,
                 symbol: req.symbol,
                 logoURI: req.logoURI,
+                metadataURI: req.metadataURI,
                 xAccount: req.xAccount,
                 website: req.website,
                 extraLink: req.extraLink,
@@ -291,7 +296,9 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             tokenAddr,
             msg.sender,
             req.name,
-            req.symbol
+            req.symbol,
+            req.logoURI,
+            req.metadataURI
         );
     }
 
