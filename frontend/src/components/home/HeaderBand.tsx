@@ -7,11 +7,11 @@ type HeaderBandProps = {
 export function HeaderBand({ className }: HeaderBandProps) {
   return (
     <div className={cn("relative w-full", className)}>
-      <div className="mwz-hud-frame relative h-[132px] md:h-[150px] lg:h-[158px] overflow-hidden px-5 md:px-7">
+      <div className="mwz-hud-frame relative h-[106px] md:h-[116px] lg:h-[126px] overflow-hidden px-5 md:px-7">
         <div className="absolute inset-0 mwz-stat-grid opacity-70" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(57,255,79,0.13),transparent_34%),linear-gradient(90deg,rgba(0,0,0,0.68),transparent_35%,transparent_65%,rgba(0,0,0,0.68))]" />
 
-        <div className="absolute left-5 top-4 hidden md:block mwz-panel p-4 min-w-[250px]">
+        <div className="absolute left-5 top-3 hidden md:block mwz-panel px-4 py-3 min-w-[250px]">
           <div className="mwz-section-title text-xs leading-6">
             <div>MWZ-TERMINAL V2.4.1</div>
             <div>COMMAND NODE: ONLINE</div>
@@ -19,8 +19,8 @@ export function HeaderBand({ className }: HeaderBandProps) {
           </div>
         </div>
 
-        <div className="absolute right-36 top-4 hidden lg:block mwz-panel p-4 min-w-[228px]">
-          <div className="mwz-section-title text-xs leading-6">
+        <div className="absolute right-36 top-3 hidden lg:block mwz-panel px-4 py-3 min-w-[228px]">
+          <div className="mwz-section-title text-xs leading-5">
             <div>SYSTEM STATUS</div>
             <div>NET: SECURE</div>
             <div>WALLET: CONNECTED</div>
@@ -28,7 +28,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
           </div>
         </div>
 
-        <div className="absolute right-8 top-3 hidden lg:block">
+        <div className="absolute right-8 top-2 hidden lg:block scale-[0.82] origin-top-right">
           <div className="mwz-radar">
             <div className="mwz-radar-sweep" />
           </div>
@@ -46,7 +46,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
           <img
             src="/assets/logo.png"
             alt="MemeWarzone"
-            className="h-[112px] md:h-[132px] lg:h-[142px] w-auto drop-shadow-[0_0_24px_rgba(57,255,79,0.22)]"
+            className="h-[104px] md:h-[116px] lg:h-[126px] w-auto drop-shadow-[0_0_24px_rgba(57,255,79,0.22)]"
             draggable={false}
           />
         </div>
