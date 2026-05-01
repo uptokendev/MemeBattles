@@ -66,7 +66,6 @@ contract LaunchFactory is Ownable {
         string name;
         string symbol;
         string logoURI;
-        string metadataURI;
         string xAccount;
         string website;
         string extraLink;
@@ -255,6 +254,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         LaunchCampaign(payable(clone)).initialize(params);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
+        string memory metadataURI = "";
 
         _campaigns.push(
             CampaignInfo({
@@ -264,7 +264,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
                 name: req.name,
                 symbol: req.symbol,
                 logoURI: req.logoURI,
-                metadataURI: req.metadataURI,
+                metadataURI: metadataURI,
                 xAccount: req.xAccount,
                 website: req.website,
                 extraLink: req.extraLink,
@@ -298,7 +298,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             req.name,
             req.symbol,
             req.logoURI,
-            req.metadataURI
+            metadataURI
         );
     }
 
