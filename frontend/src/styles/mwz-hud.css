@@ -26,6 +26,7 @@
   --sidebar-accent-foreground: 124 100% 54%;
   --sidebar-border: 124 72% 23%;
   --sidebar-ring: 124 100% 52%;
+  --radius: 0px;
   --mwz-bg: #010600;
   --mwz-bg-soft: #031004;
   --mwz-panel: rgba(2, 17, 4, 0.84);
@@ -63,6 +64,38 @@ body::after {
     linear-gradient(90deg, transparent, rgba(57, 255, 79, 0.035), transparent);
   mix-blend-mode: screen;
   opacity: 0.78;
+}
+
+button,
+a[role="button"],
+[role="button"],
+input,
+textarea,
+select,
+.mwz-hud-frame,
+.mwz-panel,
+.mwz-card,
+.mwz-button,
+.mwz-chip,
+.rounded,
+.rounded-sm,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-full {
+  border-radius: 0 !important;
+}
+
+img.rounded-full,
+.h-7.w-7.rounded-full,
+.h-8.w-8.rounded-full,
+.h-9.w-9.rounded-full,
+.h-10.w-10.rounded-full,
+.avatar,
+.mwz-radar {
+  border-radius: 9999px !important;
 }
 
 .mwz-app-shell {
@@ -132,7 +165,7 @@ body::after {
   border: 1px solid rgba(57, 255, 79, 0.48) !important;
   background: rgba(1, 14, 3, 0.92) !important;
   color: var(--mwz-green) !important;
-  border-radius: 0.375rem !important;
+  border-radius: 0 !important;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   box-shadow: inset 0 0 0 1px rgba(57, 255, 79, 0.09), 0 0 14px rgba(57, 255, 79, 0.08);
@@ -153,7 +186,7 @@ body::after {
 
 .mwz-nav-link {
   border: 1px solid transparent;
-  border-radius: 0.375rem;
+  border-radius: 0 !important;
   color: rgba(57, 255, 79, 0.76);
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -191,7 +224,7 @@ body::after {
   border: 1px solid rgba(57, 255, 79, 0.38) !important;
   background: rgba(1, 14, 3, 0.76) !important;
   color: var(--mwz-green) !important;
-  border-radius: 0.375rem !important;
+  border-radius: 0 !important;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -223,7 +256,7 @@ body::after {
   width: 128px;
   height: 128px;
   border: 1px solid rgba(57, 255, 79, 0.42);
-  border-radius: 9999px;
+  border-radius: 9999px !important;
   background:
     radial-gradient(circle, transparent 0 17%, rgba(57, 255, 79, 0.08) 18% 19%, transparent 20% 39%, rgba(57, 255, 79, 0.08) 40% 41%, transparent 42% 62%, rgba(57, 255, 79, 0.08) 63% 64%, transparent 65%),
     conic-gradient(from 0deg, rgba(57, 255, 79, 0.32), transparent 18%, transparent 100%);
