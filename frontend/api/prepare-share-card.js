@@ -15,26 +15,96 @@ function clampText(value, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function splitName(name) {
-  const clean = String(name || "MEME WARZONE").trim().toUpperCase();
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return [clean, ""];
-  if (parts.length === 2) return [parts[0], parts[1]];
-  return [parts.slice(0, Math.ceil(parts.length / 2)).join(" "), parts.slice(Math.ceil(parts.length / 2)).join(" ")];
+function splitName(name, maxChars = 14) {
+  const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
+
+  if (clean.length <= maxChars) return [clean, ""];
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    return [clean.slice(0, maxChars), clean.slice(maxChars, maxChars * 2)];
+  }
+
+  const first = [];
+  const second = [];
+  let count = 0;
+
+  for (const word of words) {
+    if (count + word.length <= maxChars || first.length === 0) {
+      first.push(word);
+      count += word.length + 1;
+    } else {
+      second.push(word);
+    }
+  }
+
+  return [first.join(" "), second.join(" ")];
 }
 
-function svgCard(data) {
-  const name = String(data.name || "MEME WARZONE").trim().toUpperCase();
-  const ticker = String(data.ticker || "MWZ").replace(/^\$+/, "").toUpperCase().slice(0, 12);
-  const chain = String(data.chain || "BNB CHAIN").toUpperCase();
-  const status = String(data.status || "DRAFT").toUpperCase();
-  const deploys = String(data.deploys || "PREPARE MODE").toUpperCase();
-  const recruits = String(data.recruits || "0");
-  const heat = String(data.heat || "0%");
-  const creator = String(data.creator || "@MEMEWARZONE").toUpperCase();
-  const link = String(data.link || `memewar.zone/d/${ticker.toLowerCase()}`);
-  const description = clampText(data.description || "The launchpad that turns every drop into a war.", 86);
-  const [line1, line2] = splitName(name);
+function normalizeLogoUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (/^data:image\//i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  return "";
+}
+
+async function loadRemoteImageAsDataUrl(src) {
+  const url = normalizeLogoUrl(src);
+  if (!url) return "";
+
+  if (/^data:image\//i.test(url)) return url;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*",
+      },
+    });
+
+    if (!response.ok) return "";
+
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!contentType.startsWith("image/")) return "";
+
+    const arrayBuffer = await response.arrayBuffer();
+    const data = Buffer.from(arrayBuffer).toString("base64");
+
+    return `data:${contentType};base64,${data}`;
+  } catch (err) {
+    console.warn("[prepare-share-card] failed to load campaign logo", err?.message || err);
+    return "";
+  }
+}
+
+function safeNumberText(value, fallback = "0") {
+  const raw = String(value ?? "").trim();
+  return raw || fallback;
+}
+
+async function svgCard(data) {
+  const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
+  const ticker = String(data.ticker || "MWZ")
+    .replace(/^\$+/, "")
+    .trim()
+    .toUpperCase()
+    .slice(0, 12);
+
+  const chain = String(data.chain || "BNB CHAIN").trim().toUpperCase();
+  const status = String(data.status || "DRAFT").trim().toUpperCase();
+  const recruits = safeNumberText(data.recruits, "0");
+  const heat = safeNumberText(data.heat, "0%");
+  const creator = String(data.creator || "@MEMEWARZONE").trim().toUpperCase();
+  const link = clampText(data.link || `memewar.zone/d/${ticker.toLowerCase()}`, 34);
+  const description = clampText(
+    data.description || "The launchpad that turns every drop into a war.",
+    72,
+  );
+
+  const campaignLogo = await loadRemoteImageAsDataUrl(data.logo);
+  const [line1, line2] = splitName(name, 14);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1002" height="531" viewBox="0 0 1002 531" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -44,83 +114,131 @@ function svgCard(data) {
       <stop offset="0.48" stop-color="#030907"/>
       <stop offset="1" stop-color="#130804"/>
     </linearGradient>
-    <radialGradient id="orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(126 248) rotate(90) scale(76)">
+
+    <radialGradient id="orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(129 249) rotate(90) scale(76)">
       <stop stop-color="#20ff90"/>
       <stop offset="0.55" stop-color="#04954d"/>
       <stop offset="1" stop-color="#012913"/>
     </radialGradient>
+
+    <radialGradient id="orbGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(129 249) rotate(90) scale(130)">
+      <stop stop-color="#00ff88" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#00ff88" stop-opacity="0"/>
+    </radialGradient>
+
     <linearGradient id="title" x1="235" y1="170" x2="470" y2="305" gradientUnits="userSpaceOnUse">
       <stop stop-color="#ffffff"/>
       <stop offset="0.45" stop-color="#eaffef"/>
       <stop offset="1" stop-color="#10f58a"/>
     </linearGradient>
+
     <pattern id="grid" width="33" height="33" patternUnits="userSpaceOnUse">
       <path d="M33 0H0V33" stroke="#13ff82" stroke-opacity="0.055"/>
     </pattern>
-    <filter id="greenGlow" x="0" y="0" width="300" height="430" filterUnits="userSpaceOnUse">
+
+    <filter id="greenGlow" x="-80" y="30" width="420" height="430" filterUnits="userSpaceOnUse">
       <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#00ff88" flood-opacity="0.35"/>
     </filter>
+
+    <clipPath id="campaignLogoClip">
+      <circle cx="129" cy="249" r="74"/>
+    </clipPath>
   </defs>
+
   <rect width="1002" height="531" fill="url(#bg)"/>
   <rect width="1002" height="531" fill="url(#grid)"/>
+  <rect width="1002" height="531" fill="url(#orbGlow)" opacity="0.65"/>
+
   <rect x="0" y="0" width="1002" height="10" fill="#070707"/>
-  <path d="M0 0H1002V10H0V0Z" fill="#070707"/>
   ${Array.from({ length: 44 }).map((_, i) => `<path d="M${i * 24} 0H${i * 24 + 12}L${i * 24 + 2} 10H${i * 24 - 10}L${i * 24} 0Z" fill="#7b421c" fill-opacity="0.52"/>`).join("")}
+
   <rect x="0" y="521" width="1002" height="10" fill="#070707"/>
   ${Array.from({ length: 44 }).map((_, i) => `<path d="M${i * 24} 521H${i * 24 + 12}L${i * 24 + 2} 531H${i * 24 - 10}L${i * 24} 521Z" fill="#7b421c" fill-opacity="0.52"/>`).join("")}
+
   <rect x="53" y="57" width="895" height="355" stroke="#1cff8f" stroke-opacity="0.08"/>
   <line x1="53" y1="412" x2="949" y2="412" stroke="#13ff82" stroke-opacity="0.32"/>
+
+  <!-- Small MemeWarzone logo / brand -->
   <g transform="translate(55 53)">
     <path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/>
+    <path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/>
     <text x="36" y="18" fill="#dfffee" font-size="11" font-weight="900" font-family="Arial Black, Arial" letter-spacing="1">MEMEWARZONE</text>
   </g>
+
+  <!-- Status pill -->
   <g transform="translate(780 55)">
     <rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/>
     <circle cx="15" cy="14" r="3" fill="#10f58a"/>
-    <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial" letter-spacing="1.6">${esc(status)} · ${esc(deploys)}</text>
+    <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial" letter-spacing="1.6">${esc(status)}</text>
   </g>
+
+  <!-- Campaign logo / ticker orb -->
   <g filter="url(#greenGlow)">
     <circle cx="129" cy="249" r="74" fill="url(#orb)"/>
     <circle cx="129" cy="249" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
-    <text x="129" y="263" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial Black, Arial">${esc(ticker)}</text>
+    ${
+      campaignLogo
+        ? `<image href="${campaignLogo}" x="55" y="175" width="148" height="148" clip-path="url(#campaignLogoClip)" preserveAspectRatio="xMidYMid slice"/>`
+        : `<text x="129" y="263" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial Black, Arial">${esc(ticker)}</text>`
+    }
   </g>
+
+  <!-- Main dynamic values -->
   <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
+
   <text x="235" y="227" fill="url(#title)" font-size="78" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line1)}</text>
   ${line2 ? `<text x="235" y="300" fill="url(#title)" font-size="78" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line2)}</text>` : ""}
+
   <text x="235" y="344" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
+
+  <!-- Bottom metrics -->
   <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">RECRUITS ARMED</text>
   <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(recruits)}</text>
+
   <text x="183" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">HEAT</text>
   <text x="183" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(heat)}</text>
+
   <text x="265" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">BUILT BY</text>
   <text x="265" y="469" fill="#e9e3db" font-size="20" font-weight="900" font-family="Arial Black, Arial">${esc(creator)}</text>
-  <text x="846" y="445" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">ARM NOTIFICATION</text>
-  <text x="742" y="471" fill="#10f58a" font-size="20" font-weight="900" font-family="Arial Black, Arial">${esc(link)}</text>
+
+  <text x="846" y="445" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2" text-anchor="middle">ARM NOTIFICATION</text>
+  <text x="846" y="471" fill="#10f58a" font-size="18" font-weight="900" font-family="Arial Black, Arial" text-anchor="middle">${esc(link)}</text>
 </svg>`;
 }
 
 async function sendPng(req, res, svg, ticker) {
-  const renderer = new Resvg(svg, { fitTo: { mode: "width", value: 1002 }, background: "rgba(0,0,0,0)" });
+  const renderer = new Resvg(svg, {
+    fitTo: { mode: "width", value: 1002 },
+    background: "rgba(0,0,0,0)",
+  });
+
   const png = Buffer.from(renderer.render().asPng());
   const q = getQuery(req);
   const filename = `memewarzone-${String(ticker || "draft").toLowerCase()}-share-card.png`;
+
   res.statusCode = 200;
   res.setHeader("content-type", "image/png");
   res.setHeader("content-length", String(png.length));
   res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
+
   if (String(q.download || "") === "1") {
     res.setHeader("content-disposition", `attachment; filename="${filename}"`);
   } else {
     res.setHeader("content-disposition", `inline; filename="${filename}"`);
   }
+
   res.end(png);
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
+  if (req.method !== "GET") {
+    return json(res, 405, { error: "Method not allowed" });
+  }
+
   try {
     const q = getQuery(req);
-    const svg = svgCard(q);
+    const svg = await svgCard(q);
+
     if (String(q.format || "png") === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
@@ -128,6 +246,7 @@ export default async function handler(req, res) {
       res.end(svg);
       return;
     }
+
     return sendPng(req, res, svg, q.ticker || "draft");
   } catch (err) {
     console.error("[prepare-share-card]", err);
