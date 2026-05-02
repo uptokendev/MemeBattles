@@ -26,9 +26,9 @@ function splitName(name) {
 function svgCard(data) {
   const name = String(data.name || "MEME WARZONE").trim().toUpperCase();
   const ticker = String(data.ticker || "MWZ").replace(/^\$+/, "").toUpperCase().slice(0, 12);
-  const chain = String(data.chain || "BNB").toUpperCase();
+  const chain = String(data.chain || "BNB CHAIN").toUpperCase();
   const status = String(data.status || "DRAFT").toUpperCase();
-  const deploys = String(data.deploys || "DEPLOYS SOON").toUpperCase();
+  const deploys = String(data.deploys || "PREPARE MODE").toUpperCase();
   const recruits = String(data.recruits || "0");
   const heat = String(data.heat || "0%");
   const creator = String(data.creator || "@MEMEWARZONE").toUpperCase();
@@ -99,12 +99,20 @@ function svgCard(data) {
 </svg>`;
 }
 
-async function sendPng(res, svg) {
+async function sendPng(req, res, svg, ticker) {
   const renderer = new Resvg(svg, { fitTo: { mode: "width", value: 1002 }, background: "rgba(0,0,0,0)" });
   const png = Buffer.from(renderer.render().asPng());
+  const q = getQuery(req);
+  const filename = `memewarzone-${String(ticker || "draft").toLowerCase()}-share-card.png`;
   res.statusCode = 200;
   res.setHeader("content-type", "image/png");
+  res.setHeader("content-length", String(png.length));
   res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
+  if (String(q.download || "") === "1") {
+    res.setHeader("content-disposition", `attachment; filename="${filename}"`);
+  } else {
+    res.setHeader("content-disposition", `inline; filename="${filename}"`);
+  }
   res.end(png);
 }
 
@@ -116,10 +124,11 @@ export default async function handler(req, res) {
     if (String(q.format || "png") === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
+      res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
       res.end(svg);
       return;
     }
-    return sendPng(res, svg);
+    return sendPng(req, res, svg, q.ticker || "draft");
   } catch (err) {
     console.error("[prepare-share-card]", err);
     return json(res, 500, { error: "Failed to render share card" });
