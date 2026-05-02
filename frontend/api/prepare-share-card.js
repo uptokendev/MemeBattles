@@ -1,4 +1,3 @@
-import { Resvg } from "@resvg/resvg-js";
 import { getQuery, json } from "../server/http.js";
 
 function esc(value) {
@@ -15,7 +14,6 @@ function clampText(value, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-<<<<<<< HEAD
 function splitName(name, maxChars = 14) {
   const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
 
@@ -42,67 +40,58 @@ function splitName(name, maxChars = 14) {
   return [first.join(" "), second.join(" ")];
 }
 
-function normalizeLogoUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  if (/^data:image\//i.test(raw)) return raw;
-  if (/^https?:\/\//i.test(raw)) return raw;
-
-  return "";
-}
-
-async function loadRemoteImageAsDataUrl(src) {
-  const url = normalizeLogoUrl(src);
-  if (!url) return "";
-
-  if (/^data:image\//i.test(url)) return url;
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*",
-      },
-    });
-
-    if (!response.ok) return "";
-
-    const contentType = response.headers.get("content-type") || "image/png";
-    if (!contentType.startsWith("image/")) return "";
-
-    const arrayBuffer = await response.arrayBuffer();
-    const data = Buffer.from(arrayBuffer).toString("base64");
-
-    return `data:${contentType};base64,${data}`;
-  } catch (err) {
-    console.warn("[prepare-share-card] failed to load campaign logo", err?.message || err);
-=======
-function splitName(name) {
-  const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length <= 1) return [clean, ""];
-  if (parts.length === 2) return [parts[0], parts[1]];
-  return [parts.slice(0, Math.ceil(parts.length / 2)).join(" "), parts.slice(Math.ceil(parts.length / 2)).join(" ")];
-}
-
-function safeUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw || !/^https?:\/\//i.test(raw)) return "";
-  try {
-    return new URL(raw).toString();
-  } catch {
->>>>>>> ced8e28fd346197999b066514d235e0960473c6c
-    return "";
-  }
-}
-
-<<<<<<< HEAD
 function safeNumberText(value, fallback = "0") {
   const raw = String(value ?? "").trim();
   return raw || fallback;
 }
 
-async function svgCard(data) {
+function normalizeImageSrc(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^data:image\//i.test(raw)) return raw;
+  if (!/^https?:\/\//i.test(raw)) return "";
+
+  try {
+    return new URL(raw).toString();
+  } catch {
+    return "";
+  }
+}
+
+async function imageToDataUrl(src) {
+  const clean = normalizeImageSrc(src);
+  if (!clean) return "";
+  if (/^data:image\//i.test(clean)) return clean;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+
+    const response = await fetch(clean, {
+      signal: controller.signal,
+      headers: {
+        accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*",
+      },
+    });
+
+    clearTimeout(timer);
+
+    if (!response.ok) return "";
+
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!/^image\//i.test(contentType)) return "";
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > 2_500_000) return "";
+
+    return `data:${contentType};base64,${buffer.toString("base64")}`;
+  } catch (err) {
+    console.warn("[prepare-share-card] failed to embed logo", err?.message || err);
+    return "";
+  }
+}
+
+function svgCard(data, logoDataUrl = "") {
   const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
   const ticker = String(data.ticker || "MWZ")
     .replace(/^\$+/, "")
@@ -121,47 +110,12 @@ async function svgCard(data) {
     72,
   );
 
-  const campaignLogo = await loadRemoteImageAsDataUrl(data.logo);
   const [line1, line2] = splitName(name, 14);
-=======
-async function imageToDataUrl(url) {
-  const clean = safeUrl(url);
-  if (!clean) return "";
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2500);
-    const response = await fetch(clean, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!response.ok) return "";
-    const contentType = response.headers.get("content-type") || "image/png";
-    if (!/^image\//i.test(contentType)) return "";
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (!buffer.length || buffer.length > 2_500_000) return "";
-    return `data:${contentType};base64,${buffer.toString("base64")}`;
-  } catch (err) {
-    console.warn("[prepare-share-card] failed to embed logo", err?.message || err);
-    return "";
-  }
-}
-
-function svgCard(data, logoDataUrl = "") {
-  const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
-  const ticker = String(data.ticker || "TICKER").replace(/^\$+/, "").toUpperCase().slice(0, 12);
-  const chain = String(data.chain || "BNB CHAIN").toUpperCase();
-  const status = String(data.status || "DRAFT").toUpperCase();
-  const deploys = String(data.deploys || "PREPARE MODE").toUpperCase();
-  const recruits = String(data.recruits || "0");
-  const heat = String(data.heat || "0%");
-  const creator = String(data.creator || "@MEMEWARZONE").toUpperCase();
-  const link = String(data.link || `memewar.zone/d/${ticker.toLowerCase()}`);
-  const description = clampText(data.description || "Short description here", 86);
-  const [line1, line2] = splitName(name);
->>>>>>> ced8e28fd346197999b066514d235e0960473c6c
-
   const titleSize = line1.length > 14 || line2.length > 14 ? 64 : 78;
   const titleY1 = line2 ? 224 : 252;
   const titleY2 = line2 ? 294 : 0;
   const descY = line2 ? 340 : 296;
+
   const logoBlock = logoDataUrl
     ? `<image href="${logoDataUrl}" x="55" y="176" width="148" height="148" clip-path="url(#logoClip)" preserveAspectRatio="xMidYMid slice"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.55" stroke-width="2" fill="none"/>`
@@ -202,14 +156,10 @@ function svgCard(data, logoDataUrl = "") {
     <filter id="greenGlow" x="-80" y="30" width="420" height="430" filterUnits="userSpaceOnUse">
       <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#00ff88" flood-opacity="0.35"/>
     </filter>
-<<<<<<< HEAD
 
-    <clipPath id="campaignLogoClip">
-      <circle cx="129" cy="249" r="74"/>
+    <clipPath id="logoClip">
+      <circle cx="129" cy="250" r="74"/>
     </clipPath>
-=======
-    <clipPath id="logoClip"><circle cx="129" cy="250" r="74"/></clipPath>
->>>>>>> ced8e28fd346197999b066514d235e0960473c6c
   </defs>
 
   <rect width="1002" height="531" fill="url(#bg)"/>
@@ -225,48 +175,25 @@ function svgCard(data, logoDataUrl = "") {
   <rect x="53" y="57" width="895" height="355" stroke="#1cff8f" stroke-opacity="0.08"/>
   <line x1="53" y1="412" x2="949" y2="412" stroke="#13ff82" stroke-opacity="0.32"/>
 
-  <!-- Small MemeWarzone logo / brand -->
   <g transform="translate(55 53)">
     <path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/>
     <path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/>
     <text x="36" y="18" fill="#dfffee" font-size="11" font-weight="900" font-family="Arial Black, Arial" letter-spacing="1">MEMEWARZONE</text>
   </g>
 
-  <!-- Status pill -->
   <g transform="translate(780 55)">
     <rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/>
     <circle cx="15" cy="14" r="3" fill="#10f58a"/>
     <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial" letter-spacing="1.6">${esc(status)}</text>
   </g>
-<<<<<<< HEAD
 
-  <!-- Campaign logo / ticker orb -->
-  <g filter="url(#greenGlow)">
-    <circle cx="129" cy="249" r="74" fill="url(#orb)"/>
-    <circle cx="129" cy="249" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
-    ${
-      campaignLogo
-        ? `<image href="${campaignLogo}" x="55" y="175" width="148" height="148" clip-path="url(#campaignLogoClip)" preserveAspectRatio="xMidYMid slice"/>`
-        : `<text x="129" y="263" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial Black, Arial">${esc(ticker)}</text>`
-    }
-  </g>
-
-  <!-- Main dynamic values -->
-  <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
-
-  <text x="235" y="227" fill="url(#title)" font-size="78" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line1)}</text>
-  ${line2 ? `<text x="235" y="300" fill="url(#title)" font-size="78" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line2)}</text>` : ""}
-
-  <text x="235" y="344" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
-
-  <!-- Bottom metrics -->
-=======
   <g filter="url(#greenGlow)">${logoBlock}</g>
+
   <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
   <text x="235" y="${titleY1}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line1)}</text>
   ${line2 ? `<text x="235" y="${titleY2}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line2)}</text>` : ""}
   <text x="235" y="${descY}" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
->>>>>>> ced8e28fd346197999b066514d235e0960473c6c
+
   <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">RECRUITS ARMED</text>
   <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(recruits)}</text>
 
@@ -281,13 +208,18 @@ function svgCard(data, logoDataUrl = "") {
 </svg>`;
 }
 
-async function sendPng(req, res, svg, ticker) {
+async function renderPng(svg) {
+  const { Resvg } = await import("@resvg/resvg-js");
   const renderer = new Resvg(svg, {
     fitTo: { mode: "width", value: 1002 },
     background: "rgba(0,0,0,0)",
   });
 
-  const png = Buffer.from(renderer.render().asPng());
+  return Buffer.from(renderer.render().asPng());
+}
+
+async function sendPng(req, res, svg, ticker) {
+  const png = await renderPng(svg);
   const q = getQuery(req);
   const filename = `memewarzone-${String(ticker || "draft").toLowerCase()}-share-card.png`;
 
@@ -296,11 +228,12 @@ async function sendPng(req, res, svg, ticker) {
   res.setHeader("content-length", String(png.length));
   res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
 
-  if (String(q.download || "") === "1") {
-    res.setHeader("content-disposition", `attachment; filename="${filename}"`);
-  } else {
-    res.setHeader("content-disposition", `inline; filename="${filename}"`);
-  }
+  res.setHeader(
+    "content-disposition",
+    String(q.download || "") === "1"
+      ? `attachment; filename="${filename}"`
+      : `inline; filename="${filename}"`,
+  );
 
   res.end(png);
 }
@@ -312,14 +245,10 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
-<<<<<<< HEAD
-    const svg = await svgCard(q);
-
-=======
     const logoDataUrl = await imageToDataUrl(q.logoUrl || q.logo || "");
     const svg = svgCard(q, logoDataUrl);
->>>>>>> ced8e28fd346197999b066514d235e0960473c6c
-    if (String(q.format || "png") === "svg") {
+
+    if (String(q.format || "png").toLowerCase() === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
       res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
