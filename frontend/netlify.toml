@@ -8,7 +8,6 @@
   targetPort = 5173
   port = 8888
 
-
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
@@ -16,13 +15,13 @@
 
 [[redirects]]
   from = "/api/prepare-share-card"
-  to = "/.netlify/functions/prepare-share-card"
+  to = "/.netlify/functions/prepare-share-card.mjs"
   status = 200
   force = true
 
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
+  to = "/.netlify/functions/api.mjs/:splat"
   status = 200
   force = true
 
