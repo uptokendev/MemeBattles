@@ -103,6 +103,7 @@ const LEGACY_CONNECTED_KEY = "mwz_wallet_connected";
 const EIP6963_WALLETS = new Map<string, Eip6963ProviderDetail>();
 const EIP6963_SUBSCRIBERS = new Set<() => void>();
 let eip6963ListenerStarted = false;
+let eip6963RequestInFlight = false;
 
 function normalizeHexAddress(value?: string | null): string {
   const v = String(value ?? "").trim();
@@ -186,11 +187,19 @@ function startEip6963Discovery() {
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
   startEip6963Discovery();
-  try {
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-  } catch {
-    // Legacy detection still works.
-  }
+  
+  if (eip6963RequestInFlight) return;
+  eip6963RequestInFlight = true;
+
+  queueMicrotask(() => {
+    try {
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    } catch {
+      // Legacy detection still works.
+    } finally {
+      eip6963RequestInFlight = false;
+    }
+  });
 }
 
 function detectedWallet(provider: Eip1193Provider, source: "eip6963" | "legacy", info?: Partial<Eip6963ProviderInfo>): DetectedWallet {
