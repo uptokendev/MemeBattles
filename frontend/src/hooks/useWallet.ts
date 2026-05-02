@@ -9,6 +9,7 @@ export type WalletType =
   | "coinbase"
   | "binance"
   | "trust"
+  | "cryptocom"
   | "okx"
   | "phantom"
   | "rainbow"
@@ -35,6 +36,9 @@ export type Eip1193Provider = {
   isBinanceChain?: boolean;
   isTrust?: boolean;
   isTrustWallet?: boolean;
+  isCryptoCom?: boolean;
+  isCryptoComWallet?: boolean;
+  isDeFiWallet?: boolean;
   isOkxWallet?: boolean;
   isOKExWallet?: boolean;
   isPhantom?: boolean;
@@ -103,6 +107,7 @@ const EIP6963_WALLETS = new Map<string, Eip6963ProviderDetail>();
 const EIP6963_SUBSCRIBERS = new Set<() => void>();
 let eip6963ListenerStarted = false;
 let eip6963NotifyTimer: number | null = null;
+let eip6963RequestTimer: number | null = null;
 
 function notifyEip6963SubscribersSoon() {
   if (typeof window === "undefined") return;
@@ -209,6 +214,18 @@ function includesAny(value: string, needles: string[]) {
   return needles.some((needle) => value.includes(needle));
 }
 
+function isLikelyCryptoDotCom(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
+  const meta = getProviderMeta(provider, info);
+
+  return (
+    getFlag(provider, "isCryptoCom") ||
+    getFlag(provider, "isCryptoComWallet") ||
+    getFlag(provider, "isDeFiWallet") ||
+    includesAny(meta.nameLower, ["crypto.com", "crypto com", "crypto defi", "defi wallet"]) ||
+    includesAny(meta.rdnsLower, ["crypto.com", "cryptocom", "com.crypto"])
+  );
+}
+
 function sanitizeWalletId(value: string): WalletType {
   const sanitized = value
     .toLowerCase()
@@ -258,6 +275,10 @@ function classifyWallet(provider: Eip1193Provider, info?: Partial<Eip6963Provide
     return { id: "trust", name: meta.name || "Trust Wallet", description: "Mobile-first wallet with BNB Chain support.", score: 92 };
   }
 
+  if (isLikelyCryptoDotCom(provider, info)) {
+    return { id: "cryptocom", name: meta.name || "Crypto.com DeFi Wallet", description: "Crypto.com DeFi Wallet for EVM networks.", score: 93 };
+  }
+
   if (
     getFlag(provider, "isOkxWallet") ||
     getFlag(provider, "isOKExWallet") ||
@@ -284,10 +305,11 @@ function classifyWallet(provider: Eip1193Provider, info?: Partial<Eip6963Provide
   }
 
   if (
-    getFlag(provider, "isMetaMask") ||
-    getFlag(provider, "_metamask") ||
-    includesAny(nameLower, ["metamask"]) ||
-    includesAny(rdnsLower, ["metamask"])
+    !isLikelyCryptoDotCom(provider, info) &&
+    (getFlag(provider, "isMetaMask") ||
+      getFlag(provider, "_metamask") ||
+      includesAny(nameLower, ["metamask"]) ||
+      includesAny(rdnsLower, ["metamask"]))
   ) {
     return { id: "metamask", name: meta.name || "MetaMask", description: "Popular injected EVM browser wallet.", score: 90 };
   }
@@ -335,12 +357,12 @@ function startEip6963Discovery() {
 
     const meta = getProviderMeta(detail.provider, detail.info);
     const key = detail.info?.uuid || meta.rdns || meta.name || String(EIP6963_WALLETS.size + 1);
-EIP6963_WALLETS.set(key, detail);
+    EIP6963_WALLETS.set(key, detail);
 
-// Never notify subscribers synchronously from inside the wallet extension's
-// announceProvider event. Some injected wallets synchronously dispatch nested
-// EIP-6963 events, and synchronous subscriber updates can re-enter that chain.
-notifyEip6963SubscribersSoon();
+    // Never notify subscribers synchronously from inside the wallet extension's
+    // announceProvider event. Some injected wallets synchronously dispatch nested
+    // EIP-6963 events, and synchronous subscriber updates can re-enter that chain.
+    notifyEip6963SubscribersSoon();
   };
 
   window.addEventListener("eip6963:announceProvider", onAnnounce);
@@ -350,18 +372,21 @@ notifyEip6963SubscribersSoon();
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
 
-  // Safety-first closeout fix:
-  //
-  // Do NOT dispatch `eip6963:requestProvider` from the app right now.
-  // Some injected wallets/extensions respond synchronously and can recursively
-  // dispatch announce/request events, causing:
-  //
-  //   InvalidStateError: Failed to execute 'dispatchEvent' on 'EventTarget':
-  //   The event is already being dispatched.
-  //
-  // We still listen for passive EIP-6963 announcements, and we still support
-  // legacy injected providers via window.ethereum / window.ethereum.providers.
   startEip6963Discovery();
+
+  if (eip6963RequestTimer != null) return;
+
+  // Dispatch asynchronously and debounce requests so wallet extensions are never
+  // re-entered while they are already handling announce/request events.
+  eip6963RequestTimer = window.setTimeout(() => {
+    eip6963RequestTimer = null;
+
+    try {
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    } catch {
+      // Passive legacy detection still works if an extension rejects dispatching.
+    }
+  }, 0);
 }
 
 function makeDetectedWallet(
@@ -426,9 +451,9 @@ function subscribeToWalletDiscovery(callback: () => void) {
   const timeout = window.setTimeout(callback, 350);
 
   return () => {
-  EIP6963_SUBSCRIBERS.delete(callback);
-  window.clearTimeout(timeout);
-};
+    EIP6963_SUBSCRIBERS.delete(callback);
+    window.clearTimeout(timeout);
+  };
 }
 
 function findDetectedWallet(walletId: WalletType | null | undefined) {
