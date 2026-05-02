@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Menu } from "lucide-react";
+import { Bell, Menu } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,12 @@ import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import { useTokenSearch } from "@/hooks/useTokenSearch";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import {
+  getDraftNotifications,
+  markAllDraftNotificationsRead,
+  markDraftNotificationRead,
+  type DraftNotification,
+} from "@/lib/draftPromotion";
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
@@ -52,6 +58,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const wallet = useWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
 
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
@@ -70,6 +78,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   });
 
   const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
+  const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass = "mwz-button h-10 px-3 md:px-5 text-xs md:text-sm font-retro";
 
@@ -219,6 +228,25 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return () => window.removeEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
   }, []);
 
+  useEffect(() => {
+    const refresh = () => setDraftNotifications(getDraftNotifications());
+    refresh();
+    window.addEventListener("mwz:notifications-changed", refresh as EventListener);
+    return () => window.removeEventListener("mwz:notifications-changed", refresh as EventListener);
+  }, []);
+
+  const openNotificationTarget = (notification: DraftNotification) => {
+    markDraftNotificationRead(notification.id);
+    setDraftNotifications(getDraftNotifications());
+    setNotificationOpen(false);
+    navigate(notification.target);
+  };
+
+  const markAllRead = () => {
+    markAllDraftNotificationsRead();
+    setDraftNotifications(getDraftNotifications());
+  };
+
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
       <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-2 px-3 md:px-5 py-2.5 min-h-[66px]">
@@ -272,6 +300,67 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
           </Button>
+
+          {wallet.isConnected && (
+            <div className="relative">
+              <Button
+                type="button"
+                onClick={() => {
+                  setDisconnectOpen(false);
+                  setNotificationOpen((prev) => !prev);
+                }}
+                className={cn(topbarButtonClass, "relative px-3")}
+                aria-label="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {unreadNotifications > 0 && (
+                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center border border-accent bg-background px-1 text-[10px] text-accent">
+                    {unreadNotifications}
+                  </span>
+                )}
+              </Button>
+
+              {notificationOpen && (
+                <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] mwz-panel z-50 overflow-hidden p-2">
+                  <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
+                    <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
+                    <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+                      Mark read
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto py-1">
+                    {draftNotifications.slice(0, 5).map((notification) => (
+                      <button
+                        key={notification.id}
+                        type="button"
+                        onClick={() => openNotificationTarget(notification)}
+                        className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-retro text-xs text-foreground">{notification.title}</span>
+                          {!notification.read && <span className="h-2 w-2 shrink-0 bg-accent" />}
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{notification.body}</p>
+                      </button>
+                    ))}
+                    {draftNotifications.length === 0 && (
+                      <div className="px-2 py-4 text-xs text-muted-foreground">No notifications yet.</div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNotificationOpen(false);
+                      navigate("/profile?tab=notifications");
+                    }}
+                    className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                  >
+                    View all
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="relative">
             <Button

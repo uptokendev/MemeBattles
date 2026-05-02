@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen } from "lucide-react";
+import { X, ImageIcon, Info, BookOpen, FileText, Radio, Rocket } from "lucide-react";
 import { z } from "zod";
 import { ethers } from "ethers";
 import ProcessingCard from "@/components/ui/processing-card";
@@ -18,7 +18,8 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { countDraftsForOwner, createDraft, hasTickerDraft } from "@/lib/draftPromotion";
 
 const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
 
@@ -28,6 +29,7 @@ function formatFileSize(bytes: number): string {
 }
 
 const Create = () => {
+  const navigate = useNavigate();
   const {
     formData,
     setTokenName,
@@ -59,6 +61,7 @@ const Create = () => {
 
   // Optional creator initial buy (tokens, 18 decimals) performed in the same tx.
   const [initialBuyBnb, setInitialBuyBnb] = useState("");
+  const [createMode, setCreateMode] = useState<"prepare" | "live">("prepare");
 
   // UPDATED: async and actually calls the contract
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -85,6 +88,41 @@ const Create = () => {
         return;
       }
       toast.error("Validation failed");
+      return;
+    }
+
+    if (createMode === "prepare") {
+      if (formData.image && formData.image.size > MAX_LOGO_UPLOAD_BYTES) {
+        toast.error(
+          `Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 2 MB.`,
+        );
+        return;
+      }
+
+      const ownerAddress = wallet.account || null;
+      if (countDraftsForOwner(ownerAddress) >= 10) {
+        toast.error("Prepare Mode draft limit reached. Archive one draft before creating another.");
+        return;
+      }
+
+      if (hasTickerDraft(formData.ticker, ownerAddress)) {
+        toast.error("You already have a Prepare Mode draft with this ticker.");
+        return;
+      }
+
+      const draft = createDraft({
+        name: formData.name,
+        ticker: formData.ticker,
+        description: formData.description,
+        logoUrl: formData.imagePreview || undefined,
+        creatorAddress: ownerAddress,
+        website: formData.website,
+        x: formData.twitter,
+        extraLink: formData.otherLink,
+      });
+
+      toast.success("Prepare Mode draft created. No gas required.");
+      navigate(`/drafts/${draft.id}/promotion`);
       return;
     }
 
@@ -225,6 +263,7 @@ const Create = () => {
 
   const isProjectDisabled = formData.category === "project";
   const isCreateDisabled = isProjectDisabled || !launchpadReadiness.ready;
+  const isSubmitDisabled = createMode === "live" ? isCreateDisabled : isProjectDisabled;
 
   return (
     <>
@@ -247,6 +286,41 @@ const Create = () => {
           <h1 className="text-4xl md:text-5xl lg:text-7xl font-retro tracking-tight text-foreground mb-6 md:mb-8">
             Create a new coin
           </h1>
+
+          <div className="mwz-panel p-3 md:p-4 mb-4 md:mb-6">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setCreateMode("prepare")}
+                className={`mwz-button flex items-start gap-3 p-4 text-left font-retro ${
+                  createMode === "prepare" ? "mwz-button-orange" : ""
+                }`}
+              >
+                <FileText className="mt-1 h-5 w-5 shrink-0" />
+                <span>
+                  <span className="block text-sm md:text-base">Prepare Draft</span>
+                  <span className="mt-1 block text-xs normal-case tracking-normal text-muted-foreground">
+                    Build the promotion page first. Save without gas, collect follows, comments, and launch signal.
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode("live")}
+                className={`mwz-button flex items-start gap-3 p-4 text-left font-retro ${
+                  createMode === "live" ? "mwz-button-orange" : ""
+                }`}
+              >
+                <Rocket className="mt-1 h-5 w-5 shrink-0" />
+                <span>
+                  <span className="block text-sm md:text-base">Create Live</span>
+                  <span className="mt-1 block text-xs normal-case tracking-normal text-muted-foreground">
+                    Deploy the campaign on-chain now. Requires wallet readiness and a live transaction.
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
 
           {/* Playbook Banner */}
           <div className="bg-gradient-to-r from-accent/20 to-accent/10 rounded-2xl p-4 md:p-6 mb-4 md:mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl border border-accent/30 backdrop-blur-sm">
@@ -271,9 +345,21 @@ const Create = () => {
             </Button>
           </div>
 
-          <div className="mb-4 md:mb-6">
-            <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
-          </div>
+          {createMode === "live" ? (
+            <div className="mb-4 md:mb-6">
+              <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
+            </div>
+          ) : (
+            <div className="mwz-panel mb-4 md:mb-6 p-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-accent">
+                <Radio className="h-4 w-4" />
+                <span className="font-retro uppercase tracking-[0.14em]">Prepare Mode</span>
+              </div>
+              <p className="mt-2">
+                Drafts create a setup page and a public Prepare page. No wallet transaction is requested until you push live later.
+              </p>
+            </div>
+          )}
 
           {/* Main Form Card */}
           <div className="bg-card/50 backdrop-blur-md rounded-2xl p-4 md:p-8 shadow-2xl border border-border relative">
@@ -288,7 +374,7 @@ const Create = () => {
               {/* Token Image */}
               <div>
                 <label className="block text-foreground font-retro mb-3 text-base md:text-lg">
-                  Token Image
+                  Token Image {createMode === "prepare" && <span className="text-muted-foreground">(optional for drafts)</span>}
                 </label>
                 <div className="flex items-center gap-4">
                   {!formData.imagePreview ? (
@@ -486,37 +572,42 @@ const Create = () => {
                 )}
               </div>
 
-              {/* Optional creator initial buy */}
-              <div className="pt-4">
-                <label className="block text-muted-foreground font-retro mb-2 text-xs md:text-sm">
-                  Initial buy (BNB, optional)
-                </label>
-                <Input
-                  value={initialBuyBnb}
-                  onChange={(e) => setInitialBuyBnb(e.target.value)}
-                  placeholder="0.00"
-                  inputMode="decimal"
-                  className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground font-retro rounded-lg focus:border-accent focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed h-12"
-                  disabled={isProjectDisabled}
-                />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  If set, the creator will spend this amount of BNB to buy tokens in the same transaction as campaign creation.
-                  Max 1 BNB.
-                </p>
-              </div>
+              {createMode === "live" && (
+                <div className="pt-4">
+                  <label className="block text-muted-foreground font-retro mb-2 text-xs md:text-sm">
+                    Initial buy (BNB, optional)
+                  </label>
+                  <Input
+                    value={initialBuyBnb}
+                    onChange={(e) => setInitialBuyBnb(e.target.value)}
+                    placeholder="0.00"
+                    inputMode="decimal"
+                    className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground font-retro rounded-lg focus:border-accent focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed h-12"
+                    disabled={isProjectDisabled}
+                  />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    If set, the creator will spend this amount of BNB to buy tokens in the same transaction as campaign creation.
+                    Max 1 BNB.
+                  </p>
+                </div>
+              )}
 
               {/* Create Button */}
               <div className="pt-4">
                 <Button
                   type="submit"
-                  disabled={isCreateDisabled}
+                  disabled={isSubmitDisabled}
                   className={`w-full font-retro text-xl md:text-2xl py-6 md:py-8 rounded-2xl shadow-lg transition-all ${
-                    isCreateDisabled
+                    isSubmitDisabled
                       ? "bg-muted text-muted-foreground cursor-not-allowed"
                       : "bg-accent hover:bg-accent/90 text-accent-foreground shadow-accent/20"
                   }`}
                 >
-                  {launchpadReadiness.ready ? "Create Coin" : launchpadReadiness.title}
+                  {createMode === "prepare"
+                    ? "Create Draft Page"
+                    : launchpadReadiness.ready
+                      ? "Create Coin"
+                      : launchpadReadiness.title}
                 </Button>
               </div>
             </form>

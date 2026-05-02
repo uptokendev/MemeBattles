@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Copy, ExternalLink } from "lucide-react";
+import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { isProfileTab, ProfileTab } from "@/types/profile";
@@ -48,6 +48,12 @@ import { REALTIME_API_BASE } from "@/lib/realtimeApi";
 import { ProfileAirdropsPanel } from "@/components/profile/ProfileAirdropsPanel";
 import { ProfileSquadPanel } from "@/components/profile/ProfileSquadPanel";
 import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
+import {
+  getDraftNotifications,
+  markAllDraftNotificationsRead,
+  markDraftNotificationRead,
+  type DraftNotification,
+} from "@/lib/draftPromotion";
 
 type TokenBalanceRow = {
   campaignAddress: string;
@@ -202,6 +208,8 @@ const Profile = () => {
   const [followedCampaigns, setFollowedCampaigns] = useState<string[]>([]);
   const [followedCards, setFollowedCards] = useState<any[]>([]);
   const [loadingFollows, setLoadingFollows] = useState(true);
+  const [profileNotifications, setProfileNotifications] = useState<DraftNotification[]>([]);
+  const unreadProfileNotifications = profileNotifications.filter((item) => !item.read).length;
 
   useEffect(() => {
     const t = String(tabParam ?? "").toLowerCase().trim();
@@ -209,6 +217,13 @@ const Profile = () => {
     const normalized = t === "activity" ? "replies" : t;
     if (isProfileTab(normalized)) setActiveTab(normalized);
   }, [tabParam]);
+
+  useEffect(() => {
+    const refresh = () => setProfileNotifications(getDraftNotifications());
+    refresh();
+    window.addEventListener("mwz:notifications-changed", refresh as EventListener);
+    return () => window.removeEventListener("mwz:notifications-changed", refresh as EventListener);
+  }, []);
 
   useEffect(() => {
   if (!viewedAddress) return;
@@ -458,6 +473,17 @@ const Profile = () => {
     if (!viewedAddress) return;
     navigator.clipboard.writeText(viewedAddress);
     toast.success("Address copied!");
+  };
+
+  const handleOpenNotification = (notification: DraftNotification) => {
+    markDraftNotificationRead(notification.id);
+    setProfileNotifications(getDraftNotifications());
+    navigate(notification.target);
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    markAllDraftNotificationsRead();
+    setProfileNotifications(getDraftNotifications());
   };
 
   const handleConnect = async () => {
@@ -1305,7 +1331,7 @@ const Profile = () => {
               { id: "recruiter" as ProfileTab, label: "Recruiter", badge: null },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
               { id: "following" as ProfileTab, label: "Following", badge: null },
-              { id: "notifications" as ProfileTab, label: "Notifications", badge: 13 },
+              { id: "notifications" as ProfileTab, label: "Notifications", badge: unreadProfileNotifications || null },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1739,12 +1765,43 @@ const Profile = () => {
 
           {/* NOTIFICATIONS TAB */}
         {activeTab === "notifications" && (
-          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-8 md:p-12 border border-border text-center">
-            <p className="font-retro text-muted-foreground text-sm md:text-base">
-              Notifications MVP ideas:
-              curve at 80/90/95%, graduation, large buy alerts, your created coin milestones,
-              and “watched coins” updates. This needs either an indexer or a lightweight polling service.
-            </p>
+          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-3">
+                <Bell className="h-5 w-5 text-accent" />
+                <div>
+                  <h3 className="font-retro text-foreground text-sm">Notifications</h3>
+                  <p className="text-xs text-muted-foreground">Draft follows, comments, heat changes, publish events, and launch updates.</p>
+                </div>
+              </div>
+              <Button type="button" variant="outline" onClick={handleMarkAllNotificationsRead} className="font-retro">
+                Mark all read
+              </Button>
+            </div>
+
+            {profileNotifications.length === 0 ? (
+              <div className="rounded-xl border border-border bg-background/40 p-6 text-center text-sm text-muted-foreground">
+                No notifications yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {profileNotifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    onClick={() => handleOpenNotification(notification)}
+                    className="flex w-full items-start gap-3 rounded-xl border border-border bg-background/40 p-4 text-left hover:border-accent/50"
+                  >
+                    <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.read ? "bg-muted" : "bg-accent"}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-retro text-sm text-foreground">{notification.title}</span>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">{notification.body}</span>
+                    </span>
+                    <span className="hidden text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:block">{notification.kind}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

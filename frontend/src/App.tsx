@@ -14,6 +14,8 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
+import PromotionSetup from "./pages/PromotionSetup";
+import PublicPromotion from "./pages/PublicPromotion";
 import League from "./pages/League";
 import LeagueDetail from "./pages/LeagueDetail";
 import Profile from "./pages/Profile";
@@ -70,6 +72,8 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
+                    <Route path="/drafts/:draftId/promotion" element={<PromotionSetup />} />
+                    <Route path="/prepare/:slug" element={<PublicPromotion />} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
