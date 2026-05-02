@@ -127,7 +127,6 @@ function buildPreparePageUrl(slug: string) {
 function buildShareCardUrl(bundle: PrepareDraftBundle, download = false) {
   const { draft, promotion, popularity } = bundle;
 
-  const pageUrl = buildPreparePageUrl(draft.slug);
   const displayLink =
     typeof window !== "undefined"
       ? `${window.location.host}/prepare/${draft.slug}`
@@ -136,7 +135,18 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false) {
   const description =
     draft.description ||
     promotion?.missionStatement ||
+    promotion?.creatorNote ||
     "The launchpad that turns every drop into a war.";
+
+  const recruits =
+    popularity.signedActions ||
+    popularity.follows ||
+    0;
+
+  const status =
+    draft.status === "promotion_published" || draft.status === "draft"
+      ? "DRAFT"
+      : statusLabel(draft.status);
 
   const params = new URLSearchParams({
     name: draft.name,
@@ -145,8 +155,8 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false) {
       Number(draft.chainId) === 101 || Number(draft.chainId) === 102
         ? "SOLANA"
         : "BNB CHAIN",
-    status: draft.status === "promotion_published" ? "DRAFT" : statusLabel(draft.status),
-    recruits: String(popularity.signedActions || popularity.follows || 0),
+    status,
+    recruits: String(recruits),
     heat: `${popularity.popularityPercentage}%`,
     creator: creatorLabel(bundle),
     link: displayLink,
