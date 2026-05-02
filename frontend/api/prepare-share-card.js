@@ -45,6 +45,13 @@ function safeNumberText(value, fallback = "0") {
   return raw || fallback;
 }
 
+function setNoStoreHeaders(res) {
+  res.setHeader("cache-control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("pragma", "no-cache");
+  res.setHeader("expires", "0");
+  res.setHeader("surrogate-control", "no-store");
+}
+
 function normalizeImageSrc(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -117,11 +124,11 @@ function svgCard(data, logoDataUrl = "") {
   const descY = line2 ? 340 : 296;
 
   const logoBlock = logoDataUrl
-    ? `<image href="${logoDataUrl}" x="55" y="176" width="148" height="148" clip-path="url(#logoClip)" preserveAspectRatio="xMidYMid slice"/>
+    ? `<image href="${esc(logoDataUrl)}" x="55" y="176" width="148" height="148" clip-path="url(#logoClip)" preserveAspectRatio="xMidYMid slice"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.55" stroke-width="2" fill="none"/>`
     : `<circle cx="129" cy="250" r="74" fill="url(#orb)"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
-       <text x="129" y="264" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial Black, Arial">${esc(ticker)}</text>`;
+       <text x="129" y="264" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(ticker)}</text>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1002" height="531" viewBox="0 0 1002 531" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -178,33 +185,33 @@ function svgCard(data, logoDataUrl = "") {
   <g transform="translate(55 53)">
     <path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/>
     <path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/>
-    <text x="36" y="18" fill="#dfffee" font-size="11" font-weight="900" font-family="Arial Black, Arial" letter-spacing="1">MEMEWARZONE</text>
+    <text x="36" y="18" fill="#dfffee" font-size="11" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="1">MEMEWARZONE</text>
   </g>
 
   <g transform="translate(780 55)">
     <rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/>
     <circle cx="15" cy="14" r="3" fill="#10f58a"/>
-    <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial" letter-spacing="1.6">${esc(status)}</text>
+    <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="1.6">${esc(status)}</text>
   </g>
 
   <g filter="url(#greenGlow)">${logoBlock}</g>
 
   <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
-  <text x="235" y="${titleY1}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line1)}</text>
-  ${line2 ? `<text x="235" y="${titleY2}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line2)}</text>` : ""}
-  <text x="235" y="${descY}" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
+  <text x="235" y="${titleY1}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="-3">${esc(line1)}</text>
+  ${line2 ? `<text x="235" y="${titleY2}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="-3">${esc(line2)}</text>` : ""}
+  <text x="235" y="${descY}" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial, Helvetica, sans-serif">${esc(description)}</text>
 
-  <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">RECRUITS ARMED</text>
-  <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(recruits)}</text>
+  <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">RECRUITS ARMED</text>
+  <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(recruits)}</text>
 
-  <text x="183" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">HEAT</text>
-  <text x="183" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(heat)}</text>
+  <text x="183" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">HEAT</text>
+  <text x="183" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(heat)}</text>
 
-  <text x="265" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">BUILT BY</text>
-  <text x="265" y="469" fill="#e9e3db" font-size="20" font-weight="900" font-family="Arial Black, Arial">${esc(creator)}</text>
+  <text x="265" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">BUILT BY</text>
+  <text x="265" y="469" fill="#e9e3db" font-size="20" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(creator)}</text>
 
-  <text x="846" y="445" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2" text-anchor="middle">ARM NOTIFICATION</text>
-  <text x="846" y="471" fill="#10f58a" font-size="18" font-weight="900" font-family="Arial Black, Arial" text-anchor="middle">${esc(link)}</text>
+  <text x="846" y="445" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2" text-anchor="middle">ARM NOTIFICATION</text>
+  <text x="846" y="471" fill="#10f58a" font-size="18" font-weight="900" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">${esc(link)}</text>
 </svg>`;
 }
 
@@ -213,6 +220,10 @@ async function renderPng(svg) {
   const renderer = new Resvg(svg, {
     fitTo: { mode: "width", value: 1002 },
     background: "rgba(0,0,0,0)",
+    font: {
+      loadSystemFonts: true,
+      defaultFontFamily: "Arial",
+    },
   });
 
   return Buffer.from(renderer.render().asPng());
@@ -226,7 +237,7 @@ async function sendPng(req, res, svg, ticker) {
   res.statusCode = 200;
   res.setHeader("content-type", "image/png");
   res.setHeader("content-length", String(png.length));
-  res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
+  setNoStoreHeaders(res);
 
   res.setHeader(
     "content-disposition",
@@ -251,7 +262,7 @@ export default async function handler(req, res) {
     if (String(q.format || "png").toLowerCase() === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
-      res.setHeader("cache-control", "public, max-age=300, s-maxage=300");
+      setNoStoreHeaders(res);
       res.end(svg);
       return;
     }
