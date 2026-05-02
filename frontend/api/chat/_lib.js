@@ -98,10 +98,30 @@ export async function ensureChatSchema() {
       role text NOT NULL DEFAULT 'trader',
       message text NOT NULL,
       client_nonce text,
-      hidden boolean NOT NULL DEFAULT false,
+      is_hidden boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_hidden boolean NOT NULL DEFAULT false`);
+
+await pool.query(`
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'chat_messages'
+        AND column_name = 'hidden'
+    ) THEN
+      EXECUTE '
+        UPDATE public.chat_messages
+        SET is_hidden = COALESCE(hidden, false)
+        WHERE is_hidden IS DISTINCT FROM COALESCE(hidden, false)
+      ';
+    END IF;
+  END $$;
+`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.chat_mutes (
