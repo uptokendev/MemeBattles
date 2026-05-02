@@ -11,23 +11,17 @@ function esc(value) {
 
 function clampText(value, max) {
   const text = String(value || "").trim();
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
 }
 
 function splitName(name, maxChars = 14) {
   const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
-
   if (clean.length <= maxChars) return [clean, ""];
-
   const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length <= 1) {
-    return [clean.slice(0, maxChars), clean.slice(maxChars, maxChars * 2)];
-  }
-
+  if (words.length <= 1) return [clean.slice(0, maxChars), clean.slice(maxChars, maxChars * 2)];
   const first = [];
   const second = [];
   let count = 0;
-
   for (const word of words) {
     if (count + word.length <= maxChars || first.length === 0) {
       first.push(word);
@@ -36,7 +30,6 @@ function splitName(name, maxChars = 14) {
       second.push(word);
     }
   }
-
   return [first.join(" "), second.join(" ")];
 }
 
@@ -57,7 +50,6 @@ function normalizeImageSrc(value) {
   if (!raw) return "";
   if (/^data:image\//i.test(raw)) return raw;
   if (!/^https?:\/\//i.test(raw)) return "";
-
   try {
     return new URL(raw).toString();
   } catch {
@@ -69,28 +61,19 @@ async function imageToDataUrl(src) {
   const clean = normalizeImageSrc(src);
   if (!clean) return "";
   if (/^data:image\//i.test(clean)) return clean;
-
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2500);
-
     const response = await fetch(clean, {
       signal: controller.signal,
-      headers: {
-        accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*",
-      },
+      headers: { accept: "image/avif,image/webp,image/png,image/jpeg,image/svg+xml,*/*" },
     });
-
     clearTimeout(timer);
-
     if (!response.ok) return "";
-
     const contentType = response.headers.get("content-type") || "image/png";
     if (!/^image\//i.test(contentType)) return "";
-
     const buffer = Buffer.from(await response.arrayBuffer());
     if (!buffer.length || buffer.length > 2_500_000) return "";
-
     return `data:${contentType};base64,${buffer.toString("base64")}`;
   } catch (err) {
     console.warn("[prepare-share-card] failed to embed logo", err?.message || err);
@@ -98,120 +81,182 @@ async function imageToDataUrl(src) {
   }
 }
 
+const GLYPHS = {
+  "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  "B": ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  "C": ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  "D": ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  "F": ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  "G": ["01111", "10000", "10000", "10111", "10001", "10001", "01111"],
+  "H": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  "I": ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  "J": ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+  "K": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  "N": ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  "Q": ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  "U": ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  "V": ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  "W": ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  "X": ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  "Y": ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  "Z": ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+  "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  "5": ["11111", "10000", "10000", "11110", "00001", "00001", "11110"],
+  "6": ["01110", "10000", "10000", "11110", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+  ",": ["00000", "00000", "00000", "00000", "00000", "01100", "01000"],
+  ":": ["00000", "01100", "01100", "00000", "01100", "01100", "00000"],
+  "/": ["00001", "00010", "00010", "00100", "01000", "01000", "10000"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  "_": ["00000", "00000", "00000", "00000", "00000", "00000", "11111"],
+  "$": ["00100", "01111", "10100", "01110", "00101", "11110", "00100"],
+  "%": ["11001", "11010", "00100", "01000", "10011", "01011", "00000"],
+  "@": ["01110", "10001", "10111", "10101", "10111", "10000", "01110"],
+  "#": ["01010", "11111", "01010", "01010", "11111", "01010", "01010"],
+  "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
+  "!": ["00100", "00100", "00100", "00100", "00100", "00000", "00100"],
+  "?": ["01110", "10001", "00001", "00010", "00100", "00000", "00100"],
+  "'": ["01100", "01100", "01000", "00000", "00000", "00000", "00000"],
+  "(": ["00010", "00100", "01000", "01000", "01000", "00100", "00010"],
+  ")": ["01000", "00100", "00010", "00010", "00010", "00100", "01000"],
+};
+
+function normalizePixelText(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9 .,:/\-_@$%#!?'()+]/g, " ");
+}
+
+function pixelText(value, x, y, options = {}) {
+  const text = normalizePixelText(value);
+  const scale = options.scale ?? 4;
+  const color = options.color ?? "#10f58a";
+  const opacity = options.opacity ?? 1;
+  const spacing = options.spacing ?? scale;
+  const maxChars = options.maxChars ?? text.length;
+  const anchor = options.anchor || "start";
+  const clipped = text.slice(0, maxChars);
+  const charWidth = 5 * scale + spacing;
+  const totalWidth = clipped.length > 0 ? clipped.length * charWidth - spacing : 0;
+  const startX = anchor === "middle" ? x - totalWidth / 2 : anchor === "end" ? x - totalWidth : x;
+  const rects = [];
+
+  [...clipped].forEach((char, index) => {
+    const glyph = GLYPHS[char] || GLYPHS[" "];
+    const gx = startX + index * charWidth;
+    glyph.forEach((row, rowIndex) => {
+      [...row].forEach((cell, colIndex) => {
+        if (cell !== "1") return;
+        rects.push(`<rect x="${gx + colIndex * scale}" y="${y + rowIndex * scale}" width="${scale}" height="${scale}" fill="${color}" opacity="${opacity}"/>`);
+      });
+    });
+  });
+
+  return `<g>${rects.join("")}</g>`;
+}
+
+function wrapPixelLines(value, maxChars, maxLines = 2) {
+  const words = normalizePixelText(value).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxChars) {
+      current = next;
+    } else {
+      if (current) lines.push(current);
+      current = word.slice(0, maxChars);
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
 function svgCard(data, logoDataUrl = "") {
   const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
-  const ticker = String(data.ticker || "MWZ")
-    .replace(/^\$+/, "")
-    .trim()
-    .toUpperCase()
-    .slice(0, 12);
-
+  const ticker = String(data.ticker || "MWZ").replace(/^\$+/, "").trim().toUpperCase().slice(0, 12);
   const chain = String(data.chain || "BNB CHAIN").trim().toUpperCase();
   const status = String(data.status || "DRAFT").trim().toUpperCase();
   const recruits = safeNumberText(data.recruits, "0");
   const heat = safeNumberText(data.heat, "0%");
   const creator = String(data.creator || "@MEMEWARZONE").trim().toUpperCase();
   const link = clampText(data.link || `memewar.zone/d/${ticker.toLowerCase()}`, 34);
-  const description = clampText(
-    data.description || "The launchpad that turns every drop into a war.",
-    72,
-  );
+  const description = clampText(data.description || "The launchpad that turns every drop into a war.", 72);
 
   const [line1, line2] = splitName(name, 14);
-  const titleSize = line1.length > 14 || line2.length > 14 ? 64 : 78;
-  const titleY1 = line2 ? 224 : 252;
-  const titleY2 = line2 ? 294 : 0;
-  const descY = line2 ? 340 : 296;
+  const titleScale = line1.length > 12 || line2.length > 12 ? 8 : 9;
+  const titleY1 = line2 ? 182 : 210;
+  const titleY2 = line2 ? 252 : 0;
+  const descLines = wrapPixelLines(description, 54, 2);
 
   const logoBlock = logoDataUrl
     ? `<image href="${esc(logoDataUrl)}" x="55" y="176" width="148" height="148" clip-path="url(#logoClip)" preserveAspectRatio="xMidYMid slice"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.55" stroke-width="2" fill="none"/>`
     : `<circle cx="129" cy="250" r="74" fill="url(#orb)"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
-       <text x="129" y="264" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(ticker)}</text>`;
+       ${pixelText(ticker, 129, 232, { scale: 7, color: "#ffffff", anchor: "middle" })}`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1002" height="531" viewBox="0 0 1002 531" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1002" y2="531" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#06170d"/>
-      <stop offset="0.48" stop-color="#030907"/>
-      <stop offset="1" stop-color="#130804"/>
+      <stop stop-color="#06170d"/><stop offset="0.48" stop-color="#030907"/><stop offset="1" stop-color="#130804"/>
     </linearGradient>
-
     <radialGradient id="orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(129 249) rotate(90) scale(76)">
-      <stop stop-color="#20ff90"/>
-      <stop offset="0.55" stop-color="#04954d"/>
-      <stop offset="1" stop-color="#012913"/>
+      <stop stop-color="#20ff90"/><stop offset="0.55" stop-color="#04954d"/><stop offset="1" stop-color="#012913"/>
     </radialGradient>
-
     <radialGradient id="orbGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(129 249) rotate(90) scale(130)">
-      <stop stop-color="#00ff88" stop-opacity="0.45"/>
-      <stop offset="1" stop-color="#00ff88" stop-opacity="0"/>
+      <stop stop-color="#00ff88" stop-opacity="0.45"/><stop offset="1" stop-color="#00ff88" stop-opacity="0"/>
     </radialGradient>
-
-    <linearGradient id="title" x1="235" y1="170" x2="470" y2="305" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#ffffff"/>
-      <stop offset="0.45" stop-color="#eaffef"/>
-      <stop offset="1" stop-color="#10f58a"/>
-    </linearGradient>
-
-    <pattern id="grid" width="33" height="33" patternUnits="userSpaceOnUse">
-      <path d="M33 0H0V33" stroke="#13ff82" stroke-opacity="0.055"/>
-    </pattern>
-
-    <filter id="greenGlow" x="-80" y="30" width="420" height="430" filterUnits="userSpaceOnUse">
-      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#00ff88" flood-opacity="0.35"/>
-    </filter>
-
-    <clipPath id="logoClip">
-      <circle cx="129" cy="250" r="74"/>
-    </clipPath>
+    <pattern id="grid" width="33" height="33" patternUnits="userSpaceOnUse"><path d="M33 0H0V33" stroke="#13ff82" stroke-opacity="0.055"/></pattern>
+    <filter id="greenGlow" x="-80" y="30" width="420" height="430" filterUnits="userSpaceOnUse"><feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#00ff88" flood-opacity="0.35"/></filter>
+    <filter id="textGlow" x="0" y="0" width="1002" height="531" filterUnits="userSpaceOnUse"><feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#10f58a" flood-opacity="0.55"/></filter>
+    <clipPath id="logoClip"><circle cx="129" cy="250" r="74"/></clipPath>
   </defs>
 
-  <rect width="1002" height="531" fill="url(#bg)"/>
-  <rect width="1002" height="531" fill="url(#grid)"/>
-  <rect width="1002" height="531" fill="url(#orbGlow)" opacity="0.65"/>
-
+  <rect width="1002" height="531" fill="url(#bg)"/><rect width="1002" height="531" fill="url(#grid)"/><rect width="1002" height="531" fill="url(#orbGlow)" opacity="0.65"/>
   <rect x="0" y="0" width="1002" height="10" fill="#070707"/>
   ${Array.from({ length: 44 }).map((_, i) => `<path d="M${i * 24} 0H${i * 24 + 12}L${i * 24 + 2} 10H${i * 24 - 10}L${i * 24} 0Z" fill="#7b421c" fill-opacity="0.52"/>`).join("")}
-
   <rect x="0" y="521" width="1002" height="10" fill="#070707"/>
   ${Array.from({ length: 44 }).map((_, i) => `<path d="M${i * 24} 521H${i * 24 + 12}L${i * 24 + 2} 531H${i * 24 - 10}L${i * 24} 521Z" fill="#7b421c" fill-opacity="0.52"/>`).join("")}
+  <rect x="53" y="57" width="895" height="355" stroke="#1cff8f" stroke-opacity="0.08"/><line x1="53" y1="412" x2="949" y2="412" stroke="#13ff82" stroke-opacity="0.32"/>
 
-  <rect x="53" y="57" width="895" height="355" stroke="#1cff8f" stroke-opacity="0.08"/>
-  <line x1="53" y1="412" x2="949" y2="412" stroke="#13ff82" stroke-opacity="0.32"/>
-
-  <g transform="translate(55 53)">
-    <path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/>
-    <path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/>
-    <text x="36" y="18" fill="#dfffee" font-size="11" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="1">MEMEWARZONE</text>
-  </g>
-
-  <g transform="translate(780 55)">
-    <rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/>
-    <circle cx="15" cy="14" r="3" fill="#10f58a"/>
-    <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="1.6">${esc(status)}</text>
-  </g>
+  <g transform="translate(55 53)"><path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/><path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/></g>
+  <g filter="url(#textGlow)">${pixelText("MEMEWARZONE", 91, 62, { scale: 2, color: "#dfffee" })}</g>
+  <g transform="translate(780 55)"><rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/><circle cx="15" cy="14" r="3" fill="#10f58a"/></g>
+  <g filter="url(#textGlow)">${pixelText(status, 805, 65, { scale: 2, color: "#f39b3d", maxChars: 18 })}</g>
 
   <g filter="url(#greenGlow)">${logoBlock}</g>
+  <g filter="url(#textGlow)">
+    ${pixelText(`// $${ticker} - ${chain}`, 235, 150, { scale: 2.2, color: "#10f58a", maxChars: 36 })}
+    ${pixelText(line1, 235, titleY1, { scale: titleScale, color: "#dfffee", maxChars: 16 })}
+    ${line2 ? pixelText(line2, 235, titleY2, { scale: titleScale, color: "#65ffad", maxChars: 16 }) : ""}
+    ${descLines.map((line, index) => pixelText(line, 235, 328 + index * 18, { scale: 2.4, color: "#d9d2ca", maxChars: 56 })).join("")}
 
-  <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
-  <text x="235" y="${titleY1}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="-3">${esc(line1)}</text>
-  ${line2 ? `<text x="235" y="${titleY2}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial, Helvetica, sans-serif" letter-spacing="-3">${esc(line2)}</text>` : ""}
-  <text x="235" y="${descY}" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial, Helvetica, sans-serif">${esc(description)}</text>
-
-  <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">RECRUITS ARMED</text>
-  <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(recruits)}</text>
-
-  <text x="183" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">HEAT</text>
-  <text x="183" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(heat)}</text>
-
-  <text x="265" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2">BUILT BY</text>
-  <text x="265" y="469" fill="#e9e3db" font-size="20" font-weight="900" font-family="Arial, Helvetica, sans-serif">${esc(creator)}</text>
-
-  <text x="846" y="445" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New, monospace" letter-spacing="2" text-anchor="middle">ARM NOTIFICATION</text>
-  <text x="846" y="471" fill="#10f58a" font-size="18" font-weight="900" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">${esc(link)}</text>
+    ${pixelText("RECRUITS ARMED", 54, 438, { scale: 1.6, color: "#4d8066" })}
+    ${pixelText(recruits, 54, 454, { scale: 4.4, color: "#10f58a", maxChars: 8 })}
+    ${pixelText("HEAT", 183, 438, { scale: 1.6, color: "#4d8066" })}
+    ${pixelText(heat, 183, 454, { scale: 4.4, color: "#10f58a", maxChars: 8 })}
+    ${pixelText("BUILT BY", 265, 438, { scale: 1.6, color: "#4d8066" })}
+    ${pixelText(creator, 265, 456, { scale: 3, color: "#e9e3db", maxChars: 18 })}
+    ${pixelText("ARM NOTIFICATION", 846, 439, { scale: 1.6, color: "#4d8066", anchor: "middle" })}
+    ${pixelText(link, 846, 458, { scale: 2.5, color: "#10f58a", maxChars: 34, anchor: "middle" })}
+  </g>
 </svg>`;
 }
 
@@ -220,12 +265,7 @@ async function renderPng(svg) {
   const renderer = new Resvg(svg, {
     fitTo: { mode: "width", value: 1002 },
     background: "rgba(0,0,0,0)",
-    font: {
-      loadSystemFonts: true,
-      defaultFontFamily: "Arial",
-    },
   });
-
   return Buffer.from(renderer.render().asPng());
 }
 
@@ -233,32 +273,20 @@ async function sendPng(req, res, svg, ticker) {
   const png = await renderPng(svg);
   const q = getQuery(req);
   const filename = `memewarzone-${String(ticker || "draft").toLowerCase()}-share-card.png`;
-
   res.statusCode = 200;
   res.setHeader("content-type", "image/png");
   res.setHeader("content-length", String(png.length));
   setNoStoreHeaders(res);
-
-  res.setHeader(
-    "content-disposition",
-    String(q.download || "") === "1"
-      ? `attachment; filename="${filename}"`
-      : `inline; filename="${filename}"`,
-  );
-
+  res.setHeader("content-disposition", String(q.download || "") === "1" ? `attachment; filename="${filename}"` : `inline; filename="${filename}"`);
   res.end(png);
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return json(res, 405, { error: "Method not allowed" });
-  }
-
+  if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
   try {
     const q = getQuery(req);
     const logoDataUrl = await imageToDataUrl(q.logoUrl || q.logo || "");
     const svg = svgCard(q, logoDataUrl);
-
     if (String(q.format || "png").toLowerCase() === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
@@ -266,7 +294,6 @@ export default async function handler(req, res) {
       res.end(svg);
       return;
     }
-
     return sendPng(req, res, svg, q.ticker || "draft");
   } catch (err) {
     console.error("[prepare-share-card]", err);
