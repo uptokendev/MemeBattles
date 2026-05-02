@@ -115,12 +115,11 @@ function notifyEip6963SubscribersSoon() {
 
   eip6963NotifyTimer = window.setTimeout(() => {
     eip6963NotifyTimer = null;
-
     EIP6963_SUBSCRIBERS.forEach((subscriber) => {
       try {
         subscriber();
       } catch {
-        // Ignore subscriber errors so one bad wallet/update cannot break discovery.
+        // Ignore subscriber errors.
       }
     });
   }, 0);
@@ -141,23 +140,16 @@ function clearWarRoomSessionCache() {
 
   try {
     const toDelete: string[] = [];
-
     for (let i = 0; i < window.localStorage.length; i += 1) {
       const key = window.localStorage.key(i);
       if (!key) continue;
-
-      if (
-        key.startsWith("mwz:warroom:") ||
-        key.startsWith("mwz:chat:") ||
-        key.startsWith("mwz:tokenchat:")
-      ) {
+      if (key.startsWith("mwz:warroom:") || key.startsWith("mwz:chat:") || key.startsWith("mwz:tokenchat:")) {
         toDelete.push(key);
       }
     }
-
     toDelete.forEach((key) => window.localStorage.removeItem(key));
   } catch {
-    // Ignore storage failures in private windows or restricted browsers.
+    // Ignore storage failures.
   }
 }
 
@@ -216,7 +208,6 @@ function includesAny(value: string, needles: string[]) {
 
 function isLikelyCryptoDotCom(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
   const meta = getProviderMeta(provider, info);
-
   return (
     getFlag(provider, "isCryptoCom") ||
     getFlag(provider, "isCryptoComWallet") ||
@@ -234,16 +225,10 @@ function sanitizeWalletId(value: string): WalletType {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
-
   return (sanitized || "injected") as WalletType;
 }
 
-type WalletBrand = {
-  id: WalletType;
-  name: string;
-  description: string;
-  score: number;
-};
+type WalletBrand = { id: WalletType; name: string; description: string; score: number };
 
 function classifyWallet(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>): WalletBrand {
   const meta = getProviderMeta(provider, info);
@@ -252,172 +237,95 @@ function classifyWallet(provider: Eip1193Provider, info?: Partial<Eip6963Provide
   if (getFlag(provider, "isRabby") || includesAny(nameLower, ["rabby"]) || includesAny(rdnsLower, ["rabby"])) {
     return { id: "rabby", name: meta.name || "Rabby", description: "Risk-aware EVM wallet with transaction previews.", score: 98 };
   }
-
-  if (
-    getFlag(provider, "isBinance") ||
-    getFlag(provider, "isBinanceChain") ||
-    includesAny(nameLower, ["binance"]) ||
-    includesAny(rdnsLower, ["binance"])
-  ) {
+  if (getFlag(provider, "isBinance") || getFlag(provider, "isBinanceChain") || includesAny(nameLower, ["binance"]) || includesAny(rdnsLower, ["binance"])) {
     return { id: "binance", name: meta.name || "Binance Wallet", description: "BNB Chain-native EVM wallet.", score: 96 };
   }
-
   if (getFlag(provider, "isCoinbaseWallet") || includesAny(nameLower, ["coinbase"]) || includesAny(rdnsLower, ["coinbase"])) {
     return { id: "coinbase", name: meta.name || "Coinbase Wallet", description: "Coinbase self-custody EVM wallet.", score: 94 };
   }
-
-  if (
-    getFlag(provider, "isTrust") ||
-    getFlag(provider, "isTrustWallet") ||
-    includesAny(nameLower, ["trust"]) ||
-    includesAny(rdnsLower, ["trust"])
-  ) {
+  if (getFlag(provider, "isTrust") || getFlag(provider, "isTrustWallet") || includesAny(nameLower, ["trust"]) || includesAny(rdnsLower, ["trust"])) {
     return { id: "trust", name: meta.name || "Trust Wallet", description: "Mobile-first wallet with BNB Chain support.", score: 92 };
   }
-
   if (isLikelyCryptoDotCom(provider, info)) {
     return { id: "cryptocom", name: meta.name || "Crypto.com DeFi Wallet", description: "Crypto.com DeFi Wallet for EVM networks.", score: 93 };
   }
-
-  if (
-    getFlag(provider, "isOkxWallet") ||
-    getFlag(provider, "isOKExWallet") ||
-    includesAny(nameLower, ["okx", "okex"]) ||
-    includesAny(rdnsLower, ["okx", "okex"])
-  ) {
+  if (getFlag(provider, "isOkxWallet") || getFlag(provider, "isOKExWallet") || includesAny(nameLower, ["okx", "okex"]) || includesAny(rdnsLower, ["okx", "okex"])) {
     return { id: "okx", name: meta.name || "OKX Wallet", description: "Multi-chain EVM wallet.", score: 88 };
   }
-
   if (getFlag(provider, "isPhantom") || includesAny(nameLower, ["phantom"]) || includesAny(rdnsLower, ["phantom"])) {
     return { id: "phantom", name: meta.name || "Phantom", description: "Multi-chain wallet with EVM support.", score: 86 };
   }
-
   if (includesAny(nameLower, ["rainbow"]) || includesAny(rdnsLower, ["rainbow"])) {
     return { id: "rainbow", name: meta.name || "Rainbow", description: "Ethereum and EVM wallet.", score: 84 };
   }
-
   if (getFlag(provider, "isBraveWallet") || includesAny(nameLower, ["brave"]) || includesAny(rdnsLower, ["brave"])) {
     return { id: "brave", name: meta.name || "Brave Wallet", description: "Built-in Brave browser wallet.", score: 82 };
   }
-
   if (includesAny(nameLower, ["frame"]) || includesAny(rdnsLower, ["frame"])) {
     return { id: "frame", name: meta.name || "Frame", description: "Desktop EVM wallet.", score: 80 };
   }
-
-  if (
-    !isLikelyCryptoDotCom(provider, info) &&
-    (getFlag(provider, "isMetaMask") ||
-      getFlag(provider, "_metamask") ||
-      includesAny(nameLower, ["metamask"]) ||
-      includesAny(rdnsLower, ["metamask"]))
-  ) {
+  if (!isLikelyCryptoDotCom(provider, info) && (getFlag(provider, "isMetaMask") || getFlag(provider, "_metamask") || includesAny(nameLower, ["metamask"]) || includesAny(rdnsLower, ["metamask"]))) {
     return { id: "metamask", name: meta.name || "MetaMask", description: "Popular injected EVM browser wallet.", score: 90 };
   }
 
   const idSource = meta.rdns || meta.name || meta.uuid || "injected";
-
-  return {
-    id: sanitizeWalletId(idSource),
-    name: meta.name || "Injected EVM Wallet",
-    description: "Detected EVM-compatible injected wallet.",
-    score: 50,
-  };
+  return { id: sanitizeWalletId(idSource), name: meta.name || "Injected EVM Wallet", description: "Detected EVM-compatible injected wallet.", score: 50 };
 }
 
 function dedupeProviders(candidates: Array<Eip1193Provider | null | undefined>) {
   const seen = new Set<Eip1193Provider>();
   const out: Eip1193Provider[] = [];
-
   for (const candidate of candidates) {
     if (!candidate || seen.has(candidate) || typeof candidate.request !== "function") continue;
     seen.add(candidate);
     out.push(candidate);
   }
-
   return out;
 }
 
 function getLegacyInjectedProviders() {
   if (typeof window === "undefined") return [];
-
-  return dedupeProviders([
-    ...(Array.isArray(window.ethereum?.providers) ? window.ethereum.providers : []),
-    window.ethereum,
-    window.BinanceChain,
-    window.binanceChain,
-  ]);
+  return dedupeProviders([...(Array.isArray(window.ethereum?.providers) ? window.ethereum.providers : []), window.ethereum, window.BinanceChain, window.binanceChain]);
 }
 
 function startEip6963Discovery() {
   if (typeof window === "undefined" || eip6963ListenerStarted) return;
-
   const onAnnounce = (event: WindowEventMap["eip6963:announceProvider"]) => {
     const detail = event.detail;
     if (!detail?.provider || typeof detail.provider.request !== "function") return;
-
     const meta = getProviderMeta(detail.provider, detail.info);
     const key = detail.info?.uuid || meta.rdns || meta.name || String(EIP6963_WALLETS.size + 1);
     EIP6963_WALLETS.set(key, detail);
-
-    // Never notify subscribers synchronously from inside the wallet extension's
-    // announceProvider event. Some injected wallets synchronously dispatch nested
-    // EIP-6963 events, and synchronous subscriber updates can re-enter that chain.
     notifyEip6963SubscribersSoon();
   };
-
   window.addEventListener("eip6963:announceProvider", onAnnounce);
   eip6963ListenerStarted = true;
 }
 
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
-
   startEip6963Discovery();
-
   if (eip6963RequestTimer != null) return;
-
-  // Dispatch asynchronously and debounce requests so wallet extensions are never
-  // re-entered while they are already handling announce/request events.
   eip6963RequestTimer = window.setTimeout(() => {
     eip6963RequestTimer = null;
-
     try {
       window.dispatchEvent(new Event("eip6963:requestProvider"));
     } catch {
-      // Passive legacy detection still works if an extension rejects dispatching.
+      // Passive legacy detection still works.
     }
   }, 0);
 }
 
-function makeDetectedWallet(
-  provider: Eip1193Provider,
-  source: "eip6963" | "legacy",
-  info?: Partial<Eip6963ProviderInfo>,
-): DetectedWallet {
+function makeDetectedWallet(provider: Eip1193Provider, source: "eip6963" | "legacy", info?: Partial<Eip6963ProviderInfo>): DetectedWallet {
   const meta = getProviderMeta(provider, info);
   const brand = classifyWallet(provider, info);
-
-  return {
-    id: brand.id,
-    name: brand.name,
-    description: brand.description,
-    rdns: meta.rdns,
-    icon: meta.icon,
-    provider,
-    source,
-    installed: true,
-    sortScore: brand.score + (source === "eip6963" ? 8 : 0),
-  };
+  return { id: brand.id, name: brand.name, description: brand.description, rdns: meta.rdns, icon: meta.icon, provider, source, installed: true, sortScore: brand.score + (source === "eip6963" ? 8 : 0) };
 }
 
 function getDetectedWalletsSnapshot(): DetectedWallet[] {
   if (typeof window === "undefined") return [];
-
-  const eip6963 = [...EIP6963_WALLETS.values()].map((detail) =>
-    makeDetectedWallet(detail.provider, "eip6963", detail.info),
-  );
+  const eip6963 = [...EIP6963_WALLETS.values()].map((detail) => makeDetectedWallet(detail.provider, "eip6963", detail.info));
   const legacy = getLegacyInjectedProviders().map((provider) => makeDetectedWallet(provider, "legacy"));
-
   const seenProviders = new Set<Eip1193Provider>();
   const seenKeys = new Set<string>();
   const seenIds = new Map<string, number>();
@@ -425,13 +333,10 @@ function getDetectedWalletsSnapshot(): DetectedWallet[] {
 
   for (const wallet of [...eip6963, ...legacy]) {
     if (seenProviders.has(wallet.provider)) continue;
-
     const providerKey = wallet.rdns || `${wallet.name}:${wallet.source}`.toLowerCase();
     if (providerKey && seenKeys.has(providerKey) && wallet.source === "legacy") continue;
-
     const existingIdCount = seenIds.get(wallet.id) ?? 0;
     const id = existingIdCount > 0 ? (`${wallet.id}-${existingIdCount + 1}` as WalletType) : wallet.id;
-
     seenProviders.add(wallet.provider);
     if (providerKey) seenKeys.add(providerKey);
     seenIds.set(wallet.id, existingIdCount + 1);
@@ -443,13 +348,10 @@ function getDetectedWalletsSnapshot(): DetectedWallet[] {
 
 function subscribeToWalletDiscovery(callback: () => void) {
   if (typeof window === "undefined") return () => undefined;
-
   startEip6963Discovery();
   EIP6963_SUBSCRIBERS.add(callback);
   requestEip6963Providers();
-
   const timeout = window.setTimeout(callback, 350);
-
   return () => {
     EIP6963_SUBSCRIBERS.delete(callback);
     window.clearTimeout(timeout);
@@ -459,31 +361,21 @@ function subscribeToWalletDiscovery(callback: () => void) {
 function findDetectedWallet(walletId: WalletType | null | undefined) {
   const wallets = getDetectedWalletsSnapshot();
   if (!walletId) return wallets[0] ?? null;
-
-  return (
-    wallets.find((wallet) => wallet.id === walletId) ||
-    wallets.find((wallet) => wallet.id.startsWith(`${walletId}-`)) ||
-    wallets.find((wallet) => classifyWallet(wallet.provider).id === walletId) ||
-    null
-  );
+  return wallets.find((wallet) => wallet.id === walletId) || wallets.find((wallet) => wallet.id.startsWith(`${walletId}-`)) || wallets.find((wallet) => classifyWallet(wallet.provider).id === walletId) || null;
 }
 
 async function choosePrimaryAccount(selectedProvider: Eip1193Provider, accounts: string[]) {
   const normalized = accounts.map((account) => normalizeHexAddress(account)).filter(Boolean);
   const selectedAddress = normalizeHexAddress(selectedProvider.selectedAddress);
-
   if (selectedAddress && normalized.includes(selectedAddress)) return selectedAddress;
-
   try {
     const fromEthAccounts = await selectedProvider.request<unknown>({ method: "eth_accounts" });
     const active = normalizeAccounts(fromEthAccounts);
-
     if (selectedAddress && active.includes(selectedAddress)) return selectedAddress;
     if (active[0]) return active[0];
   } catch {
-    // Ignore read-only account failures; eth_requestAccounts may still succeed.
+    // Ignore read-only account failures.
   }
-
   return normalized[0] ?? "";
 }
 
@@ -495,16 +387,13 @@ function parseChainId(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
-
   return undefined;
 }
 
 function isUserRejectedRequest(error: unknown) {
   if (!isObject(error)) return false;
-
   const code = error.code;
   const message = typeof error.message === "string" ? error.message.toLowerCase() : "";
-
   return code === 4001 || message.includes("user rejected") || message.includes("user denied");
 }
 
@@ -533,11 +422,10 @@ export function useWallet(): WalletHook {
 
   const syncRecruiterAttribution = useCallback(async (walletAddress: string) => {
     if (!walletAddress) return;
-
     try {
       await syncWalletRecruiterAttribution(walletAddress);
     } catch {
-      // Best-effort sync. Do not block wallet UX on attribution API issues.
+      // Best-effort sync.
     }
   }, []);
 
@@ -547,123 +435,110 @@ export function useWallet(): WalletHook {
     return wallets;
   }, []);
 
-  const resetWalletState = useCallback(() => {
+  const resetWalletState = useCallback((options?: { clearSelectedWallet?: boolean }) => {
     eip1193Ref.current = null;
     setAccount("");
     setSigner(null);
     setProvider(null);
     setChainId(undefined);
     clearWarRoomSessionCache();
+    if (options?.clearSelectedWallet && typeof window !== "undefined") {
+      window.localStorage.removeItem(SELECTED_WALLET_KEY);
+    }
   }, []);
 
-  const bindEip1193Listeners = useCallback(
-    (selectedProvider: Eip1193Provider) => {
-      cleanupRef.current?.();
-      cleanupRef.current = null;
+  const bindEip1193Listeners = useCallback((selectedProvider: Eip1193Provider) => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    if (!selectedProvider.on) return;
 
-      if (!selectedProvider.on) return;
-
-      const rebuildState = async () => {
-        try {
-          const bp = new BrowserProvider(selectedProvider);
-          setProvider(bp);
-
-          const network = await bp.getNetwork();
-          setChainId(Number(network.chainId));
-
-          const accounts = await selectedProvider.request<unknown>({ method: "eth_accounts" });
-          const chosen = await choosePrimaryAccount(selectedProvider, normalizeAccounts(accounts));
-          setAccount(chosen);
-
-          if (!chosen) {
-            setSigner(null);
-            clearWarRoomSessionCache();
-            return;
-          }
-
-          void syncRecruiterAttribution(chosen);
-          const nextSigner = await bp.getSigner(chosen);
-          setSigner(nextSigner);
-        } catch {
-          setSigner(null);
-        }
-      };
-
-      const onAccountsChanged = async (accounts: unknown) => {
+    const rebuildState = async () => {
+      try {
+        const accounts = await selectedProvider.request<unknown>({ method: "eth_accounts" });
         const chosen = await choosePrimaryAccount(selectedProvider, normalizeAccounts(accounts));
-
-        setAccount((prev) => {
-          if (prev && chosen && prev.toLowerCase() !== chosen.toLowerCase()) {
-            clearWarRoomSessionCache();
-          }
-
-          return chosen;
-        });
-
         if (!chosen) {
+          setAccount("");
           setSigner(null);
-          clearWarRoomSessionCache();
           return;
         }
-
+        const bp = new BrowserProvider(selectedProvider);
+        setProvider(bp);
+        setAccount(chosen);
         void syncRecruiterAttribution(chosen);
+        const nextSigner = await bp.getSigner(chosen);
+        setSigner(nextSigner);
+        const network = await bp.getNetwork();
+        setChainId(Number(network.chainId));
+      } catch {
+        setSigner(null);
+      }
+    };
 
-        try {
-          const bp = new BrowserProvider(selectedProvider);
-          setProvider(bp);
-          const nextSigner = await bp.getSigner(chosen);
-          setSigner(nextSigner);
-        } catch {
-          setSigner(null);
-        }
-      };
+    const onAccountsChanged = async (accounts: unknown) => {
+      const chosen = await choosePrimaryAccount(selectedProvider, normalizeAccounts(accounts));
+      setAccount((prev) => {
+        if (prev && chosen && prev.toLowerCase() !== chosen.toLowerCase()) clearWarRoomSessionCache();
+        return chosen;
+      });
+      if (!chosen) {
+        setSigner(null);
+        clearWarRoomSessionCache();
+        return;
+      }
+      void syncRecruiterAttribution(chosen);
+      try {
+        const bp = new BrowserProvider(selectedProvider);
+        setProvider(bp);
+        const nextSigner = await bp.getSigner(chosen);
+        setSigner(nextSigner);
+      } catch {
+        setSigner(null);
+      }
+    };
 
-      const onChainChanged = async (nextChainId: unknown) => {
-        setChainId(parseChainId(nextChainId));
-        await rebuildState();
-      };
+    const onChainChanged = async (nextChainId: unknown) => {
+      setChainId(parseChainId(nextChainId));
+      await rebuildState();
+    };
 
-      const onDisconnect = () => {
-        resetWalletState();
-      };
+    const onDisconnect = () => {
+      // Provider-level disconnect events can fire during navigation, extension reloads,
+      // or transient RPC drops. Do not mark the user as explicitly disconnected here.
+      // The explicit Disconnect button is the only path that sets DISCONNECTED_KEY.
+      resetWalletState();
+    };
 
-      const onVisibilityOrFocus = async () => {
-        await rebuildState();
-      };
+    const onVisibilityOrFocus = async () => {
+      await rebuildState();
+    };
 
-      selectedProvider.on("accountsChanged", onAccountsChanged);
-      selectedProvider.on("chainChanged", onChainChanged);
-      selectedProvider.on("disconnect", onDisconnect);
-      window.addEventListener("focus", onVisibilityOrFocus);
-      document.addEventListener("visibilitychange", onVisibilityOrFocus);
+    selectedProvider.on("accountsChanged", onAccountsChanged);
+    selectedProvider.on("chainChanged", onChainChanged);
+    selectedProvider.on("disconnect", onDisconnect);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
 
-      cleanupRef.current = () => {
-        try {
-          selectedProvider.removeListener?.("accountsChanged", onAccountsChanged);
-          selectedProvider.removeListener?.("chainChanged", onChainChanged);
-          selectedProvider.removeListener?.("disconnect", onDisconnect);
-        } catch {
-          // Ignore wallet listener cleanup failures.
-        }
-
-        window.removeEventListener("focus", onVisibilityOrFocus);
-        document.removeEventListener("visibilitychange", onVisibilityOrFocus);
-      };
-    },
-    [resetWalletState, syncRecruiterAttribution],
-  );
+    cleanupRef.current = () => {
+      try {
+        selectedProvider.removeListener?.("accountsChanged", onAccountsChanged);
+        selectedProvider.removeListener?.("chainChanged", onChainChanged);
+        selectedProvider.removeListener?.("disconnect", onDisconnect);
+      } catch {
+        // Ignore cleanup failures.
+      }
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+    };
+  }, [resetWalletState, syncRecruiterAttribution]);
 
   const hydrateSelectedProvider = useCallback(async () => {
     if (typeof window === "undefined") return;
-
     detectWallets();
-
     const explicitlyDisconnected = window.localStorage.getItem(DISCONNECTED_KEY) === "1";
     if (explicitlyDisconnected) return;
 
     const storedType = window.localStorage.getItem(SELECTED_WALLET_KEY) as WalletType | null;
     selectedWalletTypeRef.current = storedType;
-
     const selectedWallet = findDetectedWallet(storedType);
     const selected = selectedWallet?.provider;
     if (!selected) return;
@@ -672,36 +547,27 @@ export function useWallet(): WalletHook {
       const accounts = await selected.request<unknown>({ method: "eth_accounts" });
       const chosen = await choosePrimaryAccount(selected, normalizeAccounts(accounts));
       if (!chosen) return;
-
       eip1193Ref.current = selected;
       bindEip1193Listeners(selected);
-
       const bp = new BrowserProvider(selected);
       setProvider(bp);
       setAccount(chosen);
       void syncRecruiterAttribution(chosen);
-
       const nextSigner = await bp.getSigner(chosen);
       setSigner(nextSigner);
-
       const network = await bp.getNetwork();
       setChainId(Number(network.chainId));
-
       window.localStorage.setItem(SELECTED_WALLET_KEY, selectedWallet.id);
       window.localStorage.removeItem(DISCONNECTED_KEY);
     } catch {
-      // Never prompt during hydration. The modal handles interactive connection.
+      // Never prompt during hydration.
     }
   }, [bindEip1193Listeners, detectWallets, syncRecruiterAttribution]);
 
   useEffect(() => {
-    const unsubscribe = subscribeToWalletDiscovery(() => {
-      setDetectedWallets(getDetectedWalletsSnapshot());
-    });
-
+    const unsubscribe = subscribeToWalletDiscovery(() => setDetectedWallets(getDetectedWalletsSnapshot()));
     setDetectedWallets(getDetectedWalletsSnapshot());
     void hydrateSelectedProvider();
-
     return () => {
       unsubscribe();
       cleanupRef.current?.();
@@ -709,118 +575,80 @@ export function useWallet(): WalletHook {
     };
   }, [hydrateSelectedProvider]);
 
-  const connect = useCallback(
-    async (wallet?: WalletType) => {
-      if (typeof window === "undefined") {
-        throw new Error("No browser environment detected.");
-      }
+  const connect = useCallback(async (wallet?: WalletType) => {
+    if (typeof window === "undefined") throw new Error("No browser environment detected.");
+    if (!wallet) {
+      dispatchOpenWalletModal();
+      return;
+    }
+    const selectedWallet = findDetectedWallet(wallet);
+    const selected = selectedWallet?.provider;
+    if (!selected) throw new Error("Wallet not detected. Install an EVM wallet or open MemeWarzone inside your wallet browser.");
 
-      if (!wallet) {
-        dispatchOpenWalletModal();
-        return;
-      }
-
-      const selectedWallet = findDetectedWallet(wallet);
-      const selected = selectedWallet?.provider;
-
-      if (!selected) {
-        throw new Error("Wallet not detected. Install an EVM wallet or open MemeWarzone inside your wallet browser.");
-      }
-
-      setConnecting(true);
-      setConnectingWalletId(selectedWallet.id);
-
+    setConnecting(true);
+    setConnectingWalletId(selectedWallet.id);
+    try {
       try {
-        try {
-          await selected.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
-        } catch (error) {
-          if (isUserRejectedRequest(error)) throw error;
-          // Some wallets do not implement wallet_requestPermissions. eth_requestAccounts is the fallback.
-        }
-
-        const accounts = await selected.request<unknown>({ method: "eth_requestAccounts" });
-        const chosen = await choosePrimaryAccount(selected, normalizeAccounts(accounts));
-
-        if (!chosen) {
-          throw new Error("No wallet account returned.");
-        }
-
-        eip1193Ref.current = selected;
-        selectedWalletTypeRef.current = selectedWallet.id;
-        bindEip1193Listeners(selected);
-
-        const browserProvider = new BrowserProvider(selected);
-        setProvider(browserProvider);
-        setAccount(chosen);
-        void syncRecruiterAttribution(chosen);
-
-        const nextSigner = await browserProvider.getSigner(chosen);
-        setSigner(nextSigner);
-
-        const network = await browserProvider.getNetwork();
-        setChainId(Number(network.chainId));
-
-        window.localStorage.setItem(SELECTED_WALLET_KEY, selectedWallet.id);
-        window.localStorage.removeItem(DISCONNECTED_KEY);
-        window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
+        await selected.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
       } catch (error) {
-        throw new Error(getErrorMessage(error));
-      } finally {
-        setConnecting(false);
-        setConnectingWalletId(null);
+        if (isUserRejectedRequest(error)) throw error;
       }
-    },
-    [bindEip1193Listeners, syncRecruiterAttribution],
-  );
+      const accounts = await selected.request<unknown>({ method: "eth_requestAccounts" });
+      const chosen = await choosePrimaryAccount(selected, normalizeAccounts(accounts));
+      if (!chosen) throw new Error("No wallet account returned.");
+
+      eip1193Ref.current = selected;
+      selectedWalletTypeRef.current = selectedWallet.id;
+      bindEip1193Listeners(selected);
+      const browserProvider = new BrowserProvider(selected);
+      setProvider(browserProvider);
+      setAccount(chosen);
+      void syncRecruiterAttribution(chosen);
+      const nextSigner = await browserProvider.getSigner(chosen);
+      setSigner(nextSigner);
+      const network = await browserProvider.getNetwork();
+      setChainId(Number(network.chainId));
+      window.localStorage.setItem(SELECTED_WALLET_KEY, selectedWallet.id);
+      window.localStorage.removeItem(DISCONNECTED_KEY);
+      window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
+    } catch (error) {
+      throw new Error(getErrorMessage(error));
+    } finally {
+      setConnecting(false);
+      setConnectingWalletId(null);
+    }
+  }, [bindEip1193Listeners, syncRecruiterAttribution]);
 
   const disconnect = useCallback(async () => {
     const selected = eip1193Ref.current;
-
     cleanupRef.current?.();
     cleanupRef.current = null;
-
     if (selected?.request) {
       try {
         await selected.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
       } catch {
-        // Most injected wallets do not support explicit revoke. Local state still disconnects.
+        // Most wallets do not support explicit revoke.
       }
     }
-
-    resetWalletState();
-
+    resetWalletState({ clearSelectedWallet: true });
     if (typeof window !== "undefined") {
       window.localStorage.setItem(DISCONNECTED_KEY, "1");
       window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
     }
   }, [resetWalletState]);
 
-  return useMemo(
-    () => ({
-      provider,
-      signer,
-      account,
-      chainId,
-      connecting,
-      connectingWalletId,
-      detectedWallets,
-      hasInjectedWallets: detectedWallets.length > 0,
-      connect,
-      disconnect,
-      detectWallets,
-      isConnected: Boolean(account && signer),
-    }),
-    [
-      provider,
-      signer,
-      account,
-      chainId,
-      connecting,
-      connectingWalletId,
-      detectedWallets,
-      connect,
-      disconnect,
-      detectWallets,
-    ],
-  );
+  return useMemo(() => ({
+    provider,
+    signer,
+    account,
+    chainId,
+    connecting,
+    connectingWalletId,
+    detectedWallets,
+    hasInjectedWallets: detectedWallets.length > 0,
+    connect,
+    disconnect,
+    detectWallets,
+    isConnected: Boolean(account && signer),
+  }), [provider, signer, account, chainId, connecting, connectingWalletId, detectedWallets, connect, disconnect, detectWallets]);
 }
