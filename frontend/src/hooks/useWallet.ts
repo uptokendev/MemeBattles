@@ -102,6 +102,8 @@ const LEGACY_CONNECTED_KEY = "mwz_wallet_connected";
 const EIP6963_WALLETS = new Map<string, Eip6963ProviderDetail>();
 const EIP6963_SUBSCRIBERS = new Set<() => void>();
 let eip6963ListenerStarted = false;
+let eip6963RequestInFlight = false;
+let eip6963RequestTimer: number | null = null;
 
 function normalizeHexAddress(value?: string | null): string {
   const v = String(value ?? "").trim();
@@ -330,11 +332,27 @@ function requestEip6963Providers() {
 
   startEip6963Discovery();
 
-  try {
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-  } catch {
-    // Ignore older browser event issues.
-  }
+  // Some wallet extensions synchronously answer `eip6963:requestProvider`
+  // by dispatching `eip6963:announceProvider`. If a subscriber then calls
+  // getDetectedWalletsSnapshot(), we must not dispatch the same request again
+  // while the first event is still being handled. That causes:
+  // "Failed to execute 'dispatchEvent': The event is already being dispatched"
+  // followed by a stack overflow.
+  if (eip6963RequestInFlight) return;
+  if (eip6963RequestTimer != null) return;
+
+  eip6963RequestTimer = window.setTimeout(() => {
+    eip6963RequestTimer = null;
+    eip6963RequestInFlight = true;
+
+    try {
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    } catch {
+      // Ignore older browser / injected-wallet event issues.
+    } finally {
+      eip6963RequestInFlight = false;
+    }
+  }, 0);
 }
 
 function makeDetectedWallet(
@@ -360,8 +378,6 @@ function makeDetectedWallet(
 
 function getDetectedWalletsSnapshot(): DetectedWallet[] {
   if (typeof window === "undefined") return [];
-
-  requestEip6963Providers();
 
   const eip6963 = [...EIP6963_WALLETS.values()].map((detail) =>
     makeDetectedWallet(detail.provider, "eip6963", detail.info),
@@ -403,6 +419,10 @@ function subscribeToWalletDiscovery(callback: () => void) {
   return () => {
     EIP6963_SUBSCRIBERS.delete(callback);
     window.clearTimeout(timeout);
+    if (eip6963RequestTimer != null) {
+      window.clearTimeout(eip6963RequestTimer);
+      eip6963RequestTimer = null;
+    }
   };
 }
 
