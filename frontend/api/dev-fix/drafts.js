@@ -166,10 +166,16 @@ function mapPromotionRow(row, draftId) {
 
 function popularityFromMetrics(metrics) {
   const m = { ...ZERO, ...(metrics || {}) };
-  const rankingScore = m.follows * 10 + m.comments * 5 + m.reactions * 3 + m.shares * 4 + m.signedActions * 7 + Math.min(m.views, 2500) * 0.35;
+  const views = Number(m.views || 0);
+  const follows = Number(m.follows || 0);
+  const comments = Number(m.comments || 0);
+  const reactions = Number(m.reactions || 0);
+  const shares = Number(m.shares || 0);
+  const signedActions = Number(m.signedActions ?? m.signed_actions ?? 0);
+  const rankingScore = follows * 10 + comments * 5 + reactions * 3 + shares * 4 + signedActions * 7 + Math.min(views, 2500) * 0.35;
   const popularityPercentage = Math.max(0, Math.min(100, Math.round((rankingScore / 2200) * 100)));
   const heatLabel = popularityPercentage >= 90 ? "On Fire" : popularityPercentage >= 70 ? "Hot" : popularityPercentage >= 35 ? "Warming" : "Cold";
-  return { ...m, popularityPercentage, heatLabel, rankingScore: Math.round(rankingScore) };
+  return { views, follows, comments, reactions, shares, signedActions, popularityPercentage, heatLabel, rankingScore: Math.round(rankingScore) };
 }
 
 function canViewDraft(draft, viewer) {
@@ -186,7 +192,7 @@ async function getDraftBundleById(id, viewer, { bypassVisibility = false } = {})
     if (!draft) return null;
     if (!bypassVisibility && !canViewDraft(draft, viewer)) return { forbidden: true };
     const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
-    const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1").catch(() => ({ rows: [] }));
+    const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
     return { draft, promotion: mapPromotionRow(promoRes.rows[0], draft.id), popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO) };
   }
 
