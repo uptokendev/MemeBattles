@@ -15,6 +15,7 @@ function clampText(value, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+<<<<<<< HEAD
 function splitName(name, maxChars = 14) {
   const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
 
@@ -75,10 +76,27 @@ async function loadRemoteImageAsDataUrl(src) {
     return `data:${contentType};base64,${data}`;
   } catch (err) {
     console.warn("[prepare-share-card] failed to load campaign logo", err?.message || err);
+=======
+function splitName(name) {
+  const clean = String(name || "CAMPAIGN NAME").trim().toUpperCase();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return [clean, ""];
+  if (parts.length === 2) return [parts[0], parts[1]];
+  return [parts.slice(0, Math.ceil(parts.length / 2)).join(" "), parts.slice(Math.ceil(parts.length / 2)).join(" ")];
+}
+
+function safeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || !/^https?:\/\//i.test(raw)) return "";
+  try {
+    return new URL(raw).toString();
+  } catch {
+>>>>>>> ced8e28fd346197999b066514d235e0960473c6c
     return "";
   }
 }
 
+<<<<<<< HEAD
 function safeNumberText(value, fallback = "0") {
   const raw = String(value ?? "").trim();
   return raw || fallback;
@@ -105,6 +123,51 @@ async function svgCard(data) {
 
   const campaignLogo = await loadRemoteImageAsDataUrl(data.logo);
   const [line1, line2] = splitName(name, 14);
+=======
+async function imageToDataUrl(url) {
+  const clean = safeUrl(url);
+  if (!clean) return "";
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const response = await fetch(clean, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) return "";
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!/^image\//i.test(contentType)) return "";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > 2_500_000) return "";
+    return `data:${contentType};base64,${buffer.toString("base64")}`;
+  } catch (err) {
+    console.warn("[prepare-share-card] failed to embed logo", err?.message || err);
+    return "";
+  }
+}
+
+function svgCard(data, logoDataUrl = "") {
+  const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
+  const ticker = String(data.ticker || "TICKER").replace(/^\$+/, "").toUpperCase().slice(0, 12);
+  const chain = String(data.chain || "BNB CHAIN").toUpperCase();
+  const status = String(data.status || "DRAFT").toUpperCase();
+  const deploys = String(data.deploys || "PREPARE MODE").toUpperCase();
+  const recruits = String(data.recruits || "0");
+  const heat = String(data.heat || "0%");
+  const creator = String(data.creator || "@MEMEWARZONE").toUpperCase();
+  const link = String(data.link || `memewar.zone/d/${ticker.toLowerCase()}`);
+  const description = clampText(data.description || "Short description here", 86);
+  const [line1, line2] = splitName(name);
+>>>>>>> ced8e28fd346197999b066514d235e0960473c6c
+
+  const titleSize = line1.length > 14 || line2.length > 14 ? 64 : 78;
+  const titleY1 = line2 ? 224 : 252;
+  const titleY2 = line2 ? 294 : 0;
+  const descY = line2 ? 340 : 296;
+  const logoBlock = logoDataUrl
+    ? `<image href="${logoDataUrl}" x="55" y="176" width="148" height="148" clip-path="url(#logoClip)" preserveAspectRatio="xMidYMid slice"/>
+       <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.55" stroke-width="2" fill="none"/>`
+    : `<circle cx="129" cy="250" r="74" fill="url(#orb)"/>
+       <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
+       <text x="129" y="264" text-anchor="middle" fill="white" font-size="45" font-weight="900" font-family="Arial Black, Arial">${esc(ticker)}</text>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1002" height="531" viewBox="0 0 1002 531" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -139,10 +202,14 @@ async function svgCard(data) {
     <filter id="greenGlow" x="-80" y="30" width="420" height="430" filterUnits="userSpaceOnUse">
       <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#00ff88" flood-opacity="0.35"/>
     </filter>
+<<<<<<< HEAD
 
     <clipPath id="campaignLogoClip">
       <circle cx="129" cy="249" r="74"/>
     </clipPath>
+=======
+    <clipPath id="logoClip"><circle cx="129" cy="250" r="74"/></clipPath>
+>>>>>>> ced8e28fd346197999b066514d235e0960473c6c
   </defs>
 
   <rect width="1002" height="531" fill="url(#bg)"/>
@@ -171,6 +238,7 @@ async function svgCard(data) {
     <circle cx="15" cy="14" r="3" fill="#10f58a"/>
     <text x="25" y="18" fill="#f39b3d" font-size="10" font-weight="900" font-family="Arial" letter-spacing="1.6">${esc(status)}</text>
   </g>
+<<<<<<< HEAD
 
   <!-- Campaign logo / ticker orb -->
   <g filter="url(#greenGlow)">
@@ -192,6 +260,13 @@ async function svgCard(data) {
   <text x="235" y="344" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
 
   <!-- Bottom metrics -->
+=======
+  <g filter="url(#greenGlow)">${logoBlock}</g>
+  <text x="235" y="158" fill="#10f58a" font-size="13" font-weight="900" font-family="Courier New, monospace" letter-spacing="3">// $${esc(ticker)} · ${esc(chain)}</text>
+  <text x="235" y="${titleY1}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line1)}</text>
+  ${line2 ? `<text x="235" y="${titleY2}" fill="url(#title)" font-size="${titleSize}" font-weight="900" font-family="Arial Black, Arial" letter-spacing="-3">${esc(line2)}</text>` : ""}
+  <text x="235" y="${descY}" fill="#d9d2ca" font-size="20" font-weight="600" font-family="Arial">${esc(description)}</text>
+>>>>>>> ced8e28fd346197999b066514d235e0960473c6c
   <text x="54" y="442" fill="#4d8066" font-size="9" font-weight="900" font-family="Courier New" letter-spacing="2">RECRUITS ARMED</text>
   <text x="54" y="471" fill="#10f58a" font-size="29" font-weight="900" font-family="Arial Black, Arial">${esc(recruits)}</text>
 
@@ -237,8 +312,13 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
+<<<<<<< HEAD
     const svg = await svgCard(q);
 
+=======
+    const logoDataUrl = await imageToDataUrl(q.logoUrl || q.logo || "");
+    const svg = svgCard(q, logoDataUrl);
+>>>>>>> ced8e28fd346197999b066514d235e0960473c6c
     if (String(q.format || "png") === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
