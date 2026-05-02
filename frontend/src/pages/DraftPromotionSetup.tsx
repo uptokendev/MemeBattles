@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Copy, Eye, Flame, GripVertical, Plus, Rocket, Save, Share2, Trash2 } from "lucide-react";
+import { Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 
-function splitRoadmap(value: string) {
+function splitLines(value: string) {
   return value
     .split("\n")
     .map((item) => item.trim())
@@ -21,7 +21,7 @@ function splitRoadmap(value: string) {
     .slice(0, 8);
 }
 
-function joinRoadmap(items?: string[]) {
+function joinLines(items?: string[]) {
   return (items || []).join("\n");
 }
 
@@ -29,21 +29,23 @@ function shortDraftId(value: string) {
   return value ? `#${value.slice(0, 8)}` : "#DRAFT";
 }
 
-function EditableFrame(props: { id: string; title: string; template: string; children: React.ReactNode }) {
+function getCachedLogo(draftId: string) {
+  if (typeof window === "undefined" || !draftId) return "";
+  try {
+    return window.sessionStorage.getItem(`mwz:draft-logo:${draftId}`) || "";
+  } catch {
+    return "";
+  }
+}
+
+function SetupSection(props: { id: string; title: string; note: string; children: React.ReactNode }) {
   return (
     <section className="mwz-card mb-4 overflow-hidden">
       <div className="flex items-center gap-3 border-b border-border/60 bg-black/25 px-4 py-3">
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
+        <LockKeyhole className="h-4 w-4 text-orange-300" />
         <span className="text-xs uppercase tracking-[0.22em] text-orange-300">SEC {props.id}</span>
         <span className="font-retro text-sm uppercase tracking-[0.12em] text-foreground">{props.title}</span>
-        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-muted-foreground md:inline">/ template: {props.template}</span>
-        <div className="flex-1" />
-        <Button type="button" variant="ghost" size="sm" className="mwz-button h-7 px-2 text-[10px]">
-          <Eye className="mr-1 h-3 w-3" /> Hide
-        </Button>
-        <Button type="button" variant="ghost" size="sm" className="mwz-button h-7 px-2 text-[10px]">
-          <Trash2 className="h-3 w-3" />
-        </Button>
+        <span className="hidden text-[10px] uppercase tracking-[0.18em] text-muted-foreground md:inline">/ {props.note}</span>
       </div>
       <div className="p-4 md:p-5">{props.children}</div>
     </section>
@@ -60,6 +62,14 @@ function Metric({ label, value, delta }: { label: string; value: string; delta: 
   );
 }
 
+function TokenImage({ src, ticker }: { src?: string | null; ticker: string }) {
+  return (
+    <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-full border border-orange-400/50 bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-2xl text-white shadow-[0_0_28px_rgba(57,255,122,0.22)]">
+      {src ? <img src={src} alt={`${ticker} logo`} className="h-full w-full object-cover" /> : `$${ticker}`}
+    </div>
+  );
+}
+
 export default function DraftPromotionSetup() {
   const { draftId = "" } = useParams();
   const navigate = useNavigate();
@@ -67,9 +77,9 @@ export default function DraftPromotionSetup() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cachedLogoUrl, setCachedLogoUrl] = useState("");
 
   const [missionStatement, setMissionStatement] = useState("");
-  const [roadmapText, setRoadmapText] = useState("");
   const [launchStrategy, setLaunchStrategy] = useState("");
   const [telegramUrl, setTelegramUrl] = useState("");
   const [discordUrl, setDiscordUrl] = useState("");
@@ -77,9 +87,11 @@ export default function DraftPromotionSetup() {
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [docsText, setDocsText] = useState("");
   const [creatorNote, setCreatorNote] = useState("");
-  const [bannerUrl, setBannerUrl] = useState("");
-  const [shareMessage, setShareMessage] = useState("");
   const [visibility, setVisibility] = useState<DraftVisibility>("private");
+
+  useEffect(() => {
+    setCachedLogoUrl(getCachedLogo(draftId));
+  }, [draftId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,16 +101,13 @@ export default function DraftPromotionSetup() {
         if (cancelled) return;
         setBundle(data);
         setMissionStatement(data.promotion.missionStatement || "");
-        setRoadmapText(joinRoadmap(data.promotion.roadmap));
         setLaunchStrategy(data.promotion.launchStrategy || "");
         setTelegramUrl(data.promotion.telegramUrl || "");
         setDiscordUrl(data.promotion.discordUrl || "");
         setXUrl(data.promotion.xUrl || data.draft.xUrl || "");
         setWebsiteUrl(data.promotion.websiteUrl || data.draft.websiteUrl || "");
-        setDocsText(joinRoadmap(data.promotion.docs));
+        setDocsText(joinLines(data.promotion.docs));
         setCreatorNote(data.promotion.creatorNote || "");
-        setBannerUrl(data.promotion.bannerUrl || data.draft.logoUrl || "");
-        setShareMessage(data.promotion.shareMessage || `Incoming transmission: ${data.draft.name} is preparing for war on MemeWarzone.`);
         setVisibility(data.draft.visibility || "private");
       })
       .catch((err) => toast.error(err?.message || "Draft not found"))
@@ -112,41 +121,49 @@ export default function DraftPromotionSetup() {
 
   const draft = bundle?.draft;
   const pop = bundle?.popularity;
+  const logoUrl = draft?.logoUrl || cachedLogoUrl;
 
   const readiness = useMemo(() => {
     const checks = [
+      Boolean(logoUrl),
       Boolean(missionStatement.trim()),
-      splitRoadmap(roadmapText).length >= 2,
       Boolean(launchStrategy.trim()),
       Boolean(xUrl.trim() || telegramUrl.trim() || discordUrl.trim() || websiteUrl.trim()),
       visibility !== "private",
     ];
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }, [missionStatement, roadmapText, launchStrategy, xUrl, telegramUrl, discordUrl, websiteUrl, visibility]);
+  }, [logoUrl, missionStatement, launchStrategy, xUrl, telegramUrl, discordUrl, websiteUrl, visibility]);
 
-  const save = async (publish = false) => {
+  const save = async (options?: { publish?: boolean; preview?: boolean }) => {
+    const publish = Boolean(options?.publish);
+    const preview = Boolean(options?.preview);
+    const nextVisibility: DraftVisibility = preview && visibility === "private" ? "unlisted" : visibility;
+
     setSaving(true);
     try {
       const updated = await saveDraftPromotion(draftId, {
         missionStatement,
-        roadmap: splitRoadmap(roadmapText),
+        roadmap: [],
         launchStrategy,
         telegramUrl,
         discordUrl,
         xUrl,
         websiteUrl,
-        docs: splitRoadmap(docsText),
+        docs: splitLines(docsText),
         creatorNote,
-        bannerUrl,
-        shareMessage,
-        visibility,
+        bannerUrl: "",
+        shareMessage: `Incoming transmission: ${draft?.name || "this draft"} is preparing for war on MemeWarzone.`,
+        visibility: publish ? "public" : nextVisibility,
         publish,
       });
       setBundle(updated);
-      toast.success(publish ? "Promotion page published." : "Promotion page saved.");
-      if (publish) navigate(`/prepare/${updated.draft.slug}`);
+      setVisibility(updated.draft.visibility);
+      toast.success(publish ? "Promotion page published." : preview ? "Saved. Preview opened." : "Draft page saved.");
+      if (preview || publish) navigate(`/prepare/${updated.draft.slug}`);
+      return updated;
     } catch (err: any) {
       toast.error(err?.message || "Failed to save promotion page");
+      return null;
     } finally {
       setSaving(false);
     }
@@ -181,89 +198,69 @@ export default function DraftPromotionSetup() {
           <div className="sticky top-0 z-30 flex min-h-14 flex-col gap-3 border-b border-border/70 bg-black/70 px-4 py-3 backdrop-blur md:flex-row md:items-center md:justify-between md:px-6">
             <div className="flex items-center gap-4">
               <Button asChild variant="ghost" className="mwz-button h-8 px-3 text-xs">
-                <Link to="/profile?tab=drafts">← Exit edit</Link>
+                <Link to="/create">← Back to create</Link>
               </Button>
               <div>
-                <div className="text-xs uppercase tracking-[0.22em] text-orange-300">// Edit mode</div>
+                <div className="text-xs uppercase tracking-[0.22em] text-orange-300">// Prepare setup</div>
                 <div className="font-retro text-sm uppercase tracking-[0.12em] text-muted-foreground">${draft.ticker} · Draft {shortDraftId(draft.id)}</div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Status: {draft.status.replace(/_/g, " ")}</span>
-              <Button asChild variant="outline" className="mwz-button h-8 px-3 text-xs">
-                <Link to={`/prepare/${draft.slug}`}><Eye className="mr-1 h-3 w-3" /> Preview public</Link>
+              <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button h-8 px-3 text-xs">
+                <Save className="mr-1 h-3 w-3" /> Save draft
               </Button>
-              <Button onClick={copyLink} variant="outline" className="mwz-button h-8 px-3 text-xs">
-                <Share2 className="mr-1 h-3 w-3" /> Copy link
+              <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button h-8 px-3 text-xs">
+                <Eye className="mr-1 h-3 w-3" /> Save + preview
               </Button>
             </div>
           </div>
 
           <div className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-8">
-            <EditableFrame id="01" title="Identity" template="hero">
-              <div className="grid gap-5 md:grid-cols-[112px_1fr] md:items-center">
-                <div className="flex h-24 w-24 items-center justify-center rounded-full border border-orange-400/50 bg-[radial-gradient(circle,rgba(255,153,0,0.22),rgba(0,0,0,0.78))] font-retro text-2xl text-orange-200">
-                  ${draft.ticker}
-                </div>
+            <SetupSection id="01" title="Identity" note="locked from Create form">
+              <div className="grid gap-5 md:grid-cols-[128px_1fr] md:items-center">
+                <TokenImage src={logoUrl} ticker={draft.ticker} />
                 <div className="space-y-3">
-                  <Input value={`$${draft.ticker}`} readOnly className="h-10 border-dashed border-border/80 bg-background/30 font-mono text-xs uppercase tracking-[0.18em] text-orange-300" />
-                  <Input value={draft.name} readOnly className="h-14 border-dashed border-border/80 bg-background/30 font-retro text-3xl uppercase tracking-[0.08em]" />
-                  <Input value={draft.description || ""} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-retro text-base text-muted-foreground" />
+                  <div>
+                    <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Name</label>
+                    <Input value={draft.name} readOnly className="h-14 border-dashed border-border/80 bg-background/30 font-retro text-3xl uppercase tracking-[0.08em]" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Ticker</label>
+                    <Input value={`$${draft.ticker}`} readOnly className="h-10 border-dashed border-border/80 bg-background/30 font-mono text-sm uppercase tracking-[0.18em] text-orange-300" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Short description</label>
+                    <Input value={draft.description || ""} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-retro text-base text-muted-foreground" />
+                  </div>
                 </div>
               </div>
-            </EditableFrame>
+              {!draft.logoUrl && cachedLogoUrl && <p className="mt-3 text-xs text-orange-300">Image is shown from local upload cache while the saved draft image URL catches up.</p>}
+            </SetupSection>
 
-            <EditableFrame id="02" title="Mission Statement" template="wide dossier">
+            <SetupSection id="02" title="Mission Statement" note="creator text">
               <Textarea value={missionStatement} onChange={(e) => setMissionStatement(e.target.value)} className="min-h-40 border-border/70 bg-background/50 font-retro text-base leading-7" placeholder="Explain the brief. What is this draft? Why should soldiers lock in before launch?" />
-            </EditableFrame>
+            </SetupSection>
 
-            <EditableFrame id="03" title="Mission Phases" template="roadmap">
-              <Textarea value={roadmapText} onChange={(e) => setRoadmapText(e.target.value)} className="min-h-36 border-border/70 bg-background/50 font-retro text-base leading-7" placeholder={"Recon: recruits, hype, visuals.\nDeploy: bonding curve goes live.\nGraduate: LP locks and DEX migration opens.\nConquest: weekly meme leagues."} />
-              <p className="mt-2 text-xs text-muted-foreground">One phase per line. Use “Title: description” for the public Design B phase cards.</p>
-            </EditableFrame>
-
-            <EditableFrame id="04" title="Launch Strategy" template="battle plan">
+            <SetupSection id="03" title="Launch Strategy" note="battle plan">
               <Textarea value={launchStrategy} onChange={(e) => setLaunchStrategy(e.target.value)} className="min-h-36 border-border/70 bg-background/50 font-retro text-base leading-7" placeholder="How will the creator build hype, activate the squad, and push into launch day?" />
-            </EditableFrame>
+            </SetupSection>
 
-            <EditableFrame id="05" title="Comms Channels" template="links">
+            <SetupSection id="04" title="Comms Channels" note="public links">
               <div className="grid gap-3 md:grid-cols-2">
                 <Input value={xUrl} onChange={(e) => setXUrl(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="X / Twitter URL" />
                 <Input value={telegramUrl} onChange={(e) => setTelegramUrl(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="Telegram URL" />
                 <Input value={discordUrl} onChange={(e) => setDiscordUrl(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="Discord URL" />
                 <Input value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="Website URL" />
               </div>
-            </EditableFrame>
+            </SetupSection>
 
-            <EditableFrame id="06" title="Docs + Creator Note" template="support blocks">
+            <SetupSection id="05" title="Docs + Creator Note" note="optional support">
               <div className="grid gap-4 md:grid-cols-2">
                 <Textarea value={docsText} onChange={(e) => setDocsText(e.target.value)} className="min-h-32 border-border/70 bg-background/50 font-retro" placeholder={"https://docs.example.com\nhttps://whitepaper.example.com"} />
                 <Textarea value={creatorNote} onChange={(e) => setCreatorNote(e.target.value)} className="min-h-32 border-border/70 bg-background/50 font-retro" placeholder="Creator note shown in the dossier." />
               </div>
-            </EditableFrame>
-
-            <EditableFrame id="07" title="Share + Banner" template="distribution">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Input value={bannerUrl} onChange={(e) => setBannerUrl(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="Promotion banner URL" />
-                <Input value={shareMessage} onChange={(e) => setShareMessage(e.target.value)} className="border-border/70 bg-background/50 font-retro" placeholder="Share message" />
-              </div>
-            </EditableFrame>
-
-            <div className="mt-5">
-              <Button type="button" variant="outline" className="mwz-button h-12 w-full justify-center border-dashed font-retro">
-                <Plus className="mr-2 h-4 w-4" /> Add section from template
-              </Button>
-              <div className="mwz-card mt-3 p-4">
-                <div className="mb-3 text-xs uppercase tracking-[0.22em] text-orange-300">// Available templates</div>
-                <div className="grid gap-2 md:grid-cols-4">
-                  {["Lore / Story", "Team", "Meme Gallery", "FAQ", "Fair-launch Terms", "Audit & Locks", "Allocations", "Custom Block"].map((label) => (
-                    <button key={label} className="mwz-button flex h-16 flex-col items-center justify-center gap-1 px-2 text-center text-[11px] uppercase tracking-[0.12em]">
-                      <Plus className="h-4 w-4 text-orange-300" /> {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+            </SetupSection>
           </div>
         </div>
 
@@ -283,13 +280,16 @@ export default function DraftPromotionSetup() {
               <div className="h-full bg-gradient-to-r from-orange-500 to-green-400" style={{ width: `${readiness}%` }} />
             </div>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Add a mission, roadmap, launch strategy, comms channel, and public/unlisted visibility to reach full readiness.
+              Counts only: token image, mission, launch strategy, one comms channel, and public/unlisted visibility.
             </p>
-            <Button onClick={() => save(true)} disabled={saving} className="mwz-button mwz-button-orange mt-4 h-11 w-full justify-center font-retro">
+            <Button onClick={() => save({ publish: true })} disabled={saving} className="mwz-button mwz-button-orange mt-4 h-11 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
-            <Button onClick={() => save(false)} disabled={saving} variant="outline" className="mwz-button mt-2 h-9 w-full justify-center font-retro text-xs">
-              <Save className="mr-2 h-4 w-4" /> Save draft page
+            <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro text-xs">
+              <Save className="mr-2 h-4 w-4" /> Save draft
+            </Button>
+            <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro text-xs">
+              <Eye className="mr-2 h-4 w-4" /> Save + preview
             </Button>
           </div>
 
@@ -304,21 +304,23 @@ export default function DraftPromotionSetup() {
           </div>
 
           <div className="mwz-card mb-4 p-4">
-            <div className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">// Sections · drag to reorder</div>
-            {["Identity", "Mission Statement", "Mission Phases", "Launch Strategy", "Comms", "Transmissions"].map((name, index) => (
+            <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 text-orange-300" /> Fixed setup sections
+            </div>
+            {["Identity", "Mission Statement", "Launch Strategy", "Comms Channels", "Docs + Creator Note"].map((name, index) => (
               <div key={name} className="flex items-center gap-3 border-b border-border/40 py-2 last:border-b-0">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                <LockKeyhole className="h-4 w-4 text-orange-300" />
                 <div className="min-w-0 flex-1">
                   <div className="font-retro text-sm text-foreground">{name}</div>
                   <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">SEC 0{index + 1}</div>
                 </div>
-                <span className="h-4 w-8 border border-orange-400/60 bg-orange-400/70" />
+                <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">locked</span>
               </div>
             ))}
           </div>
 
           <div className="mwz-card p-4">
-            <div className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">// Share link</div>
+            <div className="mb-3 text-xs uppercase tracking-[0.2em] text-muted-foreground">// Visibility + share link</div>
             <div className="flex items-center gap-2 border border-border/70 bg-black/45 px-3 py-2 font-mono text-xs text-muted-foreground">
               <span className="min-w-0 flex-1 truncate">/prepare/{draft.slug}</span>
               <button type="button" onClick={copyLink} className="text-orange-300"><Copy className="h-4 w-4" /></button>
@@ -335,14 +337,15 @@ export default function DraftPromotionSetup() {
                 </button>
               ))}
             </div>
+            <p className="mt-3 text-xs text-muted-foreground">Save + preview will automatically switch a private draft to unlisted so the preview can load.</p>
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button asChild variant="outline" className="mwz-button h-10 flex-1 font-retro text-xs">
-              <Link to={`/prepare/${draft.slug}`}><Eye className="mr-2 h-4 w-4" /> Preview</Link>
+            <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button h-10 flex-1 font-retro text-xs">
+              <Eye className="mr-2 h-4 w-4" /> Preview
             </Button>
             <Button onClick={copyLink} variant="outline" className="mwz-button h-10 flex-1 font-retro text-xs">
-              <Flame className="mr-2 h-4 w-4" /> Share
+              <Flame className="mr-2 h-4 w-4" /> Copy link
             </Button>
           </div>
         </aside>

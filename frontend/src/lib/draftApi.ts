@@ -80,8 +80,10 @@ export type DraftComment = {
   draftId: string;
   walletAddress: string;
   body: string;
+  parentCommentId: string | null;
   reactionCount: number;
   createdAt: string;
+  replies?: DraftComment[];
 };
 
 export type PrepareDraftBundle = {
@@ -165,11 +167,11 @@ export async function fetchDraftComments(draftId: string): Promise<DraftComment[
   return Array.isArray(json.items) ? (json.items as DraftComment[]) : [];
 }
 
-export async function addDraftComment(draftId: string, walletAddress: string, body: string): Promise<DraftComment> {
+export async function addDraftComment(draftId: string, walletAddress: string, body: string, parentCommentId?: string | null): Promise<DraftComment> {
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/comments`), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress, body }),
+    body: JSON.stringify({ walletAddress, body, parentCommentId: parentCommentId || null }),
   });
   const json = await parseJson(res);
   return json.comment as DraftComment;
