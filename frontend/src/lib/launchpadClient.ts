@@ -19,6 +19,15 @@ const DEFAULT_ACTIVITY_LOOKBACK_BLOCKS = 50_000;
 // ---------------- ABI helpers ----------------
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
 const FACTORY_ABI = toAbi(LaunchFactoryArtifact);
+
+// Legacy factory ABI used by currently deployed BSC testnet factory.
+// This version of CampaignInfo does NOT include metadataURI.
+// Keep this until the new Phase 1 factory is deployed and chainConfig points to it.
+const LEGACY_FACTORY_ABI = [
+  "function campaignsCount() view returns (uint256)",
+  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
+] as const;
+
 const CAMPAIGN_ABI = toAbi(LaunchCampaignArtifact);
 const TOKEN_ABI = toAbi(LaunchTokenArtifact);
 
@@ -246,42 +255,75 @@ export function useLaunchpad() {
     const total: bigint = await factory.campaignsCount();
     return Number(total ?? 0n);
   }, [getFactoryRead]);
+function isDecodeResultError(error: unknown): boolean {
+  const anyError = error as any;
+  return (
+    anyError?.code === "BAD_DATA" ||
+    String(anyError?.message ?? "").toLowerCase().includes("could not decode result data")
+  );
+}
 
   /**
    * Fetch a raw campaign page from the factory.
    * NOTE: Factory pages are ordered oldest->newest; we return newest->oldest by default.
    */
-  const fetchCampaignPage = useCallback(
-    async (offset: number, limit: number, opts?: { newestFirst?: boolean }): Promise<CampaignInfo[]> => {
-      const factory = getFactoryRead();
-      if (!factory) return [];
-      const total = await fetchCampaignsCount();
-      if (total <= 0) return [];
+const fetchCampaignPage = useCallback(
+  async (offset: number, limit: number, opts?: { newestFirst?: boolean }): Promise<CampaignInfo[]> => {
+    const factory = getFactoryRead();
+    if (!factory) return [];
 
-      const safeLimit = Math.max(1, Math.min(50, Number(limit ?? 24)));
-      const safeOffset = Math.max(0, Math.min(total, Number(offset ?? 0)));
+    const total = await fetchCampaignsCount();
+    if (total <= 0) return [];
 
-      const page = await factory.getCampaignPage(safeOffset, safeLimit);
-      const mapped = (page ?? []).map((c: any, idx: number) => ({
-        id: safeOffset + idx,
-        campaign: c.campaign,
-        token: c.token,
-        creator: c.creator,
-        name: c.name,
-        symbol: c.symbol,
-        logoURI: c.logoURI,
-        metadataURI: c.metadataURI,
-        xAccount: c.xAccount,
-        website: c.website,
-        extraLink: c.extraLink,
-        createdAt: c.createdAt ? Number(c.createdAt) : undefined,
-      })) as CampaignInfo[];
+    const safeLimit = Math.max(1, Math.min(50, Number(limit ?? 24)));
+    const safeOffset = Math.max(0, Math.min(total, Number(offset ?? 0)));
 
-      const newestFirst = opts?.newestFirst ?? true;
-      return newestFirst ? mapped.slice().reverse() : mapped;
-    },
-    [getFactoryRead, fetchCampaignsCount]
-  );
+    let page: any[] = [];
+
+    try {
+      page = await factory.getCampaignPage(safeOffset, safeLimit);
+    } catch (error) {
+      if (!isDecodeResultError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        "[fetchCampaignPage] Current LaunchFactory ABI failed to decode getCampaignPage. Falling back to legacy deployed factory ABI.",
+        error,
+      );
+
+      const legacyFactory = new Contract(
+        factoryAddress,
+        LEGACY_FACTORY_ABI,
+        readProvider,
+      ) as any;
+
+      page = await legacyFactory.getCampaignPage(safeOffset, safeLimit);
+    }
+
+    const mapped = (page ?? []).map((c: any, idx: number) => ({
+      id: safeOffset + idx,
+      campaign: c.campaign,
+      token: c.token,
+      creator: c.creator,
+      name: c.name,
+      symbol: c.symbol,
+      logoURI: c.logoURI,
+
+      // New factory has metadataURI. Old deployed factory does not.
+      metadataURI: c.metadataURI ?? buildMetadataURI(activeChainId, c.token || c.campaign),
+
+      xAccount: c.xAccount,
+      website: c.website,
+      extraLink: c.extraLink,
+      createdAt: c.createdAt ? Number(c.createdAt) : undefined,
+    })) as CampaignInfo[];
+
+    const newestFirst = opts?.newestFirst ?? true;
+    return newestFirst ? mapped.slice().reverse() : mapped;
+  },
+  [getFactoryRead, fetchCampaignsCount, factoryAddress, readProvider, activeChainId]
+);
 
   const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
     const totalNumber = await fetchCampaignsCount();

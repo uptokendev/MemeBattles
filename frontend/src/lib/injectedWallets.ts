@@ -54,9 +54,14 @@ export async function discoverInjectedWallets(
     onAnnounceProvider as EventListener
   );
 
-  window.dispatchEvent(new Event("eip6963:requestProvider"));
-
-  await wait(timeoutMs);
+// Safety-first closeout fix:
+// Do NOT actively dispatch `eip6963:requestProvider` here.
+// Some injected wallets/extensions synchronously answer with nested EIP-6963
+// events, causing InvalidStateError + maximum call stack loops.
+//
+// We still listen for passive EIP-6963 announcements during the timeout,
+// then fall back to legacy injected providers via window.ethereum.
+await wait(timeoutMs);
 
   window.removeEventListener(
     "eip6963:announceProvider",

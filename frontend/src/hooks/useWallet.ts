@@ -102,8 +102,24 @@ const LEGACY_CONNECTED_KEY = "mwz_wallet_connected";
 const EIP6963_WALLETS = new Map<string, Eip6963ProviderDetail>();
 const EIP6963_SUBSCRIBERS = new Set<() => void>();
 let eip6963ListenerStarted = false;
-let eip6963RequestInFlight = false;
-let eip6963RequestTimer: number | null = null;
+let eip6963NotifyTimer: number | null = null;
+
+function notifyEip6963SubscribersSoon() {
+  if (typeof window === "undefined") return;
+  if (eip6963NotifyTimer != null) return;
+
+  eip6963NotifyTimer = window.setTimeout(() => {
+    eip6963NotifyTimer = null;
+
+    EIP6963_SUBSCRIBERS.forEach((subscriber) => {
+      try {
+        subscriber();
+      } catch {
+        // Ignore subscriber errors so one bad wallet/update cannot break discovery.
+      }
+    });
+  }, 0);
+}
 
 function normalizeHexAddress(value?: string | null): string {
   const v = String(value ?? "").trim();
@@ -319,8 +335,12 @@ function startEip6963Discovery() {
 
     const meta = getProviderMeta(detail.provider, detail.info);
     const key = detail.info?.uuid || meta.rdns || meta.name || String(EIP6963_WALLETS.size + 1);
-    EIP6963_WALLETS.set(key, detail);
-    EIP6963_SUBSCRIBERS.forEach((subscriber) => subscriber());
+EIP6963_WALLETS.set(key, detail);
+
+// Never notify subscribers synchronously from inside the wallet extension's
+// announceProvider event. Some injected wallets synchronously dispatch nested
+// EIP-6963 events, and synchronous subscriber updates can re-enter that chain.
+notifyEip6963SubscribersSoon();
   };
 
   window.addEventListener("eip6963:announceProvider", onAnnounce);
@@ -330,29 +350,18 @@ function startEip6963Discovery() {
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
 
+  // Safety-first closeout fix:
+  //
+  // Do NOT dispatch `eip6963:requestProvider` from the app right now.
+  // Some injected wallets/extensions respond synchronously and can recursively
+  // dispatch announce/request events, causing:
+  //
+  //   InvalidStateError: Failed to execute 'dispatchEvent' on 'EventTarget':
+  //   The event is already being dispatched.
+  //
+  // We still listen for passive EIP-6963 announcements, and we still support
+  // legacy injected providers via window.ethereum / window.ethereum.providers.
   startEip6963Discovery();
-
-  // Some wallet extensions synchronously answer `eip6963:requestProvider`
-  // by dispatching `eip6963:announceProvider`. If a subscriber then calls
-  // getDetectedWalletsSnapshot(), we must not dispatch the same request again
-  // while the first event is still being handled. That causes:
-  // "Failed to execute 'dispatchEvent': The event is already being dispatched"
-  // followed by a stack overflow.
-  if (eip6963RequestInFlight) return;
-  if (eip6963RequestTimer != null) return;
-
-  eip6963RequestTimer = window.setTimeout(() => {
-    eip6963RequestTimer = null;
-    eip6963RequestInFlight = true;
-
-    try {
-      window.dispatchEvent(new Event("eip6963:requestProvider"));
-    } catch {
-      // Ignore older browser / injected-wallet event issues.
-    } finally {
-      eip6963RequestInFlight = false;
-    }
-  }, 0);
 }
 
 function makeDetectedWallet(
@@ -417,13 +426,9 @@ function subscribeToWalletDiscovery(callback: () => void) {
   const timeout = window.setTimeout(callback, 350);
 
   return () => {
-    EIP6963_SUBSCRIBERS.delete(callback);
-    window.clearTimeout(timeout);
-    if (eip6963RequestTimer != null) {
-      window.clearTimeout(eip6963RequestTimer);
-      eip6963RequestTimer = null;
-    }
-  };
+  EIP6963_SUBSCRIBERS.delete(callback);
+  window.clearTimeout(timeout);
+};
 }
 
 function findDetectedWallet(walletId: WalletType | null | undefined) {
