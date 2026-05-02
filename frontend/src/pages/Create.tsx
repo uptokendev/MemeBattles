@@ -25,6 +25,15 @@ function formatFileSize(bytes: number): string {
   return `${mb.toFixed(2)} MB`;
 }
 
+function cacheDraftLogo(draftId: string, logoUrl: string) {
+  if (typeof window === "undefined" || !draftId || !logoUrl) return;
+  try {
+    window.sessionStorage.setItem(`mwz:draft-logo:${draftId}`, logoUrl);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 const Create = () => {
   const {
     formData,
@@ -143,6 +152,7 @@ const Create = () => {
         visibility: "private",
       });
 
+      cacheDraftLogo(draft.id, logoUrl);
       toast.success("Prepare Mode draft created. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);
     } catch (error: any) {
