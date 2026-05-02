@@ -19,6 +19,8 @@ import LeagueDetail from "./pages/LeagueDetail";
 import Profile from "./pages/Profile";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
+import Prepare from "./pages/Prepare";
+import DraftPromotionSetup from "./pages/DraftPromotionSetup";
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
 import Recruiter from "./pages/Recruiter";
@@ -70,6 +72,8 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
+                    <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
+                    <Route path="/prepare/:slug" element={<Prepare />} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
