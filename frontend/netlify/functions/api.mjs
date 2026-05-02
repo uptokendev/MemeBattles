@@ -1,3 +1,6 @@
+/**
+ * Netlify API router for MemeWarzone frontend.
+ */
 import express from "express";
 import serverless from "serverless-http";
 
@@ -30,6 +33,14 @@ import tokenMetadata from "../../api/token-metadata.js";
 import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
+import {
+  draftById,
+  draftComments,
+  draftFollow,
+  draftPromotion,
+  drafts,
+  prepareBySlug,
+} from "../../api/dev-fix/drafts.js";
 import {
   attributionWallet,
   attributionWalletConnect,
@@ -66,9 +77,6 @@ import {
 const app = express();
 app.disable("x-powered-by");
 
-// CORS: allow the MW admin dashboard (and local dev) to call /api/*.
-// Tokenized endpoints (e.g. /api/diagnostics) gate access; CORS just
-// relaxes the browser same-origin check.
 const ALLOWED_ORIGINS = new Set([
   "https://command-center.memewar.zone",
   "http://localhost:5173",
@@ -80,11 +88,8 @@ app.use((req, res, next) => {
   if (ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, x-diagnostics-token"
-    );
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-diagnostics-token, authorization");
   }
   if (req.method === "OPTIONS") {
     res.status(204).end();
@@ -145,9 +150,14 @@ app.all("/upload", wrap(upload));
 app.all("/votes", wrap(votes));
 app.all("/vote_counts", wrap(voteCounts));
 
-// DEV-FIX-API Phase 1: route alignment stubs.
-// These routes intentionally return JSON-safe empty states until the real
-// reward/squad persistence is implemented.
+// PREPARE MODE: draft token creation + promotion pages.
+app.all("/drafts", wrap(drafts));
+app.all("/drafts/:draftId", wrap(draftById));
+app.all("/drafts/:draftId/promotion", wrap(draftPromotion));
+app.all("/drafts/:draftId/follow", wrap(draftFollow));
+app.all("/drafts/:draftId/comments", wrap(draftComments));
+app.all("/prepare/:slug", wrap(prepareBySlug));
+
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
 app.all("/rewards/me/claims", wrap(rewardsClaims));
@@ -159,7 +169,6 @@ app.all("/squads", wrap(squadsLeaderboard));
 app.all("/squads/members", wrap(squadMembers));
 app.all("/squads/:code/summary", wrap(squadSummary));
 
-// DEV-FIX-API Phase 4: DB-backed recruiter and attribution routes.
 app.all("/recruiters", wrap(recruiters));
 app.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
 app.all("/recruiters/:code/summary", wrap(recruiterSummary));
@@ -169,11 +178,9 @@ app.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
 app.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
 app.all("/attribution/wallet/:wallet", wrap(attributionWallet));
 
-// DEV-FIX-API Phase 2/3: route-auth signature responses and status checks.
 app.all("/routing/status", wrap(routingStatus));
 app.all("/routing/create-authorization", wrap(routingCreateAuthorization));
 app.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
-// Temporary backwards-compatible aliases for current frontend clients.
 app.all("/recruiter-routing/status", wrap(routingStatus));
 app.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 app.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
@@ -183,7 +190,6 @@ app.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailabil
 app.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
 app.all("/recruiter-signup", wrap(recruiterSignupSubmit));
 
-// Preferred API namespace for internal reward ops.
 app.all("/internal/rewards/publications", wrap(internalRewardPublications));
 app.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
 app.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
