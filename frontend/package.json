@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:core-api": "node scripts/check-core-api-routes.mjs"
+    "check:core-api": "node scripts/check-core-api-routes.mjs",
+    "check:phase3-core-flow": "node scripts/check-phase3-core-flow.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
