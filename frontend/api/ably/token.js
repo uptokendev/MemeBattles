@@ -60,14 +60,20 @@ export default async function handler(req, res) {
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
     let channel = "";
-    if (scope === "league") {
-      channel = `league:${chainId}`;
-    } else {
-      if (!isAddress(campaign)) {
-        return json(res, 400, { error: "Invalid campaign address" });
-      }
-      channel = `token:${chainId}:${campaign}`;
-    }
+
+if (scope === "league") {
+  channel = `league:${chainId}`;
+} else {
+  if (!isAddress(campaign)) {
+    return json(res, 400, { error: "Invalid campaign address" });
+  }
+
+  if (scope === "warroom") {
+    channel = `warroom:${chainId}:${campaign}`;
+  } else {
+    channel = `token:${chainId}:${campaign}`;
+  }
+}
 
     const capability = { [channel]: ["subscribe"] };
     const ably = new Ably.Rest({ key: ABLY_API_KEY });

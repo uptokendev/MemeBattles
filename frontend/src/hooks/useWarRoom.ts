@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAblyWarRoomChannel } from "@/hooks/useAblyWarRoomChannel";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   buildChatSessionMessage,
@@ -10,7 +11,8 @@ import {
   getNonce,
 } from "@/lib/chatApi";
 
-const POLL_MS = 4000;
+const FALLBACK_POLL_MS = 8000;
+const RECONCILE_POLL_MS = 30000;
 
 function normalizeAddress(value?: string | null) {
   const v = String(value ?? "").trim().toLowerCase();
@@ -67,7 +69,11 @@ export function useWarRoom(args: { chainId: number; campaignAddress: string; cre
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<ChatSession | null>(null);
   const pollRef = useRef<number | null>(null);
-
+const ably = useAblyWarRoomChannel({
+  enabled: Boolean(roomAddress),
+  chainId: args.chainId,
+  campaignAddress: roomAddress,
+});
   const refreshHistory = useCallback(async () => {
     if (!roomAddress) return;
     try {
@@ -80,7 +86,31 @@ export function useWarRoom(args: { chainId: number; campaignAddress: string; cre
       setLoading(false);
     }
   }, [args.chainId, roomAddress]);
+useEffect(() => {
+  if (!ably.channel) return;
 
+  const onMessage = (msg: any) => {
+    const item = msg?.data;
+    if (!item) return;
+
+    setMessages((prev) => mergeMessages(prev, [item]));
+    setError(null);
+  };
+
+  try {
+    ably.channel.subscribe("message:new", onMessage);
+  } catch {
+    return;
+  }
+
+  return () => {
+    try {
+      ably.channel.unsubscribe("message:new", onMessage);
+    } catch {
+      // ignore
+    }
+  };
+}, [ably.channel]);
   useEffect(() => {
     setMessages([]);
     setLoading(true);
@@ -96,18 +126,26 @@ export function useWarRoom(args: { chainId: number; campaignAddress: string; cre
   }, [args.chainId, roomAddress, walletAddress]);
 
   useEffect(() => {
+  if (pollRef.current) {
+    window.clearInterval(pollRef.current);
+    pollRef.current = null;
+  }
+
+  if (!roomAddress) return;
+
+  const pollMs = ably.isConnected ? RECONCILE_POLL_MS : FALLBACK_POLL_MS;
+
+  pollRef.current = window.setInterval(() => {
+    void refreshHistory();
+  }, pollMs);
+
+  return () => {
     if (pollRef.current) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    if (!roomAddress) return;
-    pollRef.current = window.setInterval(() => {
-      void refreshHistory();
-    }, POLL_MS);
-    return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
-    };
-  }, [refreshHistory, roomAddress]);
+  };
+}, [refreshHistory, roomAddress, ably.isConnected]);
 
   const ensureSession = useCallback(async () => {
     if (!wallet.isConnected || !wallet.signer || !walletAddress) {

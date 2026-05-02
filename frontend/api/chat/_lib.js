@@ -40,12 +40,26 @@ export function parseBearer(req) {
 
 export function resolveAblyApiKey() {
   const raw = p(process.env.ABLY_API_KEY);
-  const keyName = p(process.env.ABLY_API_KEY_NAME || process.env.ABLY_KEY_NAME);
-  const keySecret = p(process.env.ABLY_API_KEY_SECRET || process.env.ABLY_KEY_SECRET);
+
+  const keyName = p(
+    process.env.ABLY_API_KEY_NAME ||
+    process.env.ABLY_KEY_NAME
+  );
+
+  const keySecret = p(
+    process.env.ABLY_API_KEY_SECRET ||
+    process.env.ABLY_KEY_SECRET ||
+    process.env.ABLY_API_SECRET ||
+    process.env.ABLY_SECRET
+  );
 
   if (raw.includes(":")) return raw;
   if (raw && keySecret) return `${raw}:${keySecret}`;
   if (keyName && keySecret) return `${keyName}:${keySecret}`;
+
+  const viteClientKey = p(process.env.VITE_ABLY_CLIENT_KEY);
+  if (viteClientKey.includes(":")) return viteClientKey;
+
   return raw;
 }
 
