@@ -143,6 +143,29 @@ async function signTradeAuthorization({ signer, chainId, campaignAddress, actor,
   return signer.signMessage(ethers.getBytes(digest));
 }
 
+function buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain }) {
+  const warnings = [];
+
+  if (!signer) warnings.push("Route-authority private key is not configured or is invalid.");
+  if (!factoryAddress) warnings.push("Factory address is missing for this chain.");
+  if (!rpcUrlConfigured) warnings.push("RPC URL is missing for this chain, so on-chain routeAuthority cannot be verified.");
+  if (onchain.error) warnings.push(`On-chain routeAuthority check failed: ${onchain.error}`);
+  if (signer && onchain.routeAuthority && !matchesOnchain) {
+    warnings.push("Configured signer address does not match LaunchFactory.routeAuthority().");
+  }
+
+  return warnings;
+}
+
+function readinessStatus({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain }) {
+  if (!signer) return "missing_signer";
+  if (!factoryAddress) return "missing_factory";
+  if (!rpcUrlConfigured) return "missing_rpc";
+  if (!onchain.routeAuthority) return "onchain_check_failed";
+  if (!matchesOnchain) return "authority_mismatch";
+  return "ready";
+}
+
 export async function routingStatus(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
 
@@ -152,20 +175,28 @@ export async function routingStatus(req, res) {
   const routeAuthority = signer?.address || null;
   const factoryAddress = normalizeAddress(q.factoryAddress) || getFactoryAddressFromEnv(chainId);
   const defaults = getDefaultRouteProfiles();
+  const rpcUrlConfigured = Boolean(getRpcUrl(chainId));
   const onchain = await readOnchainRouteAuthority({ chainId, factoryAddress });
   const matchesOnchain = Boolean(
     routeAuthority && onchain.routeAuthority && routeAuthority.toLowerCase() === onchain.routeAuthority.toLowerCase(),
   );
 
+  const readyForCoreFlow = Boolean(signer && factoryAddress && rpcUrlConfigured && onchain.routeAuthority && matchesOnchain);
+  const warnings = buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain });
+
   const walletAddress = normalizeAddress(q.walletAddress);
   const routeDecision = walletAddress ? await getRouteDecision(walletAddress) : null;
 
   return json(res, 200, {
-    ok: Boolean(signer && (!onchain.routeAuthority || matchesOnchain)),
+    ok: readyForCoreFlow,
+    readyForCoreFlow,
+    status: readinessStatus({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain }),
+    warnings,
     signerConfigured: Boolean(signer),
     routeAuthority,
     chainId,
     factoryAddress: factoryAddress || null,
+    rpcConfigured: rpcUrlConfigured,
     onchainRouteAuthority: onchain.routeAuthority,
     matchesOnchain,
     onchainError: onchain.error,
@@ -176,6 +207,11 @@ export async function routingStatus(req, res) {
     },
     routeDecision: routeDecision?.decision || null,
     ttlSeconds: parsePositiveInt(process.env.ROUTE_AUTH_TTL_SECONDS, 10 * 60),
+    closeout: {
+      requiresSignerConfigured: true,
+      requiresOnchainMatch: true,
+      requiresCreateAndTradeAuthorization200: true,
+    },
   });
 }
 
