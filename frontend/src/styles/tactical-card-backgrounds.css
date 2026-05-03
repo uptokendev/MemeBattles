@@ -1,0 +1,163 @@
+/*
+  Card background image layer.
+
+  Expected public assets:
+    frontend/public/assets/cardbghor.png
+    frontend/public/assets/cardbgvert.png
+
+  These images are attached to the card itself, not the viewport.
+  They scale with each card via background-size: 100% 100% so smaller screens keep the frame locked to the card bounds.
+*/
+
+:root {
+  --mwz-card-bg-horizontal: url('/assets/cardbghor.png');
+  --mwz-card-bg-vertical: url('/assets/cardbgvert.png');
+  --mwz-card-frame-image: var(--mwz-card-bg-vertical);
+  --mwz-card-frame-padding: clamp(10px, 0.75vw, 15px);
+  --mwz-card-frame-opacity: 0.96;
+}
+
+/* Default card behavior: vertical asset. */
+.mwz-card {
+  --mwz-card-frame-image: var(--mwz-card-bg-vertical);
+  --mwz-card-frame-padding: clamp(10px, 0.75vw, 15px);
+  border-color: transparent !important;
+  clip-path: none !important;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.006) 34%, transparent),
+    radial-gradient(circle at 28% 0%, rgba(var(--mwz-orange-rgb), 0.08), transparent 38%),
+    var(--mwz-card-frame-image),
+    linear-gradient(155deg, rgba(12, 15, 14, 0.98), rgba(4, 6, 6, 0.99)) !important;
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    100% 100% !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+}
+
+/* Horizontal card families: featured carousel, league/recruiter promo, broad section panels. */
+.mwz-card--horizontal,
+.mwz-featured-layout [data-addr].mwz-card,
+.mwz-featured-layout > .space-y-3 .mwz-card,
+.mwz-launchpad-page section.mwz-card {
+  --mwz-card-frame-image: var(--mwz-card-bg-horizontal);
+  --mwz-card-frame-padding: clamp(10px, 0.85vw, 18px);
+}
+
+/* Vertical card families: token grid cards and upcoming draft cards. */
+.mwz-card--vertical,
+.mwz-launchpad-page .grid .mwz-card.group,
+.mwz-launchpad-page article.mwz-card {
+  --mwz-card-frame-image: var(--mwz-card-bg-vertical);
+  --mwz-card-frame-padding: clamp(10px, 0.9vw, 16px);
+}
+
+/* Use the image as a frame overlay, but mask the center out so it never covers card content. */
+.mwz-card::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 5 !important;
+  pointer-events: none !important;
+  opacity: var(--mwz-card-frame-opacity) !important;
+  padding: var(--mwz-card-frame-padding) !important;
+  background-image: var(--mwz-card-frame-image) !important;
+  background-size: 100% 100% !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  border: 0 !important;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.mwz-card::after {
+  z-index: 1 !important;
+  opacity: 0.12 !important;
+}
+
+.mwz-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Keep media wells and content inside the card frame instead of sitting on top of the border art. */
+.mwz-card > button:first-child,
+.mwz-card > a:first-child,
+.mwz-card > div:first-child {
+  overflow: hidden;
+}
+
+.mwz-launchpad-page .grid .mwz-card.group > button:first-child {
+  margin: clamp(6px, 0.45vw, 9px) clamp(6px, 0.45vw, 9px) 0;
+  width: calc(100% - clamp(12px, 0.9vw, 18px));
+}
+
+.mwz-launchpad-page .grid .mwz-card.group > div:last-child {
+  padding-left: clamp(12px, 0.8vw, 16px) !important;
+  padding-right: clamp(12px, 0.8vw, 16px) !important;
+  padding-bottom: clamp(12px, 0.8vw, 16px) !important;
+}
+
+/* Featured horizontal cards need a little inset so the art does not hide the new frame. */
+.mwz-featured-layout [data-addr].mwz-card {
+  padding: clamp(6px, 0.45vw, 9px) !important;
+  gap: 0 !important;
+}
+
+.mwz-featured-layout [data-addr].mwz-card > div:first-child {
+  min-height: calc(226px - clamp(12px, 0.9vw, 18px)) !important;
+}
+
+.mwz-featured-layout [data-addr].mwz-card > div:last-child {
+  padding-top: clamp(12px, 0.8vw, 16px) !important;
+  padding-right: clamp(12px, 0.8vw, 16px) !important;
+}
+
+/* League/recruiter promo cards: keep the frame locked while their internal grid scales. */
+.mwz-featured-layout > .space-y-3 .mwz-card {
+  padding: clamp(8px, 0.65vw, 12px) !important;
+}
+
+.mwz-featured-layout > .space-y-3 .mwz-card > div {
+  min-height: calc(100% - 2px) !important;
+}
+
+/* Section-wide horizontal panels should use the horizontal texture but with softer opacity. */
+.mwz-launchpad-page section.mwz-card {
+  --mwz-card-frame-opacity: 0.82;
+  background-size: 100% 100% !important;
+}
+
+/* Fallback for browsers without mask-composite support: use the frame as the card background only. */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .mwz-card::before {
+    display: none !important;
+  }
+
+  .mwz-card {
+    border: 1px solid rgba(var(--mwz-orange-rgb), 0.45) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .mwz-card {
+    --mwz-card-frame-padding: 10px;
+  }
+
+  .mwz-featured-layout [data-addr].mwz-card {
+    padding: 6px !important;
+  }
+
+  .mwz-launchpad-page .grid .mwz-card.group > button:first-child {
+    margin: 6px 6px 0;
+    width: calc(100% - 12px);
+  }
+}
