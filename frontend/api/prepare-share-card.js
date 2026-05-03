@@ -229,7 +229,7 @@ function svgCard(data, logoDataUrl = "", brandLogoDataUrl = "") {
        ${pixelText(ticker, 129, 232, { scale: 7, color: "#ffffff", anchor: "middle" })}`;
 
   const brandLogoBlock = brandLogoDataUrl
-    ? `<image href="${esc(brandLogoDataUrl)}" x="55" y="46" width="100" height="100" preserveAspectRatio="xMidYMid meet"/>`
+    ? `<image href="${esc(brandLogoDataUrl)}" x="55" y="46" width="200" height="200" preserveAspectRatio="xMidYMid meet"/>`
     : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
