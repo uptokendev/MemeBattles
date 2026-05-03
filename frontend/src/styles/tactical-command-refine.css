@@ -191,9 +191,28 @@
 }
 
 .mwz-tactical-hero__terminal {
-  width: clamp(230px, 18vw, 340px) !important;
-  padding: 15px 18px !important;
-  box-shadow: inset 0 0 26px rgba(var(--mwz-green-rgb), 0.04), 0 0 30px rgba(0,0,0,0.6) !important;
+  width: clamp(170px, 11vw, 230px) !important;
+  padding: 10px 12px !important;
+  font-size: clamp(8px, 0.56vw, 11px) !important;
+  line-height: 1.55 !important;
+  letter-spacing: 0.075em !important;
+  background:
+    linear-gradient(180deg, rgba(4, 9, 5, 0.34), rgba(2, 5, 4, 0.16)) !important;
+  border-color: rgba(var(--mwz-green-rgb), 0.16) !important;
+  box-shadow:
+    inset 0 0 18px rgba(var(--mwz-green-rgb), 0.025),
+    0 0 18px rgba(0,0,0,0.34) !important;
+}
+
+.mwz-tactical-hero__terminal::before,
+.mwz-tactical-hero__terminal::after {
+  width: 18px !important;
+  height: 12px !important;
+  border-color: rgba(var(--mwz-green-rgb), 0.28) !important;
+}
+
+.mwz-tactical-hero__terminal strong {
+  font-size: clamp(11px, 0.78vw, 14px) !important;
 }
 
 /* Featured row: make main carousel and league panel line up like the mockup. */
