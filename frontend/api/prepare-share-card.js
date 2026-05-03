@@ -274,8 +274,8 @@ function svgCard(data, logoDataUrl = "", brandLogoDataUrl = "") {
     ${pixelText(heat, 215, 460, { scale: 2.8, color: "#10f58a", maxChars: 8 })}
     ${pixelText("BUILT BY", 335, 438, { scale: 1.55, color: "#4d8066" })}
     ${pixelText(creator, 335, 461, { scale: 2.05, color: "#e9e3db", maxChars: 18 })}
-    ${pixelText("ARM NOTIFICATION", 820, 438, { scale: 1.55, color: "#4d8066", anchor: "middle" })}
-    ${pixelText(link, 820, 461, { scale: 1.75, color: "#10f58a", maxChars: 31, anchor: "middle" })}
+    ${pixelText("ARM NOTIFICATION", 790, 439, { scale: 1.6, color: "#4d8066", anchor: "middle" })}
+    ${pixelText(link, 790, 461, { scale: 1.55, color: "#10f58a", maxChars: 34, anchor: "middle" })}
   </g>
 </svg>`;
 }

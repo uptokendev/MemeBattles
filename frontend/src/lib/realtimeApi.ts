@@ -6,6 +6,7 @@ const NETLIFY_OWNED_API_PREFIXES = [
   "/api/airdrops",
   "/api/attribution",
   "/api/drafts",
+   "/api/auth",
   "/api/internal/rewards",
   "/api/prepare",
   "/api/recruiter-routing",

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
+import { Archive, Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import {
+  archiveCampaignDraft,
   fetchCampaignDraft,
   saveDraftPromotion,
   type DraftVisibility,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
+import { signDraftAction } from "@/lib/draftAuth";
 
 function splitLines(value: string) {
   return value
@@ -139,10 +141,31 @@ export default function DraftPromotionSetup() {
     const preview = Boolean(options?.preview);
     const nextVisibility: DraftVisibility = preview && visibility === "private" ? "unlisted" : visibility;
 
-    setSaving(true);
-    try {
-      const updated = await saveDraftPromotion(draftId, {
-        missionStatement,
+if (!draft) return null;
+
+if (!wallet.account || !wallet.signer) {
+  toast.error("Connect the draft owner wallet before saving.");
+  return null;
+}
+
+if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+  toast.error("Only the draft owner wallet can edit this promotion page.");
+  return null;
+}
+
+setSaving(true);
+try {
+  const auth = await signDraftAction({
+    signer: wallet.signer,
+    walletAddress: wallet.account,
+    chainId: draft.chainId,
+    action: publish ? "publish_promotion" : "save_promotion",
+    draftId,
+  });
+
+  const updated = await saveDraftPromotion(draftId, {
+    auth,
+    missionStatement,
         roadmap: [],
         launchStrategy,
         telegramUrl,
@@ -175,7 +198,51 @@ export default function DraftPromotionSetup() {
     await navigator.clipboard?.writeText(url).catch(() => undefined);
     toast.success("Prepare page link copied.");
   };
+const archiveCurrentDraft = async () => {
+  if (!draft) return;
 
+  if (!wallet.account || !wallet.signer) {
+    toast.error("Connect the draft owner wallet before archiving.");
+    return;
+  }
+
+  if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+    toast.error("Only the draft owner wallet can archive this draft.");
+    return;
+  }
+
+  if (draft.status === "deployed") {
+    toast.error("Deployed drafts cannot be archived.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Archive ${draft.name} / $${draft.ticker}? This removes it from public Prepare Mode listings.`
+  );
+
+  if (!confirmed) return;
+
+  setSaving(true);
+
+  try {
+    const auth = await signDraftAction({
+      signer: wallet.signer,
+      walletAddress: wallet.account,
+      chainId: draft.chainId,
+      action: "archive_draft",
+      draftId,
+    });
+
+    await archiveCampaignDraft(draftId, auth);
+
+    toast.success("Draft archived.");
+    navigate("/profile?tab=drafts");
+  } catch (err: any) {
+    toast.error(err?.message || "Failed to archive draft.");
+  } finally {
+    setSaving(false);
+  }
+};
   if (loading) {
     return <div className="mx-auto max-w-6xl py-20 text-center font-retro text-muted-foreground">Loading draft command center...</div>;
   }
@@ -348,6 +415,17 @@ export default function DraftPromotionSetup() {
               <Flame className="mr-2 h-4 w-4" /> Copy link
             </Button>
           </div>
+          <div className="mt-2">
+  <Button
+    onClick={archiveCurrentDraft}
+    disabled={saving || draft.status === "deployed" || draft.status === "archived"}
+    variant="outline"
+    className="mwz-button h-10 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200"
+  >
+    <Archive className="mr-2 h-4 w-4" />
+    {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
+  </Button>
+</div>
         </aside>
       </div>
     </div>

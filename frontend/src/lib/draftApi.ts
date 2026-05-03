@@ -1,4 +1,5 @@
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import type { DraftActionAuth } from "@/lib/draftAuth";
 
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
@@ -93,6 +94,7 @@ export type PrepareDraftBundle = {
 };
 
 export type CreateDraftInput = {
+  auth?: DraftActionAuth;
   chainId: number;
   creatorWallet: string;
   name: string;
@@ -107,6 +109,7 @@ export type CreateDraftInput = {
 };
 
 export type SavePromotionInput = {
+  auth?: DraftActionAuth;
   missionStatement?: string;
   roadmap?: string[];
   launchStrategy?: string;
@@ -131,7 +134,13 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
   const json = await parseJson(res);
   return json.draft as CampaignDraft;
 }
-
+export async function fetchPublicCampaignDrafts(input: { chainId?: number; limit?: number } = {}): Promise<CampaignDraft[]> {
+  const res = await fetch(buildRealtimeApiUrl(`/api/drafts${query({ chainId: input.chainId, limit: input.limit })}`), {
+    cache: "no-store",
+  });
+  const json = await parseJson(res);
+  return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
+}
 export async function fetchCampaignDraft(draftId: string, viewer?: string | null): Promise<PrepareDraftBundle> {
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`));
   return parseJson(res) as Promise<PrepareDraftBundle>;
@@ -175,4 +184,16 @@ export async function addDraftComment(draftId: string, walletAddress: string, bo
   });
   const json = await parseJson(res);
   return json.comment as DraftComment;
+}
+export async function archiveCampaignDraft(
+  draftId: string,
+  auth: DraftActionAuth
+): Promise<PrepareDraftBundle> {
+  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/archive`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
+
+  return parseJson(res) as Promise<PrepareDraftBundle>;
 }

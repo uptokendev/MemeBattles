@@ -13,6 +13,7 @@ import { LaunchpadReadinessNotice } from "@/components/launchpad/LaunchpadReadin
 import { useLaunchpadWriteReadiness } from "@/hooks/useLaunchpadWriteReadiness";
 import { useWallet } from "@/contexts/WalletContext";
 import { createCampaignDraft } from "@/lib/draftApi";
+import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useState } from "react";
@@ -136,11 +137,22 @@ const Create = () => {
   const handleCreateDraft = async () => {
     if (!validateCoreForm()) return;
     setIsDrafting(true);
-    try {
-      const logoUrl = await uploadLogo();
-      const draft = await createCampaignDraft({
-        chainId: Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97),
-        creatorWallet: wallet.account!,
+try {
+  const chainId = Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97);
+
+  const auth = await signDraftAction({
+    signer: wallet.signer,
+    walletAddress: wallet.account!,
+    chainId,
+    action: "create_draft",
+  });
+
+  const logoUrl = await uploadLogo();
+
+  const draft = await createCampaignDraft({
+    auth,
+    chainId,
+    creatorWallet: wallet.account!,
         name: formData.name,
         ticker: formData.ticker.toUpperCase(),
         description: formData.description || null,

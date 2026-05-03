@@ -35,6 +35,7 @@ import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
 import {
+  draftArchive,
   draftById,
   draftComments,
   draftFollow,
@@ -156,6 +157,7 @@ app.all("/vote_counts", wrap(voteCounts));
 app.all("/drafts", wrap(drafts));
 app.all("/drafts/:draftId", wrap(draftById));
 app.all("/drafts/:draftId/promotion", wrap(draftPromotion));
+app.all("/drafts/:draftId/archive", wrap(draftArchive));
 app.all("/drafts/:draftId/follow", wrap(draftFollow));
 app.all("/drafts/:draftId/comments", wrap(draftComments));
 app.all("/prepare/:slug", wrap(prepareBySlug));
