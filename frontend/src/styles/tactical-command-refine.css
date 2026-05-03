@@ -1,0 +1,363 @@
+/*
+  MemeWarzone mockup refinement layer.
+  This sits after tactical-command-ui.css and focuses on CSS-only detail:
+  app chrome, stronger top command bar, mission-card framing, tighter hero/featured alignment,
+  and more mockup-like orange/steel UI density.
+*/
+
+:root {
+  --mwz-frame-line: rgba(255, 122, 26, 0.34);
+  --mwz-frame-line-soft: rgba(151, 136, 104, 0.22);
+  --mwz-steel-hi: rgba(255, 255, 255, 0.055);
+  --mwz-steel-lo: rgba(0, 0, 0, 0.76);
+  --mwz-rivet: rgba(255, 122, 26, 0.62);
+  --mwz-card-cut: 13px;
+}
+
+/* Full-screen game/HUD frame like the mockup outer shell. */
+.mwz-app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 8px;
+  z-index: 60;
+  pointer-events: none;
+  border: 1px solid var(--mwz-frame-line-soft);
+  clip-path: polygon(
+    0 18px,
+    18px 0,
+    calc(100% - 18px) 0,
+    100% 18px,
+    100% calc(100% - 18px),
+    calc(100% - 18px) 100%,
+    18px 100%,
+    0 calc(100% - 18px)
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    inset 0 0 36px rgba(0, 0, 0, 0.68),
+    0 0 28px rgba(0, 0, 0, 0.5);
+}
+
+.mwz-app-shell::after {
+  content: '';
+  position: fixed;
+  inset: 10px;
+  z-index: 61;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 46px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 46px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 46px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 46px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 46px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 1px 46px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 46px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 1px 46px no-repeat;
+  opacity: 0.42;
+}
+
+/* Layout density closer to the mockup: content stretches like a command board. */
+.mwz-launchpad-page {
+  overflow-x: hidden;
+}
+
+.mwz-launchpad-inner {
+  max-width: none !important;
+  padding-left: clamp(10px, 1.15vw, 24px) !important;
+  padding-right: clamp(10px, 1.15vw, 24px) !important;
+  padding-bottom: 4rem !important;
+}
+
+.mwz-featured-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 480px) !important;
+  align-items: stretch !important;
+}
+
+/* Top bar: more like heavy metal command segments. */
+.fixed.top-0 {
+  z-index: 70 !important;
+}
+
+.fixed.top-0 .mwz-hud-frame {
+  --mwz-cut: 18px;
+  min-height: 78px !important;
+  gap: 0.75rem !important;
+  overflow: visible !important;
+}
+
+.fixed.top-0 .mwz-hud-frame::after {
+  opacity: 0.13 !important;
+}
+
+.fixed.top-0 .mwz-hud-frame > .hidden.lg\:flex {
+  align-self: stretch;
+}
+
+.fixed.top-0 .mwz-hud-frame a[href='/'] {
+  min-width: 250px;
+  height: 56px;
+  padding: 0 18px 0 8px;
+  margin-left: -4px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045), transparent 68%),
+    linear-gradient(135deg, rgba(24, 27, 26, 0.96), rgba(7, 8, 8, 0.96));
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%);
+}
+
+.fixed.top-0 .mwz-hud-frame a[href='/'] img {
+  height: 46px !important;
+  width: 46px !important;
+}
+
+.fixed.top-0 .mwz-hud-frame a[href='/'] .mwz-section-title {
+  font-size: clamp(1.35rem, 1.7vw, 1.85rem) !important;
+  letter-spacing: 0.015em !important;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.12), 0 0 18px rgba(var(--mwz-orange-rgb), 0.14) !important;
+}
+
+.fixed.top-0 .mwz-nav-link {
+  min-height: 54px !important;
+  min-width: 122px;
+  margin-left: -1px;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 46%),
+    linear-gradient(90deg, rgba(16, 18, 17, 0.96), rgba(8, 10, 10, 0.98)) !important;
+  clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px);
+}
+
+.fixed.top-0 .mwz-nav-link-active {
+  background:
+    linear-gradient(180deg, rgba(255, 140, 38, 0.18), rgba(255, 140, 38, 0.035)),
+    linear-gradient(135deg, rgba(32, 22, 15, 0.98), rgba(8, 9, 9, 0.98)) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.18), 0 0 18px rgba(var(--mwz-orange-rgb), 0.18) !important;
+}
+
+.fixed.top-0 .mwz-nav-link-active::after {
+  height: 3px;
+  left: 20px;
+  right: 20px;
+  bottom: 7px;
+}
+
+.fixed.top-0 .mwz-button {
+  min-height: 48px !important;
+  clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px);
+}
+
+.fixed.top-0 .mwz-button:first-of-type {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 40%),
+    linear-gradient(135deg, rgba(232, 91, 10, 0.96), rgba(118, 42, 6, 0.98)) !important;
+  border-color: rgba(var(--mwz-orange-rgb), 0.92) !important;
+  box-shadow: 0 0 20px rgba(var(--mwz-orange-rgb), 0.36), inset 0 1px 0 rgba(255,255,255,0.14) !important;
+}
+
+/* Hero: add the central command-notch illusion and waveform thickness. */
+.mwz-tactical-hero {
+  --mwz-cut: 0px;
+  height: clamp(165px, 10.8vw, 220px) !important;
+  margin-top: -0.25rem !important;
+  clip-path: none !important;
+}
+
+.mwz-tactical-hero::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  z-index: 9;
+  width: clamp(200px, 18vw, 340px);
+  height: 18px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(135deg, transparent 0 16px, rgba(var(--mwz-orange-rgb), 0.38) 16px 17px, rgba(12, 14, 14, 0.92) 17px) left / 50% 100% no-repeat,
+    linear-gradient(225deg, transparent 0 16px, rgba(var(--mwz-orange-rgb), 0.38) 16px 17px, rgba(12, 14, 14, 0.92) 17px) right / 50% 100% no-repeat;
+  pointer-events: none;
+}
+
+.mwz-tactical-hero__wave {
+  height: 2px !important;
+  left: 7% !important;
+  right: 7% !important;
+  opacity: 0.58 !important;
+}
+
+.mwz-tactical-hero__wave::before,
+.mwz-tactical-hero__wave::after {
+  width: clamp(120px, 11vw, 210px) !important;
+  opacity: 0.58 !important;
+}
+
+.mwz-tactical-hero__terminal {
+  width: clamp(230px, 18vw, 340px) !important;
+  padding: 15px 18px !important;
+  box-shadow: inset 0 0 26px rgba(var(--mwz-green-rgb), 0.04), 0 0 30px rgba(0,0,0,0.6) !important;
+}
+
+/* Featured row: make main carousel and league panel line up like the mockup. */
+.mwz-featured-layout > .mwz-hud-frame,
+.mwz-featured-layout > .space-y-3 {
+  min-height: 286px;
+}
+
+.mwz-featured-layout > .space-y-3 .mwz-card {
+  min-height: 274px !important;
+}
+
+.mwz-featured-layout .mwz-card:has(img[src='/assets/leaguelogo.png']) {
+  min-height: 274px !important;
+  padding: 0 !important;
+}
+
+.mwz-featured-layout .mwz-card:has(img[src='/assets/leaguelogo.png']) > div {
+  min-height: 272px !important;
+  grid-template-columns: 190px minmax(0,1fr) !important;
+  padding: 22px !important;
+}
+
+.mwz-featured-layout .mwz-card:has(img[src='/assets/leaguelogo.png']) img {
+  height: 155px !important;
+  width: 155px !important;
+}
+
+/* Mission cards: stronger corner/rivet language without image borders. */
+.mwz-card {
+  --mwz-cut: var(--mwz-card-cut);
+}
+
+.mwz-card::before {
+  background:
+    radial-gradient(circle, var(--mwz-rivet) 0 2px, transparent 2.5px) 10px 10px / 14px 14px no-repeat,
+    radial-gradient(circle, var(--mwz-rivet) 0 2px, transparent 2.5px) calc(100% - 24px) 10px / 14px 14px no-repeat,
+    radial-gradient(circle, var(--mwz-rivet) 0 2px, transparent 2.5px) 10px calc(100% - 24px) / 14px 14px no-repeat,
+    radial-gradient(circle, var(--mwz-rivet) 0 2px, transparent 2.5px) calc(100% - 24px) calc(100% - 24px) / 14px 14px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 32px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 32px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 32px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 32px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 32px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 1px 32px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 32px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 1px 32px no-repeat !important;
+  opacity: 0.78 !important;
+}
+
+/* Featured cards closer to target proportions. */
+.mwz-featured-layout [data-addr].mwz-card {
+  min-height: 226px !important;
+  min-width: 430px !important;
+  width: 470px !important;
+  grid-template-columns: 178px minmax(0, 1fr) !important;
+}
+
+.mwz-featured-layout [data-addr].mwz-card > div:first-child {
+  min-height: 226px !important;
+}
+
+.mwz-featured-layout [data-addr].mwz-card .mwz-section-title {
+  font-size: 1.12rem !important;
+}
+
+/* Rank/status badges: octagonal, military tag style. */
+.mwz-card .absolute.left-2.top-2,
+.mwz-card .absolute.right-2.top-2 {
+  clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px);
+  border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
+  color: var(--mwz-orange) !important;
+  background: rgba(4, 5, 5, 0.82) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.1), 0 0 14px rgba(var(--mwz-orange-rgb), 0.18) !important;
+}
+
+.mwz-featured-layout [data-addr].mwz-card .absolute.left-2.top-2 {
+  border-radius: 0 !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  font-weight: 800;
+}
+
+/* Progress/ATH bars: orange primary, not green. */
+.mwz-card .h-2.border,
+.mwz-card [class*='h-2 border'] {
+  border-color: rgba(var(--mwz-orange-rgb), 0.28) !important;
+  background: rgba(0, 0, 0, 0.72) !important;
+  border-radius: 999px !important;
+}
+
+.mwz-card .h-2.border > div,
+.mwz-card [class*='h-2 border'] > div {
+  background: linear-gradient(90deg, var(--mwz-orange), #ffb24d) !important;
+  box-shadow: 0 0 13px rgba(var(--mwz-orange-rgb), 0.34) !important;
+  border-radius: 999px !important;
+}
+
+/* Filter bar like a segmented console strip. */
+.mwz-hud-frame:has(button .lucide-filter),
+.mwz-hud-frame:has(.lucide-trending-up) {
+  --mwz-cut: 12px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.035), transparent 42%),
+    linear-gradient(90deg, rgba(13, 15, 14, 0.94), rgba(7, 9, 9, 0.96)) !important;
+}
+
+.mwz-hud-frame:has(.lucide-trending-up) .mwz-chip {
+  min-width: 92px;
+}
+
+.mwz-hud-frame:has(.lucide-trending-up) .mwz-chip-active {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.1), transparent 40%),
+    linear-gradient(135deg, rgba(245, 92, 11, 0.96), rgba(152, 48, 5, 0.98)) !important;
+}
+
+/* Grid cards: compact, squared, with subtle image well. */
+.mwz-launchpad-page .grid .mwz-card.group {
+  max-width: 220px !important;
+  min-height: 320px !important;
+}
+
+.mwz-launchpad-page .grid .mwz-card.group .aspect-square {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(var(--mwz-orange-rgb), 0.08), transparent 62%),
+    rgba(0,0,0,0.74) !important;
+}
+
+/* Prepare section: keep it but make it less loud so the above fold stays like mockup. */
+.mwz-live-heading {
+  padding-top: 0.35rem !important;
+}
+
+.mwz-launchpad-page section.mwz-card:has(a[href='/create']) {
+  margin-top: 0.25rem;
+  opacity: 0.94;
+}
+
+@media (max-width: 1280px) {
+  .mwz-featured-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mwz-featured-layout > .space-y-3 .mwz-card {
+    min-height: 220px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .mwz-app-shell::before,
+  .mwz-app-shell::after {
+    display: none;
+  }
+
+  .mwz-featured-layout [data-addr].mwz-card {
+    min-width: 350px !important;
+    width: calc(100vw - 2.5rem) !important;
+    grid-template-columns: 148px minmax(0, 1fr) !important;
+  }
+
+  .fixed.top-0 .mwz-hud-frame a[href='/'] {
+    min-width: auto;
+    clip-path: none;
+    background: transparent;
+  }
+}
