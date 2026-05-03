@@ -248,14 +248,14 @@ function svgCard(data, logoDataUrl = "") {
     ${line2 ? pixelText(line2, 235, titleY2, { scale: titleScale, color: "#65ffad", maxChars: 16 }) : ""}
     ${descLines.map((line, index) => pixelText(line, 235, 328 + index * 18, { scale: 2.4, color: "#d9d2ca", maxChars: 56 })).join("")}
 
-    ${pixelText("RECRUITS ARMED", 54, 438, { scale: 1.6, color: "#4d8066" })}
-    ${pixelText(recruits, 54, 454, { scale: 4.4, color: "#10f58a", maxChars: 8 })}
-    ${pixelText("HEAT", 183, 438, { scale: 1.6, color: "#4d8066" })}
-    ${pixelText(heat, 183, 454, { scale: 4.4, color: "#10f58a", maxChars: 8 })}
-    ${pixelText("BUILT BY", 265, 438, { scale: 1.6, color: "#4d8066" })}
-    ${pixelText(creator, 265, 456, { scale: 3, color: "#e9e3db", maxChars: 18 })}
-    ${pixelText("ARM NOTIFICATION", 846, 439, { scale: 1.6, color: "#4d8066", anchor: "middle" })}
-    ${pixelText(link, 846, 458, { scale: 2.5, color: "#10f58a", maxChars: 34, anchor: "middle" })}
+    ${pixelText("RECRUITS ARMED", 54, 438, { scale: 1.55, color: "#4d8066" })}
+    ${pixelText(recruits, 54, 460, { scale: 2.8, color: "#10f58a", maxChars: 8 })}
+    ${pixelText("HEAT", 215, 438, { scale: 1.55, color: "#4d8066" })}
+    ${pixelText(heat, 215, 460, { scale: 2.8, color: "#10f58a", maxChars: 8 })}
+    ${pixelText("BUILT BY", 335, 438, { scale: 1.55, color: "#4d8066" })}
+    ${pixelText(creator, 335, 461, { scale: 2.05, color: "#e9e3db", maxChars: 18 })}
+    ${pixelText("ARM NOTIFICATION", 820, 438, { scale: 1.55, color: "#4d8066", anchor: "middle" })}
+    ${pixelText(link, 820, 461, { scale: 1.75, color: "#10f58a", maxChars: 31, anchor: "middle" })}
   </g>
 </svg>`;
 }
