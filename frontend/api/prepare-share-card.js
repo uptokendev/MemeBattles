@@ -45,6 +45,23 @@ function setNoStoreHeaders(res) {
   res.setHeader("surrogate-control", "no-store");
 }
 
+function getRequestBaseUrl(req) {
+  const host = req?.headers?.["x-forwarded-host"] || req?.headers?.host || "";
+  if (host) {
+    const proto = req?.headers?.["x-forwarded-proto"] || "https";
+    return `${proto}://${host}`;
+  }
+
+  const envUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || "";
+  return /^https?:\/\//i.test(envUrl) ? envUrl.replace(/\/+$/, "") : "";
+}
+
+function publicAssetUrl(req, path) {
+  const base = getRequestBaseUrl(req);
+  if (!base) return "";
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 function normalizeImageSrc(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -187,7 +204,7 @@ function wrapPixelLines(value, maxChars, maxLines = 2) {
   return lines.length ? lines : [""];
 }
 
-function svgCard(data, logoDataUrl = "") {
+function svgCard(data, logoDataUrl = "", brandLogoDataUrl = "") {
   const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
   const ticker = String(data.ticker || "MWZ").replace(/^\$+/, "").trim().toUpperCase().slice(0, 12);
   const chain = String(data.chain || "BNB CHAIN").trim().toUpperCase();
@@ -210,6 +227,10 @@ function svgCard(data, logoDataUrl = "") {
     : `<circle cx="129" cy="250" r="74" fill="url(#orb)"/>
        <circle cx="129" cy="250" r="74" stroke="#28ff93" stroke-opacity="0.35"/>
        ${pixelText(ticker, 129, 232, { scale: 7, color: "#ffffff", anchor: "middle" })}`;
+
+  const brandLogoBlock = brandLogoDataUrl
+    ? `<image href="${esc(brandLogoDataUrl)}" x="55" y="46" width="100" height="100" preserveAspectRatio="xMidYMid meet"/>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="1002" height="531" viewBox="0 0 1002 531" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -236,8 +257,7 @@ function svgCard(data, logoDataUrl = "") {
   ${Array.from({ length: 44 }).map((_, i) => `<path d="M${i * 24} 521H${i * 24 + 12}L${i * 24 + 2} 531H${i * 24 - 10}L${i * 24} 521Z" fill="#7b421c" fill-opacity="0.52"/>`).join("")}
   <rect x="53" y="57" width="895" height="355" stroke="#1cff8f" stroke-opacity="0.08"/><line x1="53" y1="412" x2="949" y2="412" stroke="#13ff82" stroke-opacity="0.32"/>
 
-  <g transform="translate(55 53)"><path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/><path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/></g>
-  <g filter="url(#textGlow)">${pixelText("MEMEWARZONE", 91, 62, { scale: 2, color: "#dfffee" })}</g>
+  ${brandLogoBlock}
   <g transform="translate(780 55)"><rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/><circle cx="15" cy="14" r="3" fill="#10f58a"/></g>
   <g filter="url(#textGlow)">${pixelText(status, 864, 62, { scale: 2, color: "#f39b3d", maxChars: 12, anchor: "middle" })}</g>
 
@@ -286,7 +306,10 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const logoDataUrl = await imageToDataUrl(q.logoUrl || q.logo || "");
-    const svg = svgCard(q, logoDataUrl);
+    const brandLogoDataUrl = await imageToDataUrl(
+      q.brandLogo || q.brand || publicAssetUrl(req, "/assets/logo.png"),
+    );
+    const svg = svgCard(q, logoDataUrl, brandLogoDataUrl);
     if (String(q.format || "png").toLowerCase() === "svg") {
       res.statusCode = 200;
       res.setHeader("content-type", "image/svg+xml; charset=utf-8");
