@@ -331,7 +331,7 @@ const archiveCurrentDraft = async () => {
           </div>
         </div>
 
-        <aside className="sticky top-0 h-screen overflow-auto bg-black/45 p-5 backdrop-blur">
+        <aside className="lg:sticky lg:top-0 h-auto lg:h-[calc(100vh-5.4rem)] overflow-y-auto bg-black/45 p-5 pb-24 backdrop-blur">
           <div className="mb-5">
             <div className="text-xs uppercase tracking-[0.22em] text-orange-300">// Command center</div>
             <h2 className="mt-1 font-retro text-3xl uppercase tracking-[0.08em] text-foreground">Draft control</h2>
@@ -408,13 +408,35 @@ const archiveCurrentDraft = async () => {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button h-10 flex-1 font-retro text-xs">
-              <Eye className="mr-2 h-4 w-4" /> Preview
-            </Button>
-            <Button onClick={copyLink} variant="outline" className="mwz-button h-10 flex-1 font-retro text-xs">
-              <Flame className="mr-2 h-4 w-4" /> Copy link
-            </Button>
-          </div>
+  <Button
+    onClick={() => save({ preview: true })}
+    disabled={saving}
+    variant="outline"
+    className="mwz-button h-10 flex-1 font-retro text-xs"
+  >
+    <Eye className="mr-2 h-4 w-4" /> Preview
+  </Button>
+
+  <Button
+    onClick={copyLink}
+    variant="outline"
+    className="mwz-button h-10 flex-1 font-retro text-xs"
+  >
+    <Flame className="mr-2 h-4 w-4" /> Copy link
+  </Button>
+</div>
+
+<div className="mt-2">
+  <Button
+    onClick={archiveCurrentDraft}
+    disabled={saving || draft.status === "deployed" || draft.status === "archived"}
+    variant="outline"
+    className="mwz-button h-10 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200"
+  >
+    <Archive className="mr-2 h-4 w-4" />
+    {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
+  </Button>
+</div>
           <div className="mt-2">
   <Button
     onClick={archiveCurrentDraft}
