@@ -239,7 +239,7 @@ function svgCard(data, logoDataUrl = "") {
   <g transform="translate(55 53)"><path d="M13 0L25 7V21L13 28L1 21V7L13 0Z" stroke="#10f58a" stroke-width="2"/><path d="M8 10.5L13 7.8L18 10.5V16.6L13 19.2L8 16.6V10.5Z" fill="#10f58a" fill-opacity="0.25" stroke="#10f58a" stroke-width="1"/></g>
   <g filter="url(#textGlow)">${pixelText("MEMEWARZONE", 91, 62, { scale: 2, color: "#dfffee" })}</g>
   <g transform="translate(780 55)"><rect width="168" height="28" rx="14" fill="#2b1508" stroke="#f68b2b" stroke-opacity="0.65"/><circle cx="15" cy="14" r="3" fill="#10f58a"/></g>
-  <g filter="url(#textGlow)">${pixelText(status, 805, 65, { scale: 2, color: "#f39b3d", maxChars: 18 })}</g>
+  <g filter="url(#textGlow)">${pixelText(status, 864, 62, { scale: 2, color: "#f39b3d", maxChars: 12, anchor: "middle" })}</g>
 
   <g filter="url(#greenGlow)">${logoBlock}</g>
   <g filter="url(#textGlow)">
