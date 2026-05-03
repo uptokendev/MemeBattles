@@ -1,42 +1,96 @@
+/*
+  MemeWarzone Tactical Command UI
+  Loaded after the legacy mwz-hud.css so it intentionally overrides the green terminal skin.
+*/
+
 :root {
-  --mwz-bg: #070908;
-  --mwz-surface: rgba(12, 16, 15, 0.86);
-  --mwz-surface-strong: rgba(17, 22, 20, 0.94);
-  --mwz-surface-soft: rgba(20, 26, 23, 0.68);
-  --mwz-border: rgba(132, 118, 86, 0.26);
-  --mwz-border-strong: rgba(255, 122, 26, 0.38);
+  --background: 220 18% 5%;
+  --foreground: 42 24% 91%;
+  --card: 210 16% 8%;
+  --card-foreground: 42 24% 91%;
+  --popover: 210 18% 6%;
+  --popover-foreground: 42 24% 91%;
+  --primary: 210 14% 10%;
+  --primary-foreground: 42 24% 91%;
+  --secondary: 210 12% 12%;
+  --secondary-foreground: 42 18% 82%;
+  --muted: 210 12% 12%;
+  --muted-foreground: 45 9% 61%;
+  --accent: 24 100% 55%;
+  --accent-foreground: 24 100% 8%;
+  --success: 124 71% 52%;
+  --success-foreground: 220 18% 5%;
+  --border: 35 15% 21%;
+  --input: 210 14% 9%;
+  --ring: 24 100% 55%;
+  --radius: 0px;
+
+  --mwz-bg: #050706;
+  --mwz-bg-soft: #090d0b;
+  --mwz-panel: rgba(10, 13, 12, 0.92);
+  --mwz-panel-strong: rgba(13, 16, 15, 0.97);
+  --mwz-surface: rgba(12, 16, 15, 0.92);
+  --mwz-surface-strong: rgba(16, 19, 18, 0.98);
+  --mwz-surface-soft: rgba(22, 26, 24, 0.72);
+  --mwz-border: rgba(118, 111, 91, 0.34);
+  --mwz-border-soft: rgba(118, 111, 91, 0.18);
+  --mwz-border-strong: rgba(255, 122, 26, 0.55);
   --mwz-orange: #ff7a1a;
+  --mwz-orange-hot: #ff9b2f;
   --mwz-orange-soft: rgba(255, 122, 26, 0.16);
   --mwz-orange-rgb: 255, 122, 26;
-  --mwz-green: #40e05d;
-  --mwz-green-soft: rgba(64, 224, 93, 0.12);
-  --mwz-green-rgb: 64, 224, 93;
+  --mwz-green: #38d35c;
+  --mwz-green-soft: rgba(56, 211, 92, 0.12);
+  --mwz-green-rgb: 56, 211, 92;
+  --mwz-red: #ff4338;
   --mwz-text: #ece8dc;
-  --mwz-text-muted: #a7ad9f;
-  --mwz-text-dim: #6f756c;
-  --mwz-panel-shadow: 0 22px 52px rgba(0, 0, 0, 0.48);
+  --mwz-text-muted: #a9a89d;
+  --mwz-text-dim: #707166;
+  --mwz-panel-shadow: 0 22px 52px rgba(0, 0, 0, 0.54);
+  --mwz-cut: 14px;
+}
+
+html,
+body,
+#root {
+  background: var(--mwz-bg) !important;
 }
 
 body {
-  background-color: var(--mwz-bg);
+  color: var(--mwz-text) !important;
+  font-family: Inter, Satoshi, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  letter-spacing: 0 !important;
 }
 
 body::before {
-  filter: saturate(0.82) contrast(1.04) brightness(0.78);
+  background:
+    linear-gradient(180deg, rgba(5, 6, 6, 0.88) 0%, rgba(7, 8, 8, 0.84) 34%, rgba(5, 6, 6, 0.94) 100%),
+    radial-gradient(900px 420px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.13), transparent 62%),
+    url('/assets/background.png') center / cover no-repeat !important;
+  background-attachment: fixed !important;
+  filter: saturate(0.8) contrast(1.06) brightness(0.7) !important;
 }
 
 body::after {
   background:
-    radial-gradient(900px 420px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.13), transparent 64%),
-    radial-gradient(780px 340px at 18% 90%, rgba(var(--mwz-orange-rgb), 0.1), transparent 66%),
-    radial-gradient(700px 320px at 82% 86%, rgba(var(--mwz-green-rgb), 0.045), transparent 68%),
-    linear-gradient(180deg, rgba(3, 4, 4, 0.12), rgba(3, 4, 4, 0.68));
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.024) 0, rgba(255, 255, 255, 0.024) 1px, transparent 1px, transparent 5px),
+    radial-gradient(860px 420px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.1), transparent 68%),
+    linear-gradient(90deg, transparent, rgba(var(--mwz-orange-rgb), 0.035), transparent) !important;
+  mix-blend-mode: screen !important;
+  opacity: 0.42 !important;
+}
+
+.mwz-app-shell {
+  background:
+    radial-gradient(950px 420px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.085), transparent 63%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.22), transparent 22%) !important;
 }
 
 .mwz-app-shell main {
+  padding-top: 5.75rem !important;
   background:
-    radial-gradient(900px 420px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.06), transparent 64%),
-    linear-gradient(180deg, rgba(4, 5, 5, 0.08), rgba(4, 5, 5, 0.42));
+    linear-gradient(180deg, rgba(3, 4, 4, 0.18), rgba(3, 4, 4, 0.52)),
+    radial-gradient(900px 460px at 50% 0%, rgba(var(--mwz-orange-rgb), 0.055), transparent 64%) !important;
 }
 
 .font-retro,
@@ -44,117 +98,371 @@ body::after {
 .mwz-nav-link,
 .mwz-chip,
 .mwz-button {
-  letter-spacing: 0.075em;
-  text-transform: uppercase;
+  font-family: 'Rajdhani', 'Barlow Condensed', Inter, ui-sans-serif, system-ui, sans-serif !important;
+  letter-spacing: 0.055em !important;
+  text-transform: uppercase !important;
 }
 
 .mwz-section-title {
-  color: var(--mwz-text);
-  font-weight: 800;
-  text-shadow: 0 0 16px rgba(var(--mwz-orange-rgb), 0.12);
+  color: var(--mwz-text) !important;
+  font-weight: 800 !important;
+  line-height: 1.05 !important;
+  text-shadow: 0 0 16px rgba(var(--mwz-orange-rgb), 0.14) !important;
 }
 
-.mwz-muted {
-  color: var(--mwz-text-muted);
+.mwz-muted,
+.text-muted-foreground {
+  color: var(--mwz-text-muted) !important;
 }
 
-.mwz-orange {
-  color: var(--mwz-orange);
+.mwz-orange,
+.text-orange-400 {
+  color: var(--mwz-orange) !important;
 }
 
+.text-success,
+.text-success\/70,
+.text-success\/65,
+.text-success\/55,
+.text-success\/50,
+.text-success\/75 {
+  color: var(--mwz-text-muted) !important;
+}
+
+.mwz-section-title.text-success,
+h2.mwz-section-title,
+.text-success.md\:text-3xl {
+  color: var(--mwz-text) !important;
+}
+
+.border-success,
+.border-success\/20,
+.border-success\/25,
+.border-success\/30,
+.border-success\/35,
+.border-success\/40,
+.border-success\/55,
+.border-success\/70 {
+  border-color: rgba(var(--mwz-orange-rgb), 0.24) !important;
+}
+
+.bg-success\/10,
+.hover\:bg-success\/10:hover {
+  background-color: rgba(var(--mwz-orange-rgb), 0.08) !important;
+}
+
+/* Reusable metal panel system */
 .mwz-hud-frame,
 .mwz-panel,
 .mwz-card {
-  position: relative;
-  border: 1px solid var(--mwz-border);
+  position: relative !important;
+  isolation: isolate;
+  border: 1px solid var(--mwz-border) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 26%),
-    linear-gradient(145deg, var(--mwz-surface-strong), rgba(6, 8, 8, 0.94));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012) 26%, transparent 100%),
+    radial-gradient(circle at 22% 0%, rgba(var(--mwz-orange-rgb), 0.08), transparent 36%),
+    linear-gradient(145deg, rgba(18, 21, 20, 0.97), rgba(6, 8, 8, 0.98)) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.74),
-    var(--mwz-panel-shadow);
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.76),
+    var(--mwz-panel-shadow) !important;
   backdrop-filter: blur(12px);
+  clip-path: polygon(
+    0 var(--mwz-cut),
+    var(--mwz-cut) 0,
+    calc(100% - var(--mwz-cut)) 0,
+    100% var(--mwz-cut),
+    100% calc(100% - var(--mwz-cut)),
+    calc(100% - var(--mwz-cut)) 100%,
+    var(--mwz-cut) 100%,
+    0 calc(100% - var(--mwz-cut))
+  );
 }
 
 .mwz-hud-frame::before,
 .mwz-panel::before,
 .mwz-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border: 1px solid rgba(var(--mwz-orange-rgb), 0.08);
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  opacity: 1 !important;
   background:
-    linear-gradient(90deg, rgba(var(--mwz-orange-rgb), 0.16), transparent 18%, transparent 82%, rgba(var(--mwz-orange-rgb), 0.1)) top / 100% 1px no-repeat,
-    linear-gradient(90deg, rgba(var(--mwz-green-rgb), 0.1), transparent 26%, transparent 76%, rgba(var(--mwz-orange-rgb), 0.1)) bottom / 100% 1px no-repeat;
-  opacity: 0.9;
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 1px 34px no-repeat,
+    linear-gradient(90deg, rgba(var(--mwz-orange-rgb), 0.2), transparent 20%, transparent 80%, rgba(var(--mwz-orange-rgb), 0.14)) top / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 34%, transparent 66%, rgba(255, 255, 255, 0.04)) bottom / 100% 1px no-repeat !important;
 }
 
 .mwz-hud-frame::after,
 .mwz-panel::after,
 .mwz-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
   background-image: repeating-linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.028) 0px,
-    rgba(255, 255, 255, 0.028) 1px,
+    rgba(255, 255, 255, 0.022) 0px,
+    rgba(255, 255, 255, 0.022) 1px,
     transparent 1px,
     transparent 5px
-  );
-  opacity: 0.18;
+  ) !important;
+  opacity: 0.22 !important;
   mix-blend-mode: screen;
 }
 
-.mwz-card {
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 20% 0%, rgba(var(--mwz-orange-rgb), 0.1), transparent 34%),
-    linear-gradient(155deg, rgba(19, 24, 22, 0.96), rgba(7, 9, 9, 0.98));
-  transition:
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    transform 180ms ease,
-    filter 180ms ease;
-}
-
-.mwz-card:hover {
-  border-color: rgba(var(--mwz-orange-rgb), 0.48) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 0 1px rgba(var(--mwz-orange-rgb), 0.12),
-    0 0 26px rgba(var(--mwz-orange-rgb), 0.16),
-    0 24px 56px rgba(0, 0, 0, 0.62);
-  transform: translateY(-2px);
-}
-
+.mwz-hud-frame > *,
+.mwz-panel > *,
 .mwz-card > * {
   position: relative;
   z-index: 1;
 }
 
-.mwz-card [class*='border-success'] {
-  border-color: rgba(var(--mwz-orange-rgb), 0.22) !important;
+/* Top command bar */
+.fixed.top-0 {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.68), transparent) !important;
 }
 
-.mwz-card .text-success,
-.mwz-hud-frame .text-success,
-.mwz-panel .text-success {
+.fixed.top-0 .mwz-hud-frame {
+  min-height: 76px !important;
+  margin: 4px 8px 0 !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  border-color: rgba(112, 104, 84, 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012) 36%, transparent),
+    linear-gradient(90deg, rgba(22, 25, 24, 0.99), rgba(5, 7, 7, 0.98), rgba(22, 25, 24, 0.99)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 42px rgba(0, 0, 0, 0.48) !important;
+}
+
+.fixed.top-0 .mwz-hud-frame::before {
+  background:
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 42px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 42px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 42px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 42px no-repeat,
+    linear-gradient(rgba(var(--mwz-orange-rgb), 0.28), rgba(var(--mwz-orange-rgb), 0.28)) center bottom / 100% 1px no-repeat !important;
+}
+
+.fixed.top-0 img[alt='MemeWarzone'] {
+  filter:
+    drop-shadow(0 0 10px rgba(var(--mwz-orange-rgb), 0.36))
+    drop-shadow(0 8px 16px rgba(0, 0, 0, 0.72)) !important;
+}
+
+.fixed.top-0 .mwz-section-title.text-base {
+  font-size: 1.58rem !important;
+  letter-spacing: 0.02em !important;
   color: var(--mwz-text) !important;
 }
 
-.mwz-card .text-success\/70,
-.mwz-card .text-success\/65,
-.mwz-card .text-success\/55,
-.mwz-card .text-success\/50,
-.mwz-hud-frame .text-success\/70,
-.mwz-hud-frame .text-success\/65,
-.mwz-hud-frame .text-success\/55,
-.mwz-hud-frame .text-success\/50 {
-  color: var(--mwz-text-muted) !important;
+/* Buttons, nav and chips */
+.mwz-button,
+.mwz-chip,
+.mwz-nav-link {
+  position: relative !important;
+  min-height: 36px;
+  border: 1px solid rgba(146, 129, 99, 0.34) !important;
+  color: var(--mwz-text) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%),
+    linear-gradient(135deg, rgba(21, 24, 23, 0.98), rgba(5, 7, 7, 0.97)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.72),
+    0 10px 24px rgba(0, 0, 0, 0.28) !important;
+  text-shadow: none !important;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease !important;
+}
+
+.mwz-button::before,
+.mwz-chip::before,
+.mwz-nav-link::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+.mwz-button:hover,
+.mwz-chip:hover,
+.mwz-nav-link:hover {
+  color: #fff4dd !important;
+  border-color: rgba(var(--mwz-orange-rgb), 0.68) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 42%),
+    linear-gradient(135deg, rgba(45, 31, 19, 0.99), rgba(7, 8, 8, 0.99)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 18px rgba(var(--mwz-orange-rgb), 0.18),
+    0 12px 26px rgba(0, 0, 0, 0.38) !important;
+  transform: translateY(-1px);
+}
+
+.mwz-button-active,
+.mwz-chip-active,
+.mwz-nav-link-active {
+  color: #fff1d5 !important;
+  border-color: rgba(var(--mwz-orange-rgb), 0.9) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 38%),
+    linear-gradient(135deg, rgba(236, 95, 12, 0.92), rgba(142, 48, 5, 0.98)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.52),
+    0 0 20px rgba(var(--mwz-orange-rgb), 0.34),
+    0 14px 30px rgba(0, 0, 0, 0.38) !important;
+}
+
+.mwz-nav-link {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px !important;
+  padding-left: 1.4rem !important;
+  padding-right: 1.4rem !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(236, 232, 220, 0.76) !important;
+}
+
+.mwz-nav-link-active::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 8px;
+  height: 2px;
+  background: var(--mwz-orange);
+  box-shadow: 0 0 12px rgba(var(--mwz-orange-rgb), 0.74);
+}
+
+/* Search field */
+.fixed.top-0 input,
+.fixed.top-0 [cmdk-input],
+.fixed.top-0 [role='combobox'],
+.mwz-hud-frame input,
+.mwz-panel input,
+.mwz-hud-frame [role='combobox'],
+.mwz-panel [role='combobox'] {
+  border-color: rgba(146, 129, 99, 0.36) !important;
+  background-color: rgba(5, 7, 7, 0.78) !important;
+  color: var(--mwz-text) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03) !important;
+}
+
+.fixed.top-0 input:focus,
+.mwz-hud-frame input:focus,
+.mwz-panel input:focus,
+.mwz-hud-frame [role='combobox']:focus,
+.mwz-panel [role='combobox']:focus {
+  border-color: rgba(var(--mwz-orange-rgb), 0.66) !important;
+  box-shadow: 0 0 0 2px rgba(var(--mwz-orange-rgb), 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Hero overrides: make it darker, wider, closer to target mockup. */
+.mwz-tactical-hero {
+  height: clamp(150px, 10.5vw, 215px) !important;
+  margin-top: 0.15rem;
+  border-color: rgba(var(--mwz-orange-rgb), 0.24) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    inset 0 -1px 0 rgba(var(--mwz-orange-rgb), 0.22),
+    0 18px 46px rgba(0, 0, 0, 0.44) !important;
+}
+
+.mwz-tactical-hero__bg {
+  background-position: center 54% !important;
+  filter: saturate(0.92) contrast(1.08) brightness(0.78);
+}
+
+.mwz-tactical-hero__logo {
+  width: clamp(140px, 13vw, 250px) !important;
+}
+
+.mwz-tactical-hero__crosshair {
+  width: clamp(340px, 34vw, 660px) !important;
+  opacity: 0.42 !important;
+}
+
+.mwz-tactical-hero__terminal {
+  border-color: rgba(var(--mwz-green-rgb), 0.2) !important;
+  color: rgba(var(--mwz-green-rgb), 0.58) !important;
+  background: linear-gradient(180deg, rgba(8, 16, 10, 0.32), rgba(3, 7, 5, 0.18)) !important;
+}
+
+/* Featured + filter bars: less green, more metal. */
+.mwz-hud-frame .snap-x {
+  padding-top: 0.5rem;
+  margin-top: -0.5rem;
+  padding-bottom: 0.6rem;
+}
+
+.mwz-hud-frame:has(.snap-x) {
+  padding: 1rem !important;
+}
+
+/* Campaign card treatment */
+.mwz-card {
+  overflow: hidden !important;
+  background:
+    radial-gradient(circle at 26% 0%, rgba(var(--mwz-orange-rgb), 0.12), transparent 35%),
+    linear-gradient(155deg, rgba(19, 23, 22, 0.96), rgba(7, 9, 9, 0.99)) !important;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    filter 180ms ease !important;
+}
+
+.mwz-card:hover {
+  border-color: rgba(var(--mwz-orange-rgb), 0.56) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 0 0 1px rgba(var(--mwz-orange-rgb), 0.12),
+    0 0 30px rgba(var(--mwz-orange-rgb), 0.18),
+    0 24px 60px rgba(0, 0, 0, 0.66) !important;
+  transform: translateY(-2px) !important;
+}
+
+.mwz-card img,
+.mwz-hud-frame img,
+.mwz-panel img {
+  user-select: none;
+}
+
+.mwz-card img:not([src*='profile_placeholder']) {
+  filter: saturate(1.06) contrast(1.05) brightness(0.96) !important;
+}
+
+.mwz-card:hover img:not([src*='profile_placeholder']) {
+  filter: saturate(1.14) contrast(1.08) brightness(1.02) !important;
+}
+
+.mwz-card .mwz-section-title {
+  letter-spacing: 0.025em !important;
+  text-transform: none !important;
+}
+
+.mwz-card .mwz-section-title.truncate,
+.mwz-card .text-lg {
+  color: var(--mwz-text) !important;
 }
 
 .mwz-card .bg-black,
@@ -165,177 +473,90 @@ body::after {
 
 .mwz-stat-grid {
   background-image:
-    linear-gradient(rgba(var(--mwz-green-rgb), 0.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--mwz-green-rgb), 0.12) 1px, transparent 1px);
-  background-size: 24px 24px;
+    linear-gradient(rgba(var(--mwz-green-rgb), 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--mwz-green-rgb), 0.08) 1px, transparent 1px) !important;
+  background-size: 24px 24px !important;
 }
 
-.mwz-button,
-.mwz-chip,
-.mwz-nav-link {
-  position: relative;
-  border: 1px solid rgba(151, 139, 110, 0.28) !important;
-  color: var(--mwz-text) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 36%),
-    linear-gradient(135deg, rgba(24, 29, 27, 0.96), rgba(7, 9, 9, 0.94)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 10px 24px rgba(0, 0, 0, 0.28);
-  transition:
-    color 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
-.mwz-button:hover,
-.mwz-chip:hover,
-.mwz-nav-link:hover {
-  color: #fff3df !important;
-  border-color: rgba(var(--mwz-orange-rgb), 0.55) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 36%),
-    linear-gradient(135deg, rgba(48, 35, 21, 0.98), rgba(11, 12, 11, 0.98)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 18px rgba(var(--mwz-orange-rgb), 0.18),
-    0 12px 26px rgba(0, 0, 0, 0.34);
-  transform: translateY(-1px);
-}
-
-.mwz-button-active,
-.mwz-chip-active,
-.mwz-nav-link-active {
-  color: #fff1d7 !important;
-  border-color: rgba(var(--mwz-orange-rgb), 0.72) !important;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 35%),
-    linear-gradient(135deg, rgba(var(--mwz-orange-rgb), 0.72), rgba(153, 58, 9, 0.92)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.52),
-    0 0 18px rgba(var(--mwz-orange-rgb), 0.34),
-    0 14px 30px rgba(0, 0, 0, 0.38);
-}
-
-.mwz-nav-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 42px;
-}
-
-.mwz-nav-link-active::after {
-  content: '';
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 6px;
-  height: 2px;
-  background: var(--mwz-orange);
-  box-shadow: 0 0 12px rgba(var(--mwz-orange-rgb), 0.7);
-}
-
-.fixed.top-0 .mwz-hud-frame {
-  border-color: rgba(153, 136, 104, 0.3);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01) 36%, transparent),
-    linear-gradient(90deg, rgba(24, 27, 25, 0.98), rgba(9, 11, 11, 0.96), rgba(24, 27, 25, 0.98));
-}
-
-.fixed.top-0 .mwz-hud-frame img[alt='MemeWarzone'] {
-  filter:
-    drop-shadow(0 0 12px rgba(var(--mwz-orange-rgb), 0.34))
-    drop-shadow(0 8px 18px rgba(0, 0, 0, 0.66));
-}
-
-.fixed.top-0 + * {
-  position: relative;
-}
-
-.mwz-card img,
-.mwz-hud-frame img,
-.mwz-panel img {
-  user-select: none;
-}
-
-.mwz-card img:not([src*='profile_placeholder']) {
-  filter: saturate(1.05) contrast(1.04);
-}
-
-.mwz-card:hover img:not([src*='profile_placeholder']) {
-  filter: saturate(1.13) contrast(1.08) brightness(1.03);
+.mwz-card [style*='width'] {
+  border-radius: 999px;
 }
 
 .mwz-card [class*='bg-\[linear-gradient\(90deg\,var\(--mwz-orange\)'] {
-  background: linear-gradient(90deg, var(--mwz-orange), #ffb14a) !important;
-  box-shadow: 0 0 12px rgba(var(--mwz-orange-rgb), 0.34) !important;
+  background: linear-gradient(90deg, var(--mwz-orange), #ffbd57) !important;
+  box-shadow: 0 0 12px rgba(var(--mwz-orange-rgb), 0.36) !important;
 }
 
-.mwz-card .text-orange-400,
-.mwz-hud-frame .text-orange-400,
-.mwz-panel .text-orange-400 {
-  color: var(--mwz-orange) !important;
+/* League/recruiter promo cards should feel like boxed mission panels. */
+.mwz-card:has(img[src='/assets/leaguelogo.png']) {
+  min-height: 236px !important;
+  background:
+    radial-gradient(circle at 24% 50%, rgba(var(--mwz-orange-rgb), 0.18), transparent 34%),
+    linear-gradient(145deg, rgba(18, 21, 20, 0.98), rgba(7, 8, 8, 0.99)) !important;
 }
 
-.mwz-hud-frame label,
-.mwz-panel label {
-  color: var(--mwz-text-muted);
+.mwz-card img[src='/assets/leaguelogo.png'] {
+  filter:
+    drop-shadow(0 0 22px rgba(var(--mwz-orange-rgb), 0.34))
+    drop-shadow(0 12px 24px rgba(0, 0, 0, 0.72)) !important;
 }
 
-.mwz-hud-frame input,
-.mwz-panel input,
-.mwz-hud-frame [role='combobox'],
-.mwz-panel [role='combobox'] {
-  border-color: rgba(153, 136, 104, 0.3) !important;
-  background-color: rgba(5, 7, 7, 0.76) !important;
+/* Select/dropdowns */
+[data-radix-popper-content-wrapper] [role='option'],
+[data-radix-popper-content-wrapper] [role='listbox'] {
   color: var(--mwz-text) !important;
 }
 
-.mwz-hud-frame input:focus,
-.mwz-panel input:focus,
-.mwz-hud-frame [role='combobox']:focus,
-.mwz-panel [role='combobox']:focus {
-  border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
-  box-shadow: 0 0 0 2px rgba(var(--mwz-orange-rgb), 0.14) !important;
-}
-
-[data-radix-popper-content-wrapper] [role='option'],
 [data-radix-popper-content-wrapper] [role='listbox'] {
-  color: var(--mwz-text);
+  border: 1px solid rgba(var(--mwz-orange-rgb), 0.3) !important;
+  background: rgba(7, 9, 9, 0.98) !important;
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.62) !important;
 }
 
-[data-radix-popper-content-wrapper] [role='listbox'] {
-  border: 1px solid rgba(var(--mwz-orange-rgb), 0.28);
-  background: rgba(7, 9, 9, 0.98);
-  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.58);
-}
-
-/* Home page section copy: keep the new theme orange-led instead of neon-green-led. */
-.text-success.md\:text-3xl,
+/* Home page section copy */
 .text-success\/65 {
   color: var(--mwz-text-muted) !important;
 }
 
-.text-success.md\:text-3xl {
-  color: var(--mwz-text) !important;
+/* Hide the old green ticker effect; keep it tactical but subtle. */
+.fixed.top-0 .mwz-muted {
+  color: rgba(169, 168, 157, 0.76) !important;
+}
+
+.fixed.top-0 .mwz-orange {
+  color: var(--mwz-orange) !important;
+}
+
+@media (max-width: 1024px) {
+  .mwz-nav-link {
+    min-height: 40px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .mwz-tactical-hero {
+    height: clamp(132px, 26vw, 188px) !important;
+  }
 }
 
 @media (max-width: 768px) {
+  .mwz-app-shell main {
+    padding-top: 5.35rem !important;
+  }
+
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card {
     backdrop-filter: blur(8px);
+    --mwz-cut: 10px;
   }
 
-  .mwz-card:hover {
-    transform: none;
-  }
-
+  .mwz-card:hover,
   .mwz-button:hover,
   .mwz-chip:hover,
   .mwz-nav-link:hover {
-    transform: none;
+    transform: none !important;
   }
 }
