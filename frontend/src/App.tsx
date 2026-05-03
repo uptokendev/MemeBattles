@@ -40,7 +40,6 @@ import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
-import "@/styles/tactical-command-ui.css";
 
 const queryClient = new QueryClient();
 
