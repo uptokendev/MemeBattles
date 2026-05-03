@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import "@/styles/tactical-hero.css";
 
 type HeaderBandProps = {
   className?: string;
