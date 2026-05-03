@@ -124,7 +124,7 @@ function buildPreparePageUrl(slug: string) {
   return `${window.location.origin}/prepare/${slug}`;
 }
 
-function buildShareCardUrl(bundle: PrepareDraftBundle, download = false) {
+function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version?: string) {
   const { draft, promotion, popularity } = bundle;
 
   const displayLink =
@@ -165,6 +165,7 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false) {
   });
 
   if (download) params.set("download", "1");
+  if (version) params.set("_v", version);
 
   return `/api/prepare-share-card?${params.toString()}`;
 }
