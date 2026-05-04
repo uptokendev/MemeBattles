@@ -6,7 +6,7 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 
-export type FeedTabKey = "trending" | "new" | "ending" | "dex";
+export type FeedTabKey = "drafts" | "trending" | "new" | "ending" | "dex";
 
 export type HomeQuery = {
   tab: FeedTabKey;
@@ -103,7 +103,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const [refetchNonce, setRefetchNonce] = useState(0);
 
 const { patchByCampaign, created } = useLeagueRealtime({
-  enabled: true,
+  enabled: query.tab !== "drafts",
   chainId: activeChainId,
   fallbackMs: 25000,
   onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
@@ -189,7 +189,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
     return {
       chainId: activeChainId,
       limit: 24,
-      tab: query.tab ?? "trending",
+      tab: query.tab === "drafts" ? "trending" : (query.tab ?? "trending"),
       sort: query.sort ?? "default",
       status: query.status ?? "all",
       search: query.search ?? "",
@@ -208,6 +208,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (query.tab === "drafts") return;
       setLoading(true);
       setErr(null);
       try {
@@ -243,12 +244,13 @@ const { patchByCampaign, created } = useLeagueRealtime({
     return () => {
       mounted = false;
     };
-  }, [baseParams, refetchNonce]);
+  }, [baseParams, refetchNonce, query.tab]);
 
   // Hydrate missing token images from on-chain logoURI.
   // This keeps the DB feed fast for stats/sorts while matching the behavior of
   // pages that render images via useLaunchpad().fetchCampaigns().
   useEffect(() => {
+    if (query.tab === "drafts") return;
     let cancelled = false;
 
     const missing = (items || [])
@@ -304,10 +306,10 @@ const { patchByCampaign, created } = useLeagueRealtime({
     return () => {
       cancelled = true;
     };
-  }, [items, logoCache, fetchCampaignLogoURI, DEBUG]);
+  }, [items, logoCache, fetchCampaignLogoURI, DEBUG, query.tab]);
 
   const loadMore = async () => {
-    if (loadingMore || loading || nextCursor == null) return;
+    if (query.tab === "drafts" || loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
     try {
       if (DEBUG) {
@@ -332,6 +334,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
 
   // Infinite scroll: load next page when sentinel becomes visible.
   useEffect(() => {
+    if (query.tab === "drafts") return;
     const el = sentinelRef.current;
     if (!el) return;
     const obs = new IntersectionObserver(
@@ -345,7 +348,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams]);
+  }, [sentinelRef.current, nextCursor, loading, loadingMore, baseParams, query.tab]);
 
   const vms: CampaignCardVM[] = useMemo(() => {
     const GRAD_TARGET_BNB = 50;
@@ -401,7 +404,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
     const count = vms.length;
     const updated = lastUpdatedAt ? Math.floor((Date.now() - Date.parse(lastUpdatedAt)) / 1000) : null;
     const updatedLabel = updated != null && Number.isFinite(updated) ? `${Math.max(0, updated)}s ago` : "—";
-    return `Showing ${count} campaigns • Updated ${updatedLabel}`;
+    return `Showing ${count} campaigns - Updated ${updatedLabel}`;
   }, [vms.length, lastUpdatedAt]);
 
   return (
@@ -434,7 +437,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
           <div ref={sentinelRef} className="h-12" />
 
           {loadingMore ? (
-            <div className="py-6 text-center text-xs text-muted-foreground">Loading more…</div>
+            <div className="py-6 text-center text-xs text-muted-foreground">Loading more...</div>
           ) : nextCursor == null ? (
             <div className="py-6 text-center text-xs text-muted-foreground">End of results</div>
           ) : null}
