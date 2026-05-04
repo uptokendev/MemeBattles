@@ -78,6 +78,51 @@ function getInjectedProviders() {
   return providers.filter((provider: any) => provider?.request);
 }
 
+function providerText(provider: any) {
+  const parts = [
+    provider?.providerInfo?.name,
+    provider?.providerInfo?.rdns,
+    provider?.info?.name,
+    provider?.info?.rdns,
+    provider?.metadata?.name,
+    provider?.metadata?.rdns,
+    provider?.name,
+    provider?._walletName,
+    provider?.rdns,
+    provider?._rdns,
+  ];
+  return parts.map((item) => String(item || "").toLowerCase()).join(" ");
+}
+
+function isCryptoComProvider(provider: any) {
+  const text = providerText(provider);
+  return Boolean(
+    provider?.isCryptoCom ||
+      provider?.isCryptoComWallet ||
+      text.includes("crypto.com") ||
+      text.includes("cryptocom") ||
+      text.includes("crypto com") ||
+      text.includes("defi wallet")
+  );
+}
+
+function isMetaMaskProvider(provider: any) {
+  const text = providerText(provider);
+  return Boolean(
+    (provider?.isMetaMask || text.includes("metamask") || text.includes("io.metamask")) &&
+      !isCryptoComProvider(provider)
+  );
+}
+
+function selectedWalletId() {
+  if (typeof window === "undefined") return "";
+  try {
+    return String(window.localStorage.getItem("mwz:selected_wallet") || "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 async function providerAccounts(provider: any) {
   const selected = normalizeWallet(provider?.selectedAddress || "");
   if (selected) return [selected];
@@ -93,16 +138,33 @@ async function providerAccounts(provider: any) {
 async function findProviderForWallet(walletAddress: string) {
   const wallet = normalizeWallet(walletAddress);
   const providers = getInjectedProviders();
+  const selected = selectedWalletId();
 
-  for (const provider of providers) {
+  const selectedMatches = providers.filter((provider: any) => {
+    if (selected.startsWith("metamask")) return isMetaMaskProvider(provider);
+    if (selected.startsWith("cryptocom")) return isCryptoComProvider(provider);
+    const text = providerText(provider);
+    return selected ? text.includes(selected) : false;
+  });
+
+  for (const provider of selectedMatches) {
     const accounts = await providerAccounts(provider);
     if (accounts.includes(wallet)) return provider;
   }
 
-  const metamask = providers.find((provider: any) => provider?.isMetaMask && !provider?.isCryptoCom);
+  if (selected.startsWith("metamask") && selectedMatches[0]) return selectedMatches[0];
+  if (selected.startsWith("cryptocom") && selectedMatches[0]) return selectedMatches[0];
+
+  for (const provider of providers) {
+    if (isCryptoComProvider(provider) && selected.startsWith("metamask")) continue;
+    const accounts = await providerAccounts(provider);
+    if (accounts.includes(wallet)) return provider;
+  }
+
+  const metamask = providers.find((provider: any) => isMetaMaskProvider(provider));
   if (metamask) return metamask;
 
-  return providers[0] || null;
+  return providers.find((provider: any) => !isCryptoComProvider(provider)) || providers[0] || null;
 }
 
 async function signWithInjectedWallet(message: string, walletAddress: string) {
