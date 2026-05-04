@@ -1,14 +1,14 @@
 const FRAME_CSS = `
   :root {
-    --mwz-screen-frame-top-corner-width: clamp(30px, 4.7vw, 48px);
-    --mwz-screen-frame-top-corner-height: clamp(30px, 4.8vw, 45px);
-    --mwz-screen-frame-top-edge-height: clamp(14px, 1.25vw, 20px);
+    --mwz-screen-frame-top-corner-width: clamp(28px, 4.7vw, 38px);
+    --mwz-screen-frame-top-corner-height: clamp(28px, 4.8vw, 34px);
+    --mwz-screen-frame-top-edge-height: clamp(14px, 1.25vw, 14px);
 
     --mwz-screen-frame-bottom-corner-width: var(--mwz-screen-frame-top-corner-width);
     --mwz-screen-frame-bottom-corner-height: var(--mwz-screen-frame-top-corner-height);
     --mwz-screen-frame-bottom-edge-height: var(--mwz-screen-frame-top-edge-height);
 
-    --mwz-screen-frame-side-width: clamp(8px, 1.15vw, 18px);
+    --mwz-screen-frame-side-width: clamp(8px, 1.15vw, 12px);
     --mwz-screen-frame-opacity: 0.96;
   }
 
