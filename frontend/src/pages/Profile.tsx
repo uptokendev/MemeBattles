@@ -1325,6 +1325,7 @@ const Profile = () => {
             {[
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
+              { id: "drafts" as ProfileTab, label: "Drafts", badge: null },
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
               { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
               { id: "airdrops" as ProfileTab, label: "Airdrops", badge: null },
