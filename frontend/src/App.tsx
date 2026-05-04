@@ -40,6 +40,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
+import { ScreenFrame } from "@/components/layout/ScreenFrame";
 
 const queryClient = new QueryClient();
 
@@ -99,6 +100,7 @@ const App = () => {
                   </Routes>
                   <Footer />
                 </main>
+                <ScreenFrame />
               </div>
             </BrowserRouter>
           </div>
