@@ -5,7 +5,8 @@ export type DraftAuthAction =
   | "create_draft"
   | "save_promotion"
   | "publish_promotion"
-  | "archive_draft";
+  | "archive_draft"
+  | "deploy_draft";
 
 export type DraftActionAuth = {
   action: DraftAuthAction;
