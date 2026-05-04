@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { FeedTabKey, HomeQuery } from "./CampaignGrid";
-import { Filter, Flame, Sparkles, Timer, TrendingUp } from "lucide-react";
+import { FileText, Filter, Flame, Sparkles, Timer, TrendingUp } from "lucide-react";
 
 type DiscoveryControlsProps = {
   className?: string;
@@ -29,6 +29,8 @@ type DiscoveryControlsProps = {
 };
 
 const TAB_DEFS: Array<{ key: FeedTabKey; label: string; icon: ReactNode }> = [
+  // Pre-live ordering: Drafts first. Move this item to the end when live campaigns become the default row.
+  { key: "drafts", label: "Drafts", icon: <FileText className="h-4 w-4" /> },
   { key: "trending", label: "Trending", icon: <TrendingUp className="h-4 w-4" /> },
   { key: "new", label: "New", icon: <Sparkles className="h-4 w-4" /> },
   { key: "ending", label: "Ending Soon", icon: <Timer className="h-4 w-4" /> },
@@ -37,12 +39,12 @@ const TAB_DEFS: Array<{ key: FeedTabKey; label: string; icon: ReactNode }> = [
 
 const SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }> = [
   { value: "default", label: "Default" },
-  { value: "mcap_desc", label: "Market Cap: High → Low" },
-  { value: "mcap_asc", label: "Market Cap: Low → High" },
-  { value: "votes_desc", label: "Upvotes (24h): High → Low" },
-  { value: "progress_desc", label: "Progress: High → Low" },
-  { value: "created_desc", label: "Created: New → Old" },
-  { value: "created_asc", label: "Created: Old → New" },
+  { value: "mcap_desc", label: "Market Cap: High -> Low" },
+  { value: "mcap_asc", label: "Market Cap: Low -> High" },
+  { value: "votes_desc", label: "Upvotes (24h): High -> Low" },
+  { value: "progress_desc", label: "Progress: High -> Low" },
+  { value: "created_desc", label: "Created: New -> Old" },
+  { value: "created_asc", label: "Created: Old -> New" },
 ];
 
 function numOrUndef(s: string): number | undefined {
@@ -56,6 +58,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
   const timeChips = useMemo(() => ["1h", "24h", "7d", "all"] as const, []);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const isDraftRow = query.tab === "drafts";
   const forcedStatus = query.tab === "ending" ? "live" : query.tab === "dex" ? "graduated" : null;
   const statusValue = forcedStatus ?? (query.status ?? "all");
   const sortValue = query.sort ?? "default";
@@ -122,78 +125,82 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
             );
           })}
 
-          <div className="hidden md:flex items-center gap-2 ml-2">
-            {timeChips.map((k) => {
-              const active = (query.timeFilter ?? "24h") === k;
-              return (
-                <Button
-                  key={k}
-                  size="sm"
-                  variant="ghost"
-                  className={cn("mwz-chip h-8 px-3 text-xs", active && "mwz-chip-active")}
-                  onClick={() => onChange({ ...query, timeFilter: k })}
-                >
-                  {k.toUpperCase()}
-                </Button>
-              );
-            })}
-          </div>
+          {!isDraftRow && (
+            <div className="hidden md:flex items-center gap-2 ml-2">
+              {timeChips.map((k) => {
+                const active = (query.timeFilter ?? "24h") === k;
+                return (
+                  <Button
+                    key={k}
+                    size="sm"
+                    variant="ghost"
+                    className={cn("mwz-chip h-8 px-3 text-xs", active && "mwz-chip-active")}
+                    onClick={() => onChange({ ...query, timeFilter: k })}
+                  >
+                    {k.toUpperCase()}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 justify-between md:justify-end">
-          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="mwz-button gap-2 h-9">
-                <Filter className="h-4 w-4" />
-                Filters
-              </Button>
-            </SheetTrigger>
+          {!isDraftRow && (
+            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="mwz-button gap-2 h-9">
+                  <Filter className="h-4 w-4" />
+                  Filters
+                </Button>
+              </SheetTrigger>
 
-            <SheetContent side="bottom" className="mwz-panel border-success/40">
-              <SheetHeader>
-                <SheetTitle className="mwz-section-title">Filters</SheetTitle>
-              </SheetHeader>
+              <SheetContent side="bottom" className="mwz-panel border-success/40">
+                <SheetHeader>
+                  <SheetTitle className="mwz-section-title">Filters</SheetTitle>
+                </SheetHeader>
 
-              <div className="mt-6 grid gap-5">
-                <div className="grid gap-2">
-                  <Label>Status</Label>
-                  <Select value={statusValue} disabled={Boolean(forcedStatus)} onValueChange={(v) => onChange({ ...query, status: v as any })}>
-                    <SelectTrigger className="rounded-none border-success/40 bg-black/40">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="live">Live</SelectItem>
-                      <SelectItem value="graduated">Graduated</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {forcedStatus ? <div className="text-xs mwz-muted">Status locked to {forcedStatus} for this command tab.</div> : null}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Market Cap (USD) range</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={mcapMin} onChange={(e) => setMcapMin(e.target.value)} onBlur={applyNumericFilters} placeholder="Min" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
-                    <input value={mcapMax} onChange={(e) => setMcapMax(e.target.value)} onBlur={applyNumericFilters} placeholder="Max" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                <div className="mt-6 grid gap-5">
+                  <div className="grid gap-2">
+                    <Label>Status</Label>
+                    <Select value={statusValue} disabled={Boolean(forcedStatus)} onValueChange={(v) => onChange({ ...query, status: v as any })}>
+                      <SelectTrigger className="rounded-none border-success/40 bg-black/40">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="live">Live</SelectItem>
+                        <SelectItem value="graduated">Graduated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {forcedStatus ? <div className="text-xs mwz-muted">Status locked to {forcedStatus} for this command tab.</div> : null}
                   </div>
-                  <div className="text-xs mwz-muted">Uses best-effort BNB/USD conversion.</div>
-                </div>
 
-                <div className="grid gap-2">
-                  <Label>Progress (%) range</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input value={pMin} onChange={(e) => setPMin(e.target.value)} onBlur={applyNumericFilters} placeholder="Min" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
-                    <input value={pMax} onChange={(e) => setPMax(e.target.value)} onBlur={applyNumericFilters} placeholder="Max" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                  <div className="grid gap-2">
+                    <Label>Market Cap (USD) range</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={mcapMin} onChange={(e) => setMcapMin(e.target.value)} onBlur={applyNumericFilters} placeholder="Min" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                      <input value={mcapMax} onChange={(e) => setMcapMax(e.target.value)} onBlur={applyNumericFilters} placeholder="Max" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                    </div>
+                    <div className="text-xs mwz-muted">Uses best-effort BNB/USD conversion.</div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Progress (%) range</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input value={pMin} onChange={(e) => setPMin(e.target.value)} onBlur={applyNumericFilters} placeholder="Min" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                      <input value={pMax} onChange={(e) => setPMax(e.target.value)} onBlur={applyNumericFilters} placeholder="Max" inputMode="decimal" className="h-10 border border-success/40 bg-black/40 px-3 text-sm outline-none focus:ring-2 focus:ring-success/30" />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2">
+                    <Button variant="outline" className="mwz-button" onClick={resetFilters}>Reset</Button>
+                    <Button className="mwz-button mwz-button-active" onClick={() => { applyNumericFilters(); setFiltersOpen(false); }}>Apply</Button>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between gap-2 pt-2">
-                  <Button variant="outline" className="mwz-button" onClick={resetFilters}>Reset</Button>
-                  <Button className="mwz-button mwz-button-active" onClick={() => { applyNumericFilters(); setFiltersOpen(false); }}>Apply</Button>
-                </div>
-              </div>
-            </SheetContent>
-          </Sheet>
+              </SheetContent>
+            </Sheet>
+          )}
 
           <div className="shrink-0 w-[220px]">
             <Select value={sortValue} onValueChange={(v) => onChange({ ...query, sort: v as any })}>
