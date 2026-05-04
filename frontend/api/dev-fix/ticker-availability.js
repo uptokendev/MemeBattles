@@ -26,6 +26,16 @@ async function getPool() {
   }
 }
 
+async function queryFirst(pool, sql, params) {
+  try {
+    const result = await pool.query(sql, params);
+    return result.rows[0] || null;
+  } catch (err) {
+    console.warn("[ticker-availability] query failed", err?.message || err);
+    return null;
+  }
+}
+
 export async function tickerAvailability(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
 
@@ -49,12 +59,13 @@ export async function tickerAvailability(req, res) {
   const pool = await getPool();
   if (!pool) return json(res, 503, { error: "Ticker availability requires DATABASE_URL." });
 
-  const draftRes = await pool.query(
-    "select id from public.campaign_drafts where chain_id = $1 and lower(ticker) = lower($2) and status <> 'archived' limit 1",
+  const activeDraft = await queryFirst(
+    pool,
+    "select 1 from public.campaign_drafts where chain_id = $1 and lower(ticker) = lower($2) and status <> 'archived' limit 1",
     [chainId, ticker],
   );
 
-  if (draftRes.rows.length) {
+  if (activeDraft) {
     return json(res, 200, {
       ticker,
       chainId,
@@ -64,12 +75,13 @@ export async function tickerAvailability(req, res) {
     });
   }
 
-  const liveRes = await pool.query(
-    "select campaign from public.campaigns where chain_id = $1 and lower(symbol) = lower($2) limit 1",
+  const liveCampaign = await queryFirst(
+    pool,
+    "select 1 from public.campaigns where chain_id = $1 and lower(symbol) = lower($2) limit 1",
     [chainId, ticker],
   );
 
-  if (liveRes.rows.length) {
+  if (liveCampaign) {
     return json(res, 200, {
       ticker,
       chainId,
