@@ -3,6 +3,7 @@ import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 
 export type DraftAuthAction =
   | "create_draft"
+  | "read_draft"
   | "save_promotion"
   | "publish_promotion"
   | "archive_draft"
