@@ -36,6 +36,7 @@ import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
 import { draftDeploy } from "../../api/dev-fix/draft-deploy.js";
 import { signedDraftComments, signedDraftFollow } from "../../api/dev-fix/draft-engagement.js";
+import { prepareNotifications } from "../../api/dev-fix/prepare-notifications.js";
 import { signedDraftById, signedPrepareBySlug } from "../../api/dev-fix/draft-read.js";
 import {
   draftArchive,
@@ -161,6 +162,7 @@ app.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 app.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 app.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 app.all("/prepare/:slug", wrap(signedPrepareBySlug));
+app.all("/prepare-notifications", wrap(prepareNotifications));
 
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
