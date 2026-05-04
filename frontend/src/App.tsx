@@ -23,6 +23,7 @@ import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
+import PushDraftLive from "./pages/PushDraftLive";
 import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
 import Recruiter from "./pages/Recruiter";
@@ -76,6 +77,7 @@ const App = () => {
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
+                    <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
                     <Route path="/prepare/:slug" element={<Prepare />} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
