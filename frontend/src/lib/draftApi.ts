@@ -76,16 +76,16 @@ async function signWithInjectedWallet(message: string, walletAddress: string) {
   );
 }
 
-async function signPrepareEngagement(input: {
-  action: "follow_draft" | "comment_draft";
+async function signDraftActionWithKnownChain(input: {
+  action: DraftAuthAction;
   draftId: string;
   walletAddress: string;
+  chainId: number;
 }): Promise<DraftActionAuth> {
   const walletAddress = normalizeWallet(input.walletAddress);
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
 
-  const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
-  const chainId = Number(bundle.draft.chainId);
+  const chainId = Number(input.chainId);
   if (!Number.isFinite(chainId) || chainId <= 0) {
     throw new Error("Invalid draft chain id. Refresh and try again.");
   }
@@ -110,6 +110,57 @@ async function signPrepareEngagement(input: {
     message,
     signature,
   };
+}
+
+async function signPrepareEngagement(input: {
+  action: "follow_draft" | "comment_draft";
+  draftId: string;
+  walletAddress: string;
+}): Promise<DraftActionAuth> {
+  const walletAddress = normalizeWallet(input.walletAddress);
+  if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
+
+  const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
+  return signDraftActionWithKnownChain({
+    action: input.action,
+    draftId: input.draftId,
+    walletAddress,
+    chainId: Number(bundle.draft.chainId),
+  });
+}
+
+async function retryPrivateReadWithAuth(
+  url: string,
+  walletAddress: string | null | undefined,
+  json: any,
+  fallbackDraftId?: string | null
+): Promise<PrepareDraftBundle> {
+  const wallet = normalizeWallet(walletAddress || "");
+  if (!wallet) {
+    throw new Error(String(json?.error || "Private draft requires the owner wallet."));
+  }
+
+  const chainId = Number(json?.chainId);
+  const draftId = String(json?.draftId || fallbackDraftId || "");
+
+  if (!draftId) {
+    throw new Error("Private draft auth could not identify the draft. Refresh and try again.");
+  }
+
+  const auth = await signDraftActionWithKnownChain({
+    action: "read_draft",
+    draftId,
+    walletAddress: wallet,
+    chainId,
+  });
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
+
+  return parseJson(res) as Promise<PrepareDraftBundle>;
 }
 
 export type DraftVisibility = "public" | "unlisted" | "private";
@@ -253,8 +304,16 @@ export async function fetchOwnerCampaignDrafts(
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
 export async function fetchCampaignDraft(draftId: string, viewer?: string | null): Promise<PrepareDraftBundle> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`));
-  return parseJson(res) as Promise<PrepareDraftBundle>;
+  const url = buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
+  const res = await fetch(url);
+  const json = await res.json().catch(() => ({}));
+
+  if (res.ok) return json as PrepareDraftBundle;
+  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
+    return retryPrivateReadWithAuth(url, viewer, json, draftId);
+  }
+
+  throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
 export async function saveDraftPromotion(draftId: string, input: SavePromotionInput): Promise<PrepareDraftBundle> {
@@ -267,8 +326,16 @@ export async function saveDraftPromotion(draftId: string, input: SavePromotionIn
 }
 
 export async function fetchPrepareDraft(slug: string, viewer?: string | null): Promise<PrepareDraftBundle> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/prepare/${encodeURIComponent(slug)}${query({ viewer })}`));
-  return parseJson(res) as Promise<PrepareDraftBundle>;
+  const url = buildRealtimeApiUrl(`/api/prepare/${encodeURIComponent(slug)}${query({ viewer })}`);
+  const res = await fetch(url);
+  const json = await res.json().catch(() => ({}));
+
+  if (res.ok) return json as PrepareDraftBundle;
+  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
+    return retryPrivateReadWithAuth(url, viewer, json, json?.draftId || null);
+  }
+
+  throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
 export async function followDraft(input: DraftActionAuth | string, walletAddress?: string): Promise<{ following: boolean; followCount: number }> {
