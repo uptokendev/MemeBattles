@@ -31,6 +31,10 @@ function shortDraftId(value: string) {
   return value ? `#${value.slice(0, 8)}` : "#DRAFT";
 }
 
+function canPushLiveStatus(status: string) {
+  return status === "promotion_published" || status === "ready_to_launch" || status === "scheduled";
+}
+
 function getCachedLogo(draftId: string) {
   if (typeof window === "undefined" || !draftId) return "";
   try {
@@ -352,6 +356,13 @@ const archiveCurrentDraft = async () => {
             <Button onClick={() => save({ publish: true })} disabled={saving} className="mwz-button mwz-button-orange mt-4 h-11 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
+            {canPushLiveStatus(draft.status) && (
+              <Button asChild className="mwz-button mwz-button-orange mt-2 h-11 w-full justify-center font-retro">
+                <Link to={`/drafts/${draft.id}/push-live`}>
+                  <Rocket className="mr-2 h-4 w-4" /> Push Live
+                </Link>
+              </Button>
+            )}
             <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro text-xs">
               <Save className="mr-2 h-4 w-4" /> Save draft
             </Button>
