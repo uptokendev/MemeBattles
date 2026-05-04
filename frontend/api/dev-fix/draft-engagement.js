@@ -1,8 +1,6 @@
-import { randomUUID } from "node:crypto";
 import { badMethod, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
-
-const ZERO = { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0 };
+import { notifyDraftOwner } from "./prepare-notify.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -13,6 +11,11 @@ function methodAllowed(req, res, allowed) {
 function normalizeAddress(value) {
   const raw = String(value || "").trim().toLowerCase();
   return isAddress(raw) ? raw : "";
+}
+
+function shortAddress(address) {
+  const value = String(address || "");
+  return value.length > 10 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
 }
 
 function cleanText(value, max = 5000) {
@@ -75,7 +78,7 @@ function nestComments(flat) {
 
 async function getDraftAuthContext(pool, draftId) {
   const result = await pool.query(
-    "select id, creator_wallet, chain_id from campaign_drafts where id::text = $1 limit 1",
+    "select id, creator_wallet, chain_id, name, ticker, slug from campaign_drafts where id::text = $1 limit 1",
     [draftId],
   );
 
@@ -86,6 +89,9 @@ async function getDraftAuthContext(pool, draftId) {
     id: String(row.id),
     creatorWallet: normalizeAddress(row.creator_wallet),
     chainId: Number(row.chain_id),
+    name: String(row.name || "Draft"),
+    ticker: String(row.ticker || "DRAFT"),
+    slug: String(row.slug || ""),
   };
 }
 
@@ -115,8 +121,8 @@ export async function signedDraftFollow(req, res) {
   });
   if (!authOk) return;
 
-  await pool.query(
-    "insert into campaign_draft_follows (draft_id, wallet_address) values ($1,$2) on conflict (draft_id, wallet_address) do nothing",
+  const followInsert = await pool.query(
+    "insert into campaign_draft_follows (draft_id, wallet_address) values ($1,$2) on conflict (draft_id, wallet_address) do nothing returning wallet_address",
     [draftId, wallet],
   );
 
@@ -129,6 +135,19 @@ export async function signedDraftFollow(req, res) {
       [draftId, followCount],
     )
     .catch(() => {});
+
+  if (followInsert.rows.length && wallet !== draft.creatorWallet) {
+    await notifyDraftOwner(pool, draft, {
+      eventType: "follow",
+      title: "New watchlist recruit",
+      body: `${shortAddress(wallet)} watchlisted $${draft.ticker}.`,
+      metadata: {
+        target: `/prepare/${draft.slug}`,
+        actor: wallet,
+        ticker: draft.ticker,
+      },
+    });
+  }
 
   return json(res, 200, { following: true, followCount });
 }
@@ -192,6 +211,20 @@ export async function signedDraftComments(req, res) {
       [draftId],
     )
     .catch(() => {});
+
+  if (wallet !== draft.creatorWallet) {
+    await notifyDraftOwner(pool, draft, {
+      eventType: "comment",
+      title: "New bunker comment",
+      body: `${shortAddress(wallet)} commented on $${draft.ticker}.`,
+      metadata: {
+        target: `/prepare/${draft.slug}`,
+        actor: wallet,
+        ticker: draft.ticker,
+        commentId: String(inserted.rows[0]?.id || ""),
+      },
+    });
+  }
 
   return json(res, 201, { comment: mapCommentRow(inserted.rows[0]) });
 }
