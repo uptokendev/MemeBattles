@@ -605,10 +605,6 @@ h2.mwz-section-title,
   );
   mix-blend-mode: screen;
 }
-.mwz-tactical-hero__vignette {
-  display: none !important;
-}
-
 /* Cards and card frame assets */
 .mwz-card {
   --mwz-cut: var(--mwz-card-cut);

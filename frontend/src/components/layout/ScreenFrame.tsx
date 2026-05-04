@@ -1,7 +1,7 @@
 const FRAME_CSS = `
   :root {
-    --mwz-screen-frame-top-height: clamp(42px, 4.2vw, 86px);
-    --mwz-screen-frame-bottom-height: clamp(48px, 4.9vw, 104px);
+    --mwz-screen-frame-top-height: clamp(10px, 2.2vw, 20px);
+    --mwz-screen-frame-bottom-height: clamp(48px, 2.2vw, 20px);
     --mwz-screen-frame-side-width: clamp(12px, 1.15vw, 26px);
     --mwz-screen-frame-opacity: 0.96;
   }
