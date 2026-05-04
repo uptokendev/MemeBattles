@@ -207,11 +207,11 @@ export function ProfileDraftsPanel({
       </div>
 
       {loading ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(172px,220px))]">
           {Array.from({ length: 3 }).map((_, index) => (
             <div
               key={index}
-              className="h-[260px] animate-pulse border border-success/20 bg-black/45"
+              className="h-[322px] w-full animate-pulse border border-success/20 bg-black/45"
             />
           ))}
         </div>
@@ -222,7 +222,7 @@ export function ProfileDraftsPanel({
             : "No public Prepare Mode drafts for this profile."}
         </div>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(172px,220px))]">
           {items.map((draft) => {
             const logo = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
             const canOpenPrepare = draft.status !== "archived" && draft.visibility !== "private";
@@ -232,31 +232,33 @@ export function ProfileDraftsPanel({
             return (
               <article
                 key={draft.id}
-                className="mwz-card flex min-h-[300px] flex-col overflow-hidden border-success/30 bg-black/70"
+                className="mwz-card group relative flex w-full max-w-none flex-col overflow-hidden rounded-none border-success/35 bg-black/70 sm:max-w-[clamp(172px,19vw,220px)]"
               >
-                <div className="relative aspect-[16/9] border-b border-success/20 bg-black">
+                <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black">
+                  <div className="absolute inset-0 mwz-stat-grid z-10 pointer-events-none opacity-30" />
                   <img
                     src={logo}
                     alt={draft.name}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full bg-black object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                     draggable={false}
                     loading="lazy"
                   />
+                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_45%,rgba(0,0,0,0.62))]" />
 
-                  <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
+                  <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success shadow-[0_0_12px_rgba(57,255,79,0.14)]">
                     <ShieldCheck className="h-3 w-3" />
                     Prepare
                   </div>
 
-                  <div className={`absolute right-2 top-2 border bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${statusClass(draft.status)}`}>
+                  <div className={`absolute right-2 top-2 z-30 border bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${statusClass(draft.status)}`}>
                     {statusLabel(draft.status)}
                   </div>
                 </div>
 
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-1 flex-col p-3 text-success">
+                  <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="mwz-section-title truncate text-xl text-success">
+                      <div className="mwz-section-title truncate text-lg leading-none text-success">
                         {draft.name}
                       </div>
                       <div className="mt-1 truncate text-sm text-success/70">
@@ -269,11 +271,11 @@ export function ProfileDraftsPanel({
                     </div>
                   </div>
 
-                  <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                  <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                     {draft.description || "No short description yet."}
                   </p>
 
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-y border-success/15 py-3 text-xs">
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-y border-success/15 py-2 text-xs">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                         Created
@@ -289,27 +291,27 @@ export function ProfileDraftsPanel({
                     </div>
                   </div>
 
-                  <div className="mt-auto grid gap-2 pt-4">
+                  <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
                     {isOwnProfile && draft.status !== "archived" && (
-                      <Button asChild variant="outline" className="mwz-button h-9 justify-center font-retro text-xs">
+                      <Button asChild variant="outline" className="mwz-button h-8 justify-center px-2 font-retro text-[10px]">
                         <Link to={`/drafts/${draft.id}/promotion`}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Open Setup
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          Setup
                         </Link>
                       </Button>
                     )}
 
                     {canOpenPrepare ? (
-                      <Button asChild variant="outline" className="mwz-button h-9 justify-center font-retro text-xs">
+                      <Button asChild variant="outline" className="mwz-button h-8 justify-center px-2 font-retro text-[10px]">
                         <Link to={`/prepare/${draft.slug}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          Prepare Page
+                          <Eye className="mr-1 h-3.5 w-3.5" />
+                          Prepare
                         </Link>
                       </Button>
                     ) : (
-                      <Button disabled variant="outline" className="mwz-button h-9 justify-center font-retro text-xs opacity-50">
-                        <Eye className="mr-2 h-4 w-4" />
-                        Prepare Page
+                      <Button disabled variant="outline" className="mwz-button h-8 justify-center px-2 font-retro text-[10px] opacity-50">
+                        <Eye className="mr-1 h-3.5 w-3.5" />
+                        Prepare
                       </Button>
                     )}
 
@@ -317,10 +319,10 @@ export function ProfileDraftsPanel({
                       <Button
                         onClick={() => copyPrepareLink(draft)}
                         variant="outline"
-                        className="mwz-button h-9 justify-center font-retro text-xs"
+                        className="mwz-button h-8 justify-center px-2 font-retro text-[10px]"
                       >
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Link
+                        <Copy className="mr-1 h-3.5 w-3.5" />
+                        Copy
                       </Button>
                     )}
 
@@ -329,10 +331,10 @@ export function ProfileDraftsPanel({
                         onClick={() => archiveDraft(draft)}
                         disabled={isBusy}
                         variant="outline"
-                        className="mwz-button h-9 justify-center border-red-500/40 font-retro text-xs text-red-300 hover:border-red-400 hover:text-red-200"
+                        className="mwz-button h-8 justify-center border-red-500/40 px-2 font-retro text-[10px] text-red-300 hover:border-red-400 hover:text-red-200"
                       >
-                        <Archive className="mr-2 h-4 w-4" />
-                        {isBusy ? "Archiving..." : "Archive Draft"}
+                        <Archive className="mr-1 h-3.5 w-3.5" />
+                        {isBusy ? "..." : "Archive"}
                       </Button>
                     )}
                   </div>
