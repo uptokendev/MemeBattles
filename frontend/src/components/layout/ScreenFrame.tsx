@@ -1,8 +1,8 @@
 const FRAME_CSS = `
   :root {
-    --mwz-screen-frame-top-height: clamp(10px, 2.2vw, 20px);
-    --mwz-screen-frame-bottom-height: clamp(48px, 2.2vw, 20px);
-    --mwz-screen-frame-side-width: clamp(12px, 1.15vw, 26px);
+    --mwz-screen-frame-top-corner-width: clamp(58px, 4.7vw, 90px);
+    --mwz-screen-frame-top-corner-height: clamp(60px, 4.8vw, 92px);
+    --mwz-screen-frame-top-edge-height: clamp(14px, 1.25vw, 24px);
     --mwz-screen-frame-opacity: 0.96;
   }
 
@@ -25,62 +25,52 @@ const FRAME_CSS = `
     background-repeat: no-repeat;
   }
 
-  .mwz-screen-frame__top {
+  .mwz-screen-frame__top-left,
+  .mwz-screen-frame__top-right {
     top: 0;
-    left: 0;
-    right: 0;
-    height: var(--mwz-screen-frame-top-height);
-    z-index: 3;
-    background-image: url('/assets/frame/frontendborder_top.png');
+    width: var(--mwz-screen-frame-top-corner-width);
+    height: var(--mwz-screen-frame-top-corner-height);
+    z-index: 4;
     background-size: 100% 100%;
-    background-position: top center;
+    background-repeat: no-repeat;
   }
 
-  .mwz-screen-frame__bottom {
-    bottom: 0;
+  .mwz-screen-frame__top-left {
     left: 0;
-    right: 0;
-    height: var(--mwz-screen-frame-bottom-height);
-    z-index: 3;
-    background-image: url('/assets/frame/frontendborder_bottom.png');
-    background-size: 100% 100%;
-    background-position: bottom center;
-  }
-
-  .mwz-screen-frame__left,
-  .mwz-screen-frame__right {
-    top: var(--mwz-screen-frame-top-height);
-    bottom: var(--mwz-screen-frame-bottom-height);
-    width: var(--mwz-screen-frame-side-width);
-    z-index: 2;
-    background-size: 100% auto;
-    background-repeat: repeat-y;
-  }
-
-  .mwz-screen-frame__left {
-    left: 0;
-    background-image: url('/assets/frame/frontendborder_left.png');
+    background-image: url('/assets/frame/frame_top_left.png');
     background-position: top left;
   }
 
-  .mwz-screen-frame__right {
+  .mwz-screen-frame__top-right {
     right: 0;
-    background-image: url('/assets/frame/frontendborder_right.png');
+    background-image: url('/assets/frame/frame_top_right.png');
     background-position: top right;
+  }
+
+  .mwz-screen-frame__top-edge {
+    top: 0;
+    left: var(--mwz-screen-frame-top-corner-width);
+    right: var(--mwz-screen-frame-top-corner-width);
+    height: var(--mwz-screen-frame-top-edge-height);
+    z-index: 3;
+    background-image: url('/assets/frame/frame_top_edge.png');
+    background-size: auto 100%;
+    background-repeat: repeat-x;
+    background-position: top center;
   }
 
   @media (max-width: 900px) {
     :root {
-      --mwz-screen-frame-top-height: clamp(32px, 7vw, 58px);
-      --mwz-screen-frame-bottom-height: clamp(36px, 8vw, 66px);
-      --mwz-screen-frame-side-width: clamp(8px, 2.4vw, 16px);
+      --mwz-screen-frame-top-corner-width: clamp(42px, 10vw, 64px);
+      --mwz-screen-frame-top-corner-height: clamp(44px, 10.2vw, 66px);
+      --mwz-screen-frame-top-edge-height: clamp(10px, 3vw, 16px);
       --mwz-screen-frame-opacity: 0.82;
     }
   }
 
   @media (max-width: 520px) {
     .mwz-screen-frame {
-      opacity: 0.56;
+      opacity: 0.58;
     }
   }
 `;
@@ -90,10 +80,9 @@ export function ScreenFrame() {
     <>
       <style>{FRAME_CSS}</style>
       <div className="mwz-screen-frame" aria-hidden="true">
-        <div className="mwz-screen-frame__part mwz-screen-frame__top" />
-        <div className="mwz-screen-frame__part mwz-screen-frame__left" />
-        <div className="mwz-screen-frame__part mwz-screen-frame__right" />
-        <div className="mwz-screen-frame__part mwz-screen-frame__bottom" />
+        <div className="mwz-screen-frame__part mwz-screen-frame__top-left" />
+        <div className="mwz-screen-frame__part mwz-screen-frame__top-edge" />
+        <div className="mwz-screen-frame__part mwz-screen-frame__top-right" />
       </div>
     </>
   );
