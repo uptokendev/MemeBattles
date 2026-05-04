@@ -20,7 +20,7 @@ function query(params: Record<string, string | number | null | undefined>) {
 }
 
 export type DraftVisibility = "public" | "unlisted" | "private";
-export type DraftStatus = "draft" | "promotion_published" | "ready_to_launch" | "deployed" | "archived";
+export type DraftStatus = "draft" | "promotion_published" | "ready_to_launch" | "scheduled" | "deployed" | "archived";
 
 export type CampaignDraft = {
   id: string;
@@ -214,4 +214,23 @@ export async function archiveCampaignDraft(
   });
 
   return parseJson(res) as Promise<PrepareDraftBundle>;
+}
+
+export async function markDraftDeployed(
+  draftId: string,
+  input: {
+    auth: DraftActionAuth;
+    campaignAddress: string;
+    tokenAddress?: string | null;
+    deployTxHash?: string | null;
+  }
+): Promise<CampaignDraft> {
+  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/deploy`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  const json = await parseJson(res);
+  return json.draft as CampaignDraft;
 }
