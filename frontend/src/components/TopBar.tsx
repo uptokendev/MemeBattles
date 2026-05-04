@@ -22,6 +22,11 @@ import {
   markDraftNotificationRead,
   type DraftNotification,
 } from "@/lib/draftPromotion";
+import {
+  fetchPrepareNotifications,
+  markAllPrepareNotificationsRead,
+  markPrepareNotificationRead,
+} from "@/lib/prepareNotifications";
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
@@ -60,6 +65,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
+  const [notificationsFromApi, setNotificationsFromApi] = useState(false);
 
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
@@ -229,20 +235,58 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   }, []);
 
   useEffect(() => {
-    const refresh = () => setDraftNotifications(getDraftNotifications());
-    refresh();
-    window.addEventListener("mwz:notifications-changed", refresh as EventListener);
-    return () => window.removeEventListener("mwz:notifications-changed", refresh as EventListener);
-  }, []);
+    let cancelled = false;
 
-  const openNotificationTarget = (notification: DraftNotification) => {
-    markDraftNotificationRead(notification.id);
-    setDraftNotifications(getDraftNotifications());
+    const refresh = async () => {
+      if (!wallet.account) {
+        setDraftNotifications([]);
+        setNotificationsFromApi(false);
+        return;
+      }
+
+      try {
+        const items = await fetchPrepareNotifications(wallet.account, 20);
+        if (cancelled) return;
+        setDraftNotifications(items);
+        setNotificationsFromApi(true);
+      } catch {
+        if (cancelled) return;
+        setDraftNotifications(getDraftNotifications());
+        setNotificationsFromApi(false);
+      }
+    };
+
+    refresh();
+    const onLocalChange = () => refresh();
+    window.addEventListener("mwz:notifications-changed", onLocalChange as EventListener);
+    const timer = window.setInterval(refresh, 30000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("mwz:notifications-changed", onLocalChange as EventListener);
+      window.clearInterval(timer);
+    };
+  }, [wallet.account]);
+
+  const openNotificationTarget = async (notification: DraftNotification) => {
+    if (wallet.account && notificationsFromApi) {
+      await markPrepareNotificationRead(wallet.account, notification.id).catch(() => undefined);
+      setDraftNotifications((prev) => prev.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
+    } else {
+      markDraftNotificationRead(notification.id);
+      setDraftNotifications(getDraftNotifications());
+    }
     setNotificationOpen(false);
     navigate(notification.target);
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
+    if (wallet.account && notificationsFromApi) {
+      await markAllPrepareNotificationsRead(wallet.account).catch(() => undefined);
+      setDraftNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+      return;
+    }
+
     markAllDraftNotificationsRead();
     setDraftNotifications(getDraftNotifications());
   };
