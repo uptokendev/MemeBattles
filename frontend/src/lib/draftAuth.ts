@@ -6,7 +6,9 @@ export type DraftAuthAction =
   | "save_promotion"
   | "publish_promotion"
   | "archive_draft"
-  | "deploy_draft";
+  | "deploy_draft"
+  | "follow_draft"
+  | "comment_draft";
 
 export type DraftActionAuth = {
   action: DraftAuthAction;
