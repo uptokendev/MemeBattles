@@ -269,6 +269,22 @@ export type SavePromotionInput = {
   publish?: boolean;
 };
 
+export type TickerAvailability = {
+  ticker: string;
+  chainId?: number;
+  available: boolean;
+  reason: string;
+  source: "validation" | "draft" | "campaign" | "available" | string;
+};
+
+export async function checkTickerAvailability(input: { ticker: string; chainId?: number }): Promise<TickerAvailability> {
+  const res = await fetch(
+    buildRealtimeApiUrl(`/api/drafts/ticker-availability${query({ ticker: input.ticker, chainId: input.chainId })}`),
+    { cache: "no-store" }
+  );
+  return parseJson(res) as Promise<TickerAvailability>;
+}
+
 export async function createCampaignDraft(input: CreateDraftInput): Promise<CampaignDraft> {
   const res = await fetch(buildRealtimeApiUrl("/api/drafts"), {
     method: "POST",
