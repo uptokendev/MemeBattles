@@ -3,6 +3,7 @@ import { isAddress, json } from "../../server/http.js";
 
 const ACTIONS = new Set([
   "create_draft",
+  "read_draft",
   "save_promotion",
   "publish_promotion",
   "archive_draft",
