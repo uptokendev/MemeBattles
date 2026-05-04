@@ -5,6 +5,7 @@
 export type ProfileTab =
   | "balances"
   | "coins"
+  | "drafts"
   | "replies"
   | "rewards"
   | "airdrops"
@@ -17,6 +18,7 @@ export type ProfileTab =
 export const profileTabs: ProfileTab[] = [
   "balances",
   "coins",
+  "drafts",
   "replies",
   "rewards",
   "airdrops",

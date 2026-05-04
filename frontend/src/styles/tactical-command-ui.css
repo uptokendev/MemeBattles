@@ -62,7 +62,7 @@
   --mwz-card-bg-vertical: url('/assets/cardbgvert.png');
   --mwz-card-frame-image: var(--mwz-card-bg-vertical);
   --mwz-card-frame-padding: clamp(10px, 0.75vw, 15px);
-  --mwz-card-frame-opacity: 0.96;
+  --mwz-card-frame-opacity: 0.45;
 }
 
 html,
@@ -613,14 +613,11 @@ h2.mwz-section-title,
   overflow: hidden !important;
   border-color: transparent !important;
   clip-path: none !important;
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.006) 34%, transparent),
-    radial-gradient(circle at 28% 0%, rgba(var(--mwz-orange-rgb), 0.08), transparent 38%),
-    var(--mwz-card-frame-image),
-    linear-gradient(155deg, rgba(12, 15, 14, 0.98), rgba(4, 6, 6, 0.99)) !important;
-  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100% !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
+  background-color: transparent !important;
+background-image: var(--mwz-card-frame-image) !important;
+background-size: 100% 100% !important;
+background-position: center !important;
+background-repeat: no-repeat !important;
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, filter 180ms ease !important;
 }
 
@@ -669,8 +666,10 @@ h2.mwz-section-title,
 }
 
 .mwz-card:hover {
-  border-color: rgba(var(--mwz-orange-rgb), 0.56) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.065), 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.12), 0 0 30px rgba(var(--mwz-orange-rgb), 0.18), 0 24px 60px rgba(0, 0, 0, 0.66) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 0 30px rgba(var(--mwz-orange-rgb), 0.18),
+    0 24px 60px rgba(0, 0, 0, 0.66) !important;
   transform: translateY(-2px) !important;
 }
 

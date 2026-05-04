@@ -141,6 +141,24 @@ export async function fetchPublicCampaignDrafts(input: { chainId?: number; limit
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
+export async function fetchOwnerCampaignDrafts(
+  owner: string,
+  input: { chainId?: number; limit?: number } = {}
+): Promise<CampaignDraft[]> {
+  const res = await fetch(
+    buildRealtimeApiUrl(
+      `/api/drafts${query({
+        owner,
+        chainId: input.chainId,
+        limit: input.limit,
+      })}`
+    ),
+    { cache: "no-store" }
+  );
+
+  const json = await parseJson(res);
+  return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
+}
 export async function fetchCampaignDraft(draftId: string, viewer?: string | null): Promise<PrepareDraftBundle> {
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`));
   return parseJson(res) as Promise<PrepareDraftBundle>;

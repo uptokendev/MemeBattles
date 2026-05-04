@@ -4,6 +4,7 @@ import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { isProfileTab, ProfileTab } from "@/types/profile";
+import { ProfileDraftsPanel } from "@/components/profile/ProfileDraftsPanel";
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
@@ -1652,7 +1653,12 @@ const Profile = () => {
             </div>
           </div>
         )}
-
+{activeTab === "drafts" && (
+  <ProfileDraftsPanel
+    viewedAddress={viewedAddress}
+    isOwnProfile={isOwnProfile}
+  />
+)}
         {/* REPLIES TAB: Activity feed */}
         {activeTab === "replies" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
