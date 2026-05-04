@@ -36,12 +36,11 @@ import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
 import { draftDeploy } from "../../api/dev-fix/draft-deploy.js";
 import { signedDraftComments, signedDraftFollow } from "../../api/dev-fix/draft-engagement.js";
+import { signedDraftById, signedPrepareBySlug } from "../../api/dev-fix/draft-read.js";
 import {
   draftArchive,
-  draftById,
   draftPromotion,
   drafts,
-  prepareBySlug,
 } from "../../api/dev-fix/drafts.js";
 import {
   attributionWallet,
@@ -155,13 +154,13 @@ app.all("/vote_counts", wrap(voteCounts));
 
 // PREPARE MODE: draft token creation + promotion pages.
 app.all("/drafts", wrap(drafts));
-app.all("/drafts/:draftId", wrap(draftById));
+app.all("/drafts/:draftId", wrap(signedDraftById));
 app.all("/drafts/:draftId/promotion", wrap(draftPromotion));
 app.all("/drafts/:draftId/archive", wrap(draftArchive));
 app.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 app.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
 app.all("/drafts/:draftId/comments", wrap(signedDraftComments));
-app.all("/prepare/:slug", wrap(prepareBySlug));
+app.all("/prepare/:slug", wrap(signedPrepareBySlug));
 
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
