@@ -12,6 +12,14 @@ function normalizeAddress(value) {
   return isAddress(raw) ? raw : "";
 }
 
+function isDraftPushLiveEnabled() {
+  return ["1", "true", "yes", "on"].includes(
+    String(process.env.DRAFT_PUSH_LIVE_ENABLED || process.env.ENABLE_DRAFT_PUSH_LIVE || process.env.VITE_DRAFT_PUSH_LIVE_ENABLED || "")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
 async function getPool() {
   if (!String(process.env.DATABASE_URL || "").trim()) return null;
   try {
@@ -52,6 +60,13 @@ function mapDraftRow(row) {
 
 export async function draftDeploy(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
+
+  if (!isDraftPushLiveEnabled()) {
+    return json(res, 403, {
+      error: "Push Live is locked until the platform launch switch is enabled.",
+      code: "DRAFT_PUSH_LIVE_LOCKED",
+    });
+  }
 
   const draftId = String(req.params?.draftId || "");
   const body = await readJson(req);
