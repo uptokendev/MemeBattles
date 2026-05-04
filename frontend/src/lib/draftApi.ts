@@ -400,6 +400,16 @@ export async function fetchCampaignDraft(draftId: string, viewer?: string | null
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
+export async function fetchCampaignDraftWithAuth(draftId: string, auth: DraftActionAuth): Promise<PrepareDraftBundle> {
+  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
+
+  return parseJson(res) as Promise<PrepareDraftBundle>;
+}
+
 export async function saveDraftPromotion(draftId: string, input: SavePromotionInput): Promise<PrepareDraftBundle> {
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/promotion`), {
     method: "PUT",
