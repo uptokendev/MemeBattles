@@ -178,11 +178,12 @@ export async function fetchPrepareDraft(slug: string, viewer?: string | null): P
   return parseJson(res) as Promise<PrepareDraftBundle>;
 }
 
-export async function followDraft(draftId: string, walletAddress: string): Promise<{ following: boolean; followCount: number }> {
+export async function followDraft(auth: DraftActionAuth): Promise<{ following: boolean; followCount: number }> {
+  const draftId = String(auth.draftId || "");
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/follow`), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress }),
+    body: JSON.stringify({ auth }),
   });
   const json = await parseJson(res);
   return { following: Boolean(json.following), followCount: Number(json.followCount || 0) };
@@ -194,11 +195,12 @@ export async function fetchDraftComments(draftId: string): Promise<DraftComment[
   return Array.isArray(json.items) ? (json.items as DraftComment[]) : [];
 }
 
-export async function addDraftComment(draftId: string, walletAddress: string, body: string, parentCommentId?: string | null): Promise<DraftComment> {
+export async function addDraftComment(auth: DraftActionAuth, body: string, parentCommentId?: string | null): Promise<DraftComment> {
+  const draftId = String(auth.draftId || "");
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/comments`), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress, body, parentCommentId: parentCommentId || null }),
+    body: JSON.stringify({ auth, body, parentCommentId: parentCommentId || null }),
   });
   const json = await parseJson(res);
   return json.comment as DraftComment;
