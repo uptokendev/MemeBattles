@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ethers } from "ethers";
 import { Rocket, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useWallet } from "@/contexts/WalletContext";
 import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
@@ -30,7 +28,6 @@ export default function PushDraftLive() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
-  const [initialBuyBnb, setInitialBuyBnb] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -79,21 +76,6 @@ export default function PushDraftLive() {
       return;
     }
 
-    let parsedInitialBuy: bigint | undefined;
-    const initialBuyBnbTrim = initialBuyBnb.trim();
-    if (initialBuyBnbTrim) {
-      try {
-        parsedInitialBuy = ethers.parseEther(initialBuyBnbTrim);
-      } catch {
-        toast.error("Initial buy must be a valid BNB amount, for example 0.1");
-        return;
-      }
-      if (parsedInitialBuy > ethers.parseEther("1")) {
-        toast.error("Initial buy max is 1 BNB");
-        return;
-      }
-    }
-
     setPushing(true);
 
     try {
@@ -104,7 +86,6 @@ export default function PushDraftLive() {
         xAccount: draft.xUrl || bundle?.promotion?.xUrl || "",
         website: draft.websiteUrl || bundle?.promotion?.websiteUrl || "",
         extraLink: draft.otherUrl || "",
-        initialBuyBnb,
         basePriceWei: 0n,
         priceSlopeWei: 0n,
         graduationTargetWei: 0n,
@@ -190,7 +171,7 @@ export default function PushDraftLive() {
             <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">Prepare Mode</div>
             <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">Push Draft Live</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              This converts the published promotion draft into a normal live on-chain campaign, then marks the draft as deployed.
+              This converts the published promotion draft into a normal live on-chain campaign, then marks the draft as deployed. Initial buys are disabled by design.
             </p>
           </div>
           <Button asChild variant="outline" className="mwz-button h-10 font-retro text-xs">
@@ -227,17 +208,8 @@ export default function PushDraftLive() {
               </p>
             </div>
 
-            <div className="mwz-card p-4">
-              <label className="block text-xs uppercase tracking-[0.18em] text-muted-foreground">Initial buy (BNB, optional)</label>
-              <Input
-                value={initialBuyBnb}
-                onChange={(e) => setInitialBuyBnb(e.target.value)}
-                placeholder="0.00"
-                inputMode="decimal"
-                disabled={!DRAFT_PUSH_LIVE_ENABLED}
-                className="mt-2 h-12 border-border bg-background/50 font-retro"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">Max 1 BNB. Leave empty for no initial buy.</p>
+            <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
+              Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment.
             </div>
 
             {!canPushLive(draft.status) ? (
