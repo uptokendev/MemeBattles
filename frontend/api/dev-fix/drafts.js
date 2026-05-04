@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
+import { notifyDraftOwner } from "./prepare-notify.js";
 
 const STATUSES = new Set([
   "draft",
@@ -466,15 +467,16 @@ export async function draftPromotion(req, res) {
   const pool = await getPool();
 
   if (pool) {
-    const exists = await pool.query("select id, creator_wallet, chain_id from campaign_drafts where id::text = $1 limit 1", [id]);
+    const exists = await pool.query("select id, creator_wallet, chain_id, ticker, slug, status from campaign_drafts where id::text = $1 limit 1", [id]);
     if (!exists.rows.length) return json(res, 404, { error: "Draft not found" });
+    const before = exists.rows[0];
 
     const ownerOk = await requireDraftActionAuth({
       res,
       pool,
       auth: body.auth,
-      expectedWallet: exists.rows[0].creator_wallet,
-      chainId: Number(exists.rows[0].chain_id),
+      expectedWallet: before.creator_wallet,
+      chainId: Number(before.chain_id),
       action: publish ? "publish_promotion" : "save_promotion",
       draftId: id,
     });
@@ -486,6 +488,19 @@ export async function draftPromotion(req, res) {
     );
     await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, visibility || null, publish]);
     const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
+
+    if (publish && before.status !== "promotion_published" && updated?.draft) {
+      await notifyDraftOwner(pool, updated.draft, {
+        eventType: "publish",
+        title: "Promotion page published",
+        body: `$${updated.draft.ticker || before.ticker || "DRAFT"} is now visible in Prepare Mode.`,
+        metadata: {
+          target: `/prepare/${updated.draft.slug || before.slug}`,
+          ticker: updated.draft.ticker || before.ticker,
+        },
+      });
+    }
+
     return json(res, 200, updated);
   }
 
