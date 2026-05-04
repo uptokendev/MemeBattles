@@ -1,3 +1,4 @@
+import { verifyMessage } from "ethers";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 
@@ -62,18 +63,50 @@ async function fetchNonce(chainId: number, walletAddress: string) {
   return String(json.nonce);
 }
 
+function verifySignatureWallet(message: string, signature: string, walletAddress: string) {
+  try {
+    return normalizeWallet(verifyMessage(message, signature)) === normalizeWallet(walletAddress);
+  } catch {
+    return false;
+  }
+}
+
 async function signWithInjectedWallet(message: string, walletAddress: string) {
   const ethereum = (globalThis as any)?.ethereum;
+  const wallet = normalizeWallet(walletAddress);
+
   if (!ethereum?.request) {
     throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
   }
 
-  return String(
-    await ethereum.request({
-      method: "personal_sign",
-      params: [message, normalizeWallet(walletAddress)],
-    })
-  );
+  const accounts = await ethereum.request({ method: "eth_requestAccounts" }).catch(() => []);
+  const active = normalizeWallet(Array.isArray(accounts) ? accounts[0] : "");
+
+  if (active && active !== wallet) {
+    throw new Error("Connected wallet does not match this action. Switch to the selected wallet and try again.");
+  }
+
+  const signatures: string[] = [];
+
+  for (const params of [[message, wallet], [wallet, message]]) {
+    try {
+      const signature = String(
+        await ethereum.request({
+          method: "personal_sign",
+          params,
+        })
+      );
+      signatures.push(signature);
+
+      if (verifySignatureWallet(message, signature, wallet)) {
+        return signature;
+      }
+    } catch (err) {
+      if (signatures.length === 0) throw err;
+    }
+  }
+
+  throw new Error("Wallet signature could not be verified. Reconnect your wallet and try again.");
 }
 
 async function signDraftActionWithKnownChain(input: {
