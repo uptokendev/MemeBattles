@@ -1,5 +1,6 @@
 import { badMethod, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
+import { notifyDraftOwner } from "./prepare-notify.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -82,7 +83,7 @@ export async function draftDeploy(req, res) {
   }
 
   const existing = await pool.query(
-    "select id, creator_wallet, chain_id, status from campaign_drafts where id::text = $1 limit 1",
+    "select id, creator_wallet, chain_id, status, ticker, slug from campaign_drafts where id::text = $1 limit 1",
     [draftId],
   );
 
@@ -107,5 +108,18 @@ export async function draftDeploy(req, res) {
     [draftId, campaignAddress, tokenAddress || null, deployTxHash],
   );
 
-  return json(res, 200, { draft: mapDraftRow(updated.rows[0]) });
+  const draft = mapDraftRow(updated.rows[0]);
+  await notifyDraftOwner(pool, draft, {
+    eventType: "launch",
+    title: "Campaign pushed live",
+    body: `$${draft?.ticker || row.ticker || "DRAFT"} is now live in the Warzone.`,
+    metadata: {
+      target: `/token/${campaignAddress}`,
+      campaignAddress,
+      tokenAddress: tokenAddress || null,
+      deployTxHash,
+    },
+  });
+
+  return json(res, 200, { draft });
 }
