@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
+import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
 import { HeaderBand } from "@/components/home/HeaderBand";
 import { LeagueRecruiterSlider } from "@/components/home/LeagueRecruiterSlider";
-import { UpcomingDrafts } from "@/components/home/UpcomingDrafts";
 
 const Showcase = () => {
-  const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "" });
+  const [query, setQuery] = useState<HomeQuery>({ tab: "drafts", timeFilter: "24h", search: "" });
 
   useEffect(() => {
     const onSearch = (e: Event) => {
@@ -21,9 +21,11 @@ const Showcase = () => {
   const effectiveQuery = useMemo(() => {
     return {
       ...query,
-      tab: query.tab ?? "trending",
+      tab: query.tab ?? "drafts",
     } as HomeQuery;
   }, [query]);
+
+  const isDraftRow = effectiveQuery.tab === "drafts";
 
   return (
     <div className="mwz-launchpad-page h-full overflow-y-auto">
@@ -35,18 +37,22 @@ const Showcase = () => {
           <LeagueRecruiterSlider className="w-full" />
         </div>
 
-        <UpcomingDrafts />
-
         <div className="mwz-live-heading flex flex-col gap-1 pt-2">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">Live Warzone</div>
-          <h2 className="mwz-section-title text-2xl text-success md:text-3xl">Live Campaigns</h2>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
+            {isDraftRow ? "Prepare Mode" : "Live Warzone"}
+          </div>
+          <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
+            {isDraftRow ? "Draft Campaigns" : "Live Campaigns"}
+          </h2>
           <p className="max-w-2xl text-sm text-success/65">
-            Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages.
+            {isDraftRow
+              ? "Published Prepare Pages appear in the normal campaign row before trading goes live. Draft cards keep their Prepare Mode layout and route to the promotion page."
+              : "Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages."}
           </p>
         </div>
 
         <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
-        <CampaignGrid query={effectiveQuery} />
+        {isDraftRow ? <DraftCampaignGrid query={effectiveQuery} /> : <CampaignGrid query={effectiveQuery} />}
       </div>
     </div>
   );
