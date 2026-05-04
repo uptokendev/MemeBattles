@@ -9,6 +9,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import {
   archiveCampaignDraft,
   fetchCampaignDraft,
+  fetchCampaignDraftWithAuth,
   saveDraftPromotion,
   type DraftVisibility,
   type PrepareDraftBundle,
@@ -108,7 +109,38 @@ export default function DraftPromotionSetup() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void fetchCampaignDraft(draftId, wallet.account)
+
+    const loadDraft = async () => {
+      try {
+        const first = await fetchCampaignDraft(draftId, null).catch((err: any) => {
+          if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
+          throw err;
+        });
+
+        if (first) return first;
+
+        if (!wallet.account || !wallet.signer) {
+          throw new Error("Connect the draft owner wallet to open this private draft.");
+        }
+
+        const readAuth = await signDraftAction({
+          signer: wallet.signer,
+          walletAddress: wallet.account,
+          chainId: Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97),
+          action: "read_draft",
+          draftId,
+        });
+
+        return fetchCampaignDraftWithAuth(draftId, readAuth);
+      } catch (err: any) {
+        if (String(err?.message || "").toLowerCase().includes("wallet signature chain")) {
+          throw new Error("Wrong network for this draft. Switch your connected wallet network and try again.");
+        }
+        throw err;
+      }
+    };
+
+    void loadDraft()
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
@@ -129,7 +161,7 @@ export default function DraftPromotionSetup() {
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account]);
+  }, [draftId, wallet.account, wallet.signer, wallet.chainId]);
 
   const draft = bundle?.draft;
   const pop = bundle?.popularity;
