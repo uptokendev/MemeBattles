@@ -71,42 +71,77 @@ function verifySignatureWallet(message: string, signature: string, walletAddress
   }
 }
 
-async function signWithInjectedWallet(message: string, walletAddress: string) {
-  const ethereum = (globalThis as any)?.ethereum;
-  const wallet = normalizeWallet(walletAddress);
+function getInjectedProviders() {
+  const eth = (globalThis as any)?.ethereum;
+  if (!eth) return [];
+  const providers = Array.isArray(eth.providers) ? eth.providers : [eth];
+  return providers.filter((provider: any) => provider?.request);
+}
 
-  if (!ethereum?.request) {
+async function providerAccounts(provider: any) {
+  const selected = normalizeWallet(provider?.selectedAddress || "");
+  if (selected) return [selected];
+
+  try {
+    const accounts = await provider.request({ method: "eth_accounts" });
+    return Array.isArray(accounts) ? accounts.map((item) => normalizeWallet(item)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function findProviderForWallet(walletAddress: string) {
+  const wallet = normalizeWallet(walletAddress);
+  const providers = getInjectedProviders();
+
+  for (const provider of providers) {
+    const accounts = await providerAccounts(provider);
+    if (accounts.includes(wallet)) return provider;
+  }
+
+  const metamask = providers.find((provider: any) => provider?.isMetaMask && !provider?.isCryptoCom);
+  if (metamask) return metamask;
+
+  return providers[0] || null;
+}
+
+async function signWithInjectedWallet(message: string, walletAddress: string) {
+  const wallet = normalizeWallet(walletAddress);
+  const provider = await findProviderForWallet(wallet);
+
+  if (!provider?.request) {
     throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
   }
 
-  const accounts = await ethereum.request({ method: "eth_requestAccounts" }).catch(() => []);
+  const accounts = await provider.request({ method: "eth_requestAccounts" }).catch(() => []);
   const active = normalizeWallet(Array.isArray(accounts) ? accounts[0] : "");
 
   if (active && active !== wallet) {
     throw new Error("Connected wallet does not match this action. Switch to the selected wallet and try again.");
   }
 
-  const signatures: string[] = [];
+  const attempts = [[message, wallet], [wallet, message]];
+  let lastError: any = null;
 
-  for (const params of [[message, wallet], [wallet, message]]) {
+  for (const params of attempts) {
     try {
       const signature = String(
-        await ethereum.request({
+        await provider.request({
           method: "personal_sign",
           params,
         })
       );
-      signatures.push(signature);
 
       if (verifySignatureWallet(message, signature, wallet)) {
         return signature;
       }
     } catch (err) {
-      if (signatures.length === 0) throw err;
+      lastError = err;
     }
   }
 
-  throw new Error("Wallet signature could not be verified. Reconnect your wallet and try again.");
+  if (lastError?.message) throw lastError;
+  throw new Error("Wallet signature could not be verified. Reconnect the selected wallet and try again.");
 }
 
 async function signDraftActionWithKnownChain(input: {
