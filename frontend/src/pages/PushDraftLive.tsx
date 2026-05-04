@@ -12,6 +12,12 @@ import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
+const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
+    .trim()
+    .toLowerCase()
+);
+
 function canPushLive(status?: string) {
   return status === "promotion_published" || status === "ready_to_launch" || status === "scheduled";
 }
@@ -47,6 +53,11 @@ export default function PushDraftLive() {
 
   const pushLive = async () => {
     if (!draft) return;
+
+    if (!DRAFT_PUSH_LIVE_ENABLED) {
+      toast.error("Push Live is locked until the platform launch switch is enabled.");
+      return;
+    }
 
     if (!wallet.account || !wallet.signer) {
       toast.error("Connect the draft owner wallet first.");
@@ -187,6 +198,12 @@ export default function PushDraftLive() {
           </Button>
         </div>
 
+        {!DRAFT_PUSH_LIVE_ENABLED ? (
+          <div className="mwz-card mb-6 border-orange-400/50 bg-black/60 p-4 text-sm leading-6 text-orange-300">
+            Push Live is currently locked. The deploy flow will unlock when the platform launch switch is enabled.
+          </div>
+        ) : null}
+
         <div className="grid gap-6 md:grid-cols-[220px_1fr]">
           <div className="mwz-card overflow-hidden border-success/35 bg-black/70">
             <div className="relative aspect-square border-b border-success/25 bg-black">
@@ -217,6 +234,7 @@ export default function PushDraftLive() {
                 onChange={(e) => setInitialBuyBnb(e.target.value)}
                 placeholder="0.00"
                 inputMode="decimal"
+                disabled={!DRAFT_PUSH_LIVE_ENABLED}
                 className="mt-2 h-12 border-border bg-background/50 font-retro"
               />
               <p className="mt-2 text-xs text-muted-foreground">Max 1 BNB. Leave empty for no initial buy.</p>
@@ -230,11 +248,11 @@ export default function PushDraftLive() {
 
             <Button
               onClick={pushLive}
-              disabled={pushing || !canPushLive(draft.status)}
+              disabled={pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status)}
               className="mwz-button mwz-button-orange h-12 w-full justify-center font-retro"
             >
               <Rocket className="mr-2 h-4 w-4" />
-              {pushing ? "Pushing Live..." : "Push Live Campaign"}
+              {pushing ? "Pushing Live..." : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
             </Button>
           </div>
         </div>
