@@ -13,6 +13,13 @@ import {
   type CampaignDraft,
 } from "@/lib/draftApi";
 
+const PUBLIC_PROFILE_DRAFT_STATUSES = new Set([
+  "promotion_published",
+  "ready_to_launch",
+  "scheduled",
+  "deployed",
+]);
+
 function shortAddr(addr?: string | null) {
   if (!addr) return "—";
   const a = String(addr);
@@ -99,7 +106,7 @@ export function ProfileDraftsPanel({
         publicDrafts
           .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
-          .filter((draft) => draft.status !== "archived")
+          .filter((draft) => PUBLIC_PROFILE_DRAFT_STATUSES.has(String(draft.status)))
           .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === normalizedViewedAddress)
           .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
       );
