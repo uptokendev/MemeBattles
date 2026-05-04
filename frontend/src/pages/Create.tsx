@@ -4,7 +4,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
 import { z } from "zod";
-import { ethers } from "ethers";
 import ProcessingCard from "@/components/ui/processing-card";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
@@ -64,7 +63,6 @@ const Create = () => {
   const navigate = useNavigate();
   const { createCampaign, fetchCampaigns } = useLaunchpad();
   const launchpadReadiness = useLaunchpadWriteReadiness();
-  const [initialBuyBnb, setInitialBuyBnb] = useState("");
   const [isDrafting, setIsDrafting] = useState(false);
 
   const validateCoreForm = () => {
@@ -184,21 +182,6 @@ try {
       return;
     }
 
-    const initialBuyBnbTrim = (initialBuyBnb ?? "").trim();
-    if (initialBuyBnbTrim) {
-      let wei: bigint;
-      try {
-        wei = ethers.parseEther(initialBuyBnbTrim);
-      } catch {
-        toast.error("Initial buy must be a valid BNB amount (e.g. 0.1)");
-        return;
-      }
-      if (wei > ethers.parseEther("1")) {
-        toast.error("Initial buy max is 1 BNB");
-        return;
-      }
-    }
-
     try {
       startProcessing();
       const logoURI = await uploadLogo();
@@ -210,7 +193,6 @@ try {
         xAccount: formData.twitter || "",
         website: formData.website || "",
         extraLink: formData.otherLink || "",
-        initialBuyBnb,
         basePriceWei: 0n,
         priceSlopeWei: 0n,
         graduationTargetWei: 0n,
@@ -430,19 +412,6 @@ try {
                     </div>
                   </div>
                 )}
-              </div>
-
-              <div className="pt-4">
-                <label className="block text-muted-foreground font-retro mb-2 text-xs md:text-sm">Initial buy (BNB, optional)</label>
-                <Input
-                  value={initialBuyBnb}
-                  onChange={(e) => setInitialBuyBnb(e.target.value)}
-                  placeholder="0.00"
-                  inputMode="decimal"
-                  className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground font-retro rounded-lg focus:border-accent focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed h-12"
-                  disabled={isProjectDisabled}
-                />
-                <p className="mt-2 text-xs text-muted-foreground">Only used for live on-chain creation. Prepare Mode drafts never trigger a wallet transaction.</p>
               </div>
 
               <div className="grid gap-3 pt-4 md:grid-cols-2">
