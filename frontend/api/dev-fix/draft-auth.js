@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { isAddress, json } from "../../server/http.js";
 
-const ACTIONS = new Set(["create_draft", "save_promotion", "publish_promotion", "archive_draft"]);
+const ACTIONS = new Set(["create_draft", "save_promotion", "publish_promotion", "archive_draft", "deploy_draft"]);
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim().toLowerCase();
