@@ -15,6 +15,12 @@ import {
 } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 
+const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
+    .trim()
+    .toLowerCase()
+);
+
 function splitLines(value: string) {
   return value
     .split("\n")
@@ -260,6 +266,8 @@ const archiveCurrentDraft = async () => {
     );
   }
 
+  const canPushLive = canPushLiveStatus(draft.status);
+
   return (
     <div className="relative -mx-2 -mt-1 min-h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top_left,rgba(255,153,0,0.16),transparent_42%),linear-gradient(180deg,rgba(1,6,0,0.98),rgba(0,0,0,0.96))] md:-mx-3 lg:-mx-4">
       <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(57,255,79,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,153,0,0.06)_1px,transparent_1px)] [background-size:44px_44px]" />
@@ -356,12 +364,23 @@ const archiveCurrentDraft = async () => {
             <Button onClick={() => save({ publish: true })} disabled={saving} className="mwz-button mwz-button-orange mt-4 h-11 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
-            {canPushLiveStatus(draft.status) && (
-              <Button asChild className="mwz-button mwz-button-orange mt-2 h-11 w-full justify-center font-retro">
-                <Link to={`/drafts/${draft.id}/push-live`}>
-                  <Rocket className="mr-2 h-4 w-4" /> Push Live
-                </Link>
-              </Button>
+            {canPushLive && (
+              DRAFT_PUSH_LIVE_ENABLED ? (
+                <Button asChild className="mwz-button mwz-button-orange mt-2 h-11 w-full justify-center font-retro">
+                  <Link to={`/drafts/${draft.id}/push-live`}>
+                    <Rocket className="mr-2 h-4 w-4" /> Push Live
+                  </Link>
+                </Button>
+              ) : (
+                <Button disabled variant="outline" className="mwz-button mt-2 h-11 w-full justify-center font-retro opacity-70">
+                  <Rocket className="mr-2 h-4 w-4" /> Push Live Locked
+                </Button>
+              )
+            )}
+            {!DRAFT_PUSH_LIVE_ENABLED && canPushLive && (
+              <p className="mt-2 text-xs leading-5 text-orange-300/80">
+                Deployment unlocks when the platform launch switch is enabled.
+              </p>
             )}
             <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro text-xs">
               <Save className="mr-2 h-4 w-4" /> Save draft
