@@ -1,8 +1,8 @@
 const FRAME_CSS = `
   :root {
-    --mwz-screen-frame-top-corner-width: clamp(58px, 4.7vw, 90px);
-    --mwz-screen-frame-top-corner-height: clamp(60px, 4.8vw, 92px);
-    --mwz-screen-frame-top-edge-height: clamp(14px, 1.25vw, 24px);
+    --mwz-screen-frame-top-corner-width: clamp(30px, 4.7vw, 48px);
+    --mwz-screen-frame-top-corner-height: clamp(30px, 4.8vw, 45px);
+    --mwz-screen-frame-top-edge-height: clamp(14px, 1.25vw, 20px);
     --mwz-screen-frame-opacity: 0.96;
   }
 
