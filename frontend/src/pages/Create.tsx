@@ -11,11 +11,11 @@ import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { LaunchpadReadinessNotice } from "@/components/launchpad/LaunchpadReadinessNotice";
 import { useLaunchpadWriteReadiness } from "@/hooks/useLaunchpadWriteReadiness";
 import { useWallet } from "@/contexts/WalletContext";
-import { createCampaignDraft } from "@/lib/draftApi";
+import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -23,6 +23,15 @@ const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(2)} MB`;
+}
+
+function normalizeTicker(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/^\$+/, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH);
 }
 
 function cacheDraftLogo(draftId: string, logoUrl: string) {
@@ -64,6 +73,75 @@ const Create = () => {
   const { createCampaign, fetchCampaigns } = useLaunchpad();
   const launchpadReadiness = useLaunchpadWriteReadiness();
   const [isDrafting, setIsDrafting] = useState(false);
+  const [checkingTicker, setCheckingTicker] = useState(false);
+  const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
+  const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
+
+  const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
+  const chainId = Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97);
+  const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
+  const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ticker = normalizedTicker;
+
+    setTickerAvailability(null);
+    setTickerCheckError(null);
+
+    if (!ticker) {
+      setCheckingTicker(false);
+      return;
+    }
+
+    setCheckingTicker(true);
+
+    const timer = window.setTimeout(() => {
+      checkTickerAvailability({ ticker, chainId })
+        .then((result) => {
+          if (cancelled) return;
+          setTickerAvailability(result);
+          setTickerCheckError(null);
+        })
+        .catch((err: any) => {
+          if (cancelled) return;
+          setTickerAvailability(null);
+          setTickerCheckError(err?.message || "Could not verify ticker availability.");
+        })
+        .finally(() => {
+          if (!cancelled) setCheckingTicker(false);
+        });
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [normalizedTicker, chainId]);
+
+  const ensureTickerAvailable = () => {
+    if (!normalizedTicker) {
+      toast.error("Ticker is required.");
+      return false;
+    }
+
+    if (checkingTicker) {
+      toast.error("Wait for ticker availability check to finish.");
+      return false;
+    }
+
+    if (tickerCheckError) {
+      toast.error("Ticker availability could not be verified. Try again before signing.");
+      return false;
+    }
+
+    if (!tickerConfirmedAvailable) {
+      toast.error(tickerAvailability?.reason || "Ticker is not available.");
+      return false;
+    }
+
+    return true;
+  };
 
   const validateCoreForm = () => {
     if (formData.category === "project") {
@@ -89,6 +167,8 @@ const Create = () => {
       return false;
     }
 
+    if (!ensureTickerAvailable()) return false;
+
     if (!formData.imagePreview || !formData.image) {
       toast.error("Please upload a token image");
       return false;
@@ -111,9 +191,9 @@ const Create = () => {
 
   const uploadLogo = async () => {
     if (!formData.image || !wallet.account) throw new Error("Missing logo or wallet");
-    const chainId = String(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? "97");
+    const chainIdForUpload = String(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? "97");
     const address = wallet.account.toLowerCase();
-    const qs = new URLSearchParams({ kind: "logo", chainId, address }).toString();
+    const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
     const fd = new FormData();
     fd.append("file", formData.image);
 
@@ -136,8 +216,6 @@ const Create = () => {
     if (!validateCoreForm()) return;
     setIsDrafting(true);
 try {
-  const chainId = Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97);
-
   const auth = await signDraftAction({
     signer: wallet.signer,
     walletAddress: wallet.account!,
@@ -152,7 +230,7 @@ try {
     chainId,
     creatorWallet: wallet.account!,
         name: formData.name,
-        ticker: formData.ticker.toUpperCase(),
+        ticker: normalizedTicker,
         description: formData.description || null,
         category: formData.category || "meme",
         logoUrl,
@@ -188,7 +266,7 @@ try {
 
       await createCampaign({
         name: formData.name,
-        symbol: formData.ticker.toUpperCase(),
+        symbol: normalizedTicker,
         logoURI,
         xAccount: formData.twitter || "",
         website: formData.website || "",
@@ -202,7 +280,7 @@ try {
       toast.success("Campaign created on-chain!");
 
       try {
-        const symbol = formData.ticker.toUpperCase();
+        const symbol = normalizedTicker;
         const creator = (wallet.account ?? "").toLowerCase();
         const maxAttempts = 10;
         const delayMs = 800;
@@ -241,8 +319,9 @@ try {
   };
 
   const isProjectDisabled = formData.category === "project";
-  const isCreateDisabled = isProjectDisabled || !launchpadReadiness.ready;
-  const isDraftDisabled = isProjectDisabled || isDrafting;
+  const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
+  const isCreateDisabled = isProjectDisabled || !launchpadReadiness.ready || checkingTicker || tickerUnavailableOrUnknown;
+  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
 
   return (
     <>
@@ -334,12 +413,23 @@ try {
                 <label className="block text-foreground font-retro mb-3 text-base md:text-lg">Token ticker</label>
                 <Input
                   value={formData.ticker}
-                  onChange={(e) => setTicker(e.target.value)}
+                  onChange={(e) => setTicker(normalizeTicker(e.target.value))}
                   placeholder="TICKER"
                   maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH}
                   className="bg-background/50 border-border text-foreground placeholder:text-muted-foreground font-retro text-lg md:text-xl h-12 md:h-14 rounded-lg uppercase focus:border-accent focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isProjectDisabled}
                 />
+                {normalizedTicker && (
+                  <div className={`mt-2 text-xs font-retro uppercase tracking-[0.12em] ${tickerConfirmedAvailable ? "text-green-300" : tickerBlocked || tickerCheckError ? "text-red-300" : "text-orange-300"}`}>
+                    {checkingTicker
+                      ? "Checking ticker availability..."
+                      : tickerConfirmedAvailable
+                        ? `$${normalizedTicker} available`
+                        : tickerCheckError
+                          ? tickerCheckError
+                          : tickerAvailability?.reason || "Ticker availability pending"}
+                  </div>
+                )}
               </div>
 
               <div>
