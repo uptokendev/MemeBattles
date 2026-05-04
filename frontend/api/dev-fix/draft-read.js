@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 
 const STATUSES = new Set([
@@ -126,6 +126,7 @@ export async function signedDraftById(req, res) {
       return json(res, 401, {
         error: "Private draft requires signed owner wallet auth.",
         code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+        chainId: draft.chainId,
       });
     }
 
@@ -142,7 +143,7 @@ export async function signedDraftById(req, res) {
   }
 
   const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
-  const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1").catch(() => ({ rows: [] }));
+  const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
 
   return json(res, 200, {
     draft,
@@ -173,6 +174,8 @@ export async function signedPrepareBySlug(req, res) {
       return json(res, 401, {
         error: "Private draft requires signed owner wallet auth.",
         code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+        chainId: draft.chainId,
+        draftId: draft.id,
       });
     }
 
