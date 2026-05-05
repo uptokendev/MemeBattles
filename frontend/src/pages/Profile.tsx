@@ -55,33 +55,14 @@ import {
   markDraftNotificationRead,
   type DraftNotification,
 } from "@/lib/draftPromotion";
-
-type TokenBalanceRow = {
-  campaignAddress: string;
-  tokenAddress: string;
-  image: string;
-  name: string;
-  ticker: string;
-  balanceRaw: bigint;
-  balanceFormatted: string;
-};
-
-type ActivityTradeRow = {
-  id: string;
-  txHash: string;
-  logIndex: number;
-  blockNumber: number;
-  blockTime: string;
-  side: "buy" | "sell";
-  wallet: string;
-  tokenAmount: number | null;
-  bnbAmount: number | null;
-  priceBnb: number | null;
-  campaignAddress: string;
-  campaignName: string | null;
-  campaignSymbol: string | null;
-  logoUri: string | null;
-};
+import type { TokenBalanceRow, ActivityTradeRow } from "@/types/profilePage";
+import {
+  getExplorerBase,
+  shorten,
+  pickTokenAddressFromSummary,
+  formatTimeAgo,
+  formatNumber,
+} from "@/lib/profile/profileFormatters";
 
 const ERC20_ABI_MIN = [
   {
@@ -106,33 +87,6 @@ const ERC20_ABI_MIN = [
     outputs: [{ name: "symbol", type: "string" }],
   },
 ] as const;
-
-function getExplorerBase(chainId?: number): string {
-  // BSC
-  if (chainId === 97) return "https://testnet.bscscan.com";
-  if (chainId === 56) return "https://bscscan.com";
-
-  // Fallback (keeps link valid-ish)
-  return "https://bscscan.com";
-}
-
-function shorten(addr?: string | null) {
-  if (!addr) return "";
-  if (addr.length <= 10) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
-function pickTokenAddressFromSummary(s: CampaignSummary): string | null {
-  const anyCampaign: any = s?.campaign as any;
-  // Try common fields (adjust once you confirm your schema)
-  return (
-    anyCampaign?.token ||
-    anyCampaign?.tokenAddress ||
-    anyCampaign?.tokenContract ||
-    anyCampaign?.tokenAddr ||
-    null
-  );
-}
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -441,27 +395,6 @@ const Profile = () => {
       cancelled = true;
     };
   }, [activeTab, chainId, account, isOwnProfile]);
-
-
-  const formatTimeAgo = (createdAt?: number): string => {
-    if (!createdAt) return "";
-    const now = Math.floor(Date.now() / 1000);
-    const diff = Math.max(0, now - createdAt);
-    if (diff < 60) return "now";
-    const mins = Math.floor(diff / 60);
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
-    const weeks = Math.floor(days / 7);
-    return `${weeks}w`;
-  };
-
-  const formatNumber = (value?: number | null, maxDecimals = 4): string => {
-    if (value == null || !Number.isFinite(value)) return "â€”";
-    return Number(value).toLocaleString(undefined, { maximumFractionDigits: maxDecimals });
-  };
 
   const handleCloseRankPromotionModal = () => {
     if (chainId && viewedAddress) {
