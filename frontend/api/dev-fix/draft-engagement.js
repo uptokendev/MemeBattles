@@ -1,6 +1,6 @@
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
-import { notifyDraftOwner } from "./prepare-notify.js";
+import { insertPrepareNotification, notifyDraftOwner } from "./prepare-notify.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -38,6 +38,7 @@ function memoryStore() {
     globalThis.__mwz_prepare_mode_store = {
       drafts: new Map(),
       follows: new Map(),
+      notificationSubscriptions: new Map(),
       comments: new Map(),
       metrics: new Map(),
     };
@@ -54,6 +55,33 @@ function mapCommentRow(row) {
     parentCommentId: row.parent_comment_id ? String(row.parent_comment_id) : null,
     reactionCount: Number(row.reaction_count || 0),
     createdAt: row.created_at,
+  };
+}
+
+function mapDraftRow(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    chainId: Number(row.chain_id ?? row.chainId ?? 97),
+    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    name: String(row.name || ""),
+    ticker: String(row.ticker || ""),
+    description: row.description || null,
+    category: row.category || "meme",
+    logoUrl: row.logo_url ?? row.logoUrl ?? null,
+    websiteUrl: row.website_url ?? row.websiteUrl ?? null,
+    xUrl: row.x_url ?? row.xUrl ?? null,
+    otherUrl: row.other_url ?? row.otherUrl ?? null,
+    slug: String(row.slug || ""),
+    status: String(row.status || "draft"),
+    visibility: String(row.visibility || "private"),
+    campaignAddress: row.campaign_address ?? row.campaignAddress ?? null,
+    tokenAddress: row.token_address ?? row.tokenAddress ?? null,
+    deployTxHash: row.deploy_tx_hash ?? row.deployTxHash ?? null,
+    archivedAt: row.archived_at ?? row.archivedAt ?? null,
+    deployedAt: row.deployed_at ?? row.deployedAt ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
   };
 }
 
@@ -74,6 +102,18 @@ function nestComments(flat) {
   }
 
   return parents;
+}
+
+async function ensureNotificationSubscriptionTable(pool) {
+  await pool.query(`
+    create table if not exists public.campaign_draft_notification_subscriptions (
+      draft_id uuid not null references public.campaign_drafts(id) on delete cascade,
+      wallet_address text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (draft_id, wallet_address)
+    )
+  `);
 }
 
 async function getDraftAuthContext(pool, draftId) {
@@ -150,6 +190,87 @@ export async function signedDraftFollow(req, res) {
   }
 
   return json(res, 200, { following: true, followCount });
+}
+
+export async function signedDraftNotificationSubscription(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+
+  const draftId = String(req.params?.draftId || "");
+  const body = await readJson(req);
+  const pool = await getPool();
+
+  if (!pool) return json(res, 503, { error: "Draft notifications require DATABASE_URL-backed wallet auth." });
+
+  await ensureNotificationSubscriptionTable(pool);
+
+  const draft = await getDraftAuthContext(pool, draftId);
+  if (!draft) return json(res, 404, { error: "Draft not found" });
+
+  const wallet = normalizeAddress(body.auth?.walletAddress);
+  if (!wallet) return json(res, 400, { error: "Connect wallet to arm notifications." });
+
+  const authOk = await requireDraftActionAuth({
+    res,
+    pool,
+    auth: body.auth,
+    expectedWallet: wallet,
+    chainId: draft.chainId,
+    action: "arm_draft_notifications",
+    draftId,
+  });
+  if (!authOk) return;
+
+  const inserted = await pool.query(
+    `insert into public.campaign_draft_notification_subscriptions (draft_id, wallet_address)
+     values ($1, $2)
+     on conflict (draft_id, wallet_address) do update set updated_at = now()
+     returning draft_id, wallet_address`,
+    [draftId, wallet],
+  );
+
+  await insertPrepareNotification(pool, {
+    walletAddress: wallet,
+    eventType: "armed",
+    targetType: "draft",
+    targetId: draftId,
+    title: "Draft notifications armed",
+    body: `You will be notified when $${draft.ticker} deploys or reaches major engagement milestones.`,
+    metadata: {
+      target: `/prepare/${draft.slug}`,
+      ticker: draft.ticker,
+    },
+  });
+
+  return json(res, 200, {
+    armed: Boolean(inserted.rows[0]),
+    draftId,
+    walletAddress: wallet,
+  });
+}
+
+export async function followedDrafts(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+
+  const q = getQuery(req);
+  const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address);
+  const chainId = Number(q.chainId || 0);
+  const pool = await getPool();
+
+  if (!wallet) return json(res, 400, { error: "Wallet address required." });
+  if (!pool) return json(res, 503, { error: "Followed drafts require DATABASE_URL." });
+
+  const result = await pool.query(
+    `select d.*
+       from public.campaign_draft_follows f
+       join public.campaign_drafts d on d.id = f.draft_id
+      where f.wallet_address = $1
+        and ($2::int = 0 or d.chain_id = $2)
+      order by f.created_at desc
+      limit 100`,
+    [wallet, Number.isFinite(chainId) ? chainId : 0],
+  );
+
+  return json(res, 200, { items: result.rows.map(mapDraftRow) });
 }
 
 export async function signedDraftComments(req, res) {
