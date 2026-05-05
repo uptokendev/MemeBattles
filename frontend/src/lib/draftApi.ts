@@ -700,15 +700,16 @@ export async function fetchPrepareDraft(slug: string, viewer?: string | null): P
 }
 
 export async function followDraft(input: DraftActionAuth | string, walletAddress?: string): Promise<{ following: boolean; followCount: number }> {
-  const auth = typeof input === "string"
-    ? await signPrepareEngagement({ action: "follow_draft", draftId: input, walletAddress: walletAddress || "" })
-    : input;
+  const draftId = typeof input === "string" ? input : String(input.draftId || "");
+  const wallet = typeof input === "string" ? normalizeWallet(walletAddress || "") : normalizeWallet(input.walletAddress || walletAddress || "");
 
-  const draftId = String(auth.draftId || "");
+  if (!draftId) throw new Error("Draft id missing.");
+  if (!wallet) throw new Error("Connect wallet to follow this draft.");
+
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/follow`), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ auth }),
+    body: JSON.stringify({ walletAddress: wallet }),
   });
   const json = await parseJson(res);
   return { following: Boolean(json.following), followCount: Number(json.followCount || 0) };
