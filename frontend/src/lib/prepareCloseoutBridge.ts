@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-import { armDraftNotifications, fetchPrepareDraft, type CampaignDraft } from "@/lib/draftApi";
+import { armDraftNotifications, fetchPrepareDraft, followDraft, type CampaignDraft } from "@/lib/draftApi";
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
 
 type Eip1193Provider = {
@@ -28,8 +28,10 @@ let installed = false;
 let discoveryInstalled = false;
 let discoveryRequested = false;
 let arming = false;
+let following = false;
 let refreshingProfile = false;
 let lastProfileRefresh = 0;
+let lastFollowedDraftCount = 0;
 
 function normalizeAddress(value?: string | null) {
   const raw = String(value || "").trim().toLowerCase();
@@ -212,19 +214,79 @@ async function handleArmNotificationClick(event: Event) {
   }
 }
 
-function installArmButtonInterceptor() {
+async function handleFollowDraftClick(event: Event) {
+  const slug = currentPrepareSlug();
+  if (!slug || following) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof (event as any).stopImmediatePropagation === "function") {
+    (event as any).stopImmediatePropagation();
+  }
+
+  const wallet = await getConnectedAccount();
+  if (!wallet) {
+    toast.error("Connect wallet to follow this draft.");
+    return;
+  }
+
+  following = true;
+  try {
+    const bundle = await fetchPrepareDraft(slug, wallet);
+    await followDraft(bundle.draft.id, wallet);
+    toast.success("Draft followed.");
+    window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
+  } catch (err: any) {
+    toast.error(err?.message || "Failed to follow draft");
+  } finally {
+    following = false;
+  }
+}
+
+function renamePrepareFollowButtons() {
+  if (!currentPrepareSlug()) return;
+
+  document.querySelectorAll("button").forEach((button) => {
+    const label = String(button.textContent || "").trim();
+    if (/watchlist/i.test(label)) {
+      button.childNodes.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE && /watchlist/i.test(node.textContent || "")) {
+          node.textContent = String(node.textContent || "").replace(/watchlist/gi, "Follow");
+        }
+      });
+      if (/watchlist/i.test(String(button.textContent || ""))) {
+        button.innerHTML = button.innerHTML.replace(/Watchlist/g, "Follow").replace(/watchlist/g, "Follow");
+      }
+    }
+  });
+}
+
+function installPrepareButtonInterceptors() {
   document.addEventListener(
     "click",
     (event) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest?.("button");
       const label = String(button?.textContent || "").toLowerCase();
-      if (!button || !label.includes("arm notification")) return;
-      if (!currentPrepareSlug()) return;
-      void handleArmNotificationClick(event);
+      if (!button || !currentPrepareSlug()) return;
+
+      if (label.includes("arm notification")) {
+        void handleArmNotificationClick(event);
+        return;
+      }
+
+      if (label.includes("watchlist") || /^\s*follow\s*$/.test(label)) {
+        void handleFollowDraftClick(event);
+      }
     },
     true,
   );
+
+  const rename = () => renamePrepareFollowButtons();
+  const observer = new MutationObserver(rename);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  window.setTimeout(rename, 250);
+  window.setTimeout(rename, 1000);
 }
 
 function normalizeNotificationKind(kind: string) {
@@ -293,11 +355,36 @@ function draftCard(draft: CampaignDraft) {
   `;
 }
 
-async function refreshProfileFollowedDrafts() {
+function upsertProfileFollowingSummary(count: number) {
   if (!window.location.pathname.startsWith("/profile")) return;
 
-  const tab = new URLSearchParams(window.location.search).get("tab") || "";
-  if (tab && !["following", "drafts"].includes(tab)) return;
+  const root = document.querySelector("main") || document.getElementById("root") || document.body;
+  let summary = document.getElementById("mwz-profile-following-count-bridge");
+  if (!summary) {
+    summary = document.createElement("section");
+    summary.id = "mwz-profile-following-count-bridge";
+    summary.className = "mwz-card";
+    summary.style.maxWidth = "1120px";
+    summary.style.margin = "12px auto";
+    summary.style.padding = "12px 16px";
+    summary.style.display = "flex";
+    summary.style.justifyContent = "space-between";
+    summary.style.alignItems = "center";
+    summary.style.gap = "12px";
+    root.prepend(summary);
+  }
+
+  summary.innerHTML = `
+    <div>
+      <div style="font-size:10px;color:#ffb347;text-transform:uppercase;letter-spacing:.18em;">// Following counter includes Prepare Mode</div>
+      <div style="margin-top:4px;color:rgba(255,255,255,.74);font-size:13px;">${count} followed draft${count === 1 ? "" : "s"} from Prepare Mode are included below.</div>
+    </div>
+    <a href="/profile?tab=following" class="mwz-button" style="padding:8px 12px;text-decoration:none;font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Open following</a>
+  `;
+}
+
+async function refreshProfileFollowedDrafts() {
+  if (!window.location.pathname.startsWith("/profile")) return;
 
   const wallet = await getConnectedAccount();
   if (!wallet) return;
@@ -309,8 +396,19 @@ async function refreshProfileFollowedDrafts() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(json.items)) return;
 
+    lastFollowedDraftCount = json.items.length;
+    upsertProfileFollowingSummary(lastFollowedDraftCount);
+
+    const tab = new URLSearchParams(window.location.search).get("tab") || "";
+    const shouldShowPanel = !tab || tab === "following";
+    const existing = document.getElementById("mwz-profile-followed-drafts-bridge");
+    if (!shouldShowPanel) {
+      existing?.remove();
+      return;
+    }
+
     const root = document.querySelector("main") || document.getElementById("root") || document.body;
-    let panel = document.getElementById("mwz-profile-followed-drafts-bridge");
+    let panel = existing;
     if (!panel) {
       panel = document.createElement("section");
       panel.id = "mwz-profile-followed-drafts-bridge";
@@ -322,9 +420,9 @@ async function refreshProfileFollowedDrafts() {
     }
 
     panel.innerHTML = `
-      <div style="font-size:11px;color:#ffb347;text-transform:uppercase;letter-spacing:.18em;">// Watchlisted Prepare Drafts</div>
-      <div style="margin-top:6px;font-family:var(--font-retro,monospace);font-size:24px;color:#fff;text-transform:uppercase;">Draft watchlist</div>
-      ${json.items.length ? json.items.map(draftCard).join("") : "<p style='margin-top:10px;color:rgba(255,255,255,.58);font-size:14px;'>No watchlisted drafts yet.</p>"}
+      <div style="font-size:11px;color:#ffb347;text-transform:uppercase;letter-spacing:.18em;">// Following · Prepare Drafts</div>
+      <div style="margin-top:6px;font-family:var(--font-retro,monospace);font-size:24px;color:#fff;text-transform:uppercase;">Followed drafts</div>
+      ${json.items.length ? json.items.map(draftCard).join("") : "<p style='margin-top:10px;color:rgba(255,255,255,.58);font-size:14px;'>No followed drafts yet.</p>"}
     `;
   } catch {
     // Non-blocking profile bridge.
@@ -333,6 +431,7 @@ async function refreshProfileFollowedDrafts() {
 
 function installProfileRefreshers() {
   const refresh = () => {
+    renamePrepareFollowButtons();
     void refreshProfilePrepareNotifications();
     void refreshProfileFollowedDrafts();
   };
@@ -340,6 +439,7 @@ function installProfileRefreshers() {
   window.addEventListener("focus", refresh);
   window.addEventListener("popstate", refresh);
   window.addEventListener("mwz:notifications-changed", refreshProfileFollowedDrafts as EventListener);
+  window.addEventListener("mwz:draft-follows-changed", refreshProfileFollowedDrafts as EventListener);
   window.setInterval(refresh, 15000);
   window.setTimeout(refresh, 750);
   window.setTimeout(refresh, 2500);
@@ -349,7 +449,7 @@ export function installPrepareCloseoutBridge() {
   if (installed || typeof window === "undefined" || typeof document === "undefined") return;
   installed = true;
   startEip6963Discovery();
-  installArmButtonInterceptor();
+  installPrepareButtonInterceptors();
   installProfileRefreshers();
 }
 
