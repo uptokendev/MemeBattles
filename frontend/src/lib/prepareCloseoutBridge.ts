@@ -15,10 +15,18 @@ type Eip6963ProviderDetail = {
   provider?: Eip1193Provider;
 };
 
+declare global {
+  interface Window {
+    ethereum?: Eip1193Provider;
+  }
+}
+
 const NOTIFICATIONS_KEY = "mwz_prepare_notifications_v1";
 const SELECTED_WALLET_KEY = "mwz:selected_wallet";
 const EIP6963_PROVIDERS = new Map<string, Eip1193Provider>();
 let installed = false;
+let discoveryInstalled = false;
+let discoveryRequested = false;
 let arming = false;
 let refreshingProfile = false;
 let lastProfileRefresh = 0;
@@ -79,31 +87,41 @@ function isMetaMaskProvider(provider: Eip1193Provider) {
 }
 
 function startEip6963Discovery() {
-  window.addEventListener("eip6963:announceProvider", (event: Event) => {
-    const detail = (event as CustomEvent<Eip6963ProviderDetail>).detail;
-    const provider = detail?.provider;
-    if (!provider?.request) return;
+  if (!discoveryInstalled) {
+    window.addEventListener("eip6963:announceProvider", (event: Event) => {
+      const detail = (event as CustomEvent<Eip6963ProviderDetail>).detail;
+      const provider = detail?.provider;
+      if (!provider?.request) return;
 
-    try {
-      provider.__mwzEip6963Info = detail.info || {};
-    } catch {
-      // ignore immutable provider wrappers
-    }
+      try {
+        provider.__mwzEip6963Info = detail.info || {};
+      } catch {
+        // ignore immutable provider wrappers
+      }
 
-    const info = detail.info || {};
-    const key = info.uuid || info.rdns || info.name || String(EIP6963_PROVIDERS.size + 1);
-    EIP6963_PROVIDERS.set(key, provider);
-  });
+      const info = detail.info || {};
+      const key = info.uuid || info.rdns || info.name || String(EIP6963_PROVIDERS.size + 1);
+      EIP6963_PROVIDERS.set(key, provider);
+    });
+    discoveryInstalled = true;
+  }
+
+  if (discoveryRequested) return;
+  discoveryRequested = true;
 
   try {
     window.dispatchEvent(new Event("eip6963:requestProvider"));
   } catch {
     // Legacy detection still works.
+  } finally {
+    window.setTimeout(() => {
+      discoveryRequested = false;
+    }, 1000);
   }
 }
 
 function legacyProviders() {
-  const eth = window.ethereum as Eip1193Provider | undefined;
+  const eth = window.ethereum;
   const providers = eth ? (Array.isArray(eth.providers) ? eth.providers : [eth]) : [];
   return providers.filter((provider) => provider?.request);
 }
@@ -250,14 +268,24 @@ async function refreshProfilePrepareNotifications(force = false) {
   }
 }
 
+function escapeHtml(value: string) {
+  return String(value || "").replace(/[&<>'"]/g, (char) => {
+    if (char === "&") return "&amp;";
+    if (char === "<") return "&lt;";
+    if (char === ">") return "&gt;";
+    if (char === "'") return "&#39;";
+    return "&quot;";
+  });
+}
+
 function draftCard(draft: CampaignDraft) {
-  const href = `/prepare/${draft.slug}`;
+  const href = `/prepare/${encodeURIComponent(draft.slug)}`;
   return `
     <a href="${href}" class="mwz-button" style="display:block;padding:12px;margin-top:10px;text-decoration:none;">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
         <div>
-          <div style="font-family:var(--font-retro,monospace);font-size:14px;color:#fff;text-transform:uppercase;">${draft.name} · $${draft.ticker}</div>
-          <div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,.58);text-transform:uppercase;letter-spacing:.12em;">${draft.status.replace(/_/g, " ")}</div>
+          <div style="font-family:var(--font-retro,monospace);font-size:14px;color:#fff;text-transform:uppercase;">${escapeHtml(draft.name)} · $${escapeHtml(draft.ticker)}</div>
+          <div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,.58);text-transform:uppercase;letter-spacing:.12em;">${escapeHtml(draft.status.replace(/_/g, " "))}</div>
         </div>
         <div style="font-size:11px;color:#ffb347;text-transform:uppercase;letter-spacing:.12em;">Open</div>
       </div>
