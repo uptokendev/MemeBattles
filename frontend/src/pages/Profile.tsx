@@ -1089,50 +1089,72 @@ const Profile = () => {
                 <p className="text-muted-foreground">No followed campaigns yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {followedCards.map((campaign: any) => (
-                    <div
-                      key={campaign.campaignAddress}
-                      className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
-                      onClick={() =>
-                        navigate(
-                          `/token/${String(campaign.campaignAddress).toLowerCase()}`
-                        )
-                      }
-                      role="button"
-                    >
-                      <img
-                        src={campaign.image || "/placeholder.svg"}
-                        alt=""
-                        className="w-10 h-10 rounded-xl object-cover border border-border"
-                        loading="lazy"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold truncate">
-                          {campaign.name}{" "}
-                          <span className="text-muted-foreground">·</span>{" "}
-                          <span className="text-muted-foreground">
-                            ${campaign.ticker}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {String(campaign.campaignAddress).toLowerCase()}
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(
-                            `/token/${String(
-                              campaign.campaignAddress
-                            ).toLowerCase()}`
-                          );
+                                    {followedCards.map((campaign: any) => {
+                    const href =
+                      campaign.href ||
+                      (campaign.campaignAddress
+                        ? `/token/${String(campaign.campaignAddress).toLowerCase()}`
+                        : "");
+
+                    const isDraft = campaign.kind === "draft";
+
+                    return (
+                      <div
+                        key={
+                          campaign.id ||
+                          campaign.draftId ||
+                          campaign.slug ||
+                          campaign.campaignAddress
+                        }
+                        className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border cursor-pointer hover:border-accent/50 transition-colors"
+                        onClick={() => {
+                          if (href) navigate(href);
                         }}
+                        role="button"
                       >
-                        View
-                      </Button>
-                    </div>
-                  ))}
+                        <img
+                          src={campaign.image || "/placeholder.svg"}
+                          alt=""
+                          className="w-10 h-10 rounded-xl object-cover border border-border"
+                          loading="lazy"
+                        />
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="font-semibold truncate">
+                              {campaign.name}{" "}
+                              <span className="text-muted-foreground">·</span>{" "}
+                              <span className="text-muted-foreground">
+                                ${campaign.ticker}
+                              </span>
+                            </div>
+
+                            {isDraft && (
+                              <span className="shrink-0 rounded-full border border-accent/40 px-2 py-0.5 text-[10px] text-accent">
+                                Promotion draft
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-muted-foreground truncate">
+                            {isDraft
+                              ? campaign.status || "Prepare Mode"
+                              : String(campaign.campaignAddress || "").toLowerCase()}
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (href) navigate(href);
+                          }}
+                        >
+                          View
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               )
             ) : followingList.length === 0 ? (
@@ -1142,7 +1164,7 @@ const Profile = () => {
                 {followingList.map((f: any) => (
                   <div
                     key={f.id}
-                    className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
+                    className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border cursor-pointer hover:border-accent/50 transition-colors"
                     onClick={() =>
                       navigate(`/profile?address=${encodeURIComponent(f.id)}`)
                     }
@@ -1154,14 +1176,17 @@ const Profile = () => {
                       className="w-10 h-10 rounded-full border border-border object-cover"
                       loading="lazy"
                     />
+
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold truncate">
                         {f.profile?.displayName || shorten(f.id)}
                       </div>
+
                       <div className="text-xs text-muted-foreground truncate">
                         {shorten(f.id)}
                       </div>
                     </div>
+
                     <Button
                       variant="outline"
                       onClick={(e) => {

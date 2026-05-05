@@ -699,20 +699,36 @@ export async function fetchPrepareDraft(slug: string, viewer?: string | null): P
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
-export async function followDraft(input: DraftActionAuth | string, walletAddress?: string): Promise<{ following: boolean; followCount: number }> {
-  const draftId = typeof input === "string" ? input : String(input.draftId || "");
-  const wallet = typeof input === "string" ? normalizeWallet(walletAddress || "") : normalizeWallet(input.walletAddress || walletAddress || "");
+export async function followDraft(
+  input: DraftActionAuth | string,
+  walletAddress?: string
+): Promise<{ following: boolean; followCount: number }> {
+  const draftId =
+    typeof input === "string" ? input : String(input.draftId || "");
+
+  const wallet =
+    typeof input === "string"
+      ? normalizeWallet(walletAddress || "")
+      : normalizeWallet(input.walletAddress || walletAddress || "");
 
   if (!draftId) throw new Error("Draft id missing.");
   if (!wallet) throw new Error("Connect wallet to follow this draft.");
 
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/follow`), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress: wallet }),
-  });
+  const res = await fetch(
+    buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/follow`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ walletAddress: wallet }),
+    }
+  );
+
   const json = await parseJson(res);
-  return { following: Boolean(json.following), followCount: Number(json.followCount || 0) };
+
+  return {
+    following: Boolean(json.following),
+    followCount: Number(json.followCount || 0),
+  };
 }
 
 export async function armDraftNotifications(input: DraftActionAuth | string, walletAddress?: string): Promise<{ armed: boolean }> {
