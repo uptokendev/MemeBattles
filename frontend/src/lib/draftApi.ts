@@ -99,6 +99,9 @@ function isCryptoComProvider(provider: any) {
   return Boolean(
     provider?.isCryptoCom ||
       provider?.isCryptoComWallet ||
+      provider?.isDefiWallet ||
+      provider?.isDeFiWallet ||
+      provider?.deficonnectProvider ||
       text.includes("crypto.com") ||
       text.includes("cryptocom") ||
       text.includes("crypto com") ||
@@ -109,7 +112,7 @@ function isCryptoComProvider(provider: any) {
 function isMetaMaskProvider(provider: any) {
   const text = providerText(provider);
   return Boolean(
-    (provider?.isMetaMask || text.includes("metamask") || text.includes("io.metamask")) &&
+    (provider?.isMetaMask || provider?._metamask || text.includes("metamask") || text.includes("io.metamask")) &&
       !isCryptoComProvider(provider)
   );
 }
@@ -152,14 +155,35 @@ async function findProviderForWallet(walletAddress: string) {
     if (accounts.includes(wallet)) return provider;
   }
 
+  const accountMatches: any[] = [];
+  for (const provider of providers) {
+    const accounts = await providerAccounts(provider);
+    if (accounts.includes(wallet)) accountMatches.push(provider);
+  }
+
+  if (accountMatches.length > 0) {
+    if (selected.startsWith("cryptocom")) {
+      return accountMatches.find((provider) => isCryptoComProvider(provider)) || selectedMatches[0] || accountMatches[0];
+    }
+
+    if (selected.startsWith("metamask")) {
+      return (
+        accountMatches.find((provider) => isMetaMaskProvider(provider)) ||
+        selectedMatches[0] ||
+        accountMatches.find((provider) => !isCryptoComProvider(provider)) ||
+        accountMatches[0]
+      );
+    }
+
+    return (
+      accountMatches.find((provider) => isMetaMaskProvider(provider)) ||
+      accountMatches.find((provider) => !isCryptoComProvider(provider)) ||
+      accountMatches[0]
+    );
+  }
+
   if (selected.startsWith("metamask") && selectedMatches[0]) return selectedMatches[0];
   if (selected.startsWith("cryptocom") && selectedMatches[0]) return selectedMatches[0];
-
-  for (const provider of providers) {
-    if (isCryptoComProvider(provider) && selected.startsWith("metamask")) continue;
-    const accounts = await providerAccounts(provider);
-    if (accounts.includes(wallet)) return provider;
-  }
 
   const metamask = providers.find((provider: any) => isMetaMaskProvider(provider));
   if (metamask) return metamask;
@@ -367,6 +391,85 @@ export type PrepareDraftBundle = {
   popularity: DraftPopularity;
 };
 
+const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
+const JUST_CREATED_DRAFT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function emptyPromotion(draftId: string): CampaignDraftPromotion {
+  return {
+    draftId,
+    missionStatement: "",
+    roadmap: [],
+    launchStrategy: "",
+    telegramUrl: "",
+    discordUrl: "",
+    xUrl: "",
+    websiteUrl: "",
+    docs: [],
+    creatorNote: "",
+    bannerUrl: "",
+    shareMessage: "",
+    publishedAt: null,
+    createdAt: null,
+    updatedAt: null,
+  };
+}
+
+function emptyPopularity(): DraftPopularity {
+  return {
+    views: 0,
+    follows: 0,
+    comments: 0,
+    reactions: 0,
+    shares: 0,
+    signedActions: 0,
+    popularityPercentage: 0,
+    heatLabel: "Cold",
+    rankingScore: 0,
+  };
+}
+
+function cacheJustCreatedDraft(draft: CampaignDraft) {
+  if (typeof window === "undefined" || !draft?.id) return;
+  try {
+    window.sessionStorage.setItem(
+      `${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`,
+      JSON.stringify({ draft, cachedAt: Date.now() })
+    );
+  } catch {
+    // Ignore storage failures. The normal signed private-read fallback still works.
+  }
+}
+
+function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null {
+  if (typeof window === "undefined" || !draftId) return null;
+  const key = `${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`;
+
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+
+    // One-shot cache: it only bridges the immediate Create Draft -> edit page navigation.
+    window.sessionStorage.removeItem(key);
+
+    const parsed = JSON.parse(raw) as { draft?: CampaignDraft; cachedAt?: number };
+    if (!parsed?.draft || parsed.draft.id !== draftId) return null;
+    if (!parsed.cachedAt || Date.now() - parsed.cachedAt > JUST_CREATED_DRAFT_CACHE_TTL_MS) return null;
+
+    return {
+      draft: parsed.draft,
+      promotion: emptyPromotion(draftId),
+      popularity: emptyPopularity(),
+    };
+  } catch {
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+}
+
 export type CreateDraftInput = {
   auth?: DraftActionAuth;
   chainId: number;
@@ -422,7 +525,9 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
     body: JSON.stringify(input),
   });
   const json = await parseJson(res);
-  return json.draft as CampaignDraft;
+  const draft = json.draft as CampaignDraft;
+  cacheJustCreatedDraft(draft);
+  return draft;
 }
 export async function fetchPublicCampaignDrafts(input: { chainId?: number; limit?: number } = {}): Promise<CampaignDraft[]> {
   const res = await fetch(buildRealtimeApiUrl(`/api/drafts${query({ chainId: input.chainId, limit: input.limit })}`), {
@@ -450,6 +555,9 @@ export async function fetchOwnerCampaignDrafts(
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
 export async function fetchCampaignDraft(draftId: string, viewer?: string | null): Promise<PrepareDraftBundle> {
+  const justCreatedBundle = readJustCreatedDraftBundle(draftId);
+  if (justCreatedBundle) return justCreatedBundle;
+
   const url = buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
