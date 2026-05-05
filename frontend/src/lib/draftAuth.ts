@@ -9,7 +9,8 @@ export type DraftAuthAction =
   | "archive_draft"
   | "deploy_draft"
   | "follow_draft"
-  | "comment_draft";
+  | "comment_draft"
+  | "draft_owner_session";
 
 export type DraftActionAuth = {
   action: DraftAuthAction;
@@ -20,6 +21,23 @@ export type DraftActionAuth = {
   message: string;
   signature: string;
 };
+
+type NonceResult = {
+  nonce: string;
+  expiresAt: string | null;
+};
+
+const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
+const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
+const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
+const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
+const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
+  "read_draft",
+  "save_promotion",
+  "publish_promotion",
+  "archive_draft",
+  "deploy_draft",
+]);
 
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
@@ -45,7 +63,7 @@ function buildDraftAuthMessage(input: {
   return lines.join("\n");
 }
 
-async function fetchNonce(chainId: number, walletAddress: string) {
+async function fetchNonce(chainId: number, walletAddress: string): Promise<NonceResult> {
   const qs = new URLSearchParams({
     chainId: String(chainId),
     address: normalizeWallet(walletAddress),
@@ -61,7 +79,62 @@ async function fetchNonce(chainId: number, walletAddress: string) {
     throw new Error(String(json?.error || json?.message || "Could not create wallet auth nonce."));
   }
 
-  return String(json.nonce);
+  return {
+    nonce: String(json.nonce),
+    expiresAt: json?.expiresAt ? String(json.expiresAt) : null,
+  };
+}
+
+function ownerSessionCacheKey(input: { walletAddress: string; chainId: number; draftId: string }) {
+  return `${OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
+}
+
+function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const key = ownerSessionCacheKey(input);
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { auth?: DraftActionAuth; cachedAt?: number; expiresAt?: string | null };
+    const auth = parsed?.auth;
+    if (!auth) return null;
+
+    const now = Date.now();
+    const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+    const cachedAt = Number(parsed.cachedAt || 0);
+
+    if (auth.action !== OWNER_SESSION_ACTION) return null;
+    if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
+    if (Number(auth.chainId) !== Number(input.chainId)) return null;
+    if (String(auth.draftId || "") !== input.draftId) return null;
+    if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
+    if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
+
+    return auth;
+  } catch {
+    return null;
+  }
+}
+
+function cacheOwnerSession(input: {
+  auth: DraftActionAuth;
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+  expiresAt: string | null;
+}) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      ownerSessionCacheKey(input),
+      JSON.stringify({ auth: input.auth, cachedAt: Date.now(), expiresAt: input.expiresAt })
+    );
+  } catch {
+    // Ignore storage failures. The user can still sign per action.
+  }
 }
 
 export async function signDraftAction(input: {
@@ -85,25 +158,42 @@ export async function signDraftAction(input: {
     throw new Error("Invalid wallet chain. Reconnect your wallet and try again.");
   }
 
-  const nonce = await fetchNonce(chainId, walletAddress);
+  const draftId = input.draftId || null;
+  const shouldUseOwnerSession = Boolean(
+    draftId && OWNER_SESSION_ACTIONS.has(input.action)
+  );
+
+  if (shouldUseOwnerSession && draftId) {
+    const cached = readCachedOwnerSession({ walletAddress, chainId, draftId });
+    if (cached) return cached;
+  }
+
+  const actionToSign = shouldUseOwnerSession ? OWNER_SESSION_ACTION : input.action;
+  const { nonce, expiresAt } = await fetchNonce(chainId, walletAddress);
 
   const message = buildDraftAuthMessage({
-    action: input.action,
+    action: actionToSign,
     walletAddress,
     chainId,
     nonce,
-    draftId: input.draftId || null,
+    draftId,
   });
 
   const signature = await input.signer.signMessage(message);
 
-  return {
-    action: input.action,
+  const auth: DraftActionAuth = {
+    action: actionToSign,
     walletAddress,
     chainId,
-    draftId: input.draftId || null,
+    draftId,
     nonce,
     message,
     signature,
   };
+
+  if (shouldUseOwnerSession && draftId) {
+    cacheOwnerSession({ auth, walletAddress, chainId, draftId, expiresAt });
+  }
+
+  return auth;
 }
