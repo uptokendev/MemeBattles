@@ -155,6 +155,15 @@ async function findProviderForWallet(walletAddress: string) {
     if (accounts.includes(wallet)) return provider;
   }
 
+  const selectedMetaMask = selectedMatches.find((provider: any) => isMetaMaskProvider(provider));
+  if (selected.startsWith("metamask") && selectedMetaMask) return selectedMetaMask;
+
+  const metaMaskProvider = providers.find((provider: any) => isMetaMaskProvider(provider));
+  if (!selected.startsWith("cryptocom") && metaMaskProvider) {
+    const metaMaskAccounts = await providerAccounts(metaMaskProvider);
+    if (selected.startsWith("metamask") || metaMaskAccounts.includes(wallet)) return metaMaskProvider;
+  }
+
   const accountMatches: any[] = [];
   for (const provider of providers) {
     const accounts = await providerAccounts(provider);
