@@ -344,38 +344,6 @@ function removeOldFollowingNotice() {
   document.getElementById("mwz-profile-following-count-bridge")?.remove();
 }
 
-function updateExistingFollowingCount(draftCount: number) {
-  removeOldFollowingNotice();
-  if (!window.location.pathname.startsWith("/profile")) return;
-
-  const elements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
-  const candidates = elements.filter((el) => {
-    if (el.closest("#mwz-profile-followed-drafts-bridge")) return false;
-    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
-    return /\bfollowing\b/i.test(text) && /\d/.test(text) && text.length < 80;
-  });
-
-  for (const el of candidates) {
-    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
-    const match = text.match(/(\d+)\s*(following\b)/i) || text.match(/(following\b)\s*(\d+)/i);
-    if (!match) continue;
-
-    const numberText = /^\d/.test(match[1]) ? match[1] : match[2];
-    const currentDisplayed = Number(numberText);
-    if (!Number.isFinite(currentDisplayed)) continue;
-
-    const base = Number(el.dataset.mwzBaseFollowingCount || currentDisplayed);
-    el.dataset.mwzBaseFollowingCount = String(base);
-    const next = base + draftCount;
-    if (/^\d/.test(match[1])) {
-      el.textContent = text.replace(/\d+\s*following\b/i, `${next} Following`);
-    } else {
-      el.textContent = text.replace(/following\b\s*\d+/i, `Following ${next}`);
-    }
-    break;
-  }
-}
-
 async function refreshProfileFollowedDrafts() {
   if (!window.location.pathname.startsWith("/profile")) return;
   const wallet = await getConnectedAccount();
@@ -386,7 +354,7 @@ async function refreshProfileFollowedDrafts() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(json.items)) return;
 
-    updateExistingFollowingCount(json.items.length);
+    removeOldFollowingNotice();
 
     const tab = new URLSearchParams(window.location.search).get("tab") || "";
     const existing = document.getElementById("mwz-profile-followed-drafts-bridge");
