@@ -351,7 +351,7 @@ async function signDraftActionWithKnownChain(input: {
 }
 
 async function signPrepareEngagement(input: {
-  action: "follow_draft" | "comment_draft";
+  action: "follow_draft" | "comment_draft" | "arm_draft_notifications";
   draftId: string;
   walletAddress: string;
 }): Promise<DraftActionAuth> {
@@ -638,6 +638,19 @@ export async function fetchOwnerCampaignDrafts(
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
+
+export async function fetchFollowedCampaignDrafts(input: {
+  walletAddress: string;
+  chainId?: number;
+}): Promise<CampaignDraft[]> {
+  const res = await fetch(
+    buildRealtimeApiUrl(`/api/drafts/followed${query({ wallet: input.walletAddress, chainId: input.chainId })}`),
+    { cache: "no-store" }
+  );
+  const json = await parseJson(res);
+  return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
+}
+
 export async function fetchCampaignDraft(draftId: string, viewer?: string | null): Promise<PrepareDraftBundle> {
   const justCreatedBundle = readJustCreatedDraftBundle(draftId);
   if (justCreatedBundle) return justCreatedBundle;
@@ -699,6 +712,21 @@ export async function followDraft(input: DraftActionAuth | string, walletAddress
   });
   const json = await parseJson(res);
   return { following: Boolean(json.following), followCount: Number(json.followCount || 0) };
+}
+
+export async function armDraftNotifications(input: DraftActionAuth | string, walletAddress?: string): Promise<{ armed: boolean }> {
+  const auth = typeof input === "string"
+    ? await signPrepareEngagement({ action: "arm_draft_notifications", draftId: input, walletAddress: walletAddress || "" })
+    : input;
+
+  const draftId = String(auth.draftId || "");
+  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/notifications`), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
+  const json = await parseJson(res);
+  return { armed: Boolean(json.armed) };
 }
 
 export async function fetchDraftComments(draftId: string): Promise<DraftComment[]> {
