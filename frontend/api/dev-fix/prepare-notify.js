@@ -51,3 +51,45 @@ export async function notifyDraftOwner(pool, draft, input) {
     ...input,
   });
 }
+
+export async function notifyDraftSubscribers(pool, draft, input) {
+  if (!pool || !draft?.id) return { count: 0 };
+
+  try {
+    await pool.query(`
+      create table if not exists public.campaign_draft_notification_subscriptions (
+        draft_id uuid not null references public.campaign_drafts(id) on delete cascade,
+        wallet_address text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (draft_id, wallet_address)
+      )
+    `);
+
+    const owner = normalizeAddress(draft?.creatorWallet || draft?.creator_wallet);
+    const result = await pool.query(
+      `select wallet_address
+         from public.campaign_draft_notification_subscriptions
+        where draft_id = $1`,
+      [String(draft.id)],
+    );
+
+    let count = 0;
+    for (const row of result.rows) {
+      const wallet = normalizeAddress(row.wallet_address);
+      if (!wallet || (owner && wallet === owner)) continue;
+      const inserted = await insertPrepareNotification(pool, {
+        walletAddress: wallet,
+        targetType: "draft",
+        targetId: String(draft.id),
+        ...input,
+      });
+      if (inserted) count += 1;
+    }
+
+    return { count };
+  } catch (err) {
+    console.warn("[prepare-notify] failed to notify subscribers", err?.message || err);
+    return { count: 0 };
+  }
+}
