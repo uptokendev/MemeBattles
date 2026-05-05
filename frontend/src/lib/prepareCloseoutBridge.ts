@@ -214,6 +214,25 @@ async function handleArmNotificationClick(event: Event) {
   }
 }
 
+function setFollowButtonActive() {
+  if (!currentPrepareSlug()) return;
+
+  document.querySelectorAll("button").forEach((button) => {
+    const label = String(button.textContent || "").toLowerCase();
+    if (!label.includes("follow") || label.includes("arm")) return;
+
+    button.classList.add("mwz-button-orange");
+    button.setAttribute("data-mwz-draft-followed", "true");
+    button.style.borderColor = "rgba(255,153,0,0.75)";
+    button.style.boxShadow = "0 0 22px rgba(255,153,0,0.22)";
+
+    button.querySelectorAll("svg").forEach((svg) => {
+      svg.setAttribute("fill", "currentColor");
+      (svg as SVGElement).style.color = "#ff9900";
+    });
+  });
+}
+
 async function handleFollowDraftClick(event: Event) {
   const slug = currentPrepareSlug();
   if (!slug || following) return;
@@ -234,6 +253,7 @@ async function handleFollowDraftClick(event: Event) {
   try {
     const bundle = await fetchPrepareDraft(slug, wallet);
     await followDraft(bundle.draft.id, wallet);
+    setFollowButtonActive();
     toast.success("Draft followed.");
     window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
   } catch (err: any) {
@@ -248,6 +268,13 @@ function renamePrepareFollowButtons() {
 
   document.querySelectorAll("button").forEach((button) => {
     const label = String(button.textContent || "").trim();
+
+    if (/download png/i.test(label)) {
+      button.style.display = "none";
+      button.setAttribute("aria-hidden", "true");
+      return;
+    }
+
     if (/watchlist/i.test(label)) {
       button.childNodes.forEach((node) => {
         if (node.nodeType === Node.TEXT_NODE && /watchlist/i.test(node.textContent || "")) {
