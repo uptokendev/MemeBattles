@@ -1,6 +1,6 @@
 import { badMethod, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
-import { notifyDraftOwner } from "./prepare-notify.js";
+import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -109,7 +109,7 @@ export async function draftDeploy(req, res) {
   );
 
   const draft = mapDraftRow(updated.rows[0]);
-  await notifyDraftOwner(pool, draft, {
+  const launchNotification = {
     eventType: "launch",
     title: "Campaign pushed live",
     body: `$${draft?.ticker || row.ticker || "DRAFT"} is now live in the Warzone.`,
@@ -119,7 +119,10 @@ export async function draftDeploy(req, res) {
       tokenAddress: tokenAddress || null,
       deployTxHash,
     },
-  });
+  };
+
+  await notifyDraftOwner(pool, draft, launchNotification);
+  await notifyDraftSubscribers(pool, draft, launchNotification);
 
   return json(res, 200, { draft });
 }
