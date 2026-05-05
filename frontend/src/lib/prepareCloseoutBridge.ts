@@ -29,9 +29,8 @@ let discoveryInstalled = false;
 let discoveryRequested = false;
 let arming = false;
 let following = false;
-let refreshingProfile = false;
-let lastProfileRefresh = 0;
-let lastFollowedDraftCount = 0;
+let refreshingNotifications = false;
+let lastNotificationRefresh = 0;
 
 function normalizeAddress(value?: string | null) {
   const raw = String(value || "").trim().toLowerCase();
@@ -110,11 +109,8 @@ function startEip6963Discovery() {
 
   if (discoveryRequested) return;
   discoveryRequested = true;
-
   try {
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-  } catch {
-    // Legacy detection still works.
   } finally {
     window.setTimeout(() => {
       discoveryRequested = false;
@@ -143,12 +139,12 @@ async function providers() {
   return dedupeProviders([...EIP6963_PROVIDERS.values(), ...legacyProviders()]);
 }
 
-async function providerAccounts(provider: Eip1193Provider, request = false) {
+async function providerAccounts(provider: Eip1193Provider) {
   const selected = normalizeAddress(provider.selectedAddress || "");
   if (selected) return [selected];
 
   try {
-    const accounts = await provider.request?.({ method: request ? "eth_requestAccounts" : "eth_accounts" });
+    const accounts = await provider.request?.({ method: "eth_accounts" });
     return Array.isArray(accounts) ? accounts.map((item) => normalizeAddress(String(item))).filter(Boolean) : [];
   } catch {
     return [];
@@ -158,13 +154,11 @@ async function providerAccounts(provider: Eip1193Provider, request = false) {
 async function getConnectedAccount() {
   const selected = selectedWalletId();
   const all = await providers();
-
   const selectedMatches = all.filter((provider) => {
     if (selected.startsWith("metamask")) return isMetaMaskProvider(provider);
     if (selected.startsWith("cryptocom")) return isCryptoComProvider(provider);
     return selected ? providerText(provider).includes(selected) : false;
   });
-
   const preferred = [
     ...selectedMatches,
     ...(selected.startsWith("cryptocom") ? [] : all.filter(isMetaMaskProvider)),
@@ -173,10 +167,9 @@ async function getConnectedAccount() {
   ];
 
   for (const provider of dedupeProviders(preferred)) {
-    const accounts = await providerAccounts(provider, false);
+    const accounts = await providerAccounts(provider);
     if (accounts[0]) return accounts[0];
   }
-
   return "";
 }
 
@@ -185,15 +178,28 @@ function currentPrepareSlug() {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+function setFollowButtonActive() {
+  if (!currentPrepareSlug()) return;
+  document.querySelectorAll("button").forEach((button) => {
+    const label = String(button.textContent || "").toLowerCase();
+    if (!label.includes("follow") || label.includes("arm")) return;
+    button.classList.add("mwz-button-orange");
+    button.setAttribute("data-mwz-draft-followed", "true");
+    button.style.borderColor = "rgba(255,153,0,0.75)";
+    button.style.boxShadow = "0 0 22px rgba(255,153,0,0.22)";
+    button.querySelectorAll("svg").forEach((svg) => {
+      svg.setAttribute("fill", "currentColor");
+      (svg as SVGElement).style.color = "#ff9900";
+    });
+  });
+}
+
 async function handleArmNotificationClick(event: Event) {
   const slug = currentPrepareSlug();
   if (!slug || arming) return;
-
   event.preventDefault();
   event.stopPropagation();
-  if (typeof (event as any).stopImmediatePropagation === "function") {
-    (event as any).stopImmediatePropagation();
-  }
+  if (typeof (event as any).stopImmediatePropagation === "function") (event as any).stopImmediatePropagation();
 
   const wallet = await getConnectedAccount();
   if (!wallet) {
@@ -214,34 +220,12 @@ async function handleArmNotificationClick(event: Event) {
   }
 }
 
-function setFollowButtonActive() {
-  if (!currentPrepareSlug()) return;
-
-  document.querySelectorAll("button").forEach((button) => {
-    const label = String(button.textContent || "").toLowerCase();
-    if (!label.includes("follow") || label.includes("arm")) return;
-
-    button.classList.add("mwz-button-orange");
-    button.setAttribute("data-mwz-draft-followed", "true");
-    button.style.borderColor = "rgba(255,153,0,0.75)";
-    button.style.boxShadow = "0 0 22px rgba(255,153,0,0.22)";
-
-    button.querySelectorAll("svg").forEach((svg) => {
-      svg.setAttribute("fill", "currentColor");
-      (svg as SVGElement).style.color = "#ff9900";
-    });
-  });
-}
-
 async function handleFollowDraftClick(event: Event) {
   const slug = currentPrepareSlug();
   if (!slug || following) return;
-
   event.preventDefault();
   event.stopPropagation();
-  if (typeof (event as any).stopImmediatePropagation === "function") {
-    (event as any).stopImmediatePropagation();
-  }
+  if (typeof (event as any).stopImmediatePropagation === "function") (event as any).stopImmediatePropagation();
 
   const wallet = await getConnectedAccount();
   if (!wallet) {
@@ -263,27 +247,17 @@ async function handleFollowDraftClick(event: Event) {
   }
 }
 
-function renamePrepareFollowButtons() {
+function renameAndHidePrepareButtons() {
   if (!currentPrepareSlug()) return;
-
   document.querySelectorAll("button").forEach((button) => {
     const label = String(button.textContent || "").trim();
-
     if (/download png/i.test(label)) {
       button.style.display = "none";
       button.setAttribute("aria-hidden", "true");
       return;
     }
-
     if (/watchlist/i.test(label)) {
-      button.childNodes.forEach((node) => {
-        if (node.nodeType === Node.TEXT_NODE && /watchlist/i.test(node.textContent || "")) {
-          node.textContent = String(node.textContent || "").replace(/watchlist/gi, "Follow");
-        }
-      });
-      if (/watchlist/i.test(String(button.textContent || ""))) {
-        button.innerHTML = button.innerHTML.replace(/Watchlist/g, "Follow").replace(/watchlist/g, "Follow");
-      }
+      button.innerHTML = button.innerHTML.replace(/Watchlist/g, "Follow").replace(/watchlist/g, "Follow");
     }
   });
 }
@@ -296,24 +270,16 @@ function installPrepareButtonInterceptors() {
       const button = target?.closest?.("button");
       const label = String(button?.textContent || "").toLowerCase();
       if (!button || !currentPrepareSlug()) return;
-
-      if (label.includes("arm notification")) {
-        void handleArmNotificationClick(event);
-        return;
-      }
-
-      if (label.includes("watchlist") || /^\s*follow\s*$/.test(label)) {
-        void handleFollowDraftClick(event);
-      }
+      if (label.includes("arm notification")) return void handleArmNotificationClick(event);
+      if (label.includes("watchlist") || /^\s*follow\s*$/.test(label)) return void handleFollowDraftClick(event);
     },
     true,
   );
 
-  const rename = () => renamePrepareFollowButtons();
-  const observer = new MutationObserver(rename);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.setTimeout(rename, 250);
-  window.setTimeout(rename, 1000);
+  const refresh = () => renameAndHidePrepareButtons();
+  new MutationObserver(refresh).observe(document.documentElement, { childList: true, subtree: true });
+  window.setTimeout(refresh, 250);
+  window.setTimeout(refresh, 1000);
 }
 
 function normalizeNotificationKind(kind: string) {
@@ -323,20 +289,16 @@ function normalizeNotificationKind(kind: string) {
 }
 
 async function refreshProfilePrepareNotifications(force = false) {
-  if (refreshingProfile) return;
-  if (!force && Date.now() - lastProfileRefresh < 3000) return;
+  if (refreshingNotifications) return;
+  if (!force && Date.now() - lastNotificationRefresh < 3000) return;
 
   const wallet = await getConnectedAccount();
   if (!wallet) return;
-
-  refreshingProfile = true;
+  refreshingNotifications = true;
   try {
-    const res = await fetch(buildRealtimeApiUrl(`/api/prepare-notifications?wallet=${encodeURIComponent(wallet)}&limit=50`), {
-      cache: "no-store",
-    });
+    const res = await fetch(buildRealtimeApiUrl(`/api/prepare-notifications?wallet=${encodeURIComponent(wallet)}&limit=50`), { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(json.items)) return;
-
     const items = json.items.map((item: any) => ({
       id: String(item.id),
       title: String(item.title || "Prepare Mode update"),
@@ -346,14 +308,11 @@ async function refreshProfilePrepareNotifications(force = false) {
       read: Boolean(item.read),
       kind: normalizeNotificationKind(String(item.kind || item.eventType || "publish")),
     }));
-
     window.localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(items));
     window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
-    lastProfileRefresh = Date.now();
-  } catch {
-    // Profile should still work with its local fallback.
+    lastNotificationRefresh = Date.now();
   } finally {
-    refreshingProfile = false;
+    refreshingNotifications = false;
   }
 }
 
@@ -368,9 +327,8 @@ function escapeHtml(value: string) {
 }
 
 function draftCard(draft: CampaignDraft) {
-  const href = `/prepare/${encodeURIComponent(draft.slug)}`;
   return `
-    <a href="${href}" class="mwz-button" style="display:block;padding:12px;margin-top:10px;text-decoration:none;">
+    <a href="/prepare/${encodeURIComponent(draft.slug)}" class="mwz-button" style="display:block;padding:12px;margin-top:10px;text-decoration:none;">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
         <div>
           <div style="font-family:var(--font-retro,monospace);font-size:14px;color:#fff;text-transform:uppercase;">${escapeHtml(draft.name)} · $${escapeHtml(draft.ticker)}</div>
@@ -382,54 +340,57 @@ function draftCard(draft: CampaignDraft) {
   `;
 }
 
-function upsertProfileFollowingSummary(count: number) {
+function removeOldFollowingNotice() {
+  document.getElementById("mwz-profile-following-count-bridge")?.remove();
+}
+
+function updateExistingFollowingCount(draftCount: number) {
+  removeOldFollowingNotice();
   if (!window.location.pathname.startsWith("/profile")) return;
 
-  const root = document.querySelector("main") || document.getElementById("root") || document.body;
-  let summary = document.getElementById("mwz-profile-following-count-bridge");
-  if (!summary) {
-    summary = document.createElement("section");
-    summary.id = "mwz-profile-following-count-bridge";
-    summary.className = "mwz-card";
-    summary.style.maxWidth = "1120px";
-    summary.style.margin = "12px auto";
-    summary.style.padding = "12px 16px";
-    summary.style.display = "flex";
-    summary.style.justifyContent = "space-between";
-    summary.style.alignItems = "center";
-    summary.style.gap = "12px";
-    root.prepend(summary);
-  }
+  const elements = Array.from(document.querySelectorAll<HTMLElement>("body *"));
+  const candidates = elements.filter((el) => {
+    if (el.closest("#mwz-profile-followed-drafts-bridge")) return false;
+    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    return /\bfollowing\b/i.test(text) && /\d/.test(text) && text.length < 80;
+  });
 
-  summary.innerHTML = `
-    <div>
-      <div style="font-size:10px;color:#ffb347;text-transform:uppercase;letter-spacing:.18em;">// Following counter includes Prepare Mode</div>
-      <div style="margin-top:4px;color:rgba(255,255,255,.74);font-size:13px;">${count} followed draft${count === 1 ? "" : "s"} from Prepare Mode are included below.</div>
-    </div>
-    <a href="/profile?tab=following" class="mwz-button" style="padding:8px 12px;text-decoration:none;font-size:12px;text-transform:uppercase;letter-spacing:.12em;">Open following</a>
-  `;
+  for (const el of candidates) {
+    const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
+    const match = text.match(/(\d+)\s*(following\b)/i) || text.match(/(following\b)\s*(\d+)/i);
+    if (!match) continue;
+
+    const numberText = /^\d/.test(match[1]) ? match[1] : match[2];
+    const currentDisplayed = Number(numberText);
+    if (!Number.isFinite(currentDisplayed)) continue;
+
+    const base = Number(el.dataset.mwzBaseFollowingCount || currentDisplayed);
+    el.dataset.mwzBaseFollowingCount = String(base);
+    const next = base + draftCount;
+    if (/^\d/.test(match[1])) {
+      el.textContent = text.replace(/\d+\s*following\b/i, `${next} Following`);
+    } else {
+      el.textContent = text.replace(/following\b\s*\d+/i, `Following ${next}`);
+    }
+    break;
+  }
 }
 
 async function refreshProfileFollowedDrafts() {
   if (!window.location.pathname.startsWith("/profile")) return;
-
   const wallet = await getConnectedAccount();
   if (!wallet) return;
 
   try {
-    const res = await fetch(buildRealtimeApiUrl(`/api/drafts/followed?wallet=${encodeURIComponent(wallet)}`), {
-      cache: "no-store",
-    });
+    const res = await fetch(buildRealtimeApiUrl(`/api/drafts/followed?wallet=${encodeURIComponent(wallet)}`), { cache: "no-store" });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !Array.isArray(json.items)) return;
 
-    lastFollowedDraftCount = json.items.length;
-    upsertProfileFollowingSummary(lastFollowedDraftCount);
+    updateExistingFollowingCount(json.items.length);
 
     const tab = new URLSearchParams(window.location.search).get("tab") || "";
-    const shouldShowPanel = !tab || tab === "following";
     const existing = document.getElementById("mwz-profile-followed-drafts-bridge");
-    if (!shouldShowPanel) {
+    if (tab && tab !== "following") {
       existing?.remove();
       return;
     }
@@ -445,7 +406,6 @@ async function refreshProfileFollowedDrafts() {
       panel.style.padding = "16px";
       root.appendChild(panel);
     }
-
     panel.innerHTML = `
       <div style="font-size:11px;color:#ffb347;text-transform:uppercase;letter-spacing:.18em;">// Following · Prepare Drafts</div>
       <div style="margin-top:6px;font-family:var(--font-retro,monospace);font-size:24px;color:#fff;text-transform:uppercase;">Followed drafts</div>
@@ -458,11 +418,10 @@ async function refreshProfileFollowedDrafts() {
 
 function installProfileRefreshers() {
   const refresh = () => {
-    renamePrepareFollowButtons();
+    renameAndHidePrepareButtons();
     void refreshProfilePrepareNotifications();
     void refreshProfileFollowedDrafts();
   };
-
   window.addEventListener("focus", refresh);
   window.addEventListener("popstate", refresh);
   window.addEventListener("mwz:notifications-changed", refreshProfileFollowedDrafts as EventListener);
