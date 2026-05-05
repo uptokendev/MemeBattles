@@ -227,6 +227,7 @@ export function useLaunchpad() {
 
   // Cache “fromBlock” per campaign so we don’t recompute it repeatedly
   const fromBlockCacheRef = useRef<Map<string, number>>(new Map());
+  const factoryPageAbiModeRef = useRef<"current" | "legacy">("current");
 
   const getFactoryRead = useCallback(() => {
     if (!factoryAddress) return null;
@@ -278,28 +279,36 @@ const fetchCampaignPage = useCallback(
     const safeLimit = Math.max(1, Math.min(50, Number(limit ?? 24)));
     const safeOffset = Math.max(0, Math.min(total, Number(offset ?? 0)));
 
-    let page: any[] = [];
-
-    try {
-      page = await factory.getCampaignPage(safeOffset, safeLimit);
-    } catch (error) {
-      if (!isDecodeResultError(error)) {
-        throw error;
-      }
-
-      console.warn(
-        "[fetchCampaignPage] Current LaunchFactory ABI failed to decode getCampaignPage. Falling back to legacy deployed factory ABI.",
-        error,
-      );
-
+     let page: any[] = [];
+ 
+    const loadLegacyPage = async () => {
       const legacyFactory = new Contract(
         factoryAddress,
         LEGACY_FACTORY_ABI,
         readProvider,
       ) as any;
 
-      page = await legacyFactory.getCampaignPage(safeOffset, safeLimit);
-    }
+      return await legacyFactory.getCampaignPage(safeOffset, safeLimit);
+    };
+
+    try {
+
+      if (factoryPageAbiModeRef.current === "legacy") {
+        page = await loadLegacyPage();
+      } else {
+        page = await factory.getCampaignPage(safeOffset, safeLimit);
+      }
+     } catch (error) {
+       if (!isDecodeResultError(error)) {
+         throw error;
+       }
+      factoryPageAbiModeRef.current = "legacy";
+      console.info(
+        "[fetchCampaignPage] Current LaunchFactory ABI could not decode getCampaignPage. Using legacy deployed factory ABI for future calls.",
+      );
+
+      page = await loadLegacyPage();
+     }
 
     const mapped = (page ?? []).map((c: any, idx: number) => ({
       id: safeOffset + idx,

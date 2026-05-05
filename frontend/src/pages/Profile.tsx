@@ -1,92 +1,35 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { isProfileTab, ProfileTab } from "@/types/profile";
-import { ProfileDraftsPanel } from "@/components/profile/ProfileDraftsPanel";
+import type { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignSummary } from "@/lib/launchpadClient";
-import { BrowserProvider, Contract, ethers } from "ethers";
-import { getExplorerTxBase } from "@/lib/chainConfig";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
-import {
-  buildProfileMessage,
-  fetchUserProfile,
-  requestNonce,
-  saveUserProfile,
-  type UserProfile,
-} from "@/lib/profileApi";
-import {
-  buildLeagueClaimMessage,
-  fetchClaimableRewards,
-  formatWeiToBnb,
-  submitLeagueClaim,
-  type RewardItem,
-} from "@/lib/rewardsApi";
-import { 
-  followUser, unfollowUser, isFollowingUser, getFollowersCount, getFollowingCount, 
-  getFollowers, getFollowing, getFollowedCampaigns 
-} from '@/lib/followApi';
-import { RankBadgeCard } from '@/components/rank/RankBadgeCard';
-import RankUpModal from '@/components/rank/RankUpModal';
+import { formatWeiToBnb } from "@/lib/rewardsApi";
+import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
+import RankUpModal from "@/components/rank/RankUpModal";
 import { LeagueCabinetCard } from "@/components/profile/LeagueCabinetCard";
-import {
-  clearPendingRankPromotion,
-  getRankIndex,
-  isRankUpgrade,
-  normalizeRank,
-  readPendingRankPromotion,
-  readStoredRank,
-  writePendingRankPromotion,
-  writeStoredRank,
-  type RankName,
-} from '@/lib/ranks';
-import { fetchLeagueCabinet } from "@/lib/leagueCabinetApi";
-import type { LeagueCabinet } from "@/lib/leagueCabinet";
-import { REALTIME_API_BASE } from "@/lib/realtimeApi";
 import { ProfileAirdropsPanel } from "@/components/profile/ProfileAirdropsPanel";
 import { ProfileSquadPanel } from "@/components/profile/ProfileSquadPanel";
 import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
 import {
-  getDraftNotifications,
-  markAllDraftNotificationsRead,
-  markDraftNotificationRead,
-  type DraftNotification,
-} from "@/lib/draftPromotion";
-import type { TokenBalanceRow, ActivityTradeRow } from "@/types/profilePage";
-import {
   getExplorerBase,
   shorten,
-  pickTokenAddressFromSummary,
   formatTimeAgo,
   formatNumber,
 } from "@/lib/profile/profileFormatters";
-
-const ERC20_ABI_MIN = [
-  {
-    type: "function",
-    name: "balanceOf",
-    stateMutability: "view",
-    inputs: [{ name: "account", type: "address" }],
-    outputs: [{ name: "balance", type: "uint256" }],
-  },
-  {
-    type: "function",
-    name: "decimals",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "decimals", type: "uint8" }],
-  },
-  {
-    type: "function",
-    name: "symbol",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "symbol", type: "string" }],
-  },
-] as const;
+import { useProfileTabs } from "@/hooks/profile/useProfileTabs";
+import { useProfileNotifications } from "@/hooks/profile/useProfileNotifications";
+import { useLeagueCabinet } from "@/hooks/profile/useLeagueCabinet";
+import { useProfileRank } from "@/hooks/profile/useProfileRank";
+import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
+import { useCreatedCampaigns } from "@/hooks/profile/useCreatedCampaigns";
+import { useProfileActivity } from "@/hooks/profile/useProfileActivity";
+import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
+import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
+import { useProfileRewards } from "@/hooks/profile/useProfileRewards";
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -95,126 +38,125 @@ const Profile = () => {
 
   const anyWallet: any = wallet as any;
 
-  // Prefer an explicit isConnected flag if your hook provides it.
   const isConnected: boolean = Boolean(
     anyWallet?.isConnected ?? anyWallet?.connected ?? wallet.account
   );
 
-  const account: string | null = isConnected ? (wallet.account ?? null) : null;
-  const [searchParams, setSearchParams] = useSearchParams();
-  const addressParam = searchParams.get("address");
-  const tabParam = searchParams.get("tab");
+  const account: string | null = isConnected ? wallet.account ?? null : null;
+
+  const {
+    addressParam,
+    activeTab,
+    setActiveTab,
+    activityTab,
+    setActivityTab,
+    handleTabChange,
+  } = useProfileTabs();
+
   const viewedAddress: string | null = addressParam ? addressParam : account;
-  const isOwnProfile = Boolean(account && viewedAddress && account.toLowerCase() === viewedAddress.toLowerCase());
+
+  const isOwnProfile = Boolean(
+    account &&
+      viewedAddress &&
+      account.toLowerCase() === viewedAddress.toLowerCase()
+  );
+
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
-  const [activityTab, setActivityTab] = useState<"trades" | "comments" | "created" | "interactions">("trades");
-
-  // Rewards (league winnings)
-  const [rewards, setRewards] = useState<RewardItem[]>([]);
-  const [loadingRewards, setLoadingRewards] = useState(false);
-  const [rewardsError, setRewardsError] = useState<string | null>(null);
-  const [claimingKey, setClaimingKey] = useState<string | null>(null);
-
-  const [activityTrades, setActivityTrades] = useState<ActivityTradeRow[]>([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [activityError, setActivityError] = useState<string | null>(null);
-
-  const [created, setCreated] = useState<
-    Array<{
-      id: number;
-      image: string;
-      name: string;
-      ticker: string;
-      campaignAddress: string;
-      marketCap: string;
-      timeAgo: string;
-      buyersCount?: number;
-    }>
-  >([]);
-
-  const [nativeBalance, setNativeBalance] = useState<string>("");
-  const [tokenBalances, setTokenBalances] = useState<TokenBalanceRow[]>([]);
-  const [loadingBalances, setLoadingBalances] = useState(false);
-
-  // Profile (username / bio)
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [leagueCabinet, setLeagueCabinet] = useState<LeagueCabinet | null>(null);
-  const [loadingLeagueCabinet, setLoadingLeagueCabinet] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(false);
-  const [liveRank, setLiveRank] = useState<RankName>("Recruit");
-  const [rankPromotionModal, setRankPromotionModal] = useState<{ isOpen: boolean; rank: RankName }>({
-    isOpen: false,
-    rank: "Recruit",
+  const {
+    profile,
+    editOpen,
+    setEditOpen,
+    savingProfile,
+    awaitingWallet,
+    savingAvatar,
+    avatarInputRef,
+    handleEdit,
+    handlePickAvatar,
+    handleAvatarSelected,
+    handleSaveProfile,
+  } = useEditableProfile({
+    chainId,
+    account,
+    viewedAddress,
+    wallet,
   });
-  const [editOpen, setEditOpen] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [awaitingWallet, setAwaitingWallet] = useState(false);
-  const [savingAvatar, setSavingAvatar] = useState(false);
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [followersCount, setFollowersCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followersList, setFollowersList] = useState<any[]>([]);
-  const [followingList, setFollowingList] = useState<any[]>([]);
-  const [followingView, setFollowingView] = useState<"campaigns" | "profiles">("campaigns");
-  const [followedCampaigns, setFollowedCampaigns] = useState<string[]>([]);
-  const [followedCards, setFollowedCards] = useState<any[]>([]);
-  const [loadingFollows, setLoadingFollows] = useState(true);
-  const [profileNotifications, setProfileNotifications] = useState<DraftNotification[]>([]);
-  const unreadProfileNotifications = profileNotifications.filter((item) => !item.read).length;
+  const { leagueCabinet, loadingLeagueCabinet } = useLeagueCabinet(
+    chainId,
+    viewedAddress
+  );
 
-  useEffect(() => {
-    const t = String(tabParam ?? "").toLowerCase().trim();
-    if (!t) return;
-    const normalized = t === "activity" ? "replies" : t;
-    if (isProfileTab(normalized)) setActiveTab(normalized);
-  }, [tabParam]);
+  const {
+    profileNotifications,
+    unreadProfileNotifications,
+    handleOpenNotification,
+    handleMarkAllNotificationsRead,
+  } = useProfileNotifications();
 
-  useEffect(() => {
-    const refresh = () => setProfileNotifications(getDraftNotifications());
-    refresh();
-    window.addEventListener("mwz:notifications-changed", refresh as EventListener);
-    return () => window.removeEventListener("mwz:notifications-changed", refresh as EventListener);
-  }, []);
+  const { liveRank, rankPromotionModal, handleCloseRankPromotionModal } = useProfileRank({
+    profile,
+    isOwnProfile,
+    chainId,
+    viewedAddress,
+  });
 
-  useEffect(() => {
-  if (!viewedAddress) return;
-  const loadFollows = async () => {
-    setLoadingFollows(true);
-    try {
-      const [fc, fgc, isF] = await Promise.all([
-        getFollowersCount(viewedAddress, chainId ?? 0),
-        getFollowingCount(viewedAddress, chainId ?? 0),
-        isOwnProfile || !wallet?.account
-          ? false
-          : isFollowingUser(wallet.account, viewedAddress, chainId ?? 0),
-      ]);
-      setFollowersCount(fc);
-      setFollowingCount(fgc);
-      setIsFollowing(isF);
+  const {
+    followersCount,
+    followingCount,
+    isFollowing,
+    followersList,
+    followingList,
+    followingView,
+    setFollowingView,
+    followedCards,
+    loadingFollows,
+    handleToggleFollow,
+  } = useProfileFollows({
+    activeTab,
+    viewedAddress,
+    isOwnProfile,
+    chainId,
+    account,
+    fetchCampaigns,
+    fetchCampaignSummary,
+  });
 
-      if (activeTab === 'followers') {
-        const fl = await getFollowers(viewedAddress, chainId ?? 0);
-        setFollowersList(fl);
-      } else if (activeTab === 'following') {
-        const [fl, camps] = await Promise.all([
-          getFollowing(viewedAddress, chainId ?? 0),
-          getFollowedCampaigns(viewedAddress, chainId ?? 0),
-        ]);
-        setFollowingList(fl);
-        setFollowedCampaigns(camps);
-      }
-    } catch (err) {
-      console.error('Follow data load failed', err);
-    } finally {
-      setLoadingFollows(false);
-    }
-  };
-  loadFollows();
-}, [viewedAddress, activeTab, isOwnProfile, chainId, wallet?.account]);
+  const created = useCreatedCampaigns({
+    viewedAddress,
+    account,
+    fetchCampaigns,
+    fetchCampaignSummary,
+  });
+
+  const { activityTrades, activityLoading, activityError } = useProfileActivity({
+    activeTab,
+    activityTab,
+    viewedAddress,
+    chainId,
+  });
+
+  const { nativeBalance, tokenBalances, loadingBalances } = useProfileBalances({
+    viewedAddress,
+    account,
+    wallet,
+    fetchCampaigns,
+    fetchCampaignSummary,
+  });
+
+  const {
+    rewards,
+    loadingRewards,
+    rewardsError,
+    claimingKey,
+    handleClaimPrize,
+  } = useProfileRewards({
+    activeTab,
+    chainId,
+    account,
+    isOwnProfile,
+    wallet,
+  });
 
   const walletAddressShort = useMemo(() => shorten(viewedAddress), [viewedAddress]);
 
@@ -231,193 +173,10 @@ const Profile = () => {
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);
 
-  const handleTabChange = (tab: ProfileTab) => {
-    setActiveTab(tab);
-    const next = new URLSearchParams(searchParams);
-    next.set("tab", tab);
-    if (addressParam) next.set("address", addressParam);
-    setSearchParams(next);
-  };
-
-  // Load profile from backend (username/bio/avatar) if configured
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      if (!viewedAddress) {
-        setProfile(null);
-        return;
-      }
-
-      setLoadingProfile(true);
-      try {
-        if (!chainId) {
-          setProfile(null);
-          return;
-        }
-        const p = await fetchUserProfile(chainId, viewedAddress);
-        if (!cancelled) setProfile(p);
-      } catch (e: any) {
-        // Fail gracefully if the backend is not configured or the endpoint is missing.
-        console.warn("Failed to load profile", e);
-        if (!cancelled) setProfile(null);
-      } finally {
-        if (!cancelled) setLoadingProfile(false);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [viewedAddress, chainId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadCabinet = async () => {
-      if (!viewedAddress || !chainId) {
-        setLeagueCabinet(null);
-        return;
-      }
-
-      setLoadingLeagueCabinet(true);
-      try {
-        const cabinet = await fetchLeagueCabinet(chainId, viewedAddress);
-        if (!cancelled) setLeagueCabinet(cabinet);
-      } catch (e) {
-        console.warn("Failed to load profile cabinet", e);
-        if (!cancelled) setLeagueCabinet(null);
-      } finally {
-        if (!cancelled) setLoadingLeagueCabinet(false);
-      }
-    };
-
-    loadCabinet();
-    return () => {
-      cancelled = true;
-    };
-  }, [viewedAddress, chainId]);
-
-  const resolvedProfileRank = useMemo<RankName>(() => {
-    const apiRankRaw = (profile as any)?.rank;
-    const apiRank = apiRankRaw ? normalizeRank(apiRankRaw) : null;
-    const storedOwnRank = isOwnProfile && chainId && viewedAddress
-      ? readStoredRank(chainId, viewedAddress)
-      : null;
-
-    if (apiRank && storedOwnRank) {
-      return getRankIndex(storedOwnRank) > getRankIndex(apiRank) ? storedOwnRank : apiRank;
-    }
-
-    if (apiRank) return apiRank;
-    if (storedOwnRank) return storedOwnRank;
-    return "Recruit";
-  }, [profile, isOwnProfile, chainId, viewedAddress]);
-
-  useEffect(() => {
-    setLiveRank(resolvedProfileRank);
-  }, [resolvedProfileRank]);
-
-  useEffect(() => {
-    if (!isOwnProfile || !chainId || !viewedAddress) return;
-
-    const storedRank = readStoredRank(chainId, viewedAddress);
-    const pendingPromotion = readPendingRankPromotion(chainId, viewedAddress);
-
-    if (!storedRank) {
-      writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
-      return;
-    }
-
-    if (isRankUpgrade(resolvedProfileRank, storedRank)) {
-      const pendingNewRank = pendingPromotion ? normalizeRank(pendingPromotion.newRank) : null;
-      if (!pendingPromotion || pendingNewRank !== resolvedProfileRank) {
-        writePendingRankPromotion(chainId, viewedAddress, storedRank, resolvedProfileRank);
-      }
-      writeStoredRank(chainId, viewedAddress, resolvedProfileRank);
-    }
-  }, [isOwnProfile, chainId, viewedAddress, resolvedProfileRank]);
-
-  useEffect(() => {
-    if (!isOwnProfile || !chainId || !viewedAddress) {
-      setRankPromotionModal({ isOpen: false, rank: "Recruit" });
-      return;
-    }
-
-    const pendingPromotion = readPendingRankPromotion(chainId, viewedAddress);
-    if (!pendingPromotion) return;
-
-    const nextRank = normalizeRank(pendingPromotion.newRank);
-    setRankPromotionModal((current) => {
-      if (current.isOpen && current.rank === nextRank) return current;
-      return { isOpen: true, rank: nextRank };
-    });
-  }, [isOwnProfile, chainId, viewedAddress]);
-
-  useEffect(() => {
-    const onRankUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<any>).detail ?? {};
-      const targetAddress = String(detail.address ?? "").trim().toLowerCase();
-      if (!viewedAddress || targetAddress !== viewedAddress.toLowerCase()) return;
-      setLiveRank(normalizeRank(detail.newRank ?? detail.rank));
-    };
-
-    window.addEventListener("mwz:rank-updated", onRankUpdated as EventListener);
-    return () => window.removeEventListener("mwz:rank-updated", onRankUpdated as EventListener);
-  }, [viewedAddress]);
-
-  // Load claimable league rewards (suppresses already-claimed)
-  useEffect(() => {
-    let cancelled = false;
-    const loadRewards = async () => {
-      if (activeTab !== "rewards") return;
-      if (!chainId || !account || !isOwnProfile) {
-        setRewards([]);
-        return;
-      }
-      setLoadingRewards(true);
-      setRewardsError(null);
-      try {
-        const items = await fetchClaimableRewards(chainId, account);
-        if (!cancelled) setRewards(items);
-      } catch (e: any) {
-        const msg = String(e?.message ?? "Failed to load rewards");
-        console.warn("Failed to load rewards", e);
-        if (!cancelled) setRewardsError(msg);
-        if (!cancelled) setRewards([]);
-      } finally {
-        if (!cancelled) setLoadingRewards(false);
-      }
-    };
-    loadRewards();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, chainId, account, isOwnProfile]);
-
-  const handleCloseRankPromotionModal = () => {
-    if (chainId && viewedAddress) {
-      clearPendingRankPromotion(chainId, viewedAddress);
-    }
-    setRankPromotionModal({ isOpen: false, rank: "Recruit" });
-  };
-
   const handleCopyAddress = () => {
     if (!viewedAddress) return;
     navigator.clipboard.writeText(viewedAddress);
     toast.success("Address copied!");
-  };
-
-  const handleOpenNotification = (notification: DraftNotification) => {
-    markDraftNotificationRead(notification.id);
-    setProfileNotifications(getDraftNotifications());
-    navigate(notification.target);
-  };
-
-  const handleMarkAllNotificationsRead = () => {
-    markAllDraftNotificationsRead();
-    setProfileNotifications(getDraftNotifications());
   };
 
   const handleConnect = async () => {
@@ -429,621 +188,22 @@ const Profile = () => {
     } catch {}
 
     if (typeof anyWallet?.connect === "function") return anyWallet.connect();
-    if (typeof anyWallet?.openConnectModal === "function") return anyWallet.openConnectModal();
+    if (typeof anyWallet?.openConnectModal === "function") {
+      return anyWallet.openConnectModal();
+    }
 
     toast.message("Use the Connect Wallet button in the header to connect.");
   };
 
-  const handleEdit = () => {
-    if (!account) {
-      handleConnect();
-      return;
-    }
-    setEditOpen(true);
-  };
-
-  const uploadAvatarFile = async (file: File): Promise<string> => {
-    if (!chainId) throw new Error("ChainId is not available.");
-    if (!account) throw new Error("Wallet not connected.");
-
-    const maxBytes = 3 * 1024 * 1024; // 3 MB
-    if (file.size > maxBytes) throw new Error("Avatar must be <= 3 MB.");
-
-    const typeOk = /^(image\/png|image\/jpeg|image\/jpg|image\/webp)$/.test(file.type);
-    if (!typeOk) throw new Error("Unsupported image type. Use png/jpg/webp.");
-
-    const fd = new FormData();
-    fd.append("file", file);
-
-    const url = `/api/upload?kind=avatar&chainId=${encodeURIComponent(
-      String(chainId)
-    )}&address=${encodeURIComponent(account.toLowerCase())}`;
-
-    const res = await fetch(url, { method: "POST", body: fd });
-    const j = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(j?.error || `Upload failed (${res.status})`);
-    if (!j?.url) throw new Error("Upload did not return a URL.");
-    return String(j.url);
-  };
-
-  const handlePickAvatar = () => {
-    if (!account) {
-      handleConnect();
-      return;
-    }
-    avatarInputRef.current?.click();
-  };
-
-  const handleAvatarSelected = async (file: File) => {
-    if (!account) {
-      toast.error("Connect your wallet to change your avatar.");
-      return;
-    }
-    if (!chainId) {
-      toast.error("ChainId is not available. Reconnect your wallet and try again.");
-      return;
-    }
-    if (!wallet.signer) {
-      toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
-      return;
-    }
-
-    setSavingAvatar(true);
-    const toastId = toast.loading("Uploading…");
-    try {
-      const uploadedUrl = await uploadAvatarFile(file);
-
-      // Sign and persist the new avatar url
-      const addr = account.toLowerCase();
-      const nonce = await requestNonce(chainId, addr);
-      const displayName = (profile?.displayName ?? "").trim() || null;
-      const bio = (profile?.bio ?? "").trim() || null;
-
-      setAwaitingWallet(true);
-      toast.dismiss(toastId);
-      const toastId2 = toast.loading("Confirm the signature in your wallet…");
-      let signature = "";
-      try {
-        const msg = buildProfileMessage({
-          chainId,
-          address: addr,
-          nonce,
-          displayName,
-          avatarUrl: uploadedUrl,
-        });
-        signature = await wallet.signer.signMessage(msg);
-      } finally {
-        setAwaitingWallet(false);
-        toast.dismiss(toastId2);
-      }
-
-      const toastId3 = toast.loading("Saving profile…");
-      try {
-        await saveUserProfile({
-          chainId,
-          address: addr,
-          displayName,
-          bio,
-          avatarUrl: uploadedUrl,
-          nonce,
-          signature,
-        });
-      } finally {
-        toast.dismiss(toastId3);
-      }
-
-      const refreshed = await fetchUserProfile(chainId, addr);
-      setProfile(refreshed);
-      toast.success("Avatar updated.");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to update avatar.");
-    } finally {
-      setSavingAvatar(false);
-      toast.dismiss(toastId);
-    }
-  };
-
-  const handleSaveProfile = async (values: { username: string; bio: string }) => {
-    if (!account) {
-      toast.error("Connect your wallet to edit your profile.");
-      return;
-    }
-    if (!chainId) {
-      toast.error("ChainId is not available. Reconnect your wallet and try again.");
-      return;
-    }
-    if (!wallet.signer) {
-      toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
-      return;
-    }
-
-    setSavingProfile(true);
-
-    const toastId = toast.loading("Preparing signature…");
-    try {
-      const addr = account.toLowerCase();
-      const nonce = await requestNonce(chainId, addr);
-      const displayName = values.username.trim();
-      const avatarUrl = profile?.avatarUrl ?? null;
-
-      setAwaitingWallet(true);
-      toast.dismiss(toastId);
-      const toastId2 = toast.loading("Confirm the signature in your wallet…");
-      let signature = "";
-      try {
-        const msg = buildProfileMessage({
-          chainId,
-          address: addr,
-          nonce,
-          displayName: displayName || null,
-          avatarUrl: avatarUrl ?? null,
-        });
-        signature = await wallet.signer.signMessage(msg);
-      } finally {
-        setAwaitingWallet(false);
-        toast.dismiss(toastId2);
-      }
-
-      const toastId3 = toast.loading("Saving profile…");
-      try {
-        await saveUserProfile({
-          chainId,
-          address: addr,
-          displayName: displayName || null,
-          bio: values.bio.trim() || null,
-          avatarUrl,
-          nonce,
-          signature,
-        });
-      } finally {
-        toast.dismiss(toastId3);
-      }
-
-      const refreshed = await fetchUserProfile(chainId, addr);
-      setProfile(refreshed);
-      setEditOpen(false);
-      toast.success("Profile updated.");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to update profile.");
-    } finally {
-      setSavingProfile(false);
-      toast.dismiss(toastId);
-    }
-  };
-
-  const handleClaimPrize = async (item: RewardItem) => {
-     if (!account) {
-       toast.error("Connect your wallet to claim.");
-       handleConnect();
-       return;
-     }
-     if (!chainId) {
-       toast.error("ChainId is not available. Reconnect your wallet and try again.");
-       return;
-     }
-     if (!wallet.signer) {
-       toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
-       return;
-     }
-     if (!isOwnProfile) {
-       toast.error("You can only claim from your own profile.");
-       return;
-     }
- 
-     const key = `${item.period}:${item.epochStart}:${item.category}:${item.rank}`;
-     setClaimingKey(key);
- 
-     const toastId = toast.loading("Preparing claim…");
-     try {
-       const recipient = account.toLowerCase();
-       const nonce = await requestNonce(chainId, recipient);
- 
-       toast.dismiss(toastId);
-       const toastId2 = toast.loading("Confirm the signature in your wallet…");
-       let signature = "";
-       try {
-         const msg = buildLeagueClaimMessage({
-           chainId,
-           recipient,
-           period: item.period,
-           epochStart: item.epochStart,
-           category: item.category,
-           rank: item.rank,
-           nonce,
-         });
-         signature = await wallet.signer.signMessage(msg);
-       } finally {
-         toast.dismiss(toastId2);
-       }
- 
-       const toastId3 = toast.loading("Submitting claim…");
-       try {
-         const r = await submitLeagueClaim({
-           chainId,
-           period: item.period,
-           epochStart: item.epochStart,
-           category: item.category,
-           rank: item.rank,
-           recipient,
-           nonce,
-           signature,
-         });
- 
-         const alreadyTxHash = (r as any)?.txHash;
-         if (
-           alreadyTxHash &&
-           typeof alreadyTxHash === "string" &&
-           alreadyTxHash.startsWith("0x")
-         ) {
-           const href = `${getExplorerTxBase(chainId as any)}${alreadyTxHash}`;
-           toast.success(
-             <span>
-               Paid!{" "}
-               <a className="underline" href={href} target="_blank" rel="noreferrer">
-                 View tx
-               </a>
-             </span>
-           );
-         } else if ((r as any)?.mode === "merkle") {
-           const payload = r as any;
-           const vaultAddress = String(payload.vaultAddress);
-           const epochId = payload.epochId;
-           const categoryHash = String(payload.categoryHash);
-           const amountRaw = payload.amountRaw;
-           const proof = Array.isArray(payload.proof) ? payload.proof : [];
- 
-           const abi = [
-             "function claim(uint256 epochId, bytes32 category, uint8 rank, address recipient, uint256 amount, bytes32[] proof) external",
-           ];
- 
-           const vault = new Contract(vaultAddress, abi, wallet.signer);
- 
-           const toastIdTx = toast.loading("Confirm on-chain claim (gas fee) in your wallet…");
-           let tx: any;
-           try {
-             tx = await vault.claim(epochId, categoryHash, item.rank, recipient, amountRaw, proof);
-           } finally {
-             toast.dismiss(toastIdTx);
-           }
- 
-           const toastIdWait = toast.loading("Waiting for confirmation…");
-           try {
-             await tx.wait();
-           } finally {
-             toast.dismiss(toastIdWait);
-           }
- 
-           const txHash = String(tx.hash || "");
-           if (txHash && txHash.startsWith("0x")) {
-             const href = `${getExplorerTxBase(chainId as any)}${txHash}`;
-             toast.success(
-               <span>
-                 Claimed!{" "}
-                 <a className="underline" href={href} target="_blank" rel="noreferrer">
-                   View tx
-                 </a>
-               </span>
-             );
-           } else {
-             toast.success("Claimed on-chain.");
-           }
-         } else {
-           toast.success("Claim prepared.");
-         }
-      } finally {
-        toast.dismiss(toastId3);
-       }
-       setRewards((prev) =>
-         prev.filter((r) => `${r.period}:${r.epochStart}:${r.category}:${r.rank}` !== key)
-       );
-     } catch (e: any) {
-       toast.error(e?.message ?? "Claim failed.");
-     } finally {
-       setClaimingKey(null);
-       toast.dismiss(toastId);
-     }
-   };
-
-  
-  // Load followed campaign summaries when viewing the Following tab
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadFollowedCampaignCards = async () => {
-      try {
-        if (activeTab !== "following") {
-          setFollowedCards([]);
-          return;
-        }
-        if (!viewedAddress) {
-          setFollowedCards([]);
-          return;
-        }
-
-        const addrs = (followedCampaigns || []).map((a) => String(a || "").toLowerCase()).filter(Boolean);
-        if (addrs.length === 0) {
-          setFollowedCards([]);
-          return;
-        }
-
-        const all = (await fetchCampaigns()) ?? [];
-        const wanted = all.filter((c) => addrs.includes(String((c as any).campaignAddress ?? (c as any).campaign ?? "").toLowerCase()));
-        const results = await Promise.allSettled(wanted.map((c) => fetchCampaignSummary(c)));
-
-        if (cancelled) return;
-
-        const next = results
-          .filter((r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled")
-          .map((r, idx) => {
-            const s = r.value;
-            return {
-              id: typeof s.campaign.id === "number" ? s.campaign.id : idx + 1,
-              image: s.campaign.logoURI || "/placeholder.svg",
-              name: s.campaign.name,
-              ticker: s.campaign.symbol,
-              campaignAddress: s.campaign.campaign,
-              marketCap: s.stats.marketCap,
-              timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
-              buyersCount: (s.stats as any)?.buyersCount ?? undefined,
-            };
-          });
-
-        setFollowedCards(next);
-      } catch (e) {
-        console.error("[Profile] Failed to load followed campaigns", e);
-        if (!cancelled) setFollowedCards([]);
-      }
-    };
-
-    loadFollowedCampaignCards();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, viewedAddress, followedCampaigns, fetchCampaigns, fetchCampaignSummary]);
-
-// Load created campaigns (creator view)
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadCreated = async () => {
-      try {
-        if (!viewedAddress) {
-          setCreated([]);
-          return;
-        }
-
-        const campaigns = (await fetchCampaigns()) ?? [];
-        const mine = campaigns.filter(
-          (c) => (c.creator ?? "").toLowerCase() === account.toLowerCase()
-        );
-
-        const results = await Promise.allSettled(mine.map((c) => fetchCampaignSummary(c)));
-
-        if (cancelled) return;
-
-        const next = results
-          .filter(
-            (r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled"
-          )
-          .map((r, idx) => {
-            const s = r.value;
-            return {
-              id: typeof s.campaign.id === "number" ? s.campaign.id : idx + 1,
-              image: s.campaign.logoURI || "/placeholder.svg",
-              name: s.campaign.name,
-              ticker: s.campaign.symbol,
-              campaignAddress: s.campaign.campaign,
-              marketCap: s.stats.marketCap,
-              timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
-              buyersCount: (s.stats as any)?.buyersCount ?? undefined,
-            };
-          });
-
-        setCreated(next);
-      } catch (e) {
-        console.error("[Profile] Failed to load created campaigns", e);
-        if (!cancelled) setCreated([]);
-      }
-    };
-
-    loadCreated();
-    return () => {
-      cancelled = true;
-    };
-  }, [account, fetchCampaigns, fetchCampaignSummary]);
-
-  // Load balances (native + launchpad token balances)
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveReadProvider = (): ethers.Provider | null => {
-      // 1) If the wallet hook already gives us an ethers provider, use it directly.
-      //    (Do NOT wrap it in BrowserProvider again.)
-      const p = (wallet as any)?.provider;
-      if (p && typeof p.getBalance === "function") return p as ethers.Provider;
-
-      // 2) Fallback to injected provider if it's a real EIP-1193 provider
-      const injected = (window as any)?.ethereum;
-      if (injected && typeof injected.request === "function") {
-        return new BrowserProvider(injected);
-      }
-
-      return null;
-    };
-
-    const loadBalances = async () => {
-      try {
-        if (!viewedAddress) {
-          setNativeBalance("");
-          setTokenBalances([]);
-          return;
-        }
-
-        const readProvider = resolveReadProvider();
-        if (!readProvider) {
-          // No usable provider in the browser right now; skip quietly.
-          setNativeBalance("");
-          setTokenBalances([]);
-          return;
-        }
-
-        setLoadingBalances(true);
-
-        // Native (BNB) balance
-        const bal = await readProvider.getBalance(account as any);
-        const bnb = Number(ethers.formatUnits(bal, 18)).toFixed(4);
-        if (!cancelled) setNativeBalance(`${bnb} BNB`);
-
-        // Launchpad token balances:
-        const campaigns = (await fetchCampaigns()) ?? [];
-        const summaries = await Promise.allSettled(
-          campaigns.map((c) => fetchCampaignSummary(c))
-        );
-
-        const fulfilled = summaries
-          .filter(
-            (r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled"
-          )
-          .map((r) => r.value);
-
-        const rows: TokenBalanceRow[] = [];
-
-        for (const s of fulfilled) {
-          const tokenAddr = pickTokenAddressFromSummary(s);
-          if (!tokenAddr) continue;
-
-          try {
-            const erc20 = new Contract(tokenAddr as any, ERC20_ABI_MIN as any, readProvider);
-
-            const [rawBal, decimalsAny, symbolMaybe] = await Promise.all([
-              erc20.balanceOf(account) as Promise<bigint>,
-              (erc20.decimals() as Promise<any>).catch(() => 18),
-              (erc20.symbol() as Promise<string>).catch(() => null) as Promise<string | null>,
-            ]);
-
-            if (typeof rawBal !== "bigint" || rawBal <= 0n) continue;
-
-            const decimals = Number(decimalsAny);
-            const formatted = ethers.formatUnits(
-              rawBal,
-              Number.isFinite(decimals) ? decimals : 18
-            );
-
-            rows.push({
-              campaignAddress: s.campaign.campaign,
-              tokenAddress: tokenAddr,
-              image: s.campaign.logoURI || "/placeholder.svg",
-              name: s.campaign.name,
-              ticker: s.campaign.symbol || symbolMaybe || "",
-              balanceRaw: rawBal,
-              balanceFormatted: formatted,
-            });
-          } catch {
-            continue;
-          }
-        }
-
-        if (!cancelled) {
-          setTokenBalances(rows.sort((a, b) => (a.balanceRaw > b.balanceRaw ? -1 : 1)));
-        }
-      } catch (e) {
-        console.error("[Profile] Failed to load balances", e);
-        if (!cancelled) {
-          setNativeBalance("");
-          setTokenBalances([]);
-        }
-      } finally {
-        if (!cancelled) setLoadingBalances(false);
-      }
-    };
-
-    loadBalances();
-    return () => {
-      cancelled = true;
-    };
-    // IMPORTANT: include wallet.provider as a dependency so it reruns once provider is ready.
-  }, [account, fetchCampaigns, fetchCampaignSummary, wallet]);
-
-  // Activity: Trades (profile feed)
-  useEffect(() => {
-    let cancelled = false;
-
-    if (activeTab !== "replies" || activityTab !== "trades") return;
-
-    if (!viewedAddress) {
-      setActivityTrades([]);
-      setActivityError(null);
-      setActivityLoading(false);
-      return;
-    }
-
-    if (!REALTIME_API_BASE) {
-      setActivityTrades([]);
-      setActivityError("Missing VITE_REALTIME_API_BASE");
-      setActivityLoading(false);
-      return;
-    }
-
-    const ac = new AbortController();
-    const addr = viewedAddress.toLowerCase();
-    const cid = Number(chainId ?? 97);
-
-    setActivityLoading(true);
-    setActivityError(null);
-
-    (async () => {
-      try {
-        const qs = new URLSearchParams({
-          chainId: String(cid),
-          address: addr,
-          limit: "50",
-        });
-        const url = `${REALTIME_API_BASE}/api/activity/trades?${qs.toString()}`;
-        const r = await fetch(url, { method: "GET", signal: ac.signal });
-        const j = await r.json().catch(() => null);
-        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-        const rows = Array.isArray(j?.items) ? j.items : [];
-        const next: ActivityTradeRow[] = rows.map((it: any) => ({
-          id: String(it?.id ?? `${it?.txHash ?? ""}:${it?.logIndex ?? 0}`),
-          txHash: String(it?.txHash ?? ""),
-          logIndex: Number(it?.logIndex ?? 0),
-          blockNumber: Number(it?.blockNumber ?? 0),
-          blockTime: String(it?.blockTime ?? ""),
-          side: (String(it?.side ?? "buy") === "sell" ? "sell" : "buy"),
-          wallet: String(it?.wallet ?? ""),
-          tokenAmount: it?.tokenAmount == null ? null : Number(it.tokenAmount),
-          bnbAmount: it?.bnbAmount == null ? null : Number(it.bnbAmount),
-          priceBnb: it?.priceBnb == null ? null : Number(it.priceBnb),
-          campaignAddress: String(it?.campaignAddress ?? ""),
-          campaignName: it?.campaignName ?? null,
-          campaignSymbol: it?.campaignSymbol ?? null,
-          logoUri: it?.logoUri ?? null,
-        }));
-        if (cancelled) return;
-        setActivityTrades(next);
-      } catch (e: any) {
-        if (cancelled || ac.signal.aborted) return;
-        setActivityError(String(e?.message || "Failed to load trades"));
-        setActivityTrades([]);
-      } finally {
-        if (cancelled) return;
-        setActivityLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
-  }, [activeTab, activityTab, viewedAddress, chainId]);
-
   return (
-        <div className="w-full h-full overflow-y-auto pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0">
+    <div className="w-full h-full overflow-y-auto pt-10 md:pt-8 lg:pt-8 pl-0 lg:pl-0">
       {/* Disconnect Overlay */}
       {!isConnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
           <div className="bg-card/40 border border-border rounded-2xl p-8 text-center max-w-md w-[92%]">
-            <div className="font-retro text-foreground text-xl mb-2">Connect your wallet</div>
+            <div className="font-retro text-foreground text-xl mb-2">
+              Connect your wallet
+            </div>
             <div className="font-retro text-muted-foreground text-sm mb-6">
               The Profile page is only available when you’re connected.
             </div>
@@ -1070,7 +230,10 @@ const Profile = () => {
               <div className="flex flex-col items-center sm:items-start gap-2">
                 <div className="w-20 h-20 md:w-28 md:h-28 rounded-full bg-accent/20 border-4 border-accent/30 overflow-hidden mx-auto sm:mx-0">
                   <img
-                    src={profile?.avatarUrl || "https://images.unsplash.com/photo-1621504450181-5d356f61d307?w=200&h=200&fit=crop"}
+                    src={
+                      profile?.avatarUrl ||
+                      "https://images.unsplash.com/photo-1621504450181-5d356f61d307?w=200&h=200&fit=crop"
+                    }
                     alt="Profile"
                     className="w-full h-full object-cover"
                   />
@@ -1082,8 +245,8 @@ const Profile = () => {
                   accept="image/png,image/jpeg,image/jpg,image/webp"
                   className="hidden"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleAvatarSelected(f);
+                    const file = e.target.files?.[0];
+                    if (file) handleAvatarSelected(file);
                     e.currentTarget.value = "";
                   }}
                 />
@@ -1093,7 +256,11 @@ const Profile = () => {
                   disabled={!isConnected || savingAvatar || savingProfile}
                   className="bg-accent hover:bg-accent/80 text-accent-foreground font-retro w-full sm:w-auto"
                 >
-                  {savingAvatar ? (awaitingWallet ? "confirm in wallet..." : "uploading...") : "change avatar"}
+                  {savingAvatar
+                    ? awaitingWallet
+                      ? "confirm in wallet..."
+                      : "uploading..."
+                    : "change avatar"}
                 </Button>
               </div>
 
@@ -1112,7 +279,7 @@ const Profile = () => {
                     <button
                       onClick={handleCopyAddress}
                       className="p-1 hover:bg-muted rounded transition-colors"
-                      disabled={!account}
+                      disabled={!viewedAddress}
                       title="Copy address"
                     >
                       <Copy className="h-4 w-4 text-muted-foreground" />
@@ -1120,10 +287,10 @@ const Profile = () => {
 
                     <a
                       href={explorerUrl}
-                      target={account ? "_blank" : undefined}
+                      target={viewedAddress ? "_blank" : undefined}
                       rel="noreferrer"
                       className={`flex items-center gap-1 text-xs md:text-sm font-retro transition-colors ${
-                        account
+                        viewedAddress
                           ? "text-accent hover:text-accent/80"
                           : "text-muted-foreground pointer-events-none"
                       }`}
@@ -1145,18 +312,30 @@ const Profile = () => {
                 {/* Stats */}
                 <div className="flex justify-center sm:justify-start gap-6 md:gap-8">
                   <div className="text-center">
-  <div className="text-xl md:text-2xl font-retro text-foreground">{followersCount}</div>
-  <div className="text-xs font-retro text-muted-foreground">Followers</div>
-</div>
-<div className="text-center">
-  <div className="text-xl md:text-2xl font-retro text-foreground">{followingCount}</div>
-  <div className="text-xs font-retro text-muted-foreground">Following</div>
-</div>
+                    <div className="text-xl md:text-2xl font-retro text-foreground">
+                      {followersCount}
+                    </div>
+                    <div className="text-xs font-retro text-muted-foreground">
+                      Followers
+                    </div>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="text-xl md:text-2xl font-retro text-foreground">
+                      {followingCount}
+                    </div>
+                    <div className="text-xs font-retro text-muted-foreground">
+                      Following
+                    </div>
+                  </div>
+
                   <div className="text-center">
                     <div className="text-xl md:text-2xl font-retro text-foreground">
                       {created.length}
                     </div>
-                    <div className="text-xs font-retro text-muted-foreground">Created coins</div>
+                    <div className="text-xs font-retro text-muted-foreground">
+                      Created coins
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1177,6 +356,7 @@ const Profile = () => {
                   >
                     edit
                   </Button>
+
                   <EditProfileDialog
                     open={editOpen}
                     onOpenChange={setEditOpen}
@@ -1190,27 +370,11 @@ const Profile = () => {
 
               {!isOwnProfile && viewedAddress && (
                 <Button
-                  onClick={async () => {
-                    try {
-                      if (isFollowing) {
-                        if (!wallet?.account) throw new Error('Connect wallet');
-                        await unfollowUser(wallet.account, viewedAddress, chainId ?? 0);
-                        setIsFollowing(false);
-                        setFollowersCount(c => c - 1);
-                      } else {
-                        if (!wallet?.account) throw new Error('Connect wallet');
-                        await followUser(wallet.account, viewedAddress, chainId ?? 0);
-                        setIsFollowing(true);
-                        setFollowersCount(c => c + 1);
-                      }
-                    } catch (err) {
-                      toast.error('Failed to update follow');
-                    }
-                  }}
-                  variant={isFollowing ? 'outline' : 'default'}
+                  onClick={handleToggleFollow}
+                  variant={isFollowing ? "outline" : "default"}
                   className="w-full font-retro"
                 >
-                  {isFollowing ? 'Unfollow' : 'Follow'}
+                  {isFollowing ? "Unfollow" : "Follow"}
                 </Button>
               )}
             </div>
@@ -1226,26 +390,45 @@ const Profile = () => {
             <div className="rounded-2xl border border-border bg-card/30 p-4 md:p-6">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-2">
-                  <p className="text-xs md:text-sm font-retro text-muted-foreground">Incentive Hub</p>
+                  <p className="text-xs md:text-sm font-retro text-muted-foreground">
+                    Incentive Hub
+                  </p>
                   <p className="font-retro text-sm md:text-base text-foreground">
-                    Your wallet-specific Airdrops, Squad, and Recruiter tools live inside Profile now.
+                    Your wallet-specific Airdrops, Squad, and Recruiter tools live inside
+                    Profile now.
                   </p>
                   <p className="text-xs md:text-sm text-muted-foreground">
-                    The top bar still keeps public shortcuts, but the personal reward surfaces are here.
+                    The top bar still keeps public shortcuts, but the personal reward
+                    surfaces are here.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("airdrops")}>
+                  <Button
+                    variant="outline"
+                    className="font-retro"
+                    onClick={() => handleTabChange("airdrops")}
+                  >
                     My Airdrops
                   </Button>
-                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("squad")}>
+                  <Button
+                    variant="outline"
+                    className="font-retro"
+                    onClick={() => handleTabChange("squad")}
+                  >
                     My Squad
                   </Button>
-                  <Button variant="outline" className="font-retro" onClick={() => handleTabChange("recruiter")}>
+                  <Button
+                    variant="outline"
+                    className="font-retro"
+                    onClick={() => handleTabChange("recruiter")}
+                  >
                     Recruiter
                   </Button>
-                  <Button className="font-retro" onClick={() => navigate("/recruiter/signup")}>
+                  <Button
+                    className="font-retro"
+                    onClick={() => navigate("/recruiter/signup")}
+                  >
                     Become a Recruiter
                   </Button>
                 </div>
@@ -1258,15 +441,22 @@ const Profile = () => {
             {[
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
-              { id: "drafts" as ProfileTab, label: "Drafts", badge: null },
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
-              { id: "rewards" as ProfileTab, label: "Rewards", badge: rewards.length ? rewards.length : null },
+              {
+                id: "rewards" as ProfileTab,
+                label: "Rewards",
+                badge: rewards.length ? rewards.length : null,
+              },
               { id: "airdrops" as ProfileTab, label: "Airdrops", badge: null },
               { id: "squad" as ProfileTab, label: "Squad", badge: null },
               { id: "recruiter" as ProfileTab, label: "Recruiter", badge: null },
               { id: "followers" as ProfileTab, label: "Followers", badge: null },
               { id: "following" as ProfileTab, label: "Following", badge: null },
-              { id: "notifications" as ProfileTab, label: "Notifications", badge: unreadProfileNotifications || null },
+              {
+                id: "notifications" as ProfileTab,
+                label: "Notifications",
+                badge: unreadProfileNotifications || null,
+              },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1291,13 +481,11 @@ const Profile = () => {
         {/* BALANCES TAB */}
         {activeTab === "balances" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Left: Balances */}
             <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
               <h3 className="text-xs md:text-sm font-retro text-muted-foreground mb-4 md:mb-6">
                 Balances
               </h3>
 
-              {/* Native balance */}
               <div className="flex items-center justify-between p-3 md:p-4 bg-background/50 rounded-xl border border-border mb-3">
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-accent/20 flex items-center justify-center border border-border">
@@ -1314,10 +502,11 @@ const Profile = () => {
                 </div>
               </div>
 
-              {/* Launchpad token balances */}
               <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
                 {loadingBalances && tokenBalances.length === 0 && (
-                  <div className="font-retro text-muted-foreground text-sm">Loading token balances…</div>
+                  <div className="font-retro text-muted-foreground text-sm">
+                    Loading token balances…
+                  </div>
                 )}
 
                 {!loadingBalances && tokenBalances.length === 0 && (
@@ -1355,22 +544,21 @@ const Profile = () => {
                           maximumFractionDigits: 6,
                         })}
                       </div>
-                      <div className="font-retro text-muted-foreground text-xs">Balance</div>
+                      <div className="font-retro text-muted-foreground text-xs">
+                        Balance
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Right: Created Coins */}
             <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
               <div className="flex items-center justify-between mb-4 md:mb-6">
                 <h3 className="text-xs md:text-sm font-retro text-foreground">
-                  created coins <span className="text-muted-foreground">({created.length})</span>
+                  created coins{" "}
+                  <span className="text-muted-foreground">({created.length})</span>
                 </h3>
-                <button className="text-xs md:text-sm font-retro text-accent hover:text-accent/80 transition-colors">
-                  see all
-                </button>
               </div>
 
               <div className="space-y-3 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
@@ -1390,12 +578,18 @@ const Profile = () => {
                         <div className="font-retro text-foreground text-xs md:text-sm truncate">
                           {coin.name}
                         </div>
-                        <div className="font-retro text-muted-foreground text-xs">{coin.ticker}</div>
+                        <div className="font-retro text-muted-foreground text-xs">
+                          {coin.ticker}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-4">
-                      <div className="font-retro text-foreground text-xs md:text-sm">{coin.marketCap}</div>
-                      <div className="font-retro text-muted-foreground text-xs">{coin.timeAgo}</div>
+                      <div className="font-retro text-foreground text-xs md:text-sm">
+                        {coin.marketCap}
+                      </div>
+                      <div className="font-retro text-muted-foreground text-xs">
+                        {coin.timeAgo}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1408,11 +602,12 @@ const Profile = () => {
         {activeTab === "rewards" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs md:text-sm font-retro text-foreground">rewards</h3>
+              <h3 className="text-xs md:text-sm font-retro text-foreground">
+                rewards
+              </h3>
               {isOwnProfile ? (
                 <Button
                   onClick={() => {
-                    // force reload
                     setActiveTab("balances");
                     setTimeout(() => setActiveTab("rewards"), 0);
                   }}
@@ -1439,11 +634,17 @@ const Profile = () => {
             {isOwnProfile && account && (
               <>
                 {loadingRewards && (
-                  <div className="font-retro text-muted-foreground text-sm">Loading rewards…</div>
+                  <div className="font-retro text-muted-foreground text-sm">
+                    Loading rewards…
+                  </div>
                 )}
+
                 {rewardsError && !loadingRewards && (
-                  <div className="font-retro text-destructive text-sm">{rewardsError}</div>
+                  <div className="font-retro text-destructive text-sm">
+                    {rewardsError}
+                  </div>
                 )}
+
                 {!loadingRewards && !rewardsError && rewards.length === 0 && (
                   <div className="font-retro text-muted-foreground text-sm">
                     No claimable rewards right now.
@@ -1454,10 +655,14 @@ const Profile = () => {
                   {rewards.map((r) => {
                     const key = `${r.period}:${r.epochStart}:${r.category}:${r.rank}`;
                     const amountBnb = formatWeiToBnb(r.amountRaw);
-                    const p: any = r.payload || {};
-                    const name = String(p.name ?? p.campaignName ?? "").trim();
-                    const symbol = String(p.symbol ?? p.campaignSymbol ?? "").trim();
-                    const logo = String(p.logo_uri ?? p.logoUri ?? p.logoURI ?? "").trim();
+                    const payload: any = r.payload || {};
+                    const name = String(payload.name ?? payload.campaignName ?? "").trim();
+                    const symbol = String(
+                      payload.symbol ?? payload.campaignSymbol ?? ""
+                    ).trim();
+                    const logo = String(
+                      payload.logo_uri ?? payload.logoUri ?? payload.logoURI ?? ""
+                    ).trim();
 
                     const titleParts = [
                       r.period === "weekly" ? "Weekly" : "Monthly",
@@ -1466,11 +671,18 @@ const Profile = () => {
                     ];
 
                     return (
-                      <div key={key} className="p-4 bg-background/50 rounded-xl border border-border">
+                      <div
+                        key={key}
+                        className="p-4 bg-background/50 rounded-xl border border-border"
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
                             {logo ? (
-                              <img src={logo} alt={name || symbol || "token"} className="w-10 h-10 rounded-full border-2 border-border object-cover" />
+                              <img
+                                src={logo}
+                                alt={name || symbol || "token"}
+                                className="w-10 h-10 rounded-full border-2 border-border object-cover"
+                              />
                             ) : (
                               <div className="w-10 h-10 rounded-full bg-accent/20 border border-border" />
                             )}
@@ -1486,15 +698,21 @@ const Profile = () => {
 
                           <div className="text-right shrink-0">
                             <div className="font-retro text-foreground text-sm">
-                              {Number(amountBnb).toLocaleString(undefined, { maximumFractionDigits: 6 })} BNB
+                              {Number(amountBnb).toLocaleString(undefined, {
+                                maximumFractionDigits: 6,
+                              })}{" "}
+                              BNB
                             </div>
-                            <div className="font-retro text-muted-foreground text-xs">Prize</div>
+                            <div className="font-retro text-muted-foreground text-xs">
+                              Prize
+                            </div>
                           </div>
                         </div>
 
                         <div className="mt-3 flex items-center justify-between gap-3">
                           <div className="font-retro text-muted-foreground text-[10px] truncate">
-                            {new Date(r.epochStart).toUTCString()} → {new Date(r.epochEnd).toUTCString()}
+                            {new Date(r.epochStart).toUTCString()} →{" "}
+                            {new Date(r.epochEnd).toUTCString()}
                           </div>
 
                           <Button
@@ -1538,22 +756,28 @@ const Profile = () => {
           />
         )}
 
-        {/* COINS TAB: Tokens you invested in */}
+        {/* COINS TAB */}
         {activeTab === "coins" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xs md:text-sm font-retro text-foreground">
-                tokens you invested in <span className="text-muted-foreground">({tokenBalances.length})</span>
+                tokens you invested in{" "}
+                <span className="text-muted-foreground">
+                  ({tokenBalances.length})
+                </span>
               </h3>
             </div>
 
             {loadingBalances && (
-              <div className="font-retro text-muted-foreground text-sm">Loading…</div>
+              <div className="font-retro text-muted-foreground text-sm">
+                Loading…
+              </div>
             )}
 
             {!loadingBalances && tokenBalances.length === 0 && (
               <div className="font-retro text-muted-foreground text-sm">
-                No invested tokens detected yet. Once you buy on a curve (or hold after DEX listing), it will show here.
+                No invested tokens detected yet. Once you buy on a curve, it will show
+                here.
               </div>
             )}
 
@@ -1571,15 +795,23 @@ const Profile = () => {
                       className="w-10 h-10 rounded-full border-2 border-border object-cover"
                     />
                     <div className="min-w-0">
-                      <div className="font-retro text-foreground text-sm truncate">{t.name}</div>
-                      <div className="font-retro text-muted-foreground text-xs">{t.ticker}</div>
+                      <div className="font-retro text-foreground text-sm truncate">
+                        {t.name}
+                      </div>
+                      <div className="font-retro text-muted-foreground text-xs">
+                        {t.ticker}
+                      </div>
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between">
-                    <div className="font-retro text-muted-foreground text-xs">Your balance</div>
+                    <div className="font-retro text-muted-foreground text-xs">
+                      Your balance
+                    </div>
                     <div className="font-retro text-foreground text-sm">
-                      {Number(t.balanceFormatted).toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                      {Number(t.balanceFormatted).toLocaleString(undefined, {
+                        maximumFractionDigits: 6,
+                      })}
                     </div>
                   </div>
                 </div>
@@ -1587,13 +819,8 @@ const Profile = () => {
             </div>
           </div>
         )}
-{activeTab === "drafts" && (
-  <ProfileDraftsPanel
-    viewedAddress={viewedAddress}
-    isOwnProfile={isOwnProfile}
-  />
-)}
-        {/* REPLIES TAB: Activity feed */}
+
+        {/* REPLIES TAB */}
         {activeTab === "replies" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
             <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -1602,63 +829,79 @@ const Profile = () => {
                 { id: "comments", label: "Comments" },
                 { id: "created", label: "Created" },
                 { id: "interactions", label: "Interactions" },
-              ].map((t) => (
+              ].map((tab) => (
                 <button
-                  key={t.id}
-                  onClick={() => setActivityTab(t.id as typeof activityTab)}
+                  key={tab.id}
+                  onClick={() => setActivityTab(tab.id as typeof activityTab)}
                   className={`px-3 py-1.5 rounded-full border text-xs font-retro transition-colors ${
-                    activityTab === t.id
+                    activityTab === tab.id
                       ? "bg-accent/20 text-accent border-accent/40"
                       : "bg-transparent text-muted-foreground border-border hover:text-foreground"
                   }`}
                 >
-                  {t.label}
+                  {tab.label}
                 </button>
               ))}
             </div>
 
             <div className="rounded-xl border border-border bg-background/40 p-4 md:p-6">
               <div className="text-[11px] font-retro text-muted-foreground mb-4">
-                Powered by indexed events (no per-campaign polling).
+                Powered by indexed events.
               </div>
 
               {activityTab === "trades" ? (
                 <div className="space-y-3">
                   {activityLoading && (
-                    <div className="font-retro text-muted-foreground text-sm">Loading trades...</div>
+                    <div className="font-retro text-muted-foreground text-sm">
+                      Loading trades...
+                    </div>
                   )}
 
                   {!activityLoading && activityError && (
-                    <div className="font-retro text-destructive text-sm">{activityError}</div>
+                    <div className="font-retro text-destructive text-sm">
+                      {activityError}
+                    </div>
                   )}
 
                   {!activityLoading && !activityError && activityTrades.length === 0 && (
-                    <div className="font-retro text-muted-foreground text-sm">No trades yet.</div>
+                    <div className="font-retro text-muted-foreground text-sm">
+                      No trades yet.
+                    </div>
                   )}
 
                   {!activityLoading && !activityError && activityTrades.length > 0 && (
                     <div className="space-y-2">
-                      {activityTrades.map((t) => {
-                        const label = t.campaignName || (t.campaignSymbol ? `$${t.campaignSymbol}` : "Unknown");
-                        const symbol = t.campaignSymbol ? `$${t.campaignSymbol}` : "";
-                        const ts = t.blockTime ? Math.floor(new Date(t.blockTime).getTime() / 1000) : undefined;
-                        const timeAgo = ts ? formatTimeAgo(ts) : "";
+                      {activityTrades.map((trade) => {
+                        const label =
+                          trade.campaignName ||
+                          (trade.campaignSymbol ? `$${trade.campaignSymbol}` : "Unknown");
+                        const symbol = trade.campaignSymbol
+                          ? `$${trade.campaignSymbol}`
+                          : "";
+                        const timestamp = trade.blockTime
+                          ? Math.floor(new Date(trade.blockTime).getTime() / 1000)
+                          : undefined;
+                        const timeAgo = timestamp ? formatTimeAgo(timestamp) : "";
                         const explorer = getExplorerBase(chainId);
-                        const txUrl = t.txHash ? `${explorer}/tx/${t.txHash}` : "";
+                        const txUrl = trade.txHash
+                          ? `${explorer}/tx/${trade.txHash}`
+                          : "";
 
                         return (
                           <div
-                            key={t.id}
+                            key={trade.id}
                             className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <img
-                                src={t.logoUri || "/placeholder.svg"}
+                                src={trade.logoUri || "/placeholder.svg"}
                                 alt={label}
                                 className="h-9 w-9 rounded-full border border-border/60 object-cover"
                               />
                               <div className="min-w-0">
-                                <div className="font-retro text-foreground text-sm truncate">{label}</div>
+                                <div className="font-retro text-foreground text-sm truncate">
+                                  {label}
+                                </div>
                                 <div className="text-xs text-muted-foreground truncate">
                                   {symbol} {timeAgo ? `- ${timeAgo} ago` : ""}
                                 </div>
@@ -1666,11 +909,17 @@ const Profile = () => {
                             </div>
 
                             <div className="text-right shrink-0">
-                              <div className={`font-retro text-xs ${t.side === "buy" ? "text-emerald-400" : "text-red-400"}`}>
-                                {t.side === "buy" ? "Buy" : "Sell"}
+                              <div
+                                className={`font-retro text-xs ${
+                                  trade.side === "buy"
+                                    ? "text-emerald-400"
+                                    : "text-red-400"
+                                }`}
+                              >
+                                {trade.side === "buy" ? "Buy" : "Sell"}
                               </div>
                               <div className="font-retro text-xs text-muted-foreground">
-                                {formatNumber(t.bnbAmount, 6)} BNB
+                                {formatNumber(trade.bnbAmount, 6)} BNB
                               </div>
                               {txUrl ? (
                                 <a
@@ -1692,7 +941,8 @@ const Profile = () => {
               ) : (
                 <div className="text-center">
                   <p className="font-retro text-muted-foreground text-sm md:text-base">
-                    Activity will be powered by <span className="text-foreground">indexed events</span> (recommended).
+                    Activity will be powered by{" "}
+                    <span className="text-foreground">indexed events</span>.
                   </p>
                   <p className="mt-2 font-retro text-muted-foreground text-xs md:text-sm">
                     Showing: <span className="text-foreground">{activityTab}</span>
@@ -1703,18 +953,28 @@ const Profile = () => {
           </div>
         )}
 
-          {/* NOTIFICATIONS TAB */}
+        {/* NOTIFICATIONS TAB */}
         {activeTab === "notifications" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
                 <Bell className="h-5 w-5 text-accent" />
                 <div>
-                  <h3 className="font-retro text-foreground text-sm">Notifications</h3>
-                  <p className="text-xs text-muted-foreground">Draft follows, comments, heat changes, publish events, and launch updates.</p>
+                  <h3 className="font-retro text-foreground text-sm">
+                    Notifications
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Draft follows, comments, heat changes, publish events, and launch
+                    updates.
+                  </p>
                 </div>
               </div>
-              <Button type="button" variant="outline" onClick={handleMarkAllNotificationsRead} className="font-retro">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleMarkAllNotificationsRead}
+                className="font-retro"
+              >
                 Mark all read
               </Button>
             </div>
@@ -1732,12 +992,22 @@ const Profile = () => {
                     onClick={() => handleOpenNotification(notification)}
                     className="flex w-full items-start gap-3 rounded-xl border border-border bg-background/40 p-4 text-left hover:border-accent/50"
                   >
-                    <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${notification.read ? "bg-muted" : "bg-accent"}`} />
+                    <span
+                      className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                        notification.read ? "bg-muted" : "bg-accent"
+                      }`}
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-retro text-sm text-foreground">{notification.title}</span>
-                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">{notification.body}</span>
+                      <span className="block font-retro text-sm text-foreground">
+                        {notification.title}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        {notification.body}
+                      </span>
                     </span>
-                    <span className="hidden text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:block">{notification.kind}</span>
+                    <span className="hidden text-[10px] uppercase tracking-[0.16em] text-muted-foreground md:block">
+                      {notification.kind}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -1747,25 +1017,44 @@ const Profile = () => {
 
         {/* FOLLOWERS TAB */}
         {activeTab === "followers" && (
-        <div className="bg-card/30 backdrop-blur-md rounded-2xl p-6 border border-border">
-          <h3 className="text-xl font-retro mb-4">Followers ({followersCount})</h3>
-            {loadingFollows ? <p>Loading...</p> : followersList.length === 0 ? (
+          <div className="bg-card/30 backdrop-blur-md rounded-2xl p-6 border border-border">
+            <h3 className="text-xl font-retro mb-4">
+              Followers ({followersCount})
+            </h3>
+
+            {loadingFollows ? (
+              <p>Loading...</p>
+            ) : followersList.length === 0 ? (
               <p className="text-muted-foreground">No followers yet.</p>
-                ) : (
-                <div className="space-y-3">
-                  {followersList.map(f => (
-                    <div key={f.id} className="flex items-center gap-3 p-3 bg-background/50 rounded-xl">
-                      <img src={f.profile?.avatarUrl || '/placeholder.svg'} className="w-10 h-10 rounded-full" />
+            ) : (
+              <div className="space-y-3">
+                {followersList.map((f: any) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-3 p-3 bg-background/50 rounded-xl"
+                  >
+                    <img
+                      src={f.profile?.avatarUrl || "/placeholder.svg"}
+                      alt=""
+                      className="w-10 h-10 rounded-full"
+                    />
                     <div>
-                    <div className="font-semibold">{f.profile?.displayName || shorten(f.id)}</div>
-                </div>
-                  <Button variant="link" onClick={() => navigate(`/profile?address=${f.id}`)}>View</Button>
-        </div>
-        ))}
-      </div>
-    )}
-  </div>
-)}
+                      <div className="font-semibold">
+                        {f.profile?.displayName || shorten(f.id)}
+                      </div>
+                    </div>
+                    <Button
+                      variant="link"
+                      onClick={() => navigate(`/profile?address=${f.id}`)}
+                    >
+                      View
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* FOLLOWING TAB */}
         {activeTab === "following" && (
@@ -1800,33 +1089,44 @@ const Profile = () => {
                 <p className="text-muted-foreground">No followed campaigns yet.</p>
               ) : (
                 <div className="space-y-3">
-                  {followedCards.map((c: any) => (
+                  {followedCards.map((campaign: any) => (
                     <div
-                      key={c.campaignAddress}
+                      key={campaign.campaignAddress}
                       className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
-                      onClick={() => navigate(`/token/${String(c.campaignAddress).toLowerCase()}`)}
+                      onClick={() =>
+                        navigate(
+                          `/token/${String(campaign.campaignAddress).toLowerCase()}`
+                        )
+                      }
                       role="button"
                     >
                       <img
-                        src={c.image || "/placeholder.svg"}
+                        src={campaign.image || "/placeholder.svg"}
                         alt=""
                         className="w-10 h-10 rounded-xl object-cover border border-border"
                         loading="lazy"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="font-semibold truncate">
-                          {c.name} <span className="text-muted-foreground">·</span>{" "}
-                          <span className="text-muted-foreground">${c.ticker}</span>
+                          {campaign.name}{" "}
+                          <span className="text-muted-foreground">·</span>{" "}
+                          <span className="text-muted-foreground">
+                            ${campaign.ticker}
+                          </span>
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
-                          {String(c.campaignAddress).toLowerCase()}
+                          {String(campaign.campaignAddress).toLowerCase()}
                         </div>
                       </div>
                       <Button
                         variant="outline"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/token/${String(c.campaignAddress).toLowerCase()}`);
+                          navigate(
+                            `/token/${String(
+                              campaign.campaignAddress
+                            ).toLowerCase()}`
+                          );
                         }}
                       >
                         View
@@ -1843,7 +1143,9 @@ const Profile = () => {
                   <div
                     key={f.id}
                     className="flex items-center gap-3 p-3 bg-background/50 rounded-xl border border-border"
-                    onClick={() => navigate(`/profile?address=${encodeURIComponent(f.id)}`)}
+                    onClick={() =>
+                      navigate(`/profile?address=${encodeURIComponent(f.id)}`)
+                    }
                     role="button"
                   >
                     <img
@@ -1856,7 +1158,9 @@ const Profile = () => {
                       <div className="font-semibold truncate">
                         {f.profile?.displayName || shorten(f.id)}
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">{shorten(f.id)}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {shorten(f.id)}
+                      </div>
                     </div>
                     <Button
                       variant="outline"
@@ -1873,7 +1177,6 @@ const Profile = () => {
             )}
           </div>
         )}
-
       </div>
 
       <RankUpModal
