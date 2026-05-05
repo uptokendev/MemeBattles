@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Bell, Copy, ExternalLink } from "lucide-react";
@@ -20,6 +20,11 @@ import {
   formatTimeAgo,
   formatNumber,
 } from "@/lib/profile/profileFormatters";
+import {
+  fetchOwnerCampaignDrafts,
+  fetchPublicCampaignDrafts,
+  type CampaignDraft,
+} from "@/lib/draftApi";
 import { useProfileTabs } from "@/hooks/profile/useProfileTabs";
 import { useProfileNotifications } from "@/hooks/profile/useProfileNotifications";
 import { useLeagueCabinet } from "@/hooks/profile/useLeagueCabinet";
@@ -62,7 +67,9 @@ const Profile = () => {
   );
 
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-
+const [profileDrafts, setProfileDrafts] = useState<CampaignDraft[]>([]);
+const [loadingDrafts, setLoadingDrafts] = useState(false);
+const [draftsError, setDraftsError] = useState<string | null>(null);
   const {
     profile,
     editOpen,
@@ -172,6 +179,58 @@ const Profile = () => {
     const base = getExplorerBase(chainId);
     return `${base}/address/${viewedAddress}`;
   }, [viewedAddress, chainId]);
+
+  useEffect(() => {
+  let cancelled = false;
+
+  const loadProfileDrafts = async () => {
+    if (activeTab !== "drafts") return;
+
+    if (!viewedAddress) {
+      setProfileDrafts([]);
+      return;
+    }
+
+    setLoadingDrafts(true);
+    setDraftsError(null);
+
+    try {
+      const normalizedViewedAddress = viewedAddress.toLowerCase();
+
+      const drafts = isOwnProfile
+        ? await fetchOwnerCampaignDrafts(normalizedViewedAddress, {
+            chainId,
+            limit: 50,
+          })
+        : (await fetchPublicCampaignDrafts({
+            chainId,
+            limit: 100,
+          })).filter(
+            (draft) =>
+              String(draft.creatorWallet || "").toLowerCase() ===
+              normalizedViewedAddress
+          );
+
+      if (cancelled) return;
+
+      setProfileDrafts(drafts);
+    } catch (err: any) {
+      if (cancelled) return;
+
+      console.error("[Profile] Failed to load profile drafts", err);
+      setDraftsError(err?.message || "Failed to load drafts.");
+      setProfileDrafts([]);
+    } finally {
+      if (!cancelled) setLoadingDrafts(false);
+    }
+  };
+
+  loadProfileDrafts();
+
+  return () => {
+    cancelled = true;
+  };
+}, [activeTab, viewedAddress, isOwnProfile, chainId]);
 
   const handleCopyAddress = () => {
     if (!viewedAddress) return;
@@ -441,6 +500,11 @@ const Profile = () => {
             {[
               { id: "balances" as ProfileTab, label: "Balances", badge: null },
               { id: "coins" as ProfileTab, label: "Coins", badge: null },
+              {
+                id: "drafts" as ProfileTab,
+                label: "Drafts",
+                badge: profileDrafts.length ? profileDrafts.length : null,
+              },
               { id: "replies" as ProfileTab, label: "Activity", badge: null },
               {
                 id: "rewards" as ProfileTab,
@@ -819,7 +883,107 @@ const Profile = () => {
             </div>
           </div>
         )}
+{/* DRAFTS TAB */}
+{activeTab === "drafts" && (
+  <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-xs md:text-sm font-retro text-foreground">
+        {isOwnProfile ? "your drafts" : "public drafts"}{" "}
+        <span className="text-muted-foreground">
+          ({profileDrafts.length})
+        </span>
+      </h3>
 
+      {isOwnProfile && (
+        <Button
+          className="font-retro"
+          onClick={() => navigate("/create?mode=draft")}
+        >
+          New Draft
+        </Button>
+      )}
+    </div>
+
+    {loadingDrafts && (
+      <div className="font-retro text-muted-foreground text-sm">
+        Loading drafts…
+      </div>
+    )}
+
+    {!loadingDrafts && draftsError && (
+      <div className="font-retro text-destructive text-sm">
+        {draftsError}
+      </div>
+    )}
+
+    {!loadingDrafts && !draftsError && profileDrafts.length === 0 && (
+      <div className="font-retro text-muted-foreground text-sm">
+        {isOwnProfile
+          ? "No drafts yet. Create a Prepare Mode draft to see it here."
+          : "No public promotion drafts yet."}
+      </div>
+    )}
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {profileDrafts.map((draft) => {
+        const href = draft.slug
+          ? `/prepare/${draft.slug}`
+          : `/drafts/${draft.id}`;
+
+        return (
+          <div
+            key={draft.id}
+            className="p-4 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
+            onClick={() => navigate(href)}
+            role="button"
+          >
+            <div className="flex items-center gap-3">
+              <img
+                src={draft.logoUrl || "/placeholder.svg"}
+                alt=""
+                className="w-10 h-10 rounded-xl border border-border object-cover"
+                loading="lazy"
+              />
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="font-retro text-foreground text-sm truncate">
+                    {draft.name}
+                  </div>
+
+                  <span className="shrink-0 rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-retro text-accent">
+                    Draft
+                  </span>
+                </div>
+
+                <div className="font-retro text-muted-foreground text-xs truncate">
+                  ${draft.ticker}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="font-retro text-muted-foreground text-xs truncate">
+                {draft.visibility} · {draft.status.replace(/_/g, " ")}
+              </div>
+
+              <Button
+                variant="outline"
+                className="font-retro"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(href);
+                }}
+              >
+                {isOwnProfile ? "Open" : "View"}
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
         {/* REPLIES TAB */}
         {activeTab === "replies" && (
           <div className="bg-card/30 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-border">
