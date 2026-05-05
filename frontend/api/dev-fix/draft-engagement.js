@@ -142,24 +142,32 @@ export async function signedDraftFollow(req, res) {
   const body = await readJson(req);
   const pool = await getPool();
 
-  if (!pool) return json(res, 503, { error: "Signed watchlist requires DATABASE_URL-backed wallet auth." });
+  if (!pool) return json(res, 503, { error: "Draft follow requires DATABASE_URL." });
 
   const draft = await getDraftAuthContext(pool, draftId);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  const wallet = normalizeAddress(body.auth?.walletAddress);
-  if (!wallet) return json(res, 400, { error: "Connect wallet to watchlist this draft." });
+  const wallet = normalizeAddress(
+    body.walletAddress ||
+      body.address ||
+      body.userAddress ||
+      body.followerAddress ||
+      body.auth?.walletAddress
+  );
+  if (!wallet) return json(res, 400, { error: "Connect wallet to follow this draft." });
 
-  const authOk = await requireDraftActionAuth({
-    res,
-    pool,
-    auth: body.auth,
-    expectedWallet: wallet,
-    chainId: draft.chainId,
-    action: "follow_draft",
-    draftId,
-  });
-  if (!authOk) return;
+  if (body.auth?.signature) {
+    const authOk = await requireDraftActionAuth({
+      res,
+      pool,
+      auth: body.auth,
+      expectedWallet: wallet,
+      chainId: draft.chainId,
+      action: "follow_draft",
+      draftId,
+    });
+    if (!authOk) return;
+  }
 
   const followInsert = await pool.query(
     "insert into campaign_draft_follows (draft_id, wallet_address) values ($1,$2) on conflict (draft_id, wallet_address) do nothing returning wallet_address",
@@ -171,7 +179,7 @@ export async function signedDraftFollow(req, res) {
 
   await pool
     .query(
-      "insert into campaign_draft_metrics (draft_id, follows, signed_actions) values ($1, $2, 1) on conflict (draft_id) do update set follows = greatest(campaign_draft_metrics.follows, $2), signed_actions = campaign_draft_metrics.signed_actions + 1, updated_at = now()",
+      "insert into campaign_draft_metrics (draft_id, follows, signed_actions) values ($1, $2, 0) on conflict (draft_id) do update set follows = greatest(campaign_draft_metrics.follows, $2), updated_at = now()",
       [draftId, followCount],
     )
     .catch(() => {});
@@ -179,8 +187,8 @@ export async function signedDraftFollow(req, res) {
   if (followInsert.rows.length && wallet !== draft.creatorWallet) {
     await notifyDraftOwner(pool, draft, {
       eventType: "follow",
-      title: "New watchlist recruit",
-      body: `${shortAddress(wallet)} watchlisted $${draft.ticker}.`,
+      title: "New draft follower",
+      body: `${shortAddress(wallet)} followed $${draft.ticker}.`,
       metadata: {
         target: `/prepare/${draft.slug}`,
         actor: wallet,
