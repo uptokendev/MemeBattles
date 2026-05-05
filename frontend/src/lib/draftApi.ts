@@ -71,15 +71,90 @@ function verifySignatureWallet(message: string, signature: string, walletAddress
   }
 }
 
-function getInjectedProviders() {
-  const eth = (globalThis as any)?.ethereum;
-  if (!eth) return [];
-  const providers = Array.isArray(eth.providers) ? eth.providers : [eth];
-  return providers.filter((provider: any) => provider?.request);
+type DraftApiEip1193Provider = {
+  request?: (args: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
+  selectedAddress?: string | null;
+  providers?: DraftApiEip1193Provider[];
+  [key: string]: any;
+};
+
+type DraftApiEip6963ProviderInfo = {
+  uuid?: string;
+  name?: string;
+  icon?: string;
+  rdns?: string;
+};
+
+type DraftApiEip6963ProviderDetail = {
+  info?: DraftApiEip6963ProviderInfo;
+  provider?: DraftApiEip1193Provider;
+};
+
+const EIP6963_PROVIDERS = new Map<string, DraftApiEip1193Provider>();
+let eip6963DiscoveryStarted = false;
+let eip6963DiscoveryRequested = false;
+
+function startEip6963Discovery() {
+  if (typeof window === "undefined") return;
+
+  if (!eip6963DiscoveryStarted) {
+    window.addEventListener("eip6963:announceProvider", (event: Event) => {
+      const detail = (event as CustomEvent<DraftApiEip6963ProviderDetail>).detail;
+      const provider = detail?.provider;
+      if (!provider?.request) return;
+
+      try {
+        provider.__mwzEip6963Info = detail.info || {};
+      } catch {
+        // Provider objects are usually mutable, but legacy wrappers may not be.
+      }
+
+      const info = detail.info || {};
+      const key = info.uuid || info.rdns || info.name || String(EIP6963_PROVIDERS.size + 1);
+      EIP6963_PROVIDERS.set(key, provider);
+    });
+    eip6963DiscoveryStarted = true;
+  }
+
+  if (eip6963DiscoveryRequested) return;
+  eip6963DiscoveryRequested = true;
+
+  try {
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+  } catch {
+    // Legacy provider detection still works.
+  }
+}
+
+function dedupeProviders(candidates: Array<DraftApiEip1193Provider | null | undefined>) {
+  const seen = new Set<DraftApiEip1193Provider>();
+  return candidates.filter((candidate): candidate is DraftApiEip1193Provider => {
+    if (!candidate?.request || seen.has(candidate)) return false;
+    seen.add(candidate);
+    return true;
+  });
+}
+
+async function waitForEip6963Providers() {
+  startEip6963Discovery();
+  if (EIP6963_PROVIDERS.size > 0) return Array.from(EIP6963_PROVIDERS.values());
+
+  await new Promise((resolve) => window.setTimeout(resolve, 150));
+  return Array.from(EIP6963_PROVIDERS.values());
+}
+
+async function getInjectedProviders() {
+  const eth = (globalThis as any)?.ethereum as DraftApiEip1193Provider | undefined;
+  const legacy = eth ? (Array.isArray(eth.providers) ? eth.providers : [eth]) : [];
+  const eip6963 = typeof window === "undefined" ? [] : await waitForEip6963Providers();
+  return dedupeProviders([...eip6963, ...legacy]);
 }
 
 function providerText(provider: any) {
+  const eip6963Info = provider?.__mwzEip6963Info || {};
   const parts = [
+    eip6963Info?.name,
+    eip6963Info?.rdns,
     provider?.providerInfo?.name,
     provider?.providerInfo?.rdns,
     provider?.info?.name,
@@ -140,7 +215,7 @@ async function providerAccounts(provider: any) {
 
 async function findProviderForWallet(walletAddress: string) {
   const wallet = normalizeWallet(walletAddress);
-  const providers = getInjectedProviders();
+  const providers = await getInjectedProviders();
   const selected = selectedWalletId();
 
   const selectedMatches = providers.filter((provider: any) => {
