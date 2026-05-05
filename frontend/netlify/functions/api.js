@@ -35,7 +35,12 @@ import upload from "../../api/upload.js";
 import votes from "../../api/votes.js";
 import voteCounts from "../../api/vote_counts.js";
 import { draftDeploy } from "../../api/dev-fix/draft-deploy.js";
-import { signedDraftComments, signedDraftFollow } from "../../api/dev-fix/draft-engagement.js";
+import {
+  followedDrafts,
+  signedDraftComments,
+  signedDraftFollow,
+  signedDraftNotificationSubscription,
+} from "../../api/dev-fix/draft-engagement.js";
 import { prepareNotifications } from "../../api/dev-fix/prepare-notifications.js";
 import { signedDraftById, signedPrepareBySlug } from "../../api/dev-fix/draft-read.js";
 import { tickerAvailability } from "../../api/dev-fix/ticker-availability.js";
@@ -156,11 +161,13 @@ app.all("/vote_counts", wrap(voteCounts));
 
 // PREPARE MODE: draft token creation + promotion pages.
 app.all("/drafts", wrap(drafts));
+app.all("/drafts/followed", wrap(followedDrafts));
 app.all("/drafts/ticker-availability", wrap(tickerAvailability));
 app.all("/drafts/:draftId/promotion", wrap(draftPromotion));
 app.all("/drafts/:draftId/archive", wrap(draftArchive));
 app.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 app.all("/drafts/:draftId/follow", wrap(signedDraftFollow));
+app.all("/drafts/:draftId/notifications", wrap(signedDraftNotificationSubscription));
 app.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 app.all("/drafts/:draftId", wrap(signedDraftById));
 app.all("/prepare/:slug", wrap(signedPrepareBySlug));
