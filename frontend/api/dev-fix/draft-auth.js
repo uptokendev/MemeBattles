@@ -10,6 +10,7 @@ const ACTIONS = new Set([
   "deploy_draft",
   "follow_draft",
   "comment_draft",
+  "arm_draft_notifications",
   "draft_owner_session",
 ]);
 
