@@ -10,6 +10,7 @@ export type DraftAuthAction =
   | "deploy_draft"
   | "follow_draft"
   | "comment_draft"
+  | "arm_draft_notifications"
   | "draft_owner_session";
 
 export type DraftActionAuth = {
