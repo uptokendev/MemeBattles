@@ -19,7 +19,7 @@ import PublicPromotion from "./pages/PublicPromotion";
 import League from "./pages/League";
 import LeagueDetail from "./pages/LeagueDetail";
 import ProfilePage from "./pages/ProfilePage";
-import TokenDetails from "./pages/TokenDetails";
+import HybridTokenDetails from "./pages/HybridTokenDetails";
 import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
@@ -95,7 +95,7 @@ const App = () => {
                     <Route path="/squad-dashboard" element={<SquadDashboard />} />
                     <Route path="/ops/rewards" element={<RewardOps />} />
                     <Route path="/r/:code" element={<RecruiterReferral />} />
-                    <Route path="/token/:campaignAddress" element={<TokenDetails />} />
+                    <Route path="/token/:campaignAddress" element={<HybridTokenDetails />} />
                     <Route path="/playbook" element={<Playbook />} />
                     <Route path="/docs" element={<Playbook />} />
                     <Route path="/status" element={<Status />} />
