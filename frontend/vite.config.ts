@@ -6,8 +6,10 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3000";
-  const apiProxyTarget = env.VITE_DEV_API_PROXY_TARGET || `http://localhost:${apiPort}`;
+  const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3001";
+  const apiProxyTarget = env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
+
+  console.log(`[vite] proxy /api -> ${apiProxyTarget}`);
 
   return {
     server: {
