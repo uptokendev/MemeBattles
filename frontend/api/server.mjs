@@ -1,13 +1,8 @@
-/**
- * Railway API router for MemeWarzone frontend.
- *
- * This mirrors the Netlify API wrapper route inventory, but runs as a
- * standalone Express server for Railway at /api/*.
- */
 import express from "express";
 
 import { pool } from "../server/db.js";
 
+import activityTrades from "./activity/trades.js";
 import ablyToken from "./ably/token.js";
 import authNonce from "./auth/nonce.js";
 import campaignsUpsert from "./campaigns/upsert.js";
@@ -48,11 +43,7 @@ import {
 import { prepareNotifications } from "./dev-fix/prepare-notifications.js";
 import { signedDraftById, signedPrepareBySlug } from "./dev-fix/draft-read.js";
 import { tickerAvailability } from "./dev-fix/ticker-availability.js";
-import {
-  draftArchive,
-  draftPromotion,
-  drafts,
-} from "./dev-fix/drafts.js";
+import { draftArchive, draftPromotion, drafts } from "./dev-fix/drafts.js";
 import {
   attributionWallet,
   attributionWalletConnect,
@@ -91,6 +82,7 @@ app.disable("x-powered-by");
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
   "http://localhost:8888",
   "https://memewar.zone",
   "https://www.memewar.zone",
@@ -110,54 +102,31 @@ const allowedOrigins = new Set(
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (allowedOrigins.has(origin)) return true;
-
   try {
     const { hostname } = new URL(origin);
     const host = hostname.toLowerCase();
-
-    if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) {
-      return true;
-    }
-
-    if (host.endsWith(".netlify.app") && host.includes("memewar")) {
-      return true;
-    }
-  } catch {
-    // Ignore invalid origins.
-  }
-
+    if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
+    if (host.endsWith(".netlify.app") && host.includes("memewar")) return true;
+  } catch {}
   return false;
 }
 
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
-
   if (isAllowedOrigin(origin)) {
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token"
-    );
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token");
   }
-
-  if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
-  }
-
+  if (req.method === "OPTIONS") return res.status(204).end();
   next();
 });
 
-// Railway/Cloudflare liveness. No DB call.
-app.get("/healthz", (_req, res) => {
-  res.json({ ok: true });
-});
-
-// Readiness. Confirms the API can reach Supabase/Postgres.
+app.get("/", (_req, res) => res.json({ ok: true, service: "MemeWarzone API", healthz: "/healthz", api: "/api" }));
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
 app.get("/health", async (_req, res) => {
   try {
     const r = await pool.query("select 1 as ok");
@@ -183,6 +152,7 @@ function wrap(fn) {
 
 const router = express.Router();
 
+router.all("/activity/trades", wrap(activityTrades));
 router.all("/ably/token", wrap(ablyToken));
 router.all("/auth/nonce", wrap(authNonce));
 router.all("/campaigns/upsert", wrap(campaignsUpsert));
@@ -213,8 +183,6 @@ router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
-
-// PREPARE MODE: draft token creation + promotion pages.
 router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
 router.all("/drafts/ticker-availability", wrap(tickerAvailability));
@@ -227,40 +195,32 @@ router.all("/drafts/:draftId/comments", wrap(signedDraftComments));
 router.all("/drafts/:draftId", wrap(signedDraftById));
 router.all("/prepare/:slug", wrap(signedPrepareBySlug));
 router.all("/prepare-notifications", wrap(prepareNotifications));
-
 router.all("/rewards/me", wrap(rewardsMe));
 router.all("/rewards/me/history", wrap(rewardsHistory));
 router.all("/rewards/me/claims", wrap(rewardsClaims));
 router.all("/rewards/me/eligibility", wrap(rewardsEligibility));
 router.all("/rewards", wrap(rewards));
-
 router.all("/airdrops/winners", wrap(airdropWinners));
-
 router.all("/squads", wrap(squadsLeaderboard));
 router.all("/squads/members", wrap(squadMembers));
 router.all("/squads/:code/summary", wrap(squadSummary));
-
 router.all("/recruiters", wrap(recruiters));
 router.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
 router.all("/recruiters/:code/summary", wrap(recruiterSummary));
 router.all("/recruiters/:code/replacements", wrap(recruiterReplacements));
 router.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
-
 router.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
 router.all("/attribution/wallet/:wallet", wrap(attributionWallet));
-
 router.all("/routing/status", wrap(routingStatus));
 router.all("/routing/create-authorization", wrap(routingCreateAuthorization));
 router.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 router.all("/recruiter-routing/status", wrap(routingStatus));
 router.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 router.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
-
 router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
 router.all("/recruiter-signup", wrap(recruiterSignupSubmit));
-
 router.all("/internal/rewards/publications", wrap(internalRewardPublications));
 router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
 router.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
@@ -271,18 +231,12 @@ router.all("/internal/rewards/airdrops/draws", wrap(internalAirdropDraws));
 router.all("/internal/rewards/airdrops/epochs/:epochId/draws/run", wrap(internalAirdropDrawRun));
 
 app.use("/api", router);
-
-app.use((req, res) => {
-  res.status(404).json({ error: `Unknown route: ${req.path}` });
-});
-
+app.use((req, res) => res.status(404).json({ error: `Unknown route: ${req.path}` }));
 app.use((err, _req, res, _next) => {
   console.error("[api/server] unhandled", err);
   if (res.headersSent) return;
   res.status(500).json({ error: "Server error" });
 });
 
-const port = Number(process.env.PORT || 3000);
-app.listen(port, "0.0.0.0", () => {
-  console.log(`[api/server] listening on 0.0.0.0:${port}`);
-});
+const port = Number(process.env.PORT || process.env.API_PORT || 3001);
+app.listen(port, "0.0.0.0", () => console.log(`[api/server] listening on 0.0.0.0:${port}`));
