@@ -65,7 +65,7 @@ export function CampaignCard({
 
   const openProfile = () => {
     if (!canOpenProfile) return;
-    navigate(`/profile?address=${encodeURIComponent(creatorAddr)}`);
+    navigate(`/profile/${encodeURIComponent(creatorAddr)}`);
   };
 
   useEffect(() => {
