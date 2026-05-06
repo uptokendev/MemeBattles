@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "npx netlify dev --context production",
     "dev:hybrid": "node scripts/dev-hybrid.mjs",
-    "dev:vite": "vite",
+    "dev:vite": "node scripts/dev-vite.mjs",
+    "dev:vite:raw": "vite",
     "dev:netlify": "npx netlify dev --context production",
     "api:start": "node --import ./api/load-local-env.mjs api/server.mjs",
     "api:dev": "node --watch --import ./api/load-local-env.mjs api/server.mjs",
