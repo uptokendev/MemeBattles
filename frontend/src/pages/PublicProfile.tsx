@@ -15,6 +15,8 @@ import {
   type SquadSummary,
   type WalletAttributionPublicState,
 } from "@/lib/recruiterApi";
+import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import type { ActivityTradeRow } from "@/types/profilePage";
 import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
 import { normalizeRank, type RankName } from "@/lib/ranks";
 import { Copy, ExternalLink } from "lucide-react";
@@ -66,6 +68,16 @@ function formatCompactNumber(value?: number | null) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+function formatBnb(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 5 })} BNB`;
+}
+
+function formatTokenAmount(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
 function safeRank(profile: UserProfile | null): RankName {
   const raw = (profile as any)?.rank;
   return raw ? normalizeRank(raw) : "Recruit";
@@ -100,6 +112,25 @@ function draftHref(draft: CampaignDraft) {
   return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
 }
 
+function tradeFromApiItem(item: any): ActivityTradeRow {
+  return {
+    id: String(item?.id ?? `${item?.txHash ?? ""}:${item?.logIndex ?? 0}`),
+    txHash: String(item?.txHash ?? ""),
+    logIndex: Number(item?.logIndex ?? 0),
+    blockNumber: Number(item?.blockNumber ?? 0),
+    blockTime: String(item?.blockTime ?? ""),
+    side: String(item?.side ?? "buy") === "sell" ? "sell" : "buy",
+    wallet: String(item?.wallet ?? ""),
+    tokenAmount: item?.tokenAmount == null ? null : Number(item.tokenAmount),
+    bnbAmount: item?.bnbAmount == null ? null : Number(item.bnbAmount),
+    priceBnb: item?.priceBnb == null ? null : Number(item.priceBnb),
+    campaignAddress: String(item?.campaignAddress ?? ""),
+    campaignName: item?.campaignName ?? null,
+    campaignSymbol: item?.campaignSymbol ?? null,
+    logoUri: item?.logoUri ?? null,
+  };
+}
+
 export default function PublicProfile({
   profileWallet,
   isOwnProfile,
@@ -124,6 +155,9 @@ export default function PublicProfile({
   const [walletAttribution, setWalletAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [squad, setSquad] = useState<SquadSummary | null>(null);
   const [loadingBadges, setLoadingBadges] = useState(false);
+  const [publicTrades, setPublicTrades] = useState<ActivityTradeRow[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
@@ -269,6 +303,46 @@ export default function PublicProfile({
       cancelled = true;
     };
   }, [profileWallet]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ac = new AbortController();
+
+    const loadActivity = async () => {
+      setLoadingActivity(true);
+      setActivityError(null);
+      try {
+        const qs = new URLSearchParams({
+          chainId: String(activeChainId),
+          address: profileWallet.toLowerCase(),
+          limit: "12",
+        });
+        const res = await fetch(buildRealtimeApiUrl(`/api/activity/trades?${qs.toString()}`), {
+          method: "GET",
+          signal: ac.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(String(json?.error || `HTTP ${res.status}`));
+        if (cancelled) return;
+
+        const items = Array.isArray(json?.items) ? json.items : [];
+        setPublicTrades(items.map(tradeFromApiItem));
+      } catch (e: any) {
+        if (cancelled || ac.signal.aborted) return;
+        console.warn("Failed to load public profile activity", e);
+        setActivityError(String(e?.message || "Failed to load public activity."));
+        setPublicTrades([]);
+      } finally {
+        if (!cancelled) setLoadingActivity(false);
+      }
+    };
+
+    loadActivity();
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [activeChainId, profileWallet]);
 
   const copyAddress = () => {
     navigator.clipboard.writeText(profileWallet);
@@ -532,8 +606,51 @@ export default function PublicProfile({
         </section>
 
         <section className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">
-          <h2 className="font-retro text-lg text-foreground">Public Activity</h2>
-          <p className="mt-3 text-sm text-muted-foreground">Coming soon — public activity will show visible platform actions without exposing private balances, claims, or notifications.</p>
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-retro text-lg text-foreground">Public Activity</h2>
+              <p className="text-xs text-muted-foreground">Recent public trade activity for this wallet.</p>
+            </div>
+            <div className="text-xs text-muted-foreground">{publicTrades.length} recent</div>
+          </div>
+
+          {loadingActivity ? (
+            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">Loading public activity...</div>
+          ) : activityError ? (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">{activityError}</div>
+          ) : publicTrades.length ? (
+            <div className="space-y-3">
+              {publicTrades.map((trade) => (
+                <button
+                  key={trade.id}
+                  onClick={() => trade.campaignAddress && navigate(`/token/${trade.campaignAddress}`)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <img src={trade.logoUri || "/placeholder.svg"} alt={trade.campaignName || "Token"} className="h-10 w-10 rounded-full object-cover" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={trade.side === "buy" ? "text-emerald-400" : "text-orange-400"}>{trade.side.toUpperCase()}</span>
+                        <span className="truncate font-retro text-sm text-foreground">{trade.campaignName || shorten(trade.campaignAddress)}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {trade.campaignSymbol ? `$${trade.campaignSymbol}` : "Token"} · {formatTimeAgo(trade.blockTime) || "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right text-xs">
+                    <div className="text-foreground">{formatBnb(trade.bnbAmount)}</div>
+                    <div className="text-muted-foreground">{formatTokenAmount(trade.tokenAmount)} tokens</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
+              No public trade activity yet. Private notifications, balances, and claims stay inside the Command Center.
+            </div>
+          )}
         </section>
       </div>
     </div>
