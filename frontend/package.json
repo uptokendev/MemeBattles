@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npx netlify dev --context production",
+    "dev": "vite",
     "dev:vite": "vite",
+    "dev:netlify": "npx netlify dev --context production",
+    "api:start": "node api/server.mjs",
+    "api:dev": "node --watch api/server.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
