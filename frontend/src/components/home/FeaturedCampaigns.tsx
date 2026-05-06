@@ -13,6 +13,7 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { resolveImageUri } from "@/lib/media";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
+import { apiFetch } from "@/lib/apiBase";
 
 type FeaturedItemApi = {
   chainId: number;
@@ -121,8 +122,9 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       setLoading(true);
       setErr(null);
       try {
-        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+        const r = await apiFetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
         const j = await r.json();
+        if (!r.ok) throw new Error(j?.error ?? "Failed to load featured");
         if (!mounted) return;
         setItems(Array.isArray(j.items) ? j.items : []);
       } catch (e: unknown) {
