@@ -27,6 +27,22 @@ function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): str
   return address ? `/api/token-metadata/${chainId}/${address}` : "";
 }
 
+function isKnownDeadLogoUri(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw) return true;
+  if (raw === "/placeholder.svg") return true;
+
+  const resolved = resolveImageUri(raw);
+  if (!resolved) return true;
+
+  try {
+    const url = new URL(resolved, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    return url.hostname === "jlbdueorprgnfkcpnkfq.supabase.co";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeLogoUri(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "/placeholder.svg";
@@ -34,15 +50,7 @@ function normalizeLogoUri(value: unknown): string {
   const resolved = resolveImageUri(raw);
   if (!resolved) return "/placeholder.svg";
 
-  // Older seeded rows can point at a Supabase project URL that no longer resolves.
-  // Keep the details page usable instead of rendering a broken image.
-  try {
-    const url = new URL(resolved, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-    if (url.hostname === "jlbdueorprgnfkcpnkfq.supabase.co") return "/placeholder.svg";
-  } catch {
-    // Non-URL relative paths are fine.
-  }
-
+  if (isKnownDeadLogoUri(resolved)) return "/placeholder.svg";
   return resolved;
 }
 
@@ -102,6 +110,34 @@ function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignIn
   return merged;
 }
 
+async function hydrateLogosFromContract(
+  campaigns: CampaignInfo[],
+  fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>
+): Promise<CampaignInfo[]> {
+  const targets = campaigns.filter((campaign) => isKnownDeadLogoUri(campaign.logoURI)).slice(0, 25);
+  if (!targets.length) return campaigns;
+
+  const hydrated = new Map<string, string>();
+  await Promise.all(
+    targets.map(async (campaign) => {
+      try {
+        const logo = await fetchCampaignLogoURI(campaign.campaign);
+        const normalized = normalizeLogoUri(logo);
+        if (!isKnownDeadLogoUri(normalized)) hydrated.set(campaign.campaign.toLowerCase(), normalized);
+      } catch {
+        // best-effort only
+      }
+    })
+  );
+
+  if (!hydrated.size) return campaigns;
+
+  return campaigns.map((campaign) => {
+    const logoURI = hydrated.get(campaign.campaign.toLowerCase());
+    return logoURI ? { ...campaign, logoURI } : campaign;
+  });
+}
+
 export function useLaunchpad() {
   const base = useBaseLaunchpad();
 
@@ -114,7 +150,8 @@ export function useLaunchpad() {
       fetchDbCampaigns(Number(base.activeChainId || 97)),
     ]);
 
-    return mergeCampaigns(onChain, db);
+    const merged = mergeCampaigns(onChain, db);
+    return hydrateLogosFromContract(merged, base.fetchCampaignLogoURI);
   }, [base]);
 
   return {
