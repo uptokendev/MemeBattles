@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "netlify dev --context production",
     "dev:vite": "vite",
-    "dev:netlify": "npx netlify dev --context production",
+    "dev:netlify": "netlify dev --context production",
     "api:start": "node api/server.mjs",
     "api:dev": "node --watch api/server.mjs",
     "build": "vite build",
