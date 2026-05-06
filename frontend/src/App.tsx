@@ -18,7 +18,7 @@ import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
 import League from "./pages/League";
 import LeagueDetail from "./pages/LeagueDetail";
-import Profile from "./pages/Profile";
+import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
@@ -82,7 +82,8 @@ const App = () => {
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
-                    <Route path="/profile" element={<Profile />} />
+                    <Route path="/profile" element={<ProfilePage />} />
+                    <Route path="/profile/:identifier" element={<ProfilePage />} />
                     <Route path="/airdrops" element={<AirdropOverview />} />
                     <Route path="/airdrops/winners" element={<AirdropWinners />} />
                     <Route path="/recruiter" element={<Recruiter />} />
