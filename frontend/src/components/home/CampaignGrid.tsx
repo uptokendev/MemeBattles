@@ -5,6 +5,7 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
+import { apiFetch } from "@/lib/apiBase";
 
 export type FeedTabKey = "drafts" | "trending" | "new" | "ending" | "dex";
 
@@ -90,9 +91,7 @@ function buildQueryString(params: Record<string, any>) {
 
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
   const qs = buildQueryString(params);
-  // Avoid CDN/browser caching for dynamic leaderboards (votes, trending, etc.).
-  // Vercel edge caching keys on the URL, so include a changing param when callers want a refresh.
-  const r = await fetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
+  const r = await apiFetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
   const j = await r.json();
   if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
   return j as CampaignFeedResponse;
@@ -102,25 +101,20 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
-const { patchByCampaign, created } = useLeagueRealtime({
-  enabled: query.tab !== "drafts",
-  chainId: activeChainId,
-  fallbackMs: 25000,
-  onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
-});
+  const { patchByCampaign, created } = useLeagueRealtime({
+    enabled: query.tab !== "drafts",
+    chainId: activeChainId,
+    fallbackMs: 25000,
+    onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
+  });
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  // Debug toggle (works in production):
-  //   localStorage.setItem('debug_campaign_grid', '1'); location.reload();
-  //   localStorage.removeItem('debug_campaign_grid'); location.reload();
   const DEBUG =
     typeof window !== "undefined" &&
     (window.localStorage?.getItem("debug_campaign_grid") === "1" ||
-      // Allow an escape hatch if you prefer a global flag.
       (window as any).__DEBUG_CAMPAIGN_GRID__ === true);
 
   const [items, setItems] = useState<CampaignFeedItemApi[]>([]);
-  // Lightweight on-chain hydration for missing logo_uri in the DB-backed feed.
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
   const [nextCursor, setNextCursor] = useState<number | null>(0);
   const [loading, setLoading] = useState(false);
@@ -128,8 +122,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
-  // Insert newly-created campaigns instantly (no REST refetch) for the "New" tab.
-  // Trending/etc will naturally catch up via periodic snapshot refresh.
   useEffect(() => {
     if (query.tab !== "new") return;
     if (!created?.length) return;
@@ -166,8 +158,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
     });
   }, [created, query.tab, activeChainId]);
 
-  // Immediately refresh the feed after a confirmed tx (upvote/buy/sell/finalize)
-  // so the card order and vote counts update without requiring a hard reload.
   useEffect(() => {
     const onRefresh = (e: any) => {
       const d = e?.detail ?? {};
@@ -193,9 +183,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
       sort: query.sort ?? "default",
       status: query.status ?? "all",
       search: query.search ?? "",
-
-      // Filters that require USD conversion.
-      // We pass bnbUsd so the API can filter on marketcap_usd deterministically.
       bnbUsd: bnbUsd ? bnbUsd : null,
       mcapMinUsd: query.mcapMinUsd ?? null,
       mcapMaxUsd: query.mcapMaxUsd ?? null,
@@ -204,7 +191,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
     };
   }, [activeChainId, query, bnbUsd]);
 
-  // Reset + fetch first page whenever the query changes.
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -212,13 +198,11 @@ const { patchByCampaign, created } = useLeagueRealtime({
       setLoading(true);
       setErr(null);
       try {
-        if (DEBUG) {
-          console.debug('[CampaignGrid] fetch first page params', { ...baseParams, cursor: 0 });
-        }
+        if (DEBUG) console.debug("[CampaignGrid] fetch first page params", { ...baseParams, cursor: 0 });
         const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0, _r: refetchNonce });
         if (!mounted) return;
         if (DEBUG) {
-          console.debug('[CampaignGrid] first page response', {
+          console.debug("[CampaignGrid] first page response", {
             count: resp.items?.length ?? 0,
             sample: (resp.items ?? []).slice(0, 3).map((x) => ({
               campaignAddress: x.campaignAddress,
@@ -244,11 +228,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
     return () => {
       mounted = false;
     };
-  }, [baseParams, refetchNonce, query.tab]);
+  }, [baseParams, refetchNonce, query.tab, DEBUG]);
 
-  // Hydrate missing token images from on-chain logoURI.
-  // This keeps the DB feed fast for stats/sorts while matching the behavior of
-  // pages that render images via useLaunchpad().fetchCampaigns().
   useEffect(() => {
     if (query.tab === "drafts") return;
     let cancelled = false;
@@ -257,7 +238,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
       .map((it) => String(it.campaignAddress ?? "").toLowerCase())
       .filter((addr) => addr && !logoCache[addr])
       .filter((addr) => {
-        // If the feed already has a logo, don't hydrate.
         const found = (items || []).find((x) => String(x.campaignAddress ?? "").toLowerCase() === addr);
         return !found?.logoUri;
       })
@@ -265,12 +245,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
 
     if (!missing.length) return;
 
-    if (DEBUG) {
-      console.debug('[CampaignGrid] hydrating missing logos', {
-        missingCount: missing.length,
-        missing: missing.slice(0, 10),
-      });
-    }
+    if (DEBUG) console.debug("[CampaignGrid] hydrating missing logos", { missingCount: missing.length, missing: missing.slice(0, 10) });
 
     (async () => {
       try {
@@ -282,11 +257,8 @@ const { patchByCampaign, created } = useLeagueRealtime({
         );
         if (cancelled) return;
         if (DEBUG) {
-          console.debug('[CampaignGrid] hydration results', {
-            resolved: pairs
-              .filter(([, uri]) => !!uri)
-              .slice(0, 10)
-              .map(([addr, uri]) => ({ addr, uri, resolvedUrl: resolveImageUri(uri) })),
+          console.debug("[CampaignGrid] hydration results", {
+            resolved: pairs.filter(([, uri]) => !!uri).slice(0, 10).map(([addr, uri]) => ({ addr, uri, resolvedUrl: resolveImageUri(uri) })),
             unresolved: pairs.filter(([, uri]) => !uri).slice(0, 10).map(([addr]) => addr),
           });
         }
@@ -298,8 +270,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
           return next;
         });
       } catch {
-        if (DEBUG) console.debug('[CampaignGrid] hydration failed');
-        // silent: missing images are non-fatal
+        if (DEBUG) console.debug("[CampaignGrid] hydration failed");
       }
     })();
 
@@ -312,16 +283,9 @@ const { patchByCampaign, created } = useLeagueRealtime({
     if (query.tab === "drafts" || loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
     try {
-      if (DEBUG) {
-        console.debug('[CampaignGrid] loadMore params', { ...baseParams, cursor: nextCursor });
-      }
+      if (DEBUG) console.debug("[CampaignGrid] loadMore params", { ...baseParams, cursor: nextCursor });
       const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor, _r: refetchNonce });
-      if (DEBUG) {
-        console.debug('[CampaignGrid] loadMore response', {
-          count: resp.items?.length ?? 0,
-          nextCursor: resp.nextCursor,
-        });
-      }
+      if (DEBUG) console.debug("[CampaignGrid] loadMore response", { count: resp.items?.length ?? 0, nextCursor: resp.nextCursor });
       setItems((prev) => [...prev, ...(resp.items ?? [])]);
       setNextCursor(resp.nextCursor ?? null);
       setLastUpdatedAt(resp.updatedAt ?? null);
@@ -332,7 +296,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
     }
   };
 
-  // Infinite scroll: load next page when sentinel becomes visible.
   useEffect(() => {
     if (query.tab === "drafts") return;
     const el = sentinelRef.current;
@@ -352,24 +315,18 @@ const { patchByCampaign, created } = useLeagueRealtime({
 
   const vms: CampaignCardVM[] = useMemo(() => {
     const GRAD_TARGET_BNB = 50;
-
     const isTrendingDefault = baseParams.tab === "trending" && baseParams.sort === "default";
     const mapped = (items || []).map((it) => {
       const addr = String(it.campaignAddress ?? "").toLowerCase();
       const patch = patchByCampaign[addr];
-
       const mcapBnb = Number((patch?.marketcapBnb ?? it.marketcapBnb) ?? NaN);
       const mcapUsd = Number.isFinite(mcapBnb) && bnbUsd ? mcapBnb * bnbUsd : NaN;
       const marketCapUsdLabel = Number.isFinite(mcapUsd) ? formatCompactUsd(mcapUsd) : null;
       const rawLogo = it.logoUri || logoCache[addr] || null;
-
       let progressPct: number | null = it.progressPct ?? null;
-
       const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
       const raised = Number(patch?.raisedTotalBnb ?? NaN);
-      if (Number.isFinite(raised)) {
-        progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
-      }
+      if (Number.isFinite(raised)) progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
 
       return {
         campaignAddress: addr,
@@ -388,7 +345,6 @@ const { patchByCampaign, created } = useLeagueRealtime({
     });
 
     if (!isTrendingDefault) return mapped;
-
     return mapped.slice().sort((a: any, b: any) => {
       const aa = Number(a.lastActivityAtSec ?? 0);
       const bb = Number(b.lastActivityAtSec ?? 0);
@@ -416,10 +372,7 @@ const { patchByCampaign, created } = useLeagueRealtime({
       {loading && !vms.length ? (
         <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div
-              key={i}
-              className="aspect-[1/2] w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse"
-            />
+            <div key={i} className="aspect-[1/2] w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse" />
           ))}
         </div>
       ) : err ? (
