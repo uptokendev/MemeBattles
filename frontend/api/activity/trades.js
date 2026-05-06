@@ -33,13 +33,16 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 97);
-    const address = normalizeAddress(q.address ?? q.wallet ?? q.walletAddress);
-    const limit = clampInt(q.limit, 1, 100, 50);
+    const wallet = normalizeAddress(q.wallet ?? q.walletAddress);
+    const campaignAddress = normalizeAddress(q.campaignAddress ?? q.campaign ?? q.token ?? q.address);
+    const mode = wallet ? "wallet" : campaignAddress ? "campaign" : "";
+    const limit = clampInt(q.limit, 1, 200, 50);
     const cursor = parseCursor(q.cursor);
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!address) return json(res, 400, { error: "Invalid address" });
+    if (!mode) return json(res, 400, { error: "Missing wallet or campaignAddress" });
 
+    const address = mode === "wallet" ? wallet : campaignAddress;
     const params = [chainId, address, limit];
     let cursorWhere = "";
 
@@ -51,6 +54,8 @@ export default async function handler(req, res) {
           or (t.block_number = $4 and coalesce(t.log_index, 0) < $5)
         )`;
     }
+
+    const addressWhere = mode === "wallet" ? "t.wallet = $2" : "t.campaign_address = $2";
 
     const { rows } = await pool.query(
       `select
@@ -73,7 +78,7 @@ export default async function handler(req, res) {
          on c.chain_id = t.chain_id
         and c.campaign_address = t.campaign_address
        where t.chain_id = $1
-         and t.wallet = $2
+         and ${addressWhere}
          ${cursorWhere}
        order by t.block_number desc, coalesce(t.log_index, 0) desc
        limit $3`,
@@ -87,7 +92,7 @@ export default async function handler(req, res) {
       blockNumber: Number(row.blockNumber || 0),
       blockTime: row.blockTime ? new Date(row.blockTime).toISOString() : null,
       side: String(row.side || "buy") === "sell" ? "sell" : "buy",
-      wallet: row.wallet ? String(row.wallet).toLowerCase() : address,
+      wallet: row.wallet ? String(row.wallet).toLowerCase() : "",
       tokenAmount: row.tokenAmount == null ? null : Number(row.tokenAmount),
       bnbAmount: row.bnbAmount == null ? null : Number(row.bnbAmount),
       priceBnb: row.priceBnb == null ? null : Number(row.priceBnb),
@@ -99,6 +104,7 @@ export default async function handler(req, res) {
 
     return json(res, 200, {
       items,
+      mode,
       nextCursor: items.length === limit ? makeCursor(items[items.length - 1]) : null,
     });
   } catch (e) {
