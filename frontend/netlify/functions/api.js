@@ -4,6 +4,7 @@
 import express from "express";
 import serverless from "serverless-http";
 
+import activityTrades from "../../api/activity/trades.js";
 import ablyToken from "../../api/ably/token.js";
 import authNonce from "../../api/auth/nonce.js";
 import campaignsUpsert from "../../api/campaigns/upsert.js";
@@ -88,6 +89,7 @@ app.disable("x-powered-by");
 const ALLOWED_ORIGINS = new Set([
   "https://command-center.memewar.zone",
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
   "http://localhost:8888",
 ]);
 
@@ -127,6 +129,7 @@ function wrap(fn) {
   };
 }
 
+app.all("/activity/trades", wrap(activityTrades));
 app.all("/ably/token", wrap(ablyToken));
 app.all("/auth/nonce", wrap(authNonce));
 app.all("/campaigns/upsert", wrap(campaignsUpsert));
