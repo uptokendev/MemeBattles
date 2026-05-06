@@ -16,7 +16,7 @@ import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
 import League from "./pages/League";
 import LeagueDetail from "./pages/LeagueDetail";
-import Profile from "./pages/Profile";
+import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
 import Status from "./pages/Status";
@@ -68,7 +68,8 @@ const App = () => {
                   <Route path="/battle-leagues" element={<League />} />
                   <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                   <Route path="/league" element={<League />} />
-                  <Route path="/profile" element={<Profile />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/profile/:identifier" element={<ProfilePage />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
                   <Route path="/docs" element={<Playbook />} />
             <Route path="/playbook" element={<Playbook />} />
