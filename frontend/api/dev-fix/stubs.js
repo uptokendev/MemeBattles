@@ -65,7 +65,6 @@ export async function rewardsMe(req, res) {
   const q = getQuery(req);
   const address = normalizeAddress(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
-
   return json(res, 200, emptyRewardSummary(address));
 }
 
@@ -74,7 +73,6 @@ export async function rewardsHistory(req, res) {
   const q = getQuery(req);
   const address = normalizeAddress(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
-
   return json(res, 200, {
     address,
     items: [],
@@ -89,7 +87,6 @@ export async function rewardsClaims(req, res) {
   const q = getQuery(req);
   const address = normalizeAddress(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
-
   return json(res, 200, {
     address,
     claims: [],
@@ -104,7 +101,6 @@ export async function rewardsEligibility(req, res) {
   const q = getQuery(req);
   const address = normalizeAddress(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
-
   return json(res, 200, {
     address,
     items: [],
@@ -144,8 +140,12 @@ export async function squadSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const recruiterCode = String(req.params?.code || "").trim();
   if (!recruiterCode) return json(res, 400, { error: "Missing recruiter code" });
-
-  return json(res, 404, { error: "Squad summary not found", code: "SQUAD_NOT_FOUND" });
+  return json(res, 200, {
+    squad: null,
+    recruiterCode,
+    exists: false,
+    materializedAt: null,
+  });
 }
 
 export async function squadMembers(req, res) {
@@ -176,23 +176,30 @@ export async function recruiterSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const code = String(req.params?.code || "").trim();
   if (!code) return json(res, 400, { error: "Missing recruiter code" });
-
-  return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
+  return json(res, 200, {
+    recruiter: null,
+    code,
+    exists: false,
+    materializedAt: null,
+  });
 }
 
 export async function recruiterWalletSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const wallet = normalizeAddress(req.params?.wallet);
   if (!wallet) return json(res, 400, { error: "Invalid wallet address" });
-
-  return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
+  return json(res, 200, {
+    recruiter: null,
+    walletAddress: wallet,
+    exists: false,
+    materializedAt: null,
+  });
 }
 
 export async function recruiterReplacements(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const code = String(req.params?.code || "").trim();
   if (!code) return json(res, 400, { error: "Missing recruiter code" });
-
   return json(res, 200, {
     recruiterCode: code,
     replacements: [],
@@ -205,7 +212,6 @@ export async function recruiterReferralCapture(req, res) {
   const code = String(req.params?.code || "").trim();
   const body = await readJson(req);
   if (!code) return json(res, 400, { error: "Missing recruiter code" });
-
   return json(res, 200, {
     captured: false,
     recruiterCode: code,
@@ -221,7 +227,6 @@ export async function attributionWalletConnect(req, res) {
   const body = await readJson(req);
   const walletAddress = normalizeAddress(body.walletAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
-
   return json(res, 200, {
     state: {
       walletAddress,
@@ -241,7 +246,6 @@ export async function attributionWallet(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const walletAddress = normalizeAddress(req.params?.wallet);
   if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
-
   return json(res, 200, {
     state: {
       walletAddress,
@@ -261,7 +265,6 @@ export async function routingCreateAuthorization(req, res) {
   const body = await readJson(req);
   const walletAddress = normalizeAddress(body.walletAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
-
   return json(res, 503, {
     error: "Route authorization signer is not configured yet.",
     code: "ROUTE_AUTHORIZER_NOT_IMPLEMENTED",
@@ -276,7 +279,6 @@ export async function routingTradeAuthorization(req, res) {
   const campaignAddress = normalizeAddress(body.campaignAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
   if (!campaignAddress) return json(res, 400, { error: "Invalid or missing campaignAddress" });
-
   return json(res, 503, {
     error: "Route authorization signer is not configured yet.",
     code: "ROUTE_AUTHORIZER_NOT_IMPLEMENTED",
@@ -289,7 +291,6 @@ export async function recruiterSignupStatus(req, res) {
   const q = getQuery(req);
   const walletAddress = normalizeAddress(q.walletAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
-
   return json(res, 200, {
     walletAddress,
     isRecruiter: false,
@@ -304,7 +305,6 @@ export async function recruiterSignupCodeAvailability(req, res) {
   const q = getQuery(req);
   const code = String(q.code || "").trim().toLowerCase();
   if (!code) return json(res, 400, { error: "Missing recruiter code" });
-
   return json(res, 200, {
     code,
     isAvailable: null,
@@ -317,7 +317,6 @@ export async function recruiterSignupNonce(req, res) {
   const body = await readJson(req);
   const walletAddress = normalizeAddress(body.walletAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
-
   return json(res, 503, {
     error: "Recruiter signup nonce storage is not configured yet.",
     code: "RECRUITER_SIGNUP_NOT_IMPLEMENTED",
@@ -335,11 +334,7 @@ export async function recruiterSignupSubmit(req, res) {
 export async function internalRewardPublications(req, res) {
   if (!methodAllowed(req, res, ["GET", "POST"])) return;
   if (!requireInternalToken(req, res)) return;
-
-  if (req.method === "GET") {
-    return json(res, 200, { items: [] });
-  }
-
+  if (req.method === "GET") return json(res, 200, { items: [] });
   const body = await readJson(req);
   return json(res, 200, {
     item: {
