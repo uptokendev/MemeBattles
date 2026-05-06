@@ -7,6 +7,14 @@ import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import {
+  fetchRecruiterSummaryByWallet,
+  fetchSquadSummary,
+  fetchWalletAttributionState,
+  type RecruiterSummary,
+  type SquadSummary,
+  type WalletAttributionPublicState,
+} from "@/lib/recruiterApi";
 import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
 import { normalizeRank, type RankName } from "@/lib/ranks";
 import { Copy, ExternalLink } from "lucide-react";
@@ -51,6 +59,11 @@ function formatTimeAgo(createdAt?: number | string | null): string {
   if (days < 7) return `${days}d`;
   const weeks = Math.floor(days / 7);
   return `${weeks}w`;
+}
+
+function formatCompactNumber(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return "0";
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 function safeRank(profile: UserProfile | null): RankName {
@@ -107,6 +120,10 @@ export default function PublicProfile({
   const [visibleDrafts, setVisibleDrafts] = useState<CampaignDraft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
+  const [recruiter, setRecruiter] = useState<RecruiterSummary | null>(null);
+  const [walletAttribution, setWalletAttribution] = useState<WalletAttributionPublicState | null>(null);
+  const [squad, setSquad] = useState<SquadSummary | null>(null);
+  const [loadingBadges, setLoadingBadges] = useState(false);
 
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
@@ -204,6 +221,55 @@ export default function PublicProfile({
     };
   }, [activeChainId, profileWallet]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBadges = async () => {
+      setLoadingBadges(true);
+      try {
+        const [recruiterResult, attributionResult] = await Promise.allSettled([
+          fetchRecruiterSummaryByWallet(profileWallet),
+          fetchWalletAttributionState(profileWallet),
+        ]);
+
+        if (cancelled) return;
+
+        const nextRecruiter = recruiterResult.status === "fulfilled" ? recruiterResult.value : null;
+        const nextAttribution = attributionResult.status === "fulfilled" ? attributionResult.value : null;
+        setRecruiter(nextRecruiter);
+        setWalletAttribution(nextAttribution);
+
+        const squadCode = nextRecruiter?.code || nextAttribution?.recruiterCode || null;
+        if (!squadCode) {
+          setSquad(null);
+          return;
+        }
+
+        try {
+          const nextSquad = await fetchSquadSummary(squadCode);
+          if (!cancelled) setSquad(nextSquad);
+        } catch (e) {
+          console.warn("Failed to load public squad badge", e);
+          if (!cancelled) setSquad(null);
+        }
+      } catch (e) {
+        console.warn("Failed to load public profile badges", e);
+        if (!cancelled) {
+          setRecruiter(null);
+          setWalletAttribution(null);
+          setSquad(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingBadges(false);
+      }
+    };
+
+    loadBadges();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileWallet]);
+
   const copyAddress = () => {
     navigator.clipboard.writeText(profileWallet);
     toast.success("Address copied!");
@@ -264,16 +330,88 @@ export default function PublicProfile({
 
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">
-            <h2 className="font-retro text-lg text-foreground">Badges</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border/40 bg-background/30 p-4">
-                <div className="font-retro text-sm text-foreground">Recruiter</div>
-                <div className="mt-1 text-xs text-muted-foreground">Coming soon — recruiter status will appear here when enabled.</div>
-              </div>
-              <div className="rounded-xl border border-border/40 bg-background/30 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="font-retro text-lg text-foreground">Badges</h2>
+              {loadingBadges ? <div className="text-xs text-muted-foreground">Loading...</div> : null}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => recruiter?.code && navigate(`/recruiters/${recruiter.code}`)}
+                disabled={!recruiter?.code}
+                className="rounded-xl border border-border/40 bg-background/30 p-4 text-left transition enabled:hover:border-accent/50 enabled:hover:bg-background/50 disabled:cursor-default"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-retro text-sm text-foreground">Recruiter</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {recruiter ? `/${recruiter.code}` : "No recruiter badge yet."}
+                    </div>
+                  </div>
+                  {recruiter?.isOg ? (
+                    <span className="rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-retro text-accent">OG</span>
+                  ) : null}
+                </div>
+                {recruiter ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-muted-foreground">Status</div>
+                      <div className="capitalize text-foreground">{recruiter.status || "active"}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Linked wallets</div>
+                      <div className="text-foreground">{formatCompactNumber(recruiter.linkedWalletCount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Creators</div>
+                      <div className="text-foreground">{formatCompactNumber(recruiter.linkedCreatorsCount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Traders</div>
+                      <div className="text-foreground">{formatCompactNumber(recruiter.linkedTradersCount)}</div>
+                    </div>
+                  </div>
+                ) : null}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const code = recruiter?.code || walletAttribution?.recruiterCode;
+                  if (code) navigate(`/squads?recruiter=${encodeURIComponent(code)}`);
+                }}
+                disabled={!squad && !walletAttribution?.recruiterCode}
+                className="rounded-xl border border-border/40 bg-background/30 p-4 text-left transition enabled:hover:border-accent/50 enabled:hover:bg-background/50 disabled:cursor-default"
+              >
                 <div className="font-retro text-sm text-foreground">Squad</div>
-                <div className="mt-1 text-xs text-muted-foreground">Coming soon — squad membership and public rank will appear here.</div>
-              </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {squad?.recruiterCode
+                    ? `Squad /${squad.recruiterCode}`
+                    : walletAttribution?.recruiterCode
+                      ? `Linked via /${walletAttribution.recruiterCode}`
+                      : "No squad badge yet."}
+                </div>
+                {squad || walletAttribution ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-muted-foreground">State</div>
+                      <div className="capitalize text-foreground">{walletAttribution?.squadState || squad?.recruiterStatus || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Members</div>
+                      <div className="text-foreground">{formatCompactNumber(squad?.activeMemberCount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Eligible</div>
+                      <div className="text-foreground">{formatCompactNumber(squad?.eligibleMemberCount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Last routed</div>
+                      <div className="text-foreground">{formatTimeAgo(squad?.lastRoutedAt) || "—"}</div>
+                    </div>
+                  </div>
+                ) : null}
+              </button>
             </div>
           </div>
 
