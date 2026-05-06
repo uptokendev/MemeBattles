@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npx netlify dev --context production",
+    "dev:hybrid": "node scripts/dev-hybrid.mjs",
     "dev:vite": "vite",
     "dev:netlify": "npx netlify dev --context production",
     "api:start": "node --import ./api/load-local-env.mjs api/server.mjs",
