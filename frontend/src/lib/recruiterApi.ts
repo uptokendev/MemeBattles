@@ -1,5 +1,5 @@
 import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
-import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { apiFetch } from "@/lib/apiBase";
 
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
@@ -36,33 +36,37 @@ async function parseJson(res: Response) {
   return json as any;
 }
 
+async function getJson(path: string) {
+  return parseJson(await apiFetch(path));
+}
+
+async function postJson(path: string, body: any) {
+  return parseJson(
+    await apiFetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
 export async function captureRecruiterReferral(recruiterCode: string, walletAddress?: string | null) {
   const session = getRecruiterSession();
-  const res = await fetch(buildRealtimeApiUrl(`/api/recruiters/${encodeURIComponent(recruiterCode)}/referral/capture`), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      recruiterCode,
-      walletAddress: walletAddress ?? null,
-      sessionToken: session.sessionToken,
-      clientFingerprint: session.clientFingerprint,
-    }),
+  return postJson(`/api/recruiters/${encodeURIComponent(recruiterCode)}/referral/capture`, {
+    recruiterCode,
+    walletAddress: walletAddress ?? null,
+    sessionToken: session.sessionToken,
+    clientFingerprint: session.clientFingerprint,
   });
-  return parseJson(res);
 }
 
 export async function syncWalletRecruiterAttribution(walletAddress: string) {
   const session = getRecruiterSession();
-  const res = await fetch(buildRealtimeApiUrl("/api/attribution/wallet-connect"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      walletAddress,
-      sessionToken: session.sessionToken,
-      clientFingerprint: session.clientFingerprint,
-    }),
+  return postJson("/api/attribution/wallet-connect", {
+    walletAddress,
+    sessionToken: session.sessionToken,
+    clientFingerprint: session.clientFingerprint,
   });
-  return parseJson(res);
 }
 
 export async function fetchCampaignCreateAuthorization(walletAddress: string, walletChainId?: number | null) {
@@ -70,16 +74,11 @@ export async function fetchCampaignCreateAuthorization(walletAddress: string, wa
   const factoryAddress = getFactoryAddress(chainId);
   if (!factoryAddress) throw new Error(`Factory address missing for chain ${chainId}`);
 
-  const res = await fetch(buildRealtimeApiUrl("/api/routing/create-authorization"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      walletAddress,
-      chainId,
-      factoryAddress,
-    }),
+  return postJson("/api/routing/create-authorization", {
+    walletAddress,
+    chainId,
+    factoryAddress,
   });
-  return parseJson(res);
 }
 
 export async function fetchCampaignTradeAuthorization(
@@ -88,16 +87,11 @@ export async function fetchCampaignTradeAuthorization(
   walletChainId?: number | null,
 ) {
   const chainId = getActiveChainId(walletChainId);
-  const res = await fetch(buildRealtimeApiUrl("/api/routing/trade-authorization"), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      walletAddress,
-      campaignAddress,
-      chainId,
-    }),
+  return postJson("/api/routing/trade-authorization", {
+    walletAddress,
+    campaignAddress,
+    chainId,
   });
-  return parseJson(res);
 }
 
 export type RecruiterSummary = {
@@ -214,52 +208,60 @@ function buildQuery(params: Record<string, string | number | null | undefined>) 
   return query ? `?${query}` : "";
 }
 
+function unwrapRecruiterSummary(json: any): RecruiterSummary | null {
+  return (json?.recruiter ?? json ?? null) as RecruiterSummary | null;
+}
+
+function unwrapSquadSummary(json: any): SquadSummary | null {
+  return (json?.squad ?? json ?? null) as SquadSummary | null;
+}
+
 export async function fetchRecruiterLeaderboard(limit = 100, status?: string | null): Promise<RecruiterSummary[]> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/recruiters${buildQuery({ limit, status })}`));
-  const json = await parseJson(res);
+  const json = await getJson(`/api/recruiters${buildQuery({ limit, status })}`);
   return Array.isArray(json?.recruiters) ? json.recruiters as RecruiterSummary[] : [];
 }
 
 export async function fetchRecruiterSummary(code: string): Promise<RecruiterSummary> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/recruiters/${encodeURIComponent(code)}/summary`));
-  return parseJson(res);
+  const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/summary`);
+  const recruiter = unwrapRecruiterSummary(json);
+  if (!recruiter || (json?.exists === false)) throw new Error("Recruiter not found");
+  return recruiter;
 }
 
 export async function fetchRecruiterSummaryByWallet(walletAddress: string): Promise<RecruiterSummary> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/recruiters/wallet/${encodeURIComponent(walletAddress)}/summary`));
-  return parseJson(res);
+  const json = await getJson(`/api/recruiters/wallet/${encodeURIComponent(walletAddress)}/summary`);
+  const recruiter = unwrapRecruiterSummary(json);
+  if (!recruiter || (json?.exists === false)) throw new Error("Recruiter not found");
+  return recruiter;
 }
 
 export async function fetchRecruiterReplacements(code: string, limit = 5) {
-  const res = await fetch(buildRealtimeApiUrl(`/api/recruiters/${encodeURIComponent(code)}/replacements${buildQuery({ limit })}`));
-  return parseJson(res);
+  return getJson(`/api/recruiters/${encodeURIComponent(code)}/replacements${buildQuery({ limit })}`);
 }
 
 export async function fetchSquadSummary(recruiterCode: string): Promise<SquadSummary> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/squads/${encodeURIComponent(recruiterCode)}/summary`));
-  return parseJson(res);
+  const json = await getJson(`/api/squads/${encodeURIComponent(recruiterCode)}/summary`);
+  const squad = unwrapSquadSummary(json);
+  if (!squad || (json?.exists === false)) throw new Error("Squad summary not found");
+  return squad;
 }
 
 export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/attribution/wallet/${encodeURIComponent(walletAddress)}`));
-  const json = await parseJson(res);
+  const json = await getJson(`/api/attribution/wallet/${encodeURIComponent(walletAddress)}`);
   return json?.state as WalletAttributionPublicState;
 }
 
 export async function fetchWalletRewardSummary(walletAddress: string): Promise<WalletRewardSummary> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/rewards/me${buildQuery({ address: walletAddress })}`));
-  return parseJson(res);
+  return getJson(`/api/rewards/me${buildQuery({ address: walletAddress })}`);
 }
 
 export async function fetchWalletRewardHistory(walletAddress: string, limit = 50, program?: string | null) {
-  const res = await fetch(buildRealtimeApiUrl(`/api/rewards/me/history${buildQuery({ address: walletAddress, limit, program })}`));
-  const json = await parseJson(res);
+  const json = await getJson(`/api/rewards/me/history${buildQuery({ address: walletAddress, limit, program })}`);
   return Array.isArray(json?.items) ? json.items : [];
 }
 
 export async function fetchWalletRewardClaims(walletAddress: string, limit = 50, program?: string | null) {
-  const res = await fetch(buildRealtimeApiUrl(`/api/rewards/me/claims${buildQuery({ address: walletAddress, limit, program })}`));
-  const json = await parseJson(res);
+  const json = await getJson(`/api/rewards/me/claims${buildQuery({ address: walletAddress, limit, program })}`);
   return Array.isArray(json?.claims) ? json.claims : [];
 }
 
@@ -310,7 +312,7 @@ export async function fetchRecruiterSignupStatus(walletAddress: string): Promise
   const normalized = normalizeWalletAddress(walletAddress);
 
   try {
-    const res = await fetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
+    const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
     if (res.ok) {
       const json = await parseJson(res);
       return {
@@ -321,10 +323,7 @@ export async function fetchRecruiterSignupStatus(walletAddress: string): Promise
         signupApiAvailable: true,
       };
     }
-
-    if (res.status !== 404) {
-      await parseJson(res);
-    }
+    if (res.status !== 404) await parseJson(res);
   } catch {
     // Fall through to the summary-based fallback.
   }
@@ -365,7 +364,7 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
   }
 
   try {
-    const res = await fetch(`/api/recruiter-signup/code-availability${buildQuery({ code: normalized })}`);
+    const res = await apiFetch(`/api/recruiter-signup/code-availability${buildQuery({ code: normalized })}`);
     if (res.ok) {
       const json = await parseJson(res);
       return {
@@ -375,10 +374,7 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
         message: json?.message ? String(json.message) : null,
       };
     }
-
-    if (res.status !== 404) {
-      await parseJson(res);
-    }
+    if (res.status !== 404) await parseJson(res);
   } catch {
     // Fall through to the summary-based fallback.
   }
@@ -401,7 +397,6 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
         message: "This recruiter code looks available.",
       };
     }
-
     return {
       code: normalized,
       isAvailable: null,
@@ -413,35 +408,15 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
 
 export async function requestRecruiterSignupNonce(walletAddress: string): Promise<RecruiterSignupNonceResponse> {
   const normalized = normalizeWalletAddress(walletAddress);
-  const res = await fetch("/api/recruiter-signup/nonce", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress: normalized }),
-  });
-
-  if (res.status === 404) {
-    throw new Error("Recruiter signup is not enabled on this environment yet.");
-  }
-
-  const json = await parseJson(res);
+  const json = await postJson("/api/recruiter-signup/nonce", { walletAddress: normalized });
   if (!json?.nonce) throw new Error("Recruiter signup nonce missing from response.");
   return { nonce: String(json.nonce) };
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  const res = await fetch("/api/recruiter-signup", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      ...payload,
-      walletAddress: normalizeWalletAddress(payload.walletAddress),
-      desiredCode: normalizeRecruiterCode(payload.desiredCode),
-    }),
+  return postJson("/api/recruiter-signup", {
+    ...payload,
+    walletAddress: normalizeWalletAddress(payload.walletAddress),
+    desiredCode: normalizeRecruiterCode(payload.desiredCode),
   });
-
-  if (res.status === 404) {
-    throw new Error("Recruiter signup submission is not enabled on this environment yet.");
-  }
-
-  return parseJson(res);
 }
