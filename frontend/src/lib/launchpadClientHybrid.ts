@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { ethers } from "ethers";
 import { apiFetch } from "@/lib/apiBase";
+import { resolveImageUri } from "@/lib/media";
 import { useLaunchpad as useBaseLaunchpad } from "./launchpadClient";
 
 export * from "./launchpadClient";
@@ -26,6 +27,25 @@ function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): str
   return address ? `/api/token-metadata/${chainId}/${address}` : "";
 }
 
+function normalizeLogoUri(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "/placeholder.svg";
+
+  const resolved = resolveImageUri(raw);
+  if (!resolved) return "/placeholder.svg";
+
+  // Older seeded rows can point at a Supabase project URL that no longer resolves.
+  // Keep the details page usable instead of rendering a broken image.
+  try {
+    const url = new URL(resolved, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    if (url.hostname === "jlbdueorprgnfkcpnkfq.supabase.co") return "/placeholder.svg";
+  } catch {
+    // Non-URL relative paths are fine.
+  }
+
+  return resolved;
+}
+
 function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | null {
   const campaign = normalizeAddress(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign);
   if (!campaign) return null;
@@ -40,7 +60,7 @@ function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | 
     creator,
     name: String(item?.name ?? "Unknown"),
     symbol: String(item?.symbol ?? ""),
-    logoURI: String(item?.logoUri ?? item?.logoURI ?? item?.logo_uri ?? ""),
+    logoURI: normalizeLogoUri(item?.logoUri ?? item?.logoURI ?? item?.logo_uri),
     metadataURI: buildMetadataURI(chainId, token || campaign),
     xAccount: String(item?.xAccount ?? item?.xUrl ?? item?.x_url ?? ""),
     website: String(item?.website ?? item?.websiteUrl ?? item?.website_url ?? ""),
