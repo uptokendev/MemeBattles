@@ -6,6 +6,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
+import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import { RankBadgeCard } from "@/components/rank/RankBadgeCard";
 import { normalizeRank, type RankName } from "@/lib/ranks";
 import { Copy, ExternalLink } from "lucide-react";
@@ -35,10 +36,12 @@ function getExplorerBase(chainId?: number): string {
   return "https://bscscan.com";
 }
 
-function formatTimeAgo(createdAt?: number): string {
+function formatTimeAgo(createdAt?: number | string | null): string {
   if (!createdAt) return "";
+  const seconds = typeof createdAt === "number" ? createdAt : Math.floor(new Date(createdAt).getTime() / 1000);
+  if (!Number.isFinite(seconds)) return "";
   const now = Math.floor(Date.now() / 1000);
-  const diff = Math.max(0, now - createdAt);
+  const diff = Math.max(0, now - seconds);
   if (diff < 60) return "now";
   const mins = Math.floor(diff / 60);
   if (mins < 60) return `${mins}m`;
@@ -74,6 +77,16 @@ function coinFromSummary(summary: CampaignSummary, index: number): PublicCoin {
   };
 }
 
+function isDraftVisibleOnPublicProfile(draft: CampaignDraft) {
+  if (draft.visibility !== "public") return false;
+  if (draft.status === "archived") return false;
+  return true;
+}
+
+function draftHref(draft: CampaignDraft) {
+  return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
+}
+
 export default function PublicProfile({
   profileWallet,
   isOwnProfile,
@@ -91,6 +104,9 @@ export default function PublicProfile({
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [createdCoins, setCreatedCoins] = useState<PublicCoin[]>([]);
   const [loadingCoins, setLoadingCoins] = useState(false);
+  const [visibleDrafts, setVisibleDrafts] = useState<CampaignDraft[]>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [draftsError, setDraftsError] = useState<string | null>(null);
 
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
@@ -155,6 +171,38 @@ export default function PublicProfile({
       cancelled = true;
     };
   }, [fetchCampaigns, fetchCampaignSummary, profileWallet]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDrafts = async () => {
+      setLoadingDrafts(true);
+      setDraftsError(null);
+      try {
+        const drafts = await fetchPublicCampaignDrafts({ chainId: activeChainId, limit: 100 });
+        if (cancelled) return;
+
+        setVisibleDrafts(
+          drafts
+            .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === profileWallet.toLowerCase())
+            .filter(isDraftVisibleOnPublicProfile)
+        );
+      } catch (e: any) {
+        console.warn("Failed to load public profile drafts", e);
+        if (!cancelled) {
+          setDraftsError(String(e?.message || "Failed to load visible drafts."));
+          setVisibleDrafts([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingDrafts(false);
+      }
+    };
+
+    loadDrafts();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChainId, profileWallet]);
 
   const copyAddress = () => {
     navigator.clipboard.writeText(profileWallet);
@@ -290,10 +338,59 @@ export default function PublicProfile({
         </section>
 
         <section className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">
-          <h2 className="font-retro text-lg text-foreground">Visible Drafts</h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            No public drafts yet. Private drafts stay inside the owner Command Center and are never shown here.
-          </p>
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-retro text-lg text-foreground">Visible Drafts</h2>
+              <p className="text-xs text-muted-foreground">Only public Prepare Mode drafts are shown here.</p>
+            </div>
+            <div className="text-xs text-muted-foreground">{visibleDrafts.length} visible</div>
+          </div>
+
+          {loadingDrafts ? (
+            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">Loading visible drafts...</div>
+          ) : draftsError ? (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">{draftsError}</div>
+          ) : visibleDrafts.length ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleDrafts.map((draft) => (
+                <button
+                  key={draft.id}
+                  onClick={() => navigate(draftHref(draft))}
+                  className="rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
+                >
+                  <div className="flex items-center gap-3">
+                    <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-11 w-11 rounded-full object-cover" />
+                    <div className="min-w-0">
+                      <div className="truncate font-retro text-sm text-foreground">{draft.name}</div>
+                      <div className="text-xs text-muted-foreground">${draft.ticker}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <div className="text-muted-foreground">Visibility</div>
+                      <div className="capitalize text-foreground">{draft.visibility}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Status</div>
+                      <div className="capitalize text-foreground">{draft.status.replace(/_/g, " ")}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Category</div>
+                      <div className="capitalize text-foreground">{draft.category || "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Updated</div>
+                      <div className="text-foreground">{formatTimeAgo(draft.updatedAt) || "—"}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
+              No public drafts yet. Private and unlisted drafts stay out of the public profile.
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">
