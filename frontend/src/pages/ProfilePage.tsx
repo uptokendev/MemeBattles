@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import CommandCenter from "./Profile";
@@ -61,6 +61,25 @@ function InvalidPublicProfile({ identifier }: { identifier: string }) {
   );
 }
 
+function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="space-y-3">
+      <div className="mx-auto flex w-full max-w-6xl justify-end px-1">
+        <Button
+          variant="secondary"
+          className="font-retro"
+          onClick={() => navigate(`/profile/${encodeURIComponent(walletAddress)}`)}
+        >
+          View Public Profile
+        </Button>
+      </div>
+      <CommandCenter />
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams] = useSearchParams();
@@ -86,7 +105,7 @@ export default function ProfilePage() {
       return <ConnectCommandCenterPrompt onConnect={() => openWalletModal(anyWallet)} />;
     }
 
-    return <CommandCenter />;
+    return <CommandCenterShell walletAddress={accountWallet} />;
   }
 
   if (!profileWallet) {
