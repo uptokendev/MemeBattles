@@ -116,20 +116,12 @@ if (!String(process.env.DATABASE_URL || "").trim()) {
   );
 }
 
-if (!String(process.env.SUPABASE_URL || "").trim()) {
-  const presentAliases = SUPABASE_URL_ALIASES.filter((key) => process.env[key] != null);
-  console.warn(
-    `[api/load-local-env] SUPABASE_URL is missing or empty. Upload endpoints need it. ` +
-      `Checked aliases: ${SUPABASE_URL_ALIASES.join(", ")}. ` +
-      `Present aliases: ${presentAliases.length ? presentAliases.join(", ") : "none"}.`
-  );
-}
-
-if (!String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim()) {
-  const presentAliases = SUPABASE_SERVICE_ROLE_KEY_ALIASES.filter((key) => process.env[key] != null);
-  console.warn(
-    `[api/load-local-env] SUPABASE_SERVICE_ROLE_KEY is missing or empty. Upload endpoints need it. ` +
-      `Checked aliases: ${SUPABASE_SERVICE_ROLE_KEY_ALIASES.join(", ")}. ` +
-      `Present aliases: ${presentAliases.length ? presentAliases.join(", ") : "none"}.`
+if (String(process.env.API_DEBUG_ENV || "").trim() === "1") {
+  const hasSupabaseUrl = Boolean(String(process.env.SUPABASE_URL || "").trim());
+  const hasSupabaseServiceRoleKey = Boolean(String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim());
+  console.log(
+    `[api/load-local-env] optional upload env: ` +
+      `SUPABASE_URL=${hasSupabaseUrl ? "set" : "missing"}, ` +
+      `SUPABASE_SERVICE_ROLE_KEY=${hasSupabaseServiceRoleKey ? "set" : "missing"}`
   );
 }
