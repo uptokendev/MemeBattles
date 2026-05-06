@@ -14,15 +14,19 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function isApiHealthy() {
+  try {
+    const res = await fetch(healthUrl, { cache: "no-store" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForApi(timeoutMs = 30000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const res = await fetch(healthUrl, { cache: "no-store" });
-      if (res.ok) return true;
-    } catch {
-      // API is still booting.
-    }
+    if (await isApiHealthy()) return true;
     await sleep(500);
   }
   return false;
@@ -83,22 +87,29 @@ process.on("SIGTERM", () => shutdown(0));
 console.log(`[dev-hybrid] API: ${apiBase}`);
 console.log(`[dev-hybrid] Web: http://127.0.0.1:${vitePort}`);
 
-start("api", "api:dev", {
-  PORT: apiPort,
-  API_PORT: apiPort,
-});
+const apiAlreadyRunning = await isApiHealthy();
 
-console.log(`[dev-hybrid] waiting for API health: ${healthUrl}`);
-const apiReady = await waitForApi();
-
-if (!apiReady) {
-  console.error(`[dev-hybrid] API did not become healthy at ${healthUrl}`);
-  shutdown(1);
+if (apiAlreadyRunning) {
+  console.log(`[dev-hybrid] API already healthy, reusing existing server: ${healthUrl}`);
 } else {
-  console.log(`[dev-hybrid] API is healthy`);
-  start("vite", "dev:vite", {
-    VITE_DEV_API_PORT: apiPort,
-    VITE_DEV_API_PROXY_TARGET: apiBase,
-    VITE_PORT: vitePort,
+  start("api", "api:dev", {
+    PORT: apiPort,
+    API_PORT: apiPort,
   });
+
+  console.log(`[dev-hybrid] waiting for API health: ${healthUrl}`);
+  const apiReady = await waitForApi();
+
+  if (!apiReady) {
+    console.error(`[dev-hybrid] API did not become healthy at ${healthUrl}`);
+    shutdown(1);
+  } else {
+    console.log(`[dev-hybrid] API is healthy`);
+  }
 }
+
+start("vite", "dev:vite", {
+  VITE_DEV_API_PORT: apiPort,
+  VITE_DEV_API_PROXY_TARGET: apiBase,
+  VITE_PORT: vitePort,
+});
