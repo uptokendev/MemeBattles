@@ -167,6 +167,36 @@ export default function PublicProfile({
   const explorerUrl = useMemo(() => `${getExplorerBase(activeChainId)}/address/${profileWallet}`, [activeChainId, profileWallet]);
   const rank = useMemo(() => safeRank(profile), [profile]);
 
+  const profileCompleteness = useMemo(() => {
+    let score = 0;
+    if ((profile?.displayName ?? "").trim()) score += 25;
+    if ((profile?.bio ?? "").trim()) score += 25;
+    if ((profile?.avatarUrl ?? "").trim()) score += 25;
+    if (createdCoins.length > 0 || visibleDrafts.length > 0 || publicTrades.length > 0) score += 25;
+    return score;
+  }, [profile?.avatarUrl, profile?.bio, profile?.displayName, createdCoins.length, visibleDrafts.length, publicTrades.length]);
+
+  const reputationSignals = useMemo(
+    () => [
+      { label: "Rank", value: rank, detail: "Current public progression" },
+      { label: "Created", value: formatCompactNumber(createdCoins.length), detail: "Public launched coins" },
+      { label: "Drafts", value: formatCompactNumber(visibleDrafts.length), detail: "Public Prepare drafts" },
+      { label: "Trades", value: formatCompactNumber(publicTrades.length), detail: "Recent public activity" },
+    ],
+    [rank, createdCoins.length, visibleDrafts.length, publicTrades.length]
+  );
+
+  const publicTrustTags = useMemo(() => {
+    const tags: string[] = [];
+    if (recruiter?.code) tags.push("Recruiter verified");
+    if (recruiter?.isOg) tags.push("OG recruiter");
+    if (squad?.recruiterCode || walletAttribution?.recruiterCode) tags.push("Squad-linked");
+    if (createdCoins.length > 0) tags.push("Creator activity");
+    if (publicTrades.length > 0) tags.push("Trader activity");
+    if (visibleDrafts.length > 0) tags.push("Public drafts");
+    return tags;
+  }, [createdCoins.length, publicTrades.length, recruiter?.code, recruiter?.isOg, squad?.recruiterCode, visibleDrafts.length, walletAttribution?.recruiterCode]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -490,10 +520,39 @@ export default function PublicProfile({
           </div>
 
           <div className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">
-            <h2 className="font-retro text-lg text-foreground">Reputation</h2>
-            <p className="mt-4 text-sm text-muted-foreground">
-              Coming soon — reputation will reflect creator history, battle activity, squad contribution, and platform trust signals.
-            </p>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-retro text-lg text-foreground">Reputation</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Public signals only — no hidden score yet.</p>
+              </div>
+              <div className="rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-retro text-accent">
+                {profileCompleteness}% complete
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {reputationSignals.map((signal) => (
+                <div key={signal.label} className="rounded-xl border border-border/40 bg-background/30 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{signal.label}</div>
+                  <div className="mt-1 font-retro text-base text-foreground">{signal.value}</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">{signal.detail}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {publicTrustTags.length ? (
+                publicTrustTags.map((tag) => (
+                  <span key={tag} className="rounded-full border border-border/40 bg-background/30 px-3 py-1 text-[11px] text-muted-foreground">
+                    {tag}
+                  </span>
+                ))
+              ) : (
+                <span className="rounded-full border border-border/40 bg-background/30 px-3 py-1 text-[11px] text-muted-foreground">
+                  Building public history
+                </span>
+              )}
+            </div>
           </div>
         </section>
 
