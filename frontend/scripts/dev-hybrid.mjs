@@ -4,9 +4,29 @@ const isWindows = process.platform === "win32";
 
 const apiPort = process.env.PORT || process.env.API_PORT || process.env.VITE_DEV_API_PORT || "3001";
 const vitePort = process.env.VITE_PORT || "5173";
+const apiBase = `http://127.0.0.1:${apiPort}`;
+const healthUrl = `${apiBase}/healthz`;
 
 const children = [];
 let shuttingDown = false;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForApi(timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const res = await fetch(healthUrl, { cache: "no-store" });
+      if (res.ok) return true;
+    } catch {
+      // API is still booting.
+    }
+    await sleep(500);
+  }
+  return false;
+}
 
 function start(name, script, env) {
   const command = isWindows ? "cmd.exe" : "npm";
@@ -59,11 +79,8 @@ function shutdown(code = 0) {
 
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
-process.on("exit", () => {
-  if (!shuttingDown) shutdown(0);
-});
 
-console.log(`[dev-hybrid] API: http://127.0.0.1:${apiPort}`);
+console.log(`[dev-hybrid] API: ${apiBase}`);
 console.log(`[dev-hybrid] Web: http://127.0.0.1:${vitePort}`);
 
 start("api", "api:dev", {
@@ -71,8 +88,17 @@ start("api", "api:dev", {
   API_PORT: apiPort,
 });
 
-start("vite", "dev:vite", {
-  VITE_DEV_API_PORT: apiPort,
-  VITE_DEV_API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
-  VITE_PORT: vitePort,
-});
+console.log(`[dev-hybrid] waiting for API health: ${healthUrl}`);
+const apiReady = await waitForApi();
+
+if (!apiReady) {
+  console.error(`[dev-hybrid] API did not become healthy at ${healthUrl}`);
+  shutdown(1);
+} else {
+  console.log(`[dev-hybrid] API is healthy`);
+  start("vite", "dev:vite", {
+    VITE_DEV_API_PORT: apiPort,
+    VITE_DEV_API_PROXY_TARGET: apiBase,
+    VITE_PORT: vitePort,
+  });
+}
