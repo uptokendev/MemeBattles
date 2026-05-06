@@ -1,5 +1,5 @@
 import { verifyMessage } from "ethers";
-import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { apiFetch, apiUrl } from "@/lib/apiBase";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 
 async function parseJson(res: Response) {
@@ -50,10 +50,7 @@ async function fetchNonce(chainId: number, walletAddress: string) {
     address: normalizeWallet(walletAddress),
   });
 
-  const res = await fetch(buildRealtimeApiUrl(`/api/auth/nonce?${qs.toString()}`), {
-    cache: "no-store",
-  });
-
+  const res = await apiFetch(`/api/auth/nonce?${qs.toString()}`, { cache: "no-store" });
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok || !json?.nonce) {
@@ -138,7 +135,6 @@ function dedupeProviders(candidates: Array<DraftApiEip1193Provider | null | unde
 async function waitForEip6963Providers() {
   startEip6963Discovery();
   if (EIP6963_PROVIDERS.size > 0) return Array.from(EIP6963_PROVIDERS.values());
-
   await new Promise((resolve) => window.setTimeout(resolve, 150));
   return Array.from(EIP6963_PROVIDERS.values());
 }
@@ -279,9 +275,7 @@ async function signWithInjectedWallet(message: string, walletAddress: string) {
   const wallet = normalizeWallet(walletAddress);
   const provider = await findProviderForWallet(wallet);
 
-  if (!provider?.request) {
-    throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
-  }
+  if (!provider?.request) throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
 
   const accounts = await provider.request({ method: "eth_requestAccounts" }).catch(() => []);
   const active = normalizeWallet(Array.isArray(accounts) ? accounts[0] : "");
@@ -295,16 +289,8 @@ async function signWithInjectedWallet(message: string, walletAddress: string) {
 
   for (const params of attempts) {
     try {
-      const signature = String(
-        await provider.request({
-          method: "personal_sign",
-          params,
-        })
-      );
-
-      if (verifySignatureWallet(message, signature, wallet)) {
-        return signature;
-      }
+      const signature = String(await provider.request({ method: "personal_sign", params }));
+      if (verifySignatureWallet(message, signature, wallet)) return signature;
     } catch (err) {
       lastError = err;
     }
@@ -324,30 +310,13 @@ async function signDraftActionWithKnownChain(input: {
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
 
   const chainId = Number(input.chainId);
-  if (!Number.isFinite(chainId) || chainId <= 0) {
-    throw new Error("Invalid draft chain id. Refresh and try again.");
-  }
+  if (!Number.isFinite(chainId) || chainId <= 0) throw new Error("Invalid draft chain id. Refresh and try again.");
 
   const nonce = await fetchNonce(chainId, walletAddress);
-  const message = buildDraftAuthMessage({
-    action: input.action,
-    walletAddress,
-    chainId,
-    nonce,
-    draftId: input.draftId,
-  });
-
+  const message = buildDraftAuthMessage({ action: input.action, walletAddress, chainId, nonce, draftId: input.draftId });
   const signature = await signWithInjectedWallet(message, walletAddress);
 
-  return {
-    action: input.action,
-    walletAddress,
-    chainId,
-    draftId: input.draftId,
-    nonce,
-    message,
-    signature,
-  };
+  return { action: input.action, walletAddress, chainId, draftId: input.draftId, nonce, message, signature };
 }
 
 async function signPrepareEngagement(input: {
@@ -357,14 +326,8 @@ async function signPrepareEngagement(input: {
 }): Promise<DraftActionAuth> {
   const walletAddress = normalizeWallet(input.walletAddress);
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
-
   const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
-  return signDraftActionWithKnownChain({
-    action: input.action,
-    draftId: input.draftId,
-    walletAddress,
-    chainId: Number(bundle.draft.chainId),
-  });
+  return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId: Number(bundle.draft.chainId) });
 }
 
 async function retryPrivateReadWithAuth(
@@ -374,23 +337,13 @@ async function retryPrivateReadWithAuth(
   fallbackDraftId?: string | null
 ): Promise<PrepareDraftBundle> {
   const wallet = normalizeWallet(walletAddress || "");
-  if (!wallet) {
-    throw new Error(String(json?.error || "Private draft requires the owner wallet."));
-  }
+  if (!wallet) throw new Error(String(json?.error || "Private draft requires the owner wallet."));
 
   const chainId = Number(json?.chainId);
   const draftId = String(json?.draftId || fallbackDraftId || "");
+  if (!draftId) throw new Error("Private draft auth could not identify the draft. Refresh and try again.");
 
-  if (!draftId) {
-    throw new Error("Private draft auth could not identify the draft. Refresh and try again.");
-  }
-
-  const auth = await signDraftActionWithKnownChain({
-    action: "read_draft",
-    draftId,
-    walletAddress: wallet,
-    chainId,
-  });
+  const auth = await signDraftActionWithKnownChain({ action: "read_draft", draftId, walletAddress: wallet, chainId });
 
   const res = await fetch(url, {
     method: "POST",
@@ -499,29 +452,14 @@ function emptyPromotion(draftId: string): CampaignDraftPromotion {
 }
 
 function emptyPopularity(): DraftPopularity {
-  return {
-    views: 0,
-    follows: 0,
-    comments: 0,
-    reactions: 0,
-    shares: 0,
-    signedActions: 0,
-    popularityPercentage: 0,
-    heatLabel: "Cold",
-    rankingScore: 0,
-  };
+  return { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0, popularityPercentage: 0, heatLabel: "Cold", rankingScore: 0 };
 }
 
 function cacheJustCreatedDraft(draft: CampaignDraft) {
   if (typeof window === "undefined" || !draft?.id) return;
   try {
-    window.sessionStorage.setItem(
-      `${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`,
-      JSON.stringify({ draft, cachedAt: Date.now() })
-    );
-  } catch {
-    // Ignore storage failures. The normal signed private-read fallback still works.
-  }
+    window.sessionStorage.setItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`, JSON.stringify({ draft, cachedAt: Date.now() }));
+  } catch {}
 }
 
 function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null {
@@ -531,25 +469,15 @@ function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null 
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
-
-    // One-shot cache: it only bridges the immediate Create Draft -> edit page navigation.
     window.sessionStorage.removeItem(key);
-
     const parsed = JSON.parse(raw) as { draft?: CampaignDraft; cachedAt?: number };
     if (!parsed?.draft || parsed.draft.id !== draftId) return null;
     if (!parsed.cachedAt || Date.now() - parsed.cachedAt > JUST_CREATED_DRAFT_CACHE_TTL_MS) return null;
-
-    return {
-      draft: parsed.draft,
-      promotion: emptyPromotion(draftId),
-      popularity: emptyPopularity(),
-    };
+    return { draft: parsed.draft, promotion: emptyPromotion(draftId), popularity: emptyPopularity() };
   } catch {
     try {
       window.sessionStorage.removeItem(key);
-    } catch {
-      // ignore
-    }
+    } catch {}
     return null;
   }
 }
@@ -595,15 +523,12 @@ export type TickerAvailability = {
 };
 
 export async function checkTickerAvailability(input: { ticker: string; chainId?: number }): Promise<TickerAvailability> {
-  const res = await fetch(
-    buildRealtimeApiUrl(`/api/drafts/ticker-availability${query({ ticker: input.ticker, chainId: input.chainId })}`),
-    { cache: "no-store" }
-  );
+  const res = await apiFetch(`/api/drafts/ticker-availability${query({ ticker: input.ticker, chainId: input.chainId })}`, { cache: "no-store" });
   return parseJson(res) as Promise<TickerAvailability>;
 }
 
 export async function createCampaignDraft(input: CreateDraftInput): Promise<CampaignDraft> {
-  const res = await fetch(buildRealtimeApiUrl("/api/drafts"), {
+  const res = await apiFetch("/api/drafts", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
@@ -613,40 +538,21 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
   cacheJustCreatedDraft(draft);
   return draft;
 }
+
 export async function fetchPublicCampaignDrafts(input: { chainId?: number; limit?: number } = {}): Promise<CampaignDraft[]> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts${query({ chainId: input.chainId, limit: input.limit })}`), {
-    cache: "no-store",
-  });
-  const json = await parseJson(res);
-  return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
-}
-export async function fetchOwnerCampaignDrafts(
-  owner: string,
-  input: { chainId?: number; limit?: number } = {}
-): Promise<CampaignDraft[]> {
-  const res = await fetch(
-    buildRealtimeApiUrl(
-      `/api/drafts${query({
-        owner,
-        chainId: input.chainId,
-        limit: input.limit,
-      })}`
-    ),
-    { cache: "no-store" }
-  );
-
+  const res = await apiFetch(`/api/drafts${query({ chainId: input.chainId, limit: input.limit })}`, { cache: "no-store" });
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
 
-export async function fetchFollowedCampaignDrafts(input: {
-  walletAddress: string;
-  chainId?: number;
-}): Promise<CampaignDraft[]> {
-  const res = await fetch(
-    buildRealtimeApiUrl(`/api/drafts/followed${query({ wallet: input.walletAddress, chainId: input.chainId })}`),
-    { cache: "no-store" }
-  );
+export async function fetchOwnerCampaignDrafts(owner: string, input: { chainId?: number; limit?: number } = {}): Promise<CampaignDraft[]> {
+  const res = await apiFetch(`/api/drafts${query({ owner, chainId: input.chainId, limit: input.limit })}`, { cache: "no-store" });
+  const json = await parseJson(res);
+  return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
+}
+
+export async function fetchFollowedCampaignDrafts(input: { walletAddress: string; chainId?: number }): Promise<CampaignDraft[]> {
+  const res = await apiFetch(`/api/drafts/followed${query({ wallet: input.walletAddress, chainId: input.chainId })}`, { cache: "no-store" });
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as CampaignDraft[]) : [];
 }
@@ -655,30 +561,26 @@ export async function fetchCampaignDraft(draftId: string, viewer?: string | null
   const justCreatedBundle = readJustCreatedDraftBundle(draftId);
   if (justCreatedBundle) return justCreatedBundle;
 
-  const url = buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
+  const url = apiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
 
   if (res.ok) return json as PrepareDraftBundle;
-  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
-    return retryPrivateReadWithAuth(url, viewer, json, draftId);
-  }
-
+  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") return retryPrivateReadWithAuth(url, viewer, json, draftId);
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
 export async function fetchCampaignDraftWithAuth(draftId: string, auth: DraftActionAuth): Promise<PrepareDraftBundle> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}`), {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ auth }),
   });
-
   return parseJson(res) as Promise<PrepareDraftBundle>;
 }
 
 export async function saveDraftPromotion(draftId: string, input: SavePromotionInput): Promise<PrepareDraftBundle> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/promotion`), {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/promotion`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
@@ -687,48 +589,29 @@ export async function saveDraftPromotion(draftId: string, input: SavePromotionIn
 }
 
 export async function fetchPrepareDraft(slug: string, viewer?: string | null): Promise<PrepareDraftBundle> {
-  const url = buildRealtimeApiUrl(`/api/prepare/${encodeURIComponent(slug)}${query({ viewer })}`);
+  const url = apiUrl(`/api/prepare/${encodeURIComponent(slug)}${query({ viewer })}`);
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
 
   if (res.ok) return json as PrepareDraftBundle;
-  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
-    return retryPrivateReadWithAuth(url, viewer, json, json?.draftId || null);
-  }
-
+  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") return retryPrivateReadWithAuth(url, viewer, json, json?.draftId || null);
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
-export async function followDraft(
-  input: DraftActionAuth | string,
-  walletAddress?: string
-): Promise<{ following: boolean; followCount: number }> {
-  const draftId =
-    typeof input === "string" ? input : String(input.draftId || "");
-
-  const wallet =
-    typeof input === "string"
-      ? normalizeWallet(walletAddress || "")
-      : normalizeWallet(input.walletAddress || walletAddress || "");
+export async function followDraft(input: DraftActionAuth | string, walletAddress?: string): Promise<{ following: boolean; followCount: number }> {
+  const draftId = typeof input === "string" ? input : String(input.draftId || "");
+  const wallet = typeof input === "string" ? normalizeWallet(walletAddress || "") : normalizeWallet(input.walletAddress || walletAddress || "");
 
   if (!draftId) throw new Error("Draft id missing.");
   if (!wallet) throw new Error("Connect wallet to follow this draft.");
 
-  const res = await fetch(
-    buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/follow`),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ walletAddress: wallet }),
-    }
-  );
-
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/follow`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ walletAddress: wallet }),
+  });
   const json = await parseJson(res);
-
-  return {
-    following: Boolean(json.following),
-    followCount: Number(json.followCount || 0),
-  };
+  return { following: Boolean(json.following), followCount: Number(json.followCount || 0) };
 }
 
 export async function armDraftNotifications(input: DraftActionAuth | string, walletAddress?: string): Promise<{ armed: boolean }> {
@@ -737,7 +620,7 @@ export async function armDraftNotifications(input: DraftActionAuth | string, wal
     : input;
 
   const draftId = String(auth.draftId || "");
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/notifications`), {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/notifications`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ auth }),
@@ -747,7 +630,7 @@ export async function armDraftNotifications(input: DraftActionAuth | string, wal
 }
 
 export async function fetchDraftComments(draftId: string): Promise<DraftComment[]> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/comments`));
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/comments`);
   const json = await parseJson(res);
   return Array.isArray(json.items) ? (json.items as DraftComment[]) : [];
 }
@@ -760,13 +643,11 @@ export async function addDraftComment(
 ): Promise<DraftComment> {
   const oldSignature = typeof input === "string";
   const draftId = oldSignature ? input : String(input.draftId || "");
-  const auth = oldSignature
-    ? await signPrepareEngagement({ action: "comment_draft", draftId, walletAddress: walletAddressOrBody })
-    : input;
+  const auth = oldSignature ? await signPrepareEngagement({ action: "comment_draft", draftId, walletAddress: walletAddressOrBody }) : input;
   const body = oldSignature ? String(bodyOrParentCommentId || "") : walletAddressOrBody;
   const parentCommentId = oldSignature ? parentCommentIdArg : bodyOrParentCommentId;
 
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/comments`), {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/comments`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ auth, body, parentCommentId: parentCommentId || null }),
@@ -774,34 +655,25 @@ export async function addDraftComment(
   const json = await parseJson(res);
   return json.comment as DraftComment;
 }
-export async function archiveCampaignDraft(
-  draftId: string,
-  auth: DraftActionAuth
-): Promise<PrepareDraftBundle> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/archive`), {
+
+export async function archiveCampaignDraft(draftId: string, auth: DraftActionAuth): Promise<PrepareDraftBundle> {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/archive`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ auth }),
   });
-
   return parseJson(res) as Promise<PrepareDraftBundle>;
 }
 
 export async function markDraftDeployed(
   draftId: string,
-  input: {
-    auth: DraftActionAuth;
-    campaignAddress: string;
-    tokenAddress?: string | null;
-    deployTxHash?: string | null;
-  }
+  input: { auth: DraftActionAuth; campaignAddress: string; tokenAddress?: string | null; deployTxHash?: string | null }
 ): Promise<CampaignDraft> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/drafts/${encodeURIComponent(draftId)}/deploy`), {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/deploy`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-
   const json = await parseJson(res);
   return json.draft as CampaignDraft;
 }
