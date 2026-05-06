@@ -92,6 +92,31 @@ function aliasEnv(targetKey, aliases) {
   }
 }
 
+function autoConfigureLocalPgSsl() {
+  const databaseUrl = String(process.env.DATABASE_URL || "").trim();
+  if (!databaseUrl) return;
+
+  const hasExplicitSslSetting =
+    String(process.env.PG_DISABLE_SSL || "").trim() ||
+    String(process.env.PG_SSL_ALLOW_SELF_SIGNED || "").trim() ||
+    String(process.env.PG_CA_CERT || "").trim() ||
+    String(process.env.PG_CA_CERT_B64 || "").trim();
+
+  if (hasExplicitSslSetting) return;
+
+  let host = "";
+  try {
+    host = new URL(databaseUrl).hostname.toLowerCase();
+  } catch {
+    return;
+  }
+
+  if (host.endsWith(".pooler.supabase.com") || host.includes("supabase.com")) {
+    process.env.PG_SSL_ALLOW_SELF_SIGNED = "1";
+    console.log("[api/load-local-env] enabled PG_SSL_ALLOW_SELF_SIGNED=1 for local Supabase pooler dev");
+  }
+}
+
 const loaded = [
   path.join(frontendDir, ".env.local"),
   path.join(frontendDir, ".env"),
@@ -106,6 +131,7 @@ if (loaded.length) {
 aliasEnv("DATABASE_URL", DATABASE_URL_ALIASES);
 aliasEnv("SUPABASE_URL", SUPABASE_URL_ALIASES);
 aliasEnv("SUPABASE_SERVICE_ROLE_KEY", SUPABASE_SERVICE_ROLE_KEY_ALIASES);
+autoConfigureLocalPgSsl();
 
 if (!String(process.env.DATABASE_URL || "").trim()) {
   const presentAliases = DATABASE_URL_ALIASES.filter((key) => process.env[key] != null);
