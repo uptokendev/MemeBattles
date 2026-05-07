@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npx netlify dev --context production",
+    "dev": "npm run dev:hybrid",
     "dev:hybrid": "node scripts/dev-hybrid.mjs",
     "dev:vite": "node scripts/dev-vite.mjs",
     "dev:vite:raw": "vite",
