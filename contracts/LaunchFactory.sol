@@ -39,6 +39,7 @@ contract LaunchFactory is Ownable {
     error AbandonTooEarly();
     error TreasuryTransferFail();
     error InvalidTierConfig();
+    error AntiVampLocked();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -114,6 +115,11 @@ contract LaunchFactory is Ownable {
     uint8   public constant MAX_DEPLOY_SLOTS = 10;
     uint8   public constant MAX_LIVE_CAMPAIGNS_BOUND = 20;
     uint256 public constant MAX_NO_SELL_BLOCKS = 100_000; // ~3.5 days at 3s blocks
+    /// @notice Upper bound on the configurable anti-vamp lockout. 30 days is
+    /// far longer than any realistic protection window; bounded to prevent
+    /// admin-key compromise from permanently freezing creation under a given
+    /// (symbol, logoURI) hash.
+    uint256 public constant MAX_ANTI_VAMP_LOCKOUT = 30 days;
     // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
@@ -135,6 +141,12 @@ contract LaunchFactory is Ownable {
     /// @notice How long a campaign can be inactive before anyone can call abandonCampaign.
     uint256 public abandonTimeout = 30 days;
 
+    /// @notice Anti-vamp lockout duration. After a campaign is created with a
+    /// given (symbol, logoURI), no new campaign with the same combo can be
+    /// created for this many seconds. Default 48h, owner-tunable up to MAX.
+    uint256 public antiVampLockout = 48 hours;
+    mapping(bytes32 => uint64) public symbolLogoLockedUntil;
+
     event CampaignCreated(
         uint256 indexed id,
         address indexed campaign,
@@ -152,6 +164,7 @@ contract LaunchFactory is Ownable {
     event CreatorTierUpdated(address indexed creator, uint8 tier);
     event CampaignAbandoned(address indexed creator, address indexed campaign);
     event AbandonTimeoutUpdated(uint256 newTimeout);
+    event AntiVampLockoutUpdated(uint256 newLockout);
 
     constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
         if (router_ == address(0)) revert RouterZero();
@@ -217,6 +230,11 @@ contract LaunchFactory is Ownable {
         if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
         if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
         if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+
+        // ── Anti-vamp: block re-use of (symbol, logoURI) within lockout ──
+        bytes32 vampKey = keccak256(abi.encodePacked(req.symbol, req.logoURI));
+        if (block.timestamp < symbolLogoLockedUntil[vampKey]) revert AntiVampLocked();
+        symbolLogoLockedUntil[vampKey] = uint64(block.timestamp + antiVampLockout);
 
         // ── Tier enforcement ──
         TierConfig memory tc = tierConfig[creatorTier[msg.sender]];
@@ -390,6 +408,12 @@ contract LaunchFactory is Ownable {
     function setAbandonTimeout(uint256 newTimeout) external onlyOwner {
         abandonTimeout = newTimeout;
         emit AbandonTimeoutUpdated(newTimeout);
+    }
+
+    function setAntiVampLockout(uint256 newLockout) external onlyOwner {
+        if (newLockout > MAX_ANTI_VAMP_LOCKOUT) revert ParamTooHigh();
+        antiVampLockout = newLockout;
+        emit AntiVampLockoutUpdated(newLockout);
     }
 
     // ── Campaign lifecycle callbacks ──
