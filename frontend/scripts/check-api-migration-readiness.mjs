@@ -2,7 +2,7 @@
 
 const BASE_URL = (process.env.API_BASE_URL || "http://127.0.0.1:3001").replace(/\/+$/, "");
 const CHAIN_ID = process.env.CHECK_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID || process.env.VITE_DEFAULT_CHAIN_ID || "97";
-const WALLET_ADDRESS = process.env.CHECK_WALLET_ADDRESS || "0x0000000000000000000000000000000000000001";
+const WALLET_ADDRESS = process.env.CHECK_WALLET_ADDRESS || "0x1111111111111111111111111111111111111111";
 const CAMPAIGN_ADDRESS = process.env.CHECK_CAMPAIGN_ADDRESS || "0x0000000000000000000000000000000000000002";
 const DRAFT_ID = process.env.CHECK_DRAFT_ID || "00000000-0000-4000-8000-000000000000";
 const PREPARE_SLUG = process.env.CHECK_PREPARE_SLUG || "smoke-test-slug";
@@ -13,8 +13,9 @@ function url(path) {
 
 async function readJson(res) {
   const text = await res.text();
+  if (!text) return {};
   try {
-    return text ? JSON.parse(text) : {};
+    return JSON.parse(text);
   } catch {
     return { __nonJson: text.slice(0, 300) };
   }
@@ -26,7 +27,7 @@ async function check({ name, method = "GET", path, body, allowed = [200], header
     headers: body ? { "content-type": "application/json", ...headers } : headers,
     body: body ? JSON.stringify(body) : undefined,
   });
-  const json = await readJson(res);
+  const json = (await readJson(res)) || {};
   const ok = allowed.includes(res.status) && !json.__nonJson;
   const upstream = res.headers.get("x-mwz-api-upstream") || "local";
   return { name, method, path, status: res.status, ok, upstream, json };
@@ -44,14 +45,14 @@ const checks = [
   { name: "Vote counts", path: `/api/vote_counts?campaignAddress=${CAMPAIGN_ADDRESS}&chainId=${CHAIN_ID}` },
   { name: "Profile", path: `/api/profile?address=${WALLET_ADDRESS}&chainId=${CHAIN_ID}`, allowed: [200, 404] },
   { name: "Profile cabinet", path: `/api/profileCabinet?address=${WALLET_ADDRESS}&chainId=${CHAIN_ID}`, allowed: [200, 404] },
-  { name: "Follows user counts", path: `/api/follows/user-counts?wallet=${WALLET_ADDRESS}&chainId=${CHAIN_ID}`, allowed: [200, 404] },
+  { name: "Follows user counts", path: `/api/follows/user-counts?wallet=${WALLET_ADDRESS}&address=${WALLET_ADDRESS}&chainId=${CHAIN_ID}`, allowed: [200, 404] },
 
   // Prepare mode / promotion pages.
   { name: "Draft list", path: `/api/drafts?chainId=${CHAIN_ID}&limit=5`, allowed: [200] },
   { name: "Draft detail", path: `/api/drafts/${DRAFT_ID}`, allowed: [200, 404] },
   { name: "Prepare slug", path: `/api/prepare/${PREPARE_SLUG}`, allowed: [200, 404] },
   { name: "Draft ticker availability", path: `/api/drafts/ticker-availability?chainId=${CHAIN_ID}&symbol=SMOKE`, allowed: [200] },
-  { name: "Prepare notifications", path: `/api/prepare-notifications?chainId=${CHAIN_ID}&limit=5`, allowed: [200] },
+  { name: "Prepare notifications", path: `/api/prepare-notifications?wallet=${WALLET_ADDRESS}&address=${WALLET_ADDRESS}&chainId=${CHAIN_ID}&limit=5`, allowed: [200, 404] },
 
   // Reward/recruiter/squad surfaces: stubs are acceptable now, JSON responses are required.
   { name: "Reward summary", path: `/api/rewards/me?address=${WALLET_ADDRESS}` },
