@@ -4,28 +4,8 @@ import Ably from "ably";
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
-const ENABLE_LOCAL_ABLY = String(import.meta.env.VITE_ENABLE_LOCAL_ABLY || "").trim() === "1";
-
-function isLoopbackHost(hostname: string): boolean {
-  const normalized = String(hostname || "").trim().toLowerCase();
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
-}
-
-function isLocalBrowser(): boolean {
-  if (typeof window === "undefined") return false;
-  return isLoopbackHost(window.location.hostname);
-}
-
-function shouldDisableLocalAbly(): boolean {
-  // In Vite local dev, missing server-side ABLY_API_KEY creates noisy 500s from
-  // /api/ably/token. Keep localhost stable unless realtime is explicitly enabled
-  // or an explicit auth base is configured.
-  return isLocalBrowser() && !ABLY_AUTH_BASE && !ENABLE_LOCAL_ABLY;
-}
 
 function getAuthBase() {
-  if (shouldDisableLocalAbly()) return "";
-
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
   }
@@ -141,53 +121,19 @@ export function useAblyTokenChannel(opts: {
   }, [enabled, chainId, campaignAddress]);
 
   const [entry, setEntry] = useState<Entry | null>(null);
-  const [connectionState, setConnectionState] = useState<string>("initialized");
 
   useEffect(() => {
     if (!enabled || !campaignAddress) {
       setEntry(null);
-      setConnectionState("disabled");
-      return;
-    }
-    if (shouldDisableLocalAbly()) {
-      setEntry(null);
-      setConnectionState("disabled_local_dev");
       return;
     }
     if (!getAuthBase()) {
       setEntry(null);
-      setConnectionState("missing_base");
       return;
     }
     const e = acquire(chainId, campaignAddress);
     setEntry(e);
-
-    try {
-      setConnectionState(e.client.connection.state);
-    } catch {
-      // ignore
-    }
-
-    const onConn = () => {
-      try {
-        setConnectionState(e.client.connection.state);
-      } catch {
-        // ignore
-      }
-    };
-
-    try {
-      e.client.connection.on(onConn);
-    } catch {
-      // ignore
-    }
-
     return () => {
-      try {
-        e.client.connection.off(onConn);
-      } catch {
-        // ignore
-      }
       release(e.key);
     };
   }, [enabled, chainId, campaignAddress]);
@@ -199,8 +145,5 @@ export function useAblyTokenChannel(opts: {
     ready: Boolean(entry && entry.client && entry.channel),
     missingBase: enabled && !!campaignAddress && !getAuthBase(),
     cacheKey: key,
-    connectionState,
-    isConnected: connectionState === "connected",
-    disabledLocalDev: connectionState === "disabled_local_dev",
   };
 }
