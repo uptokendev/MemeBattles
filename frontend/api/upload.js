@@ -91,7 +91,7 @@ export default async function handler(req, res) {
 
       const name =
         kind === "avatar" && address
-          ? `avatars/${chainId}/${address}.${ext}`
+          ? `avatars/${chainId}/${address}/${uuid}.${ext}`
           : `logos/${chainId}/${uuid}.${ext}`;
 
       const buf = fs.readFileSync(filepath);
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
       const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
         contentType: mimetype,
         upsert: true,
-        cacheControl: "3600",
+        cacheControl: kind === "avatar" ? "60" : "3600",
       });
 
       // best-effort cleanup of temp file
