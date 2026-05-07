@@ -478,4 +478,68 @@ describe("Protection Framework", function () {
       factory.connect(alice).onCampaignFinalized(await alice.getAddress())
     ).to.be.revertedWithCustomError(factory, "NotRegistered");
   });
+
+  // ── setTierConfig bounds (Salus Finding 5) ──
+
+  describe("setTierConfig bounds", () => {
+    it("reverts when cooldownSeconds exceeds MAX_COOLDOWN", async () => {
+      const { factory, owner } = await deployCoreFixture();
+      await expect(
+        factory.connect(owner).setTierConfig(0, {
+          cooldownSeconds: 8n * 24n * 3600n, // 8 days, > 7 day cap
+          deploySlots: 3,
+          maxLiveCampaigns: 5,
+          creatorNoSellBlocks: 100n,
+        })
+      ).to.be.revertedWithCustomError(factory, "InvalidTierConfig");
+    });
+
+    it("reverts when deploySlots exceeds MAX_DEPLOY_SLOTS", async () => {
+      const { factory, owner } = await deployCoreFixture();
+      await expect(
+        factory.connect(owner).setTierConfig(0, {
+          cooldownSeconds: 3600n,
+          deploySlots: 11, // > 10 cap — slot loop must stay bounded
+          maxLiveCampaigns: 5,
+          creatorNoSellBlocks: 100n,
+        })
+      ).to.be.revertedWithCustomError(factory, "InvalidTierConfig");
+    });
+
+    it("reverts when maxLiveCampaigns exceeds MAX_LIVE_CAMPAIGNS_BOUND", async () => {
+      const { factory, owner } = await deployCoreFixture();
+      await expect(
+        factory.connect(owner).setTierConfig(0, {
+          cooldownSeconds: 3600n,
+          deploySlots: 3,
+          maxLiveCampaigns: 21, // > 20 cap
+          creatorNoSellBlocks: 100n,
+        })
+      ).to.be.revertedWithCustomError(factory, "InvalidTierConfig");
+    });
+
+    it("reverts when creatorNoSellBlocks exceeds MAX_NO_SELL_BLOCKS", async () => {
+      const { factory, owner } = await deployCoreFixture();
+      await expect(
+        factory.connect(owner).setTierConfig(0, {
+          cooldownSeconds: 3600n,
+          deploySlots: 3,
+          maxLiveCampaigns: 5,
+          creatorNoSellBlocks: 100_001n, // > 100_000 cap
+        })
+      ).to.be.revertedWithCustomError(factory, "InvalidTierConfig");
+    });
+
+    it("accepts values at the upper bound", async () => {
+      const { factory, owner } = await deployCoreFixture();
+      await expect(
+        factory.connect(owner).setTierConfig(0, {
+          cooldownSeconds: 7n * 24n * 3600n,
+          deploySlots: 10,
+          maxLiveCampaigns: 20,
+          creatorNoSellBlocks: 100_000n,
+        })
+      ).to.not.be.reverted;
+    });
+  });
 });

@@ -38,6 +38,7 @@ contract LaunchFactory is Ownable {
     error AlreadyFinalized();
     error AbandonTooEarly();
     error TreasuryTransferFail();
+    error InvalidTierConfig();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -106,6 +107,13 @@ contract LaunchFactory is Ownable {
     /// tokens) bounds x*x at ~1e60 — far below uint256 max ~1.16e77 — and is
     /// well above any realistic meme launch (Ackee L4 / W10 mitigation).
     uint256 public constant MAX_TOTAL_SUPPLY = 1e30;
+    // Bounds on TierConfig fields to prevent admin-key compromise from
+    // DoSing creation, freezing creator activity, or OOGing the slot loop
+    // (Salus four.meme Finding 5 equivalent).
+    uint256 public constant MAX_COOLDOWN = 7 days;
+    uint8   public constant MAX_DEPLOY_SLOTS = 10;
+    uint8   public constant MAX_LIVE_CAMPAIGNS_BOUND = 20;
+    uint256 public constant MAX_NO_SELL_BLOCKS = 100_000; // ~3.5 days at 3s blocks
     // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
@@ -353,6 +361,10 @@ contract LaunchFactory is Ownable {
     // ── Tier Management (owner only) ──
 
     function setTierConfig(uint8 tier, TierConfig calldata cfg) external onlyOwner {
+        if (cfg.cooldownSeconds > MAX_COOLDOWN) revert InvalidTierConfig();
+        if (cfg.deploySlots > MAX_DEPLOY_SLOTS) revert InvalidTierConfig();
+        if (cfg.maxLiveCampaigns > MAX_LIVE_CAMPAIGNS_BOUND) revert InvalidTierConfig();
+        if (cfg.creatorNoSellBlocks > MAX_NO_SELL_BLOCKS) revert InvalidTierConfig();
         tierConfig[tier] = cfg;
         emit TierConfigUpdated(tier, cfg);
     }
