@@ -15,6 +15,7 @@ const ACTIONS = new Set([
 ]);
 
 const OWNER_SESSION_ACTION = "draft_owner_session";
+const POST_CREATE_SESSION_ACTION = "create_draft";
 const OWNER_SESSION_ALLOWED_ACTIONS = new Set([
   "read_draft",
   "save_promotion",
@@ -70,10 +71,15 @@ export async function requireDraftActionAuth({
   const signature = String(auth?.signature || "").trim();
   const message = String(auth?.message || "");
   const authAction = String(auth?.action || "");
-  const signedAction = authAction === OWNER_SESSION_ACTION && OWNER_SESSION_ALLOWED_ACTIONS.has(action)
+  const isOwnerSession = authAction === OWNER_SESSION_ACTION && OWNER_SESSION_ALLOWED_ACTIONS.has(action);
+  const isPostCreateSession = authAction === POST_CREATE_SESSION_ACTION && action !== "create_draft" && OWNER_SESSION_ALLOWED_ACTIONS.has(action);
+  const signedAction = isOwnerSession
     ? OWNER_SESSION_ACTION
-    : action;
-  const isOwnerSession = signedAction === OWNER_SESSION_ACTION;
+    : isPostCreateSession
+      ? POST_CREATE_SESSION_ACTION
+      : action;
+  const reusableSession = isOwnerSession || isPostCreateSession;
+  const signedDraftId = isPostCreateSession ? null : draftId;
 
   if (!wallet || !expected || wallet !== expected) {
     json(res, 401, { error: "Wallet signature does not match the draft owner." });
@@ -100,7 +106,7 @@ export async function requireDraftActionAuth({
     walletAddress: wallet,
     chainId: expectedChainId,
     nonce,
-    draftId,
+    draftId: signedDraftId,
   });
 
   if (message && message !== expectedMessage) {
@@ -141,7 +147,7 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  if (!isOwnerSession && row.used_at) {
+  if (!reusableSession && row.used_at) {
     json(res, 401, { error: "Wallet auth nonce already used. Please sign again." });
     return null;
   }
@@ -151,7 +157,7 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  if (!isOwnerSession) {
+  if (!reusableSession) {
     await pool.query(
       `update auth_nonces
           set used_at = now()
