@@ -1,8 +1,6 @@
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
-const EXACT_RAILWAY_PATHS = new Set([
-  "/api/featured",
-]);
+const EXACT_RAILWAY_PATHS = new Set([]);
 
 const RAILWAY_PATH_PREFIXES = [
   "/api/token/",
