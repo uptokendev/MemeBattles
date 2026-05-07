@@ -39,6 +39,7 @@ const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
   "archive_draft",
   "deploy_draft",
 ]);
+const OWNER_SESSION_IN_FLIGHT = new Map<string, Promise<DraftActionAuth>>();
 
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
@@ -90,6 +91,10 @@ function ownerSessionCacheKey(input: { walletAddress: string; chainId: number; d
   return `${OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
 }
 
+function ownerSessionInFlightKey(input: { walletAddress: string; chainId: number; draftId: string }) {
+  return ownerSessionCacheKey(input);
+}
+
 function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
   if (typeof window === "undefined") return null;
 
@@ -138,6 +143,50 @@ function cacheOwnerSession(input: {
   }
 }
 
+async function createSignedDraftAction(input: {
+  signer: JsonRpcSigner;
+  walletAddress: string;
+  chainId: number;
+  action: DraftAuthAction;
+  draftId: string | null;
+  shouldUseOwnerSession: boolean;
+}): Promise<DraftActionAuth> {
+  const actionToSign = input.shouldUseOwnerSession ? OWNER_SESSION_ACTION : input.action;
+  const { nonce, expiresAt } = await fetchNonce(input.chainId, input.walletAddress);
+
+  const message = buildDraftAuthMessage({
+    action: actionToSign,
+    walletAddress: input.walletAddress,
+    chainId: input.chainId,
+    nonce,
+    draftId: input.draftId,
+  });
+
+  const signature = await input.signer.signMessage(message);
+
+  const auth: DraftActionAuth = {
+    action: actionToSign,
+    walletAddress: input.walletAddress,
+    chainId: input.chainId,
+    draftId: input.draftId,
+    nonce,
+    message,
+    signature,
+  };
+
+  if (input.shouldUseOwnerSession && input.draftId) {
+    cacheOwnerSession({
+      auth,
+      walletAddress: input.walletAddress,
+      chainId: input.chainId,
+      draftId: input.draftId,
+      expiresAt,
+    });
+  }
+
+  return auth;
+}
+
 export async function signDraftAction(input: {
   signer: JsonRpcSigner | null | undefined;
   walletAddress: string;
@@ -165,36 +214,38 @@ export async function signDraftAction(input: {
   );
 
   if (shouldUseOwnerSession && draftId) {
-    const cached = readCachedOwnerSession({ walletAddress, chainId, draftId });
+    const cacheInput = { walletAddress, chainId, draftId };
+    const cached = readCachedOwnerSession(cacheInput);
     if (cached) return cached;
+
+    const inFlightKey = ownerSessionInFlightKey(cacheInput);
+    const inFlight = OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
+    if (inFlight) return inFlight;
+
+    const promise = createSignedDraftAction({
+      signer: input.signer,
+      walletAddress,
+      chainId,
+      action: input.action,
+      draftId,
+      shouldUseOwnerSession,
+    });
+
+    OWNER_SESSION_IN_FLIGHT.set(inFlightKey, promise);
+
+    try {
+      return await promise;
+    } finally {
+      OWNER_SESSION_IN_FLIGHT.delete(inFlightKey);
+    }
   }
 
-  const actionToSign = shouldUseOwnerSession ? OWNER_SESSION_ACTION : input.action;
-  const { nonce, expiresAt } = await fetchNonce(chainId, walletAddress);
-
-  const message = buildDraftAuthMessage({
-    action: actionToSign,
+  return createSignedDraftAction({
+    signer: input.signer,
     walletAddress,
     chainId,
-    nonce,
+    action: input.action,
     draftId,
+    shouldUseOwnerSession,
   });
-
-  const signature = await input.signer.signMessage(message);
-
-  const auth: DraftActionAuth = {
-    action: actionToSign,
-    walletAddress,
-    chainId,
-    draftId,
-    nonce,
-    message,
-    signature,
-  };
-
-  if (shouldUseOwnerSession && draftId) {
-    cacheOwnerSession({ auth, walletAddress, chainId, draftId, expiresAt });
-  }
-
-  return auth;
 }
