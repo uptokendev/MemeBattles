@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiPort = env.VITE_DEV_API_PORT || env.API_PORT || env.PORT || "3001";
@@ -26,16 +25,9 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
     resolve: {
-      alias: [
-        {
-          find: "@/lib/launchpadClient",
-          replacement: path.resolve(__dirname, "./src/lib/launchpadClientHybrid.ts"),
-        },
-        {
-          find: "@",
-          replacement: path.resolve(__dirname, "./src"),
-        },
-      ],
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
     },
   };
 });
