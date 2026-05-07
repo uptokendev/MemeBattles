@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/apiBase";
 
 // "Chart only" query params
 const CHART_QUERY =
@@ -37,9 +38,9 @@ export function useDexScreenerChart(tokenAddress?: string): DexChartState {
         setLoading(true);
         setError(undefined);
 
-        const res = await fetch(
-          `https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`
-        );
+        const res = await apiFetch(`/api/dexscreener/token/${encodeURIComponent(tokenAddress)}`, {
+          cache: "no-store" as RequestCache,
+        });
 
         if (!res.ok) {
           throw new Error(`DexScreener HTTP ${res.status}`);
