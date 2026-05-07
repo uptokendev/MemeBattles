@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { apiFetch } from "@/lib/apiBase";
 import { toast } from "sonner";
 
 type TokenCommentsProps = {
@@ -69,7 +70,7 @@ async function readJson(res: Response) {
 
 async function getNonce(chainId: number, address: string): Promise<string> {
   const url = `/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address)}`;
-  const res = await fetch(url, { method: "GET" });
+  const res = await apiFetch(url, { method: "GET" });
   if (!res.ok) {
     const j = await readJson(res);
     throw new Error(j?.error || `Nonce request failed (${res.status})`);
@@ -132,7 +133,7 @@ export function TokenComments({
       setLoading(true);
       setError(null);
       const url = `/api/comments?chainId=${encodeURIComponent(String(chainId))}&campaignAddress=${encodeURIComponent(normalizedCampaign)}`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (!res.ok) {
         const j = await readJson(res);
         throw new Error(j?.error || `Failed to load comments (${res.status})`);
@@ -208,7 +209,7 @@ export function TokenComments({
 
       setPosting(true);
 
-      const res = await fetch("/api/comments", {
+      const res = await apiFetch("/api/comments", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
