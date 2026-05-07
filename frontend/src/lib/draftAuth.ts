@@ -29,6 +29,7 @@ type NonceResult = {
 };
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
+const POST_CREATE_SESSION_ACTION: DraftAuthAction = "create_draft";
 const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
 const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
 const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
@@ -135,10 +136,10 @@ function readCachedOwnerSession(input: { walletAddress: string; chainId: number;
     const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
     const cachedAt = Number(parsed.cachedAt || 0);
 
-    if (auth.action !== OWNER_SESSION_ACTION) return null;
+    if (auth.action !== OWNER_SESSION_ACTION && auth.action !== POST_CREATE_SESSION_ACTION) return null;
     if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
     if (Number(auth.chainId) !== Number(input.chainId)) return null;
-    if (String(auth.draftId || "") !== input.draftId) return null;
+    if (auth.action === OWNER_SESSION_ACTION && String(auth.draftId || "") !== input.draftId) return null;
     if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
     if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
 
@@ -165,6 +166,22 @@ function cacheOwnerSession(input: {
   } catch {
     // Ignore storage failures. The user can still sign per action.
   }
+}
+
+export function cacheDraftOwnerSessionFromCreateAuth(input: {
+  auth: DraftActionAuth;
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+}) {
+  if (!input.auth || input.auth.action !== POST_CREATE_SESSION_ACTION) return;
+  cacheOwnerSession({
+    auth: { ...input.auth, draftId: null },
+    walletAddress: input.walletAddress,
+    chainId: input.chainId,
+    draftId: input.draftId,
+    expiresAt: null,
+  });
 }
 
 async function createSignedDraftAction(input: {
