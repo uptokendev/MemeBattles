@@ -8,7 +8,6 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/airdrops",
   "/api/squads",
   "/api/recruiters",
-  "/api/attribution",
   "/api/routing",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
