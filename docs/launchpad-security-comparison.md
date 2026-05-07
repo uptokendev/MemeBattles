@@ -210,6 +210,8 @@ These are either unique to us or structurally stronger than every peer:
 
 Five items. All either have concrete audit evidence (Salus, Ackee) or are structural gaps observed in competitor analysis.
 
+> **Status (2026-04-22):** All five Critical items shipped on `feat/pre-mainnet-hardening`. `LaunchCampaign` runtime sits at 21,194 bytes (86.23% of the 24KB cap) after the cleanup work (S-8 buy-path merge dropped ~2.8KB). 94 tests pass, only the pre-existing TreasuryVaultV2 Merkle-claim failure remains (unrelated).
+
 #### C-1. Trading pause flags (per-campaign + global)
 
 **Why.** Four.meme has per-token `suspendTrading(token, bool)` and global `_tradingHalt()`. Pump.fun has `disable_flags` bitmask. Today our only safety lever is "tell users not to trade." If a specific campaign is exploited post-launch we have no way to intervene.
@@ -333,7 +335,7 @@ Things we specifically looked at and rejected for v1.
 
 A single-pass list for before we announce mainnet:
 
-- [ ] All Critical items (C-1 through C-5) implemented and tested
+- [x] All Critical items (C-1 through C-5) implemented and tested *(branch `feat/pre-mainnet-hardening`, 2026-04-22)*
 - [ ] Decide S-1 through S-10 in / out; implement those in
 - [ ] Protection framework Section 1 closed (cooldown, concurrent cap, tier gating, no-sell, first-minute cap, anti-bot per-block, `abandonCampaign`)
 - [ ] Frontend ABI regenerated to match contract changes
