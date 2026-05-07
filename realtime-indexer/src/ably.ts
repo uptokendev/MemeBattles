@@ -7,6 +7,10 @@ export function tokenChannel(chainId: number, campaignAddress: string) {
   return `token:${chainId}:${campaignAddress.toLowerCase()}`;
 }
 
+export function warroomChannel(chainId: number, campaignAddress: string) {
+  return `warroom:${chainId}:${campaignAddress.toLowerCase()}`;
+}
+
 export function leagueChannel(chainId: number) {
   return `league:${chainId}`;
 }
