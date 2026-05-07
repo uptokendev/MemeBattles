@@ -9,6 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+import {IPancakeV2Factory, IPancakeV2Pair, IWrappedNative} from "./interfaces/IPancakeAdditional.sol";
 
 interface ILaunchFactory {
     function onCampaignFinalized(address creator) external;
@@ -604,23 +605,47 @@ receive() external payable {}
         uint256 tokensForLp = liquiditySupply;
 
         if (tokensForLp > 0 && liquidityValue > 0) {
+            // Mitigates Ackee Printr audit finding W15: an attacker can call
+            // factory.createPair() and donate WBNB into the resulting pair
+            // before graduation, producing a one-sided pre-seed. Calling
+            // router.addLiquidityETH against such a pair triggers
+            // UniswapV2Library.quote() with a zero reserve, which reverts
+            // and bricks the campaign. To stay graduation-safe we detect
+            // a one-sided pre-seed and bypass the router by transferring
+            // wrapped native + tokens directly into the pair and minting
+            // LP via pair.mint(). The pair's invariant math absorbs any
+            // attacker donation as added LP value at the burn address.
+            address weth = router.WETH();
+            IPancakeV2Factory pancakeFactory = IPancakeV2Factory(router.factory());
+            address pair = pancakeFactory.getPair(address(token), weth);
+            bool oneSidedPreseed;
+            if (pair != address(0)) {
+                (uint112 r0, uint112 r1, ) = IPancakeV2Pair(pair).getReserves();
+                oneSidedPreseed = (r0 == 0 && r1 > 0) || (r0 > 0 && r1 == 0);
+            }
 
-            // NOTE: We intentionally do NOT revert if the v2 pair already exists or even has reserves.
-            // LaunchToken blocks user transfers pre-finalize, so meaningful preseeding should be impossible.
-            // Reverting here can brick campaigns, which is worse than any theoretical edge case.
-
-            tokenInterface.forceApprove(address(router), tokensForLp);
-            (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
-                address(token),
-                tokensForLp,
-                minTokens,
-                minBnb,
-                lpReceiver,
-                block.timestamp + 30 minutes
-            );
-            tokenInterface.forceApprove(address(router), 0);
-            if (tokensForLp > usedTokens) {
-                tokenInterface.safeTransfer(owner(), tokensForLp - usedTokens);
+            if (oneSidedPreseed) {
+                // Direct mint: bypass router, donate to pair, call mint().
+                IWrappedNative(weth).deposit{value: liquidityValue}();
+                IWrappedNative(weth).transfer(pair, liquidityValue);
+                tokenInterface.safeTransfer(pair, tokensForLp);
+                IPancakeV2Pair(pair).mint(lpReceiver);
+                usedTokens = tokensForLp;
+                usedBnb = liquidityValue;
+            } else {
+                tokenInterface.forceApprove(address(router), tokensForLp);
+                (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
+                    address(token),
+                    tokensForLp,
+                    minTokens,
+                    minBnb,
+                    lpReceiver,
+                    block.timestamp + 30 minutes
+                );
+                tokenInterface.forceApprove(address(router), 0);
+                if (tokensForLp > usedTokens) {
+                    tokenInterface.safeTransfer(owner(), tokensForLp - usedTokens);
+                }
             }
         }
 

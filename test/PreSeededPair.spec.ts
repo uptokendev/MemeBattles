@@ -3,48 +3,75 @@ import { ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
 /**
- * Verification test for Ackee Printr audit finding W15:
- *   "Attacker can front-run the liquidity pool creation and make graduation fail"
+ * Tests for the Ackee Printr W15 mitigation.
  *
- * In Uniswap V2 / PancakeSwap V2, anyone can call factory.createPair() for any
- * (token, wrappedNative) pair, then transfer wrappedNative directly into the
- * resulting pair contract. This produces a pair with one-sided reserves
- * (reserveToken = 0, reserveWeth > 0).
+ * Threat (verified in the previous commit on the unfixed contract):
+ *   An attacker calls factory.createPair(token, WBNB) and donates WBNB into
+ *   the resulting pair before graduation. UniswapV2Library.quote() reverts
+ *   on a zero reserve, so router.addLiquidityETH reverts during _finalize,
+ *   bricking the campaign.
  *
- * UniswapV2Router02._addLiquidity calls UniswapV2Library.quote() when reserves
- * are non-zero, and quote() reverts with INSUFFICIENT_LIQUIDITY when either
- * reserve is zero. So a pre-seeded pair makes router.addLiquidityETH() revert.
- *
- * Our LaunchCampaign._finalize calls router.addLiquidityETH(token, ..., 0, 0, ...).
- * If an attacker pre-seeds the pair with WBNB-equivalent reserves, _finalize
- * reverts, which reverts the buy that triggered auto-finalize, which permanently
- * bricks the campaign at the graduation threshold.
- *
- * MockRouter has been upgraded to mirror this behaviour: it reads the registered
- * pair's reserves and reverts InsufficientLiquidity when reserves are one-sided.
- *
- * This file documents the threat surface only. The fix and its test live in
- * Task 2 of docs/superpowers/plans/2026-04-22-pre-mainnet-hardening.md.
+ * Fix (this commit):
+ *   _finalize reads the pair's reserves before calling the router. If the
+ *   pair has one-sided liquidity, _finalize bypasses the router: it wraps
+ *   our native into WBNB, transfers WBNB + tokens directly to the pair, and
+ *   mints LP via pair.mint(). Any attacker pre-seed becomes part of the
+ *   pool's reserves at the burn address.
  */
 
-describe("Pre-seeded pair attack on auto-finalize (Ackee W15)", () => {
-  it("auto-finalize REVERTS when pair has one-sided WBNB reserves", async () => {
-    const { factory, owner, creator, alice, v2factory } = await deployCoreFixture();
+const noLimitsTier = {
+  cooldownSeconds: 0n,
+  deploySlots: 0,
+  maxLiveCampaigns: 0,
+  creatorNoSellBlocks: 0n,
+};
 
-    // Use a tier with no protections so the buy path is the only thing under test.
-    await factory.connect(owner).setTierConfig(0, {
-      cooldownSeconds: 0n,
-      deploySlots: 0,
-      maxLiveCampaigns: 0,
-      creatorNoSellBlocks: 0n,
-    });
+/// Reproduces the real-world W15 attack:
+///   1. attacker calls factory.createPair(token, wbnb) — pair exists with no reserves
+///   2. attacker wraps native into WBNB and transfers WBNB into the pair
+///   3. attacker calls pair.sync() — reserves now match the donated balance
+/// After sync, getReserves() returns one-sided reserves, which makes
+/// router.addLiquidityETH revert via UniswapV2Library.quote().
+async function preSeedPairWithWbnb(
+  v2factory: any,
+  tokenAddr: string,
+  wbnbAddr: string,
+  preSeedAmount: bigint,
+  attacker: any
+): Promise<{ pair: any; pairAddr: string }> {
+  await v2factory.createPair(tokenAddr, wbnbAddr);
+  const pairAddr = await v2factory.getPair(tokenAddr, wbnbAddr);
+  const pair = await ethers.getContractAt("MockV2Pair", pairAddr);
+  const wbnb = await ethers.getContractAt("MockWBNB", wbnbAddr);
 
-    // Default fixture has graduationTarget = 1 BNB and a small curve. A small
-    // buy will cross the target and trigger auto-finalize.
+  // Attacker wraps native into WBNB and donates it to the pair.
+  await wbnb.connect(attacker).deposit({ value: preSeedAmount });
+  await wbnb.connect(attacker).transfer(pairAddr, preSeedAmount);
+
+  // Simulate UniswapV2Pair.sync(): reserves are updated to match balances.
+  // setReserves convention in MockV2Pair: (r0, r1) with r0 mapping to
+  // whichever address is canonically smaller (token0).
+  const tokenIsToken0 = tokenAddr.toLowerCase() < wbnbAddr.toLowerCase();
+  if (tokenIsToken0) {
+    await pair.setReserves(0, preSeedAmount);
+  } else {
+    await pair.setReserves(preSeedAmount, 0);
+  }
+
+  return { pair, pairAddr };
+}
+
+describe("Pre-seeded pair attack on auto-finalize (Ackee W15 mitigation)", () => {
+  it("auto-finalize SUCCEEDS even when pair has one-sided WBNB pre-seed", async () => {
+    const { factory, owner, creator, alice, bob, v2factory } = await deployCoreFixture();
+
+    await factory.connect(owner).setTierConfig(0, noLimitsTier);
+
+    // Default fixture has graduationTarget = 1 BNB; a small buy will cross it.
     await factory.connect(creator).createCampaign({
-      name: "Bricked",
-      symbol: "BRK",
-      logoURI: "ipfs://brk",
+      name: "Saved",
+      symbol: "SAV",
+      logoURI: "ipfs://sav",
       xAccount: "",
       website: "",
       extraLink: "",
@@ -60,52 +87,38 @@ describe("Pre-seeded pair attack on auto-finalize (Ackee W15)", () => {
     const info = await factory.getCampaign(0);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     const tokenAddr = await campaign.token();
-    const router = await ethers.getContractAt(
-      "MockRouter",
-      await campaign.router()
-    );
+    const router = await ethers.getContractAt("MockRouter", await campaign.router());
     const wbnbAddr = await router.WETH();
 
-    // ATTACKER: deploy a fresh pair, register it in the factory, and pre-seed
-    // it with one-sided WBNB-equivalent reserves. In real life the attacker
-    // calls IPancakeFactory.createPair(...) and transfers WBNB to the pair —
-    // here we use the mock primitive setReserves(tokenAmt, wbnbAmt).
-    const Pair = await ethers.getContractFactory("MockV2Pair");
-    const pair = await Pair.deploy();
-    await v2factory.setPair(tokenAddr, wbnbAddr, await pair.getAddress());
-    await pair.setReserves(0, ethers.parseEther("5"));
+    // ATTACKER: pre-create the pair and donate WBNB into it.
+    const preSeedAmount = ethers.parseEther("5");
+    const { pair } = await preSeedPairWithWbnb(
+      v2factory, tokenAddr, wbnbAddr, preSeedAmount, bob
+    );
 
-    // VICTIM: trigger auto-finalize with a buy that crosses graduationTarget.
-    // The router will revert InsufficientLiquidity because reserves are
-    // one-sided, which propagates up through _finalize and reverts the buy.
+    // VICTIM: trigger auto-finalize by crossing graduationTarget.
     const graduationTarget = await campaign.graduationTarget();
     await expect(
       campaign.connect(alice).buyExactBnb(0, { value: graduationTarget + 1n })
-    ).to.be.revertedWithCustomError(router, "InsufficientLiquidity");
+    ).to.not.be.reverted;
 
-    // Campaign is bricked: launched stayed false, but every subsequent buy
-    // that would re-trigger auto-finalize will hit the same revert.
-    expect(await campaign.launched()).to.eq(false);
-    await expect(
-      campaign.connect(alice).buyExactBnb(0, { value: graduationTarget + 1n })
-    ).to.be.revertedWithCustomError(router, "InsufficientLiquidity");
+    expect(await campaign.launched()).to.eq(true);
+
+    // Pair received both legs of LP — token side from us, WBNB side from us
+    // PLUS the attacker's pre-seed donation. mint() ran successfully.
+    expect(await pair.totalSupply()).to.be.gt(0n);
   });
 
-  it("manual finalize() also reverts under the pre-seeded pair attack", async () => {
-    const { factory, owner, creator, alice, v2factory } = await deployCoreFixture();
+  it("manual finalize() also succeeds under one-sided WBNB pre-seed", async () => {
+    const { factory, owner, creator, alice, bob, v2factory } = await deployCoreFixture();
 
-    await factory.connect(owner).setTierConfig(0, {
-      cooldownSeconds: 0n,
-      deploySlots: 0,
-      maxLiveCampaigns: 0,
-      creatorNoSellBlocks: 0n,
-    });
+    await factory.connect(owner).setTierConfig(0, noLimitsTier);
 
     // High graduation target so we choose when to finalize manually.
     await factory.connect(creator).createCampaign({
-      name: "Bricked2",
-      symbol: "BRK2",
-      logoURI: "ipfs://brk2",
+      name: "Manual",
+      symbol: "MAN",
+      logoURI: "ipfs://man",
       xAccount: "",
       website: "",
       extraLink: "",
@@ -121,28 +134,61 @@ describe("Pre-seeded pair attack on auto-finalize (Ackee W15)", () => {
     const info = await factory.getCampaign(0);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     const tokenAddr = await campaign.token();
-    const router = await ethers.getContractAt(
-      "MockRouter",
-      await campaign.router()
-    );
+    const router = await ethers.getContractAt("MockRouter", await campaign.router());
     const wbnbAddr = await router.WETH();
 
-    // Top up the campaign with native tokens so finalize threshold is met.
+    // Top up campaign with native to meet finalize threshold.
     await alice.sendTransaction({
       to: info.campaign,
       value: ethers.parseEther("100"),
     });
 
-    // Pre-seed the pair with one-sided WBNB.
-    const Pair = await ethers.getContractFactory("MockV2Pair");
-    const pair = await Pair.deploy();
-    await v2factory.setPair(tokenAddr, wbnbAddr, await pair.getAddress());
-    await pair.setReserves(0, ethers.parseEther("5"));
+    // Pre-seed the pair.
+    const { pair } = await preSeedPairWithWbnb(
+      v2factory,
+      tokenAddr,
+      wbnbAddr,
+      ethers.parseEther("5"),
+      bob
+    );
 
-    // Creator-initiated finalize hits the same router revert.
+    // Creator finalizes — fix kicks in, direct mint succeeds.
+    await expect(campaign.connect(creator).finalize(0, 0)).to.not.be.reverted;
+
+    expect(await campaign.launched()).to.eq(true);
+    expect(await pair.totalSupply()).to.be.gt(0n);
+  });
+
+  it("normal graduation (no pre-seed, pair created by router) still works via router path", async () => {
+    const { factory, owner, creator, alice } = await deployCoreFixture();
+
+    await factory.connect(owner).setTierConfig(0, noLimitsTier);
+
+    await factory.connect(creator).createCampaign({
+      name: "Normal",
+      symbol: "NRM",
+      logoURI: "ipfs://nrm",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+      initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
+    });
+
+    const info = await factory.getCampaign(0);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    const graduationTarget = await campaign.graduationTarget();
+
+    // No pre-seed: router path is used (pair doesn't exist yet OR has 0/0 reserves).
     await expect(
-      campaign.connect(creator).finalize(0, 0)
-    ).to.be.revertedWithCustomError(router, "InsufficientLiquidity");
-    expect(await campaign.launched()).to.eq(false);
+      campaign.connect(alice).buyExactBnb(0, { value: graduationTarget + 1n })
+    ).to.not.be.reverted;
+
+    expect(await campaign.launched()).to.eq(true);
   });
 });
