@@ -62,7 +62,12 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
         return;
       }
       setStats({
-        lastPriceBnb: num(row.last_price_bnb),
+        // Do not let the periodic Railway summary snapshot override the page's
+        // local/on-chain last price. During migration the snapshot can lag the
+        // local trade feed, which makes TokenDetails show fake equal changes
+        // across 5m/1h/4h/24h. Live Ably stats_patch messages below may still
+        // update this field when they arrive in real time.
+        lastPriceBnb: null,
         marketcapBnb: num(row.marketcap_bnb),
         vol24hBnb: Number(num(row.vol_24h_bnb) ?? 0),
         soldTokens: num(row.sold_tokens),
