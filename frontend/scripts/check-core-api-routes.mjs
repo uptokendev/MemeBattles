@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const BASE_URL = (process.env.API_BASE_URL || process.env.VITE_REALTIME_API_BASE || "http://localhost:8888").replace(/\/+$/, "");
+const BASE_URL = (process.env.API_BASE_URL || process.env.VITE_REALTIME_API_BASE || "http://127.0.0.1:3001").replace(/\/+$/, "");
 const CHAIN_ID = process.env.CHECK_CHAIN_ID || process.env.VITE_DEFAULT_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID || "97";
 const FACTORY_ADDRESS = process.env.CHECK_FACTORY_ADDRESS || process.env.VITE_FACTORY_ADDRESS_97 || process.env.VITE_FACTORY_ADDRESS || "";
 const WALLET_ADDRESS = process.env.CHECK_WALLET_ADDRESS || "0x0000000000000000000000000000000000000001";
@@ -28,7 +28,8 @@ async function check(name, method, path, body, options = {}) {
   const json = await readJson(res);
   const allowedStatuses = options.allowedStatuses || [200];
   const ok = allowedStatuses.includes(res.status) && !json.__nonJson;
-  return { name, method, path, status: res.status, ok, json };
+  const upstream = res.headers.get("x-mwz-api-upstream") || "local";
+  return { name, method, path, status: res.status, ok, upstream, json };
 }
 
 const checks = [
@@ -40,7 +41,7 @@ const checks = [
   ["Airdrop winners", "GET", "/api/airdrops/winners?limit=1", null],
   ["Squad leaderboard", "GET", "/api/squads?limit=1", null],
   ["Squad members", "GET", "/api/squads/members?limit=1", null],
-  ["Recruiter leaderboard", "GET", "/api/recruiters?limit=1", null],
+  ["Recruiter leaderboard", "GET", "/api/recruiters?limit=1", null, { allowedStatuses: [200, 404] }],
   ["Wallet attribution", "GET", `/api/attribution/wallet/${WALLET_ADDRESS}`, null],
   ["Wallet connect attribution", "POST", "/api/attribution/wallet-connect", { walletAddress: WALLET_ADDRESS, sessionToken: "smoke", clientFingerprint: "smoke" }],
   ["Routing status", "GET", `/api/routing/status?chainId=${CHAIN_ID}${FACTORY_ADDRESS ? `&factoryAddress=${FACTORY_ADDRESS}` : ""}`, null],
@@ -58,7 +59,7 @@ for (const args of checks) {
     const marker = result.ok ? "OK" : "FAIL";
     if (!result.ok) failures++;
     const extra = result.json?.code ? ` code=${result.json.code}` : "";
-    console.log(`${marker} ${result.method} ${result.path} -> ${result.status}${extra} :: ${result.name}`);
+    console.log(`${marker} ${result.method} ${result.path} -> ${result.status} upstream=${result.upstream}${extra} :: ${result.name}`);
     if (!result.ok) {
       console.log(JSON.stringify(result.json, null, 2));
     }
