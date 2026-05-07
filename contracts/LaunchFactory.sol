@@ -147,6 +147,12 @@ contract LaunchFactory is Ownable {
     uint256 public antiVampLockout = 48 hours;
     mapping(bytes32 => uint64) public symbolLogoLockedUntil;
 
+    /// @notice Global kill switch for buys across every campaign. Sells stay
+    /// open so holders always have an exit. Modeled on Pump.fun's
+    /// disable_flags pattern — useful for incident response without
+    /// iterating every campaign.
+    bool public globalPauseBuys;
+
     event CampaignCreated(
         uint256 indexed id,
         address indexed campaign,
@@ -165,6 +171,7 @@ contract LaunchFactory is Ownable {
     event CampaignAbandoned(address indexed creator, address indexed campaign);
     event AbandonTimeoutUpdated(uint256 newTimeout);
     event AntiVampLockoutUpdated(uint256 newLockout);
+    event GlobalPauseBuysSet(bool paused);
 
     constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
         if (router_ == address(0)) revert RouterZero();
@@ -416,6 +423,11 @@ contract LaunchFactory is Ownable {
         emit AntiVampLockoutUpdated(newLockout);
     }
 
+    function setGlobalPauseBuys(bool v) external onlyOwner {
+        globalPauseBuys = v;
+        emit GlobalPauseBuysSet(v);
+    }
+
     // ── Campaign lifecycle callbacks ──
 
     /// @notice Called by a campaign on graduation. Decrements active count.
@@ -427,6 +439,13 @@ contract LaunchFactory is Ownable {
         if (activeCampaignCount[creator_] > 0) {
             activeCampaignCount[creator_]--;
         }
+    }
+
+    /// @notice Owner-only emergency pause for a single campaign. Blocks new
+    /// buys; sells stay open so holders always have an exit.
+    function setCampaignPaused(address campaign, bool v) external onlyOwner {
+        if (!isRegisteredCampaign[campaign]) revert NotRegistered();
+        LaunchCampaign(payable(campaign)).setPaused(v);
     }
 
     /// @notice Anyone can mark a campaign abandoned after `abandonTimeout` of

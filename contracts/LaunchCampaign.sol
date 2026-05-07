@@ -13,6 +13,7 @@ import {IPancakeV2Factory, IPancakeV2Pair, IWrappedNative} from "./interfaces/IP
 
 interface ILaunchFactory {
     function onCampaignFinalized(address creator) external;
+    function globalPauseBuys() external view returns (bool);
 }
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
@@ -100,6 +101,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public firstMinWalletCap;
     bool public antiBotEnabled;
     bool public abandoned;
+    /// @notice Per-campaign pause flag. Set only via factory.setCampaignPaused.
+    /// Blocks new buys; sells stay open so holders always have an exit.
+    bool public paused;
     uint256 public constant ANTI_BOT_BLOCKS = 6;
     mapping(address => uint256) public firstMinuteSpent;
     mapping(address => uint256) public lastBuyBlock;
@@ -108,6 +112,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error WalletCapExceeded();
     error OnePerBlock();
     error CampaignAbandoned();
+    error CampaignPaused();
 
     event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost);
     event TokensSold(address indexed seller, uint256 amountIn, uint256 payout);
@@ -121,6 +126,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 creatorPayout
     );
     event Abandoned();
+    event PausedSet(bool paused);
 
     bool private _initialized;
 
@@ -358,6 +364,13 @@ receive() external payable {}
     {
         require(!launched, "campaign launched");
         if (abandoned) revert CampaignAbandoned();
+        if (paused) revert CampaignPaused();
+        // Read the global flag from the factory. Guard for the test
+        // scenarios where `factory` is an EOA (no code) — in production the
+        // factory is always the deploying LaunchFactory contract.
+        if (factory.code.length > 0 && ILaunchFactory(factory).globalPauseBuys()) {
+            revert CampaignPaused();
+        }
         require(amountOut > 0, "zero amount");
         require(sold + amountOut <= curveSupply, "sold out");
         uint256 costNoFee = _quoteBuyNoFee(amountOut);
@@ -380,6 +393,13 @@ receive() external payable {}
     {
         require(!launched, "campaign launched");
         if (abandoned) revert CampaignAbandoned();
+        if (paused) revert CampaignPaused();
+        // Read the global flag from the factory. Guard for the test
+        // scenarios where `factory` is an EOA (no code) — in production the
+        // factory is always the deploying LaunchFactory contract.
+        if (factory.code.length > 0 && ILaunchFactory(factory).globalPauseBuys()) {
+            revert CampaignPaused();
+        }
         (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
         require(tokensOut > 0, "zero amount");
         require(tokensOut >= minTokensOut, "slippage");
@@ -488,6 +508,13 @@ receive() external payable {}
         require(!launched, "finalized");
         abandoned = true;
         emit Abandoned();
+    }
+
+    /// @notice Pause or unpause new buys on this campaign. Sells remain open.
+    /// @dev Only callable by the factory (admin gates this in setCampaignPaused).
+    function setPaused(bool v) external onlyFactory {
+        paused = v;
+        emit PausedSet(v);
     }
 
     function claimPendingNative() external nonReentrant returns (uint256 amount) {
