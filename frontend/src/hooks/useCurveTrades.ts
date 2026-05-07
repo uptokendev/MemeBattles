@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
-import { apiFetch } from "@/lib/apiBase";
+
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
+const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 
 type RealtimeChannel = any;
 
@@ -44,6 +46,7 @@ function mergeTrades(prev: CurveTradePoint[], next: CurveTradePoint[]) {
 }
 
 function toBigIntWei(amount: unknown, kind: "ether" | "token"): bigint {
+  // Postgres numerics often come through as strings (best case).
   const s = typeof amount === "string" ? amount : typeof amount === "number" ? String(amount) : "0";
   try {
     if (kind === "ether") return ethers.parseEther(s);
@@ -82,8 +85,8 @@ function toTimestampSec(v: unknown): number {
   }
 }
 
-async function fetchJson(path: string, signal?: AbortSignal) {
-  const r = await apiFetch(path, { method: "GET", signal });
+async function fetchJson(url: string, signal?: AbortSignal) {
+  const r = await fetch(url, { method: "GET", signal });
   if (!r.ok) {
     const text = await r.text().catch(() => "");
     throw new Error(text || `HTTP ${r.status}`);
@@ -93,8 +96,8 @@ async function fetchJson(path: string, signal?: AbortSignal) {
 
 /**
  * Curve trades (bonding curve) backed by:
- *  1) Snapshot: hybrid app API /api/activity/trades
- *  2) Realtime: Ably channel updates when configured
+ *  1) Snapshot: Railway realtime-indexer REST endpoint
+ *  2) Realtime: Ably channel updates
  *  3) Safety: periodic snapshot reconcile to avoid drift under heavy load
  */
 export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOptions) {
@@ -103,6 +106,9 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Only hard-reset state when the campaign address actually changes.
+  // This prevents brief "trade list resets" that can cause the chart to
+  // momentarily drop the latest candle while the indexer catches up.
   const prevCampaignRef = useRef<string>("");
 
   const chainId = useMemo<SupportedChainId>(() => {
@@ -113,29 +119,31 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const inFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
 
+  // If Ably realtime is temporarily unavailable (e.g., mobile networks, WS blocked),
+  // this snapshot reconcile keeps the UI fresh. Keep it relatively low for testnet UX.
   const reconcileMs = opts?.reconcileMs ?? 10_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
 
-  const apiTradesPath = useMemo(() => {
-    if (!campaignAddress) return "";
-    return `/api/activity/trades?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(campaignAddress.toLowerCase())}&limit=${encodeURIComponent(String(limit))}`;
+  const apiTradesUrl = useMemo(() => {
+    if (!API_BASE || !campaignAddress) return "";
+    return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
   }, [campaignAddress, chainId, limit]);
 
   const applySnapshot = useCallback((rows: any[]) => {
     const next: CurveTradePoint[] = (rows || [])
-      .map((r: any, idx: number) => {
+      .map((r: any) => {
         const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
-        const txHash = String(r.tx_hash || r.txHash || r.tx_hash_hex || "");
-        const logIndex = Number(r.log_index ?? r.logIndex ?? idx);
+        const txHash = String(r.tx_hash || r.txHash || "");
+        const logIndex = Number(r.log_index ?? r.logIndex ?? 0);
         const blockNumber = Number(r.block_number ?? r.blockNumber ?? 0);
-        const ts = toTimestampSec(r.block_time ?? r.blockTime ?? r.timestamp ?? r.time);
+        const ts = toTimestampSec(r.block_time ?? r.timestamp ?? r.time);
 
-        const tokensWei = toBigIntWei(r.token_amount ?? r.tokenAmount ?? r.tokens ?? r.tokensWei, "token");
-        const nativeWei = toBigIntWei(r.bnb_amount ?? r.bnbAmount ?? r.native ?? r.nativeWei, "ether");
+        const tokensWei = toBigIntWei(r.token_amount ?? r.tokens ?? r.tokensWei, "token");
+        const nativeWei = toBigIntWei(r.bnb_amount ?? r.native ?? r.nativeWei, "ether");
 
         const tokens = Number(ethers.formatUnits(tokensWei, 18));
         const bnb = Number(ethers.formatEther(nativeWei));
-        const pricePerToken = toNumber(r.price_bnb ?? r.priceBnb ?? r.pricePerToken) || (tokens > 0 ? bnb / tokens : 0);
+        const pricePerToken = toNumber(r.price_bnb ?? r.pricePerToken) || (tokens > 0 ? bnb / tokens : 0);
 
         return {
           type: side,
@@ -162,18 +170,18 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setError(null);
       return;
     }
-    if (!apiTradesPath) {
+    if (!apiTradesUrl) {
+      setError("Missing VITE_REALTIME_API_BASE");
       setLoading(false);
-      setError(null);
       return;
     }
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
+      // Avoid "page reload" feel by only showing the loading state for the first fetch.
       if (!initialLoadedRef.current) setLoading(true);
-      const payload = await fetchJson(apiTradesPath, signal);
-      const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
-      applySnapshot(rows);
+      const rows = await fetchJson(apiTradesUrl, signal);
+      applySnapshot(Array.isArray(rows) ? rows : []);
       setError(null);
       initialLoadedRef.current = true;
     } catch (e: any) {
@@ -183,12 +191,16 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [enabled, campaignAddress, apiTradesPath, applySnapshot]);
+  }, [enabled, campaignAddress, apiTradesUrl, applySnapshot]);
 
+  // Initial snapshot + periodic reconcile
   useEffect(() => {
     const ac = new AbortController();
     const curr = (campaignAddress || "").toLowerCase();
     const prev = prevCampaignRef.current;
+    // Only reset when the campaign truly changed. Avoid resets caused by
+    // incidental prop changes (e.g., undefined -> 97 chainId) which can
+    // temporarily clear the trade series and cause chart flicker.
     if (curr !== prev) {
       prevCampaignRef.current = curr;
       setPoints([]);
@@ -211,6 +223,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     };
   }, [enabled, campaignAddress, pullSnapshot, reconcileMs]);
 
+  // Ably realtime stream (trade events) — shared per campaign to avoid multiple WebSockets.
   const ably = useAblyTokenChannel({ enabled: enabled && !!campaignAddress, chainId, campaignAddress });
   useEffect(() => {
     if (!enabled || !campaignAddress) return;
@@ -236,6 +249,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       }
     };
   }, [enabled, campaignAddress, ably.channel, ably.missingBase, applySnapshot]);
+
 
   return { points, loading, error };
 }
