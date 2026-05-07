@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/apiBase";
+
 export type ChatProfile = {
   walletAddress: string;
   displayName?: string | null;
@@ -43,7 +45,7 @@ async function parseResponse(res: Response) {
 }
 
 export async function getNonce(chainId: number, address: string) {
-  const res = await fetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address)}`);
+  const res = await apiFetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address)}`);
   const data = await parseResponse(res);
   if (!data?.nonce) throw new Error("Nonce missing");
   return String(data.nonce);
@@ -61,7 +63,7 @@ export function buildChatSessionMessage(args: { chainId: number; address: string
 }
 
 export async function joinWarRoom(args: { chainId: number; campaignAddress: string; address: string; signature: string; nonce: string; creatorAddress?: string | null; }) {
-  const res = await fetch("/api/chat/join", {
+  const res = await apiFetch("/api/chat/join", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(args),
@@ -76,12 +78,12 @@ export async function fetchWarRoomHistory(args: { chainId: number; campaignAddre
     limit: String(args.limit ?? 50),
   });
   if (args.beforeId != null) qs.set("beforeId", String(args.beforeId));
-  const res = await fetch(`/api/chat/history?${qs.toString()}`);
+  const res = await apiFetch(`/api/chat/history?${qs.toString()}`);
   return parseResponse(res) as Promise<{ items: ChatMessage[]; nextBeforeId: number | null }>;
 }
 
 export async function sendWarRoomMessage(args: { chainId: number; campaignAddress: string; message: string; clientNonce: string; sessionToken: string; }) {
-  const res = await fetch("/api/chat/send", {
+  const res = await apiFetch("/api/chat/send", {
     method: "POST",
     headers: {
       "content-type": "application/json",
