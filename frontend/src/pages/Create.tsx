@@ -13,6 +13,7 @@ import { useLaunchpadWriteReadiness } from "@/hooks/useLaunchpadWriteReadiness";
 import { useWallet } from "@/contexts/WalletContext";
 import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -197,7 +198,7 @@ const Create = () => {
     const fd = new FormData();
     fd.append("file", formData.image);
 
-    const res = await fetch(`/api/upload?${qs}`, {
+    const res = await apiFetch(`/api/upload?${qs}`, {
       method: "POST",
       body: fd,
     });
