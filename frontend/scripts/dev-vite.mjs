@@ -6,6 +6,12 @@ const apiPort = process.env.VITE_DEV_API_PORT || process.env.API_PORT || process
 const apiBase = process.env.VITE_DEV_API_PROXY_TARGET || `http://127.0.0.1:${apiPort}`;
 const healthUrl = `${apiBase.replace(/\/$/, "")}/healthz`;
 
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+
+function truthy(value) {
+  return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -14,6 +20,18 @@ function normalizeUrl(raw) {
 }
 
 function viteRealtimeApiBase() {
+  const localGateway = normalizeUrl(apiBase);
+  const railwayProxyEnabled = truthy(process.env.API_RAILWAY_PROXY || process.env.RAILWAY_API_PROXY || process.env.VITE_API_RAILWAY_PROXY);
+  const forceDirect = truthy(process.env.VITE_REALTIME_API_DIRECT || process.env.VITE_FORCE_DIRECT_REALTIME_API);
+
+  // In hybrid localhost mode, the browser should call the local API gateway.
+  // The gateway then proxies /api/token/* to Railway. This avoids localhost CORS
+  // drift while preserving the same Railway data source underneath.
+  if (railwayProxyEnabled && !forceDirect && localGateway) {
+    console.log("[dev:vite] using local API gateway as VITE_REALTIME_API_BASE for hybrid parity");
+    return localGateway;
+  }
+
   const explicit = normalizeUrl(process.env.VITE_REALTIME_API_BASE);
   if (explicit) return explicit;
 
@@ -53,7 +71,7 @@ console.log(`[dev:vite] API OK: ${healthUrl}`);
 const realtimeApiBase = viteRealtimeApiBase();
 if (!realtimeApiBase) {
   console.warn(
-    "[dev:vite] VITE_REALTIME_API_BASE is missing. TokenDetails chart/realtime data expects the Railway realtime-indexer URL."
+    "[dev:vite] VITE_REALTIME_API_BASE is missing. TokenDetails chart/realtime data expects the Railway realtime-indexer URL or the local hybrid gateway."
   );
 }
 
