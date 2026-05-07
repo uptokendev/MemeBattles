@@ -10,11 +10,14 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/airdrops",
   "/api/squads",
   "/api/recruiters",
+  "/api/attribution",
   "/api/routing",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
   "/internal/",
 ];
+
+const FALLBACK_STATUSES = new Set([404, 405]);
 
 function truthy(value) {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
@@ -22,6 +25,10 @@ function truthy(value) {
 
 function railwayProxyEnabled() {
   return truthy(process.env.API_RAILWAY_PROXY || process.env.RAILWAY_API_PROXY || process.env.VITE_API_RAILWAY_PROXY);
+}
+
+function railwayProxyStrict() {
+  return truthy(process.env.API_RAILWAY_PROXY_STRICT || process.env.RAILWAY_API_PROXY_STRICT);
 }
 
 function railwayBaseUrl() {
@@ -136,6 +143,11 @@ export function createRailwayProxyMiddleware(options = {}) {
         redirect: "manual",
       });
 
+      if (!railwayProxyStrict() && FALLBACK_STATUSES.has(upstream.status)) {
+        console.warn(`${responseLabel(serviceName, path)} upstream ${upstream.status}; falling back to local handler`);
+        return next();
+      }
+
       const text = await upstream.text();
       res.statusCode = upstream.status;
 
@@ -146,6 +158,11 @@ export function createRailwayProxyMiddleware(options = {}) {
 
       res.end(text);
     } catch (err) {
+      if (!railwayProxyStrict()) {
+        console.warn(`${responseLabel(serviceName, path)} upstream failed; falling back to local handler`, err?.message || err);
+        return next();
+      }
+
       console.error(responseLabel(serviceName, path), err);
       res.statusCode = 502;
       res.setHeader("content-type", "application/json; charset=utf-8");
