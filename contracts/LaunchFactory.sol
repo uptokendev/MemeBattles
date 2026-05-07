@@ -101,6 +101,11 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
+    /// @notice Cap on totalSupply to keep x*x in LaunchCampaign._area within
+    /// uint256 even inside the unchecked block. 1e30 wei (1 trillion 18-decimal
+    /// tokens) bounds x*x at ~1e60 — far below uint256 max ~1.16e77 — and is
+    /// well above any realistic meme launch (Ackee L4 / W10 mitigation).
+    uint256 public constant MAX_TOTAL_SUPPLY = 1e30;
     // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
@@ -437,6 +442,7 @@ contract LaunchFactory is Ownable {
 
     function _validateConfig(LaunchConfig memory newConfig) internal pure {
         if (newConfig.totalSupply == 0) revert SupplyZero();
+        if (newConfig.totalSupply > MAX_TOTAL_SUPPLY) revert ParamTooHigh();
         if (!(newConfig.curveBps > 0 && newConfig.curveBps + newConfig.liquidityTokenBps <= MAX_BPS)) revert InvalidCurveBps();
         if (newConfig.basePrice == 0) revert PriceZero();
         if (newConfig.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
