@@ -19,7 +19,7 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -177,7 +177,7 @@ const Create = () => {
 
     if (formData.image.size > MAX_LOGO_UPLOAD_BYTES) {
       toast.error(
-        `Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 2 MB.`,
+        `Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 5 MB.`,
       );
       return false;
     }
@@ -395,7 +395,7 @@ try {
                   )}
                   <input id="image-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" disabled={isProjectDisabled} />
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">Max upload size: 2 MB. Use a compressed PNG, JPG, or WebP for best results.</p>
+                <p className="mt-2 text-xs text-muted-foreground">Max upload size: 5 MB. Use a compressed PNG, JPG, or WebP for best results.</p>
               </div>
 
               <div>
