@@ -33,6 +33,8 @@ describe("Security & invariants", function () {
         graduationTarget: 0n,
         lpReceiver: await alice.getAddress(),
         initialBuyBnbWei: 0n,
+        firstMinWalletCapWei: 0n,
+        antiBotEnabled: false,
       },
       { value: 0 }
     );
@@ -79,6 +81,8 @@ describe("Security & invariants", function () {
         graduationTarget: 0,
         lpReceiver: ethers.ZeroAddress,
         initialBuyBnbWei: 0,
+        firstMinWalletCapWei: 0,
+        antiBotEnabled: false,
       },
       { value: 0 }
     );
@@ -152,6 +156,8 @@ describe("Security & invariants", function () {
         graduationTarget: 0,
         lpReceiver: ethers.ZeroAddress,
         initialBuyBnbWei: 0,
+        firstMinWalletCapWei: 0,
+        antiBotEnabled: false,
       },
       { value: 0 }
     );
@@ -209,6 +215,8 @@ describe("Security & invariants", function () {
         graduationTarget: ethers.parseEther("100"),
         lpReceiver: ethers.ZeroAddress,
         initialBuyBnbWei: 0,
+        firstMinWalletCapWei: 0,
+        antiBotEnabled: false,
       },
       { value: 0 }
     );
@@ -270,6 +278,8 @@ describe("Security & invariants", function () {
         // Try to set lpReceiver to Alice (should be ignored)
         lpReceiver: await alice.getAddress(),
         initialBuyBnbWei: 0,
+        firstMinWalletCapWei: 0,
+        antiBotEnabled: false,
       },
       { value: 0 }
     );

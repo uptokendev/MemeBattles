@@ -10,6 +10,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
 
+interface ILaunchFactory {
+    function onCampaignFinalized(address creator) external;
+}
+
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -36,6 +40,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         address feeRecipient;
         address creator;
         address factory;
+        // Protection framework fields
+        uint256 creatorNoSellBlocks;
+        uint256 firstMinWalletCapWei;
+        bool    antiBotEnabled;
     }
 
     uint256 private constant WAD = 1e18;
@@ -75,12 +83,30 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _;
     }
 
-// ---- Phase 2 cheap counters (no backend / no log scanning) ----
-uint256 public totalBuyVolumeWei;
-uint256 public totalSellVolumeWei;
-uint256 public buyersCount;
-mapping(address => bool) public hasBought;
-mapping(address => uint256) public pendingNative;
+    // ---- Phase 2 cheap counters (no backend / no log scanning) ----
+    uint256 public totalBuyVolumeWei;
+    uint256 public totalSellVolumeWei;
+    uint256 public buyersCount;
+    mapping(address => bool) public hasBought;
+    mapping(address => uint256) public pendingNative;
+
+    // ---- Protection framework ----
+    address public creator;              // immutable after initialize (distinct from owner())
+    uint256 public creatorNoSellBlocks;
+    uint256 public startBlock;
+    uint256 public campaignStartTime;
+    uint256 public lastActivityTime;
+    uint256 public firstMinWalletCap;
+    bool public antiBotEnabled;
+    bool public abandoned;
+    uint256 public constant ANTI_BOT_BLOCKS = 6;
+    mapping(address => uint256) public firstMinuteSpent;
+    mapping(address => uint256) public lastBuyBlock;
+
+    error CreatorSellLocked();
+    error WalletCapExceeded();
+    error OnePerBlock();
+    error CampaignAbandoned();
 
     event TokensPurchased(address indexed buyer, uint256 amountOut, uint256 cost);
     event TokensSold(address indexed seller, uint256 amountIn, uint256 payout);
@@ -93,6 +119,7 @@ mapping(address => uint256) public pendingNative;
         uint256 protocolFee,
         uint256 creatorPayout
     );
+    event Abandoned();
 
     bool private _initialized;
 
@@ -150,7 +177,15 @@ function initialize(InitParams memory params) external {
         MAX_BPS;
     creatorReserve = params.totalSupply - curveSupply - liquiditySupply;
     require(liquiditySupply > 0, "liquidity zero");
-    require(creatorReserve >= 0, "creator portion");
+
+    // Protection framework
+    creator = params.creator;
+    creatorNoSellBlocks = params.creatorNoSellBlocks;
+    firstMinWalletCap = params.firstMinWalletCapWei;
+    antiBotEnabled = params.antiBotEnabled;
+    startBlock = block.number;
+    campaignStartTime = block.timestamp;
+    lastActivityTime = block.timestamp;
 
     token = new LaunchToken(
         params.name,
@@ -264,6 +299,7 @@ receive() external payable {}
         returns (uint256 cost)
     {
         require(!launched, "campaign launched");
+        if (abandoned) revert CampaignAbandoned();
         require(amountOut > 0, "zero amount");
         require(sold + amountOut <= curveSupply, "sold out");
         uint256 costNoFee = _quoteBuyNoFee(amountOut);
@@ -272,19 +308,29 @@ receive() external payable {}
         require(total <= maxCost, "slippage");
         require(msg.value >= total, "insufficient value");
 
-// Phase 2 counters (volume excludes protocol fee)
-totalBuyVolumeWei += costNoFee;
-if (!hasBought[msg.sender]) {
-    hasBought[msg.sender] = true;
-    buyersCount += 1;
-}
+        // Premium mode: first-minute wallet cap (cumulative)
+        if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
+            firstMinuteSpent[msg.sender] += costNoFee;
+            if (firstMinuteSpent[msg.sender] > firstMinWalletCap) revert WalletCapExceeded();
+        }
+        // Premium mode: anti-bot (1 buy per wallet per block)
+        if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
+            if (lastBuyBlock[msg.sender] >= block.number) revert OnePerBlock();
+            lastBuyBlock[msg.sender] = block.number;
+        }
+
+        // Phase 2 counters (volume excludes protocol fee)
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[msg.sender]) {
+            hasBought[msg.sender] = true;
+            buyersCount += 1;
+        }
 
         sold += amountOut;
         tokenInterface.safeTransfer(msg.sender, amountOut);
 
         if (fee > 0) {
             (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
             if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
             if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
         }
@@ -294,11 +340,11 @@ if (!hasBought[msg.sender]) {
         }
 
         // Auto-finalize (graduate) immediately once the campaign becomes eligible.
-        // This matches pump.fun / gra.fun style behavior: the completion trade triggers LP deployment.
         if (sold == curveSupply || address(this).balance >= graduationTarget) {
             _finalize(0, 0, msg.sender);
         }
 
+        lastActivityTime = block.timestamp;
         emit TokensPurchased(msg.sender, amountOut, total);
         return total;
     }
@@ -312,6 +358,7 @@ if (!hasBought[msg.sender]) {
         returns (uint256 tokensOut, uint256 totalSpent)
     {
         require(!launched, "campaign launched");
+        if (abandoned) revert CampaignAbandoned();
         (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
         require(tokensOut > 0, "zero amount");
         require(tokensOut >= minTokensOut, "slippage");
@@ -321,6 +368,17 @@ if (!hasBought[msg.sender]) {
         uint256 fee = _fee(costNoFee);
         uint256 total = costNoFee + fee;
         require(total == totalSpent, "quote mismatch");
+
+        // Premium mode: first-minute wallet cap (cumulative)
+        if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
+            firstMinuteSpent[msg.sender] += costNoFee;
+            if (firstMinuteSpent[msg.sender] > firstMinWalletCap) revert WalletCapExceeded();
+        }
+        // Premium mode: anti-bot (1 buy per wallet per block)
+        if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
+            if (lastBuyBlock[msg.sender] >= block.number) revert OnePerBlock();
+            lastBuyBlock[msg.sender] = block.number;
+        }
 
         // Phase 2 counters (volume excludes protocol fee)
         totalBuyVolumeWei += costNoFee;
@@ -334,7 +392,6 @@ if (!hasBought[msg.sender]) {
 
         if (fee > 0) {
             (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
             if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
             if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
         }
@@ -348,6 +405,7 @@ if (!hasBought[msg.sender]) {
             _finalize(0, 0, msg.sender);
         }
 
+        lastActivityTime = block.timestamp;
         emit TokensPurchased(msg.sender, tokensOut, total);
         return (tokensOut, total);
     }
@@ -461,6 +519,13 @@ if (!hasBought[msg.sender]) {
     {
         require(!launched, "campaign launched");
         require(amountIn > 0, "zero amount");
+
+        // Creator no-sell window (mandatory, per-tier duration). Sells remain
+        // open for everyone else even if the campaign is paused/abandoned —
+        // holders must always have an exit.
+        if (msg.sender == creator && creatorNoSellBlocks > 0) {
+            if (block.number < startBlock + creatorNoSellBlocks) revert CreatorSellLocked();
+        }
         require(amountIn <= sold, "exceeds sold");
         uint256 gross = _quoteSellNoFee(amountIn);
         uint256 fee = _fee(gross);
@@ -472,7 +537,6 @@ if (!hasBought[msg.sender]) {
 
         if (fee > 0) {
             (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(gross);
-            // fee == protocolNet + leagueFee
             if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
             if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
         }
@@ -480,9 +544,18 @@ if (!hasBought[msg.sender]) {
 
         // Phase 2 counters (volume excludes protocol fee)
         totalSellVolumeWei += gross;
+        lastActivityTime = block.timestamp;
 
         emit TokensSold(msg.sender, amountIn, payout);
         return payout;
+    }
+
+    /// @notice Marks the campaign as abandoned. Blocks new buys; sells stay open.
+    /// @dev Only callable by the factory (which enforces the abandon timeout).
+    function markAbandoned() external onlyFactory {
+        require(!launched, "finalized");
+        abandoned = true;
+        emit Abandoned();
     }
 
     function claimPendingNative() external nonReentrant returns (uint256 amount) {
@@ -564,6 +637,11 @@ if (!hasBought[msg.sender]) {
         uint256 creatorPayout = address(this).balance;
         if (creatorPayout > 0) {
             _sendNative(owner(), creatorPayout);
+        }
+
+        // Notify factory: decrement active campaign count.
+        if (factory != address(0)) {
+            ILaunchFactory(factory).onCampaignFinalized(creator);
         }
 
         // Enable unrestricted token transfers after liquidity is added and funds are distributed

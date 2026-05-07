@@ -24,7 +24,9 @@ async function createCampaignFixture() {
     priceSlope: 0n,
     graduationTarget: 0n,
     lpReceiver: await fx.lpReceiver.getAddress(),
-    initialBuyBnbWei: 0n
+    initialBuyBnbWei: 0n,
+    firstMinWalletCapWei: 0n,
+    antiBotEnabled: false,
   };
 
   await factory.connect(creator).createCampaign(req as any);
@@ -53,6 +55,8 @@ async function createLowTargetCampaignFixture() {
     graduationTarget: 1n,
     lpReceiver: ethers.ZeroAddress,
     initialBuyBnbWei: 0n,
+    firstMinWalletCapWei: 0n,
+    antiBotEnabled: false,
   };
 
   await factory.connect(creator).createCampaign(req as any);
@@ -244,7 +248,10 @@ describe("LaunchCampaign", function () {
       lpReceiver: await creator.getAddress(),
       feeRecipient: await owner.getAddress(),
       creator: await creator.getAddress(),
-      factory: await caller.getAddress()
+      factory: await caller.getAddress(),
+      creatorNoSellBlocks: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     const impl = await Campaign.deploy();
@@ -367,6 +374,9 @@ await campaign.initialize(params);
       feeRecipient: await feeRecipient.getAddress(),
       creator: await creator.getAddress(),
       factory: await creator.getAddress(),
+      creatorNoSellBlocks: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
     await campaign.initialize(params);
 

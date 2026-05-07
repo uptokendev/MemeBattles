@@ -29,6 +29,15 @@ contract LaunchFactory is Ownable {
     error LiquidityBps();
     error NotLive();
     error AlreadyLive();
+    error CooldownActive();
+    error MaxLiveCampaignsReached();
+    error NotRegistered();
+    error PremiumTierRequired();
+    error InvalidTier();
+    error LengthMismatch();
+    error AlreadyFinalized();
+    error AbandonTooEarly();
+    error TreasuryTransferFail();
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -37,6 +46,16 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         uint256 liquidityBps;
+    }
+
+    /// @notice Tier configuration. cooldownSeconds is the per-deploy-slot
+    /// cooldown — each of the `deploySlots` slots tracks its own timer
+    /// independently. maxLiveCampaigns caps concurrent active campaigns.
+    struct TierConfig {
+        uint256 cooldownSeconds;
+        uint8   deploySlots;
+        uint8   maxLiveCampaigns;
+        uint256 creatorNoSellBlocks;
     }
 
     struct CampaignInfo {
@@ -64,6 +83,9 @@ contract LaunchFactory is Ownable {
         uint256 graduationTarget;
         address lpReceiver;
         uint256 initialBuyBnbWei; // optional: buy tokens for the creator using exact BNB in the create tx
+        // Premium-mode fields (0/false = disabled, tier >= Premium required)
+        uint256 firstMinWalletCapWei;
+        bool    antiBotEnabled;
     }
 
     uint256 private constant MAX_BPS = 10_000;
@@ -87,6 +109,19 @@ contract LaunchFactory is Ownable {
 
     CampaignInfo[] private _campaigns;
 
+    // ── Protection Framework ──
+    mapping(address => uint8) public creatorTier;          // 0=Base, 1=Premium, 2=Verified
+    mapping(uint8 => TierConfig) public tierConfig;
+    /// @notice Per-creator, per-deploy-slot timestamp of last use. A slot is
+    /// "free" when its last-use timestamp is older than cooldownSeconds ago.
+    /// Slot count is determined by the creator's tier config.
+    mapping(address => mapping(uint8 => uint64)) public deploySlotLastUsed;
+    mapping(address => uint8) public activeCampaignCount;
+    mapping(address => bool) public isRegisteredCampaign;
+
+    /// @notice How long a campaign can be inactive before anyone can call abandonCampaign.
+    uint256 public abandonTimeout = 30 days;
+
     event CampaignCreated(
         uint256 indexed id,
         address indexed campaign,
@@ -100,6 +135,10 @@ contract LaunchFactory is Ownable {
     event RouterUpdated(address indexed newRouter);
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event LiveEnabled(uint64 at);
+    event TierConfigUpdated(uint8 indexed tier, TierConfig config);
+    event CreatorTierUpdated(address indexed creator, uint8 tier);
+    event CampaignAbandoned(address indexed creator, address indexed campaign);
+    event AbandonTimeoutUpdated(uint256 newTimeout);
 
     constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
         if (router_ == address(0)) revert RouterZero();
@@ -162,10 +201,41 @@ contract LaunchFactory is Ownable {
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
 
-if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
-if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
-if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+        if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
+        if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
+        if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
 
+        // ── Tier enforcement ──
+        TierConfig memory tc = tierConfig[creatorTier[msg.sender]];
+
+        // 1) Per-slot cooldown rate limit. Each of `deploySlots` slots tracks
+        //    its own timer; a slot is free when its last-use timestamp is
+        //    older than cooldownSeconds. Disabled if either is zero.
+        if (tc.deploySlots > 0 && tc.cooldownSeconds > 0) {
+            uint64 cutoff = block.timestamp > tc.cooldownSeconds
+                ? uint64(block.timestamp - tc.cooldownSeconds)
+                : 0;
+            uint8 freeSlot = type(uint8).max;
+            for (uint8 i = 0; i < tc.deploySlots; i++) {
+                if (deploySlotLastUsed[msg.sender][i] <= cutoff) {
+                    freeSlot = i;
+                    break;
+                }
+            }
+            if (freeSlot == type(uint8).max) revert CooldownActive();
+            deploySlotLastUsed[msg.sender][freeSlot] = uint64(block.timestamp);
+        }
+
+        // 2) Concurrent active campaign cap (independent of deploy slots).
+        if (tc.maxLiveCampaigns > 0
+            && activeCampaignCount[msg.sender] >= tc.maxLiveCampaigns) {
+            revert MaxLiveCampaignsReached();
+        }
+
+        // 3) Premium-mode tier gate.
+        if (req.firstMinWalletCapWei > 0 || req.antiBotEnabled) {
+            if (creatorTier[msg.sender] < 1) revert PremiumTierRequired();
+        }
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
@@ -192,13 +262,20 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             lpReceiver: DEAD,
             feeRecipient: feeRecipient,
             creator: msg.sender,
-            factory: address(this)
+            factory: address(this),
+            creatorNoSellBlocks: tc.creatorNoSellBlocks,
+            firstMinWalletCapWei: req.firstMinWalletCapWei,
+            antiBotEnabled: req.antiBotEnabled
         });
 
         address clone = Clones.clone(campaignImplementation);
         LaunchCampaign(payable(clone)).initialize(params);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
+
+        // Track protection state
+        isRegisteredCampaign[campaignAddr] = true;
+        activeCampaignCount[msg.sender]++;
 
         _campaigns.push(
             CampaignInfo({
@@ -219,15 +296,15 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
         uint256 spent = 0;
         if (req.initialBuyBnbWei > 0) {
-    if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
-    if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
+            if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
+            if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
 
-    (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
-        msg.sender,
-        0
-    );
-    spent = totalSpent;
-}
+            (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
+                msg.sender,
+                0
+            );
+            spent = totalSpent;
+        }
         if (msg.value > spent) {
             (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
             if (!ok) revert RefundFail();
@@ -266,6 +343,67 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         if (newProtocolFeeBps < LEAGUE_FEE_BPS) revert FeeTooLowForLeague();
         protocolFeeBps = newProtocolFeeBps;
         emit ProtocolFeeUpdated(newProtocolFeeBps);
+    }
+
+    // ── Tier Management (owner only) ──
+
+    function setTierConfig(uint8 tier, TierConfig calldata cfg) external onlyOwner {
+        tierConfig[tier] = cfg;
+        emit TierConfigUpdated(tier, cfg);
+    }
+
+    function setCreatorTier(address creator, uint8 tier) external onlyOwner {
+        if (tier > 2) revert InvalidTier();
+        creatorTier[creator] = tier;
+        emit CreatorTierUpdated(creator, tier);
+    }
+
+    function batchSetCreatorTier(
+        address[] calldata creators,
+        uint8[] calldata tiers
+    ) external onlyOwner {
+        if (creators.length != tiers.length) revert LengthMismatch();
+        for (uint256 i = 0; i < creators.length; i++) {
+            if (tiers[i] > 2) revert InvalidTier();
+            creatorTier[creators[i]] = tiers[i];
+            emit CreatorTierUpdated(creators[i], tiers[i]);
+        }
+    }
+
+    function setAbandonTimeout(uint256 newTimeout) external onlyOwner {
+        abandonTimeout = newTimeout;
+        emit AbandonTimeoutUpdated(newTimeout);
+    }
+
+    // ── Campaign lifecycle callbacks ──
+
+    /// @notice Called by a campaign on graduation. Decrements active count.
+    /// @dev Underflow-guarded for defense in depth — a buggy campaign that
+    /// double-calls this should not brick finalize for the creator.
+    function onCampaignFinalized(address creator_) external {
+        if (!isRegisteredCampaign[msg.sender]) revert NotRegistered();
+        isRegisteredCampaign[msg.sender] = false;
+        if (activeCampaignCount[creator_] > 0) {
+            activeCampaignCount[creator_]--;
+        }
+    }
+
+    /// @notice Anyone can mark a campaign abandoned after `abandonTimeout` of
+    /// inactivity. Frees the creator's active-campaign slot and blocks new
+    /// buys on the campaign. Sells stay open so holders can exit.
+    function abandonCampaign(address campaign) external {
+        if (!isRegisteredCampaign[campaign]) revert NotRegistered();
+        LaunchCampaign c = LaunchCampaign(payable(campaign));
+        if (c.launched()) revert AlreadyFinalized();
+        if (block.timestamp < c.lastActivityTime() + abandonTimeout) revert AbandonTooEarly();
+
+        address creator_ = c.creator();
+        isRegisteredCampaign[campaign] = false;
+        if (activeCampaignCount[creator_] > 0) {
+            activeCampaignCount[creator_]--;
+        }
+        c.markAbandoned();
+        emit CampaignAbandoned(creator_, campaign);
     }
 
     function campaignsCount() external view returns (uint256) {

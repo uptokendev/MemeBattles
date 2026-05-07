@@ -58,6 +58,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: ethers.parseEther("100"),
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     const tx = await factory.connect(creator).createCampaign(request);
@@ -135,6 +137,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -216,6 +220,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -332,6 +338,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: ethers.parseEther("100"),
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -399,6 +407,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -451,6 +461,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -537,6 +549,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -632,6 +646,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     await factory.connect(creator).createCampaign(request);
@@ -740,6 +756,8 @@ describe("Launchpad end-to-end", function () {
       graduationTarget: 0n,
       lpReceiver: creator.address,
       initialBuyBnbWei: 0n,
+      firstMinWalletCapWei: 0n,
+      antiBotEnabled: false,
     };
 
     // 1. Creator launches a campaign via factory
