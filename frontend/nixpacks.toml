@@ -1,0 +1,14 @@
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["node -e \"console.log('Skipping Vite build for Railway API gateway service')\""]
+
+[start]
+cmd = "npm run api:start"
