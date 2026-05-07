@@ -29,7 +29,8 @@ type NonceResult = {
 };
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
-const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
+const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
+const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
 const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
 const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
 const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
@@ -91,8 +92,31 @@ function ownerSessionCacheKey(input: { walletAddress: string; chainId: number; d
   return `${OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
 }
 
+function legacyOwnerSessionCacheKey(input: { walletAddress: string; chainId: number; draftId: string }) {
+  return `${LEGACY_OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
+}
+
 function ownerSessionInFlightKey(input: { walletAddress: string; chainId: number; draftId: string }) {
   return ownerSessionCacheKey(input);
+}
+
+export function clearCachedDraftOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }) {
+  if (typeof window === "undefined") return;
+
+  const normalized = {
+    walletAddress: normalizeWallet(input.walletAddress),
+    chainId: Number(input.chainId),
+    draftId: input.draftId,
+  };
+
+  try {
+    window.sessionStorage.removeItem(ownerSessionCacheKey(normalized));
+    window.sessionStorage.removeItem(legacyOwnerSessionCacheKey(normalized));
+  } catch {
+    // Ignore storage failures. The user can still sign again.
+  }
+
+  OWNER_SESSION_IN_FLIGHT.delete(ownerSessionInFlightKey(normalized));
 }
 
 function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
@@ -193,6 +217,7 @@ export async function signDraftAction(input: {
   chainId: number;
   action: DraftAuthAction;
   draftId?: string | null;
+  forceNewOwnerSession?: boolean;
 }): Promise<DraftActionAuth> {
   if (!input.signer) {
     throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
@@ -215,12 +240,17 @@ export async function signDraftAction(input: {
 
   if (shouldUseOwnerSession && draftId) {
     const cacheInput = { walletAddress, chainId, draftId };
-    const cached = readCachedOwnerSession(cacheInput);
-    if (cached) return cached;
 
-    const inFlightKey = ownerSessionInFlightKey(cacheInput);
-    const inFlight = OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
-    if (inFlight) return inFlight;
+    if (!input.forceNewOwnerSession) {
+      const cached = readCachedOwnerSession(cacheInput);
+      if (cached) return cached;
+
+      const inFlightKey = ownerSessionInFlightKey(cacheInput);
+      const inFlight = OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
+      if (inFlight) return inFlight;
+    } else {
+      clearCachedDraftOwnerSession(cacheInput);
+    }
 
     const promise = createSignedDraftAction({
       signer: input.signer,
@@ -231,12 +261,12 @@ export async function signDraftAction(input: {
       shouldUseOwnerSession,
     });
 
-    OWNER_SESSION_IN_FLIGHT.set(inFlightKey, promise);
+    OWNER_SESSION_IN_FLIGHT.set(ownerSessionInFlightKey(cacheInput), promise);
 
     try {
       return await promise;
     } finally {
-      OWNER_SESSION_IN_FLIGHT.delete(inFlightKey);
+      OWNER_SESSION_IN_FLIGHT.delete(ownerSessionInFlightKey(cacheInput));
     }
   }
 
