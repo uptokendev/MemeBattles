@@ -27,31 +27,16 @@ function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): str
   return address ? `/api/token-metadata/${chainId}/${address}` : "";
 }
 
-function isKnownDeadLogoUri(value: unknown): boolean {
+function hasLogo(value: unknown): boolean {
   const raw = String(value ?? "").trim();
-  if (!raw) return true;
-  if (raw === "/placeholder.svg") return true;
-
-  const resolved = resolveImageUri(raw);
-  if (!resolved) return true;
-
-  try {
-    const url = new URL(resolved, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-    return url.hostname === "jlbdueorprgnfkcpnkfq.supabase.co";
-  } catch {
-    return false;
-  }
+  if (!raw || raw === "/placeholder.svg") return false;
+  return Boolean(resolveImageUri(raw));
 }
 
 function normalizeLogoUri(value: unknown): string {
   const raw = String(value ?? "").trim();
-  if (!raw) return "/placeholder.svg";
-
   const resolved = resolveImageUri(raw);
-  if (!resolved) return "/placeholder.svg";
-
-  if (isKnownDeadLogoUri(resolved)) return "/placeholder.svg";
-  return resolved;
+  return resolved || "/placeholder.svg";
 }
 
 function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | null {
@@ -110,20 +95,19 @@ function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignIn
   return merged;
 }
 
-async function hydrateLogosFromContract(
+async function hydrateMissingLogosFromContract(
   campaigns: CampaignInfo[],
   fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>
 ): Promise<CampaignInfo[]> {
-  const targets = campaigns.filter((campaign) => isKnownDeadLogoUri(campaign.logoURI)).slice(0, 25);
+  const targets = campaigns.filter((campaign) => !hasLogo(campaign.logoURI)).slice(0, 25);
   if (!targets.length) return campaigns;
 
   const hydrated = new Map<string, string>();
   await Promise.all(
     targets.map(async (campaign) => {
       try {
-        const logo = await fetchCampaignLogoURI(campaign.campaign);
-        const normalized = normalizeLogoUri(logo);
-        if (!isKnownDeadLogoUri(normalized)) hydrated.set(campaign.campaign.toLowerCase(), normalized);
+        const logo = normalizeLogoUri(await fetchCampaignLogoURI(campaign.campaign));
+        if (hasLogo(logo)) hydrated.set(campaign.campaign.toLowerCase(), logo);
       } catch {
         // best-effort only
       }
@@ -151,7 +135,7 @@ export function useLaunchpad() {
     ]);
 
     const merged = mergeCampaigns(onChain, db);
-    return hydrateLogosFromContract(merged, base.fetchCampaignLogoURI);
+    return hydrateMissingLogosFromContract(merged, base.fetchCampaignLogoURI);
   }, [base]);
 
   return {
