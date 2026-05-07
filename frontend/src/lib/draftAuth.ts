@@ -1,5 +1,5 @@
 import type { JsonRpcSigner } from "ethers";
-import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { apiFetch } from "@/lib/apiBase";
 
 export type DraftAuthAction =
   | "create_draft"
@@ -70,7 +70,7 @@ async function fetchNonce(chainId: number, walletAddress: string): Promise<Nonce
     address: normalizeWallet(walletAddress),
   });
 
-  const res = await fetch(buildRealtimeApiUrl(`/api/auth/nonce?${qs.toString()}`), {
+  const res = await apiFetch(`/api/auth/nonce?${qs.toString()}`, {
     cache: "no-store",
   });
 
