@@ -11,3 +11,9 @@ dist
 
 # Local archive accidentally created at repo root
 frontend.zip
+
+# OS / IDE noise
+.DS_Store
+
+# Local debug output
+firebase-debug.log
