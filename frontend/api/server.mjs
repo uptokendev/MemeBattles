@@ -1,6 +1,7 @@
 import express from "express";
 
 import { pool } from "../server/db.js";
+import { createRailwayProxyMiddleware } from "../server/railwayProxy.js";
 
 import activityTrades from "./activity/trades.js";
 import ablyToken from "./ably/token.js";
@@ -139,6 +140,7 @@ app.get("/health", async (_req, res) => {
 
 app.use(express.json({ limit: process.env.API_JSON_LIMIT || "2mb" }));
 app.use(express.urlencoded({ extended: false, limit: process.env.API_FORM_LIMIT || "2mb" }));
+app.use(createRailwayProxyMiddleware({ serviceName: "local-api-gateway" }));
 
 function wrap(fn) {
   return async (req, res, next) => {
