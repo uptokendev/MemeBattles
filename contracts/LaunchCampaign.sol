@@ -293,6 +293,63 @@ receive() external payable {}
         return basePrice + Math.mulDiv(priceSlope, sold, WAD);
     }
 
+    /// @dev Shared buy execution. The four external entry points compute
+    /// (recipient, amountOut, costNoFee, fee, total) up front, validate
+    /// slippage / msg.value, then delegate here. `isUserFacing` skips the
+    /// premium-mode checks for the factory-only initial-buy variants
+    /// (creators are not subject to the wallet cap or anti-bot rule on
+    /// their own initial buy executed in the same tx as creation).
+    function _executeBuy(
+        address recipient,
+        uint256 amountOut,
+        uint256 costNoFee,
+        uint256 fee,
+        uint256 total,
+        bool isUserFacing
+    ) internal {
+        // Premium-mode checks (user-facing only).
+        if (isUserFacing) {
+            if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
+                firstMinuteSpent[recipient] += costNoFee;
+                if (firstMinuteSpent[recipient] > firstMinWalletCap) revert WalletCapExceeded();
+            }
+            if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
+                if (lastBuyBlock[recipient] >= block.number) revert OnePerBlock();
+                lastBuyBlock[recipient] = block.number;
+            }
+        }
+
+        // Phase 2 counters (volume excludes protocol fee).
+        totalBuyVolumeWei += costNoFee;
+        if (!hasBought[recipient]) {
+            hasBought[recipient] = true;
+            buyersCount += 1;
+        }
+
+        sold += amountOut;
+        tokenInterface.safeTransfer(recipient, amountOut);
+
+        if (fee > 0) {
+            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
+            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
+            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+        }
+
+        if (msg.value > total) {
+            _sendNative(msg.sender, msg.value - total);
+        }
+
+        // Auto-finalize (graduate) immediately once eligible.
+        if (sold == curveSupply || address(this).balance >= graduationTarget) {
+            _finalize(0, 0, recipient);
+        }
+
+        if (isUserFacing) {
+            lastActivityTime = block.timestamp;
+        }
+        emit TokensPurchased(recipient, amountOut, total);
+    }
+
     function buyExactTokens(uint256 amountOut, uint256 maxCost)
         external
         payable
@@ -309,44 +366,7 @@ receive() external payable {}
         require(total <= maxCost, "slippage");
         require(msg.value >= total, "insufficient value");
 
-        // Premium mode: first-minute wallet cap (cumulative)
-        if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
-            firstMinuteSpent[msg.sender] += costNoFee;
-            if (firstMinuteSpent[msg.sender] > firstMinWalletCap) revert WalletCapExceeded();
-        }
-        // Premium mode: anti-bot (1 buy per wallet per block)
-        if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
-            if (lastBuyBlock[msg.sender] >= block.number) revert OnePerBlock();
-            lastBuyBlock[msg.sender] = block.number;
-        }
-
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[msg.sender]) {
-            hasBought[msg.sender] = true;
-            buyersCount += 1;
-        }
-
-        sold += amountOut;
-        tokenInterface.safeTransfer(msg.sender, amountOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once the campaign becomes eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, msg.sender);
-        }
-
-        lastActivityTime = block.timestamp;
-        emit TokensPurchased(msg.sender, amountOut, total);
+        _executeBuy(msg.sender, amountOut, costNoFee, fee, total, true);
         return total;
     }
 
@@ -370,44 +390,7 @@ receive() external payable {}
         uint256 total = costNoFee + fee;
         require(total == totalSpent, "quote mismatch");
 
-        // Premium mode: first-minute wallet cap (cumulative)
-        if (firstMinWalletCap > 0 && block.timestamp < campaignStartTime + 60) {
-            firstMinuteSpent[msg.sender] += costNoFee;
-            if (firstMinuteSpent[msg.sender] > firstMinWalletCap) revert WalletCapExceeded();
-        }
-        // Premium mode: anti-bot (1 buy per wallet per block)
-        if (antiBotEnabled && block.number <= startBlock + ANTI_BOT_BLOCKS) {
-            if (lastBuyBlock[msg.sender] >= block.number) revert OnePerBlock();
-            lastBuyBlock[msg.sender] = block.number;
-        }
-
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[msg.sender]) {
-            hasBought[msg.sender] = true;
-            buyersCount += 1;
-        }
-
-        sold += tokensOut;
-        tokenInterface.safeTransfer(msg.sender, tokensOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, msg.sender);
-        }
-
-        lastActivityTime = block.timestamp;
-        emit TokensPurchased(msg.sender, tokensOut, total);
+        _executeBuy(msg.sender, tokensOut, costNoFee, fee, total, true);
         return (tokensOut, total);
     }
 
@@ -431,33 +414,7 @@ receive() external payable {}
         require(total <= maxCost, "slippage");
         require(msg.value >= total, "insufficient value");
 
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[recipient]) {
-            hasBought[recipient] = true;
-            buyersCount += 1;
-        }
-
-        sold += amountOut;
-        tokenInterface.safeTransfer(recipient, amountOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible (factory initial buy can trigger this too).
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, recipient);
-        }
-
-        emit TokensPurchased(recipient, amountOut, total);
+        _executeBuy(recipient, amountOut, costNoFee, fee, total, false);
         return total;
     }
 
@@ -483,33 +440,7 @@ receive() external payable {}
         uint256 total = costNoFee + fee;
         require(total == totalSpent, "quote mismatch");
 
-        // Phase 2 counters (volume excludes protocol fee)
-        totalBuyVolumeWei += costNoFee;
-        if (!hasBought[recipient]) {
-            hasBought[recipient] = true;
-            buyersCount += 1;
-        }
-
-        sold += tokensOut;
-        tokenInterface.safeTransfer(recipient, tokensOut);
-
-        if (fee > 0) {
-            (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(costNoFee);
-            // fee == protocolNet + leagueFee
-            if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-            if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-        }
-
-        if (msg.value > total) {
-            _sendNative(msg.sender, msg.value - total);
-        }
-
-        // Auto-finalize (graduate) immediately once eligible.
-        if (sold == curveSupply || address(this).balance >= graduationTarget) {
-            _finalize(0, 0, recipient);
-        }
-
-        emit TokensPurchased(recipient, tokensOut, total);
+        _executeBuy(recipient, tokensOut, costNoFee, fee, total, false);
         return (tokensOut, total);
     }
 
