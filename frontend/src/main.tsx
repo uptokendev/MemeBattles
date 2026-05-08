@@ -8,6 +8,5 @@ import App from "./App.tsx";
 import "./index.css";
 import "./styles/mwz-hud.css";
 import "./styles/tactical-command-ui.css";
-import "./lib/prepareCloseoutBridge";
 
 createRoot(document.getElementById("root")!).render(<App />);
