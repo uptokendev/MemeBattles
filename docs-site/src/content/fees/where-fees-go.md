@@ -1,6 +1,6 @@
 ---
 title: Where Fees Go
-description: How MemeWarzone routes fees across Leagues, recruiters, airdrops, squads, protocol revenue, and treasury policy.
+description: How MemeWarzone routes fees across creators, Leagues, recruiters, airdrops, squads, protocol revenue, and treasury policy.
 ---
 
 MemeWarzone fees support the whole battlefield, not only the protocol owner.
@@ -8,7 +8,7 @@ MemeWarzone fees support the whole battlefield, not only the protocol owner.
 The important principle is:
 
 ```txt
-protocol revenue = fee remainder after reward routing
+protocol revenue = fee remainder after creator and reward routing
 ```
 
 ## Trading fees
@@ -17,11 +17,20 @@ Every buy and sell has a 2.00% fee.
 
 That fee can route into:
 
+- creator wallet direct trade share
 - LeagueTreasury
 - RecruiterRewardsVault
 - CommunityRewardsVault: warzoneAirdropBalance
 - CommunityRewardsVault: squadPoolBalance
 - ProtocolRevenueVault
+
+## Creator direct trade share
+
+From every buy and sell on a campaign's own bonding curve, **0.10% of trade notional** routes directly to that campaign creator's wallet.
+
+This is not an additional user fee. It is part of the existing 2.00% buy/sell fee.
+
+This gives creators ongoing upside from real bonding-curve activity even before graduation.
 
 ## League Treasury
 
@@ -59,7 +68,7 @@ When a wallet is unlinked, the unassigned recruiter and squad slices route to th
 
 ## Protocol revenue
 
-ProtocolRevenueVault receives the remainder after League, recruiter, airdrop, and Squad Pool routing.
+ProtocolRevenueVault receives the remainder after creator, League, recruiter, airdrop, and Squad Pool routing.
 
 That revenue can then move into Owners Safe policy and weekly treasury distribution. It should not flow directly to personal developer wallets.
 
