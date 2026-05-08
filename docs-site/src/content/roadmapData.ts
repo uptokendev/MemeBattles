@@ -62,77 +62,70 @@ export const roadmapMilestones: RoadmapMilestone[] = [
     id: 'prepare-mode-systems',
     month: 'April',
     title: 'Prepare Mode Systems',
-    shortText: 'Core systems were prepared for the May 12 Prepare Mode rollout.',
+    shortText: 'Drafts, Promotion Pages, scheduled status, and Prepare Mode launch flows were prepared.',
     status: 'completed'
   },
   {
-    id: 'quest-system',
+    id: 'war-missions',
     month: 'Before May 12',
-    title: 'Quest System Deployment',
-    shortText: 'Quest system deployed to drive community growth before launch.',
+    title: 'War Missions / Quest System',
+    shortText: 'Quest system deployment to drive onboarding, social growth, and recruiter applications before launch.',
     status: 'incoming'
   },
   {
     id: 'prepare-mode-live',
-    month: 'May 12',
+    month: 'May 12, 2026',
     title: 'Prepare Mode Live',
-    shortText: 'Creators, recruiters, and squads start preparing before full deployment.',
+    shortText: 'Creators, recruiters, squads, traders, and communities start preparing before full live deployment.',
     status: 'incoming'
   },
   {
-    id: 'launchpad-live',
-    month: 'June 9',
-    title: 'Launchpad Live',
-    shortText: 'Draft campaigns can deploy into the live MemeWarzone battlefield.',
+    id: 'bnb-live-launch',
+    month: 'June 9, 2026',
+    title: 'BNB Live Launch',
+    shortText: 'Full BNB battlefield opens with live campaign deployment, bonding-curve trading, UpVotes, Leagues, rewards, and claims.',
     status: 'scheduled'
-  },
-  {
-    id: 'marketing-wave-one',
-    month: 'June',
-    title: 'Marketing Wave I',
-    shortText: 'First heavy marketing push begins after the launchpad opens.',
-    status: 'scheduled'
-  },
-  {
-    id: 'marketing-wave-two',
-    month: 'July',
-    title: 'Marketing Wave II',
-    shortText: 'Second heavy marketing wave tests scale, retention, and growth channels.',
-    status: 'planned'
   },
   {
     id: 'solana-expansion',
-    month: 'July',
+    month: 'End June 2026',
     title: 'Solana Expansion',
-    shortText: 'MemeWarzone expands beyond BNB Chain into Solana.',
+    shortText: 'MemeWarzone expands beyond BNB Chain into Solana and starts the multi-chain battlefield phase.',
+    status: 'scheduled'
+  },
+  {
+    id: 'marketing-growth-engine',
+    month: 'June-July 2026',
+    title: 'Marketing Growth Engine',
+    shortText: 'Automated Telegram, Discord, and X pushes, Shill & Chill spaces, weekly podcast, and campaign recaps scale activity.',
     status: 'planned'
   },
   {
-    id: 'next-chain-prep',
-    month: 'August',
-    title: 'Next Chain Prep',
-    shortText: 'Preparation begins for Tron, Base, and Ethereum expansion.',
+    id: 'tron-base-eth-expansion',
+    month: 'End August 2026',
+    title: 'Tron, Base & Ethereum',
+    shortText: 'MemeWarzone expands to Tron, Base, and Ethereum to become a serious multi-chain launchpad.',
     status: 'planned'
   },
   {
-    id: 'three-chain-deployment',
-    month: 'August',
-    title: 'Three-Chain Deployment',
-    shortText: 'MemeWarzone deploys on Tron, Base, and Ethereum.',
-    status: 'planned'
-  },
-  {
-    id: 'integrated-bridge',
-    month: 'September',
-    title: 'Integrated Bridge',
-    shortText: 'Chains connect through an integrated bridge experience.',
+    id: 'internal-bridge',
+    month: 'Mid-October 2026',
+    title: 'Internal Bridge',
+    shortText: 'The internal bridge target moves MemeWarzone from multi-chain presence toward one connected interchain battlefield.',
     status: 'future'
   },
   {
-    id: 'launchpad-domination',
-    month: 'October',
-    title: 'Launchpad Domination',
-    shortText: 'MemeWarzone pushes to dominate the competitive launchpad space.',
+    id: 'interchain-battlefield',
+    month: 'After bridge',
+    title: 'Full Interchain Battlefield',
+    shortText: 'Cross-chain discovery, profiles, rankings, reputation, chain choice, and unified reward dashboards expand the ecosystem.',
+    status: 'future'
+  },
+  {
+    id: 'market-share-push',
+    month: 'Year one',
+    title: '20% Per-Chain Target',
+    shortText: 'The strategic target is 20% market share on each chain MemeWarzone launches on, not only 20% across all chains combined.',
     status: 'future'
   }
 ]
