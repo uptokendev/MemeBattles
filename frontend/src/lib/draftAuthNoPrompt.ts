@@ -1,4 +1,5 @@
 import type { JsonRpcSigner } from "ethers";
+import { apiFetch } from "@/lib/apiBase";
 
 export type DraftAuthAction =
   | "create_draft"
@@ -24,6 +25,42 @@ export type DraftActionAuth = {
 
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
+}
+
+function buildDraftAuthMessage(input: {
+  action: DraftAuthAction;
+  walletAddress: string;
+  chainId: number;
+  nonce: string;
+  draftId?: string | null;
+}) {
+  const lines = [
+    "MemeWarzone Prepare Mode",
+    `Action: ${input.action}`,
+    `Wallet: ${normalizeWallet(input.walletAddress)}`,
+    `Chain ID: ${Number(input.chainId)}`,
+  ];
+
+  if (input.draftId) lines.push(`Draft ID: ${input.draftId}`);
+  lines.push(`Nonce: ${input.nonce}`);
+
+  return lines.join("\n");
+}
+
+async function fetchNonce(chainId: number, walletAddress: string) {
+  const qs = new URLSearchParams({
+    chainId: String(chainId),
+    address: normalizeWallet(walletAddress),
+  });
+
+  const res = await apiFetch(`/api/auth/nonce?${qs.toString()}`, { cache: "no-store" });
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok || !json?.nonce) {
+    throw new Error(String(json?.error || json?.message || "Could not create wallet auth nonce."));
+  }
+
+  return String(json.nonce);
 }
 
 export function clearCachedDraftOwnerSession(_input: { walletAddress: string; chainId: number; draftId: string }) {
@@ -55,18 +92,37 @@ export async function signDraftAction(input: {
     throw new Error("Invalid wallet chain. Reconnect your wallet and try again.");
   }
 
-  if (input.action === "create_draft") {
-    const original = await import("./draftAuth");
-    return original.signDraftAction(input);
+  if (input.action !== "create_draft") {
+    return {
+      action: input.action,
+      walletAddress,
+      chainId,
+      draftId: input.draftId || null,
+      nonce: "",
+      message: "",
+      signature: "",
+    };
   }
 
+  if (!input.signer) throw new Error("Wallet signer unavailable. Reconnect your wallet and try again.");
+
+  const nonce = await fetchNonce(chainId, walletAddress);
+  const message = buildDraftAuthMessage({
+    action: "create_draft",
+    walletAddress,
+    chainId,
+    nonce,
+    draftId: input.draftId || null,
+  });
+  const signature = await input.signer.signMessage(message);
+
   return {
-    action: input.action,
+    action: "create_draft",
     walletAddress,
     chainId,
     draftId: input.draftId || null,
-    nonce: "",
-    message: "",
-    signature: "",
+    nonce,
+    message,
+    signature,
   };
 }
