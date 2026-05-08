@@ -56,10 +56,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         {
-          find: "@/lib/launchpadClient",
-          replacement: path.resolve(__dirname, "./src/lib/launchpadClientHybrid.ts"),
-        },
-        {
           find: "@",
           replacement: path.resolve(__dirname, "./src"),
         },

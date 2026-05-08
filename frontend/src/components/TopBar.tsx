@@ -43,6 +43,10 @@ type TickerItem = {
 
 const brandMark = "/assets/ticker.png";
 
+const ENABLE_TOPBAR_ONCHAIN_METRICS = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_ENABLE_TOPBAR_ONCHAIN_METRICS || "").trim().toLowerCase(),
+);
+
 function navPathMatches(currentPathname: string, currentSearch: string, target: string): boolean {
   try {
     const url = new URL(target, "https://memewarzone.local");
@@ -118,18 +122,24 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
-        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
+if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
+  setTickerMetricsByCampaign({});
+  tickerInitialLoadedRef.current = true;
+  return;
+}
 
-        if (cancelled) return;
+const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
 
-        const next: Record<string, CampaignMetrics | null> = {};
-        top.forEach((c, idx) => {
-          const r = results[idx];
-          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
-        });
+if (cancelled) return;
 
-        setTickerMetricsByCampaign(next);
-        tickerInitialLoadedRef.current = true;
+const next: Record<string, CampaignMetrics | null> = {};
+top.forEach((c, idx) => {
+  const r = results[idx];
+  next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
+});
+
+setTickerMetricsByCampaign(next);
+tickerInitialLoadedRef.current = true;
       } catch (err) {
         console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
