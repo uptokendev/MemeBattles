@@ -9,7 +9,15 @@
     "cron:daily-repair": "node --enable-source-maps dist/jobs/dailyRepair.js",
     "cron:sweep-expired-claims": "node --enable-source-maps dist/jobs/sweepExpiredClaims.js",
     "cron:finalize-epoch-winners": "node --enable-source-maps dist/jobs/finalizeEpochWinners.js",
-    "cron:export-league-payout-batch": "node --enable-source-maps dist/jobs/exportLeaguePayoutBatch.js"
+    "cron:export-league-payout-batch": "node --enable-source-maps dist/jobs/exportLeaguePayoutBatch.js",
+    "cron:export-recruiter-settlement-batch": "node --enable-source-maps dist/jobs/exportRecruiterSettlementBatch.js",
+    "cron:reconcile-attribution": "node --enable-source-maps dist/jobs/reconcileAttribution.js",
+    "cron:process-reward-epoch": "node --enable-source-maps dist/jobs/processRewardEpoch.js",
+    "cron:process-reward-expiries": "node --enable-source-maps dist/jobs/processRewardExpiries.js",
+    "cron:process-reward-eligibility": "node --enable-source-maps dist/jobs/processRewardEligibility.js",
+    "cron:process-reward-reminders": "node --enable-source-maps dist/jobs/processRewardReminders.js",
+    "simulate:phase7": "node --enable-source-maps dist/jobs/runPhase7Simulation.js",
+    "test:phase4-7": "tsx --test src/tests/phase4-phase7.test.ts"
   },
   "dependencies": {
     "ably": "^2.6.0",

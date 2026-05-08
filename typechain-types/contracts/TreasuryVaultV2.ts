@@ -26,29 +26,62 @@ import type {
 export interface TreasuryVaultV2Interface extends Interface {
   getFunction(
     nameOrSignature:
+      | "claim"
+      | "claimsPaused"
       | "dailyPayoutCap"
       | "dailySpent"
+      | "epochClaimedTotal"
+      | "epochLeafClaimed"
+      | "epochRoot"
+      | "epochTotal"
       | "lastDay"
+      | "maxClaimPerTx"
+      | "maxEpochTotal"
       | "maxPayoutPerTx"
       | "multisig"
       | "operator"
       | "payout"
       | "payoutsPaused"
+      | "rootPoster"
       | "setCaps"
+      | "setClaimCaps"
+      | "setClaimsPaused"
+      | "setEpochRoot"
       | "setOperator"
       | "setPayoutsPaused"
+      | "setRootPoster"
       | "withdraw"
   ): FunctionFragment;
 
   getEvent(
     nameOrSignatureOrTopic:
       | "CapsUpdated"
+      | "ClaimCapsUpdated"
+      | "Claimed"
+      | "ClaimsPaused"
+      | "EpochRootSet"
       | "OperatorUpdated"
       | "Payout"
       | "PayoutsPaused"
+      | "RootPosterUpdated"
       | "Withdraw"
   ): EventFragment;
 
+  encodeFunctionData(
+    functionFragment: "claim",
+    values: [
+      BigNumberish,
+      BytesLike,
+      BigNumberish,
+      AddressLike,
+      BigNumberish,
+      BytesLike[]
+    ]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "claimsPaused",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "dailyPayoutCap",
     values?: undefined
@@ -57,7 +90,31 @@ export interface TreasuryVaultV2Interface extends Interface {
     functionFragment: "dailySpent",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "epochClaimedTotal",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "epochLeafClaimed",
+    values: [BigNumberish, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "epochRoot",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "epochTotal",
+    values: [BigNumberish]
+  ): string;
   encodeFunctionData(functionFragment: "lastDay", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "maxClaimPerTx",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "maxEpochTotal",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "maxPayoutPerTx",
     values?: undefined
@@ -73,8 +130,24 @@ export interface TreasuryVaultV2Interface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "rootPoster",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "setCaps",
     values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setClaimCaps",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setClaimsPaused",
+    values: [boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setEpochRoot",
+    values: [BigNumberish, BytesLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setOperator",
@@ -85,16 +158,43 @@ export interface TreasuryVaultV2Interface extends Interface {
     values: [boolean]
   ): string;
   encodeFunctionData(
+    functionFragment: "setRootPoster",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "withdraw",
     values: [AddressLike, BigNumberish]
   ): string;
 
+  decodeFunctionResult(functionFragment: "claim", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "claimsPaused",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "dailyPayoutCap",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "dailySpent", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "epochClaimedTotal",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "epochLeafClaimed",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "epochRoot", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "epochTotal", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "lastDay", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "maxClaimPerTx",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "maxEpochTotal",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "maxPayoutPerTx",
     data: BytesLike
@@ -106,13 +206,30 @@ export interface TreasuryVaultV2Interface extends Interface {
     functionFragment: "payoutsPaused",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "rootPoster", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "setCaps", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setClaimCaps",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setClaimsPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setEpochRoot",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "setOperator",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "setPayoutsPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRootPoster",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "withdraw", data: BytesLike): Result;
@@ -127,6 +244,81 @@ export namespace CapsUpdatedEvent {
   export interface OutputObject {
     maxPayoutPerTx: bigint;
     dailyPayoutCap: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ClaimCapsUpdatedEvent {
+  export type InputTuple = [
+    maxClaimPerTx: BigNumberish,
+    maxEpochTotal: BigNumberish
+  ];
+  export type OutputTuple = [maxClaimPerTx: bigint, maxEpochTotal: bigint];
+  export interface OutputObject {
+    maxClaimPerTx: bigint;
+    maxEpochTotal: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ClaimedEvent {
+  export type InputTuple = [
+    epochId: BigNumberish,
+    recipient: AddressLike,
+    amount: BigNumberish,
+    leaf: BytesLike
+  ];
+  export type OutputTuple = [
+    epochId: bigint,
+    recipient: string,
+    amount: bigint,
+    leaf: string
+  ];
+  export interface OutputObject {
+    epochId: bigint;
+    recipient: string;
+    amount: bigint;
+    leaf: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace ClaimsPausedEvent {
+  export type InputTuple = [paused: boolean];
+  export type OutputTuple = [paused: boolean];
+  export interface OutputObject {
+    paused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace EpochRootSetEvent {
+  export type InputTuple = [
+    epochId: BigNumberish,
+    root: BytesLike,
+    totalAmount: BigNumberish
+  ];
+  export type OutputTuple = [
+    epochId: bigint,
+    root: string,
+    totalAmount: bigint
+  ];
+  export interface OutputObject {
+    epochId: bigint;
+    root: string;
+    totalAmount: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -164,6 +356,18 @@ export namespace PayoutsPausedEvent {
   export type OutputTuple = [paused: boolean];
   export interface OutputObject {
     paused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RootPosterUpdatedEvent {
+  export type InputTuple = [rootPoster: AddressLike];
+  export type OutputTuple = [rootPoster: string];
+  export interface OutputObject {
+    rootPoster: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -227,11 +431,46 @@ export interface TreasuryVaultV2 extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  claim: TypedContractMethod<
+    [
+      epochId: BigNumberish,
+      category: BytesLike,
+      rank: BigNumberish,
+      recipient: AddressLike,
+      amount: BigNumberish,
+      proof: BytesLike[]
+    ],
+    [void],
+    "nonpayable"
+  >;
+
+  claimsPaused: TypedContractMethod<[], [boolean], "view">;
+
   dailyPayoutCap: TypedContractMethod<[], [bigint], "view">;
 
   dailySpent: TypedContractMethod<[], [bigint], "view">;
 
+  epochClaimedTotal: TypedContractMethod<
+    [arg0: BigNumberish],
+    [bigint],
+    "view"
+  >;
+
+  epochLeafClaimed: TypedContractMethod<
+    [arg0: BigNumberish, arg1: BytesLike],
+    [boolean],
+    "view"
+  >;
+
+  epochRoot: TypedContractMethod<[arg0: BigNumberish], [string], "view">;
+
+  epochTotal: TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
+
   lastDay: TypedContractMethod<[], [bigint], "view">;
+
+  maxClaimPerTx: TypedContractMethod<[], [bigint], "view">;
+
+  maxEpochTotal: TypedContractMethod<[], [bigint], "view">;
 
   maxPayoutPerTx: TypedContractMethod<[], [bigint], "view">;
 
@@ -247,8 +486,24 @@ export interface TreasuryVaultV2 extends BaseContract {
 
   payoutsPaused: TypedContractMethod<[], [boolean], "view">;
 
+  rootPoster: TypedContractMethod<[], [string], "view">;
+
   setCaps: TypedContractMethod<
     [_maxPayoutPerTx: BigNumberish, _dailyPayoutCap: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setClaimCaps: TypedContractMethod<
+    [_maxClaimPerTx: BigNumberish, _maxEpochTotal: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setClaimsPaused: TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+
+  setEpochRoot: TypedContractMethod<
+    [epochId: BigNumberish, root: BytesLike, totalAmount: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -265,6 +520,12 @@ export interface TreasuryVaultV2 extends BaseContract {
     "nonpayable"
   >;
 
+  setRootPoster: TypedContractMethod<
+    [_rootPoster: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   withdraw: TypedContractMethod<
     [to: AddressLike, amount: BigNumberish],
     [void],
@@ -276,13 +537,52 @@ export interface TreasuryVaultV2 extends BaseContract {
   ): T;
 
   getFunction(
+    nameOrSignature: "claim"
+  ): TypedContractMethod<
+    [
+      epochId: BigNumberish,
+      category: BytesLike,
+      rank: BigNumberish,
+      recipient: AddressLike,
+      amount: BigNumberish,
+      proof: BytesLike[]
+    ],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "claimsPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
     nameOrSignature: "dailyPayoutCap"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "dailySpent"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "epochClaimedTotal"
+  ): TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "epochLeafClaimed"
+  ): TypedContractMethod<
+    [arg0: BigNumberish, arg1: BytesLike],
+    [boolean],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "epochRoot"
+  ): TypedContractMethod<[arg0: BigNumberish], [string], "view">;
+  getFunction(
+    nameOrSignature: "epochTotal"
+  ): TypedContractMethod<[arg0: BigNumberish], [bigint], "view">;
+  getFunction(
     nameOrSignature: "lastDay"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "maxClaimPerTx"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "maxEpochTotal"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "maxPayoutPerTx"
@@ -304,9 +604,29 @@ export interface TreasuryVaultV2 extends BaseContract {
     nameOrSignature: "payoutsPaused"
   ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
+    nameOrSignature: "rootPoster"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "setCaps"
   ): TypedContractMethod<
     [_maxPayoutPerTx: BigNumberish, _dailyPayoutCap: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setClaimCaps"
+  ): TypedContractMethod<
+    [_maxClaimPerTx: BigNumberish, _maxEpochTotal: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setClaimsPaused"
+  ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setEpochRoot"
+  ): TypedContractMethod<
+    [epochId: BigNumberish, root: BytesLike, totalAmount: BigNumberish],
     [void],
     "nonpayable"
   >;
@@ -316,6 +636,9 @@ export interface TreasuryVaultV2 extends BaseContract {
   getFunction(
     nameOrSignature: "setPayoutsPaused"
   ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setRootPoster"
+  ): TypedContractMethod<[_rootPoster: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "withdraw"
   ): TypedContractMethod<
@@ -330,6 +653,34 @@ export interface TreasuryVaultV2 extends BaseContract {
     CapsUpdatedEvent.InputTuple,
     CapsUpdatedEvent.OutputTuple,
     CapsUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "ClaimCapsUpdated"
+  ): TypedContractEvent<
+    ClaimCapsUpdatedEvent.InputTuple,
+    ClaimCapsUpdatedEvent.OutputTuple,
+    ClaimCapsUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "Claimed"
+  ): TypedContractEvent<
+    ClaimedEvent.InputTuple,
+    ClaimedEvent.OutputTuple,
+    ClaimedEvent.OutputObject
+  >;
+  getEvent(
+    key: "ClaimsPaused"
+  ): TypedContractEvent<
+    ClaimsPausedEvent.InputTuple,
+    ClaimsPausedEvent.OutputTuple,
+    ClaimsPausedEvent.OutputObject
+  >;
+  getEvent(
+    key: "EpochRootSet"
+  ): TypedContractEvent<
+    EpochRootSetEvent.InputTuple,
+    EpochRootSetEvent.OutputTuple,
+    EpochRootSetEvent.OutputObject
   >;
   getEvent(
     key: "OperatorUpdated"
@@ -353,6 +704,13 @@ export interface TreasuryVaultV2 extends BaseContract {
     PayoutsPausedEvent.OutputObject
   >;
   getEvent(
+    key: "RootPosterUpdated"
+  ): TypedContractEvent<
+    RootPosterUpdatedEvent.InputTuple,
+    RootPosterUpdatedEvent.OutputTuple,
+    RootPosterUpdatedEvent.OutputObject
+  >;
+  getEvent(
     key: "Withdraw"
   ): TypedContractEvent<
     WithdrawEvent.InputTuple,
@@ -370,6 +728,50 @@ export interface TreasuryVaultV2 extends BaseContract {
       CapsUpdatedEvent.InputTuple,
       CapsUpdatedEvent.OutputTuple,
       CapsUpdatedEvent.OutputObject
+    >;
+
+    "ClaimCapsUpdated(uint256,uint256)": TypedContractEvent<
+      ClaimCapsUpdatedEvent.InputTuple,
+      ClaimCapsUpdatedEvent.OutputTuple,
+      ClaimCapsUpdatedEvent.OutputObject
+    >;
+    ClaimCapsUpdated: TypedContractEvent<
+      ClaimCapsUpdatedEvent.InputTuple,
+      ClaimCapsUpdatedEvent.OutputTuple,
+      ClaimCapsUpdatedEvent.OutputObject
+    >;
+
+    "Claimed(uint256,address,uint256,bytes32)": TypedContractEvent<
+      ClaimedEvent.InputTuple,
+      ClaimedEvent.OutputTuple,
+      ClaimedEvent.OutputObject
+    >;
+    Claimed: TypedContractEvent<
+      ClaimedEvent.InputTuple,
+      ClaimedEvent.OutputTuple,
+      ClaimedEvent.OutputObject
+    >;
+
+    "ClaimsPaused(bool)": TypedContractEvent<
+      ClaimsPausedEvent.InputTuple,
+      ClaimsPausedEvent.OutputTuple,
+      ClaimsPausedEvent.OutputObject
+    >;
+    ClaimsPaused: TypedContractEvent<
+      ClaimsPausedEvent.InputTuple,
+      ClaimsPausedEvent.OutputTuple,
+      ClaimsPausedEvent.OutputObject
+    >;
+
+    "EpochRootSet(uint256,bytes32,uint256)": TypedContractEvent<
+      EpochRootSetEvent.InputTuple,
+      EpochRootSetEvent.OutputTuple,
+      EpochRootSetEvent.OutputObject
+    >;
+    EpochRootSet: TypedContractEvent<
+      EpochRootSetEvent.InputTuple,
+      EpochRootSetEvent.OutputTuple,
+      EpochRootSetEvent.OutputObject
     >;
 
     "OperatorUpdated(address)": TypedContractEvent<
@@ -403,6 +805,17 @@ export interface TreasuryVaultV2 extends BaseContract {
       PayoutsPausedEvent.InputTuple,
       PayoutsPausedEvent.OutputTuple,
       PayoutsPausedEvent.OutputObject
+    >;
+
+    "RootPosterUpdated(address)": TypedContractEvent<
+      RootPosterUpdatedEvent.InputTuple,
+      RootPosterUpdatedEvent.OutputTuple,
+      RootPosterUpdatedEvent.OutputObject
+    >;
+    RootPosterUpdated: TypedContractEvent<
+      RootPosterUpdatedEvent.InputTuple,
+      RootPosterUpdatedEvent.OutputTuple,
+      RootPosterUpdatedEvent.OutputObject
     >;
 
     "Withdraw(address,uint256)": TypedContractEvent<

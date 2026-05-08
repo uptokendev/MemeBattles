@@ -40,12 +40,26 @@ export function parseBearer(req) {
 
 export function resolveAblyApiKey() {
   const raw = p(process.env.ABLY_API_KEY);
-  const keyName = p(process.env.ABLY_API_KEY_NAME || process.env.ABLY_KEY_NAME);
-  const keySecret = p(process.env.ABLY_API_KEY_SECRET || process.env.ABLY_KEY_SECRET);
+
+  const keyName = p(
+    process.env.ABLY_API_KEY_NAME ||
+    process.env.ABLY_KEY_NAME
+  );
+
+  const keySecret = p(
+    process.env.ABLY_API_KEY_SECRET ||
+    process.env.ABLY_KEY_SECRET ||
+    process.env.ABLY_API_SECRET ||
+    process.env.ABLY_SECRET
+  );
 
   if (raw.includes(":")) return raw;
   if (raw && keySecret) return `${raw}:${keySecret}`;
   if (keyName && keySecret) return `${keyName}:${keySecret}`;
+
+  const viteClientKey = p(process.env.VITE_ABLY_CLIENT_KEY);
+  if (viteClientKey.includes(":")) return viteClientKey;
+
   return raw;
 }
 
@@ -98,10 +112,30 @@ export async function ensureChatSchema() {
       role text NOT NULL DEFAULT 'trader',
       message text NOT NULL,
       client_nonce text,
-      hidden boolean NOT NULL DEFAULT false,
+      is_hidden boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_hidden boolean NOT NULL DEFAULT false`);
+
+await pool.query(`
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'chat_messages'
+        AND column_name = 'hidden'
+    ) THEN
+      EXECUTE '
+        UPDATE public.chat_messages
+        SET is_hidden = COALESCE(hidden, false)
+        WHERE is_hidden IS DISTINCT FROM COALESCE(hidden, false)
+      ';
+    END IF;
+  END $$;
+`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.chat_mutes (

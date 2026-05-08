@@ -1,11 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
-const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
+const ENABLE_LOCAL_ABLY = String(import.meta.env.VITE_ENABLE_LOCAL_ABLY || "").trim() === "1";
+
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+function isLocalBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  return isLoopbackHost(window.location.hostname);
+}
+
+function shouldDisableLocalAbly(): boolean {
+  // In Vite local dev, missing server-side ABLY_API_KEY creates noisy 500s from
+  // /api/ably/token. Netlify/Railway/prod can still enable realtime normally.
+  return isLocalBrowser() && !ABLY_AUTH_BASE && !ENABLE_LOCAL_ABLY;
+}
 
 function getAuthBase() {
+  if (shouldDisableLocalAbly()) return "";
+
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
   }
@@ -121,6 +138,11 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
       setConnectionState("disabled");
       return;
     }
+    if (shouldDisableLocalAbly()) {
+      setEntry(null);
+      setConnectionState("disabled_local_dev");
+      return;
+    }
     if (!getAuthBase()) {
       setEntry(null);
       setConnectionState("missing_base");
@@ -151,7 +173,7 @@ export function useAblyLeagueChannel(opts: { enabled: boolean; chainId: number }
     }
 
     return () => {
-        try {
+      try {
         e.client.connection.off(onConn);
       } catch {
         // ignore

@@ -244,7 +244,9 @@ describe("LaunchCampaign", function () {
       lpReceiver: await creator.getAddress(),
       feeRecipient: await owner.getAddress(),
       creator: await creator.getAddress(),
-      factory: await caller.getAddress()
+      factory: await caller.getAddress(),
+      tradeRouteProfile: 1,
+      finalizeRouteProfile: 1
     };
 
     const impl = await Campaign.deploy();
@@ -367,6 +369,8 @@ await campaign.initialize(params);
       feeRecipient: await feeRecipient.getAddress(),
       creator: await creator.getAddress(),
       factory: await creator.getAddress(),
+      tradeRouteProfile: 1,
+      finalizeRouteProfile: 1,
     };
     await campaign.initialize(params);
 
@@ -399,10 +403,77 @@ await campaign.initialize(params);
     // FeeRecipient portion escrowed
     await expect(tx).to.emit(campaign, "NativeEscrowed").withArgs(await feeRecipient.getAddress(), protocolNet);
     expect(await campaign.pendingNative(await feeRecipient.getAddress())).to.eq(protocolNet);
+    expect(await campaign.pendingNativeTotal()).to.eq(protocolNet);
 
     // LeagueReceiver is the TreasuryRouter; forwarding fails but doesn't revert; router retains funds
     await expect(tx).to.emit(leagueReceiver, "ForwardFailed").withArgs(await vault.getAddress(), leagueFee);
     expect(await ethers.provider.getBalance(await leagueReceiver.getAddress())).to.eq(leagueFee);
+  });
+
+
+  it("pending escrow does not count toward graduation threshold", async () => {
+    const { creator, owner, alice } = await deployCoreFixture();
+
+    const Reverting = await ethers.getContractFactory("RevertingReceiver");
+    const feeRecipient = await Reverting.deploy();
+    await feeRecipient.waitForDeployment();
+
+    const Router = await ethers.getContractFactory("MockRouter");
+    const dexRouter = await Router.deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    await dexRouter.waitForDeployment();
+
+    const Campaign = await ethers.getContractFactory("LaunchCampaign");
+    const impl = await Campaign.deploy();
+    await impl.waitForDeployment();
+
+    const implAddr = await impl.getAddress();
+    const minimalProxyBytecode =
+      "0x3d602d80600a3d3981f3363d3d373d3d3d363d73" +
+      implAddr.slice(2).toLowerCase() +
+      "5af43d82803e903d91602b57fd5bf3";
+    const txClone = await creator.sendTransaction({ data: minimalProxyBytecode });
+    const receipt = await txClone.wait();
+    const cloneAddr = receipt!.contractAddress;
+
+    const campaign = Campaign.attach(cloneAddr);
+
+    const amountOut = ethers.parseEther("1");
+    const basePrice = 10n ** 12n;
+    const priceSlope = 10n ** 9n;
+    const protocolFeeBps = 200n;
+    const { total } = quoteBuyExactTokens(0n, amountOut, basePrice, priceSlope, protocolFeeBps);
+
+    await campaign.initialize({
+      name: "Escrowed",
+      symbol: "ESC",
+      logoURI: "ipfs://logo",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
+      basePrice,
+      priceSlope,
+      graduationTarget: total,
+      liquidityBps: 8000,
+      protocolFeeBps,
+      leagueFeeBps: 0,
+      leagueReceiver: await owner.getAddress(),
+      router: await dexRouter.getAddress(),
+      lpReceiver: await creator.getAddress(),
+      feeRecipient: await feeRecipient.getAddress(),
+      creator: await creator.getAddress(),
+      factory: await creator.getAddress(),
+      tradeRouteProfile: 1,
+      finalizeRouteProfile: 1,
+    });
+
+    await campaign.connect(alice).buyExactTokens(amountOut, total, { value: total });
+
+    expect(await campaign.launched()).to.eq(false);
+    expect(await campaign.pendingNativeTotal()).to.be.gt(0n);
+    expect(await ethers.provider.getBalance(await campaign.getAddress())).to.eq(total);
   });
 
   it("auto-finalize: completion buy triggers graduation; adds liquidity; burns unsold; transfers creatorReserve; pays creator; enables trading", async () => {

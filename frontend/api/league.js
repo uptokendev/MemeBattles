@@ -433,7 +433,7 @@ async function getPrizeMeta(chainId, periodNorm, epochStartIso, rangeEndIso) {
   if (epochStartIso) {
     try {
       const { rows: rrows } = await pool.query(
-        `select category, coalesce(sum(amount_raw), 0)::numeric(78,0) as amount_raw
+        `select category, coalesce(sum(amount_raw::numeric), 0)::numeric(78,0) as amount_raw
            from public.league_rollovers
           where chain_id = $1 and period = $2 and epoch_start = $3::timestamptz
           group by category`,

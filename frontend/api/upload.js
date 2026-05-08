@@ -8,10 +8,21 @@ export const config = {
   api: { bodyParser: false },
 };
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+let storageClient = null;
+
+function getStorageClient() {
+  if (storageClient) return storageClient;
+
+  const url = String(process.env.SUPABASE_URL || "").trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+  if (!url || !key) {
+    throw new Error("Supabase upload storage env is missing");
+  }
+
+  storageClient = createClient(url, key);
+  return storageClient;
+}
 
 function bad(res, code, msg) {
   return res.status(code).json({ error: msg });
@@ -34,17 +45,25 @@ function pickExt(mimetype) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
+  let supabase;
+  try {
+    supabase = getStorageClient();
+  } catch (e) {
+    console.error("[api/upload] storage env missing", e);
+    return bad(res, 503, "Uploads are not configured");
+  }
+
   const q = req.query || {};
   const kind = String(q.kind || "avatar"); // "avatar" | "logo"
   const chainId = String(q.chainId || "97");
   const address = String(q.address || "").toLowerCase();
 
-  const maxBytes = kind === "avatar" ? 3 * 1024 * 1024 : 2 * 1024 * 1024;
-const form = formidable({
-  multiples: false,
-  maxFileSize: maxBytes,
-  maxTotalFileSize: maxBytes,
-});
+  const maxBytes = 5 * 1024 * 1024;
+  const form = formidable({
+    multiples: false,
+    maxFileSize: maxBytes,
+    maxTotalFileSize: maxBytes,
+  });
 
   form.parse(req, async (err, fields, files) => {
     try {
@@ -72,7 +91,7 @@ const form = formidable({
 
       const name =
         kind === "avatar" && address
-          ? `avatars/${chainId}/${address}.${ext}`
+          ? `avatars/${chainId}/${address}/${uuid}.${ext}`
           : `logos/${chainId}/${uuid}.${ext}`;
 
       const buf = fs.readFileSync(filepath);
@@ -80,7 +99,7 @@ const form = formidable({
       const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
         contentType: mimetype,
         upsert: true,
-        cacheControl: "3600",
+        cacheControl: kind === "avatar" ? "60" : "3600",
       });
 
       // best-effort cleanup of temp file

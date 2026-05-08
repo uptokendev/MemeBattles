@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 /// @dev Minimal UniswapV2/PancakeV2 factory mock for tests.
 contract MockV2Factory {

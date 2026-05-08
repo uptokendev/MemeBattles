@@ -1,0 +1,209 @@
+import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { requireDraftActionAuth } from "./draft-auth.js";
+
+const STATUSES = new Set([
+  "draft",
+  "promotion_published",
+  "ready_to_launch",
+  "scheduled",
+  "deployed",
+  "archived",
+]);
+const VISIBILITIES = new Set(["public", "unlisted", "private"]);
+const ZERO = { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0 };
+
+function methodAllowed(req, res, allowed) {
+  if (allowed.includes(req.method)) return true;
+  badMethod(res);
+  return false;
+}
+
+function normalizeAddress(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return isAddress(raw) ? raw : "";
+}
+
+async function getPool() {
+  if (!String(process.env.DATABASE_URL || "").trim()) return null;
+  try {
+    const mod = await import("../../server/db.js");
+    return mod.pool || null;
+  } catch (err) {
+    console.warn("[draft-read] DB unavailable", err?.message || err);
+    return null;
+  }
+}
+
+function normalizeTicker(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^\$+/, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, 12);
+}
+
+function mapDraftRow(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    chainId: Number(row.chain_id ?? row.chainId ?? 97),
+    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    name: String(row.name || ""),
+    ticker: normalizeTicker(row.ticker),
+    description: row.description || null,
+    category: row.category || "meme",
+    logoUrl: row.logo_url ?? row.logoUrl ?? null,
+    websiteUrl: row.website_url ?? row.websiteUrl ?? null,
+    xUrl: row.x_url ?? row.xUrl ?? null,
+    otherUrl: row.other_url ?? row.otherUrl ?? null,
+    slug: String(row.slug || ""),
+    status: STATUSES.has(row.status) ? row.status : "draft",
+    visibility: VISIBILITIES.has(row.visibility) ? row.visibility : "private",
+    campaignAddress: row.campaign_address ?? row.campaignAddress ?? null,
+    tokenAddress: row.token_address ?? row.tokenAddress ?? null,
+    deployTxHash: row.deploy_tx_hash ?? row.deployTxHash ?? null,
+    archivedAt: row.archived_at ?? row.archivedAt ?? null,
+    deployedAt: row.deployed_at ?? row.deployedAt ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? row.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+function mapPromotionRow(row, draftId) {
+  return {
+    draftId: String(row?.draft_id ?? row?.draftId ?? draftId),
+    missionStatement: row?.mission_statement ?? row?.missionStatement ?? "",
+    roadmap: Array.isArray(row?.roadmap) ? row.roadmap : [],
+    launchStrategy: row?.launch_strategy ?? row?.launchStrategy ?? "",
+    telegramUrl: row?.telegram_url ?? row?.telegramUrl ?? "",
+    discordUrl: row?.discord_url ?? row?.discordUrl ?? "",
+    xUrl: row?.x_url ?? row?.xUrl ?? "",
+    websiteUrl: row?.website_url ?? row?.websiteUrl ?? "",
+    docs: Array.isArray(row?.docs) ? row.docs : [],
+    creatorNote: row?.creator_note ?? row?.creatorNote ?? "",
+    bannerUrl: row?.banner_url ?? row?.bannerUrl ?? "",
+    shareMessage: row?.share_message ?? row?.shareMessage ?? "",
+    publishedAt: row?.published_at ?? row?.publishedAt ?? null,
+    createdAt: row?.created_at ?? row?.createdAt ?? null,
+    updatedAt: row?.updated_at ?? row?.updatedAt ?? null,
+  };
+}
+
+function popularityFromMetrics(metrics) {
+  const m = { ...ZERO, ...(metrics || {}) };
+  const views = Number(m.views || 0);
+  const follows = Number(m.follows || 0);
+  const comments = Number(m.comments || 0);
+  const reactions = Number(m.reactions || 0);
+  const shares = Number(m.shares || 0);
+  const signedActions = Number(m.signedActions ?? m.signed_actions ?? 0);
+  const rankingScore = follows * 10 + comments * 5 + reactions * 3 + shares * 4 + signedActions * 7 + Math.min(views, 2500) * 0.35;
+  const popularityPercentage = Math.max(0, Math.min(100, Math.round((rankingScore / 2200) * 100)));
+  const heatLabel = popularityPercentage >= 90 ? "On Fire" : popularityPercentage >= 70 ? "Hot" : popularityPercentage >= 35 ? "Warming" : "Cold";
+  return { views, follows, comments, reactions, shares, signedActions, popularityPercentage, heatLabel, rankingScore: Math.round(rankingScore) };
+}
+
+export async function signedDraftById(req, res) {
+  if (!methodAllowed(req, res, ["GET", "POST"])) return;
+
+  const draftId = String(req.params?.draftId || "");
+  const pool = await getPool();
+  if (!pool) return json(res, 503, { error: "Signed draft reads require DATABASE_URL-backed wallet auth." });
+
+  const draftRes = await pool.query("select * from campaign_drafts where id::text = $1 limit 1", [draftId]);
+  const draft = mapDraftRow(draftRes.rows[0]);
+  if (!draft) return json(res, 404, { error: "Draft not found" });
+
+  if (draft.visibility === "private") {
+    let auth = null;
+    if (req.method === "POST") {
+      const body = await readJson(req);
+      auth = body.auth || null;
+    }
+
+    if (!auth) {
+      return json(res, 401, {
+        error: "Private draft requires signed owner wallet auth.",
+        code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+        chainId: draft.chainId,
+      });
+    }
+
+    const ok = await requireDraftActionAuth({
+      res,
+      pool,
+      auth,
+      expectedWallet: draft.creatorWallet,
+      chainId: draft.chainId,
+      action: "read_draft",
+      draftId,
+    });
+    if (!ok) return;
+  }
+
+  const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
+  const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
+
+  return json(res, 200, {
+    draft,
+    promotion: mapPromotionRow(promoRes.rows[0], draft.id),
+    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO),
+  });
+}
+
+export async function signedPrepareBySlug(req, res) {
+  if (!methodAllowed(req, res, ["GET", "POST"])) return;
+
+  const slug = String(req.params?.slug || "");
+  const pool = await getPool();
+  if (!pool) return json(res, 503, { error: "Signed prepare reads require DATABASE_URL-backed wallet auth." });
+
+  const draftRes = await pool.query("select * from campaign_drafts where slug = $1 limit 1", [slug]);
+  const draft = mapDraftRow(draftRes.rows[0]);
+  if (!draft) return json(res, 404, { error: "Prepare page not found" });
+
+  if (draft.visibility === "private") {
+    let auth = null;
+    if (req.method === "POST") {
+      const body = await readJson(req);
+      auth = body.auth || null;
+    }
+
+    if (!auth) {
+      return json(res, 401, {
+        error: "Private draft requires signed owner wallet auth.",
+        code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+        chainId: draft.chainId,
+        draftId: draft.id,
+      });
+    }
+
+    const ok = await requireDraftActionAuth({
+      res,
+      pool,
+      auth,
+      expectedWallet: draft.creatorWallet,
+      chainId: draft.chainId,
+      action: "read_draft",
+      draftId: draft.id,
+    });
+    if (!ok) return;
+  }
+
+  await pool
+    .query(
+      "insert into campaign_draft_metrics (draft_id, views) values ($1, 1) on conflict (draft_id) do update set views = campaign_draft_metrics.views + 1, updated_at = now()",
+      [draft.id],
+    )
+    .catch(() => {});
+
+  const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
+  const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
+
+  return json(res, 200, {
+    draft,
+    promotion: mapPromotionRow(promoRes.rows[0], draft.id),
+    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO),
+  });
+}

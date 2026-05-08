@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiFetch } from "@/lib/apiBase";
 
 type TelemetryResponse = {
   ts: number;
@@ -59,7 +60,7 @@ export default function Status() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch("/api/status", {
+      const r = await apiFetch("/api/status", {
         headers: {
           authorization: `Bearer ${tok}`,
         },

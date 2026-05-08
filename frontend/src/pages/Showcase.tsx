@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
+import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
 import { HeaderBand } from "@/components/home/HeaderBand";
-import { LeagueOverlayCard } from "@/components/home/LeagueOverlayCard";
-
+import { LeagueRecruiterSlider } from "@/components/home/LeagueRecruiterSlider";
 
 const Showcase = () => {
-  const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "" });
+  const [query, setQuery] = useState<HomeQuery>({ tab: "drafts", timeFilter: "24h", search: "" });
 
-  // Optional: keep TopBar typeahead behavior, but also allow "filter in place" for the Home grid.
   useEffect(() => {
-    const onSearch = (e: any) => {
-      const q = String(e?.detail ?? "");
+    const onSearch = (e: Event) => {
+      const q = String((e as CustomEvent<string>).detail ?? "");
       setQuery((prev) => ({ ...prev, search: q }));
     };
     window.addEventListener("memebattles:homeSearch", onSearch);
@@ -22,53 +21,38 @@ const Showcase = () => {
   const effectiveQuery = useMemo(() => {
     return {
       ...query,
-      // default tab should be trending
-      tab: query.tab ?? "trending",
+      tab: query.tab ?? "drafts",
     } as HomeQuery;
   }, [query]);
 
+  const isDraftRow = effectiveQuery.tab === "drafts";
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="relative px-3 md:px-6 pb-10">
-        {/*
-          Header band (logo + glow strip)
-          IMPORTANT: avoid negative margins here — the scroll container clips anything pushed above its top.
-          We align the logo by tightening App.tsx main padding instead.
-        */}
+    <div className="mwz-launchpad-page h-full overflow-y-auto">
+      <div className="mwz-launchpad-inner relative px-1 md:px-2 pb-10 space-y-3">
         <HeaderBand />
 
-        {/* Featured + League card row */}
-        <div className="-translate-y-6 md:-translate-y-14">
-          {/* Mobile: show the league card above featured */}
-          <div className="md:hidden mt-2 mb-5">
-            <LeagueOverlayCard className="w-full max-w-[420px] mx-auto" />
-          </div>
-
-          {/* Desktop: side-by-side so the league card has a fixed slot next to Featured */}
-          <div className="hidden md:flex gap-4 items-start">
-            <div className="flex-1 min-w-0">
-              <FeaturedCampaigns />
-            </div>
-            <div className="w-[420px] shrink-0">
-              <LeagueOverlayCard className="w-full" />
-            </div>
-          </div>
-
-          {/* Mobile: featured below the league card */}
-          <div className="md:hidden">
-            <FeaturedCampaigns />
-          </div>
+        <div className="mwz-featured-layout grid gap-3 xl:grid-cols-[minmax(0,1fr)_480px] items-start">
+          <FeaturedCampaigns />
+          <LeagueRecruiterSlider className="w-full" />
         </div>
 
-        {/* Tabs / filters / sort / search */}
-        <div className="mt-5 -translate-y-6 md:-translate-y-14">
-          <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
+        <div className="mwz-live-heading flex flex-col gap-1 pt-2">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
+            {isDraftRow ? "Prepare Mode" : "Live Warzone"}
+          </div>
+          <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
+            {isDraftRow ? "Draft Campaigns" : "Live Campaigns"}
+          </h2>
+          <p className="max-w-2xl text-sm text-success/65">
+            {isDraftRow
+              ? "Published Prepare Pages appear in the normal campaign row before trading goes live. Draft cards keep their Prepare Mode layout and route to the promotion page."
+              : "Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages."}
+          </p>
         </div>
 
-        {/* Main campaign browsing surface (paged / infinite) */}
-        <div className="mt-4 -translate-y-6 md:-translate-y-14">
-          <CampaignGrid query={effectiveQuery} />
-        </div>
+        <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
+        {isDraftRow ? <DraftCampaignGrid query={effectiveQuery} /> : <CampaignGrid query={effectiveQuery} />}
       </div>
     </div>
   );

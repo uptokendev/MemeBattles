@@ -2,7 +2,36 @@
  * Profile and user-related TypeScript interfaces
  */
 
-export type ProfileTab = "balances" | "coins" | "replies" | "rewards" | "notifications" | "followers";
+export type ProfileTab =
+  | "balances"
+  | "coins"
+  | "drafts"
+  | "replies"
+  | "rewards"
+  | "airdrops"
+  | "squad"
+  | "recruiter"
+  | "notifications"
+  | "followers"
+  | "following";
+
+export const profileTabs: ProfileTab[] = [
+  "balances",
+  "coins",
+  "drafts",
+  "replies",
+  "rewards",
+  "airdrops",
+  "squad",
+  "recruiter",
+  "notifications",
+  "followers",
+  "following",
+];
+
+export function isProfileTab(value: string): value is ProfileTab {
+  return profileTabs.includes(value as ProfileTab);
+}
 
 export interface Coin {
   id: number;

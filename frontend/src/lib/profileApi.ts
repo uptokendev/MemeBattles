@@ -1,9 +1,4 @@
-/**
- * Client for the repo's Vercel functions:
- * - GET  /api/profile?chainId=...&address=...
- * - POST /api/profile
- * - GET  /api/auth/nonce?chainId=...&address=...
- */
+import { apiFetch, apiUrl } from "@/lib/apiBase";
 
 export type UserProfile = {
   chainId: number;
@@ -18,18 +13,6 @@ export type UserProfile = {
   rankUpdatedAt?: string | null;
 };
 
-const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
-const API_BASE = rawBase.replace(/\/$/, "");
-
-function buildUrl(pathWithQuery: string): string {
-  // Absolute base URL: VITE_API_BASE_URL=https://<your-vercel-domain>
-  if (API_BASE && /^https?:\/\//i.test(API_BASE)) {
-    return `${API_BASE}${pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`}`;
-  }
-  // Default: same-origin /api/*
-  return new URL(pathWithQuery, window.location.origin).toString();
-}
-
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
   if (!text) return null;
@@ -38,6 +21,10 @@ async function readJson(res: Response): Promise<any> {
   } catch {
     return null;
   }
+}
+
+function buildUrl(pathWithQuery: string): string {
+  return apiUrl(pathWithQuery);
 }
 
 function normalizeAddress(addr: string): string {
@@ -51,7 +38,6 @@ export function buildProfileMessage(args: {
   displayName?: string | null;
   avatarUrl?: string | null;
 }): string {
-  // Must match frontend/api/profile.js exactly.
   const name = String(args.displayName ?? "").trim().slice(0, 32);
   const avatar = String(args.avatarUrl ?? "").trim().slice(0, 200);
   return [
@@ -68,13 +54,10 @@ export function buildProfileMessage(args: {
 
 export async function fetchUserProfile(chainId: number, address: string): Promise<UserProfile | null> {
   const addr = normalizeAddress(address);
-  const url = buildUrl(
-    `/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
-  );
+  const url = buildUrl(`/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`);
 
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
-    // If API isn't available in local dev, fail gracefully.
     if (res.status === 404) return null;
     const j = await readJson(res);
     throw new Error(j?.error || `Failed to load profile (${res.status})`);
@@ -100,10 +83,7 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
 
 export async function requestNonce(chainId: number, address: string): Promise<string> {
   const addr = normalizeAddress(address);
-  const url = buildUrl(
-    `/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
-  );
-  const res = await fetch(url, { method: "GET" });
+  const res = await apiFetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`, { method: "GET" });
   if (!res.ok) {
     const j = await readJson(res);
     throw new Error(j?.error || `Nonce request failed (${res.status})`);
@@ -124,8 +104,7 @@ export type SaveProfileInput = {
 };
 
 export async function saveUserProfile(input: SaveProfileInput): Promise<void> {
-  const url = buildUrl(`/api/profile`);
-  const res = await fetch(url, {
+  const res = await apiFetch(`/api/profile`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

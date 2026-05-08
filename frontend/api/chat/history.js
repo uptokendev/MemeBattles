@@ -20,7 +20,7 @@ export default async function handler(req, res) {
        FROM public.chat_messages
        WHERE chain_id = $1
          AND campaign_address = $2
-         AND hidden = false
+         AND COALESCE(is_hidden, false) = false
          AND ($3::bigint IS NULL OR id < $3)
        ORDER BY id DESC
        LIMIT $4`,

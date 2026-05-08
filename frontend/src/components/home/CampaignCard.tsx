@@ -7,7 +7,7 @@ import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/fol
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
-import { Star } from "lucide-react";
+import { Flame, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export type CampaignCardVM = {
@@ -16,9 +16,7 @@ export type CampaignCardVM = {
   symbol: string;
   logoURI?: string;
   creator?: string;
-  createdAt?: number; // unix seconds
-
-  // Computed / hydrated fields
+  createdAt?: number;
   marketCapUsdLabel?: string | null;
   athLabel?: string | null;
   progressPct?: number | null;
@@ -62,9 +60,12 @@ export function CampaignCard({
   const addr = String(vm.campaignAddress ?? "").toLowerCase();
   const creatorAddr = String(vm.creator ?? "").trim();
   const canOpenProfile = creatorAddr.length > 0;
+  const progress = Math.max(0, Math.min(100, Number(vm.progressPct ?? 0)));
+  const statusLabel = vm.isDexTrading ? "DEX" : "LIVE";
+
   const openProfile = () => {
     if (!canOpenProfile) return;
-    navigate(`/profile?address=${encodeURIComponent(creatorAddr)}`);
+    navigate(`/profile/${encodeURIComponent(creatorAddr)}`);
   };
 
   useEffect(() => {
@@ -95,25 +96,24 @@ export function CampaignCard({
       try {
         window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
         return;
-      } catch {}
+      } catch {
+        // non-fatal
+      }
       return;
     }
 
     if (followBusy) return;
     setFollowBusy(true);
     const next = !followed;
-    setFollowed(next); // optimistic
+    setFollowed(next);
     try {
-      if (next) {
-        await followCampaign(wallet.account, addr, chainIdForStorage);
-      } else {
-        await unfollowCampaign(wallet.account, addr, chainIdForStorage);
-      }
-    } catch (err: any) {
-      setFollowed(!next); // rollback
+      if (next) await followCampaign(wallet.account, addr, chainIdForStorage);
+      else await unfollowCampaign(wallet.account, addr, chainIdForStorage);
+    } catch (err: unknown) {
+      setFollowed(!next);
       toast({
         title: "Follow failed",
-        description: String(err?.message ?? err ?? "Unknown error"),
+        description: String((err as { message?: string })?.message ?? err ?? "Unknown error"),
       });
     } finally {
       setFollowBusy(false);
@@ -123,143 +123,126 @@ export function CampaignCard({
   return (
     <div
       className={cn(
-        "group relative flex w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] flex-col rounded-2xl overflow-hidden border border-border/50 bg-card/60",
-        "transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(255,159,28,0.18),0_18px_50px_-22px_rgba(255,120,0,0.38)]",
+        "mwz-card group relative flex w-full max-w-none sm:max-w-[clamp(172px,19vw,220px)] flex-col overflow-hidden rounded-none",
+        "min-h-[322px] border-success/35 bg-black/70",
         className
       )}
     >
-      {/* Image */}
-      <button
-        className="block w-full text-left"
-        onClick={() => navigate(`/token/${addr}`)}
-        aria-label={`Open ${vm.name}`}
-      >
-        <div className="relative aspect-square w-full">
+      <button className="block w-full text-left" onClick={() => navigate(`/token/${addr}`)} aria-label={`Open ${vm.name}`}>
+        <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black">
+          <div className="absolute inset-0 mwz-stat-grid opacity-30 z-10 pointer-events-none" />
           <img
             src={resolveImageUri(vm.logoURI) || "/placeholder.svg"}
             alt={vm.name}
-            className="h-full w-full object-cover bg-muted"
+            className="h-full w-full object-cover bg-black transition-transform duration-300 group-hover:scale-[1.03]"
             draggable={false}
             loading="lazy"
           />
-          {/* subtle top fade */}
-          <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-transparent" />
+          <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_45%,rgba(0,0,0,0.62))]" />
+          <div className="absolute left-2 top-2 z-30 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success shadow-[0_0_12px_rgba(57,255,79,0.14)]">
+            {statusLabel}
+          </div>
+          <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 border border-orange-400/60 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-orange-400">
+            <Flame className="h-3 w-3" />
+            {Number(vm.votes24h ?? 0)}/24h
+          </div>
         </div>
       </button>
 
-      {/* Content */}
-      <div className="flex aspect-square flex-col p-3 sm:p-4">
-        {/* Title + upvotes */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-base font-semibold truncate">{vm.name}</div>
-            <div className="text-xs text-muted-foreground truncate">{vm.symbol ? `$${vm.symbol}` : ""}</div>
-          </div>
-          <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {/* Follow ⭐ */}
-            <Button
-              type="button"
-              variant="secondary"
-              size="icon"
-              className="h-8 w-8 rounded-xl"
-              onClick={toggleFollow}
-              disabled={followBusy}
-              aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
-              title={followed ? "Unfollow" : "Follow"}
-            >
-              <Star
-  className={cn(
-    "h-4 w-4 transition-all",
-    followed
-      ? "text-accent fill-accent scale-110 drop-shadow-[0_0_10px_rgba(240,106,26,0.38)]"
-      : "text-muted-foreground/70"
-  )}
-/>
-            </Button>
-
-            {/* Upvote */}
-            <UpvoteDialog campaignAddress={addr} />
-          </div>
-        </div>
-
-        {/* Creator + time */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <img
-              src="/assets/profile_placeholder.png"
-              alt="Creator"
-              className={cn(
-                "w-7 h-7 rounded-full object-cover border border-border/60",
-                canOpenProfile ? "cursor-pointer hover:border-accent/60" : ""
-              )}
-              draggable={false}
-              role={canOpenProfile ? "button" : undefined}
-              tabIndex={canOpenProfile ? 0 : undefined}
-              onClick={(e) => {
-                if (!canOpenProfile) return;
-                e.stopPropagation();
-                openProfile();
-              }}
-              onKeyDown={(e) => {
-                if (!canOpenProfile) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  openProfile();
-                }
-              }}
-            />
-            <div
-              className={cn(
-                "text-xs text-muted-foreground truncate",
-                canOpenProfile ? "cursor-pointer hover:text-foreground" : ""
-              )}
-              role={canOpenProfile ? "button" : undefined}
-              tabIndex={canOpenProfile ? 0 : undefined}
-              onClick={(e) => {
-                if (!canOpenProfile) return;
-                e.stopPropagation();
-                openProfile();
-              }}
-              onKeyDown={(e) => {
-                if (!canOpenProfile) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  openProfile();
-                }
-              }}
-            >
-              {vm.creator ? shortAddr(vm.creator) : "—"}
+      <div className="flex flex-1 flex-col p-3 text-success">
+        <button className="min-w-0 text-left" onClick={() => navigate(`/token/${addr}`)}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="mwz-section-title truncate text-lg leading-none">{vm.name}</div>
+              <div className="mt-1 truncate text-sm text-success/70">{vm.symbol ? `$${vm.symbol}` : ""}</div>
+            </div>
+            <div className="shrink-0 text-right text-[10px] uppercase tracking-[0.16em] text-success/55">
+              {timeAgoFromUnix(vm.createdAt)}
             </div>
           </div>
-          <div className="text-xs text-muted-foreground shrink-0">{timeAgoFromUnix(vm.createdAt)}</div>
-        </div>
+        </button>
 
-        {/* Key stats */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[10px] text-muted-foreground">MCap</div>
-            <div className="text-xs font-semibold truncate">{vm.marketCapUsdLabel ?? "—"}</div>
-          </div>
-
-          <div className="text-right">
-            <div className="text-[10px] text-muted-foreground">UpVotes (24h)</div>
-            <div className="text-xs font-semibold">{Number(vm.votes24h ?? 0)}</div>
-          </div>
-        </div>
-
-        {/* ATH bar */}
-        <div className="mt-3">
-          <AthBar
-            currentLabel={vm.athLabel ?? null}
-            storageKey={`ath:${String(chainIdForStorage)}:${addr}`}
-            className="text-[10px]"
-            barWidthPx={220}
-            barMaxWidth="100%"
+        <div className="mt-3 flex items-center gap-2 min-w-0">
+          <img
+            src="/assets/profile_placeholder.png"
+            alt="Creator"
+            className={cn("h-7 w-7 rounded-full border border-success/35 object-cover", canOpenProfile ? "cursor-pointer hover:border-orange-400/70" : "")}
+            draggable={false}
+            role={canOpenProfile ? "button" : undefined}
+            tabIndex={canOpenProfile ? 0 : undefined}
+            onClick={(e) => {
+              if (!canOpenProfile) return;
+              e.stopPropagation();
+              openProfile();
+            }}
+            onKeyDown={(e) => {
+              if (!canOpenProfile) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                openProfile();
+              }
+            }}
           />
+          <div
+            className={cn("truncate text-xs text-success/65", canOpenProfile ? "cursor-pointer hover:text-orange-400" : "")}
+            role={canOpenProfile ? "button" : undefined}
+            tabIndex={canOpenProfile ? 0 : undefined}
+            onClick={(e) => {
+              if (!canOpenProfile) return;
+              e.stopPropagation();
+              openProfile();
+            }}
+            onKeyDown={(e) => {
+              if (!canOpenProfile) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                openProfile();
+              }
+            }}
+          >
+            {vm.creator ? shortAddr(vm.creator) : "—"}
+          </div>
         </div>
 
+        <div className="mt-3 grid grid-cols-2 gap-3 border-y border-success/20 py-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">MCap</div>
+            <div className="truncate text-sm text-success">{vm.marketCapUsdLabel ?? "—"}</div>
+          </div>
+          <div className="min-w-0 text-right">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">Curve</div>
+            <div className="truncate text-sm text-success">{Number.isFinite(progress) ? `${progress.toFixed(0)}%` : "—"}</div>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <div className="h-2 border border-success/30 bg-black/70 p-[1px] shadow-[inset_0_0_12px_rgba(57,255,79,0.08)]">
+            <div className="h-full bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <AthBar currentLabel={vm.athLabel ?? null} storageKey={`ath:${String(chainIdForStorage)}:${addr}`} className="text-[10px]" barWidthPx={220} barMaxWidth="100%" />
+        </div>
+
+        <div className="mt-auto flex items-center justify-between gap-2 pt-3" onClick={(e) => e.stopPropagation()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn("mwz-button h-8 w-8", followed && "mwz-button-active")}
+            onClick={toggleFollow}
+            disabled={followBusy}
+            aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
+            title={followed ? "Unfollow" : "Follow"}
+          >
+            <Star className={cn("h-4 w-4 transition-all", followed ? "fill-current text-orange-400" : "text-success/75")} />
+          </Button>
+
+          <UpvoteDialog campaignAddress={addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "compile": "hardhat compile",
+    "sync:frontend-abis": "node scripts/sync-frontend-abis.cjs",
+    "compile:frontend-abis": "hardhat compile && node scripts/sync-frontend-abis.cjs",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "gas": "REPORT_GAS=true hardhat test"

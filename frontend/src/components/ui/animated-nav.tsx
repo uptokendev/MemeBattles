@@ -17,7 +17,24 @@ interface AnimatedNavProps {
 export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const selectedValue = location.pathname
+
+  const matchesPath = (target: string) => {
+    if (/^https?:\/\//i.test(target)) return false
+
+    try {
+      const url = new URL(target, "https://memewarzone.local")
+      if (url.pathname !== location.pathname) return false
+
+      const currentSearch = new URLSearchParams(location.search)
+      for (const [key, value] of url.searchParams.entries()) {
+        if (currentSearch.get(key) !== value) return false
+      }
+
+      return true
+    } catch {
+      return location.pathname === target
+    }
+  }
 
   const handleChange = (path: string) => {
     if (/^https?:\/\//i.test(path)) {
@@ -33,7 +50,7 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
     `nav-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
 
   const getGliderTransform = () => {
-    const index = options.findIndex((option) => option.path === selectedValue)
+    const index = options.findIndex((option) => matchesPath(option.path))
     return `translateY(${index * 100}%)`
   }
 
@@ -42,7 +59,7 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
     return `h-1/${options.length}`
   }
 
-  const isPageInMenu = options.some((option) => option.path === selectedValue)
+  const isPageInMenu = options.some((option) => matchesPath(option.path))
 
   return (
     <div className="relative flex flex-col pl-3 w-full">
@@ -53,14 +70,14 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
             name="navigation"
             type="radio"
             value={option.path}
-            checked={selectedValue === option.path}
+            checked={matchesPath(option.path)}
             onChange={(e) => handleChange(e.target.value)}
             className="absolute w-full h-full m-0 opacity-0 cursor-pointer z-30 appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none ring-0 active:outline-none [-webkit-tap-highlight-color:transparent] accent-[hsl(var(--accent))]"
           />
           <label
             htmlFor={makeId(option.label)}
             className={`cursor-pointer flex items-center gap-3 text-base py-3 px-4 block transition-all duration-300 ease-in-out outline-none focus:outline-none focus-visible:outline-none [-webkit-tap-highlight-color:transparent] ${
-              selectedValue === option.path
+              matchesPath(option.path)
                 ? "text-accent font-medium"
                 : "text-sidebar-foreground hover:text-accent"
             }`}
@@ -70,7 +87,7 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
                 src={option.icon} 
                 alt={option.label} 
                 className={`w-5 h-5 transition-all duration-300 ${
-                  selectedValue === option.path
+                  matchesPath(option.path)
                     ? "[filter:brightness(0)_saturate(100%)_invert(50%)_sepia(88%)_saturate(1567%)_hue-rotate(355deg)_brightness(101%)_contrast(92%)]"
                     : "opacity-70"
                 }`}
