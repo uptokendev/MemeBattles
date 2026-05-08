@@ -43,6 +43,24 @@ const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
 ]);
 const OWNER_SESSION_IN_FLIGHT = new Map<string, Promise<DraftActionAuth>>();
 
+function buildConnectedWalletDraftAuth(input: {
+  action: DraftAuthAction;
+  walletAddress: string;
+  chainId: number;
+  draftId?: string | null;
+}): DraftActionAuth {
+  return {
+    action: input.action,
+    walletAddress: normalizeWallet(input.walletAddress),
+    chainId: Number(input.chainId),
+    draftId: input.draftId || null,
+    nonce: "",
+    message: "",
+    signature: "",
+  };
+}
+
+
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
 }
@@ -255,7 +273,20 @@ export async function signDraftAction(input: {
     draftId && OWNER_SESSION_ACTIONS.has(input.action)
   );
 
+  // The backend already treats connected owner-wallet draft actions as authorized
+  // without a second wallet signature. Only create_draft should sign.
+  // This removes repeat prompts when entering edit, saving/publishing promotion,
+  // archiving, deploying, or returning from the public prepare page to edit.
   if (shouldUseOwnerSession && draftId) {
+    return buildConnectedWalletDraftAuth({
+      action: input.action,
+      walletAddress,
+      chainId,
+      draftId,
+    });
+  }
+
+  if (false && shouldUseOwnerSession && draftId) {
     const cacheInput = { walletAddress, chainId, draftId };
 
     if (!input.forceNewOwnerSession) {

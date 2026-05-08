@@ -3,7 +3,7 @@
  * Responsive header with search, actions, and ticker feed
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Menu } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -77,6 +77,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
   const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<Record<string, CampaignMetrics | null>>({});
   const [tickerLoading, setTickerLoading] = useState(true);
+  const tickerInitialLoadedRef = useRef(false);
 
   const { results: searchResults, loading: searchLoading, error: searchError } = useTokenSearch(searchQuery, allCampaigns, {
     limit: 10,
@@ -108,7 +109,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
     const load = async () => {
       try {
-        setTickerLoading(true);
+        if (!tickerInitialLoadedRef.current) setTickerLoading(true);
         const campaigns = await fetchCampaigns();
         const all = campaigns ?? [];
         const top = all.slice(0, 12);
@@ -128,11 +129,14 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         });
 
         setTickerMetricsByCampaign(next);
+        tickerInitialLoadedRef.current = true;
       } catch (err) {
         console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
-          setTickerCampaigns([]);
-          setTickerMetricsByCampaign({});
+          if (!tickerInitialLoadedRef.current) {
+            setTickerCampaigns([]);
+            setTickerMetricsByCampaign({});
+          }
         }
       } finally {
         if (!cancelled) setTickerLoading(false);

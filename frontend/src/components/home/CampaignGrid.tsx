@@ -121,6 +121,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const initialLoadedRef = useRef(false);
 
   useEffect(() => {
     if (query.tab !== "new") return;
@@ -195,7 +196,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     let mounted = true;
     (async () => {
       if (query.tab === "drafts") return;
-      setLoading(true);
+      if (!initialLoadedRef.current) setLoading(true);
       setErr(null);
       try {
         if (DEBUG) console.debug("[CampaignGrid] fetch first page params", { ...baseParams, cursor: 0 });
@@ -215,11 +216,14 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         setItems(resp.items ?? []);
         setNextCursor(resp.nextCursor ?? null);
         setLastUpdatedAt(resp.updatedAt ?? null);
+        initialLoadedRef.current = true;
       } catch (e: any) {
         if (!mounted) return;
         setErr(e?.message ?? "Failed to load campaigns");
-        setItems([]);
-        setNextCursor(null);
+        if (!initialLoadedRef.current) {
+          setItems([]);
+          setNextCursor(null);
+        }
       } finally {
         if (!mounted) return;
         setLoading(false);
@@ -375,12 +379,17 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
             <div key={i} className="aspect-[1/2] w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse" />
           ))}
         </div>
-      ) : err ? (
+      ) : err && !vms.length ? (
         <div className="py-10 text-center text-sm text-muted-foreground">{err}</div>
       ) : vms.length === 0 ? (
         <div className="py-10 text-center text-sm text-muted-foreground">No campaigns yet.</div>
       ) : (
         <>
+          {err && (
+            <div className="mb-3 rounded-lg border border-orange-400/30 bg-orange-500/10 px-3 py-2 text-xs text-orange-200">
+              Background refresh failed. Showing the last loaded campaigns.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
             {vms.map((vm) => (
               <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />

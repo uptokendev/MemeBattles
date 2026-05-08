@@ -87,6 +87,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   const [followedMap, setFollowedMap] = useState<Record<string, boolean>>({});
   const [followBusyMap, setFollowBusyMap] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const initialLoadedRef = useRef(false);
 
   const { patchByCampaign } = useLeagueRealtime({
     enabled: true,
@@ -119,7 +120,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      setLoading(true);
+      if (!initialLoadedRef.current) setLoading(true);
       setErr(null);
       try {
         const r = await apiFetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
@@ -127,6 +128,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         if (!r.ok) throw new Error(j?.error ?? "Failed to load featured");
         if (!mounted) return;
         setItems(Array.isArray(j.items) ? j.items : []);
+        initialLoadedRef.current = true;
       } catch (e: unknown) {
         if (!mounted) return;
         setErr(String((e as { message?: string })?.message ?? "Failed to load featured"));
@@ -337,13 +339,19 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth" style={{ scrollbarWidth: "none" } as React.CSSProperties}>
           {loading && !cards.length ? (
             Array.from({ length: 4 }).map((_, i) => <div key={i} className="mwz-card h-[204px] min-w-[420px] animate-pulse" />)
-          ) : err ? (
+          ) : err && !cards.length ? (
             <div className="mwz-muted py-8 text-sm">{err}</div>
           ) : cards.length === 0 ? (
             <div className="mwz-muted py-8 text-sm">No featured campaigns yet.</div>
           ) : (
-            cards.map((c) => (
-              <div
+            <>
+              {err && (
+                <div className="mwz-card min-w-[320px] max-w-[420px] p-4 text-xs text-orange-200">
+                  Background refresh failed. Showing last loaded featured campaigns.
+                </div>
+              )}
+              {cards.map((c) => (
+                <div
                 key={c.addr}
                 data-addr={c.addr}
                 className="mwz-card snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none"
@@ -461,8 +469,9 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                     <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${activeChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
                   </div>
                 </div>
-              </div>
-            ))
+                </div>
+              ))}
+            </>
           )}
         </div>
       </div>

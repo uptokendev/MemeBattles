@@ -8,8 +8,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
@@ -45,6 +45,59 @@ import { ScreenFrame } from "@/components/layout/ScreenFrame";
 
 const queryClient = new QueryClient();
 
+function InternalLinkInterceptor() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
+
+      const target = event.target as Element | null;
+      const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+
+      const rawHref = anchor.getAttribute("href") || "";
+      if (!rawHref) return;
+      if (rawHref.startsWith("#")) return;
+      if (/^(mailto:|tel:|sms:)/i.test(rawHref)) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+
+      if (url.origin !== window.location.origin) return;
+      if (
+        url.pathname.startsWith("/api/") ||
+        url.pathname.startsWith("/assets/") ||
+        url.pathname.startsWith("/favicon") ||
+        url.pathname.startsWith("/robots.txt")
+      ) {
+        return;
+      }
+
+      const next = `${url.pathname}${url.search}${url.hash}`;
+      const current = `${location.pathname}${location.search}${location.hash}`;
+
+      event.preventDefault();
+      if (next !== current) navigate(next);
+    };
+
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [navigate, location.pathname, location.search, location.hash]);
+
+  return null;
+}
+
+
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showContent, setShowContent] = useState(false);
@@ -68,6 +121,7 @@ const App = () => {
             }`}
           >
             <BrowserRouter>
+            <InternalLinkInterceptor />
               <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
