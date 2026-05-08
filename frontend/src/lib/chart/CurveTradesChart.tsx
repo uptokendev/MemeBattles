@@ -1,7 +1,7 @@
 // src/lib/chart/CurveTradesChart.tsx
 // TradingView-style chart using TradingView Lightweight Charts (free).
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   createChart,
   CrosshairMode,
@@ -49,18 +49,12 @@ export const CurveTradesChart: React.FC<Props> = ({ points, intervalSec, height 
 
   const lastBarCountRef = useRef(0);
 
-  // Re-render once per second so we always extend candles to "now"
-  const [nowTick, setNowTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick((x) => x + 1), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Build candles (fills gaps + extends to now)
+  // Build candles when actual chart inputs change.
+  // Realtime trades still update instantly because `points` changes when Ably/indexer data arrives.
   const { candles } = useMemo(() => {
     const nowSec = Math.floor(Date.now() / 1000);
     return buildCandles(points ?? [], intervalSec, { extendToNow: true, nowSec });
-  }, [points, intervalSec, nowTick]);
+  }, [points, intervalSec]);
 
   // Fit only once per interval to avoid "jumping" during realtime updates
   const fittedRef = useRef<{ intervalSec: number; fitted: boolean }>({ intervalSec, fitted: false });

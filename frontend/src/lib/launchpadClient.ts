@@ -707,29 +707,39 @@ const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
     [getCampaignRead, getFromBlockForCampaign, readProvider]
   );
 
-  const fetchCampaignSummary = useCallback(
-    async (campaign: CampaignInfo): Promise<CampaignSummary> => {
-      const metrics = await fetchCampaignMetrics(campaign.campaign);
+const fetchCampaignSummary = useCallback(
+  async (campaign: CampaignInfo): Promise<CampaignSummary> => {
+    let metrics: CampaignMetrics | null = null;
 
-      let holders = "—";
-      let volume = "—";
-      let marketCap = "—";
-      let marketCapBnb: number | undefined = undefined;
-
-  // Activity rollups are expensive on public RPCs. During the Railway/Supabase
-// migration, keep this disabled by default and rely on realtime-indexer data
-// for TokenDetails trade/volume UI.
-if (ENABLE_TOKEN_ONCHAIN_ACTIVITY) {
-  try {
-    const activity = await fetchCampaignActivity(campaign.campaign);
-    if (activity) {
-      holders = formatCount(activity.buyers);
-      volume = formatBnbFromWei(activity.buyVolumeWei + activity.sellVolumeWei);
+    try {
+      metrics = await fetchCampaignMetrics(campaign.campaign);
+    } catch (e) {
+      console.warn(
+        "[fetchCampaignSummary] metrics fetch failed; continuing with realtime/indexer data",
+        e,
+      );
+      metrics = null;
     }
-  } catch (e) {
-    console.warn("[fetchCampaignSummary] activity fetch failed", e);
-  }
-}
+
+    let holders = "—";
+    let volume = "—";
+    let marketCap = "—";
+    let marketCapBnb: number | undefined = undefined;
+
+    // Activity rollups are expensive on public RPCs. During the Railway/Supabase
+    // migration, keep this disabled by default and rely on realtime-indexer data
+    // for TokenDetails trade/volume UI.
+    if (ENABLE_TOKEN_ONCHAIN_ACTIVITY) {
+      try {
+        const activity = await fetchCampaignActivity(campaign.campaign);
+        if (activity) {
+          holders = formatCount(activity.buyers);
+          volume = formatBnbFromWei(activity.buyVolumeWei + activity.sellVolumeWei);
+        }
+      } catch (e) {
+        console.warn("[fetchCampaignSummary] activity fetch failed", e);
+      }
+    }
 
       // Market cap (derived): currentPrice * totalSupply
       try {
