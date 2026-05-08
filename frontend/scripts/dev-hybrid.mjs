@@ -92,7 +92,9 @@ const apiAlreadyRunning = await isApiHealthy();
 if (apiAlreadyRunning) {
   console.log(`[dev-hybrid] API already healthy, reusing existing server: ${healthUrl}`);
 } else {
-  start("api", "api:dev", {
+  // Use stable API mode by default. The node --watch API script can restart from
+  // unrelated file activity and cause browser refreshes across every route.
+  start("api", "api:start", {
     PORT: apiPort,
     API_PORT: apiPort,
   });
