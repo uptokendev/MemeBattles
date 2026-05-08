@@ -56,10 +56,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         {
-          find: "@/lib/draftAuth",
-          replacement: path.resolve(__dirname, "./src/lib/draftAuthNoPrompt.ts"),
-        },
-        {
           find: "@/lib/launchpadClient",
           replacement: path.resolve(__dirname, "./src/lib/launchpadClientHybrid.ts"),
         },

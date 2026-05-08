@@ -354,22 +354,22 @@ function TransmissionList({
     };
   }, [draftId]);
 
-const send = async (reply = false) => {
-  const text = reply ? replyBody.trim() : body.trim();
+  const send = async (reply = false) => {
+    const text = reply ? replyBody.trim() : body.trim();
 
-  if (!wallet.account) {
-    toast.error("Connect wallet to send a transmission.");
-    return;
-  }
+    if (!wallet.account) {
+      toast.error("Connect wallet to send a transmission.");
+      return;
+    }
 
-  if (reply && !isCreator) {
-    toast.error("Only the creator can reply to transmissions.");
-    return;
-  }
+    if (reply && !isCreator) {
+      toast.error("Only the creator can reply to transmissions.");
+      return;
+    }
 
-  if (!text) return;
+    if (!text) return;
 
-  setLoading(true);
+    setLoading(true);
 
     try {
       const prefix =
