@@ -1,133 +1,148 @@
 ---
 title: Roadmap
-description: The MemeWarzone rollout path from Prepare Mode to live campaigns, rewards, transparency, and long-term progression.
+description: The MemeWarzone rollout path from Prepare Mode to BNB launch, Solana, Tron, Base, Ethereum, internal bridge, and full interchain expansion.
 ---
 
-MemeWarzone is rolling out in stages so the battlefield can open with structure instead of chaos.
+MemeWarzone starts on BNB Chain, but BNB is only the first battlefield.
 
-The roadmap focuses on four things:
+The roadmap is designed to move the product from a single-chain launchpad into a full interchain meme campaign battlefield.
 
-1. prepare the first creators, recruiters, squads, and traders
-2. open live campaign deployment and bonding-curve trading
-3. activate reward routing, weekly epochs, and claims
-4. expand reputation, profiles, analytics, and safety signals over time
+The rollout focuses on six things:
 
-## Current phase — Prepare Mode
+1. prepare creators, recruiters, squads, traders, and communities before live deployment
+2. open BNB live campaign deployment and bonding-curve trading
+3. activate UpVotes, Leagues, recruiter attribution, Squad Pool, Airdrops, weekly epochs, and claims
+4. expand quickly to Solana, Tron, Base, and Ethereum
+5. connect the ecosystem through an internal bridge
+6. build cross-chain reputation, profiles, discovery, rewards, rankings, and long-term campaign history
 
-**Status:** Opening May 12, 2026
+## Phase 1 — Prepare Mode
 
-Prepare Mode is the pre-live battlefield.
+**Target:** May 12, 2026
+
+Prepare Mode opens the pre-live battlefield.
 
 It opens the door for:
 
 - creator campaign preparation
+- Promotion Pages
+- draft follows and notification opt-ins
 - recruiter onboarding
 - squad building
-- early user education
+- trader education
 - War Room community activity
-- docs and safety guidance
+- safety guidance
 - launch planning before full deployment
 
-The goal is to avoid a cold start. When the full battlefield opens, early creators, recruiters, squads, and traders should already understand the rules.
+Prepare Mode is not meant to be a passive waiting room. It is the first campaign pipeline.
 
 Read: **[Prepare Mode](/prepare-mode)**.
 
-## Next phase — Live campaign system
+## Phase 2 — BNB Live Launch
 
-**Status:** Next major product phase
+**Target:** June 9, 2026 — about four weeks after Prepare Mode opens
 
-The live campaign system brings the full campaign loop online:
+The BNB live launch brings the full first battlefield online:
 
-- campaign deployment
+- live campaign deployment
 - bonding-curve buying and selling
+- creator direct 0.10% trade share on own campaign buys and sells
 - UpVotes
 - campaign pages
 - War Room activity around active campaigns
 - 50 BNB graduation threshold
 - 2.00% finalize fee
 - 80/20 post-finalize split
-- DEX stage after graduation
+- Leagues
+- Recruiter attribution
+- Squad Pool
+- Warzone BNB Airdrops
+- weekly epochs
+- claim-based rewards
 
 This is where prepared campaigns move from staging into active battlefield execution.
 
-Read: **[Campaign System](/platform/campaign-lifecycle)**.
+Read: **[Campaign System](/platform/campaign-lifecycle)** and **[Fee Routing](/fees/fee-routing)**.
 
-## Reward routing and weekly systems
+## Phase 3 — Solana Expansion
 
-**Status:** Core v1 systems
+**Target:** End of June 2026
 
-MemeWarzone reward systems are designed around one TreasuryRouter entry point and separate downstream buckets.
+MemeWarzone expands to Solana to reach a fast, meme-native, retail-heavy trading ecosystem.
 
-Core reward and routing systems include:
+The goal is to bring the MemeWarzone loop to Solana without reducing it to simple token creation:
 
-- LeagueTreasury funding from 0.75% of every buy and sell
-- RecruiterRewardsVault for linked recruiter rewards
-- CommunityRewardsVault with Warzone Airdrop and Squad Pool balances
-- ProtocolRevenueVault for protocol revenue after reward routing
-- Squad Pool scoring and weekly allocation
-- Warzone BNB Airdrop eligibility and draws
-- weekly epochs and claim-based settlement
+- campaign pages
+- UpVote-equivalent pricing in native token terms
+- campaign discovery
+- social growth loops
+- recurring competition
+- creator reputation
+- trader activity
 
-Reward systems do not add extra user fees. They route the existing fee envelope into the correct buckets.
+Solana is the first step from BNB-only to multi-chain.
 
-Read: **[Fee Routing](/fees/fee-routing)** and **[Epochs & Claims](/rewards/epochs-and-claims)**.
+## Phase 4 — Tron, Base, and Ethereum Expansion
 
-## Battle Leagues
+**Target:** End of August 2026
 
-**Status:** Core competitive layer
+MemeWarzone then expands to Tron, Base, and Ethereum.
 
-Battle Leagues turn campaign activity into recurring public competitions.
+| Chain | Strategic role |
+| --- | --- |
+| Tron | Global retail activity and payment culture |
+| Base | Consumer crypto and growing meme ecosystem |
+| Ethereum | Liquidity, credibility, and larger capital pools |
 
-The League system focuses on:
+At this stage MemeWarzone becomes a serious multi-chain launchpad instead of only a BNB launchpad.
 
-- weekly battles
-- monthly finals
-- public standings
-- public winners
-- prize pools funded by LeagueTreasury
-- categories that reward different kinds of campaign performance
+## Phase 5 — Internal Bridge and Interchain Launchpad
 
-League categories include Perfect Run, Fastest Finish, Biggest Hit, Top Earner, and Crowd Favorite.
+**Target:** By mid-October 2026
 
-Read: **[Leagues Overview](/leagues)** and **[League Categories](/leagues/categories)**.
+The internal bridge target moves MemeWarzone from multi-chain presence toward one connected interchain battlefield.
 
-## Trust and transparency
+| Model | Meaning |
+| --- | --- |
+| Multi-chain | MemeWarzone exists on multiple chains separately |
+| Interchain | MemeWarzone connects chains into one unified ecosystem |
 
-**Status:** Required for launch safety
+The long-term interchain vision includes:
 
-Trust work includes:
+- cross-chain campaign discovery
+- cross-chain creator reputation
+- cross-chain trader profiles
+- cross-chain or chain-specific Leagues
+- recruiter and squad tracking where possible
+- unified reward dashboards where possible
+- internal bridge routing
+- chain choice for creators
+- multi-chain trading discovery
 
-- public leaderboards
-- public winner pages
-- private reward dashboards
-- user-facing eligibility states
-- broad anti-abuse reason codes
-- no direct developer-wallet protocol revenue custody
-- multisig treasury policy
-- official-link safety guidance
-- incident response guidance
+## Growth systems running across the roadmap
 
-MemeWarzone should be transparent about rules and outcomes without publishing the exact anti-abuse thresholds that would help farmers exploit rewards.
+The roadmap is not only chain deployment.
 
-Read: **[Protection Model](/security/protection-model)** and **[Transparency](/security/transparency)**.
+The growth engine includes:
 
-## Later expansion
+- Draft Mode after launch
+- Promotion Pages
+- scheduled launches with upfront deployment payment
+- draft follows and notification opt-ins
+- hot draft ranking
+- automated Telegram, Discord, and X marketing
+- twice-weekly Shill & Chill X Spaces
+- weekly podcast with strong creators or traders
+- weekly campaign, League, Airdrop, Squad, and Recruiter recaps
+- post-graduation trading through MemeWarzone with a 0.05% platform route fee
 
-**Status:** Planned after the core battlefield is stable
+## Market-share target
 
-Future iterations can deepen the system with:
+The year-one target is aggressive:
 
-- richer creator reputation
-- more detailed trader profiles
-- stronger squad analytics
-- improved recruiter tooling
-- more League categories
-- better campaign safety signals
-- historical reward dashboards
-- richer campaign performance history
-- expanded community and War Room tools
+**20% market share on every chain MemeWarzone launches on.**
 
-These later features should build on real activity after the core launch systems are live and tested.
+That means the target is not merely 20% across all chains combined. The goal is to become a major launchpad competitor in each chain ecosystem entered.
 
 ## Roadmap principle
 
@@ -138,6 +153,8 @@ MemeWarzone should ship the battlefield in the right order:
 3. route fees correctly
 4. process rewards cleanly
 5. publish transparent outcomes
-6. improve reputation and progression over time
+6. expand chain access
+7. connect the chains into one interchain battlefield
+8. improve reputation, profiles, analytics, and progression over time
 
-A fast launch is useful only if users understand what is happening and rewards can be explained without confusion.
+A fast launch is useful only if users understand what is happening, creators have a reason to prepare, rewards can be explained, and the system can scale across chains without becoming chaotic.
