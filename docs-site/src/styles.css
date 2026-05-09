@@ -224,3 +224,252 @@ a { color: inherit; }
     background-size: auto 100vh;
   }
 }
+
+/* Roadmap battlefield styles are scoped to /roadmap component only. */
+.roadmap-battlefield {
+  position: relative;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  border-radius: 1.9rem;
+  border: 1px solid rgba(var(--mb-border), 0.28);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(240,106,26,0.18), transparent 32%),
+    radial-gradient(circle at 88% 14%, rgba(57,227,23,0.10), transparent 28%),
+    linear-gradient(180deg, rgba(18,22,28,0.92), rgba(9,12,15,0.92));
+  overflow: hidden;
+  box-shadow: 0 35px 90px -45px rgba(0,0,0,0.95), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.roadmap-battlefield::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.75), transparent 92%);
+}
+
+.roadmap-battlefield__scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,138,42,0.08), transparent 62%);
+  animation: roadmapScan 7s linear infinite;
+}
+
+@keyframes roadmapScan {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+.roadmap-battlefield__header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.roadmap-battlefield__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(var(--mb-accent-strong), 0.92);
+}
+
+.roadmap-battlefield__header h2 {
+  margin: 0;
+  max-width: 720px;
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  line-height: 1.05;
+  font-weight: 850;
+}
+
+.roadmap-battlefield__header p:last-child {
+  max-width: 720px;
+  margin: 0.65rem 0 0;
+  color: rgba(var(--mb-muted), 0.92);
+  line-height: 1.6;
+}
+
+.roadmap-battlefield__hint {
+  white-space: nowrap;
+  border: 1px solid rgba(var(--mb-accent), 0.32);
+  border-radius: 999px;
+  padding: 0.55rem 0.8rem;
+  background: rgba(240,106,26,0.10);
+  color: rgba(var(--mb-accent-strong), 0.95);
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: 0 0 24px rgba(240,106,26,0.08);
+}
+
+.roadmap-scroll {
+  position: relative;
+  z-index: 1;
+  margin-top: 1.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 0.55rem;
+}
+
+.roadmap-scroll:focus {
+  outline: 2px solid rgba(var(--mb-accent), 0.55);
+  outline-offset: 4px;
+}
+
+.roadmap-track {
+  position: relative;
+  display: flex;
+  gap: 2rem;
+  min-width: max-content;
+  padding: 3.2rem 1rem 2.4rem;
+}
+
+.roadmap-route-line {
+  position: absolute;
+  top: 4rem;
+  left: 2rem;
+  right: 2rem;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(57,227,23,0.75), rgba(255,138,42,0.88), rgba(145,151,160,0.35));
+  box-shadow: 0 0 30px rgba(240,106,26,0.28), 0 0 18px rgba(57,227,23,0.18);
+}
+
+.roadmap-node {
+  position: relative;
+  display: block;
+  width: 240px;
+  min-height: 180px;
+  scroll-snap-align: center;
+  padding: 1rem;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(var(--mb-border), 0.28);
+  background: linear-gradient(180deg, rgba(25,30,37,0.88), rgba(11,14,18,0.88));
+  color: rgb(var(--mb-text));
+  text-decoration: none;
+  box-shadow: 0 18px 45px -25px rgba(0,0,0,0.96), inset 0 1px 0 rgba(255,255,255,0.05);
+  backdrop-filter: blur(10px);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.roadmap-node:hover,
+.roadmap-node:focus-visible {
+  transform: translateY(-7px) scale(1.02);
+  border-color: rgba(var(--mb-accent-strong), 0.64);
+  box-shadow: 0 0 0 1px rgba(240,106,26,0.16), 0 0 42px rgba(240,106,26,0.22), 0 24px 60px -28px rgba(0,0,0,1);
+  outline: none;
+}
+
+.roadmap-beacon {
+  position: absolute;
+  top: -2.15rem;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgb(var(--mb-accent-strong));
+  box-shadow: 0 0 0 7px rgba(240,106,26,0.12), 0 0 24px rgba(240,106,26,0.78);
+  animation: roadmapPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes roadmapPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.82; }
+  50% { transform: translateX(-50%) scale(1.25); opacity: 1; }
+}
+
+.roadmap-node--completed .roadmap-beacon,
+.roadmap-node--completed .roadmap-status {
+  background: rgba(var(--mb-nvg), 0.92);
+  color: rgba(2,8,5,0.95);
+}
+
+.roadmap-node--completed .roadmap-beacon {
+  box-shadow: 0 0 0 7px rgba(57,227,23,0.10), 0 0 24px rgba(57,227,23,0.62);
+}
+
+.roadmap-node--future {
+  opacity: 0.78;
+}
+
+.roadmap-node--future .roadmap-beacon {
+  background: rgba(145,151,160,0.75);
+  box-shadow: 0 0 0 7px rgba(145,151,160,0.08), 0 0 16px rgba(145,151,160,0.20);
+}
+
+.roadmap-month {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(var(--mb-accent-strong), 0.90);
+}
+
+.roadmap-title {
+  display: block;
+  margin-top: 0.45rem;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.roadmap-text {
+  margin: 0.55rem 0 0;
+  color: rgba(var(--mb-muted), 0.94);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.roadmap-status {
+  display: inline-flex;
+  margin-top: 0.85rem;
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  background: rgba(var(--mb-accent), 0.18);
+  color: rgba(var(--mb-accent-strong), 0.98);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .roadmap-battlefield {
+    padding: 1.1rem;
+  }
+
+  .roadmap-battlefield__header {
+    display: block;
+  }
+
+  .roadmap-battlefield__hint {
+    display: inline-flex;
+    margin-top: 1rem;
+  }
+
+  .roadmap-node {
+    width: 78vw;
+    max-width: 300px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-battlefield__scan,
+  .roadmap-beacon {
+    animation: none;
+  }
+
+  .roadmap-node {
+    transition: none;
+  }
+}
