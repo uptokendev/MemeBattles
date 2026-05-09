@@ -2,14 +2,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen } from "lucide-react";
+import { X, ImageIcon, BookOpen } from "lucide-react";
 import { z } from "zod";
 import { ethers } from "ethers";
 import ProcessingCard from "@/components/ui/processing-card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
-import { TokenCategory } from "@/types/token";
+import { createPageTooltipCopy } from "@/lib/infoTooltipCopy";
 
 // NEW: import wallet + launchpad client
 import { useWallet } from "@/contexts/WalletContext";
@@ -89,7 +90,6 @@ const Create = () => {
       toast.error("Please connect your wallet first");
       return;
     }
-
 
     // Optional creator initial buy validation (max 1 BNB to keep launches fair)
     const initialBuyBnbTrim = (initialBuyBnb ?? "").trim();
@@ -334,7 +334,11 @@ const Create = () => {
                   <label className="text-foreground font-retro text-base md:text-lg">
                     Token Category
                   </label>
-                  <Info className="h-4 w-4 text-accent" />
+                  <InfoTooltip ariaLabel={createPageTooltipCopy.tokenCategory.ariaLabel} side="right" align="start">
+                    {createPageTooltipCopy.tokenCategory.lines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </InfoTooltip>
                 </div>
                 <div className="flex gap-3">
                   <button
