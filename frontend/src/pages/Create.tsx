@@ -2,9 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
+import { X, ImageIcon, BookOpen, FileText, Rocket } from "lucide-react";
 import { z } from "zod";
 import ProcessingCard from "@/components/ui/processing-card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
@@ -15,6 +16,7 @@ import { checkTickerAvailability, createCampaignDraft, type TickerAvailability }
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { createPageTooltipCopy } from "@/lib/infoTooltipCopy";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -436,7 +438,11 @@ try {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <label className="text-foreground font-retro text-base md:text-lg">Token Category</label>
-                  <Info className="h-4 w-4 text-accent" />
+                  <InfoTooltip ariaLabel={createPageTooltipCopy.tokenCategory.ariaLabel} side="right" align="start">
+                    {createPageTooltipCopy.tokenCategory.lines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </InfoTooltip>
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -506,10 +512,19 @@ try {
               </div>
 
               <div className="grid gap-3 pt-4 md:grid-cols-2">
-                <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 font-retro text-lg md:text-xl">
-                  <FileText className="mr-2 h-5 w-5" />
-                  {isDrafting ? "Creating Draft..." : "Create Draft"}
-                </Button>
+                <div className="relative">
+                  <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 w-full pr-12 font-retro text-lg md:text-xl">
+                    <FileText className="mr-2 h-5 w-5" />
+                    {isDrafting ? "Creating Draft..." : "Create Draft"}
+                  </Button>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                    <InfoTooltip ariaLabel={createPageTooltipCopy.createDraft.ariaLabel} side="top" align="center" className="text-current hover:text-current">
+                      {createPageTooltipCopy.createDraft.lines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </InfoTooltip>
+                  </div>
+                </div>
                 <Button
                   type="submit"
                   disabled={isCreateDisabled}

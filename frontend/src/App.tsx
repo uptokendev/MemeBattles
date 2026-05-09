@@ -42,6 +42,7 @@ import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
+import { PromotionInfoTooltips } from "@/components/promotion/PromotionInfoTooltips";
 
 const queryClient = new QueryClient();
 
@@ -122,6 +123,7 @@ const App = () => {
           >
             <BrowserRouter>
             <InternalLinkInterceptor />
+            <PromotionInfoTooltips />
               <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
