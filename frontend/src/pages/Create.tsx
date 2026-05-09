@@ -512,15 +512,19 @@ try {
               </div>
 
               <div className="grid gap-3 pt-4 md:grid-cols-2">
-                <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 font-retro text-lg md:text-xl">
-                  <FileText className="mr-2 h-5 w-5" />
-                  {isDrafting ? "Creating Draft..." : "Create Draft"}
-                  <InfoTooltip ariaLabel={createPageTooltipCopy.createDraft.ariaLabel} side="top" align="center" className="ml-2 text-current hover:text-current">
-                    {createPageTooltipCopy.createDraft.lines.map((line) => (
-                      <p key={line}>{line}</p>
-                    ))}
-                  </InfoTooltip>
-                </Button>
+                <div className="relative">
+                  <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 w-full pr-12 font-retro text-lg md:text-xl">
+                    <FileText className="mr-2 h-5 w-5" />
+                    {isDrafting ? "Creating Draft..." : "Create Draft"}
+                  </Button>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                    <InfoTooltip ariaLabel={createPageTooltipCopy.createDraft.ariaLabel} side="top" align="center" className="text-current hover:text-current">
+                      {createPageTooltipCopy.createDraft.lines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </InfoTooltip>
+                  </div>
+                </div>
                 <Button
                   type="submit"
                   disabled={isCreateDisabled}
