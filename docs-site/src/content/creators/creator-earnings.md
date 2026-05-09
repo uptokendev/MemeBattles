@@ -1,11 +1,39 @@
 ---
 title: Creator Earnings
-description: How creators can earn from successful MemeWarzone graduations.
+description: How creators can earn from direct bonding-curve trade share, successful MemeWarzone graduations, visibility, and long-term reputation.
 ---
 
-Creator earnings are tied to successful graduation.
+Creators have two direct on-platform earning paths in the current MemeWarzone model:
 
-MemeWarzone is designed so creators can earn meaningful value when they bring enough demand to graduate a campaign.
+1. **Direct bonding-curve trade earnings** from buys and sells on their own campaign.
+2. **Graduation payout** when their campaign reaches the graduation threshold and finalizes.
+
+MemeWarzone is designed so creators can earn while a campaign is active and also earn meaningful value when they bring enough demand to graduate.
+
+## Direct bonding-curve trade earnings
+
+Creators receive **0.10% of every buy and sell** made through their own token bonding curve.
+
+This creator trade share:
+
+- is paid directly to the campaign creator wallet
+- comes from the existing 2.00% buy/sell fee envelope
+- does not add a separate user-facing fee
+- applies during the bonding-curve phase
+- is separate from recruiter rewards, Squad Pool, LeagueTreasury, Airdrops, and protocol revenue
+- is separate from the creator graduation payout
+
+## Creator trade share example
+
+If a creator's campaign generates 100 BNB of bonding-curve buy/sell notional before graduation:
+
+| Item | Amount |
+| --- | ---: |
+| Bonding-curve trade notional | 100 BNB |
+| Creator direct trade share | 0.10% |
+| Creator direct trade earnings | 0.100 BNB |
+
+This means a creator can earn from real trading activity even before the campaign graduates.
 
 ## Graduation threshold
 
@@ -23,7 +51,7 @@ At graduation:
    - 80% to LP
    - 20% to creator payout
 
-## Minimum example
+## Minimum graduation example
 
 At 50 BNB raised:
 
@@ -35,11 +63,15 @@ At 50 BNB raised:
 | Creator payout, 20% | 9.8 BNB |
 | LP liquidity, 80% | 39.2 BNB |
 
+The creator's 20% graduation payout is separate from any 0.10% direct trade earnings already earned during bonding-curve trading.
+
 ## Finalize routing
 
 The 2.00% finalize fee routes through TreasuryRouter.
 
 Depending on attribution profile, it can fund recruiter rewards, Squad Pool, Warzone Airdrops, and protocol revenue.
+
+Finalize does not route to LeagueTreasury and does not use the creator direct trade-share path.
 
 Read: **[Fee Routing](/fees/fee-routing)**.
 
@@ -55,8 +87,10 @@ A strong creator brings:
 - traffic
 - attention
 - campaign energy
+- launch preparation
+- post-launch momentum
 
-The creator payout rewards successful campaign execution while still leaving most remaining liquidity for LP.
+The 0.10% direct trade share rewards creators for keeping their own bonding-curve market active. The graduation payout rewards successful campaign execution while still leaving most remaining liquidity for LP.
 
 ## Repeat campaigns
 

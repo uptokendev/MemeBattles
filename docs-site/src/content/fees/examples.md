@@ -1,6 +1,6 @@
 ---
 title: Fee Examples
-description: Simple BNB examples for trading fees, fee routing, UpVotes, finalize routing, and graduation economics.
+description: Simple BNB examples for trading fees, creator trade earnings, fee routing, UpVotes, finalize routing, and graduation economics.
 ---
 
 These examples use BNB amounts to keep the math easy.
@@ -14,10 +14,13 @@ If a linked standard user buys or sells with 1 BNB, the 2.00% fee is 0.0200 BNB.
 | Destination | Amount |
 | --- | ---: |
 | LeagueTreasury, 0.75% | 0.0075 BNB |
+| Creator wallet, 0.10% | 0.0010 BNB |
 | RecruiterRewardsVault, 0.25% | 0.0025 BNB |
 | Squad Pool, 0.05% | 0.0005 BNB |
-| ProtocolRevenueVault, 0.95% | 0.0095 BNB |
+| ProtocolRevenueVault, 0.85% | 0.0085 BNB |
 | Total fee | 0.0200 BNB |
+
+The creator wallet receives the 0.10% directly because the trade happened on that creator's own token bonding curve.
 
 ## Unlinked trade example
 
@@ -26,11 +29,12 @@ If an unlinked user buys or sells with 1 BNB, the 2.00% fee is still 0.0200 BNB.
 | Destination | Amount |
 | --- | ---: |
 | LeagueTreasury, 0.75% | 0.0075 BNB |
+| Creator wallet, 0.10% | 0.0010 BNB |
 | Warzone Airdrops, 0.30% | 0.0030 BNB |
-| ProtocolRevenueVault, 0.95% | 0.0095 BNB |
+| ProtocolRevenueVault, 0.85% | 0.0085 BNB |
 | Total fee | 0.0200 BNB |
 
-Unlinked activity sends the unassigned recruiter and squad slices to Warzone Airdrops.
+Unlinked activity sends the unassigned recruiter and squad slices to Warzone Airdrops. The creator still receives the 0.10% direct trade share.
 
 ## OG trade example
 
@@ -39,12 +43,25 @@ If an OG-linked user buys or sells with 1 BNB:
 | Destination | Amount |
 | --- | ---: |
 | LeagueTreasury, 0.75% | 0.0075 BNB |
+| Creator wallet, 0.10% | 0.0010 BNB |
 | OG recruiter, 0.30% | 0.0030 BNB |
 | Squad Pool, 0.05% | 0.0005 BNB |
-| ProtocolRevenueVault, 0.90% | 0.0090 BNB |
+| ProtocolRevenueVault, 0.80% | 0.0080 BNB |
 | Total fee | 0.0200 BNB |
 
 The OG override comes from protocol revenue. It does not increase the user-facing fee.
+
+## Creator trade earnings example
+
+If a creator's campaign receives 100 BNB of bonding-curve buy/sell notional before graduation, the creator earns:
+
+| Item | Amount |
+| --- | ---: |
+| Bonding-curve trade notional | 100 BNB |
+| Creator direct trade share | 0.10% |
+| Direct creator trade earnings | 0.100 BNB |
+
+This is separate from the graduation payout. It is earned from trading activity on the creator's own campaign.
 
 ## UpVote example
 
@@ -83,7 +100,7 @@ If a standard linked campaign finalizes with a 1 BNB finalize fee:
 | ProtocolRevenueVault | 1.65% | 0.825 BNB |
 | Total finalize fee | 2.00% | 1.000 BNB |
 
-Finalize does not route to LeagueTreasury.
+Finalize does not route to LeagueTreasury or the creator direct trade-share path.
 
 ## Unlinked finalize example
 
