@@ -66,9 +66,3 @@ Reward systems must filter fake activity.
 Wash trading, self-trading, common-control wallets, wallet splitting, circular trading, and recruiter farming loops can be excluded from rewards.
 
 Read: **[Anti-Abuse System](/security/anti-abuse)**.
-
-## Wording discipline
-
-Security claims must match the actual implementation.
-
-Do not market a feature as guaranteed unless contracts, frontend, indexing, and operations enforce it.
