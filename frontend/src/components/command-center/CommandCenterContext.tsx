@@ -19,6 +19,16 @@ type CommandCenterData = {
   chainId?: number;
   profile: ReturnType<typeof useEditableProfile>["profile"];
   loadingProfile: boolean;
+  editOpen: boolean;
+  setEditOpen: ReturnType<typeof useEditableProfile>["setEditOpen"];
+  savingProfile: boolean;
+  savingAvatar: boolean;
+  awaitingWallet: boolean;
+  avatarInputRef: ReturnType<typeof useEditableProfile>["avatarInputRef"];
+  handleEdit: ReturnType<typeof useEditableProfile>["handleEdit"];
+  handlePickAvatar: ReturnType<typeof useEditableProfile>["handlePickAvatar"];
+  handleAvatarSelected: ReturnType<typeof useEditableProfile>["handleAvatarSelected"];
+  handleSaveProfile: ReturnType<typeof useEditableProfile>["handleSaveProfile"];
   displayName: string;
   avatarUrl: string;
   followersCount: number;
@@ -49,12 +59,27 @@ export function CommandCenterDataProvider({
   const account = wallet.account || walletAddress;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
 
-  const { profile, loadingProfile } = useEditableProfile({
+  const editableProfile = useEditableProfile({
     chainId,
     account,
     viewedAddress: walletAddress,
     wallet,
   });
+
+  const {
+    profile,
+    loadingProfile,
+    editOpen,
+    setEditOpen,
+    savingProfile,
+    savingAvatar,
+    awaitingWallet,
+    avatarInputRef,
+    handleEdit,
+    handlePickAvatar,
+    handleAvatarSelected,
+    handleSaveProfile,
+  } = editableProfile;
 
   const {
     followersCount,
@@ -108,6 +133,16 @@ export function CommandCenterDataProvider({
     chainId,
     profile,
     loadingProfile,
+    editOpen,
+    setEditOpen,
+    savingProfile,
+    savingAvatar,
+    awaitingWallet,
+    avatarInputRef,
+    handleEdit,
+    handlePickAvatar,
+    handleAvatarSelected,
+    handleSaveProfile,
     displayName,
     avatarUrl,
     followersCount,
@@ -126,6 +161,16 @@ export function CommandCenterDataProvider({
     chainId,
     profile,
     loadingProfile,
+    editOpen,
+    setEditOpen,
+    savingProfile,
+    savingAvatar,
+    awaitingWallet,
+    avatarInputRef,
+    handleEdit,
+    handlePickAvatar,
+    handleAvatarSelected,
+    handleSaveProfile,
     displayName,
     avatarUrl,
     followersCount,
