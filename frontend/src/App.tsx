@@ -48,7 +48,7 @@ import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruite
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
 import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
 import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
-import CommandCenterPlaceholderPage from "@/pages/command-center/CommandCenterPlaceholderPage";
+import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 
 const queryClient = new QueryClient();
 
@@ -150,18 +150,7 @@ const App = () => {
                     <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
-                    <Route
-                      path="/profile/:wallet/command/settings"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterPlaceholderPage
-                            title="Settings"
-                            description="Settings route is ready for profile settings, notifications, wallet links, privacy, and recruiter-code controls. No admin-only controls live here."
-                            sections={["Profile settings", "Notification settings", "Wallet / linked address", "Privacy"]}
-                          />
-                        </CommandCenterShell>
-                      }
-                    />
+                    <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
                     <Route path="/profile/:identifier" element={<ProfilePage />} />
                     <Route path="/airdrops" element={<AirdropOverview />} />
                     <Route path="/airdrops/winners" element={<AirdropWinners />} />
