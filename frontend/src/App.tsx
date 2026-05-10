@@ -44,6 +44,8 @@ import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
+import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
+import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
 import CommandCenterPlaceholderPage from "@/pages/command-center/CommandCenterPlaceholderPage";
 
 const queryClient = new QueryClient();
@@ -160,11 +162,7 @@ const App = () => {
                       path="/profile/:wallet/command/recruiter"
                       element={
                         <CommandCenterShell>
-                          <CommandCenterPlaceholderPage
-                            title="Recruiter"
-                            description="Recruiter dashboard routing now lives inside the private Command Center. Full recruiter/non-recruiter states come in the Recruiter page batch."
-                            sections={["Dashboard", "Squad", "Claims", "Attribution"]}
-                          />
+                          <CommandCenterRecruiter />
                         </CommandCenterShell>
                       }
                     />
@@ -184,11 +182,7 @@ const App = () => {
                       path="/profile/:wallet/command/airdrops"
                       element={
                         <CommandCenterShell>
-                          <CommandCenterPlaceholderPage
-                            title="Warzone Airdrops"
-                            description="Airdrops now open inside the private Command Center shell. Eligibility, winners, claims, and reason-code data are wired in the Airdrops batch."
-                            sections={["Overview", "Eligibility", "Winners", "Claims"]}
-                          />
+                          <CommandCenterAirdrops />
                         </CommandCenterShell>
                       }
                     />
