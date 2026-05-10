@@ -24,7 +24,6 @@ import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
 import PushDraftLive from "./pages/PushDraftLive";
-import RecruiterDashboard from "./pages/RecruiterDashboard";
 import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
 import Recruiter from "./pages/Recruiter";
 import RecruiterProfile from "./pages/RecruiterProfile";
@@ -33,7 +32,6 @@ import RecruiterReferral from "./pages/RecruiterReferral";
 import AirdropOverview from "./pages/AirdropOverview";
 import AirdropWinners from "./pages/AirdropWinners";
 import SquadLeaderboard from "./pages/SquadLeaderboard";
-import SquadDashboard from "./pages/SquadDashboard";
 import RewardOps from "./pages/RewardOps";
 import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
@@ -43,6 +41,7 @@ import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
+import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
@@ -158,9 +157,9 @@ const App = () => {
                     <Route path="/recruiter/signup" element={<RecruiterSignup />} />
                     <Route path="/recruiters" element={<RecruiterLeaderboard />} />
                     <Route path="/recruiters/:code" element={<RecruiterProfile />} />
-                    <Route path="/recruiter-dashboard" element={<RecruiterDashboard />} />
+                    <Route path="/recruiter-dashboard" element={<LegacyCommandCenterRedirect section="recruiter" />} />
                     <Route path="/squads" element={<SquadLeaderboard />} />
-                    <Route path="/squad-dashboard" element={<SquadDashboard />} />
+                    <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
                     <Route path="/ops/rewards" element={<RewardOps />} />
                     <Route path="/r/:code" element={<RecruiterReferral />} />
                     <Route path="/token/:campaignAddress" element={<TokenDetails />} />
