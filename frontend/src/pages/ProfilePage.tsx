@@ -92,13 +92,19 @@ function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
 
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
             <Button
+              className="font-retro"
+              onClick={() => navigate(`/profile/${encodeURIComponent(walletAddress)}/command`)}
+            >
+              Open New Command Center
+            </Button>
+            <Button
               variant="secondary"
               className="font-retro"
               onClick={() => navigate(`/profile/${encodeURIComponent(walletAddress)}`)}
             >
               View Public Profile
             </Button>
-            <Button className="font-retro" onClick={() => navigate("/create")}>Create Coin</Button>
+            <Button variant="outline" className="font-retro" onClick={() => navigate("/create")}>Create Coin</Button>
           </div>
         </div>
       </section>
