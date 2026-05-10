@@ -47,6 +47,7 @@ import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview"
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
 import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
+import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterPlaceholderPage from "@/pages/command-center/CommandCenterPlaceholderPage";
 
 const queryClient = new QueryClient();
@@ -148,18 +149,7 @@ const App = () => {
                     <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
-                    <Route
-                      path="/profile/:wallet/command/claims"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterPlaceholderPage
-                            title="Rewards / Claims"
-                            description="The universal claim hub route is ready. Claimable, pending, claimed, expired, and under-review states are wired in the Claims batch."
-                            sections={["Recruiter rewards", "Squad rewards", "Warzone Airdrops", "League rewards", "Claim history", "Expiring rewards"]}
-                          />
-                        </CommandCenterShell>
-                      }
-                    />
+                    <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
                     <Route
                       path="/profile/:wallet/command/settings"
                       element={
