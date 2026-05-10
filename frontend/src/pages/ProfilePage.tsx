@@ -68,6 +68,7 @@ function InvalidPublicProfile({ identifier }: { identifier: string }) {
 
 function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
   const navigate = useNavigate();
+  const commandPath = `/profile/${encodeURIComponent(walletAddress)}/command`;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4">
@@ -93,9 +94,9 @@ function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
             <Button
               className="font-retro"
-              onClick={() => navigate(`/profile/${encodeURIComponent(walletAddress)}/command`)}
+              onClick={() => navigate(commandPath)}
             >
-              Open New Command Center
+              Open Command Center
             </Button>
             <Button
               variant="secondary"
@@ -112,27 +113,27 @@ function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
       <section className="grid gap-3 md:grid-cols-3">
         <button
           type="button"
-          onClick={() => navigate("/recruiter-dashboard")}
+          onClick={() => navigate(`${commandPath}/recruiter`)}
           className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
         >
-          <div className="font-retro text-sm text-foreground">Recruiter Dashboard</div>
-          <div className="mt-2 text-xs text-muted-foreground">Open private recruiter tools, claims, and attribution views.</div>
+          <div className="font-retro text-sm text-foreground">Recruiter</div>
+          <div className="mt-2 text-xs text-muted-foreground">Open recruiter tools, claims, and attribution inside Command Center.</div>
         </button>
         <button
           type="button"
-          onClick={() => navigate("/squad-dashboard")}
+          onClick={() => navigate(`${commandPath}/squad`)}
           className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
         >
-          <div className="font-retro text-sm text-foreground">Squad Dashboard</div>
-          <div className="mt-2 text-xs text-muted-foreground">Open private squad status, member, and reward surfaces.</div>
+          <div className="font-retro text-sm text-foreground">Squad</div>
+          <div className="mt-2 text-xs text-muted-foreground">Open squad status, member, and reward surfaces inside Command Center.</div>
         </button>
         <button
           type="button"
-          onClick={() => navigate("/airdrops")}
+          onClick={() => navigate(`${commandPath}/airdrops`)}
           className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
         >
           <div className="font-retro text-sm text-foreground">Warzone Airdrops</div>
-          <div className="mt-2 text-xs text-muted-foreground">Check public airdrop overview and winner surfaces.</div>
+          <div className="mt-2 text-xs text-muted-foreground">Check airdrop eligibility, reason codes, winners, and claims inside Command Center.</div>
         </button>
       </section>
 
