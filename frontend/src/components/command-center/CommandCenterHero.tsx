@@ -25,7 +25,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
   };
 
   return (
-    <section className="sticky top-0 z-20 rounded-3xl border border-border/50 bg-background/85 p-4 shadow-2xl backdrop-blur-xl md:p-5">
+    <section className="rounded-3xl border border-border/50 bg-background/85 p-4 shadow-2xl backdrop-blur-xl md:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-accent/35 bg-accent/10 font-retro text-xl text-accent md:h-20 md:w-20">
