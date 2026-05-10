@@ -150,6 +150,7 @@ const App = () => {
                     <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
                     <Route path="/profile/:identifier" element={<ProfilePage />} />
                     <Route path="/airdrops" element={<AirdropOverview />} />
                     <Route path="/airdrops/winners" element={<AirdropWinners />} />
