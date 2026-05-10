@@ -149,6 +149,14 @@ const App = () => {
                       }
                     />
                     <Route
+                      path="/profile/:wallet/command/overview"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterOverview />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
                       path="/profile/:wallet/command/recruiter"
                       element={
                         <CommandCenterShell>
