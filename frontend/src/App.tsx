@@ -42,6 +42,9 @@ import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
+import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
+import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
+import CommandCenterPlaceholderPage from "@/pages/command-center/CommandCenterPlaceholderPage";
 
 const queryClient = new QueryClient();
 
@@ -137,6 +140,74 @@ const App = () => {
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
                     <Route path="/profile" element={<ProfilePage />} />
+                    <Route
+                      path="/profile/:wallet/command"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterOverview />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
+                      path="/profile/:wallet/command/recruiter"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterPlaceholderPage
+                            title="Recruiter"
+                            description="Recruiter dashboard routing now lives inside the private Command Center. Full recruiter/non-recruiter states come in the Recruiter page batch."
+                            sections={["Dashboard", "Squad", "Claims", "Attribution"]}
+                          />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
+                      path="/profile/:wallet/command/squad"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterPlaceholderPage
+                            title="Squad"
+                            description="Squad routing now lives inside the private Command Center. Membership gating, member rankings, and rewards are added in the Squad batch."
+                            sections={["Status", "Members", "Rewards", "Leaderboard"]}
+                          />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
+                      path="/profile/:wallet/command/airdrops"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterPlaceholderPage
+                            title="Warzone Airdrops"
+                            description="Airdrops now open inside the private Command Center shell. Eligibility, winners, claims, and reason-code data are wired in the Airdrops batch."
+                            sections={["Overview", "Eligibility", "Winners", "Claims"]}
+                          />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
+                      path="/profile/:wallet/command/claims"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterPlaceholderPage
+                            title="Rewards / Claims"
+                            description="The universal claim hub route is ready. Claimable, pending, claimed, expired, and under-review states are wired in the Claims batch."
+                            sections={["Recruiter rewards", "Squad rewards", "Warzone Airdrops", "League rewards", "Claim history", "Expiring rewards"]}
+                          />
+                        </CommandCenterShell>
+                      }
+                    />
+                    <Route
+                      path="/profile/:wallet/command/settings"
+                      element={
+                        <CommandCenterShell>
+                          <CommandCenterPlaceholderPage
+                            title="Settings"
+                            description="Settings route is ready for profile settings, notifications, wallet links, privacy, and recruiter-code controls. No admin-only controls live here."
+                            sections={["Profile settings", "Notification settings", "Wallet / linked address", "Privacy"]}
+                          />
+                        </CommandCenterShell>
+                      }
+                    />
                     <Route path="/profile/:identifier" element={<ProfilePage />} />
                     <Route path="/airdrops" element={<AirdropOverview />} />
                     <Route path="/airdrops/winners" element={<AirdropWinners />} />
