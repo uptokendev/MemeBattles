@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
@@ -23,6 +23,16 @@ function openWalletModal(wallet: any) {
   if (typeof wallet?.openConnectModal === "function") return wallet.openConnectModal();
 }
 
+function getCommandSection(pathname: string): string {
+  const marker = "/command";
+  const index = pathname.indexOf(marker);
+  if (index < 0) return "";
+
+  const suffix = pathname.slice(index + marker.length).split("/").filter(Boolean)[0] || "";
+  const allowed = new Set(["overview", "recruiter", "squad", "airdrops", "claims", "settings"]);
+  return allowed.has(suffix) ? `/${suffix}` : "";
+}
+
 function ConnectRequired({ onConnect }: { onConnect: () => void }) {
   return (
     <div className="mx-auto flex min-h-[65vh] w-full max-w-3xl items-center justify-center px-4">
@@ -42,32 +52,13 @@ function ConnectRequired({ onConnect }: { onConnect: () => void }) {
   );
 }
 
-function WrongWallet({ requestedWallet, connectedWallet }: { requestedWallet: string; connectedWallet: string }) {
-  return (
-    <div className="mx-auto flex min-h-[65vh] w-full max-w-3xl items-center justify-center px-4">
-      <div className="w-full rounded-3xl border border-destructive/35 bg-card/40 p-6 text-center shadow-2xl backdrop-blur-md md:p-10">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-destructive/40 bg-destructive/10 font-retro text-2xl text-destructive">
-          !
-        </div>
-        <h1 className="font-retro text-2xl text-foreground md:text-4xl">Wrong wallet</h1>
-        <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground md:text-base">
-          This Command Center belongs to another wallet. Public profiles stay visible, but private dashboard data requires the matching connected wallet.
-        </p>
-        <div className="mt-5 space-y-2 rounded-2xl border border-border/50 bg-background/30 p-4 text-left text-xs text-muted-foreground">
-          <div><span className="text-foreground">Requested:</span> <span className="font-mono">{requestedWallet}</span></div>
-          <div><span className="text-foreground">Connected:</span> <span className="font-mono">{connectedWallet}</span></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 type CommandCenterShellProps = {
   children: ReactNode;
 };
 
 export function CommandCenterShell({ children }: CommandCenterShellProps) {
   const { wallet: walletParam } = useParams<{ wallet?: string }>();
+  const location = useLocation();
   const wallet = useWallet();
   const anyWallet: any = wallet as any;
 
@@ -81,7 +72,8 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
   }
 
   if (connectedWallet !== requestedWallet) {
-    return <WrongWallet requestedWallet={requestedWallet} connectedWallet={connectedWallet} />;
+    const section = getCommandSection(location.pathname);
+    return <Navigate to={`/profile/${connectedWallet}/command${section}`} replace />;
   }
 
   return (
