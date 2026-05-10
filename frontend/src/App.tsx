@@ -45,6 +45,7 @@ import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
+import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
 import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
 import CommandCenterPlaceholderPage from "@/pages/command-center/CommandCenterPlaceholderPage";
 
@@ -142,50 +143,11 @@ const App = () => {
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
                     <Route path="/profile" element={<ProfilePage />} />
-                    <Route
-                      path="/profile/:wallet/command"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterOverview />
-                        </CommandCenterShell>
-                      }
-                    />
-                    <Route
-                      path="/profile/:wallet/command/overview"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterOverview />
-                        </CommandCenterShell>
-                      }
-                    />
-                    <Route
-                      path="/profile/:wallet/command/recruiter"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterRecruiter />
-                        </CommandCenterShell>
-                      }
-                    />
-                    <Route
-                      path="/profile/:wallet/command/squad"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterPlaceholderPage
-                            title="Squad"
-                            description="Squad routing now lives inside the private Command Center. Membership gating, member rankings, and rewards are added in the Squad batch."
-                            sections={["Status", "Members", "Rewards", "Leaderboard"]}
-                          />
-                        </CommandCenterShell>
-                      }
-                    />
-                    <Route
-                      path="/profile/:wallet/command/airdrops"
-                      element={
-                        <CommandCenterShell>
-                          <CommandCenterAirdrops />
-                        </CommandCenterShell>
-                      }
-                    />
+                    <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
                     <Route
                       path="/profile/:wallet/command/claims"
                       element={
