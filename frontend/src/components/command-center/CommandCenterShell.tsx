@@ -29,7 +29,17 @@ function getCommandSection(pathname: string): string {
   if (index < 0) return "";
 
   const suffix = pathname.slice(index + marker.length).split("/").filter(Boolean)[0] || "";
-  const allowed = new Set(["overview", "recruiter", "squad", "airdrops", "claims", "settings"]);
+  const allowed = new Set([
+    "overview",
+    "recruiter",
+    "squad",
+    "airdrops",
+    "claims",
+    "settings",
+    "followers",
+    "following",
+    "coins",
+  ]);
   return allowed.has(suffix) ? `/${suffix}` : "";
 }
 
