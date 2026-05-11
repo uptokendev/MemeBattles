@@ -111,7 +111,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
               <Button
                 key={t.key}
                 variant="ghost"
-                size="xs"
+                size="sm"
                 className={cn("mwz-chip gap-2 h-9 px-2 font-retro !text-[9px]", active && "mwz-chip-active")}
                 onClick={() => {
                   const nextTab = t.key;
