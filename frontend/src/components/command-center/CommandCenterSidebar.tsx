@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Award, Gift, Home, Settings, Shield, Trophy, Users } from "lucide-react";
+import { Gift, Home, Settings, Shield, Trophy, Users } from "lucide-react";
 
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
@@ -55,13 +55,6 @@ export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
           );
         })}
       </nav>
-      <div className="mt-3 hidden rounded-2xl border border-border/50 bg-background/20 p-3 text-xs text-muted-foreground lg:block">
-        <div className="mb-2 flex items-center gap-2 font-retro text-foreground">
-          <Award className="h-4 w-4 text-accent" />
-          Command Center
-        </div>
-        Private owner tools, rewards, settings, and wallet-specific state.
-      </div>
     </aside>
   );
 }
