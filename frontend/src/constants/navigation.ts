@@ -42,6 +42,7 @@ export const socialLinks: SocialItem[] = [
   {
     href: "https://t.me/launchpad",
     ariaLabel: "Telegram",
+    tooltip: "Telegram",
     color: "#0088cc",
     svgUrl: telegramIcon,
   },
