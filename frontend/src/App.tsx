@@ -49,6 +49,7 @@ import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
 import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops";
 import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
+import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 
 const queryClient = new QueryClient();
 
@@ -151,6 +152,8 @@ const App = () => {
                     <Route path="/command/airdrops" element={<LegacyCommandCenterRedirect section="airdrops" />} />
                     <Route path="/command/claims" element={<LegacyCommandCenterRedirect section="claims" />} />
                     <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
+                    <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
+                    <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
                     <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
                     <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
@@ -159,6 +162,8 @@ const App = () => {
                     <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
                     <Route path="/profile/:identifier" element={<ProfilePage />} />
                     <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
