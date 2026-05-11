@@ -242,7 +242,7 @@ try {
       });
 
       cacheDraftLogo(draft.id, logoUrl);
-      toast.success("Prepare Mode draft created. No gas spent.");
+      toast.success("Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);
     } catch (error: any) {
       console.error(error);
@@ -278,7 +278,7 @@ try {
         lpReceiver: "",
       });
 
-      toast.success("Campaign created on-chain!");
+      toast.success("Coin deployed on-chain!");
 
       try {
         const symbol = normalizedTicker;
@@ -314,7 +314,7 @@ try {
       }
     } catch (error: any) {
       console.error(error);
-      const message = error?.shortMessage || error?.reason || error?.message || "Failed to create campaign";
+      const message = error?.shortMessage || error?.reason || error?.message || "Failed to deploy coin";
       toast.error(message);
     }
   };
@@ -351,9 +351,9 @@ try {
                 <BookOpen className="h-6 w-6 md:h-8 md:w-8 text-accent" />
               </div>
               <div>
-                <h2 className="text-lg md:2xl font-retro text-foreground mb-1">First time launching?</h2>
+                <h2 className="text-lg md:2xl font-retro text-foreground mb-1">Choose your launch path</h2>
                 <p className="text-sm md:text-base text-muted-foreground font-retro">
-                  Prepare Mode lets you build the promotion page first, with no gas and no trading UI.
+                  Draft Mode opens the promotion setup first. Deploy Mode launches directly on-chain.
                 </p>
               </div>
             </div>
@@ -506,26 +506,33 @@ try {
               </div>
 
               <div className="grid gap-3 pt-4 md:grid-cols-2">
-                <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 font-retro text-lg md:text-xl">
-                  <FileText className="mr-2 h-5 w-5" />
-                  {isDrafting ? "Creating Draft..." : "Create Draft"}
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isCreateDisabled}
-                  className={`font-retro text-lg md:text-xl h-16 shadow-lg transition-all ${isCreateDisabled ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-accent hover:bg-accent/90 text-accent-foreground shadow-accent/20"}`}
-                >
-                  <Rocket className="mr-2 h-5 w-5" />
-                  {launchpadReadiness.ready ? "Create Live Campaign" : launchpadReadiness.title}
-                </Button>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="mwz-card p-4 text-sm text-muted-foreground">
-                  <span className="font-retro text-orange-300">Prepare Mode:</span> saves the draft, reserves the ticker, opens the War Room promotion setup page, and costs no gas.
+                <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
+                  <div className="mb-3">
+                    <div className="font-retro text-sm text-foreground">Draft Mode</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.
+                    </p>
+                  </div>
+                  <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-16 w-full font-retro text-lg md:text-xl">
+                    <FileText className="mr-2 h-5 w-5" />
+                    {isDrafting ? "Saving Draft..." : "Save Draft"}
+                  </Button>
                 </div>
-                <div className="mwz-card p-4 text-sm text-muted-foreground">
-                  <span className="font-retro text-orange-300">Live Campaign:</span> keeps the current on-chain creation flow and requires wallet confirmation.
+                <div className="rounded-2xl border border-accent/35 bg-accent/10 p-4">
+                  <div className="mb-3">
+                    <div className="font-retro text-sm text-foreground">Deploy Mode</div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Deploy directly on-chain now. This skips the promotion page and starts the live coin immediately after wallet confirmation.
+                    </p>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={isCreateDisabled}
+                    className={`font-retro text-lg md:text-xl h-16 w-full shadow-lg transition-all ${isCreateDisabled ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-accent hover:bg-accent/90 text-accent-foreground shadow-accent/20"}`}
+                  >
+                    <Rocket className="mr-2 h-5 w-5" />
+                    {launchpadReadiness.ready ? "Deploy Now" : launchpadReadiness.title}
+                  </Button>
                 </div>
               </div>
             </form>
