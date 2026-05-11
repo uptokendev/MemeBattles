@@ -83,7 +83,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followingCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Following</div>
           </Link>
-          <Link to={commandBase} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
+          <Link to={`${commandBase}/coins`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
           </Link>
