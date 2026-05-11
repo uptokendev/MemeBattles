@@ -323,7 +323,7 @@ tickerInitialLoadedRef.current = true;
               <Link
                 key={item.path}
                 to={item.path}
-                className={cn("mwz-nav-link px-3 py-2 text-sm font-retro whitespace-nowrap", isActive(item.path) && "mwz-nav-link-active")}
+                className={cn("mwz-nav-link px-3 py-2 text-xs font-retro whitespace-nowrap", isActive(item.path) && "mwz-nav-link-active")}
               >
                 {item.label}
               </Link>

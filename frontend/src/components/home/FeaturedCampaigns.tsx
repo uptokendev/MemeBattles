@@ -388,7 +388,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             Featured Campaigns
           </div>
           <div className="hidden md:block text-xs uppercase tracking-[0.16em] mwz-muted">
-            Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"}, tie-break by activity)
+            Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"})
           </div>
         </div>
 
