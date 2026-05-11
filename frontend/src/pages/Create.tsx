@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
+const IS_PREPARE_MODE = true;
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -254,6 +255,12 @@ try {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (IS_PREPARE_MODE) {
+      toast.error("Deploy Mode is locked during Prepare Mode. Save a draft instead.");
+      return;
+    }
+
     if (!validateCoreForm()) return;
 
     if (!launchpadReadiness.ready) {
@@ -321,7 +328,7 @@ try {
 
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
-  const isCreateDisabled = isProjectDisabled || !launchpadReadiness.ready || checkingTicker || tickerUnavailableOrUnknown;
+  const isCreateDisabled = true;
   const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
 
   return (
@@ -345,6 +352,15 @@ try {
             Create a new coin
           </h1>
 
+          {IS_PREPARE_MODE && (
+            <div className="mb-4 rounded-2xl border border-accent/40 bg-accent/10 p-4 md:p-5">
+              <div className="font-retro text-sm uppercase tracking-[0.16em] text-accent">Prepare Mode Active</div>
+              <p className="mt-2 text-sm text-muted-foreground md:text-base">
+                MemeWarzone is currently in Prepare Mode. You can create drafts and build promotion pages now; direct on-chain deployment unlocks when the live launch window opens.
+              </p>
+            </div>
+          )}
+
           <div className="mwz-card mb-4 md:mb-6 p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3 md:gap-4">
               <div className="bg-accent/20 p-3 md:p-4 rounded-xl">
@@ -353,7 +369,7 @@ try {
               <div>
                 <h2 className="text-lg md:2xl font-retro text-foreground mb-1">Choose your launch path</h2>
                 <p className="text-sm md:text-base text-muted-foreground font-retro">
-                  Draft Mode opens the promotion setup first. Deploy Mode launches directly on-chain.
+                  Draft Mode opens the promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
                 </p>
               </div>
             </div>
@@ -362,9 +378,11 @@ try {
             </Button>
           </div>
 
-          <div className="mb-4 md:mb-6">
-            <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
-          </div>
+          {!IS_PREPARE_MODE && (
+            <div className="mb-4 md:mb-6">
+              <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
+            </div>
+          )}
 
           <div className="mwz-card p-4 md:p-8 relative">
             <button
@@ -518,20 +536,20 @@ try {
                     {isDrafting ? "Saving Draft..." : "Save Draft"}
                   </Button>
                 </div>
-                <div className="rounded-2xl border border-accent/35 bg-accent/10 p-4">
+                <div className="rounded-2xl border border-border/50 bg-background/25 p-4 opacity-80">
                   <div className="mb-3">
                     <div className="font-retro text-sm text-foreground">Deploy Mode</div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Deploy directly on-chain now. This skips the promotion page and starts the live coin immediately after wallet confirmation.
+                      Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.
                     </p>
                   </div>
                   <Button
                     type="submit"
                     disabled={isCreateDisabled}
-                    className={`font-retro text-lg md:text-xl h-16 w-full shadow-lg transition-all ${isCreateDisabled ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-accent hover:bg-accent/90 text-accent-foreground shadow-accent/20"}`}
+                    className="h-16 w-full cursor-not-allowed bg-muted font-retro text-lg text-muted-foreground shadow-none md:text-xl"
                   >
                     <Rocket className="mr-2 h-5 w-5" />
-                    {launchpadReadiness.ready ? "Deploy Now" : launchpadReadiness.title}
+                    Locked in Prepare Mode
                   </Button>
                 </div>
               </div>
