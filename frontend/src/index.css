@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Campaign ticker marquee. It is intentionally not sticky; HeaderBand renders it
+   in normal page flow so it scrolls away with the homepage content. */
+.mwz-campaign-ticker-track {
+  animation: mwz-campaign-ticker-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+.mwz-campaign-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes mwz-campaign-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 /* Custom Fonts */
 @font-face {
   font-family: 'Pixeboy';
