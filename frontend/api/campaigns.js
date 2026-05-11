@@ -38,7 +38,8 @@ function normalizeSort(v) {
   ].includes(s)
     ? s
     : "default";
-}\n
+}
+
 function normalizeStatus(v) {
   const s = String(v || "all").toLowerCase();
   return s === "live" || s === "graduated" || s === "ended" ? s : "all";
@@ -88,9 +89,6 @@ export default async function handler(req, res) {
 
     const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
 
-    // Deterministic ordering per tab/sort.
-    // IMPORTANT: the outer query selects from the CTE `calc`.
-    // So ORDER BY must only reference columns available on `calc`.
     const orderBy = (() => {
       if (sort === "created_desc") return "calc.created_block desc, calc.campaign_address asc";
       if (sort === "created_asc") return "calc.created_block asc, calc.campaign_address asc";
@@ -98,14 +96,9 @@ export default async function handler(req, res) {
       if (sort === "mcap_asc") return "coalesce(calc.marketcap_bnb, 0) asc, calc.created_block desc, calc.campaign_address asc";
       if (sort === "votes_desc") return "coalesce(calc.votes_24h, 0) desc, calc.created_block desc, calc.campaign_address asc";
       if (sort === "progress_desc") return "coalesce(calc.progress_pct, -1) desc, calc.created_block desc, calc.campaign_address asc";
-
-      // Tab defaults
       if (tab === "new") return "calc.created_block desc, calc.campaign_address asc";
-      if (tab === "ending")
-        return "calc.eta_sec asc nulls last, calc.progress_pct desc nulls last, calc.created_block desc, calc.campaign_address asc";
+      if (tab === "ending") return "calc.eta_sec asc nulls last, calc.progress_pct desc nulls last, calc.created_block desc, calc.campaign_address asc";
       if (tab === "dex") return "calc.graduated_block desc nulls last, calc.created_block desc, calc.campaign_address asc";
-
-      // trending default (pump.fun-like): most recent activity first
       return "calc.last_activity_at desc nulls last, calc.created_block desc, calc.campaign_address asc";
     })();
 
@@ -185,15 +178,9 @@ export default async function handler(req, res) {
           case
             when rt.raised_total_bnb >= $2::numeric then 0
             when rt.raised_10m_bnb <= 0 then null
-            else (
-              ($2::numeric - rt.raised_total_bnb)
-              / (rt.raised_10m_bnb / 600.0)
-            )
+            else (($2::numeric - rt.raised_total_bnb) / (rt.raised_10m_bnb / 600.0))
           end as eta_sec,
-          (
-            coalesce(b.vol_24h_bnb, 0) * 1000
-            + coalesce(b.votes_24h, 0) * 10
-          ) as trending_score
+          (coalesce(b.vol_24h_bnb, 0) * 1000 + coalesce(b.votes_24h, 0) * 10) as trending_score
         from base b
         join rt
           on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
@@ -201,24 +188,10 @@ export default async function handler(req, res) {
       select *
       from calc
       where 1=1
-        and (
-          $9::numeric is null
-          or calc.progress_pct >= $9::numeric
-        )
-        and (
-          $10::numeric is null
-          or calc.progress_pct <= $10::numeric
-        )
-        and (
-          $6::numeric is null
-          or $7::numeric is null
-          or (calc.marketcap_bnb is not null and (calc.marketcap_bnb * $6::numeric) >= $7::numeric)
-        )
-        and (
-          $6::numeric is null
-          or $8::numeric is null
-          or (calc.marketcap_bnb is not null and (calc.marketcap_bnb * $6::numeric) <= $8::numeric)
-        )
+        and ($9::numeric is null or calc.progress_pct >= $9::numeric)
+        and ($10::numeric is null or calc.progress_pct <= $10::numeric)
+        and ($6::numeric is null or $7::numeric is null or (calc.marketcap_bnb is not null and (calc.marketcap_bnb * $6::numeric) >= $7::numeric))
+        and ($6::numeric is null or $8::numeric is null or (calc.marketcap_bnb is not null and (calc.marketcap_bnb * $6::numeric) <= $8::numeric))
       order by ${orderBy}
       offset $11
       limit $12
@@ -240,12 +213,10 @@ export default async function handler(req, res) {
     ]);
 
     const items = (r.rows || []).map((row) => {
-      const campaignAddress = String(row.campaign_address ?? "").toLowerCase();
       const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
-
       return {
         chainId: Number(row.chain_id),
-        campaignAddress,
+        campaignAddress: String(row.campaign_address ?? "").toLowerCase(),
         tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
         creatorAddress: row.creator_address ? String(row.creator_address).toLowerCase() : null,
         name: row.name ?? null,
@@ -254,12 +225,8 @@ export default async function handler(req, res) {
         createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
         graduatedAtChain: graduatedAt,
         isDexTrading: Boolean(graduatedAt),
-
-        // canonical status (useful for UI)
         isActive: Boolean(row.is_active),
         status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
-
-        // stats
         lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
         lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
         soldTokens: row.sold_tokens != null ? String(row.sold_tokens) : null,
@@ -267,8 +234,6 @@ export default async function handler(req, res) {
         vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
         votes24h: row.votes_24h != null ? Number(row.votes_24h) : 0,
         votesAllTime: row.votes_all_time != null ? Number(row.votes_all_time) : 0,
-
-        // derived
         raisedTotalBnb: row.raised_total_bnb != null ? String(row.raised_total_bnb) : "0",
         raised10mBnb: row.raised_10m_bnb != null ? String(row.raised_10m_bnb) : "0",
         progressPct: row.progress_pct != null ? Number(row.progress_pct) : null,
@@ -277,11 +242,9 @@ export default async function handler(req, res) {
       };
     });
 
-    const nextCursor = items.length === limit ? cursor + limit : null;
-
     return json(res, 200, {
       items,
-      nextCursor,
+      nextCursor: items.length === limit ? cursor + limit : null,
       pageSize: limit,
       updatedAt: new Date().toISOString(),
     });
