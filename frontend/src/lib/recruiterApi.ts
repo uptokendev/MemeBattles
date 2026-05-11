@@ -311,45 +311,46 @@ export function buildRecruiterSignupMessage(input: {
 export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
   const normalized = normalizeWalletAddress(walletAddress);
 
-  try {
-    const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
-    if (res.ok) {
-      const json = await parseJson(res);
-      return {
-        walletAddress: normalized,
-        isRecruiter: Boolean(json?.isRecruiter),
-        recruiter: (json?.recruiter ?? null) as RecruiterSummary | null,
-        canStartSignup: Boolean(json?.canStartSignup ?? !json?.isRecruiter),
-        signupApiAvailable: true,
-      };
-    }
-    if (res.status !== 404) await parseJson(res);
-  } catch {
-    // Fall through to the summary-based fallback.
-  }
+  const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
 
-  try {
-    const recruiter = await fetchRecruiterSummaryByWallet(normalized);
+  if (res.ok) {
+    const json = await parseJson(res);
+    const isRecruiter = Boolean(json?.isRecruiter);
+    let recruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
+
+    // The signup-status endpoint is the source of truth for whether a wallet is a recruiter.
+    // Only hydrate missing management details after that endpoint explicitly confirms recruiter status.
+    if (isRecruiter && !recruiter) {
+      recruiter = await fetchRecruiterSummaryByWallet(normalized).catch(() => null);
+    }
+
     return {
       walletAddress: normalized,
-      isRecruiter: true,
+      isRecruiter,
       recruiter,
-      canStartSignup: false,
-      signupApiAvailable: false,
+      canStartSignup: Boolean(json?.canStartSignup ?? !isRecruiter),
+      signupApiAvailable: true,
     };
-  } catch (error: any) {
-    const message = String(error?.message || "");
-    if (message.includes("404") || message.toLowerCase().includes("not found")) {
-      return {
-        walletAddress: normalized,
-        isRecruiter: false,
-        recruiter: null,
-        canStartSignup: true,
-        signupApiAvailable: false,
-      };
-    }
-    throw error;
   }
+
+  if (res.status === 404) {
+    return {
+      walletAddress: normalized,
+      isRecruiter: false,
+      recruiter: null,
+      canStartSignup: true,
+      signupApiAvailable: true,
+    };
+  }
+
+  await parseJson(res);
+  return {
+    walletAddress: normalized,
+    isRecruiter: false,
+    recruiter: null,
+    canStartSignup: true,
+    signupApiAvailable: false,
+  };
 }
 
 export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
