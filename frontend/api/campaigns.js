@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     const q = getQuery(req);
 
     const chainId = toInt(q.chainId, 97);
-    limit = clamp(toInt(q.limit, 24), 1, 50);
+    limit = clamp(toInt(q.limit, 24), 1, 500);
     const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000);
 
     const tab = normalizeTab(q.tab);
@@ -122,10 +122,11 @@ export default async function handler(req, res) {
             and nullif(d.logo_url, '') is not null
             and (
               (d.campaign_address is not null and lower(d.campaign_address::text) = lower(c.campaign_address::text))
-              or (d.token_address is not null and c.token_address is not null and lower(d.token_address::text) = lower(c.token_address::text))
               or (
                 d.creator_wallet is not null
                 and c.creator_address is not null
+                and d.ticker is not null
+                and c.symbol is not null
                 and lower(d.creator_wallet::text) = lower(c.creator_address::text)
                 and lower(d.ticker::text) = lower(c.symbol::text)
               )
@@ -133,8 +134,7 @@ export default async function handler(req, res) {
           order by
             case
               when d.campaign_address is not null and lower(d.campaign_address::text) = lower(c.campaign_address::text) then 0
-              when d.token_address is not null and c.token_address is not null and lower(d.token_address::text) = lower(c.token_address::text) then 1
-              else 2
+              else 1
             end,
             d.updated_at desc nulls last,
             d.created_at desc nulls last
@@ -259,6 +259,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[api/campaigns]", e);
-    return emptyCampaignFeed(res, limit, "Campaign indexer feed is temporarily unavailable.");
+    return json(res, 500, { error: "Campaign feed failed", message: String(e?.message || e) });
   }
 }
