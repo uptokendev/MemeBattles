@@ -57,6 +57,12 @@ import {
   recruiterWalletSummary,
   recruiters,
 } from "./dev-fix/attribution.js";
+import {
+  recruiterAuthNonce,
+  recruiterAuthVerify,
+  recruiterLogout,
+  recruiterPortal,
+} from "./dev-fix/recruiter-portal.js";
 import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "./dev-fix/route-auth.js";
 import {
   airdropWinners,
@@ -219,6 +225,10 @@ router.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 router.all("/recruiter-routing/status", wrap(routingStatus));
 router.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 router.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
+router.all("/recruiter-auth-nonce", wrap(recruiterAuthNonce));
+router.all("/recruiter-auth-verify", wrap(recruiterAuthVerify));
+router.all("/recruiter-portal", wrap(recruiterPortal));
+router.all("/recruiter-logout", wrap(recruiterLogout));
 router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
