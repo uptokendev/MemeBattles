@@ -49,13 +49,13 @@ export default function CommandCenterOverview() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <CommandCenterCard title="Ranking" description="Current rank badge and rank-ladder progress.">
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-3xl border border-accent/35 bg-accent/10 p-3">
+          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 md:p-5">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+              <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-3xl border border-accent/35 bg-accent/10 p-2 shadow-xl sm:h-44 sm:w-44 lg:h-48 lg:w-48">
                 <img
                   src={getRankBadgeSrc(rankProgress.currentRank)}
                   alt={`${rankProgress.currentRank} badge`}
-                  className="h-full w-full object-contain"
+                  className="h-full w-full scale-110 object-contain"
                 />
               </div>
               <div className="min-w-0 flex-1">
