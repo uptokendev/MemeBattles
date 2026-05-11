@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Contract } from "ethers";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -6,6 +7,8 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
+import { getFactoryAddress } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 
 export type FeedTabKey = "drafts" | "trending" | "new" | "ending" | "dex";
 
@@ -52,7 +55,13 @@ type CampaignFeedResponse = {
   nextCursor: number | null;
   pageSize: number;
   updatedAt?: string;
+  source?: string;
 };
+
+const LEGACY_FACTORY_ABI = [
+  "function campaignsCount() view returns (uint256)",
+  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
+] as const;
 
 function safeUnixSeconds(ts: any): number | null {
   if (ts == null) return null;
@@ -89,12 +98,95 @@ function buildQueryString(params: Record<string, any>) {
   return qs.toString();
 }
 
+function normalizeSearch(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function matchesSearch(item: CampaignFeedItemApi, search: unknown) {
+  const q = normalizeSearch(search);
+  if (!q) return true;
+  return [item.name, item.symbol, item.campaignAddress, item.tokenAddress, item.creatorAddress]
+    .map((v) => String(v ?? "").toLowerCase())
+    .some((v) => v.includes(q));
+}
+
+async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
+  const chainId = Number(params.chainId || 97);
+  const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
+  const cursor = Math.max(0, Number(params.cursor || 0));
+  const factoryAddress = getFactoryAddress(chainId as any);
+  if (!factoryAddress) {
+    return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
+  }
+
+  const provider = getReadProvider(chainId as any);
+  const factory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
+  const totalRaw: bigint = await factory.campaignsCount();
+  const total = Number(totalRaw ?? 0n);
+  if (!Number.isFinite(total) || total <= 0) {
+    return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
+  }
+
+  // Factory pages are oldest -> newest. UI wants newest first, so translate the
+  // cursor into a reverse offset. We intentionally over-fetch a little to allow
+  // search/status filters without making the grid look empty.
+  const readLimit = Math.min(100, Math.max(limit, 48));
+  const endExclusive = Math.max(0, total - cursor);
+  const offset = Math.max(0, endExclusive - readLimit);
+  const actualLimit = Math.max(0, endExclusive - offset);
+  if (actualLimit <= 0) {
+    return { items: [], nextCursor: null, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain" };
+  }
+
+  const rows = await factory.getCampaignPage(offset, actualLimit);
+  const mapped: CampaignFeedItemApi[] = Array.from(rows ?? [])
+    .map((row: any) => ({
+      chainId,
+      campaignAddress: String(row?.campaign ?? "").toLowerCase(),
+      tokenAddress: row?.token ? String(row.token).toLowerCase() : null,
+      creatorAddress: row?.creator ? String(row.creator).toLowerCase() : null,
+      name: row?.name ? String(row.name) : null,
+      symbol: row?.symbol ? String(row.symbol) : null,
+      logoUri: row?.logoURI ? String(row.logoURI) : null,
+      createdAtChain: row?.createdAt ? String(Number(row.createdAt)) : null,
+      graduatedAtChain: null,
+      isDexTrading: false,
+      marketcapBnb: null,
+      votes24h: 0,
+      progressPct: null,
+      etaSec: null,
+    }))
+    .reverse()
+    .filter((item) => /^0x[a-f0-9]{40}$/.test(item.campaignAddress))
+    .filter((item) => matchesSearch(item, params.search));
+
+  const items = mapped.slice(0, limit);
+  const nextCursor = cursor + actualLimit < total ? cursor + actualLimit : null;
+
+  return {
+    items,
+    nextCursor,
+    pageSize: limit,
+    updatedAt: new Date().toISOString(),
+    source: "onchain-factory-fallback",
+  };
+}
+
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
   const qs = buildQueryString(params);
-  const r = await apiFetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
-  return j as CampaignFeedResponse;
+  try {
+    const r = await apiFetch(`/api/campaigns?${qs}`, { cache: "no-store" as any });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
+    const items = Array.isArray(j?.items) ? j.items : [];
+    // If the realtime feed is empty while the chain has campaigns, still fall
+    // back so the homepage does not only show Prepare drafts.
+    if (!items.length) return await fetchOnChainCampaignFeed(params);
+    return j as CampaignFeedResponse;
+  } catch (error) {
+    console.warn("[CampaignGrid] realtime campaign feed failed; using on-chain factory fallback", error);
+    return await fetchOnChainCampaignFeed(params);
+  }
 }
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
@@ -204,6 +296,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         if (!mounted) return;
         if (DEBUG) {
           console.debug("[CampaignGrid] first page response", {
+            source: resp.source,
             count: resp.items?.length ?? 0,
             sample: (resp.items ?? []).slice(0, 3).map((x) => ({
               campaignAddress: x.campaignAddress,
@@ -289,7 +382,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     try {
       if (DEBUG) console.debug("[CampaignGrid] loadMore params", { ...baseParams, cursor: nextCursor });
       const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor, _r: refetchNonce });
-      if (DEBUG) console.debug("[CampaignGrid] loadMore response", { count: resp.items?.length ?? 0, nextCursor: resp.nextCursor });
+      if (DEBUG) console.debug("[CampaignGrid] loadMore response", { source: resp.source, count: resp.items?.length ?? 0, nextCursor: resp.nextCursor });
       setItems((prev) => [...prev, ...(resp.items ?? [])]);
       setNextCursor(resp.nextCursor ?? null);
       setLastUpdatedAt(resp.updatedAt ?? null);
