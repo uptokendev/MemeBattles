@@ -59,15 +59,58 @@ function normalizeCode(value: string) {
     .replace(/^-|-$/g, "");
 }
 
+async function loadImageElement(file: File): Promise<HTMLImageElement> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Could not read image."));
+      img.src = objectUrl;
+    });
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  }
+}
+
+async function squareCropImageFile(file: File): Promise<File> {
+  const img = await loadImageElement(file);
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  if (!width || !height) throw new Error("Could not read image dimensions.");
+
+  const cropSize = Math.min(width, height);
+  const sourceX = Math.floor((width - cropSize) / 2);
+  const sourceY = Math.floor((height - cropSize) / 2);
+  const outputSize = 512;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = outputSize;
+  canvas.height = outputSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Image crop is not supported in this browser.");
+
+  ctx.drawImage(img, sourceX, sourceY, cropSize, cropSize, 0, 0, outputSize, outputSize);
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.92));
+  if (!blob) throw new Error("Could not create square image.");
+
+  const originalName = file.name.replace(/\.[^.]+$/, "") || "squad-image";
+  return new File([blob], `${originalName}-square.webp`, { type: "image/webp" });
+}
+
 async function uploadSquadImageFile(file: File, walletAddress: string): Promise<string> {
   const maxBytes = 3 * 1024 * 1024;
   if (file.size > maxBytes) throw new Error("Squad image must be <= 3 MB.");
 
-  const typeOk = /^(image\/png|image\/jpeg|image\/jpg|image\/webp|image\/gif)$/.test(file.type);
-  if (!typeOk) throw new Error("Unsupported image type. Use png, jpg, webp, or gif.");
+  const typeOk = /^(image\/png|image\/jpeg|image\/jpg|image\/webp)$/.test(file.type);
+  if (!typeOk) throw new Error("Unsupported image type. Use png, jpg, or webp.");
+
+  const squareFile = await squareCropImageFile(file);
+  if (squareFile.size > maxBytes) throw new Error("Square squad image must be <= 3 MB.");
 
   const fd = new FormData();
-  fd.append("file", file);
+  fd.append("file", squareFile);
 
   const url = `/api/upload?kind=squad&address=${encodeURIComponent(walletAddress.toLowerCase())}`;
   const res = await apiFetch(url, { method: "POST", body: fd });
@@ -231,7 +274,7 @@ export default function CommandCenterRecruiter() {
       return;
     }
 
-    const toastId = toast.loading("Uploading squad image...");
+    const toastId = toast.loading("Cropping and uploading square squad image...");
     try {
       const uploadedUrl = await uploadSquadImageFile(file, walletAddress);
       toast.dismiss(toastId);
@@ -414,8 +457,8 @@ export default function CommandCenterRecruiter() {
           </div>
 
           {activeSquadImage && (
-            <div className="mt-4 overflow-hidden rounded-2xl border border-accent/30 bg-accent/10">
-              <img src={activeSquadImage} alt={`${activeCode} squad`} className="h-40 w-full object-cover" />
+            <div className="mt-4 flex justify-center">
+              <img src={activeSquadImage} alt={`${activeCode} squad`} className="h-40 w-40 rounded-2xl border border-accent/30 bg-accent/10 object-cover" />
             </div>
           )}
 
@@ -480,12 +523,12 @@ export default function CommandCenterRecruiter() {
                   Squad image
                 </label>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Upload a recognition image for this recruiter's squad. Uses the same upload flow as profile and campaign images.
+                  Upload a recognition image for this recruiter's squad. It is center-cropped and saved as a square image for consistent display.
                 </p>
                 <input
                   ref={squadImageInputRef}
                   type="file"
-                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
                   className="hidden"
                   onChange={(event) => void handleSquadImageSelected(event.target.files?.[0])}
                 />
@@ -500,7 +543,7 @@ export default function CommandCenterRecruiter() {
                     </Button>
                   )}
                 </div>
-                {activeSquadImage && <img src={activeSquadImage} alt="Squad preview" className="mt-3 h-24 w-full rounded-xl object-cover" />}
+                {activeSquadImage && <img src={activeSquadImage} alt="Squad preview" className="mt-3 h-24 w-24 rounded-xl border border-border/50 object-cover" />}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
