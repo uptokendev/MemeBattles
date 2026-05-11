@@ -12,7 +12,7 @@ const rules = [
   "Trader and creator buckets are separate",
   "Reason codes explain ineligibility",
   "Claims stay user-initiated",
-  "Anti-abuse thresholds stay private",
+  "Eligibility checks run automatically",
   "Published winners remain public",
 ];
 
@@ -36,7 +36,7 @@ export default function CommandCenterAirdrops() {
       <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
         <CommandCenterCard
           title="Airdrop overview"
-          description="Warzone Airdrops are funded from unassigned recruiter and squad slices, with trader and creator buckets shown separately."
+          description="Warzone Airdrops give active solo creators and traders another path to rewards."
         >
           <div className="grid gap-3 sm:grid-cols-2">
             {rules.map((rule) => (
@@ -47,7 +47,7 @@ export default function CommandCenterAirdrops() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard title="Eligibility model" description="The UI exposes broad state and reason codes, not private detection thresholds.">
+        <CommandCenterCard title="Eligibility model" description="Your eligibility state updates as new activity and reward rounds are published.">
           <div className="space-y-3">
             <div className="rounded-2xl border border-accent/30 bg-accent/10 p-4">
               <div className="flex items-start gap-3">
@@ -66,7 +66,7 @@ export default function CommandCenterAirdrops() {
                 <div>
                   <div className="font-retro text-sm text-foreground">Creator bucket</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Creator eligibility remains separate from trader eligibility. A wallet can surface in either or both buckets when backend rules allow it.
+                    Creator eligibility remains separate from trader eligibility. A wallet can surface in either or both buckets when it qualifies.
                   </p>
                 </div>
               </div>
