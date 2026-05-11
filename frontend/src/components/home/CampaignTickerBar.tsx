@@ -37,6 +37,8 @@ const REALTIME_API_BASE = String(
   import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production.up.railway.app"
 ).replace(/\/$/, "");
 
+const MIN_TICKER_RENDERED_ITEMS = 18;
+
 function normalizeAddress(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -131,6 +133,17 @@ async function fetchTickerItems(chainId: number): Promise<CampaignTickerItem[]> 
   return enriched;
 }
 
+function buildRepeatedTickerItems(items: CampaignTickerItem[]) {
+  if (!items.length) return [];
+
+  // The CSS animation moves the track by 50%, so the rendered list must contain
+  // two identical halves. First make one half wide enough for short campaign
+  // lists, then duplicate that half for a seamless loop.
+  const repeatCount = Math.max(1, Math.ceil(MIN_TICKER_RENDERED_ITEMS / items.length));
+  const half = Array.from({ length: repeatCount }).flatMap(() => items);
+  return [...half, ...half];
+}
+
 export function CampaignTickerBar({ className }: { className?: string }) {
   const wallet = useWallet();
   const chainId = getActiveChainId((wallet as any)?.chainId ?? (wallet as any)?.network?.chainId);
@@ -161,10 +174,7 @@ export function CampaignTickerBar({ className }: { className?: string }) {
     };
   }, [chainId]);
 
-  const loopItems = useMemo(() => {
-    if (!items.length) return [];
-    return [...items, ...items];
-  }, [items]);
+  const loopItems = useMemo(() => buildRepeatedTickerItems(items), [items]);
 
   if (!loopItems.length) {
     return (
