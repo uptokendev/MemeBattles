@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
+// Token realtime belongs to the realtime-indexer Railway service.
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
 
 function getAuthBase() {
+  if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) {
+    return REALTIME_API_BASE.replace(/\/$/, "");
+  }
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
   }
@@ -24,9 +27,6 @@ type Entry = {
   closeTimer: any | null;
 };
 
-// Cache Ably connections per (chainId,campaign) to prevent multiple WebSockets
-// being opened/closed within the same page. This eliminates the "reload" feel
-// and prevents "WebSocket is closed before the connection is established" noise.
 const CACHE = new Map<string, Entry>();
 
 function channelNameFor(chainId: number, campaign: string) {
@@ -58,15 +58,12 @@ function acquire(chainId: number, campaign: string) {
   const chName = channelNameFor(chainId, campaign);
   const channel = client.channels.get(chName);
 
-  // Rewind a short window so reconnects pick up recent updates.
-  // This is safe even if publish frequency is low.
   try {
     channel.setOptions({ params: { rewind: "120s" } });
   } catch {
     // ignore
   }
 
-  // Attach eagerly
   try {
     channel.attach();
   } catch {
@@ -91,8 +88,6 @@ function release(key: string) {
   entry.refs -= 1;
   if (entry.refs > 0) return;
 
-  // Delay close slightly to avoid rapid open/close cycles during React rerenders
-  // and route transitions, which can trigger "closed before established".
   entry.closeTimer = setTimeout(() => {
     try {
       entry.channel.unsubscribe();
