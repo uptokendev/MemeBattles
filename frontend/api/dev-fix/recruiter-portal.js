@@ -78,12 +78,28 @@ function readCookie(req, name) {
   return "";
 }
 
-function setSessionCookie(res, token) {
-  res.setHeader("Set-Cookie", `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+function isSecureRequest(req) {
+  const proto = String(req.headers?.["x-forwarded-proto"] || req.protocol || "").toLowerCase();
+  const host = String(req.headers?.host || "").toLowerCase();
+  return proto === "https" || host.endsWith(".memewar.zone") || host.endsWith(".netlify.app");
 }
 
-function clearSessionCookie(res) {
-  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+function cookieAttributes(req, maxAgeSeconds) {
+  const attrs = ["Path=/", "HttpOnly", `Max-Age=${maxAgeSeconds}`];
+  if (isSecureRequest(req)) {
+    attrs.push("SameSite=None", "Secure");
+  } else {
+    attrs.push("SameSite=Lax");
+  }
+  return attrs.join("; ");
+}
+
+function setSessionCookie(req, res, token) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=${encodeURIComponent(token)}; ${cookieAttributes(req, Math.floor(SESSION_TTL_MS / 1000))}`);
+}
+
+function clearSessionCookie(req, res) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; ${cookieAttributes(req, 0)}`);
 }
 
 function buildAuthMessage({ walletAddress, nonce }) {
@@ -265,7 +281,7 @@ export async function recruiterAuthVerify(req, res) {
     if (!recruiter) return json(res, 403, { error: "This wallet is not an approved recruiter." });
 
     const token = encodeSession({ recruiterId: Number(recruiter.id), walletAddress, exp: Date.now() + SESSION_TTL_MS });
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     return json(res, 200, { ok: true, recruiter: recruiterShape(recruiter) });
   } catch (error) {
     console.error("[api/recruiter auth verify]", error);
@@ -319,7 +335,7 @@ export async function recruiterPortal(req, res) {
   }
 }
 
-export async function recruiterLogout(_req, res) {
-  clearSessionCookie(res);
+export async function recruiterLogout(req, res) {
+  clearSessionCookie(req, res);
   return json(res, 200, { ok: true });
 }
