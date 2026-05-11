@@ -6,7 +6,7 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["express", "serverless-http", "@resvg/resvg-js"]
+  included_files = ["package.json"]
 
 [[redirects]]
   from = "/api/prepare-share-card"
