@@ -143,7 +143,7 @@ export default function CommandCenterClaims() {
         <CommandCenterCard title="Claimable now" description="Rewards ready for user-initiated claim.">
           <div className="font-retro text-3xl text-foreground">{formatBnb(summary?.totalClaimableAmount)} BNB</div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Claim execution is backend/vault controlled. This hub displays the claimable state surfaced by the API.
+            Claimable rewards will appear here when they are ready to collect.
           </p>
         </CommandCenterCard>
         <CommandCenterCard title="Claimed lifetime" description="Previously claimed rewards across programs.">
@@ -153,7 +153,7 @@ export default function CommandCenterClaims() {
         <CommandCenterCard title="Expiring soon" description="Rewards inside the next 48 hours of their visible deadline.">
           <div className="font-retro text-3xl text-foreground">{expiringRewards.length}</div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Expiry/rollover destinations are enforced by the reward system, not by frontend math.
+            Review these first so you do not miss a claim window.
           </p>
         </CommandCenterCard>
       </div>
@@ -183,7 +183,7 @@ export default function CommandCenterClaims() {
                   </div>
                 </div>
                 <Button disabled variant="outline" className="mt-4 w-full font-retro">
-                  Claim action pending vault flow
+                  Claim coming soon
                 </Button>
               </div>
             ))}
@@ -194,7 +194,7 @@ export default function CommandCenterClaims() {
       <div className="grid gap-4 xl:grid-cols-2">
         <CommandCenterCard
           title="Pending / reward history"
-          description="Latest published reward ledger entries."
+          description="Latest reward ledger entries."
           action={<Hourglass className="h-5 w-5 text-accent" />}
         >
           <div className="space-y-3">
@@ -258,8 +258,8 @@ export default function CommandCenterClaims() {
       </div>
 
       <CommandCenterCard
-        title="Claim-state rules"
-        description="The hub displays claim states, but all reward settlement, expiration, rollover, and under-review decisions remain server/vault controlled."
+        title="Claim-state guide"
+        description="Reward states help you understand what is ready, pending, already claimed, or no longer available."
         action={<Clock3 className="h-5 w-5 text-accent" />}
       >
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
