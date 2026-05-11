@@ -23,6 +23,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
   } = useCommandCenterData();
 
   const short = shortenWallet(walletAddress);
+  const publicProfileBase = `/profile/${encodeURIComponent(walletAddress)}`;
 
   const handleCopyAddress = async () => {
     try {
@@ -61,7 +62,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
                 Copy
               </button>
               <a
-                href={`/profile/${encodeURIComponent(walletAddress)}`}
+                href={publicProfileBase}
                 className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-card/35 px-3 py-1 transition hover:border-accent/50 hover:text-foreground"
               >
                 Public profile
@@ -72,18 +73,18 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
         </div>
 
         <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
-          <div className="rounded-2xl border border-border/50 bg-card/35 p-3">
+          <a href={`${publicProfileBase}#followers`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followersCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Followers</div>
-          </div>
-          <div className="rounded-2xl border border-border/50 bg-card/35 p-3">
+          </a>
+          <a href={`${publicProfileBase}#following`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followingCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Following</div>
-          </div>
-          <div className="rounded-2xl border border-border/50 bg-card/35 p-3">
+          </a>
+          <a href={`${publicProfileBase}#created-coins`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
-          </div>
+          </a>
         </div>
       </div>
     </section>
