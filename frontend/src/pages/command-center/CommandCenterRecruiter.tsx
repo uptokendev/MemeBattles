@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, Upload, Users, WalletCards } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, Upload, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -171,7 +171,7 @@ export default function CommandCenterRecruiter() {
       setSquadImageUrl(getPortalSquadImageUrl(nextPortal));
     } catch (err: any) {
       setPortal(null);
-      setPortalError(String(err?.message || err || "Failed to load recruiter portal."));
+      setPortalError(String(err?.message || err || "Failed to load recruiter tools."));
     } finally {
       setLoadingPortal(false);
     }
@@ -220,7 +220,7 @@ export default function CommandCenterRecruiter() {
       const signature = await wallet.signer.signMessage(challenge.message);
       await verifyRecruiterAuth(wallet.account, signature);
       await loadPortal();
-      toast.success("Recruiter portal unlocked");
+      toast.success("Recruiter tools unlocked");
     } catch (err: any) {
       setPortalError(String(err?.message || err || "Wallet sign-in failed."));
       toast.error(String(err?.message || "Wallet sign-in failed."));
@@ -270,7 +270,7 @@ export default function CommandCenterRecruiter() {
   const handleSquadImageSelected = async (file?: File | null) => {
     if (!file) return;
     if (!portal) {
-      toast.error("Sign in to the recruiter portal first.");
+      toast.error("Sign in to recruiter tools first.");
       return;
     }
 
@@ -296,7 +296,7 @@ export default function CommandCenterRecruiter() {
     setPortal(null);
     setPreferredCode(recruiter?.code || "");
     setSquadImageUrl("");
-    toast.success("Recruiter portal disconnected");
+    toast.success("Recruiter tools disconnected");
   };
 
   const shareToX = () => {
@@ -333,7 +333,7 @@ export default function CommandCenterRecruiter() {
     return (
       <div className="space-y-4">
         <CommandCenterPageHeader title="Recruiter" description="Recruiter status could not be loaded." />
-        <CommandCenterCard title="Recruiter status unavailable" description="Try again after refreshing or checking the backend API.">
+        <CommandCenterCard title="Recruiter status unavailable" description="Try again after refreshing.">
           <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-6 text-sm text-rose-100">
             {statusError}
           </div>
@@ -381,7 +381,7 @@ export default function CommandCenterRecruiter() {
                 <div>
                   <div className="font-retro text-sm text-foreground">Program rule</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Recruiter routing, attribution locks, claim accounting, eligibility, and anti-abuse controls stay backend controlled. The Command Center displays only safe wallet-specific state.
+                    Recruiter routing, attribution locks, reward eligibility, and anti-abuse checks are handled automatically by the reward system.
                   </p>
                 </div>
               </div>
@@ -487,16 +487,16 @@ export default function CommandCenterRecruiter() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard title="Management actions" description="Portal-backed functions from the temporary recruiter dashboard.">
+        <CommandCenterCard title="Management actions" description="Recruiter tools and sharing controls.">
           {portalLocked ? (
             <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4">
-              <div className="font-retro text-sm text-foreground">Unlock recruiter portal</div>
+              <div className="font-retro text-sm text-foreground">Unlock recruiter tools</div>
               <p className="mt-2 text-sm text-muted-foreground">
-                Sign with the approved recruiter wallet to edit your recruiter code and load the full squad roster from the recruiter portal database.
+                Sign with the approved recruiter wallet to edit your recruiter code, squad image, and sharing links.
               </p>
               {portalError && <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{portalError}</div>}
               <Button onClick={signIntoPortal} disabled={authing || loadingPortal} className="mt-4 font-retro">
-                {authing ? "Waiting for signature..." : loadingPortal ? "Loading portal..." : "Sign in to manage"}
+                {authing ? "Waiting for signature..." : loadingPortal ? "Loading tools..." : "Sign in to manage"}
               </Button>
             </div>
           ) : (
@@ -523,7 +523,7 @@ export default function CommandCenterRecruiter() {
                   Squad image
                 </label>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Upload a recognition image for this recruiter's squad. It is center-cropped and saved as a square image for consistent display.
+                  Recommended size: 512 × 512 px square. PNG, JPG, or WebP up to 3 MB. Wide images are center-cropped automatically.
                 </p>
                 <input
                   ref={squadImageInputRef}
@@ -557,11 +557,11 @@ export default function CommandCenterRecruiter() {
                 </Button>
                 <Button onClick={() => void nativeShare()} variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro">
                   <Gift className="mr-3 h-4 w-4" />
-                  Brag about squad
+                  Share squad
                 </Button>
                 <Button onClick={() => void disconnectPortal()} variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro">
                   <LogOut className="mr-3 h-4 w-4" />
-                  Disconnect portal
+                  Disconnect session
                 </Button>
                 <Button asChild variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro">
                   <Link to="/command/claims">
@@ -582,7 +582,7 @@ export default function CommandCenterRecruiter() {
       </div>
 
       {portal && (
-        <CommandCenterCard title="Squad roster" description="Creators and traders already locked in through your recruiter portal.">
+        <CommandCenterCard title="Squad roster" description="Creators and traders connected through your recruiter link.">
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Squad size</div>
