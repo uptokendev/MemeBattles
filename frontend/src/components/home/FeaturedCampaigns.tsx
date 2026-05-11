@@ -393,12 +393,12 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip h-8 px-3", voteMode === "24h" && "mwz-chip-active")} onClick={() => setVoteMode("24h")}>24H</Button>
-          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip h-8 px-3", voteMode === "all" && "mwz-chip-active")} onClick={() => setVoteMode("all")}>All-Time</Button>
-          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex h-8 w-10 p-0" onClick={() => scrollByCards("left")}>
+          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "24h" && "mwz-chip-active")} onClick={() => setVoteMode("24h")}>24H</Button>
+          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "all" && "mwz-chip-active")} onClick={() => setVoteMode("all")}>All-Time</Button>
+          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("left")}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex h-8 w-10 p-0" onClick={() => scrollByCards("right")}>
+          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("right")}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
