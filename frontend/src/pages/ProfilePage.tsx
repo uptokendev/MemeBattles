@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
-import { PublicProfileStatsBar } from "@/components/profile/PublicProfileStatsBar";
 import PublicProfile from "./PublicProfile";
 
 function normalizeWallet(value?: string | null): string | null {
@@ -94,12 +93,9 @@ export default function ProfilePage() {
   }
 
   return (
-    <>
-      <PublicProfileStatsBar profileWallet={profileWallet} isOwnProfile={sameWallet(account, profileWallet)} />
-      <PublicProfile
-        profileWallet={profileWallet}
-        isOwnProfile={sameWallet(account, profileWallet)}
-      />
-    </>
+    <PublicProfile
+      profileWallet={profileWallet}
+      isOwnProfile={sameWallet(account, profileWallet)}
+    />
   );
 }
