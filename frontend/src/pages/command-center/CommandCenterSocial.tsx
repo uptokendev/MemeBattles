@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Coins, UserPlus, Users } from "lucide-react";
+import { Coins, FileText, UserPlus, Users } from "lucide-react";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
@@ -26,6 +26,14 @@ function resolveWallet(item: any, mode: "followers" | "following") {
   return String(item?.following ?? item?.followingAddress ?? item?.wallet ?? item?.address ?? "");
 }
 
+function EmptyState({ children }: { children: string }) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) {
   const {
     walletAddress,
@@ -33,6 +41,7 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
     followersCount,
     followingCount,
     loadingFollows: loadingCounts,
+    createdCount,
   } = useCommandCenterData();
   const wallet = useWallet();
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
@@ -53,12 +62,13 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
     fetchCampaignSummary,
   });
 
-  const profileRows = mode === "followers" ? followersList : followingList;
+  const followedDraftCards = followedCards.filter((card: any) => card.kind === "draft");
+  const followedCoinCards = followedCards.filter((card: any) => card.kind !== "draft");
+
   const title = mode === "followers" ? "Followers" : "Following";
   const description = mode === "followers"
     ? "Wallets following this profile."
-    : "Profiles, campaigns, and drafts followed by this wallet.";
-  const count = mode === "followers" ? followersCount : followingCount;
+    : "Users, coins, and Prepare drafts followed by this wallet.";
 
   const statCards = useMemo(
     () => [
@@ -78,13 +88,13 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
       },
       {
         label: "Coins",
-        value: "Overview",
-        href: `/profile/${walletAddress}/command`,
+        value: createdCount.toLocaleString(),
+        href: `/profile/${walletAddress}/command/coins`,
         icon: Coins,
         active: false,
       },
     ],
-    [followersCount, followingCount, loadingCounts, mode, walletAddress],
+    [createdCount, followersCount, followingCount, loadingCounts, mode, walletAddress],
   );
 
   return (
@@ -115,49 +125,111 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
         })}
       </div>
 
-      <CommandCenterCard title={title} description={`${loadingFollows ? "Loading" : count.toLocaleString()} total ${title.toLowerCase()}.`}>
-        {loadingFollows ? (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
-            Loading {title.toLowerCase()}...
-          </div>
-        ) : profileRows.length > 0 || (mode === "following" && followedCards.length > 0) ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {profileRows.map((item: any, index: number) => {
-              const rowWallet = resolveWallet(item, mode);
-              return (
-                <Link
-                  key={`${rowWallet}-${index}`}
-                  to={rowWallet ? `/profile/${rowWallet}` : `/profile/${walletAddress}/command/${mode}`}
-                  className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
-                >
-                  <div className="font-retro text-sm text-foreground">{shortenWallet(rowWallet) || "Unknown wallet"}</div>
-                  <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{rowWallet || "No wallet address returned"}</div>
-                </Link>
-              );
-            })}
+      {mode === "followers" ? (
+        <CommandCenterCard title="Followers" description={`${loadingFollows ? "Loading" : followersCount.toLocaleString()} wallets follow this profile.`}>
+          {loadingFollows ? (
+            <EmptyState>Loading followers...</EmptyState>
+          ) : followersList.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {followersList.map((item: any, index: number) => {
+                const rowWallet = resolveWallet(item, mode);
+                return (
+                  <Link
+                    key={`${rowWallet}-${index}`}
+                    to={rowWallet ? `/profile/${rowWallet}` : `/profile/${walletAddress}/command/followers`}
+                    className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
+                  >
+                    <div className="font-retro text-sm text-foreground">{shortenWallet(rowWallet) || "Unknown wallet"}</div>
+                    <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{rowWallet || "No wallet address returned"}</div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState>No followers to show yet.</EmptyState>
+          )}
+        </CommandCenterCard>
+      ) : (
+        <div className="space-y-4">
+          <CommandCenterCard title="Followed users" description={`${followingList.length.toLocaleString()} user profiles followed.`}>
+            {loadingFollows ? (
+              <EmptyState>Loading followed users...</EmptyState>
+            ) : followingList.length > 0 ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {followingList.map((item: any, index: number) => {
+                  const rowWallet = resolveWallet(item, mode);
+                  return (
+                    <Link
+                      key={`${rowWallet}-${index}`}
+                      to={rowWallet ? `/profile/${rowWallet}` : `/profile/${walletAddress}/command/following`}
+                      className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
+                    >
+                      <div className="font-retro text-sm text-foreground">{shortenWallet(rowWallet) || "Unknown wallet"}</div>
+                      <div className="mt-2 break-all font-mono text-xs text-muted-foreground">{rowWallet || "No wallet address returned"}</div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState>No followed users yet.</EmptyState>
+            )}
+          </CommandCenterCard>
 
-            {mode === "following" && followedCards.map((card: any) => (
-              <Link
-                key={`${card.kind}-${card.id}`}
-                to={card.href || `/profile/${walletAddress}/command/following`}
-                className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
-              >
-                <div className="flex items-center gap-3">
-                  <img src={card.image || "/placeholder.svg"} alt={card.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
-                  <div className="min-w-0">
-                    <div className="truncate font-retro text-sm text-foreground">{card.name}</div>
-                    <div className="text-xs text-muted-foreground">${card.ticker}</div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
-            No {title.toLowerCase()} to show yet.
-          </div>
-        )}
-      </CommandCenterCard>
+          <CommandCenterCard title="Followed coins" description={`${followedCoinCards.length.toLocaleString()} live campaigns followed.`}>
+            {loadingFollows ? (
+              <EmptyState>Loading followed coins...</EmptyState>
+            ) : followedCoinCards.length > 0 ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {followedCoinCards.map((card: any) => (
+                  <Link
+                    key={`${card.kind}-${card.id}`}
+                    to={card.href || `/profile/${walletAddress}/command/following`}
+                    className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img src={card.image || "/placeholder.svg"} alt={card.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                      <div className="min-w-0">
+                        <div className="truncate font-retro text-sm text-foreground">{card.name}</div>
+                        <div className="text-xs text-muted-foreground">${card.ticker}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-xs text-muted-foreground">Market cap: {card.marketCap || "—"}</div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState>No followed coins yet.</EmptyState>
+            )}
+          </CommandCenterCard>
+
+          <CommandCenterCard title="Followed drafts" description={`${followedDraftCards.length.toLocaleString()} Prepare Mode drafts followed.`}>
+            {loadingFollows ? (
+              <EmptyState>Loading followed drafts...</EmptyState>
+            ) : followedDraftCards.length > 0 ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {followedDraftCards.map((card: any) => (
+                  <Link
+                    key={`${card.kind}-${card.id}`}
+                    to={card.href || `/profile/${walletAddress}/command/following`}
+                    className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img src={card.image || "/placeholder.svg"} alt={card.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                      <div className="min-w-0">
+                        <div className="truncate font-retro text-sm text-foreground">{card.name}</div>
+                        <div className="text-xs text-muted-foreground">${card.ticker}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 text-xs text-muted-foreground">Status: {card.status || "Prepare Mode"}</div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState>No followed drafts yet.</EmptyState>
+            )}
+          </CommandCenterCard>
+        </div>
+      )}
     </div>
   );
 }
