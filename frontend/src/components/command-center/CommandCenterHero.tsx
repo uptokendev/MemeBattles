@@ -1,4 +1,5 @@
 import { Copy, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
@@ -24,6 +25,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
 
   const short = shortenWallet(walletAddress);
   const publicProfileBase = `/profile/${encodeURIComponent(walletAddress)}`;
+  const commandBase = `${publicProfileBase}/command`;
 
   const handleCopyAddress = async () => {
     try {
@@ -73,18 +75,18 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
         </div>
 
         <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
-          <a href={`${publicProfileBase}#followers`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
+          <Link to={`${commandBase}/followers`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followersCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Followers</div>
-          </a>
-          <a href={`${publicProfileBase}#following`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
+          </Link>
+          <Link to={`${commandBase}/following`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followingCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Following</div>
-          </a>
-          <a href={`${publicProfileBase}#created-coins`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
+          </Link>
+          <Link to={commandBase} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
-          </a>
+          </Link>
         </div>
       </div>
     </section>
