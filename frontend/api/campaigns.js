@@ -101,7 +101,7 @@ export default async function handler(req, res) {
           c.creator_address,
           c.name,
           c.symbol,
-          coalesce(c.logo_uri, draft_logo.logo_url) as logo_uri,
+          coalesce(nullif(c.logo_uri, ''), draft_logo.logo_url) as logo_uri,
           c.created_block,
           c.created_at_chain,
           c.graduated_block,
@@ -119,8 +119,25 @@ export default async function handler(req, res) {
           select d.logo_url
           from public.campaign_drafts d
           where d.logo_url is not null
-            and lower(d.campaign_address::text) = lower(c.campaign_address::text)
-          order by d.updated_at desc nulls last, d.created_at desc nulls last
+            and nullif(d.logo_url, '') is not null
+            and (
+              (d.campaign_address is not null and lower(d.campaign_address::text) = lower(c.campaign_address::text))
+              or (d.token_address is not null and c.token_address is not null and lower(d.token_address::text) = lower(c.token_address::text))
+              or (
+                d.creator_wallet is not null
+                and c.creator_address is not null
+                and lower(d.creator_wallet::text) = lower(c.creator_address::text)
+                and lower(d.ticker::text) = lower(c.symbol::text)
+              )
+            )
+          order by
+            case
+              when d.campaign_address is not null and lower(d.campaign_address::text) = lower(c.campaign_address::text) then 0
+              when d.token_address is not null and c.token_address is not null and lower(d.token_address::text) = lower(c.token_address::text) then 1
+              else 2
+            end,
+            d.updated_at desc nulls last,
+            d.created_at desc nulls last
           limit 1
         ) draft_logo on true
         left join public.token_stats ts
