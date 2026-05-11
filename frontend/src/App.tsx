@@ -151,6 +151,7 @@ const App = () => {
                     <Route path="/command/airdrops" element={<LegacyCommandCenterRedirect section="airdrops" />} />
                     <Route path="/command/claims" element={<LegacyCommandCenterRedirect section="claims" />} />
                     <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
+                    <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
                     <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
                     <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
