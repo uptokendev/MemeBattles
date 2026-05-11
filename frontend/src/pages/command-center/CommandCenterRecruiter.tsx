@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, Users, WalletCards } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, Upload, Users, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
 import { useWallet } from "@/contexts/WalletContext";
+import { apiFetch } from "@/lib/apiBase";
 import { fetchRecruiterSignupStatus, type RecruiterSignupStatus } from "@/lib/recruiterApi";
 import {
   fetchRecruiterPortal,
@@ -58,9 +59,29 @@ function normalizeCode(value: string) {
     .replace(/^-|-$/g, "");
 }
 
+async function uploadSquadImageFile(file: File, walletAddress: string): Promise<string> {
+  const maxBytes = 3 * 1024 * 1024;
+  if (file.size > maxBytes) throw new Error("Squad image must be <= 3 MB.");
+
+  const typeOk = /^(image\/png|image\/jpeg|image\/jpg|image\/webp|image\/gif)$/.test(file.type);
+  if (!typeOk) throw new Error("Unsupported image type. Use png, jpg, webp, or gif.");
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  const url = `/api/upload?kind=squad&address=${encodeURIComponent(walletAddress.toLowerCase())}`;
+  const res = await apiFetch(url, { method: "POST", body: fd });
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) throw new Error(json?.error || `Upload failed (${res.status})`);
+  if (!json?.url) throw new Error("Upload did not return a URL.");
+  return String(json.url);
+}
+
 export default function CommandCenterRecruiter() {
   const { walletAddress } = useCommandCenterData();
   const wallet = useWallet();
+  const squadImageInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<RecruiterSignupStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -187,17 +208,11 @@ export default function CommandCenterRecruiter() {
     }
   };
 
-  const saveSquadImage = async () => {
-    const nextImage = squadImageUrl.trim();
-    if (nextImage && !/^https?:\/\//i.test(nextImage)) {
-      toast.error("Use a full image URL starting with http or https.");
-      return;
-    }
-
+  const saveSquadImageUrl = async (nextImageUrl: string) => {
     setSavingSquadImage(true);
     setPortalError(null);
     try {
-      const result = await updateRecruiterPortalSquadImage(nextImage);
+      const result = await updateRecruiterPortalSquadImage(nextImageUrl);
       setSquadImageUrl(result.squad_image_url);
       await loadPortal();
       toast.success("Squad image updated");
@@ -207,6 +222,30 @@ export default function CommandCenterRecruiter() {
     } finally {
       setSavingSquadImage(false);
     }
+  };
+
+  const handleSquadImageSelected = async (file?: File | null) => {
+    if (!file) return;
+    if (!portal) {
+      toast.error("Sign in to the recruiter portal first.");
+      return;
+    }
+
+    const toastId = toast.loading("Uploading squad image...");
+    try {
+      const uploadedUrl = await uploadSquadImageFile(file, walletAddress);
+      toast.dismiss(toastId);
+      await saveSquadImageUrl(uploadedUrl);
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error(String(err?.message || "Failed to upload squad image."));
+    } finally {
+      if (squadImageInputRef.current) squadImageInputRef.current.value = "";
+    }
+  };
+
+  const clearSquadImage = async () => {
+    await saveSquadImageUrl("");
   };
 
   const disconnectPortal = async () => {
@@ -438,21 +477,28 @@ export default function CommandCenterRecruiter() {
               <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
                 <label className="flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                   <Image className="h-4 w-4 text-accent" />
-                  Squad image URL
+                  Squad image
                 </label>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Recognition image for this recruiter's squad. The backend needs to support the `setSquadImage` portal action before this persists for everyone.
+                  Upload a recognition image for this recruiter's squad. Uses the same upload flow as profile and campaign images.
                 </p>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    value={squadImageUrl}
-                    onChange={(event) => setSquadImageUrl(event.target.value)}
-                    className="min-h-10 flex-1 rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60"
-                    placeholder="https://.../squad-image.png"
-                  />
-                  <Button onClick={saveSquadImage} disabled={savingSquadImage} className="font-retro">
-                    {savingSquadImage ? "Saving..." : "Save image"}
+                <input
+                  ref={squadImageInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                  className="hidden"
+                  onChange={(event) => void handleSquadImageSelected(event.target.files?.[0])}
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button onClick={() => squadImageInputRef.current?.click()} disabled={savingSquadImage} className="font-retro">
+                    <Upload className="mr-2 h-4 w-4" />
+                    {savingSquadImage ? "Uploading..." : activeSquadImage ? "Replace image" : "Upload image"}
                   </Button>
+                  {activeSquadImage && (
+                    <Button onClick={() => void clearSquadImage()} disabled={savingSquadImage} variant="outline" className="font-retro">
+                      Remove image
+                    </Button>
+                  )}
                 </div>
                 {activeSquadImage && <img src={activeSquadImage} alt="Squad preview" className="mt-3 h-24 w-full rounded-xl object-cover" />}
               </div>
