@@ -207,6 +207,12 @@ export function apiUrl(path: string): string {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  // Address-based TokenDetails pages should not depend on the global campaign
+  // feed. This preemptively avoids the known realtime-indexer /api/campaigns
+  // 500 while still letting homepage/showcase campaign feeds use the API.
+  const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
+  if (preemptiveFallback) return preemptiveFallback;
+
   const url = apiUrl(path);
 
   try {
