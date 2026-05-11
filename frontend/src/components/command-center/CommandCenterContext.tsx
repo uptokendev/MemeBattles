@@ -122,6 +122,7 @@ export function CommandCenterDataProvider({
   const created = useCreatedCampaigns({
     viewedAddress: walletAddress,
     account,
+    chainId,
     fetchCampaigns,
     fetchCampaignSummary,
   });
