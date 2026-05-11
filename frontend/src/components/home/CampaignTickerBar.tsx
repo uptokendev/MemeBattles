@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { apiFetch } from "@/lib/apiBase";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { useWallet } from "@/contexts/WalletContext";
@@ -24,6 +23,10 @@ type CampaignFeedItemApi = {
   votes24h?: number | null;
   votes_24h?: number | null;
 };
+
+const REALTIME_API_BASE = String(
+  import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production.up.railway.app"
+).replace(/\/$/, "");
 
 function normalizeAddress(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
@@ -63,34 +66,47 @@ function normalizeItem(raw: CampaignFeedItemApi): CampaignTickerItem | null {
   };
 }
 
+async function fetchTickerItems(chainId: number): Promise<CampaignTickerItem[]> {
+  const qs = new URLSearchParams({
+    chainId: String(chainId),
+    limit: "30",
+    tab: "trending",
+    sort: "default",
+    status: "all",
+  });
+
+  // The ticker is launchpad/realtime data and must not depend on the frontend
+  // Railway API router. Fetch the realtime-indexer project directly.
+  const res = await fetch(`${REALTIME_API_BASE}/api/campaigns?${qs.toString()}`, {
+    cache: "no-store" as RequestCache,
+    headers: { Accept: "application/json" },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Ticker campaigns failed (${res.status})`);
+
+  const rows = Array.isArray(json?.items) ? json.items : [];
+  return rows.map(normalizeItem).filter(Boolean).slice(0, 24) as CampaignTickerItem[];
+}
+
 export function CampaignTickerBar({ className }: { className?: string }) {
   const wallet = useWallet();
   const chainId = getActiveChainId((wallet as any)?.chainId ?? (wallet as any)?.network?.chainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<CampaignTickerItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const qs = new URLSearchParams({
-          chainId: String(chainId),
-          limit: "30",
-          tab: "trending",
-          sort: "default",
-          status: "all",
-        });
-
-        const res = await apiFetch(`/api/campaigns?${qs.toString()}`, { cache: "no-store" as RequestCache });
-        const json = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(json?.error || `Ticker campaigns failed (${res.status})`);
-
-        const rows = Array.isArray(json?.items) ? json.items : [];
-        const normalized = rows.map(normalizeItem).filter(Boolean) as CampaignTickerItem[];
-        if (!cancelled) setItems(normalized.slice(0, 24));
-      } catch {
+        const next = await fetchTickerItems(chainId);
+        if (!cancelled) setItems(next);
+      } catch (error) {
+        console.warn("[CampaignTickerBar] failed to load ticker campaigns", error);
         if (!cancelled) setItems([]);
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     }
 
@@ -107,7 +123,15 @@ export function CampaignTickerBar({ className }: { className?: string }) {
     return [...items, ...items];
   }, [items]);
 
-  if (!loopItems.length) return null;
+  if (!loopItems.length) {
+    return (
+      <div className={cn("mwz-hud-frame overflow-hidden border-success/25 bg-black/65 px-3 py-2", className)} aria-label="Live campaign ticker">
+        <div className="text-xs uppercase tracking-[0.16em] text-success/55">
+          {loaded ? "Live ticker waiting for campaign market caps" : "Loading live campaign ticker..."}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("mwz-hud-frame overflow-hidden border-success/25 bg-black/65 py-2", className)} aria-label="Live campaign ticker">
@@ -121,7 +145,7 @@ export function CampaignTickerBar({ className }: { className?: string }) {
             <span className="font-retro text-success">${item.symbol}</span>
             <span className="hidden max-w-[140px] truncate text-success/45 sm:inline">{item.name}</span>
             <span className="text-orange-300/90">{formatMc(item.marketcapBnb, bnbUsd)}</span>
-            <span className="text-success/40">▲ {item.votes24h || 0}</span>
+            <span className="text-success/40">UP {item.votes24h || 0}</span>
           </Link>
         ))}
       </div>
