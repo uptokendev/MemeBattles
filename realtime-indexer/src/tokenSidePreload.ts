@@ -55,7 +55,14 @@ const patchedAblyToken = wrap(async (req, res) => {
   return res.json(tokenRequest);
 });
 
-const originalGet = express.application.get;
+// Express' application.get has overloaded signatures. Capturing it without an
+// explicit type lets TypeScript infer an ambiguous overload union, which breaks
+// the .call() sites below during Railway builds.
+const originalGet = express.application.get as unknown as (
+  this: typeof express.application,
+  path: any,
+  ...handlers: any[]
+) => any;
 
 express.application.get = function patchedGet(this: any, path: any, ...handlers: any[]) {
   if (path === "/api/ably/token") {
