@@ -52,7 +52,7 @@ export default function CommandCenterCoins() {
     <div className="space-y-4">
       <CommandCenterPageHeader
         title="Coins & Drafts"
-        description="Coins you launched and Prepare Mode drafts owned by this wallet. This page is inside Command Center but not shown as a sidebar item."
+        description="Coins you launched and Prepare Mode drafts owned by this wallet."
       />
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -120,7 +120,7 @@ export default function CommandCenterCoins() {
         )}
       </CommandCenterCard>
 
-      <CommandCenterCard title="Prepare drafts" description="Drafts owned by this wallet, including private/unlisted owner drafts returned by the backend.">
+      <CommandCenterCard title="Prepare drafts" description="Drafts owned by this wallet.">
         {loadingDrafts ? (
           <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">Loading drafts...</div>
         ) : draftsError ? (
