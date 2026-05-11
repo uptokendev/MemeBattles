@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Contract, ethers } from "ethers";
 import { Button } from "@/components/ui/button";
 import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,12 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { resolveImageUri } from "@/lib/media";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { apiFetch } from "@/lib/apiBase";
+import { getReadProvider } from "@/lib/readProvider";
+import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
+import LaunchTokenArtifact from "@/abi/LaunchToken.json";
+
+const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
+const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 
 type FeaturedItemApi = {
   chainId: number;
@@ -73,25 +80,72 @@ function isEvmAddress(addr?: string | null) {
 
 function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   if (!raw) return null;
-  const campaignAddress = String(raw.campaignAddress ?? raw.campaign_address ?? "").toLowerCase();
+  const src = raw.campaign && typeof raw.campaign === "object" ? { ...raw.campaign, ...raw } : raw;
+  const campaignAddress = String(src.campaignAddress ?? src.campaign_address ?? src.campaign ?? "").toLowerCase();
   if (!campaignAddress) return null;
   return {
-    chainId: Number(raw.chainId ?? raw.chain_id ?? 97),
+    chainId: Number(src.chainId ?? src.chain_id ?? 97),
     campaignAddress,
-    tokenAddress: raw.tokenAddress ?? raw.token_address ?? null,
-    creatorAddress: raw.creatorAddress ?? raw.creator_address ?? null,
-    creatorName: raw.creatorName ?? raw.creator_name ?? null,
-    creatorUsername: raw.creatorUsername ?? raw.creator_username ?? null,
-    username: raw.username ?? null,
-    name: raw.name ?? null,
-    symbol: raw.symbol ?? null,
-    logoUri: raw.logoUri ?? raw.logo_uri ?? null,
-    createdAtChain: raw.createdAtChain ?? raw.created_at_chain ?? null,
-    graduatedAtChain: raw.graduatedAtChain ?? raw.graduated_at_chain ?? null,
-    votes24h: Number(raw.votes24h ?? raw.votes_24h ?? 0),
-    votesAllTime: Number(raw.votesAllTime ?? raw.votes_all_time ?? 0),
-    marketcapBnb: raw.marketcapBnb ?? raw.marketcap_bnb ?? null,
+    tokenAddress: src.tokenAddress ?? src.token_address ?? src.token ?? null,
+    creatorAddress: src.creatorAddress ?? src.creator_address ?? src.creator ?? null,
+    creatorName: src.creatorName ?? src.creator_name ?? null,
+    creatorUsername: src.creatorUsername ?? src.creator_username ?? null,
+    username: src.username ?? null,
+    name: src.name ?? null,
+    symbol: src.symbol ?? src.ticker ?? null,
+    logoUri: src.logoUri ?? src.logo_uri ?? src.logoURI ?? src.image ?? null,
+    createdAtChain: src.createdAtChain ?? src.created_at_chain ?? src.createdAt ?? null,
+    graduatedAtChain: src.graduatedAtChain ?? src.graduated_at_chain ?? null,
+    votes24h: Number(src.votes24h ?? src.votes_24h ?? 0),
+    votesAllTime: Number(src.votesAllTime ?? src.votes_all_time ?? 0),
+    marketcapBnb: src.marketcapBnb ?? src.marketcap_bnb ?? null,
   };
+}
+
+async function safeString(fn: () => Promise<unknown>, fallback = "") {
+  try {
+    const value = await fn();
+    const text = String(value ?? "").trim();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function hydrateFeaturedMetadata(items: FeaturedItemApi[], chainId: number): Promise<FeaturedItemApi[]> {
+  const provider = getReadProvider(chainId as any);
+  const hydrated = await Promise.all(
+    items.map(async (item) => {
+      const needsHydration = !item.name || item.name === "Unknown" || !item.symbol || !item.logoUri || !item.creatorAddress;
+      if (!needsHydration || !isEvmAddress(item.campaignAddress)) return item;
+
+      try {
+        const campaign = new Contract(item.campaignAddress, CAMPAIGN_ABI, provider) as any;
+        const tokenAddress = item.tokenAddress || (await safeString(() => campaign.token()));
+        const token = isEvmAddress(tokenAddress) ? (new Contract(String(tokenAddress), TOKEN_ABI, provider) as any) : null;
+
+        const [name, symbol, logoUri, creatorAddress] = await Promise.all([
+          item.name && item.name !== "Unknown" ? Promise.resolve(item.name) : token ? safeString(() => token.name(), item.name || "Unknown") : Promise.resolve(item.name || "Unknown"),
+          item.symbol ? Promise.resolve(item.symbol) : token ? safeString(() => token.symbol(), "") : Promise.resolve(""),
+          item.logoUri ? Promise.resolve(item.logoUri) : safeString(() => campaign.logoURI(), "/placeholder.svg"),
+          item.creatorAddress ? Promise.resolve(item.creatorAddress) : safeString(() => campaign.owner(), ""),
+        ]);
+
+        return {
+          ...item,
+          tokenAddress: tokenAddress ? String(tokenAddress).toLowerCase() : item.tokenAddress,
+          name,
+          symbol,
+          logoUri,
+          creatorAddress: isEvmAddress(creatorAddress) ? String(creatorAddress).toLowerCase() : item.creatorAddress,
+        };
+      } catch {
+        return item;
+      }
+    })
+  );
+
+  return hydrated;
 }
 
 export function FeaturedCampaigns({ className }: { className?: string }) {
@@ -151,8 +205,15 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         if (!r.ok) throw new Error(j?.error ?? "Failed to load featured");
         if (!mounted) return;
         const rawItems = Array.isArray(j) ? j : Array.isArray(j.items) ? j.items : [];
-        setItems(rawItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[]);
+        const normalized = rawItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+        setItems(normalized);
         initialLoadedRef.current = true;
+
+        // Featured endpoint can be intentionally lightweight. Hydrate sparse rows
+        // from campaign/token contracts so cards do not render as Unknown.
+        hydrateFeaturedMetadata(normalized, activeChainId).then((next) => {
+          if (mounted) setItems(next);
+        });
       } catch (e: unknown) {
         if (!mounted) return;
         setErr(String((e as { message?: string })?.message ?? "Failed to load featured"));
@@ -187,9 +248,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
           for (const [addr, uri] of pairs) if (uri) next[addr] = uri;
           return next;
         });
-      } catch {
-        // non-fatal
-      }
+      } catch {}
     })();
 
     return () => {
@@ -204,15 +263,10 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     if (!missing.length) return;
 
     (async () => {
-      const results = await Promise.all(
-        missing.map(async (addr) => {
-          try {
-            return [addr, await fetchUserProfile(activeChainId, addr)] as const;
-          } catch {
-            return [addr, null] as const;
-          }
-        })
-      );
+      const results = await Promise.all(missing.map(async (addr) => {
+        try { return [addr, await fetchUserProfile(activeChainId, addr)] as const; }
+        catch { return [addr, null] as const; }
+      }));
       if (cancelled) return;
       setProfilesByAddr((prev) => {
         const next = { ...prev };
@@ -221,9 +275,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       });
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [items, activeChainId, profilesByAddr]);
 
   const cards: FeaturedCardVM[] = useMemo(() => {
@@ -250,7 +302,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         idx: idx + 1,
         chainId: Number(it.chainId ?? 0) || activeChainId,
         addr,
-        name: String(it.name ?? "Unknown"),
+        name: String(it.name || "Unknown"),
         symbol: String(it.symbol ?? ""),
         creator: creatorAddr,
         creatorLabel,
@@ -282,23 +334,16 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
           return;
         }
         const next: Record<string, boolean> = {};
-        await Promise.all(
-          cards.map(async (c) => {
-            try {
-              next[c.addr] = await isFollowingCampaign(wallet.account!, c.addr, c.chainId);
-            } catch {
-              next[c.addr] = false;
-            }
-          })
-        );
+        await Promise.all(cards.map(async (c) => {
+          try { next[c.addr] = await isFollowingCampaign(wallet.account!, c.addr, c.chainId); }
+          catch { next[c.addr] = false; }
+        }));
         if (alive) setFollowedMap(next);
       } catch {
         if (alive) setFollowedMap({});
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [wallet.account, cards]);
 
   const toggleFollow = async (e: React.MouseEvent, c: FeaturedCardVM) => {
@@ -369,130 +414,55 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             <div className="mwz-muted py-8 text-sm">No featured campaigns yet.</div>
           ) : (
             <>
-              {err && (
-                <div className="mwz-card min-w-[320px] max-w-[420px] p-4 text-xs text-orange-200">
-                  Background refresh failed. Showing last loaded featured campaigns.
-                </div>
-              )}
+              {err && <div className="mwz-card min-w-[320px] max-w-[420px] p-4 text-xs text-orange-200">Background refresh failed. Showing last loaded featured campaigns.</div>}
               {cards.map((c) => (
-                <div
-                key={c.addr}
-                data-addr={c.addr}
-                className="mwz-card snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/token/${c.addr}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`);
-                }}
-              >
-                <div className="relative h-full min-h-[204px] bg-black border-r border-success/25">
-                  <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
-                  <img
-                    src={c.image}
-                    alt={c.name}
-                    className="h-full w-full object-cover"
-                    draggable={false}
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      if (!img.dataset.fallback) {
-                        img.dataset.fallback = "1";
-                        img.src = "/placeholder.svg";
-                      }
-                    }}
-                  />
-                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_42%,rgba(0,0,0,0.68))]" />
-                  <div className="absolute left-2 top-2 z-30 flex h-8 min-w-8 items-center justify-center border border-success/70 bg-black/75 px-2 text-lg text-success shadow-[0_0_14px_rgba(57,255,79,0.18)]">
-                    {c.idx}
-                  </div>
-                </div>
-
-                <div className="relative flex min-w-0 flex-col p-3 pb-11">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="mwz-section-title truncate text-lg leading-none">{c.name}</div>
-                      <div className="mt-1 truncate text-sm text-success/70">{c.symbol ? `$${c.symbol}` : ""}</div>
-                    </div>
-                    <div className="inline-flex items-center gap-1 text-xs text-orange-400 shrink-0">
-                      <Flame className="h-4 w-4" />
-                      <span>{voteMode === "24h" ? c.votes24h : c.votesAll}</span>
-                      <span>{voteMode === "24h" ? "/24h" : "all"}</span>
-                    </div>
+                <div key={c.addr} data-addr={c.addr} className="mwz-card snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none" role="button" tabIndex={0} onClick={() => navigate(`/token/${c.addr}`)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`); }}>
+                  <div className="relative h-full min-h-[204px] bg-black border-r border-success/25">
+                    <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
+                    <img src={c.image} alt={c.name} className="h-full w-full object-cover" draggable={false} onError={(e) => { const img = e.currentTarget; if (!img.dataset.fallback) { img.dataset.fallback = "1"; img.src = "/placeholder.svg"; } }} />
+                    <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),transparent_42%,rgba(0,0,0,0.68))]" />
+                    <div className="absolute left-2 top-2 z-30 flex h-8 min-w-8 items-center justify-center border border-success/70 bg-black/75 px-2 text-lg text-success shadow-[0_0_14px_rgba(57,255,79,0.18)]">{c.idx}</div>
                   </div>
 
-                  <div className="mt-3 flex items-center gap-2 min-w-0">
-                    <img
-                      src="/assets/profile_placeholder.png"
-                      alt="Creator"
-                      className="h-7 w-7 rounded-full border border-success/35 object-cover hover:border-orange-400/70"
-                      draggable={false}
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goProfile(c.creator);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          goProfile(c.creator);
-                        }
-                      }}
-                    />
-                    <div
-                      className="truncate text-xs text-success/65 hover:text-orange-400"
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goProfile(c.creator);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          goProfile(c.creator);
-                        }
-                      }}
-                    >
-                      {c.creatorLabel}
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-end justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">MCap</div>
-                      <div className="truncate text-sm text-success">{c.mcapUsdLabel ?? "—"}</div>
+                  <div className="relative flex min-w-0 flex-col p-3 pb-11">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="mwz-section-title truncate text-lg leading-none">{c.name}</div>
+                        <div className="mt-1 truncate text-sm text-success/70">{c.symbol ? `$${c.symbol}` : ""}</div>
+                      </div>
+                      <div className="inline-flex items-center gap-1 text-xs text-orange-400 shrink-0">
+                        <Flame className="h-4 w-4" />
+                        <span>{voteMode === "24h" ? c.votes24h : c.votesAll}</span>
+                        <span>{voteMode === "24h" ? "/24h" : "all"}</span>
+                      </div>
                     </div>
 
-                    <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={cn("mwz-button h-8 w-8", followedMap[c.addr] && "mwz-button-active")}
-                        onClick={(e) => toggleFollow(e, c)}
-                        disabled={!!followBusyMap[c.addr]}
-                        aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
-                        title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
-                      >
-                        <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/75")} />
-                      </Button>
-                      <UpvoteDialog campaignAddress={c.addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
+                    <div className="mt-3 flex items-center gap-2 min-w-0">
+                      <img src="/assets/profile_placeholder.png" alt="Creator" className="h-7 w-7 rounded-full border border-success/35 object-cover hover:border-orange-400/70" draggable={false} role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); goProfile(c.creator); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); goProfile(c.creator); } }} />
+                      <div className="truncate text-xs text-success/65 hover:text-orange-400" role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); goProfile(c.creator); }} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); goProfile(c.creator); } }}>{c.creatorLabel}</div>
+                    </div>
+
+                    <div className="mt-4 flex items-end justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-success/50">MCap</div>
+                        <div className="truncate text-sm text-success">{c.mcapUsdLabel ?? "—"}</div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-8 w-8", followedMap[c.addr] && "mwz-button-active")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
+                          <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/75")} />
+                        </Button>
+                        <UpvoteDialog campaignAddress={c.addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
+                      </div>
+                    </div>
+
+                    <div className="mt-auto pt-4">
+                      <div className="h-2 border border-success/30 bg-black/70 p-[1px]"><div className="h-full w-[92%] bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]" /></div>
+                    </div>
+
+                    <div className="absolute inset-x-3 bottom-2 pointer-events-none">
+                      <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${activeChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
                     </div>
                   </div>
-
-                  <div className="mt-auto pt-4">
-                    <div className="h-2 border border-success/30 bg-black/70 p-[1px]">
-                      <div className="h-full w-[92%] bg-[linear-gradient(90deg,var(--mwz-orange),var(--mwz-green))] shadow-[0_0_12px_rgba(57,255,79,0.22)]" />
-                    </div>
-                  </div>
-
-                  <div className="absolute inset-x-3 bottom-2 pointer-events-none">
-                    <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${activeChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
-                  </div>
-                </div>
                 </div>
               ))}
             </>
