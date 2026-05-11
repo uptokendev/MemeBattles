@@ -1,9 +1,6 @@
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, json } from "../server/http.js";
 
-// LaunchFactory default graduation target is 50 BNB (see contracts/LaunchFactory.sol).
-// Campaigns can override this, but until we persist per-campaign targets in DB,
-// we treat this as the system default for progress/ETA on the homepage.
 const DEFAULT_GRAD_TARGET_BNB = 50;
 
 function toInt(v, fallback) {
@@ -65,22 +62,15 @@ export default async function handler(req, res) {
 
     const chainId = toInt(q.chainId, 97);
     limit = clamp(toInt(q.limit, 24), 1, 50);
-    const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000); // offset-based pagination
+    const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000);
 
     const tab = normalizeTab(q.tab);
     const sort = normalizeSort(q.sort);
     const status = normalizeStatus(q.status);
-
-    // Contract rule:
-    // - /api/campaigns defaults to "all"
-    // - "Ending Soon" is always Live-only
-    // - "Trading on DEX" is always Graduated-only
-    const effectiveStatus =
-      tab === "ending" ? "live" : tab === "dex" ? "graduated" : status;
+    const effectiveStatus = tab === "ending" ? "live" : tab === "dex" ? "graduated" : status;
     const searchRaw = String(q.search || "").trim();
     const search = searchRaw ? `%${searchRaw}%` : null;
 
-    // Optional filters
     const bnbUsd = Number.isFinite(Number(q.bnbUsd)) ? toFloat(q.bnbUsd, NaN) : null;
     const mcapMinUsd = Number.isFinite(Number(q.mcapMinUsd)) ? toFloat(q.mcapMinUsd, NaN) : null;
     const mcapMaxUsd = Number.isFinite(Number(q.mcapMaxUsd)) ? toFloat(q.mcapMaxUsd, NaN) : null;
@@ -111,7 +101,7 @@ export default async function handler(req, res) {
           c.creator_address,
           c.name,
           c.symbol,
-          c.logo_uri,
+          coalesce(c.logo_uri, draft_logo.logo_url) as logo_uri,
           c.created_block,
           c.created_at_chain,
           c.graduated_block,
@@ -125,6 +115,14 @@ export default async function handler(req, res) {
           va.votes_24h,
           va.votes_all_time
         from public.campaigns c
+        left join lateral (
+          select d.logo_url
+          from public.campaign_drafts d
+          where d.logo_url is not null
+            and lower(d.campaign_address::text) = lower(c.campaign_address::text)
+          order by d.updated_at desc nulls last, d.created_at desc nulls last
+          limit 1
+        ) draft_logo on true
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
         left join public.campaign_activity ca
@@ -143,23 +141,17 @@ export default async function handler(req, res) {
             or ($4::text = 'graduated' and c.graduated_at_chain is not null)
             or ($4::text = 'ended' and c.is_active = false and c.graduated_at_chain is null)
           )
-          and (
-            $5::text <> 'dex'
-            or c.graduated_at_chain is not null
-          )
+          and ($5::text <> 'dex' or c.graduated_at_chain is not null)
       ),
       rt as (
         select
           b.chain_id,
           b.campaign_address,
+          coalesce(sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end), 0) as raised_total_bnb,
           coalesce(
             sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end)
-            ,0
-          ) as raised_total_bnb,
-          coalesce(
-            sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end)
-              filter (where t.block_time >= now() - interval '10 minutes')
-            ,0
+              filter (where t.block_time >= now() - interval '10 minutes'),
+            0
           ) as raised_10m_bnb
         from base b
         left join public.curve_trades t
@@ -182,8 +174,7 @@ export default async function handler(req, res) {
           end as eta_sec,
           (coalesce(b.vol_24h_bnb, 0) * 1000 + coalesce(b.votes_24h, 0) * 10) as trending_score
         from base b
-        join rt
-          on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
+        join rt on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
       )
       select *
       from calc
@@ -222,6 +213,7 @@ export default async function handler(req, res) {
         name: row.name ?? null,
         symbol: row.symbol ?? null,
         logoUri: row.logo_uri ?? null,
+        logoUrl: row.logo_uri ?? null,
         createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
         graduatedAtChain: graduatedAt,
         isDexTrading: Boolean(graduatedAt),
