@@ -9,6 +9,8 @@ export type RecruiterPortalRecruiter = {
   status: string;
   focus: string | null;
   recruiter_code: string;
+  squad_image_url?: string | null;
+  squadImageUrl?: string | null;
   approved_at?: string | null;
 };
 
@@ -24,6 +26,8 @@ export type RecruiterPortalSquadRow = {
 export type RecruiterPortalData = {
   recruiter: RecruiterPortalRecruiter;
   squad: {
+    imageUrl?: string | null;
+    image_url?: string | null;
     counts: {
       total: number;
       creators: number;
@@ -45,6 +49,16 @@ async function parseJson(res: Response) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
   return json as any;
+}
+
+export function getPortalSquadImageUrl(portal?: RecruiterPortalData | null): string {
+  return String(
+    portal?.squad?.imageUrl ||
+    portal?.squad?.image_url ||
+    portal?.recruiter?.squadImageUrl ||
+    portal?.recruiter?.squad_image_url ||
+    "",
+  ).trim();
 }
 
 export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null> {
@@ -86,6 +100,17 @@ export async function updateRecruiterPortalCode(code: string): Promise<{ recruit
   });
   const json = await parseJson(res);
   return { recruiter_code: String(json?.recruiter_code || code) };
+}
+
+export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise<{ squad_image_url: string }> {
+  const res = await apiFetch("/api/recruiter-portal", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "setSquadImage", imageUrl }),
+  });
+  const json = await parseJson(res);
+  return { squad_image_url: String(json?.squad_image_url || json?.squadImageUrl || imageUrl) };
 }
 
 export async function logoutRecruiterPortal() {
