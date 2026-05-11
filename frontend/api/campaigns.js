@@ -45,38 +45,147 @@ function normalizeStatus(v) {
   return s === "live" || s === "graduated" || s === "ended" ? s : "all";
 }
 
+function mapCampaignRow(row, gradTargetBnb) {
+  const campaignAddress = String(row.campaign_address ?? "").toLowerCase();
+  const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
+
+  return {
+    chainId: Number(row.chain_id),
+    campaignAddress,
+    tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
+    creatorAddress: row.creator_address ? String(row.creator_address).toLowerCase() : null,
+    name: row.name ?? null,
+    symbol: row.symbol ?? null,
+    logoUri: row.logo_uri ?? null,
+    createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
+    graduatedAtChain: graduatedAt,
+    isDexTrading: Boolean(graduatedAt),
+
+    // canonical status (useful for UI)
+    isActive: Boolean(row.is_active),
+    status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
+
+    // stats, present in rich mode and null/zero in basic fallback mode
+    lastActivityAt: row.last_activity_at ? String(row.last_activity_at) : null,
+    lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
+    soldTokens: row.sold_tokens != null ? String(row.sold_tokens) : null,
+    marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
+    vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
+    votes24h: row.votes_24h != null ? Number(row.votes_24h) : 0,
+    votesAllTime: row.votes_all_time != null ? Number(row.votes_all_time) : 0,
+
+    // derived, present in rich mode and safe defaults in basic fallback mode
+    raisedTotalBnb: row.raised_total_bnb != null ? String(row.raised_total_bnb) : "0",
+    raised10mBnb: row.raised_10m_bnb != null ? String(row.raised_10m_bnb) : "0",
+    progressPct: row.progress_pct != null ? Number(row.progress_pct) : null,
+    etaSec: row.eta_sec != null ? Number(row.eta_sec) : null,
+    gradTargetBnb,
+  };
+}
+
+function campaignPayload(rows, { limit, cursor, gradTargetBnb, warning = null }) {
+  const items = (rows || []).map((row) => mapCampaignRow(row, gradTargetBnb));
+  return {
+    items,
+    nextCursor: items.length === limit ? cursor + limit : null,
+    pageSize: limit,
+    updatedAt: new Date().toISOString(),
+    ...(warning ? { warning } : {}),
+  };
+}
+
+async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus, searchRaw, tab, sort }) {
+  const params = [chainId];
+  let where = "where c.chain_id = $1 and c.campaign_address is not null";
+
+  if (searchRaw) {
+    params.push(`%${searchRaw}%`);
+    where += ` and (c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length})`;
+  }
+
+  if (effectiveStatus === "live") {
+    where += " and c.is_active = true and c.graduated_at_chain is null";
+  } else if (effectiveStatus === "graduated") {
+    where += " and c.graduated_at_chain is not null";
+  } else if (effectiveStatus === "ended") {
+    where += " and c.is_active = false and c.graduated_at_chain is null";
+  }
+
+  const orderBy = (() => {
+    if (sort === "created_asc") return "c.created_block asc nulls last, c.created_at_chain asc nulls last, c.campaign_address asc";
+    if (tab === "dex") return "c.graduated_block desc nulls last, c.graduated_at_chain desc nulls last, c.created_block desc nulls last, c.campaign_address asc";
+    return "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc";
+  })();
+
+  params.push(cursor, limit);
+
+  return pool.query(
+    `select
+       c.chain_id,
+       c.campaign_address,
+       c.token_address,
+       c.creator_address,
+       c.name,
+       c.symbol,
+       c.logo_uri,
+       c.created_block,
+       c.created_at_chain,
+       c.graduated_block,
+       c.graduated_at_chain,
+       c.is_active,
+       null::numeric as last_price_bnb,
+       null::numeric as sold_tokens,
+       null::numeric as marketcap_bnb,
+       null::numeric as vol_24h_bnb,
+       null::timestamptz as last_activity_at,
+       0::numeric as votes_24h,
+       0::numeric as votes_all_time,
+       0::numeric as raised_total_bnb,
+       0::numeric as raised_10m_bnb,
+       null::numeric as progress_pct,
+       null::numeric as eta_sec
+     from public.campaigns c
+     ${where}
+     order by ${orderBy}
+     offset $${params.length - 1}
+     limit $${params.length}`,
+    params,
+  );
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
+  const q = getQuery(req);
+
+  const chainId = toInt(q.chainId, 97);
+  // TokenDetails intentionally requests a large enough page to locate a token by address.
+  // Keep this capped, but do not silently crush limit=500 down to 50.
+  const limit = clamp(toInt(q.limit, 24), 1, 500);
+  const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000); // offset-based pagination
+
+  const tab = normalizeTab(q.tab);
+  const sort = normalizeSort(q.sort);
+  const status = normalizeStatus(q.status);
+
+  // Contract rule:
+  // - /api/campaigns defaults to "all"
+  // - "Ending Soon" is always Live-only
+  // - "Trading on DEX" is always Graduated-only
+  const effectiveStatus = tab === "ending" ? "live" : tab === "dex" ? "graduated" : status;
+  const searchRaw = String(q.search || "").trim();
+  const search = searchRaw ? `%${searchRaw}%` : null;
+
+  // Optional filters
+  const bnbUsd = Number.isFinite(Number(q.bnbUsd)) ? toFloat(q.bnbUsd, NaN) : null;
+  const mcapMinUsd = Number.isFinite(Number(q.mcapMinUsd)) ? toFloat(q.mcapMinUsd, NaN) : null;
+  const mcapMaxUsd = Number.isFinite(Number(q.mcapMaxUsd)) ? toFloat(q.mcapMaxUsd, NaN) : null;
+  const progressMinPct = Number.isFinite(Number(q.progressMinPct)) ? toFloat(q.progressMinPct, NaN) : null;
+  const progressMaxPct = Number.isFinite(Number(q.progressMaxPct)) ? toFloat(q.progressMaxPct, NaN) : null;
+
+  const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
+
   try {
-    const q = getQuery(req);
-
-    const chainId = toInt(q.chainId, 97);
-    const limit = clamp(toInt(q.limit, 24), 1, 50);
-    const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000); // offset-based pagination
-
-    const tab = normalizeTab(q.tab);
-    const sort = normalizeSort(q.sort);
-    const status = normalizeStatus(q.status);
-
-    // Contract rule:
-    // - /api/campaigns defaults to "all"
-    // - "Ending Soon" is always Live-only
-    // - "Trading on DEX" is always Graduated-only
-    const effectiveStatus =
-      tab === "ending" ? "live" : tab === "dex" ? "graduated" : status;
-    const searchRaw = String(q.search || "").trim();
-    const search = searchRaw ? `%${searchRaw}%` : null;
-
-    // Optional filters
-    const bnbUsd = Number.isFinite(Number(q.bnbUsd)) ? toFloat(q.bnbUsd, NaN) : null;
-    const mcapMinUsd = Number.isFinite(Number(q.mcapMinUsd)) ? toFloat(q.mcapMinUsd, NaN) : null;
-    const mcapMaxUsd = Number.isFinite(Number(q.mcapMaxUsd)) ? toFloat(q.mcapMaxUsd, NaN) : null;
-    const progressMinPct = Number.isFinite(Number(q.progressMinPct)) ? toFloat(q.progressMinPct, NaN) : null;
-    const progressMaxPct = Number.isFinite(Number(q.progressMaxPct)) ? toFloat(q.progressMaxPct, NaN) : null;
-
-    const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
-
     // Deterministic ordering per tab/sort.
     // IMPORTANT: the outer query selects from the CTE `calc`.
     // So ORDER BY must only reference columns available on `calc`.
@@ -225,53 +334,40 @@ export default async function handler(req, res) {
       limit,
     ]);
 
-    const items = (r.rows || []).map((row) => {
-      const campaignAddress = String(row.campaign_address ?? "").toLowerCase();
-      const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
-
-      return {
-        chainId: Number(row.chain_id),
-        campaignAddress,
-        tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
-        creatorAddress: row.creator_address ? String(row.creator_address).toLowerCase() : null,
-        name: row.name ?? null,
-        symbol: row.symbol ?? null,
-        logoUri: row.logo_uri ?? null,
-        createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
-        graduatedAtChain: graduatedAt,
-        isDexTrading: Boolean(graduatedAt),
-
-        // canonical status (useful for UI)
-        isActive: Boolean(row.is_active),
-        status: graduatedAt ? "graduated" : row.is_active ? "live" : "ended",
-
-        // stats
-        lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
-        soldTokens: row.sold_tokens != null ? String(row.sold_tokens) : null,
-        marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
-        vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
-        votes24h: row.votes_24h != null ? Number(row.votes_24h) : 0,
-        votesAllTime: row.votes_all_time != null ? Number(row.votes_all_time) : 0,
-
-        // derived
-        raisedTotalBnb: row.raised_total_bnb != null ? String(row.raised_total_bnb) : "0",
-        raised10mBnb: row.raised_10m_bnb != null ? String(row.raised_10m_bnb) : "0",
-        progressPct: row.progress_pct != null ? Number(row.progress_pct) : null,
-        etaSec: row.eta_sec != null ? Number(row.eta_sec) : null,
-        gradTargetBnb,
-      };
-    });
-
-    const nextCursor = items.length === limit ? cursor + limit : null;
-
-    return json(res, 200, {
-      items,
-      nextCursor,
-      pageSize: limit,
-      updatedAt: new Date().toISOString(),
-    });
+    return json(res, 200, campaignPayload(r.rows, { limit, cursor, gradTargetBnb }));
   } catch (e) {
-    console.error("[api/campaigns]", e);
-    return json(res, 500, { error: "Server error" });
+    console.error("[api/campaigns] rich campaign query failed; trying basic fallback", e);
+
+    try {
+      const fallback = await fetchBasicCampaignRows({
+        chainId,
+        limit,
+        cursor,
+        effectiveStatus,
+        searchRaw,
+        tab,
+        sort,
+      });
+
+      return json(
+        res,
+        200,
+        campaignPayload(fallback.rows, {
+          limit,
+          cursor,
+          gradTargetBnb,
+          warning: "Campaign feed returned basic data because rich stats are temporarily unavailable.",
+        }),
+      );
+    } catch (fallbackError) {
+      console.error("[api/campaigns] basic campaign fallback failed", fallbackError);
+      return json(res, 200, {
+        items: [],
+        nextCursor: null,
+        pageSize: 0,
+        updatedAt: new Date().toISOString(),
+        warning: "Campaign feed is temporarily unavailable.",
+      });
+    }
   }
 }
