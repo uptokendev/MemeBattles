@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -8,6 +8,7 @@ import { useCreatedCampaigns } from "@/hooks/profile/useCreatedCampaigns";
 import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
 import { useProfileRank } from "@/hooks/profile/useProfileRank";
 import { useLeagueCabinet } from "@/hooks/profile/useLeagueCabinet";
+import { fetchWalletAttributionState, type WalletAttributionPublicState } from "@/lib/recruiterApi";
 
 function shortenWallet(addr?: string | null) {
   if (!addr) return "";
@@ -31,6 +32,8 @@ type CommandCenterData = {
   handleSaveProfile: ReturnType<typeof useEditableProfile>["handleSaveProfile"];
   displayName: string;
   avatarUrl: string;
+  attribution: WalletAttributionPublicState | null;
+  loadingAttribution: boolean;
   followersCount: number;
   followingCount: number;
   loadingFollows: boolean;
@@ -58,6 +61,8 @@ export function CommandCenterDataProvider({
   const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
   const account = wallet.account || walletAddress;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
+  const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
+  const [loadingAttribution, setLoadingAttribution] = useState(false);
 
   const editableProfile = useEditableProfile({
     chainId,
@@ -80,6 +85,25 @@ export function CommandCenterDataProvider({
     handleAvatarSelected,
     handleSaveProfile,
   } = editableProfile;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingAttribution(true);
+    void fetchWalletAttributionState(walletAddress)
+      .then((state) => {
+        if (!cancelled) setAttribution(state ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setAttribution(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAttribution(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
 
   const {
     followersCount,
@@ -145,6 +169,8 @@ export function CommandCenterDataProvider({
     handleSaveProfile,
     displayName,
     avatarUrl,
+    attribution,
+    loadingAttribution,
     followersCount,
     followingCount,
     loadingFollows,
@@ -173,6 +199,8 @@ export function CommandCenterDataProvider({
     handleSaveProfile,
     displayName,
     avatarUrl,
+    attribution,
+    loadingAttribution,
     followersCount,
     followingCount,
     loadingFollows,
