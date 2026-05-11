@@ -2,7 +2,7 @@ import Ably from "ably";
 import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
 
 function p(v) {
-  return String(v ?? "").trim().replace(/^['"]|['"]$/g, "");
+  return String(v ?? "").trim().replace(/^[']|[']$/g, "").replace(/^[\"]|[\"]$/g, "");
 }
 function resolveAblyApiKey() {
   const raw = p(process.env.ABLY_API_KEY);
@@ -59,23 +59,22 @@ export default async function handler(req, res) {
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
-    let channel = "";
+    const capability = {};
 
-if (scope === "league") {
-  channel = `league:${chainId}`;
-} else {
-  if (!isAddress(campaign)) {
-    return json(res, 400, { error: "Invalid campaign address" });
-  }
+    if (scope === "league") {
+      capability[`league:${chainId}`] = ["subscribe"];
+    } else {
+      if (!isAddress(campaign)) {
+        return json(res, 400, { error: "Invalid campaign address" });
+      }
 
-  if (scope === "warroom") {
-    channel = `warroom:${chainId}:${campaign}`;
-  } else {
-    channel = `token:${chainId}:${campaign}`;
-  }
-}
+      // Campaign detail pages can mount token realtime and War Room realtime
+      // very close together. Grant both read channels so cached/overlapping Ably
+      // clients cannot receive a token scoped to the wrong campaign channel.
+      capability[`token:${chainId}:${campaign}`] = ["subscribe"];
+      capability[`warroom:${chainId}:${campaign}`] = ["subscribe"];
+    }
 
-    const capability = { [channel]: ["subscribe"] };
     const ably = new Ably.Rest({ key: ABLY_API_KEY });
     const tokenRequest = await ably.auth.createTokenRequest({
       ttl: 60 * 60 * 1000,
