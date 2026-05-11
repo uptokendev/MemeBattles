@@ -18,13 +18,11 @@ const EXPLICIT_REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE
   .trim()
   .replace(/\/$/, "");
 
-// TokenDetails / launchpad read data belongs to the realtime-indexer Railway
-// service, not the frontend Railway service. Keep command-center/profile/draft
-// APIs on VITE_API_BASE_URL, but route token/campaign read endpoints through
-// VITE_REALTIME_API_BASE when it is configured.
+// Do not route global list endpoints (/api/campaigns, /api/featured) to the
+// realtime-indexer project: memebattles-production does not expose those routes.
+// TokenDetails is protected below by a preemptive /token/0x... contract fallback
+// when legacy code asks for /api/campaigns.
 const REALTIME_INDEXER_API_PREFIXES = [
-  "/api/campaigns",
-  "/api/featured",
   "/api/league",
   "/api/leaguePayouts",
   "/api/leagueRoot",
@@ -207,9 +205,6 @@ export function apiUrl(path: string): string {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  // Address-based TokenDetails pages should not depend on the global campaign
-  // feed. This preemptively avoids the known realtime-indexer /api/campaigns
-  // 500 while still letting homepage/showcase campaign feeds use the API.
   const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
   if (preemptiveFallback) return preemptiveFallback;
 
