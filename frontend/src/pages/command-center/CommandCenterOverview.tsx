@@ -91,13 +91,13 @@ export default function CommandCenterOverview() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard title="Reputation" description="Prepare Mode reputation data will plug in after launch.">
+        <CommandCenterCard title="Reputation" description="Reputation combines profile activity, creator history, and platform trust signals.">
           <div className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-border/50 bg-background/25 p-4 md:p-5">
             <div>
               <div className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Reputation Score</div>
               <div className="mt-3 font-retro text-3xl text-foreground">No data yet</div>
               <p className="mt-3 text-sm text-muted-foreground">
-                Reputation will be wired after Prepare Mode launches. This card is reserved for profile completeness, creator activity, public drafts, trading activity, and trust signals.
+                Reputation data will appear here once enough activity is available.
               </p>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
