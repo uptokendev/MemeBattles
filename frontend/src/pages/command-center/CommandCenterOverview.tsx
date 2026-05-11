@@ -46,7 +46,7 @@ export default function CommandCenterOverview() {
     <div>
       <CommandCenterPageHeader
         title="Overview"
-        description="Your home base for ranking, League Cabinet, and balances. Reward-specific actions stay inside their dedicated Command Center pages."
+        description="Your home base for ranking, reputation, League Cabinet, and balances. Reward-specific actions stay inside their dedicated Command Center pages."
       />
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -91,6 +91,30 @@ export default function CommandCenterOverview() {
           </div>
         </CommandCenterCard>
 
+        <CommandCenterCard title="Reputation" description="Prepare Mode reputation data will plug in after launch.">
+          <div className="flex min-h-[260px] flex-col justify-between rounded-2xl border border-border/50 bg-background/25 p-4 md:p-5">
+            <div>
+              <div className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Reputation Score</div>
+              <div className="mt-3 font-retro text-3xl text-foreground">No data yet</div>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Reputation will be wired after Prepare Mode launches. This card is reserved for profile completeness, creator activity, public drafts, trading activity, and trust signals.
+              </p>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              {[
+                "Profile completeness",
+                "Creator history",
+                "Prepare drafts",
+                "Public activity",
+              ].map((item) => (
+                <div key={item} className="rounded-xl border border-border/40 bg-card/25 p-3">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CommandCenterCard>
+
         <CommandCenterCard title="League Cabinet" description="Badges, trophies, and league status.">
           <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
             {loadingLeagueCabinet ? (
@@ -111,7 +135,7 @@ export default function CommandCenterOverview() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard title="Balances" description="Wallet balance and detected launchpad token balances." className="md:col-span-2">
+        <CommandCenterCard title="Balances" description="Wallet balance and detected launchpad token balances.">
           <div className="space-y-3 rounded-2xl border border-border/50 bg-background/25 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -132,7 +156,7 @@ export default function CommandCenterOverview() {
               {loadingBalances ? (
                 <div className="mt-2 text-sm text-muted-foreground">Loading token balances...</div>
               ) : tokenBalances.length > 0 ? (
-                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                <div className="mt-3 grid gap-2">
                   {tokenBalances.slice(0, 6).map((token) => (
                     <Link
                       key={`${token.tokenAddress}-${token.campaignAddress}`}
