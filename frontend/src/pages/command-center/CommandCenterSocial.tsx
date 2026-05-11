@@ -99,10 +99,7 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        title={title}
-        description={`${description} These pages are part of Command Center but intentionally not shown as sidebar menu items.`}
-      />
+      <CommandCenterPageHeader title={title} description={description} />
 
       <div className="grid gap-3 md:grid-cols-3">
         {statCards.map((stat) => {
