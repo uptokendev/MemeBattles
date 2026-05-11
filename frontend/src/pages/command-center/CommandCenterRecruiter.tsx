@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Copy, ExternalLink, Gift, Link2, LogOut, ShieldCheck, Trophy, Users, WalletCards } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, Users, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,11 @@ import { useWallet } from "@/contexts/WalletContext";
 import { fetchRecruiterSignupStatus, type RecruiterSignupStatus } from "@/lib/recruiterApi";
 import {
   fetchRecruiterPortal,
+  getPortalSquadImageUrl,
   logoutRecruiterPortal,
   requestRecruiterAuthNonce,
   updateRecruiterPortalCode,
+  updateRecruiterPortalSquadImage,
   verifyRecruiterAuth,
   type RecruiterPortalData,
 } from "@/lib/recruiterPortalApi";
@@ -66,8 +68,10 @@ export default function CommandCenterRecruiter() {
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [preferredCode, setPreferredCode] = useState("");
+  const [squadImageUrl, setSquadImageUrl] = useState("");
   const [authing, setAuthing] = useState(false);
   const [savingCode, setSavingCode] = useState(false);
+  const [savingSquadImage, setSavingSquadImage] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +104,7 @@ export default function CommandCenterRecruiter() {
       const nextPortal = await fetchRecruiterPortal();
       setPortal(nextPortal);
       setPreferredCode(nextPortal?.recruiter?.recruiter_code || recruiter?.code || "");
+      setSquadImageUrl(getPortalSquadImageUrl(nextPortal));
     } catch (err: any) {
       setPortal(null);
       setPortalError(String(err?.message || err || "Failed to load recruiter portal."));
@@ -112,6 +117,7 @@ export default function CommandCenterRecruiter() {
     if (!isRecruiter) {
       setPortal(null);
       setPreferredCode("");
+      setSquadImageUrl("");
       return;
     }
     void loadPortal();
@@ -121,6 +127,7 @@ export default function CommandCenterRecruiter() {
   const baseUrl = typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : "https://memewar.zone";
   const canonicalLink = `${baseUrl}/r/${encodeURIComponent(activeCode)}`;
   const queryLink = `${baseUrl}/?ref=${encodeURIComponent(activeCode)}`;
+  const activeSquadImage = squadImageUrl || getPortalSquadImageUrl(portal);
 
   const shareText = useMemo(() => {
     const squadSize = portal?.squad?.counts?.total ?? recruiter?.linkedWalletCount ?? 0;
@@ -180,10 +187,33 @@ export default function CommandCenterRecruiter() {
     }
   };
 
+  const saveSquadImage = async () => {
+    const nextImage = squadImageUrl.trim();
+    if (nextImage && !/^https?:\/\//i.test(nextImage)) {
+      toast.error("Use a full image URL starting with http or https.");
+      return;
+    }
+
+    setSavingSquadImage(true);
+    setPortalError(null);
+    try {
+      const result = await updateRecruiterPortalSquadImage(nextImage);
+      setSquadImageUrl(result.squad_image_url);
+      await loadPortal();
+      toast.success("Squad image updated");
+    } catch (err: any) {
+      setPortalError(String(err?.message || err || "Failed to update squad image."));
+      toast.error(String(err?.message || "Failed to update squad image."));
+    } finally {
+      setSavingSquadImage(false);
+    }
+  };
+
   const disconnectPortal = async () => {
     await logoutRecruiterPortal();
     setPortal(null);
     setPreferredCode(recruiter?.code || "");
+    setSquadImageUrl("");
     toast.success("Recruiter portal disconnected");
   };
 
@@ -344,6 +374,12 @@ export default function CommandCenterRecruiter() {
             </div>
           </div>
 
+          {activeSquadImage && (
+            <div className="mt-4 overflow-hidden rounded-2xl border border-accent/30 bg-accent/10">
+              <img src={activeSquadImage} alt={`${activeCode} squad`} className="h-40 w-full object-cover" />
+            </div>
+          )}
+
           <div className="mt-4 rounded-2xl border border-border/50 bg-background/25 p-4">
             <div className="font-retro text-sm text-foreground">Referral links</div>
             <div className="mt-3 space-y-2">
@@ -397,6 +433,28 @@ export default function CommandCenterRecruiter() {
                   </Button>
                 </div>
                 {portalError && <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{portalError}</div>}
+              </div>
+
+              <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
+                <label className="flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                  <Image className="h-4 w-4 text-accent" />
+                  Squad image URL
+                </label>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Recognition image for this recruiter's squad. The backend needs to support the `setSquadImage` portal action before this persists for everyone.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={squadImageUrl}
+                    onChange={(event) => setSquadImageUrl(event.target.value)}
+                    className="min-h-10 flex-1 rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60"
+                    placeholder="https://.../squad-image.png"
+                  />
+                  <Button onClick={saveSquadImage} disabled={savingSquadImage} className="font-retro">
+                    {savingSquadImage ? "Saving..." : "Save image"}
+                  </Button>
+                </div>
+                {activeSquadImage && <img src={activeSquadImage} alt="Squad preview" className="mt-3 h-24 w-full rounded-xl object-cover" />}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
