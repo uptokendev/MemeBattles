@@ -1,7 +1,6 @@
 import { Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
 function shortenWallet(addr?: string | null) {
@@ -21,7 +20,6 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
     followingCount,
     createdCount,
     loadingFollows,
-    liveRank,
   } = useCommandCenterData();
 
   const short = shortenWallet(walletAddress);
@@ -43,8 +41,9 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
             <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
           </div>
           <div className="min-w-0">
-            <div className="mb-1 font-retro text-[10px] uppercase tracking-[0.2em] text-accent">
-              Private Command Center
+            <div className="mb-1 flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.2em] text-accent">
+              <img src="/assets/ticker.png" alt="MemeWarzone" className="h-4 w-4 rounded-sm object-contain" />
+              <span>Command Center</span>
             </div>
             <h1 className="truncate font-retro text-xl text-foreground md:text-2xl">
               {displayName || short || "Connected wallet"}
@@ -85,20 +84,6 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
           </div>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-border/50 bg-card/25 p-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="font-retro text-sm text-foreground">Current Rank: {liveRank}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              Rank progress bar plugs in when the backend returns next-rank thresholds. Missing progress data stays safe.
-            </div>
-          </div>
-          <Button variant="outline" className="font-retro" disabled>
-            Progress pending
-          </Button>
         </div>
       </div>
     </section>
