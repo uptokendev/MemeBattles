@@ -38,21 +38,32 @@ function normalizeSort(v) {
   ].includes(s)
     ? s
     : "default";
-}
-
+}\n
 function normalizeStatus(v) {
   const s = String(v || "all").toLowerCase();
   return s === "live" || s === "graduated" || s === "ended" ? s : "all";
 }
 
+function emptyCampaignFeed(res, limit, warning) {
+  return json(res, 200, {
+    items: [],
+    nextCursor: null,
+    pageSize: limit,
+    updatedAt: new Date().toISOString(),
+    warning,
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
+
+  let limit = 24;
 
   try {
     const q = getQuery(req);
 
     const chainId = toInt(q.chainId, 97);
-    const limit = clamp(toInt(q.limit, 24), 1, 50);
+    limit = clamp(toInt(q.limit, 24), 1, 50);
     const cursor = clamp(toInt(q.cursor, 0), 0, 1_000_000); // offset-based pagination
 
     const tab = normalizeTab(q.tab);
@@ -276,6 +287,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("[api/campaigns]", e);
-    return json(res, 500, { error: "Server error" });
+    return emptyCampaignFeed(res, limit, "Campaign indexer feed is temporarily unavailable.");
   }
 }
