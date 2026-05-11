@@ -479,16 +479,8 @@ export function useWallet(): WalletHook {
   }, [applyProviderState, bindListeners]);
 
   const disconnect = useCallback(async () => {
-    const selected = eip1193Ref.current;
     cleanupRef.current?.();
     cleanupRef.current = null;
-    if (selected?.request) {
-      try {
-        await selected.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
-      } catch {
-        // unsupported by most wallets
-      }
-    }
     resetWalletState(true);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(DISCONNECTED_KEY, "1");
