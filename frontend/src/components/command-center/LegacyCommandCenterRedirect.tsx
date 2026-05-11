@@ -8,8 +8,18 @@ function normalizeWallet(value?: string | null): string | null {
   return raw.toLowerCase();
 }
 
+type CommandCenterSection =
+  | "overview"
+  | "recruiter"
+  | "squad"
+  | "airdrops"
+  | "claims"
+  | "settings"
+  | "followers"
+  | "following";
+
 type LegacyCommandCenterRedirectProps = {
-  section: "overview" | "recruiter" | "squad" | "airdrops" | "claims" | "settings";
+  section: CommandCenterSection;
 };
 
 export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedirectProps) {
