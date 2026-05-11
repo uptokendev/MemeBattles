@@ -71,6 +71,29 @@ function isEvmAddress(addr?: string | null) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
 }
 
+function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
+  if (!raw) return null;
+  const campaignAddress = String(raw.campaignAddress ?? raw.campaign_address ?? "").toLowerCase();
+  if (!campaignAddress) return null;
+  return {
+    chainId: Number(raw.chainId ?? raw.chain_id ?? 97),
+    campaignAddress,
+    tokenAddress: raw.tokenAddress ?? raw.token_address ?? null,
+    creatorAddress: raw.creatorAddress ?? raw.creator_address ?? null,
+    creatorName: raw.creatorName ?? raw.creator_name ?? null,
+    creatorUsername: raw.creatorUsername ?? raw.creator_username ?? null,
+    username: raw.username ?? null,
+    name: raw.name ?? null,
+    symbol: raw.symbol ?? null,
+    logoUri: raw.logoUri ?? raw.logo_uri ?? null,
+    createdAtChain: raw.createdAtChain ?? raw.created_at_chain ?? null,
+    graduatedAtChain: raw.graduatedAtChain ?? raw.graduated_at_chain ?? null,
+    votes24h: Number(raw.votes24h ?? raw.votes_24h ?? 0),
+    votesAllTime: Number(raw.votesAllTime ?? raw.votes_all_time ?? 0),
+    marketcapBnb: raw.marketcapBnb ?? raw.marketcap_bnb ?? null,
+  };
+}
+
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const wallet = useWallet();
   const { toast } = useToast();
@@ -127,7 +150,8 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
         const j = await r.json();
         if (!r.ok) throw new Error(j?.error ?? "Failed to load featured");
         if (!mounted) return;
-        setItems(Array.isArray(j.items) ? j.items : []);
+        const rawItems = Array.isArray(j) ? j : Array.isArray(j.items) ? j.items : [];
+        setItems(rawItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[]);
         initialLoadedRef.current = true;
       } catch (e: unknown) {
         if (!mounted) return;
