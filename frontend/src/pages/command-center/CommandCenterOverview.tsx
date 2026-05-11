@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { getRankBadgeSrc, getRankIndex, RANK_SEQUENCE } from "@/lib/ranks";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
@@ -132,7 +134,11 @@ export default function CommandCenterOverview() {
               ) : tokenBalances.length > 0 ? (
                 <div className="mt-3 grid gap-2 lg:grid-cols-2">
                   {tokenBalances.slice(0, 6).map((token) => (
-                    <div key={`${token.tokenAddress}-${token.campaignAddress}`} className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-card/25 p-3">
+                    <Link
+                      key={`${token.tokenAddress}-${token.campaignAddress}`}
+                      to={`/token/${token.campaignAddress}`}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-card/25 p-3 transition hover:border-accent/50 hover:bg-card/45"
+                    >
                       <div className="flex min-w-0 items-center gap-3">
                         <img
                           src={(token as any).image || "/placeholder.svg"}
@@ -147,7 +153,7 @@ export default function CommandCenterOverview() {
                       <div className="shrink-0 text-right font-retro text-xs text-foreground">
                         {Number(token.balanceFormatted).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               ) : (
