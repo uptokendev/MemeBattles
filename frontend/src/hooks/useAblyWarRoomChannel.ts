@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
+const ABLY_AUTH_BASE = String(
+  import.meta.env.VITE_ABLY_AUTH_BASE ||
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_BASE ||
+    ""
+).trim();
 
 function getAuthBase() {
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
