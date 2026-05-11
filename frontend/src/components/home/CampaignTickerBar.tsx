@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Contract } from "ethers";
 import { cn } from "@/lib/utils";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 import { useWallet } from "@/contexts/WalletContext";
 
 type CampaignTickerItem = {
@@ -13,16 +15,23 @@ type CampaignTickerItem = {
   votes24h: number;
 };
 
-type CampaignFeedItemApi = {
-  campaignAddress?: string | null;
-  campaign_address?: string | null;
-  symbol?: string | null;
-  name?: string | null;
-  marketcapBnb?: string | number | null;
-  marketcap_bnb?: string | number | null;
-  votes24h?: number | null;
-  votes_24h?: number | null;
+type FactoryCampaignRow = {
+  campaign?: string;
+  token?: string;
+  creator?: string;
+  name?: string;
+  symbol?: string;
+  logoURI?: string;
+  xAccount?: string;
+  website?: string;
+  extraLink?: string;
+  createdAt?: bigint | number | string;
 };
+
+const FACTORY_ABI = [
+  "function campaignsCount() view returns (uint256)",
+  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
+] as const;
 
 const REALTIME_API_BASE = String(
   import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production.up.railway.app"
@@ -30,6 +39,16 @@ const REALTIME_API_BASE = String(
 
 function normalizeAddress(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function isAddress(value: unknown) {
+  return /^0x[a-f0-9]{40}$/.test(normalizeAddress(value));
+}
+
+function asNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : Number(String(value));
+  return Number.isFinite(n) ? n : null;
 }
 
 function formatMc(value: number | null, bnbUsd: number | null) {
@@ -48,44 +67,68 @@ function formatMc(value: number | null, bnbUsd: number | null) {
   return `MC ${value >= 1 ? value.toFixed(2) : value.toFixed(4)} BNB`;
 }
 
-function normalizeItem(raw: CampaignFeedItemApi): CampaignTickerItem | null {
-  const campaignAddress = normalizeAddress(raw.campaignAddress ?? raw.campaign_address);
-  if (!/^0x[a-f0-9]{40}$/.test(campaignAddress)) return null;
+async function fetchTokenSummary(chainId: number, campaignAddress: string): Promise<{ marketcapBnb: number | null; votes24h: number }> {
+  try {
+    const res = await fetch(`${REALTIME_API_BASE}/api/token/${campaignAddress}/summary?chainId=${chainId}`, {
+      cache: "no-store" as RequestCache,
+      headers: { Accept: "application/json" },
+    });
+    const row = await res.json().catch(() => null);
+    if (!res.ok || !row) return { marketcapBnb: null, votes24h: 0 };
 
-  const symbol = String(raw.symbol ?? "").trim();
-  const name = String(raw.name ?? "").trim();
-  const marketcapRaw = raw.marketcapBnb ?? raw.marketcap_bnb;
-  const marketcapBnb = Number.isFinite(Number(marketcapRaw)) ? Number(marketcapRaw) : null;
+    return {
+      marketcapBnb: asNumber(row.marketcap_bnb ?? row.marketcapBnb),
+      votes24h: Number(asNumber(row.votes_24h ?? row.votes24h) ?? 0),
+    };
+  } catch {
+    return { marketcapBnb: null, votes24h: 0 };
+  }
+}
 
-  return {
-    campaignAddress,
-    symbol: symbol || "???",
-    name: name || "Unknown",
-    marketcapBnb,
-    votes24h: Number(raw.votes24h ?? raw.votes_24h ?? 0),
-  };
+async function fetchFactoryRows(chainId: number): Promise<FactoryCampaignRow[]> {
+  const factoryAddress = getFactoryAddress(chainId as any);
+  if (!factoryAddress) return [];
+
+  const provider = getReadProvider(chainId as any);
+  const factory = new Contract(factoryAddress, FACTORY_ABI, provider) as any;
+  const totalRaw: bigint = await factory.campaignsCount();
+  const total = Number(totalRaw ?? 0n);
+  if (!Number.isFinite(total) || total <= 0) return [];
+
+  const limit = Math.min(30, total);
+  const offset = Math.max(0, total - limit);
+  const rows = await factory.getCampaignPage(offset, limit);
+  return Array.from(rows ?? []).reverse() as FactoryCampaignRow[];
 }
 
 async function fetchTickerItems(chainId: number): Promise<CampaignTickerItem[]> {
-  const qs = new URLSearchParams({
-    chainId: String(chainId),
-    limit: "30",
-    tab: "trending",
-    sort: "default",
-    status: "all",
-  });
+  const rows = await fetchFactoryRows(chainId);
+  const baseItems = rows
+    .map((row) => {
+      const campaignAddress = normalizeAddress(row?.campaign);
+      if (!isAddress(campaignAddress)) return null;
+      return {
+        campaignAddress,
+        symbol: String(row?.symbol ?? "").trim() || "???",
+        name: String(row?.name ?? "").trim() || "Unknown",
+        marketcapBnb: null,
+        votes24h: 0,
+      } satisfies CampaignTickerItem;
+    })
+    .filter(Boolean) as CampaignTickerItem[];
 
-  // The ticker is launchpad/realtime data and must not depend on the frontend
-  // Railway API router. Fetch the realtime-indexer project directly.
-  const res = await fetch(`${REALTIME_API_BASE}/api/campaigns?${qs.toString()}`, {
-    cache: "no-store" as RequestCache,
-    headers: { Accept: "application/json" },
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(json?.error || `Ticker campaigns failed (${res.status})`);
+  const enriched = await Promise.all(
+    baseItems.slice(0, 24).map(async (item) => {
+      const summary = await fetchTokenSummary(chainId, item.campaignAddress);
+      return {
+        ...item,
+        marketcapBnb: summary.marketcapBnb,
+        votes24h: summary.votes24h,
+      } satisfies CampaignTickerItem;
+    })
+  );
 
-  const rows = Array.isArray(json?.items) ? json.items : [];
-  return rows.map(normalizeItem).filter(Boolean).slice(0, 24) as CampaignTickerItem[];
+  return enriched;
 }
 
 export function CampaignTickerBar({ className }: { className?: string }) {
@@ -127,7 +170,7 @@ export function CampaignTickerBar({ className }: { className?: string }) {
     return (
       <div className={cn("mwz-hud-frame overflow-hidden border-success/25 bg-black/65 px-3 py-2", className)} aria-label="Live campaign ticker">
         <div className="text-xs uppercase tracking-[0.16em] text-success/55">
-          {loaded ? "Live ticker waiting for campaign market caps" : "Loading live campaign ticker..."}
+          {loaded ? "Live ticker waiting for factory campaigns" : "Loading live campaign ticker..."}
         </div>
       </div>
     );
