@@ -113,7 +113,7 @@ function isAllowedOrigin(origin) {
     const { hostname } = new URL(origin);
     const host = hostname.toLowerCase();
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
-    if (host.endsWith(".netlify.app") && host.includes("memewar")) return true;
+    if (host.endsWith(".netlify.app")) return true;
   } catch {}
   return false;
 }
