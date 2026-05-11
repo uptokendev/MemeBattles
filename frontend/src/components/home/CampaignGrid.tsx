@@ -65,9 +65,7 @@ const LEGACY_FACTORY_ABI = [
 
 function safeUnixSeconds(ts: any): number | null {
   if (ts == null) return null;
-  if (typeof ts === "number" && Number.isFinite(ts)) {
-    return ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts);
-  }
+  if (typeof ts === "number" && Number.isFinite(ts)) return ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts);
   if (typeof ts === "string") {
     const asNum = Number(ts);
     if (Number.isFinite(asNum) && asNum > 0) return asNum > 1e12 ? Math.floor(asNum / 1000) : Math.floor(asNum);
@@ -79,13 +77,12 @@ function safeUnixSeconds(ts: any): number | null {
 
 function formatCompactUsd(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  const fmt = new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(undefined, {
     style: "currency",
     currency: "USD",
     notation: "compact",
     maximumFractionDigits: 2,
-  });
-  return fmt.format(value);
+  }).format(value);
 }
 
 function buildQueryString(params: Record<string, any>) {
@@ -110,33 +107,35 @@ function matchesSearch(item: CampaignFeedItemApi, search: unknown) {
     .some((v) => v.includes(q));
 }
 
+function mergeCampaignItems(primary: CampaignFeedItemApi[], fallback: CampaignFeedItemApi[]) {
+  const map = new Map<string, CampaignFeedItemApi>();
+  for (const item of [...fallback, ...primary]) {
+    const key = String(item.campaignAddress ?? "").toLowerCase();
+    if (!key) continue;
+    const existing = map.get(key);
+    map.set(key, { ...(existing || {}), ...item });
+  }
+  return Array.from(map.values());
+}
+
 async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
   const chainId = Number(params.chainId || 97);
   const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
   const cursor = Math.max(0, Number(params.cursor || 0));
   const factoryAddress = getFactoryAddress(chainId as any);
-  if (!factoryAddress) {
-    return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
-  }
+  if (!factoryAddress) return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
 
   const provider = getReadProvider(chainId as any);
   const factory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
   const totalRaw: bigint = await factory.campaignsCount();
   const total = Number(totalRaw ?? 0n);
-  if (!Number.isFinite(total) || total <= 0) {
-    return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
-  }
+  if (!Number.isFinite(total) || total <= 0) return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
 
-  // Factory pages are oldest -> newest. UI wants newest first, so translate the
-  // cursor into a reverse offset. We intentionally over-fetch a little to allow
-  // search/status filters without making the grid look empty.
   const readLimit = Math.min(100, Math.max(limit, 48));
   const endExclusive = Math.max(0, total - cursor);
   const offset = Math.max(0, endExclusive - readLimit);
   const actualLimit = Math.max(0, endExclusive - offset);
-  if (actualLimit <= 0) {
-    return { items: [], nextCursor: null, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain" };
-  }
+  if (actualLimit <= 0) return { items: [], nextCursor: null, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain" };
 
   const rows = await factory.getCampaignPage(offset, actualLimit);
   const mapped: CampaignFeedItemApi[] = Array.from(rows ?? [])
@@ -163,13 +162,7 @@ async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<Ca
   const items = mapped.slice(0, limit);
   const nextCursor = cursor + actualLimit < total ? cursor + actualLimit : null;
 
-  return {
-    items,
-    nextCursor,
-    pageSize: limit,
-    updatedAt: new Date().toISOString(),
-    source: "onchain-factory-fallback",
-  };
+  return { items, nextCursor, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain-factory-fallback" };
 }
 
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
@@ -179,9 +172,22 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
     const j = await r.json();
     if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
     const items = Array.isArray(j?.items) ? j.items : [];
-    // If the realtime feed is empty while the chain has campaigns, still fall
-    // back so the homepage does not only show Prepare drafts.
-    if (!items.length) return await fetchOnChainCampaignFeed(params);
+
+    // If the realtime feed is sparse (for example 3 DB rows), merge it with
+    // the LaunchFactory page so the grid still shows the full launched set.
+    if (items.length < Number(params.limit || 24)) {
+      const fallback = await fetchOnChainCampaignFeed(params);
+      const merged = mergeCampaignItems(items, fallback.items).slice(0, Number(params.limit || 24));
+      return {
+        ...j,
+        items: merged,
+        nextCursor: fallback.nextCursor ?? j?.nextCursor ?? null,
+        pageSize: Number(params.limit || 24),
+        updatedAt: j?.updatedAt ?? fallback.updatedAt,
+        source: items.length ? "realtime-plus-onchain" : fallback.source,
+      } as CampaignFeedResponse;
+    }
+
     return j as CampaignFeedResponse;
   } catch (error) {
     console.warn("[CampaignGrid] realtime campaign feed failed; using on-chain factory fallback", error);
@@ -201,10 +207,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   });
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  const DEBUG =
-    typeof window !== "undefined" &&
-    (window.localStorage?.getItem("debug_campaign_grid") === "1" ||
-      (window as any).__DEBUG_CAMPAIGN_GRID__ === true);
+  const DEBUG = typeof window !== "undefined" && (window.localStorage?.getItem("debug_campaign_grid") === "1" || (window as any).__DEBUG_CAMPAIGN_GRID__ === true);
 
   const [items, setItems] = useState<CampaignFeedItemApi[]>([]);
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
@@ -218,16 +221,13 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   useEffect(() => {
     if (query.tab !== "new") return;
     if (!created?.length) return;
-
     setItems((prev) => {
       const seen = new Set(prev.map((x) => String(x.campaignAddress ?? "").toLowerCase()).filter(Boolean));
       const additions: CampaignFeedItemApi[] = [];
-
       for (const it of created) {
         const addr = String(it?.campaignAddress ?? "").toLowerCase();
         if (!addr || seen.has(addr)) continue;
         seen.add(addr);
-
         additions.push({
           chainId: activeChainId,
           campaignAddress: addr,
@@ -245,9 +245,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           etaSec: null,
         });
       }
-
-      if (!additions.length) return prev;
-      return [...additions, ...prev].slice(0, 200);
+      return additions.length ? [...additions, ...prev].slice(0, 200) : prev;
     });
   }, [created, query.tab, activeChainId]);
 
@@ -268,21 +266,19 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const baseParams = useMemo(() => {
-    return {
-      chainId: activeChainId,
-      limit: 24,
-      tab: query.tab === "drafts" ? "trending" : (query.tab ?? "trending"),
-      sort: query.sort ?? "default",
-      status: query.status ?? "all",
-      search: query.search ?? "",
-      bnbUsd: bnbUsd ? bnbUsd : null,
-      mcapMinUsd: query.mcapMinUsd ?? null,
-      mcapMaxUsd: query.mcapMaxUsd ?? null,
-      progressMinPct: query.progressMinPct ?? null,
-      progressMaxPct: query.progressMaxPct ?? null,
-    };
-  }, [activeChainId, query, bnbUsd]);
+  const baseParams = useMemo(() => ({
+    chainId: activeChainId,
+    limit: 24,
+    tab: query.tab === "drafts" ? "trending" : (query.tab ?? "trending"),
+    sort: query.sort ?? "default",
+    status: query.status ?? "all",
+    search: query.search ?? "",
+    bnbUsd: bnbUsd ? bnbUsd : null,
+    mcapMinUsd: query.mcapMinUsd ?? null,
+    mcapMaxUsd: query.mcapMaxUsd ?? null,
+    progressMinPct: query.progressMinPct ?? null,
+    progressMaxPct: query.progressMaxPct ?? null,
+  }), [activeChainId, query, bnbUsd]);
 
   useEffect(() => {
     let mounted = true;
@@ -291,21 +287,9 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       if (!initialLoadedRef.current) setLoading(true);
       setErr(null);
       try {
-        if (DEBUG) console.debug("[CampaignGrid] fetch first page params", { ...baseParams, cursor: 0 });
         const resp = await fetchCampaignFeed({ ...baseParams, cursor: 0, _r: refetchNonce });
         if (!mounted) return;
-        if (DEBUG) {
-          console.debug("[CampaignGrid] first page response", {
-            source: resp.source,
-            count: resp.items?.length ?? 0,
-            sample: (resp.items ?? []).slice(0, 3).map((x) => ({
-              campaignAddress: x.campaignAddress,
-              logoUri: x.logoUri,
-              name: x.name,
-              symbol: x.symbol,
-            })),
-          });
-        }
+        if (DEBUG) console.debug("[CampaignGrid] first page response", { source: resp.source, count: resp.items?.length ?? 0 });
         setItems(resp.items ?? []);
         setNextCursor(resp.nextCursor ?? null);
         setLastUpdatedAt(resp.updatedAt ?? null);
@@ -318,19 +302,15 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
           setNextCursor(null);
         }
       } finally {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [baseParams, refetchNonce, query.tab, DEBUG]);
 
   useEffect(() => {
     if (query.tab === "drafts") return;
     let cancelled = false;
-
     const missing = (items || [])
       .map((it) => String(it.campaignAddress ?? "").toLowerCase())
       .filter((addr) => addr && !logoCache[addr])
@@ -339,51 +319,27 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         return !found?.logoUri;
       })
       .slice(0, 24);
-
     if (!missing.length) return;
-
-    if (DEBUG) console.debug("[CampaignGrid] hydrating missing logos", { missingCount: missing.length, missing: missing.slice(0, 10) });
-
     (async () => {
       try {
-        const pairs = await Promise.all(
-          missing.map(async (addr) => {
-            const uri = await fetchCampaignLogoURI(addr);
-            return [addr, uri] as const;
-          })
-        );
+        const pairs = await Promise.all(missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr)] as const));
         if (cancelled) return;
-        if (DEBUG) {
-          console.debug("[CampaignGrid] hydration results", {
-            resolved: pairs.filter(([, uri]) => !!uri).slice(0, 10).map(([addr, uri]) => ({ addr, uri, resolvedUrl: resolveImageUri(uri) })),
-            unresolved: pairs.filter(([, uri]) => !uri).slice(0, 10).map(([addr]) => addr),
-          });
-        }
         setLogoCache((prev) => {
           const next = { ...prev };
-          for (const [addr, uri] of pairs) {
-            if (uri) next[addr] = uri;
-          }
+          for (const [addr, uri] of pairs) if (uri) next[addr] = uri;
           return next;
         });
-      } catch {
-        if (DEBUG) console.debug("[CampaignGrid] hydration failed");
-      }
+      } catch {}
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [items, logoCache, fetchCampaignLogoURI, DEBUG, query.tab]);
+    return () => { cancelled = true; };
+  }, [items, logoCache, fetchCampaignLogoURI, query.tab]);
 
   const loadMore = async () => {
     if (query.tab === "drafts" || loadingMore || loading || nextCursor == null) return;
     setLoadingMore(true);
     try {
-      if (DEBUG) console.debug("[CampaignGrid] loadMore params", { ...baseParams, cursor: nextCursor });
       const resp = await fetchCampaignFeed({ ...baseParams, cursor: nextCursor, _r: refetchNonce });
-      if (DEBUG) console.debug("[CampaignGrid] loadMore response", { source: resp.source, count: resp.items?.length ?? 0, nextCursor: resp.nextCursor });
-      setItems((prev) => [...prev, ...(resp.items ?? [])]);
+      setItems((prev) => mergeCampaignItems(prev, resp.items ?? []));
       setNextCursor(resp.nextCursor ?? null);
       setLastUpdatedAt(resp.updatedAt ?? null);
     } catch (e: any) {
@@ -397,14 +353,9 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     if (query.tab === "drafts") return;
     const el = sentinelRef.current;
     if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) loadMore();
-        }
-      },
-      { root: null, rootMargin: "600px", threshold: 0 }
-    );
+    const obs = new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) loadMore();
+    }, { root: null, rootMargin: "600px", threshold: 0 });
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -424,7 +375,6 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       const activitySec = (patch?.lastActivityAt != null ? Number(patch.lastActivityAt) : safeUnixSeconds((it as any).lastActivityAt ?? null)) ?? 0;
       const raised = Number(patch?.raisedTotalBnb ?? NaN);
       if (Number.isFinite(raised)) progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
-
       return {
         campaignAddress: addr,
         name: String(it.name ?? "Unknown"),
@@ -440,7 +390,6 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
         votes24h: Number(patch?.votes24h ?? it.votes24h ?? 0),
       } as CampaignCardVM;
     });
-
     if (!isTrendingDefault) return mapped;
     return mapped.slice().sort((a: any, b: any) => {
       const aa = Number(a.lastActivityAtSec ?? 0);
@@ -460,6 +409,8 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     return `Showing ${count} campaigns - Updated ${updatedLabel}`;
   }, [vms.length, lastUpdatedAt]);
 
+  const gridClass = "grid grid-cols-2 gap-3 justify-items-stretch sm:[grid-template-columns:repeat(auto-fill,minmax(180px,220px))] sm:justify-start sm:gap-4";
+
   return (
     <div className={cn("w-full", className)}>
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -467,9 +418,9 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       </div>
 
       {loading && !vms.length ? (
-        <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
+        <div className={gridClass}>
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="aspect-[1/2] w-full max-w-none sm:max-w-[clamp(170px,20vw,210px)] rounded-2xl border border-border/40 bg-card/40 animate-pulse" />
+            <div key={i} className="aspect-[1/2] w-full rounded-2xl border border-border/40 bg-card/40 animate-pulse" />
           ))}
         </div>
       ) : err && !vms.length ? (
@@ -483,14 +434,10 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
               Background refresh failed. Showing the last loaded campaigns.
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3 justify-items-stretch sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-4 sm:justify-items-center">
-            {vms.map((vm) => (
-              <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />
-            ))}
+          <div className={gridClass}>
+            {vms.map((vm) => <CampaignCard key={vm.campaignAddress} vm={vm} chainIdForStorage={activeChainId} />)}
           </div>
-
           <div ref={sentinelRef} className="h-12" />
-
           {loadingMore ? (
             <div className="py-6 text-center text-xs text-muted-foreground">Loading more...</div>
           ) : nextCursor == null ? (
