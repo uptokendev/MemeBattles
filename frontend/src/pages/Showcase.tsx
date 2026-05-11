@@ -7,12 +7,7 @@ import { HeaderBand } from "@/components/home/HeaderBand";
 import { LeagueRecruiterSlider } from "@/components/home/LeagueRecruiterSlider";
 
 const Showcase = () => {
-  // The homepage has two core feeds:
-  // - Drafts / Prepare Mode from the frontend Railway service
-  // - Live launched campaigns from the realtime-indexer/on-chain campaign path
-  // Keep both visible so drafts never hide live campaigns and live campaign
-  // issues never hide drafts.
-  const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "" });
+  const [query, setQuery] = useState<HomeQuery>({ tab: "drafts", timeFilter: "24h", search: "" });
 
   useEffect(() => {
     const onSearch = (e: Event) => {
@@ -26,20 +21,15 @@ const Showcase = () => {
   const effectiveQuery = useMemo(() => {
     return {
       ...query,
-      tab: query.tab ?? "trending",
+      tab: query.tab ?? "drafts",
     } as HomeQuery;
   }, [query]);
 
-  const draftQuery = useMemo(() => {
-    return {
-      ...effectiveQuery,
-      tab: "drafts" as const,
-    } as HomeQuery;
-  }, [effectiveQuery]);
+  const isDraftRow = effectiveQuery.tab === "drafts";
 
   return (
     <div className="mwz-launchpad-page h-full overflow-y-auto">
-      <div className="mwz-launchpad-inner relative px-1 md:px-2 pb-10 space-y-6">
+      <div className="mwz-launchpad-inner relative px-1 md:px-2 pb-10 space-y-3">
         <HeaderBand />
 
         <div className="mwz-featured-layout grid gap-3 xl:grid-cols-[minmax(0,1fr)_480px] items-start">
@@ -47,37 +37,22 @@ const Showcase = () => {
           <LeagueRecruiterSlider className="w-full" />
         </div>
 
-        <section className="space-y-3">
-          <div className="mwz-live-heading flex flex-col gap-1 pt-2">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
-              Prepare Mode
-            </div>
-            <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-              Draft Campaigns
-            </h2>
-            <p className="max-w-2xl text-sm text-success/65">
-              Published Prepare Pages appear before trading goes live. Draft cards keep their Prepare Mode layout and route to the promotion page.
-            </p>
+        <div className="mwz-live-heading flex flex-col gap-1 pt-2">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
+            {isDraftRow ? "Prepare Mode" : "Live Warzone"}
           </div>
-          <DraftCampaignGrid query={draftQuery} />
-        </section>
+          <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
+            {isDraftRow ? "Draft Campaigns" : "Live Campaigns"}
+          </h2>
+          <p className="max-w-2xl text-sm text-success/65">
+            {isDraftRow
+              ? "Published Prepare Pages appear in the normal campaign row before trading goes live. Draft cards keep their Prepare Mode layout and route to the promotion page."
+              : "Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages."}
+          </p>
+        </div>
 
-        <section className="space-y-3">
-          <div className="mwz-live-heading flex flex-col gap-1 pt-2">
-            <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
-              Live Warzone
-            </div>
-            <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-              Live Campaigns
-            </h2>
-            <p className="max-w-2xl text-sm text-success/65">
-              Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages.
-            </p>
-          </div>
-
-          <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
-          <CampaignGrid query={effectiveQuery} />
-        </section>
+        <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
+        {isDraftRow ? <DraftCampaignGrid query={effectiveQuery} /> : <CampaignGrid query={effectiveQuery} />}
       </div>
     </div>
   );
