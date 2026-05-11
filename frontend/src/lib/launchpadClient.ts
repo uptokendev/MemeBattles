@@ -275,7 +275,13 @@ function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | 
     creator,
     name: String(item?.name ?? "Unknown"),
     symbol: String(item?.symbol ?? ""),
-    logoURI: normalizeLogoUri(item?.logoUri ?? item?.logoURI ?? item?.logo_uri),
+    logoURI: normalizeLogoUri(
+  item?.logoUri ??
+  item?.logoURI ??
+  item?.logoUrl ??
+  item?.logo_url ??
+  item?.logo_uri
+),
     metadataURI: buildMetadataURI(chainId, token || campaign),
     xAccount: String(item?.xAccount ?? item?.xUrl ?? item?.x_url ?? ""),
     website: String(item?.website ?? item?.websiteUrl ?? item?.website_url ?? ""),
@@ -516,7 +522,11 @@ const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
   // lists. On-chain factory paging is noisy and expensive in the browser, so keep
   // it opt-in only.
   if (!ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) {
+  if (!ENABLE_ONCHAIN_LOGO_HYDRATION) {
     return db;
+  }
+
+  return hydrateMissingLogosFromContract(db, fetchCampaignLogoURI);
   }
 
   const onChain = await fetchOnChainCampaigns().catch((error: unknown) => {
