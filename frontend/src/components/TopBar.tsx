@@ -358,9 +358,15 @@ tickerInitialLoadedRef.current = true;
           <Menu className="h-5 w-5" />
         </button>
 
-        <Link to="/" className="hidden md:flex items-center gap-2 mr-2 shrink-0">
-          <img src={brandMark} alt="MemeWarzone" className="h-10 w-10 object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
-          <span className="mwz-section-title hidden 2xl:inline text-base">MemeWarzone</span>
+        <Link to="/" className="hidden md:flex items-center mr-2 shrink-0">
+          {/* navbar-logo is a wide strip (~5.5:1) that already contains the
+              MemeWarzone wordmark, so fix the height and let the width scale. */}
+          <img
+            src={brandMark}
+            alt="MemeWarzone"
+            className="h-8 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-9 2xl:h-10"
+            draggable={false}
+          />
         </Link>
 
         <div className="hidden lg:flex items-center gap-1 min-w-0 flex-1 overflow-hidden">

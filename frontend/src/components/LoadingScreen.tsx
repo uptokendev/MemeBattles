@@ -8,8 +8,9 @@ import { useEffect, useState } from "react";
 import { SpaceBackground } from "@/components/ui/space-background";
 
 // NOTE:
-// Use the public logo so there's exactly one source of truth with the header logo.
-// The query string helps bust aggressive caching.
+// Use the public hero logo (everywhere except the navbar, which uses its own
+// strip mark at /assets/navbar-logo.png). The query string helps bust aggressive
+// caching.
 const LOADING_LOGO_SRC = "/assets/logo.png?v=mw2";
 
 interface LoadingScreenProps {
