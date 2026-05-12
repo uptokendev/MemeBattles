@@ -152,6 +152,12 @@ Render rules (priority order):
 
 **Trust model — moderator status:** moderator status is **not** embedded in the message. It is computed client-side from `VITE_LIVE_CHAT_MODERATORS` (comma-separated wallet list at build time). Cannot be spoofed because the truth lives in the build, not in the payload. mw-dashboard maintains its own copy of the same list.
 
+**Moderator match is case-insensitive.** Wallet addresses from `useWallet()` (via ethers) are typically EIP-55 checksummed mixed-case; env-var entries are often lowercased. Compare with `.toLowerCase()` on both sides before matching to avoid a silent miss on launch night.
+
+**Rotating moderators requires a redeploy.** Acceptable for a one-off launch event; if `/live` becomes recurring, promote the list to runtime config (Supabase row, fetched at page load) so mods can be added/removed without rebuilding.
+
+**Env-var exposure note.** `VITE_LIVE_CHAT_MODERATORS` ships in the client bundle (all `VITE_*` vars do). Wallet addresses are already public on-chain, so this is intentional and safe — but worth knowing it isn't a secret.
+
 **Client-side safety on publish:**
 - Trim whitespace, strip null/control characters
 - Hard cap 200 characters
@@ -232,7 +238,7 @@ Already present (no install needed):
 **Unit (Vitest):**
 - `LivestreamPlayer`: renders `<PlayerOffline />` when src is null; renders `Player.Root` when src present
 - `LiveChatInput`: throttles publishes; strips URLs; truncates >200 chars; trims whitespace
-- `LiveChat`: applies moderator shield rule; applies callsign bracket rule; drops messages on delete events; seeds from history on mount
+- `LiveChat`: applies moderator shield rule (including case-insensitive wallet match); applies callsign bracket rule; drops messages on delete events; seeds from history on mount
 - `Live` page: renders wallet-gate CTA when disconnected; renders player + chat when connected; renders `<NotFound />` when feature flag off
 
 **Manual launch-night checklist (more valuable than e2e for a one-off):**
@@ -249,7 +255,10 @@ Already present (no install needed):
 
 ## 15. Open implementation details (to confirm during planning)
 
-- Exact endpoint / shape for "look up squad by wallet" — may already exist; may need a thin new route
+- **Squad-lookup endpoint.** Must be resolved before planning starts because the answer affects Section 4's "no backend changes" claim:
+  - **Path A (preferred):** an existing endpoint (e.g. `/api/wallets/:address` or similar) already returns squad affiliation. Plan stays purely frontend.
+  - **Path B:** no such endpoint exists. Then either (i) add a small read-only `GET /api/wallets/:address/squad` route — explicitly amending Section 4 to allow this one backend addition, or (ii) call the existing `/api/squads/{recruiterCode}/summary` from the dashboard side and embed the callsign at message-publish time (but the publishing client doesn't know its own callsign without a lookup, so this loops back to needing an endpoint).
+  - The implementation plan must pick A or B-i explicitly in its first step.
 - Whether the existing wallet-gate CTA can be reused as-is or needs a thin wrapper for the `/live` context
 - Tailwind theming of `@livepeer/react` Player.Controls to match tactical-command-ui CSS — small spike during implementation
 - Ably client init: reuse the existing client/auth used by token comments, or instantiate a separate client for the live channel
