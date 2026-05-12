@@ -163,14 +163,17 @@ mw-dashboard/src/App.tsx (or routes file)    add <Route path="/live" /> + sideba
 Differs from MemeBattles' equivalent:
 - **No presence enter** (operators don't count themselves as viewers — keeps the count accurate)
 - **No URL-strip / length-cap** (operators don't publish chat messages — only mute/delete events)
-- **Exposes `publish` helpers**: `publishDelete(msgId)`, `publishMute(wallet, untilMs)`, `publishUnmute(wallet)`
+- **Exposes `publish` helpers**: `publishDelete(msgId: string)`, `publishMute(wallet: string, until: number | null)` where `until` is an **absolute** ms-epoch timestamp (or `null` for perma) matching the wire-format `LiveChatMute.until` field — callers compute `Date.now() + durationMs` themselves so the helper isn't ambiguous, `publishUnmute(wallet: string)`
 - **Maintains an internal `Map<wallet, expiresAt | null>`** of currently-active mutes, exposed as `mutedWallets` for the right-rail panel
 
 ### 5.6 Env vars
 
 ```
-# Shared with MemeBattles /live
-VITE_LIVE_ABLY_AUTH_URL=https://memebattles.xyz/api/ably/token
+# Values aligned with MemeBattles /live (same channel, same playback ID).
+# Variable NAMES are mw-dashboard-local: VITE_LIVE_ABLY_AUTH_URL has no counterpart
+# in MemeBattles (the /live page on MemeBattles hits same-origin /api/ably/token),
+# but mw-dashboard must point at MemeBattles' deployed host explicitly.
+VITE_LIVE_ABLY_AUTH_URL=https://<memebattles-prod-host>/api/ably/token
 VITE_LIVE_CHAT_CHANNEL=live:launch-party
 VITE_MUX_PLAYBACK_ID=
 ```
@@ -180,6 +183,8 @@ VITE_MUX_PLAYBACK_ID=
 ### 6.1 CORS allow-list on `/api/ably/token`
 
 **Prerequisite already done (commit `6a67883`):** `frontend/api/ably/token.js` now supports `scope=live&channel=<name>` and mints tokens with `subscribe`, `publish`, `presence`, `history` capabilities for `live:<safe-slug>` channels. This was a blocker for the existing MemeBattles `/live` chat too — without it, the token endpoint returned 400 for the live channel.
+
+**Channel slug constraint:** the regex in the endpoint is `^live:[a-z0-9._-]+$`. Channel names must be lowercase, with only ASCII alphanumerics, dots, hyphens, and underscores in the slug. Examples that pass: `live:launch-party`, `live:ama-2026-05-21`, `live:weekly.shill`. Examples that fail (and return 400): `live:Launch-Party` (uppercase), `live:ama 21` (space), `live:`. Pick conformant names when configuring `VITE_LIVE_CHAT_CHANNEL` on either repo.
 
 **Still needed for mw-dashboard:**
 
@@ -221,6 +226,7 @@ Add a `mutedUntil` prop:
   - temp: `"Muted — wait X more"` with countdown (live-updating)
 - On the moment of transition from "not muted" → "muted", fire a sonner toast: `"You have been muted for X"` or `"You have been muted (perma)"`. Use a small `useEffect` watching for the transition (similar to the stream-interruption toast already in `LivestreamPlayer.tsx`).
 - On the reverse transition (muted → unmuted, whether by explicit unmute or temp expiry), fire a softer toast: `"You can chat again."`. Same `useEffect` pattern as above.
+- **Initial-mount guard:** track the previous mute state in a `useRef` and only fire toasts when the value transitions from one stable state to another. If a viewer reloads the page while already muted (history seed populates the mute on mount), no toast should fire — the user already knows they're muted, repeating it is noise.
 
 ### 6.5 Type updates
 
