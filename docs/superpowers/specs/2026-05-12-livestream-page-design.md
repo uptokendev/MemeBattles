@@ -20,28 +20,28 @@ Ship a `/live` page in the MemeBattles frontend so connected wallet users can wa
 
 ## 3. Provider & infrastructure
 
-**Live provider:** Livepeer Studio
-- RTMP ingest from OBS: `rtmp://rtmp.livepeer.com/live` + stream key
-- Playback via `@livepeer/react` SDK — defaults to WebRTC (sub-second), transparently falls back to LL-HLS (~3–5s)
-- No API key needed client-side for public playback info
+**Live provider:** Mux
+- RTMP ingest from OBS: `rtmps://global-live.mux.com:443/app` + per-stream key from the Mux dashboard
+- Playback via `@mux/mux-player-react` — `<MuxPlayer streamType="live" playbackId={id} />` — automatic LL-HLS (~3s latency), built-in recovery and controls
+- No client-side API key needed for public playback IDs
 
-**Cost estimate (200 viewers × 2hr launch):** ~$5–10. Livepeer transcoding ~$0.005/min; egress included.
+**Cost estimate (200 viewers × 2hr launch):** ~$25–30 (no monthly minimum). Live encoding ~$0.04/min × 120 = $4.80; delivery ~$0.00096/min × 200 × 120 = $23.04.
 
-**Why Livepeer (vs alternatives considered):**
-- Bunny.net: officially does not support RTMP ingest as of 2026-05-12 ("we are exploring what we can offer in the future")
-- Cloudflare Stream: managed, $24 for the event, lowest risk — runner-up
-- Mux: best React DX, ~$17–25, runner-up for polish
-- Livepeer: thematically on-brand (crypto-native, fits MemeBattles aesthetic), cheapest managed option, sub-3s latency. Stream provisioning verified working on 2026-05-12.
+**Why Mux (vs alternatives considered):**
+- **Livepeer:** initially planned, but the Growth tier (the only tier supporting >30 concurrent viewers) carries a $100/mo minimum spend. Not worth it for a one-off launch. Free Sandbox caps at 30 viewers and doesn't fit a launch audience.
+- **Bunny.net:** officially does not support RTMP ingest as of 2026-05-12 ("we are exploring what we can offer in the future").
+- **Cloudflare Stream:** ~$24 for the event, comparable cost. Mux wins on React DX (`@mux/mux-player-react` is the best player React component in the market — single declarative component, themeable, built-in live recovery).
+- **Mux:** no minimum spend, ~$25–30 for the event, sub-3s latency, best-in-class React SDK. Worth the small premium over Cloudflare for launch-night reliability and DX.
 
 ## 4. Architecture
 
 ```
 OBS (one machine)
-   │  RTMP push
+   │  RTMPS push
    ▼
-rtmp://rtmp.livepeer.com/live  (Livepeer Studio: transcode + global edge)
+rtmps://global-live.mux.com:443/app  (Mux: transcode + global edge)
    │
-   │  HLS / WebRTC playback
+   │  LL-HLS playback (~3s glass-to-glass)
    ▼
 <LivestreamPlayer /> inside /live page in MemeBattles frontend
    │
@@ -82,24 +82,41 @@ frontend/src/
 
 ## 7. Player
 
-Uses `@livepeer/react/player` composable primitives (`Player.Root`, `Player.Container`, `Player.Video`, `Player.Controls`).
+Uses `@mux/mux-player-react` — a single declarative component that wraps Mux's web-component player.
+
+```tsx
+// LivestreamPlayer.tsx (sketch)
+import MuxPlayer from "@mux/mux-player-react";
+
+<MuxPlayer
+  streamType="live"
+  playbackId={playbackId}
+  metadata={{ video_title: "MemeBattles Launch Party" }}
+  autoPlay
+  muted={false}
+  accentColor="#<tactical-theme-color>"
+  className="aspect-video w-full rounded-md bg-black"
+/>
+```
+
+**Live status polling for the offline placeholder swap:**
 
 ```ts
-// LivestreamPlayer.tsx (sketch)
-const { data: src } = useQuery({
-  queryKey: ["livepeer-playback", playbackId],
+const { data: status } = useQuery({
+  queryKey: ["mux-playback-status", playbackId],
   queryFn: async () => {
-    const res = await fetch(`https://livepeer.studio/api/playback/${playbackId}`);
-    return getSrc(await res.json());
+    // HEAD request to the HLS manifest — 200 = live, 412/404 = offline
+    const res = await fetch(`https://stream.mux.com/${playbackId}.m3u8`, { method: "HEAD" });
+    return res.ok;
   },
-  refetchInterval: 15_000, // detect offline→live transition without page refresh
+  refetchInterval: 10_000,
 });
 ```
 
-- `src` is `null` while the stream is offline → render `<PlayerOffline />`
-- WebRTC negotiation is automatic, LL-HLS fallback is automatic
-- Controls themed via Tailwind classes to match the tactical-command-ui aesthetic
-- Aspect ratio fixed 16:9; black background prevents player flicker on mode swap
+- When `status === false` (manifest not available) → render `<PlayerOffline />` instead of `<MuxPlayer />`
+- When `status === true` → render `<MuxPlayer />`; Mux Player handles its own LL-HLS, recovery, and quality selection automatically
+- The `streamType="live"` flag tells Mux Player to optimize for live-stream UX (no scrubber on the timeline by default, live indicator built in)
+- Theme via `accentColor` plus CSS custom properties Mux exposes (e.g. `--media-primary-color`, `--media-control-background`) to match tactical-command-ui
 
 ## 8. Chat
 
@@ -192,7 +209,7 @@ Source of truth is the same TanStack Query poll that drives the player.
 Add to `.env.example` and document in the repo's existing env-var docs:
 
 ```
-VITE_LIVEPEER_PLAYBACK_ID=<playback ID from Livepeer Studio dashboard>
+VITE_MUX_PLAYBACK_ID=<playback ID from the Mux dashboard, "Live Streams" → stream → Playback ID>
 VITE_LIVE_CHAT_CHANNEL=live:launch-party
 VITE_LIVE_PAGE_ENABLED=true
 VITE_LIVE_CHAT_MODERATORS=0x...,0x...     # comma-separated wallet addresses
@@ -223,7 +240,7 @@ The Ably API/auth wiring uses whatever pattern is already in place for token-com
 
 Add to `frontend/package.json`:
 
-- `@livepeer/react` — current SDK with composable Player primitives
+- `@mux/mux-player-react` — declarative React wrapper around Mux's `<mux-player>` web component (live + VOD, LL-HLS, recovery, theming)
 
 Already present (no install needed):
 
@@ -243,8 +260,8 @@ Already present (no install needed):
 
 **Manual launch-night checklist (more valuable than e2e for a one-off):**
 
-- T-30 min: stream key validated in OBS; `/live` shows offline state on production; env vars confirmed deployed
-- T-5 min: OBS Start Streaming → `/live` flips to live state within ~15s; latency feels <5s
+- T-30 min: Mux stream key validated in OBS (RTMPS `rtmps://global-live.mux.com:443/app` + stream key); `/live` shows offline state on production; env vars confirmed deployed; Mux dashboard "Live Streams" page shows the stream idle
+- T-5 min: OBS Start Streaming → Mux dashboard shows stream Active within ~5s → `/live` flips to live state within ~10s; latency feels ~3s
 - Phone on cellular: confirms CDN delivery from a non-office network
 - Incognito with no wallet: confirms gate works
 - Two wallets in different browsers: chat round-trips in real time
@@ -267,8 +284,9 @@ Already present (no install needed):
 
 | Decision | Why |
 |---|---|
-| Livepeer over Bunny.net | Bunny does not support RTMP live ingest as of today |
-| Livepeer over Cloudflare/Mux | On-brand for crypto-native audience; cheaper at low scale; user already provisioned stream successfully |
+| Mux over Bunny.net | Bunny does not support RTMP live ingest as of today |
+| Mux over Livepeer | Livepeer's Growth tier carries a $100/mo minimum spend; Free Sandbox caps at 30 viewers. Mux has no minimum and ~$25 actual cost for the event. |
+| Mux over Cloudflare Stream | Comparable cost (~$25 vs ~$24); Mux wins on React DX (`@mux/mux-player-react` is the best-in-class player component, less code in the page). Worth the ~$1 premium. |
 | Native player vs YouTube/Twitch embed | User asked for native MemeBattles experience |
 | Wallet-gated vs fully public | User answered: wallet-connected only |
 | Generic offline placeholder vs countdown | User answered: generic — start time is flexible |
