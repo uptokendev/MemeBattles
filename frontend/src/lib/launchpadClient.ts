@@ -756,23 +756,46 @@ try {
     [signer, activeChainId]
   );
 
-  return {
-    fetchCampaignsCount,
-    fetchCampaignPage,
-    fetchCampaigns,
-    fetchCampaignLogoURI,
-    fetchCampaignMetrics,
-    fetchCampaignCardStats,
-    fetchCampaignActivity,
-    fetchCampaignSummary,
-    createCampaign,
-    buyTokens,
-    sellTokens,
-    finalizeCampaign,
+  // Memoize the return object so consumers can put `useLaunchpad()` results
+  // (or destructured callbacks) in effect/callback dependency arrays without
+  // triggering re-runs on every render. Every individual field below is already
+  // useMemo/useCallback-stable; this just stabilizes the wrapper identity.
+  return useMemo(
+    () => ({
+      fetchCampaignsCount,
+      fetchCampaignPage,
+      fetchCampaigns,
+      fetchCampaignLogoURI,
+      fetchCampaignMetrics,
+      fetchCampaignCardStats,
+      fetchCampaignActivity,
+      fetchCampaignSummary,
+      createCampaign,
+      buyTokens,
+      sellTokens,
+      finalizeCampaign,
 
-    // keeping these around in case you need them later
-    walletProvider,
-    activeChainId,
-    factoryAddress,
-  };
+      // keeping these around in case you need them later
+      walletProvider,
+      activeChainId,
+      factoryAddress,
+    }),
+    [
+      fetchCampaignsCount,
+      fetchCampaignPage,
+      fetchCampaigns,
+      fetchCampaignLogoURI,
+      fetchCampaignMetrics,
+      fetchCampaignCardStats,
+      fetchCampaignActivity,
+      fetchCampaignSummary,
+      createCampaign,
+      buyTokens,
+      sellTokens,
+      finalizeCampaign,
+      walletProvider,
+      activeChainId,
+      factoryAddress,
+    ],
+  );
 }
