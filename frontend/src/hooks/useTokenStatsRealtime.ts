@@ -3,6 +3,7 @@ import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
+const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
 
 export type TokenStatsRealtime = {
   lastPriceBnb: number | null;
@@ -31,7 +32,6 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
   const [stats, setStats] = useState<TokenStatsRealtime | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const initialLoadedRef = useRef(false);
 
   const cid = useMemo<SupportedChainId>(() => getActiveChainId(Number(chainId ?? 97)), [chainId]);
@@ -77,22 +77,21 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
     }
   }, [enabled, campaignAddress, url]);
 
-  // Initial + reconcile polling (lightweight)
   useEffect(() => {
     const ac = new AbortController();
-    setLoading(true);
     setError(null);
-    initialLoadedRef.current = false;
+    if (!initialLoadedRef.current) setLoading(true);
     pull(ac.signal);
-    if (!enabled || !campaignAddress) return () => ac.abort();
-    const t = setInterval(() => pull(ac.signal), 15_000);
+
+    if (!enabled || !campaignAddress || !ENABLE_TOKEN_POLLING) return () => ac.abort();
+
+    const t = setInterval(() => pull(ac.signal), 60_000);
     return () => {
       clearInterval(t);
       ac.abort();
     };
   }, [enabled, campaignAddress, cid, pull]);
 
-  // Ably live patches (shared channel; avoids multiple WebSockets per TokenDetails page)
   const ably = useAblyTokenChannel({ enabled: enabled && !!campaignAddress, chainId: cid, campaignAddress });
   useEffect(() => {
     if (!enabled || !campaignAddress) return;

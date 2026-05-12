@@ -57,6 +57,12 @@ import {
   recruiterWalletSummary,
   recruiters,
 } from "./dev-fix/attribution.js";
+import {
+  recruiterAuthNonce,
+  recruiterAuthVerify,
+  recruiterLogout,
+  recruiterPortal,
+} from "./dev-fix/recruiter-portal.js";
 import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "./dev-fix/route-auth.js";
 import {
   airdropWinners,
@@ -107,7 +113,7 @@ function isAllowedOrigin(origin) {
     const { hostname } = new URL(origin);
     const host = hostname.toLowerCase();
     if (host === "memewar.zone" || host === "www.memewar.zone" || host.endsWith(".memewar.zone")) return true;
-    if (host.endsWith(".netlify.app") && host.includes("memewar")) return true;
+    if (host.endsWith(".netlify.app")) return true;
   } catch {}
   return false;
 }
@@ -118,6 +124,7 @@ app.use((req, res, next) => {
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Credentials", "true");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token");
@@ -219,6 +226,10 @@ router.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 router.all("/recruiter-routing/status", wrap(routingStatus));
 router.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 router.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
+router.all("/recruiter-auth-nonce", wrap(recruiterAuthNonce));
+router.all("/recruiter-auth-verify", wrap(recruiterAuthVerify));
+router.all("/recruiter-portal", wrap(recruiterPortal));
+router.all("/recruiter-logout", wrap(recruiterLogout));
 router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));

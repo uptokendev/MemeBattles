@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
-import CommandCenter from "./Profile";
 import PublicProfile from "./PublicProfile";
 
 function normalizeWallet(value?: string | null): string | null {
@@ -15,11 +14,6 @@ function sameWallet(a?: string | null, b?: string | null): boolean {
   const aa = normalizeWallet(a);
   const bb = normalizeWallet(b);
   return Boolean(aa && bb && aa === bb);
-}
-
-function shortenWallet(addr?: string | null) {
-  if (!addr) return "";
-  return addr.length > 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
 }
 
 function openWalletModal(wallet: any) {
@@ -66,75 +60,6 @@ function InvalidPublicProfile({ identifier }: { identifier: string }) {
   );
 }
 
-function CommandCenterShell({ walletAddress }: { walletAddress: string }) {
-  const navigate = useNavigate();
-
-  return (
-    <div className="mx-auto w-full max-w-6xl space-y-4">
-      <section className="rounded-3xl border border-border/50 bg-card/35 p-5 shadow-2xl backdrop-blur-md md:p-7">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="mb-2 inline-flex rounded-full border border-accent/30 bg-accent/10 px-3 py-1 font-retro text-[10px] uppercase tracking-[0.18em] text-accent">
-              Owner Workspace
-            </div>
-            <h1 className="font-retro text-2xl text-foreground md:text-4xl">Command Center</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
-              Your private operating layer for balances, rewards, coins, drafts, recruiter tools, squad tools, notifications, and settings.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border/40 bg-background/30 px-3 py-1 font-mono">
-                {shortenWallet(walletAddress)}
-              </span>
-              <span className="rounded-full border border-border/40 bg-background/30 px-3 py-1">Private owner tools</span>
-              <span className="rounded-full border border-border/40 bg-background/30 px-3 py-1">Public profile separated</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row lg:flex-col xl:flex-row">
-            <Button
-              variant="secondary"
-              className="font-retro"
-              onClick={() => navigate(`/profile/${encodeURIComponent(walletAddress)}`)}
-            >
-              View Public Profile
-            </Button>
-            <Button className="font-retro" onClick={() => navigate("/create")}>Create Coin</Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <button
-          type="button"
-          onClick={() => navigate("/recruiter-dashboard")}
-          className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
-        >
-          <div className="font-retro text-sm text-foreground">Recruiter Dashboard</div>
-          <div className="mt-2 text-xs text-muted-foreground">Open private recruiter tools, claims, and attribution views.</div>
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate("/squad-dashboard")}
-          className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
-        >
-          <div className="font-retro text-sm text-foreground">Squad Dashboard</div>
-          <div className="mt-2 text-xs text-muted-foreground">Open private squad status, member, and reward surfaces.</div>
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate("/airdrops")}
-          className="rounded-2xl border border-border/50 bg-card/30 p-4 text-left transition hover:border-accent/50 hover:bg-card/45"
-        >
-          <div className="font-retro text-sm text-foreground">Warzone Airdrops</div>
-          <div className="mt-2 text-xs text-muted-foreground">Check public airdrop overview and winner surfaces.</div>
-        </button>
-      </section>
-
-      <CommandCenter />
-    </div>
-  );
-}
-
 export default function ProfilePage() {
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams] = useSearchParams();
@@ -160,7 +85,7 @@ export default function ProfilePage() {
       return <ConnectCommandCenterPrompt onConnect={() => openWalletModal(anyWallet)} />;
     }
 
-    return <CommandCenterShell walletAddress={accountWallet} />;
+    return <Navigate to={`/profile/${accountWallet}/command`} replace />;
   }
 
   if (!profileWallet) {

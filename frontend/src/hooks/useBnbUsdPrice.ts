@@ -9,6 +9,7 @@ type BnbUsdState = {
 
 const STORAGE_KEY = "launchit:bnbUsdPrice:v1";
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const ENABLE_BNB_USD_POLLING = String(import.meta.env.VITE_ENABLE_BNB_USD_POLLING || "").trim() === "1";
 
 function readCache(): { price: number; updatedAt: number } | null {
   try {
@@ -36,19 +37,19 @@ function writeCache(price: number) {
 }
 
 /**
- * Fetches BNB/USD reference price for UI conversions (e.g., Market Cap in USD).
- * Source: CoinGecko simple price endpoint.
+ * Fetches BNB/USD reference price for UI conversions.
  *
- * Notes:
- * - Best-effort utility for display purposes only.
- * - Uses localStorage caching to reduce request volume.
+ * Default behavior is one fetch when cache is stale. Background polling is
+ * disabled unless VITE_ENABLE_BNB_USD_POLLING=1 to avoid visible page loading
+ * pulses on token pages.
  */
 export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_000): BnbUsdState {
   const cached = useMemo(() => (typeof window !== "undefined" ? readCache() : null), []);
+  const cacheIsFresh = Boolean(cached && Date.now() - cached.updatedAt < CACHE_TTL_MS);
 
   const [price, setPrice] = useState<number | null>(cached?.price ?? null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(cached?.updatedAt ?? null);
-  const [loading, setLoading] = useState<boolean>(enabled && !(cached && Date.now() - cached.updatedAt < CACHE_TTL_MS));
+  const [loading, setLoading] = useState<boolean>(enabled && !cacheIsFresh);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_0
     let cancelled = false;
     let intervalId: number | undefined;
 
-    const fetchPrice = async () => {
+    const fetchPrice = async (showLoading: boolean) => {
       try {
         setError(null);
 
@@ -71,7 +72,7 @@ export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_0
           return;
         }
 
-        setLoading(true);
+        if (showLoading) setLoading(true);
 
         const res = await fetch(
           "https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd",
@@ -99,14 +100,17 @@ export function useBnbUsdPrice(enabled: boolean = true, refreshMs: number = 60_0
       }
     };
 
-    fetchPrice();
-    intervalId = window.setInterval(fetchPrice, refreshMs);
+    fetchPrice(!cacheIsFresh);
+
+    if (ENABLE_BNB_USD_POLLING) {
+      intervalId = window.setInterval(() => fetchPrice(false), refreshMs);
+    }
 
     return () => {
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [enabled, refreshMs]);
+  }, [enabled, refreshMs, cacheIsFresh]);
 
   return { price, loading, error, updatedAt };
 }

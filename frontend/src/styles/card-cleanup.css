@@ -1,0 +1,90 @@
+/*
+  Generic card cleanup
+
+  Keep the sliced app frame and launchpad promotional/card art, but remove the
+  heavy card-image treatment from ordinary panels such as Create, Draft Edit,
+  forms, and utility cards. Normal cards now use the same corner-line border
+  language as the main featured-campaign container.
+*/
+
+.mwz-card {
+  --mwz-card-clean-cut: var(--mwz-cut, 14px);
+  border: 1px solid var(--mwz-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012) 28%, transparent 100%),
+    radial-gradient(circle at 22% 0%, rgba(var(--mwz-orange-rgb), 0.055), transparent 34%),
+    linear-gradient(145deg, rgba(18, 21, 20, 0.94), rgba(6, 8, 8, 0.97)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.72),
+    var(--mwz-panel-shadow) !important;
+  clip-path: polygon(
+    0 var(--mwz-card-clean-cut),
+    var(--mwz-card-clean-cut) 0,
+    calc(100% - var(--mwz-card-clean-cut)) 0,
+    100% var(--mwz-card-clean-cut),
+    100% calc(100% - var(--mwz-card-clean-cut)),
+    calc(100% - var(--mwz-card-clean-cut)) 100%,
+    var(--mwz-card-clean-cut) 100%,
+    0 calc(100% - var(--mwz-card-clean-cut))
+  ) !important;
+}
+
+.mwz-card::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 1px 34px no-repeat !important;
+  opacity: 0.82 !important;
+}
+
+.mwz-card::after {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.018) 0px,
+    rgba(255, 255, 255, 0.018) 1px,
+    transparent 1px,
+    transparent 5px
+  ) !important;
+  opacity: 0.14 !important;
+  mix-blend-mode: screen;
+}
+
+/* Keep campaign/feature cards and battle-league/recruiter promo cards on the launchpad art treatment. */
+.mwz-launchpad-page .mwz-card {
+  --mwz-card-clean-cut: var(--mwz-card-cut, 13px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012) 26%, transparent 100%),
+    radial-gradient(circle at 22% 0%, rgba(var(--mwz-orange-rgb), 0.08), transparent 36%),
+    linear-gradient(145deg, rgba(18, 21, 20, 0.97), rgba(6, 8, 8, 0.98)) !important;
+}
+
+.mwz-launchpad-page .mwz-card::before {
+  inset: 0 !important;
+  background:
+    var(--mwz-card-frame-image) center / 100% 100% no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right top / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left bottom / 1px 34px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 34px 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) right bottom / 1px 34px no-repeat !important;
+  opacity: var(--mwz-card-frame-opacity, 0.45) !important;
+}

@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   addDraftComment,
+  armDraftNotifications,
   fetchDraftComments,
   fetchPrepareDraft,
   followDraft,
@@ -531,6 +532,8 @@ export default function Prepare() {
   const [loading, setLoading] = useState(true);
   const [followCount, setFollowCount] = useState<number | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [armingNotification, setArmingNotification] = useState(false);
+  const [followingDraft, setFollowingDraft] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -559,20 +562,55 @@ export default function Prepare() {
   const promo = bundle?.promotion;
   const pop = bundle?.popularity;
 
+  const refreshPrepareBundle = async () => {
+    const data = await fetchPrepareDraft(slug, wallet.account);
+    setBundle(data);
+    setFollowCount(data.popularity.follows);
+    return data;
+  };
+
+  const handleArmNotification = async () => {
+    if (!draft) return;
+
+    if (!wallet.account) {
+      toast.error("Connect wallet to arm notifications.");
+      return;
+    }
+
+    setArmingNotification(true);
+
+    try {
+      await armDraftNotifications(draft.id, wallet.account);
+      await refreshPrepareBundle().catch(() => null);
+      window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
+      toast.success("Notifications armed for this draft.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to arm notifications.");
+    } finally {
+      setArmingNotification(false);
+    }
+  };
+
   const handleFollow = async () => {
     if (!draft) return;
 
     if (!wallet.account) {
-      toast.error("Connect wallet to watchlist this draft.");
+      toast.error("Connect wallet to follow this draft.");
       return;
     }
+
+    setFollowingDraft(true);
 
     try {
       const result = await followDraft(draft.id, wallet.account);
       setFollowCount(result.followCount);
-      toast.success("Draft added to your watchlist.");
+      await refreshPrepareBundle().catch(() => null);
+      window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
+      toast.success("Draft followed.");
     } catch (err: any) {
-      toast.error(err?.message || "Failed to watchlist draft");
+      toast.error(err?.message || "Failed to follow draft.");
+    } finally {
+      setFollowingDraft(false);
     }
   };
 
@@ -662,16 +700,21 @@ export default function Prepare() {
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Button
-              onClick={handleFollow}
+              onClick={handleArmNotification}
+              disabled={armingNotification}
               className="mwz-button mwz-button-orange h-13 px-6 font-retro text-base"
             >
               <Bell className="mr-2 h-4 w-4" />
-              Arm notification
+              {armingNotification ? "Arming..." : "Arm notification"}
             </Button>
 
-            <Button onClick={handleFollow} className="mwz-button h-13 px-6 font-retro text-base">
+            <Button
+              onClick={handleFollow}
+              disabled={followingDraft}
+              className="mwz-button h-13 px-6 font-retro text-base"
+            >
               <Star className="mr-2 h-4 w-4" />
-              Watchlist
+              {followingDraft ? "Following..." : "Follow"}
             </Button>
 
             <Button
@@ -681,17 +724,6 @@ export default function Prepare() {
             >
               <Share2 className="mr-2 h-4 w-4" />
               Generate share card
-            </Button>
-
-            <Button
-              onClick={() =>
-                window.open(buildShareCardUrl(bundle, true), "_blank", "noopener,noreferrer")
-              }
-              variant="outline"
-              className="mwz-button h-13 px-6 font-retro text-base"
-            >
-              <ImageDown className="mr-2 h-4 w-4" />
-              Download PNG
             </Button>
           </div>
 
@@ -870,10 +902,11 @@ export default function Prepare() {
                 placeholder="wallet or call sign"
               />
               <Button
-                onClick={handleFollow}
+                onClick={handleArmNotification}
+                disabled={armingNotification}
                 className="mwz-button mwz-button-orange h-12 px-6 font-retro"
               >
-                Arm me
+                {armingNotification ? "Arming..." : "Arm me"}
               </Button>
             </div>
           </div>

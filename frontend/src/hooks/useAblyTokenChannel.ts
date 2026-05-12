@@ -1,31 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 
-// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
+// Token realtime belongs to the realtime-indexer Railway service.
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
-const ENABLE_LOCAL_ABLY = String(import.meta.env.VITE_ENABLE_LOCAL_ABLY || "").trim() === "1";
-
-function isLoopbackHost(hostname: string): boolean {
-  const normalized = String(hostname || "").trim().toLowerCase();
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
-}
-
-function isLocalBrowser(): boolean {
-  if (typeof window === "undefined") return false;
-  return isLoopbackHost(window.location.hostname);
-}
-
-function shouldDisableLocalAbly(): boolean {
-  // In Vite local dev, missing server-side ABLY_API_KEY creates noisy 500s from
-  // /api/ably/token. Keep localhost stable unless realtime is explicitly enabled
-  // or an explicit auth base is configured.
-  return isLocalBrowser() && !ABLY_AUTH_BASE && !ENABLE_LOCAL_ABLY;
-}
 
 function getAuthBase() {
-  if (shouldDisableLocalAbly()) return "";
-
+  if (REALTIME_API_BASE && /^https?:\/\//i.test(REALTIME_API_BASE)) {
+    return REALTIME_API_BASE.replace(/\/$/, "");
+  }
   if (ABLY_AUTH_BASE && /^https?:\/\//i.test(ABLY_AUTH_BASE)) {
     return ABLY_AUTH_BASE.replace(/\/$/, "");
   }
@@ -44,9 +27,6 @@ type Entry = {
   closeTimer: any | null;
 };
 
-// Cache Ably connections per (chainId,campaign) to prevent multiple WebSockets
-// being opened/closed within the same page. This eliminates the "reload" feel
-// and prevents "WebSocket is closed before the connection is established" noise.
 const CACHE = new Map<string, Entry>();
 
 function channelNameFor(chainId: number, campaign: string) {
@@ -78,15 +58,12 @@ function acquire(chainId: number, campaign: string) {
   const chName = channelNameFor(chainId, campaign);
   const channel = client.channels.get(chName);
 
-  // Rewind a short window so reconnects pick up recent updates.
-  // This is safe even if publish frequency is low.
   try {
     channel.setOptions({ params: { rewind: "120s" } });
   } catch {
     // ignore
   }
 
-  // Attach eagerly
   try {
     channel.attach();
   } catch {
@@ -111,8 +88,6 @@ function release(key: string) {
   entry.refs -= 1;
   if (entry.refs > 0) return;
 
-  // Delay close slightly to avoid rapid open/close cycles during React rerenders
-  // and route transitions, which can trigger "closed before established".
   entry.closeTimer = setTimeout(() => {
     try {
       entry.channel.unsubscribe();
@@ -141,53 +116,19 @@ export function useAblyTokenChannel(opts: {
   }, [enabled, chainId, campaignAddress]);
 
   const [entry, setEntry] = useState<Entry | null>(null);
-  const [connectionState, setConnectionState] = useState<string>("initialized");
 
   useEffect(() => {
     if (!enabled || !campaignAddress) {
       setEntry(null);
-      setConnectionState("disabled");
-      return;
-    }
-    if (shouldDisableLocalAbly()) {
-      setEntry(null);
-      setConnectionState("disabled_local_dev");
       return;
     }
     if (!getAuthBase()) {
       setEntry(null);
-      setConnectionState("missing_base");
       return;
     }
     const e = acquire(chainId, campaignAddress);
     setEntry(e);
-
-    try {
-      setConnectionState(e.client.connection.state);
-    } catch {
-      // ignore
-    }
-
-    const onConn = () => {
-      try {
-        setConnectionState(e.client.connection.state);
-      } catch {
-        // ignore
-      }
-    };
-
-    try {
-      e.client.connection.on(onConn);
-    } catch {
-      // ignore
-    }
-
     return () => {
-      try {
-        e.client.connection.off(onConn);
-      } catch {
-        // ignore
-      }
       release(e.key);
     };
   }, [enabled, chainId, campaignAddress]);
@@ -199,8 +140,5 @@ export function useAblyTokenChannel(opts: {
     ready: Boolean(entry && entry.client && entry.channel),
     missingBase: enabled && !!campaignAddress && !getAuthBase(),
     cacheKey: key,
-    connectionState,
-    isConnected: connectionState === "connected",
-    disabledLocalDev: connectionState === "disabled_local_dev",
   };
 }

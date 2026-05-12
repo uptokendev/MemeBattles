@@ -75,11 +75,29 @@ function validUntilFromDeadline(deadline) {
   return new Date(deadline * 1000).toISOString();
 }
 
+function firstCsvValue(value) {
+  return String(value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)[0] || "";
+}
+
 function getRpcUrl(chainId) {
-  const perChain = String(process.env[`BSC_RPC_HTTP_${chainId}`] || process.env[`VITE_PUBLIC_RPC_${chainId}`] || "").trim();
-  if (perChain) return perChain.split(",").map((s) => s.trim()).filter(Boolean)[0] || "";
-  if (chainId === 56) return String(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC || "").trim();
-  if (chainId === 97) return String(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC || "").trim();
+  const perChain =
+    process.env[`BSC_RPC_HTTP_${chainId}`] ||
+    process.env[`VITE_PUBLIC_RPC_${chainId}`];
+
+  const perChainFirst = firstCsvValue(perChain);
+  if (perChainFirst) return perChainFirst;
+
+  if (chainId === 56) {
+    return firstCsvValue(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC);
+  }
+
+  if (chainId === 97) {
+    return firstCsvValue(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC);
+  }
+
   return "";
 }
 

@@ -2,12 +2,45 @@ import { verifyMessage } from "ethers";
 import { apiFetch, apiUrl } from "@/lib/apiBase";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 
+const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
+const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
+const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
+const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
+const CONNECTED_OWNER_ACTIONS = new Set<DraftAuthAction>([
+  "read_draft",
+  "save_promotion",
+  "publish_promotion",
+  "archive_draft",
+  "deploy_draft",
+]);
+
+function buildConnectedWalletDraftAuth(input: {
+  action: DraftAuthAction;
+  walletAddress: string;
+  chainId: number;
+  draftId?: string | null;
+}): DraftActionAuth {
+  return {
+    action: input.action,
+    walletAddress: normalizeWallet(input.walletAddress),
+    chainId: Number(input.chainId),
+    draftId: input.draftId || null,
+    nonce: "",
+    message: "",
+    signature: "",
+  };
+}
+
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
   return json as any;
+}
+
+async function readResponseJson(res: Response) {
+  return res.json().catch(() => ({}));
 }
 
 function query(params: Record<string, string | number | null | undefined>) {
@@ -57,7 +90,76 @@ async function fetchNonce(chainId: number, walletAddress: string) {
     throw new Error(String(json?.error || json?.message || "Could not create wallet auth nonce."));
   }
 
-  return String(json.nonce);
+  return {
+    nonce: String(json.nonce),
+    expiresAt: json?.expiresAt ? String(json.expiresAt) : null,
+  };
+}
+
+function ownerSessionCacheKey(input: { walletAddress: string; chainId: number; draftId: string }) {
+  return `${OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
+}
+
+function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(ownerSessionCacheKey(input));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { auth?: DraftActionAuth; cachedAt?: number; expiresAt?: string | null };
+    const auth = parsed?.auth;
+    if (!auth) return null;
+
+    const now = Date.now();
+    const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+    const cachedAt = Number(parsed.cachedAt || 0);
+
+    if (auth.action !== OWNER_SESSION_ACTION) return null;
+    if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
+    if (Number(auth.chainId) !== Number(input.chainId)) return null;
+    if (String(auth.draftId || "") !== input.draftId) return null;
+    if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
+    if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
+
+    return auth;
+  } catch {
+    return null;
+  }
+}
+
+function cacheOwnerSession(input: {
+  auth: DraftActionAuth;
+  walletAddress: string;
+  chainId: number;
+  draftId: string;
+  expiresAt: string | null;
+}) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      ownerSessionCacheKey(input),
+      JSON.stringify({ auth: input.auth, cachedAt: Date.now(), expiresAt: input.expiresAt })
+    );
+  } catch {
+    // Ignore storage failures. The user can still sign again.
+  }
+}
+
+function clearCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.removeItem(ownerSessionCacheKey(input));
+  } catch {
+    // Ignore storage failures. The user can still sign again.
+  }
+}
+
+function shouldRetryWithFreshOwnerSession(error: any) {
+  const text = String(error?.error || error?.message || "").toLowerCase();
+  return text.includes("nonce not found") || text.includes("nonce already used") || text.includes("nonce expired") || text.includes("please sign again");
 }
 
 function verifySignatureWallet(message: string, signature: string, walletAddress: string) {
@@ -305,6 +407,8 @@ async function signDraftActionWithKnownChain(input: {
   draftId: string;
   walletAddress: string;
   chainId: number;
+  useOwnerSession?: boolean;
+  forceNewOwnerSession?: boolean;
 }): Promise<DraftActionAuth> {
   const walletAddress = normalizeWallet(input.walletAddress);
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
@@ -312,11 +416,39 @@ async function signDraftActionWithKnownChain(input: {
   const chainId = Number(input.chainId);
   if (!Number.isFinite(chainId) || chainId <= 0) throw new Error("Invalid draft chain id. Refresh and try again.");
 
-  const nonce = await fetchNonce(chainId, walletAddress);
-  const message = buildDraftAuthMessage({ action: input.action, walletAddress, chainId, nonce, draftId: input.draftId });
+  // Match the backend migration behavior: once the creator wallet is connected,
+  // owner-only draft actions do not need another personal_sign prompt.
+  if (input.useOwnerSession || CONNECTED_OWNER_ACTIONS.has(input.action)) {
+    return buildConnectedWalletDraftAuth({
+      action: input.action,
+      draftId: input.draftId,
+      walletAddress,
+      chainId,
+    });
+  }
+
+  if (input.useOwnerSession) {
+    const cacheInput = { walletAddress, chainId, draftId: input.draftId };
+    if (!input.forceNewOwnerSession) {
+      const cached = readCachedOwnerSession(cacheInput);
+      if (cached) return cached;
+    } else {
+      clearCachedOwnerSession(cacheInput);
+    }
+  }
+
+  const actionToSign = input.useOwnerSession ? OWNER_SESSION_ACTION : input.action;
+  const { nonce, expiresAt } = await fetchNonce(chainId, walletAddress);
+  const message = buildDraftAuthMessage({ action: actionToSign, walletAddress, chainId, nonce, draftId: input.draftId });
   const signature = await signWithInjectedWallet(message, walletAddress);
 
-  return { action: input.action, walletAddress, chainId, draftId: input.draftId, nonce, message, signature };
+  const auth = { action: actionToSign, walletAddress, chainId, draftId: input.draftId, nonce, message, signature };
+
+  if (input.useOwnerSession) {
+    cacheOwnerSession({ auth, walletAddress, chainId, draftId: input.draftId, expiresAt });
+  }
+
+  return auth;
 }
 
 async function signPrepareEngagement(input: {
@@ -328,6 +460,14 @@ async function signPrepareEngagement(input: {
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
   const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
   return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId: Number(bundle.draft.chainId) });
+}
+
+async function postPrivateRead(url: string, auth: DraftActionAuth) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
 }
 
 async function retryPrivateReadWithAuth(
@@ -343,13 +483,25 @@ async function retryPrivateReadWithAuth(
   const draftId = String(json?.draftId || fallbackDraftId || "");
   if (!draftId) throw new Error("Private draft auth could not identify the draft. Refresh and try again.");
 
-  const auth = await signDraftActionWithKnownChain({ action: "read_draft", draftId, walletAddress: wallet, chainId });
+  const auth = await signDraftActionWithKnownChain({ action: "read_draft", draftId, walletAddress: wallet, chainId, useOwnerSession: true });
+  let res = await postPrivateRead(url, auth);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ auth }),
-  });
+  if (!res.ok) {
+    const errorJson = await readResponseJson(res);
+    if (res.status === 401 && shouldRetryWithFreshOwnerSession(errorJson)) {
+      const freshAuth = await signDraftActionWithKnownChain({
+        action: "read_draft",
+        draftId,
+        walletAddress: wallet,
+        chainId,
+        useOwnerSession: true,
+        forceNewOwnerSession: true,
+      });
+      res = await postPrivateRead(url, freshAuth);
+    } else {
+      throw new Error(String(errorJson?.error || errorJson?.message || `Request failed (${res.status})`));
+    }
+  }
 
   return parseJson(res) as Promise<PrepareDraftBundle>;
 }

@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Campaign ticker marquee. It is intentionally not sticky; HeaderBand renders it
+   in normal page flow so it scrolls away with the homepage content. */
+.mwz-campaign-ticker-track {
+  animation: mwz-campaign-ticker-scroll 38s linear infinite;
+  will-change: transform;
+}
+
+.mwz-campaign-ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes mwz-campaign-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 /* Custom Fonts */
 @font-face {
   font-family: 'Pixeboy';
@@ -376,6 +392,64 @@ All colors MUST be HSL.
 
 .scrollbar-hidden::-webkit-scrollbar {
   display: none;
+}
+
+/* Compact public promotion page */
+@media (min-width: 1024px) {
+  .prepare-compact > div > main > section:first-child {
+    min-height: 470px !important;
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child h1 {
+    font-size: clamp(4.25rem, 8vw, 7.5rem) !important;
+    line-height: 0.82 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child p {
+    margin-top: 1.25rem !important;
+    font-size: 1.125rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-card {
+    margin-top: 1.75rem !important;
+  }
+
+  .prepare-compact > div > main > section:not(:first-child) {
+    padding-top: 1.75rem !important;
+    padding-bottom: 1.75rem !important;
+  }
+
+  .prepare-compact .mwz-card {
+    padding: 1rem !important;
+  }
+
+  .prepare-compact .mwz-card h3 {
+    font-size: 1.55rem !important;
+  }
+
+  .prepare-compact .mwz-card p {
+    line-height: 1.55 !important;
+  }
+
+  .prepare-compact .mwz-radar {
+    height: 8rem !important;
+    width: 8rem !important;
+  }
+
+  .prepare-compact .mwz-radar + * {
+    margin-top: 0.75rem !important;
+  }
+
+  .prepare-compact [class*="max-h-"][class*="460px"] {
+    max-height: 320px !important;
+  }
+
+  .prepare-compact [class*="min-h-"][class*="190px"] {
+    min-height: 140px !important;
+  }
 }
 
 /* Glass Button Styles */

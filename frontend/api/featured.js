@@ -9,6 +9,15 @@ const SORT_MAP = {
   all: "votes_all_time",
 };
 
+function safeEmptyFeatured(res, error) {
+  console.error("[api/featured] indexer query failed; returning empty featured feed", error);
+  return json(res, 200, {
+    items: [],
+    updatedAt: new Date().toISOString(),
+    warning: "Featured campaign indexer data is not available yet.",
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
@@ -61,9 +70,8 @@ export default async function handler(req, res) {
       [chainId, limit]
     );
 
-    return json(res, 200, { items: rows });
+    return json(res, 200, { items: rows, updatedAt: new Date().toISOString() });
   } catch (e) {
-    console.error("[api/featured]", e);
-    return json(res, 500, { error: "Server error" });
+    return safeEmptyFeatured(res, e);
   }
 }

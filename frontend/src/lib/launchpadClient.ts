@@ -7,6 +7,8 @@ import { useCallback, useMemo, useRef } from "react";
 import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
 import { fetchCampaignCreateAuthorization, fetchCampaignTradeAuthorization } from "@/lib/recruiterApi";
 import { getReadProvider } from "@/lib/readProvider";
+import { apiFetch } from "@/lib/apiBase";
+import { resolveImageUri } from "@/lib/media";
 
 // Public endpoints can be very sensitive to getLogs volume.
 // Keep scans small + chunked.
@@ -15,6 +17,32 @@ const LOG_CHUNK_SIZE = 700;
 // For UI-only rollups (holders/volume), recent history is sufficient.
 // 50k blocks is roughly 1–2 days on BSC (approx).
 const DEFAULT_ACTIVITY_LOOKBACK_BLOCKS = 50_000;
+
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+
+function envEnabled(value: unknown): boolean {
+  return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
+}
+
+/**
+ * Migration default:
+ * - campaign lists come from Railway/Supabase DB
+ * - old on-chain factory campaign paging is opt-in only
+ * - on-chain logo hydration is opt-in only
+ */
+const ENABLE_ONCHAIN_CAMPAIGN_FALLBACK = envEnabled(
+  import.meta.env.VITE_ENABLE_ONCHAIN_CAMPAIGN_FALLBACK,
+);
+
+const ENABLE_ONCHAIN_LOGO_HYDRATION = envEnabled(
+  import.meta.env.VITE_ENABLE_ONCHAIN_LOGO_HYDRATION,
+);
+
+const ENABLE_TOKEN_ONCHAIN_ACTIVITY = envEnabled(
+  import.meta.env.VITE_ENABLE_TOKEN_ONCHAIN_ACTIVITY,
+);
+
+let loggedOnChainCampaignFailure = false;
 
 // ---------------- ABI helpers ----------------
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
@@ -208,7 +236,125 @@ function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): str
   if (address && ethers.isAddress(address)) return `/api/token-metadata/${chainId}/${address}`;
   return "";
 }
+function normalizeAddress(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  return ethers.isAddress(raw) ? raw.toLowerCase() : "";
+}
 
+function toUnixSeconds(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+}
+
+function hasLogo(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "/placeholder.svg") return false;
+  return Boolean(resolveImageUri(raw));
+}
+
+function normalizeLogoUri(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  const resolved = resolveImageUri(raw);
+  return resolved || "/placeholder.svg";
+}
+
+function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | null {
+  const campaign = normalizeAddress(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign);
+  if (!campaign) return null;
+
+  const token = normalizeAddress(item?.tokenAddress ?? item?.token_address ?? item?.token);
+  const creator = normalizeAddress(item?.creatorAddress ?? item?.creator_address ?? item?.creator);
+
+  return {
+    id: 100000 + idx,
+    campaign,
+    token,
+    creator,
+    name: String(item?.name ?? "Unknown"),
+    symbol: String(item?.symbol ?? ""),
+    logoURI: normalizeLogoUri(
+  item?.logoUri ??
+  item?.logoURI ??
+  item?.logoUrl ??
+  item?.logo_url ??
+  item?.logo_uri
+),
+    metadataURI: buildMetadataURI(chainId, token || campaign),
+    xAccount: String(item?.xAccount ?? item?.xUrl ?? item?.x_url ?? ""),
+    website: String(item?.website ?? item?.websiteUrl ?? item?.website_url ?? ""),
+    extraLink: String(item?.extraLink ?? item?.extraUrl ?? item?.otherUrl ?? item?.other_url ?? ""),
+    createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
+    dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
+    dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
+  };
+}
+
+async function fetchDbCampaigns(chainId: number, limit = 500): Promise<CampaignInfo[]> {
+  try {
+    const res = await apiFetch(
+      `/api/campaigns?chainId=${encodeURIComponent(String(chainId))}&limit=${encodeURIComponent(
+        String(limit),
+      )}&tab=trending&sort=default&status=all`,
+      { cache: "no-store" as RequestCache },
+    );
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(String(json?.error || `HTTP ${res.status}`));
+
+    const items = Array.isArray(json?.items) ? json.items : [];
+    return items
+      .map((item: any, idx: number) => mapDbCampaign(item, idx, chainId))
+      .filter(Boolean) as CampaignInfo[];
+  } catch (error) {
+    console.warn("[launchpadClient] DB campaign fetch failed", error);
+    return [];
+  }
+}
+
+function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignInfo[] {
+  const seen = new Set<string>();
+  const merged: CampaignInfo[] = [];
+
+  for (const item of [...db, ...onChain]) {
+    const key = normalizeAddress(item?.campaign);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+
+  return merged;
+}
+
+async function hydrateMissingLogosFromContract(
+  campaigns: CampaignInfo[],
+  fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>,
+): Promise<CampaignInfo[]> {
+  const targets = campaigns.filter((campaign) => !hasLogo(campaign.logoURI)).slice(0, 25);
+  if (!targets.length) return campaigns;
+
+  const hydrated = new Map<string, string>();
+
+  await Promise.all(
+    targets.map(async (campaign) => {
+      try {
+        const logo = normalizeLogoUri(await fetchCampaignLogoURI(campaign.campaign));
+        if (hasLogo(logo)) hydrated.set(campaign.campaign.toLowerCase(), logo);
+      } catch {
+        // Best-effort only.
+      }
+    }),
+  );
+
+  if (!hydrated.size) return campaigns;
+
+  return campaigns.map((campaign) => {
+    const logoURI = hydrated.get(campaign.campaign.toLowerCase());
+    return logoURI ? { ...campaign, logoURI } : campaign;
+  });
+}
 // ---------------- Hook ----------------
 export function useLaunchpad() {
   const wallet = useWallet() as any;
@@ -334,16 +480,6 @@ const fetchCampaignPage = useCallback(
   [getFactoryRead, fetchCampaignsCount, factoryAddress, readProvider, activeChainId]
 );
 
-  const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
-    const totalNumber = await fetchCampaignsCount();
-    if (totalNumber <= 0) return [];
-
-    // Default behavior (kept for backward compatibility): return the latest 25.
-    const limit = Math.min(totalNumber, 25);
-    const offset = Math.max(0, totalNumber - limit);
-    return await fetchCampaignPage(offset, limit, { newestFirst: true });
-  }, [fetchCampaignsCount, fetchCampaignPage]);
-
   /**
    * Fetch only the on-chain logoURI for a given campaign.
    *
@@ -367,6 +503,48 @@ const fetchCampaignPage = useCallback(
     },
     [getCampaignRead]
   );
+
+const fetchOnChainCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
+  const totalNumber = await fetchCampaignsCount();
+  if (totalNumber <= 0) return [];
+
+  // Old behavior: return the latest 25 on-chain campaigns.
+  const limit = Math.min(totalNumber, 25);
+  const offset = Math.max(0, totalNumber - limit);
+  return await fetchCampaignPage(offset, limit, { newestFirst: true });
+}, [fetchCampaignsCount, fetchCampaignPage]);
+
+const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
+  const chainId = Number(activeChainId || 97);
+  const db = await fetchDbCampaigns(chainId);
+
+  // Migration default: Railway/Supabase DB is the source of truth for campaign
+  // lists. On-chain factory paging is noisy and expensive in the browser, so keep
+  // it opt-in only.
+  if (!ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) {
+  if (!ENABLE_ONCHAIN_LOGO_HYDRATION) {
+    return db;
+  }
+
+  return hydrateMissingLogosFromContract(db, fetchCampaignLogoURI);
+  }
+
+  const onChain = await fetchOnChainCampaigns().catch((error: unknown) => {
+    if (!loggedOnChainCampaignFailure) {
+      loggedOnChainCampaignFailure = true;
+      console.warn("[launchpadClient] on-chain campaign page failed; using DB campaigns", error);
+    }
+    return [] as CampaignInfo[];
+  });
+
+  const merged = mergeCampaigns(onChain, db);
+
+  if (!ENABLE_ONCHAIN_LOGO_HYDRATION) {
+    return merged;
+  }
+
+  return hydrateMissingLogosFromContract(merged, fetchCampaignLogoURI);
+}, [activeChainId, fetchOnChainCampaigns, fetchCampaignLogoURI]);
 
   const fetchCampaignMetrics = useCallback(
     async (campaignAddress: string): Promise<CampaignMetrics | null> => {
@@ -539,16 +717,29 @@ const fetchCampaignPage = useCallback(
     [getCampaignRead, getFromBlockForCampaign, readProvider]
   );
 
-  const fetchCampaignSummary = useCallback(
-    async (campaign: CampaignInfo): Promise<CampaignSummary> => {
-      const metrics = await fetchCampaignMetrics(campaign.campaign);
+const fetchCampaignSummary = useCallback(
+  async (campaign: CampaignInfo): Promise<CampaignSummary> => {
+    let metrics: CampaignMetrics | null = null;
 
-      let holders = "—";
-      let volume = "—";
-      let marketCap = "—";
-      let marketCapBnb: number | undefined = undefined;
+    try {
+      metrics = await fetchCampaignMetrics(campaign.campaign);
+    } catch (e) {
+      console.warn(
+        "[fetchCampaignSummary] metrics fetch failed; continuing with realtime/indexer data",
+        e,
+      );
+      metrics = null;
+    }
 
-      // Activity rollups (safe + limited)
+    let holders = "—";
+    let volume = "—";
+    let marketCap = "—";
+    let marketCapBnb: number | undefined = undefined;
+
+    // Activity rollups are expensive on public RPCs. During the Railway/Supabase
+    // migration, keep this disabled by default and rely on realtime-indexer data
+    // for TokenDetails trade/volume UI.
+    if (ENABLE_TOKEN_ONCHAIN_ACTIVITY) {
       try {
         const activity = await fetchCampaignActivity(campaign.campaign);
         if (activity) {
@@ -558,6 +749,7 @@ const fetchCampaignPage = useCallback(
       } catch (e) {
         console.warn("[fetchCampaignSummary] activity fetch failed", e);
       }
+    }
 
       // Market cap (derived): currentPrice * totalSupply
       try {

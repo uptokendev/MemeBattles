@@ -1,0 +1,141 @@
+/* Draft edit: keep the main editor viewport-style, but allow the right command panel to scroll. */
+@media (min-width: 1024px) {
+  aside[class*="lg:h-[calc(100dvh-5.4rem)]"] {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding-bottom: 1.5rem !important;
+  }
+}
+
+/* Promotion page: compact the public Prepare page beyond the first overlay removal. */
+@media (min-width: 1024px) {
+  .prepare-compact > div {
+    min-height: auto !important;
+  }
+
+  .prepare-compact > div > main > section:first-child {
+    min-height: 390px !important;
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.25rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-chip {
+    margin-top: 1.5rem !important;
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-chip + div {
+    margin-top: 1.25rem !important;
+    font-size: 1rem !important;
+    letter-spacing: 0.34em !important;
+  }
+
+  .prepare-compact > div > main > section:first-child h1 {
+    margin-top: 0.5rem !important;
+    font-size: clamp(3.5rem, 7vw, 6.25rem) !important;
+    line-height: 0.8 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child p {
+    margin-top: 1rem !important;
+    max-width: 48rem !important;
+    font-size: 1rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child p + div {
+    margin-top: 1.25rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child button,
+  .prepare-compact > div > main > section:first-child a {
+    min-height: 0 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .h-13 {
+    height: 2.75rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-card {
+    margin-top: 1.25rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-card > div {
+    padding: 0.75rem 1rem !important;
+  }
+
+  .prepare-compact > div > main > section:not(:first-child) {
+    padding-top: 1.25rem !important;
+    padding-bottom: 1.25rem !important;
+  }
+
+  .prepare-compact > div > main > section:not(:first-child) > .mb-6,
+  .prepare-compact > div > main > section:not(:first-child) > .mb-8 {
+    margin-bottom: 1rem !important;
+  }
+
+  .prepare-compact > div > main > section h2 {
+    font-size: clamp(1.75rem, 3vw, 2.5rem) !important;
+  }
+
+  .prepare-compact .grid {
+    gap: 0.75rem !important;
+  }
+
+  .prepare-compact .mwz-card {
+    padding: 0.85rem !important;
+  }
+
+  .prepare-compact .mwz-card .mb-5,
+  .prepare-compact .mwz-card .mb-6 {
+    margin-bottom: 0.75rem !important;
+  }
+
+  .prepare-compact .mwz-card .mt-5,
+  .prepare-compact .mwz-card .mt-6,
+  .prepare-compact .mwz-card .mt-8,
+  .prepare-compact .mwz-card .mt-10 {
+    margin-top: 0.85rem !important;
+  }
+
+  .prepare-compact .mwz-card h3 {
+    margin-top: 0.35rem !important;
+    font-size: 1.35rem !important;
+    line-height: 1 !important;
+  }
+
+  .prepare-compact .mwz-card p {
+    margin-top: 0.75rem !important;
+    line-height: 1.45 !important;
+  }
+
+  .prepare-compact .mwz-radar {
+    height: 7rem !important;
+    width: 7rem !important;
+  }
+
+  .prepare-compact .mwz-radar::before,
+  .prepare-compact .mwz-radar::after {
+    inset: 0.75rem !important;
+  }
+
+  .prepare-compact [class~="max-h-[460px]"] {
+    max-height: 280px !important;
+  }
+
+  .prepare-compact [class~="min-h-[190px]"] {
+    min-height: 120px !important;
+  }
+
+  .prepare-compact textarea.min-h-32 {
+    min-height: 5.5rem !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .prepare-compact > div > main > section:first-child {
+    min-height: 360px !important;
+  }
+}

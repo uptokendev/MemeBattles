@@ -1,6 +1,6 @@
 /**
  * Top Bar Component
- * Responsive header with search, actions, and ticker feed
+ * Responsive header with search and actions
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,6 +42,10 @@ type TickerItem = {
 };
 
 const brandMark = "/assets/ticker.png";
+
+const ENABLE_TOPBAR_ONCHAIN_METRICS = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_ENABLE_TOPBAR_ONCHAIN_METRICS || "").trim().toLowerCase(),
+);
 
 function navPathMatches(currentPathname: string, currentSearch: string, target: string): boolean {
   try {
@@ -97,6 +101,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
   const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<Record<string, CampaignMetrics | null>>({});
   const [tickerLoading, setTickerLoading] = useState(true);
+  const tickerInitialLoadedRef = useRef(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -155,7 +160,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
     const load = async () => {
       try {
-        setTickerLoading(true);
+        if (!tickerInitialLoadedRef.current) setTickerLoading(true);
         const campaigns = await fetchCampaigns();
         const all = campaigns ?? [];
         const top = all.slice(0, 12);
@@ -164,22 +169,31 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
-        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
+if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
+  setTickerMetricsByCampaign({});
+  tickerInitialLoadedRef.current = true;
+  return;
+}
 
-        if (cancelled) return;
+const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
 
-        const next: Record<string, CampaignMetrics | null> = {};
-        top.forEach((c, idx) => {
-          const r = results[idx];
-          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
-        });
+if (cancelled) return;
 
-        setTickerMetricsByCampaign(next);
+const next: Record<string, CampaignMetrics | null> = {};
+top.forEach((c, idx) => {
+  const r = results[idx];
+  next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
+});
+
+setTickerMetricsByCampaign(next);
+tickerInitialLoadedRef.current = true;
       } catch (err) {
         console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
-          setTickerCampaigns([]);
-          setTickerMetricsByCampaign({});
+          if (!tickerInitialLoadedRef.current) {
+            setTickerCampaigns([]);
+            setTickerMetricsByCampaign({});
+          }
         }
       } finally {
         if (!cancelled) setTickerLoading(false);
@@ -491,18 +505,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               document.body,
             )}
           </div>
-        </div>
-      </div>
-
-      <div className="hidden xl:flex mx-4 mt-3 h-5 overflow-hidden text-[10px] uppercase tracking-[0.18em] mwz-muted">
-        <div className="flex animate-[scroll_45s_linear_infinite] whitespace-nowrap gap-8 pr-8">
-          {(tickerLoading || tickerBaseLoop.length === 0 ? [{ key: "loading", symbol: "MWZ", subtitle: "COMMAND FEED ONLINE", hot: true, route: "/" }] : tickerBaseLoop).concat(tickerBaseLoop).map((item, idx) => (
-            <button key={`${item.key}-${idx}`} type="button" onClick={() => navigate(item.route)} className="inline-flex items-center gap-2 hover:text-[var(--mwz-orange)]">
-              <span className={item.hot ? "mwz-orange" : ""}>▰</span>
-              <span>${item.symbol}</span>
-              <span>{item.subtitle}</span>
-            </button>
-          ))}
         </div>
       </div>
 

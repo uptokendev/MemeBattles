@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/apiBase";
 import {
   buildProfileMessage,
   fetchUserProfile,
@@ -103,7 +104,7 @@ export function useEditableProfile({
       String(chainId)
     )}&address=${encodeURIComponent(account.toLowerCase())}`;
 
-    const res = await fetch(url, { method: "POST", body: fd });
+    const res = await apiFetch(url, { method: "POST", body: fd });
     const j = await res.json().catch(() => null);
 
     if (!res.ok) throw new Error(j?.error || `Upload failed (${res.status})`);

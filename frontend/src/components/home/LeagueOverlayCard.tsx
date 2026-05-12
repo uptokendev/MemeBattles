@@ -37,8 +37,8 @@ export function LeagueOverlayCard({ className }: LeagueOverlayCardProps) {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <Button className="mwz-button h-10 px-2 text-[11px] whitespace-nowrap" onClick={() => navigate("/create")}>Start Battle</Button>
-            <Button className="mwz-button mwz-button-active h-10 px-2 text-[11px] whitespace-nowrap" onClick={() => navigate("/battle-leagues")}>View Leagues</Button>
+            <Button className="mwz-button h-10 text-[10px] leading-none" onClick={() => navigate("/create")}>Start a Battle</Button>
+            <Button className="mwz-button mwz-button-active h-10 text-[10px] leading-none" onClick={() => navigate("/battle-leagues")}>Go to Leagues</Button>
           </div>
         </div>
       </div>

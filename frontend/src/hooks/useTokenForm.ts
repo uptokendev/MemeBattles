@@ -15,6 +15,8 @@ const initialFormData: TokenFormData = {
   imagePreview: "",
   website: "",
   twitter: "",
+  telegram: "",
+  discord: "",
   otherLink: "",
   showSocialLinks: false,
 };
@@ -44,6 +46,14 @@ export const useTokenForm = () => {
 
   const setTwitter = (twitter: string) => {
     setFormData((prev) => ({ ...prev, twitter }));
+  };
+
+  const setTelegram = (telegram: string) => {
+    setFormData((prev) => ({ ...prev, telegram }));
+  };
+
+  const setDiscord = (discord: string) => {
+    setFormData((prev) => ({ ...prev, discord }));
   };
 
   const setOtherLink = (otherLink: string) => {
@@ -83,6 +93,8 @@ export const useTokenForm = () => {
       showSocialLinks: false,
       website: "",
       twitter: "",
+      telegram: "",
+      discord: "",
       otherLink: "",
     }));
   };
@@ -95,6 +107,8 @@ export const useTokenForm = () => {
     setCategory,
     setWebsite,
     setTwitter,
+    setTelegram,
+    setDiscord,
     setOtherLink,
     setShowSocialLinks,
     handleImageChange,

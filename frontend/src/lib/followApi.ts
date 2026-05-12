@@ -1,4 +1,5 @@
 import { isAddress } from "ethers";
+import { apiFetch } from "@/lib/apiBase";
 
 type FollowUserPayload = {
   chainId: number;
@@ -13,7 +14,7 @@ type FollowCampaignPayload = {
 };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await apiFetch(url, {
     headers: { "content-type": "application/json", ...(init?.headers || {}) },
     ...init,
   });

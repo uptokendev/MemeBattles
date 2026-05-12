@@ -365,12 +365,31 @@ const TokenDetails = () => {
           return;
         }
 
-        setCampaign(match);
+setCampaign(match);
 
-        // Unified token stats + metrics (same source as carousel / UP Dashboard)
-        const s = await fetchCampaignSummary(match);
-        setSummary(s);
-        setMetrics(s.metrics ?? null);
+// Unified token stats + metrics are best-effort. The page should still render
+// from Railway/realtime data when public RPC reads fail.
+try {
+  const s = await fetchCampaignSummary(match);
+  setSummary(s);
+  setMetrics(s.metrics ?? null);
+} catch (summaryErr) {
+  console.warn(
+    "[TokenDetails] summary fetch failed; rendering with campaign + realtime data",
+    summaryErr,
+  );
+
+  setSummary({
+    campaign: match,
+    metrics: null,
+    stats: {
+      holders: "—",
+      volume: "—",
+      marketCap: "—",
+    },
+  });
+  setMetrics(null);
+}
       } catch (err) {
         console.error(err);
         setError("Failed to load token data");
@@ -543,7 +562,20 @@ const TokenDetails = () => {
 
   // Read curve trades for transactions + analytics (live mode)
   // Hook returns CurveTrade[] (your "@/types/token" Transaction type)
-  const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(campaign?.campaign);
+const resolvedCampaignAddress = useMemo(() => {
+  const value = String(campaign?.campaign || campaignAddr || "").trim().toLowerCase();
+  return /^0x[a-fA-F0-9]{40}$/.test(value) ? value : "";
+}, [campaign?.campaign, campaignAddr]);
+
+const hasValidCampaignAddress = Boolean(resolvedCampaignAddress);
+
+const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveError } = useCurveTrades(
+  hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+  {
+    chainId: chainIdForStorage,
+    enabled: hasValidCampaignAddress,
+  },
+);
   const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? liveCurvePoints : [];
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
@@ -557,10 +589,11 @@ const TokenDetails = () => {
   }, [liveCurvePointsSafe]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
-  const { stats: rtStats } = useTokenStatsRealtime(
-    campaign?.campaign ?? campaignAddress,
-    wallet.chainId
-  );
+const { stats: rtStats } = useTokenStatsRealtime(
+  hasValidCampaignAddress ? resolvedCampaignAddress : undefined,
+  chainIdForStorage,
+  hasValidCampaignAddress,
+);
 const toSeconds = (ts: number): number => {
   if (!Number.isFinite(ts) || ts <= 0) return 0;
   // If it looks like milliseconds, convert to seconds.

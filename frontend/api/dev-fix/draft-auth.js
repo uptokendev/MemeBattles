@@ -14,8 +14,7 @@ const ACTIONS = new Set([
   "draft_owner_session",
 ]);
 
-const OWNER_SESSION_ACTION = "draft_owner_session";
-const OWNER_SESSION_ALLOWED_ACTIONS = new Set([
+const CONNECTED_WALLET_ALLOWED_ACTIONS = new Set([
   "read_draft",
   "save_promotion",
   "publish_promotion",
@@ -56,27 +55,12 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  if (!pool) {
-    json(res, 503, {
-      error: "Draft wallet auth requires DATABASE_URL-backed nonce storage.",
-    });
-    return null;
-  }
-
-  const wallet = normalizeAddress(auth?.walletAddress);
+  const wallet = normalizeAddress(auth?.walletAddress || auth?.address || auth?.viewer);
   const expected = normalizeAddress(expectedWallet);
   const expectedChainId = Number(chainId);
-  const nonce = String(auth?.nonce || "").trim();
-  const signature = String(auth?.signature || "").trim();
-  const message = String(auth?.message || "");
-  const authAction = String(auth?.action || "");
-  const signedAction = authAction === OWNER_SESSION_ACTION && OWNER_SESSION_ALLOWED_ACTIONS.has(action)
-    ? OWNER_SESSION_ACTION
-    : action;
-  const isOwnerSession = signedAction === OWNER_SESSION_ACTION;
 
   if (!wallet || !expected || wallet !== expected) {
-    json(res, 401, { error: "Wallet signature does not match the draft owner." });
+    json(res, 401, { error: "Connected wallet does not match the draft owner." });
     return null;
   }
 
@@ -86,9 +70,29 @@ export async function requireDraftActionAuth({
   }
 
   if (Number(auth?.chainId) !== expectedChainId) {
-    json(res, 401, { error: "Wallet signature chain does not match this draft." });
+    json(res, 401, { error: "Connected wallet chain does not match this draft." });
     return null;
   }
+
+  // Current migration scope: after the creator wallet is connected, draft owner
+  // actions do not require extra wallet signatures. Only create_draft still signs.
+  if (action !== "create_draft" && CONNECTED_WALLET_ALLOWED_ACTIONS.has(action)) {
+    return {
+      walletAddress: wallet,
+      chainId: expectedChainId,
+    };
+  }
+
+  if (!pool) {
+    json(res, 503, {
+      error: "Draft wallet auth requires DATABASE_URL-backed nonce storage.",
+    });
+    return null;
+  }
+
+  const nonce = String(auth?.nonce || "").trim();
+  const signature = String(auth?.signature || "").trim();
+  const message = String(auth?.message || "");
 
   if (!nonce || !signature) {
     json(res, 401, { error: "Wallet signature required." });
@@ -96,7 +100,7 @@ export async function requireDraftActionAuth({
   }
 
   const expectedMessage = buildDraftAuthMessage({
-    action: signedAction,
+    action,
     walletAddress: wallet,
     chainId: expectedChainId,
     nonce,
@@ -141,7 +145,7 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  if (!isOwnerSession && row.used_at) {
+  if (row.used_at) {
     json(res, 401, { error: "Wallet auth nonce already used. Please sign again." });
     return null;
   }
@@ -151,17 +155,15 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  if (!isOwnerSession) {
-    await pool.query(
-      `update auth_nonces
-          set used_at = now()
-        where chain_id = $1
-          and address = $2
-          and nonce = $3
-          and used_at is null`,
-      [expectedChainId, wallet, nonce],
-    );
-  }
+  await pool.query(
+    `update auth_nonces
+        set used_at = now()
+      where chain_id = $1
+        and address = $2
+        and nonce = $3
+        and used_at is null`,
+    [expectedChainId, wallet, nonce],
+  );
 
   return {
     walletAddress: wallet,

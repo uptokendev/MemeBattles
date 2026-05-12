@@ -1,6 +1,36 @@
-const EXPLICIT_API_BASE = String(import.meta.env.VITE_API_BASE_URL || "")
+import { Contract, ethers } from "ethers";
+import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
+import LaunchTokenArtifact from "@/abi/LaunchToken.json";
+import { getReadProvider } from "@/lib/readProvider";
+
+const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
+const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
+
+const EXPLICIT_API_BASE = String(
+  import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_BASE ||
+    ""
+)
   .trim()
   .replace(/\/$/, "");
+
+const EXPLICIT_REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "")
+  .trim()
+  .replace(/\/$/, "");
+
+// Do not route global list endpoints (/api/campaigns, /api/featured) to the
+// realtime-indexer project: memebattles-production does not expose those routes.
+// TokenDetails is protected below by a preemptive /token/0x... contract fallback
+// when legacy code asks for /api/campaigns.
+const REALTIME_INDEXER_API_PREFIXES = [
+  "/api/league",
+  "/api/leaguePayouts",
+  "/api/leagueRoot",
+  "/api/token/",
+  "/api/token-metadata",
+  "/api/votes",
+  "/api/vote_counts",
+];
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
@@ -10,14 +40,188 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function shouldUseRealtimeIndexer(path: string): boolean {
+  return REALTIME_INDEXER_API_PREFIXES.some((prefix) => {
+    if (prefix.endsWith("/")) return path.startsWith(prefix);
+    return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
+  });
+}
+
+function isCampaignFeedPath(path: string): boolean {
+  try {
+    const url = new URL(path, "http://local");
+    return url.pathname === "/api/campaigns";
+  } catch {
+    return normalizePath(path).split("?")[0] === "/api/campaigns";
+  }
+}
+
+function getTokenPageCampaignAddress(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const match = window.location.pathname.match(/^\/token\/(0x[a-fA-F0-9]{40})(?:\/)?$/);
+    return match?.[1]?.toLowerCase() || "";
+  } catch {
+    return "";
+  }
+}
+
+function getChainIdFromApiPath(path: string): number {
+  try {
+    const url = new URL(path, "http://local");
+    const raw = Number(url.searchParams.get("chainId") || 97);
+    return Number.isFinite(raw) ? raw : 97;
+  } catch {
+    return 97;
+  }
+}
+
+async function safeString(fn: () => Promise<unknown>, fallback = ""): Promise<string> {
+  try {
+    const value = await fn();
+    const text = String(value ?? "").trim();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function safeBool(fn: () => Promise<unknown>, fallback = false): Promise<boolean> {
+  try {
+    return Boolean(await fn());
+  } catch {
+    return fallback;
+  }
+}
+
+async function safeBigInt(fn: () => Promise<unknown>, fallback = 0n): Promise<bigint> {
+  try {
+    const value = await fn();
+    if (typeof value === "bigint") return value;
+    return BigInt(String(value ?? fallback));
+  } catch {
+    return fallback;
+  }
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "x-mwz-client-fallback": "token-details-contract",
+    },
+  });
+}
+
+async function buildTokenDetailsCampaignFallback(path: string): Promise<Response | null> {
+  const campaignAddress = getTokenPageCampaignAddress();
+  if (!campaignAddress) return null;
+  if (!isCampaignFeedPath(path)) return null;
+
+  const chainId = getChainIdFromApiPath(path);
+
+  try {
+    const provider = getReadProvider(chainId as any);
+    const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, provider) as any;
+
+    const tokenAddress = (await safeString(() => campaign.token())).toLowerCase();
+    if (!/^0x[a-f0-9]{40}$/.test(tokenAddress)) return null;
+
+    const token = new Contract(tokenAddress, TOKEN_ABI, provider) as any;
+
+    const [
+      name,
+      symbol,
+      logoUri,
+      creatorAddress,
+      website,
+      xAccount,
+      extraLink,
+      launched,
+      sold,
+      curveSupply,
+    ] = await Promise.all([
+      safeString(() => token.name(), "Unknown"),
+      safeString(() => token.symbol(), ""),
+      safeString(() => campaign.logoURI(), "/placeholder.svg"),
+      safeString(() => campaign.owner()),
+      safeString(() => campaign.website()),
+      safeString(() => campaign.xAccount()),
+      safeString(() => campaign.extraLink()),
+      safeBool(() => campaign.launched(), false),
+      safeBigInt(() => campaign.sold(), 0n),
+      safeBigInt(() => campaign.curveSupply(), 0n),
+    ]);
+
+    const progressPct = curveSupply > 0n ? Number((sold * 10_000n) / curveSupply) / 100 : null;
+
+    return jsonResponse({
+      items: [
+        {
+          chainId,
+          campaignAddress,
+          tokenAddress,
+          creatorAddress: /^0x[a-fA-F0-9]{40}$/.test(creatorAddress) ? creatorAddress.toLowerCase() : null,
+          name,
+          symbol,
+          logoUri,
+          logoURI: logoUri,
+          website,
+          xAccount,
+          xUrl: xAccount,
+          extraLink,
+          isDexTrading: launched,
+          isActive: !launched,
+          status: launched ? "graduated" : "live",
+          progressPct,
+          votes24h: 0,
+          votesAllTime: 0,
+          raisedTotalBnb: "0",
+          raised10mBnb: "0",
+          source: "token-details-contract-fallback",
+        },
+      ],
+      nextCursor: null,
+      pageSize: 1,
+      updatedAt: new Date().toISOString(),
+      warning: "Campaign feed fallback hydrated this token directly from the campaign contract.",
+    });
+  } catch (error) {
+    console.warn("[apiBase] TokenDetails contract fallback failed", error);
+    return null;
+  }
+}
+
 export function apiUrl(path: string): string {
   if (isHttpUrl(path)) return path;
   const normalized = normalizePath(path);
+
+  if (EXPLICIT_REALTIME_API_BASE && shouldUseRealtimeIndexer(normalized)) {
+    return `${EXPLICIT_REALTIME_API_BASE}${normalized}`;
+  }
+
   return EXPLICIT_API_BASE ? `${EXPLICIT_API_BASE}${normalized}` : normalized;
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(apiUrl(path), init);
+  const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
+  if (preemptiveFallback) return preemptiveFallback;
+
+  const url = apiUrl(path);
+
+  try {
+    const res = await fetch(url, init);
+    if (!res.ok && isCampaignFeedPath(path)) {
+      const fallback = await buildTokenDetailsCampaignFallback(path);
+      if (fallback) return fallback;
+    }
+    return res;
+  } catch (error) {
+    const fallback = await buildTokenDetailsCampaignFallback(path);
+    if (fallback) return fallback;
+    throw error;
+  }
 }
 
 export async function apiJson<T = any>(path: string, init?: RequestInit): Promise<T> {

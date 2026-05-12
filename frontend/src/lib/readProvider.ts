@@ -41,13 +41,11 @@ export function getReadProvider(chainId: SupportedChainId): ethers.AbstractProvi
       } as any
     );
 
-  const provider: ethers.AbstractProvider =
-    urls.length === 1
-      ? mk(urls[0])
-      : new ethers.FallbackProvider(
-          urls.map((u) => ({ provider: mk(u), weight: 1, priority: 1 })),
-          network
-        );
+  // Use one stable RPC endpoint in the browser. ethers FallbackProvider can throw
+  // "quorum not met" on BSC when one public RPC replies and another lags/fails,
+  // even if the returned data is valid. For UI reads we prefer a quiet, deterministic
+  // provider over quorum aggregation.
+  const provider: ethers.AbstractProvider = mk(urls[0]);
 
   providerCache.set(chainId, provider);
   return provider;

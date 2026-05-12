@@ -20,7 +20,7 @@ export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
-  { icon: userIcon, label: "Profile", path: "/profile?tab=balances" },
+  { icon: userIcon, label: "Command Center", path: "/command" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
 ];
 
