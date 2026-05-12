@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { useWallet } from "@/contexts/WalletContext";
 import { fetchWalletAttributionState } from "@/lib/recruiterApi";
+import { fetchUserProfile } from "@/lib/profileApi";
+import { useLaunchpad } from "@/lib/launchpadClient";
 import { LivestreamPlayer } from "@/components/live/LivestreamPlayer";
 import { LiveChat } from "@/components/live/LiveChat";
 import { LiveChatInput } from "@/components/live/LiveChatInput";
@@ -62,6 +64,7 @@ const Live = () => {
   // Side-effects are gated via `enabled` so they no-op until the wallet is connected.
   const wallet = useWallet();
   const account = wallet.account || "";
+  const { activeChainId } = useLaunchpad();
   const ready = PAGE_ENABLED && wallet.isConnected && account.length > 0;
 
   const { data: attribution } = useQuery({
@@ -70,9 +73,19 @@ const Live = () => {
     staleTime: Infinity,
     enabled: ready,
   });
-  // recruiterDisplayName is part of WalletAttributionPublicState (recruiterApi.ts:146-155).
+  // The user's own profile (display name set in /profile). Falls back to the
+  // recruiter/squad display name, then to a shortened wallet at render time.
+  const { data: profile } = useQuery({
+    queryKey: ["user-profile-live", activeChainId, account.toLowerCase()],
+    queryFn: () => fetchUserProfile(activeChainId, account),
+    staleTime: Infinity,
+    enabled: ready,
+  });
   const squadCallsign = attribution?.recruiterCode ?? null;
-  const handle = attribution?.recruiterDisplayName ?? null;
+  const handle =
+    profile?.displayName ??
+    attribution?.recruiterDisplayName ??
+    null;
 
   const { messages, publish, presenceCount, connected, mutedWallets, getMuteExpiry } = useLiveChannel({
     channelName: CHAT_CHANNEL,
