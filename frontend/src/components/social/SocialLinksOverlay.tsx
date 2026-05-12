@@ -238,9 +238,13 @@ export function PromotionEditSocialLinksPanel() {
 
   if (!bundle) return null;
 
+  const fieldClassName = "space-y-1";
+  const labelClassName = "block font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground";
+  const inputClassName = "h-9 bg-background/60 font-retro text-xs";
+
   return (
     <div className="fixed bottom-5 right-4 z-40 w-[min(92vw,26rem)] rounded-2xl border border-border/60 bg-black/80 p-3 shadow-xl backdrop-blur-md">
-      <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Official links</div>
           <div className="font-retro text-sm text-foreground">Promotion social links</div>
@@ -252,11 +256,26 @@ export function PromotionEditSocialLinksPanel() {
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <Input value={form.website} onChange={(e) => setField("website", e.target.value)} placeholder="Website" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.x} onChange={(e) => setField("x", e.target.value)} placeholder="X handle or URL" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.telegram} onChange={(e) => setField("telegram", e.target.value)} placeholder="Telegram handle or URL" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.discord} onChange={(e) => setField("discord", e.target.value)} placeholder="Discord" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.other} onChange={(e) => setField("other", e.target.value)} placeholder="Other" className="h-9 bg-background/60 font-retro text-xs sm:col-span-2" />
+        <div className={fieldClassName}>
+          <label className={labelClassName}>Website</label>
+          <Input value={form.website} onChange={(e) => setField("website", e.target.value)} placeholder="https://memewar.zone" className={inputClassName} />
+        </div>
+        <div className={fieldClassName}>
+          <label className={labelClassName}>X (formally Twitter)</label>
+          <Input value={form.x} onChange={(e) => setField("x", e.target.value)} placeholder="@memewarzone or URL" className={inputClassName} />
+        </div>
+        <div className={fieldClassName}>
+          <label className={labelClassName}>Telegram</label>
+          <Input value={form.telegram} onChange={(e) => setField("telegram", e.target.value)} placeholder="@memewarzone or URL" className={inputClassName} />
+        </div>
+        <div className={fieldClassName}>
+          <label className={labelClassName}>Discord</label>
+          <Input value={form.discord} onChange={(e) => setField("discord", e.target.value)} placeholder="Discord invite URL" className={inputClassName} />
+        </div>
+        <div className={`${fieldClassName} sm:col-span-2`}>
+          <label className={labelClassName}>Other</label>
+          <Input value={form.other} onChange={(e) => setField("other", e.target.value)} placeholder="Extra official link" className={inputClassName} />
+        </div>
       </div>
     </div>
   );
