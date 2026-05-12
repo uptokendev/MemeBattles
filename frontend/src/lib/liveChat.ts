@@ -52,8 +52,9 @@ export function shortWallet(wallet: string): string {
 }
 
 export function newMessageId(): string {
-  // ULID-ish: timestamp + 8 random hex chars — sortable, collision-resistant enough
-  // for a single launch event without pulling in a dep.
+  // ULID-ish: base36 timestamp + 12 random hex chars (6 bytes × 2 hex/byte) —
+  // sortable, collision-resistant enough for a single launch event without
+  // pulling in a dep.
   const ts = Date.now().toString(36);
   const rand = Array.from(crypto.getRandomValues(new Uint8Array(6)))
     .map((b) => b.toString(16).padStart(2, "0"))

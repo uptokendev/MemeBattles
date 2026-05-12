@@ -47,7 +47,7 @@ export const LiveChatInput = ({ wallet, handle, squadCallsign, disabled, onSend 
       await onSend(msg);
       lastSentRef.current = now;
       setValue("");
-    } catch (err) {
+    } catch {
       toast.error("Couldn't send message. Try again.");
     } finally {
       setPending(false);

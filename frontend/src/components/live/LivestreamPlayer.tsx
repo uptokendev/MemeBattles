@@ -1,6 +1,8 @@
 // frontend/src/components/live/LivestreamPlayer.tsx
+import { useEffect, useRef } from "react";
 import MuxPlayer from "@mux/mux-player-react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { LiveBadge } from "./LiveBadge";
 import { PlayerOffline } from "./PlayerOffline";
 
@@ -30,6 +32,16 @@ export const LivestreamPlayer = ({ playbackId }: Props) => {
     refetchIntervalInBackground: true,
     enabled: Boolean(playbackId),
   });
+
+  // Spec Section 10: toast when stream drops mid-event. Only fire on a true
+  // live→offline transition (not on first-load offline state).
+  const wasLiveRef = useRef(false);
+  useEffect(() => {
+    if (wasLiveRef.current && !isLive) {
+      toast("Stream interrupted — back in a moment");
+    }
+    wasLiveRef.current = isLive;
+  }, [isLive]);
 
   return (
     <div className="relative w-full">

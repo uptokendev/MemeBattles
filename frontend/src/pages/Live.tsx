@@ -32,7 +32,7 @@ const Live = () => {
   const squadCallsign = attribution?.recruiterCode ?? null;
   const handle = attribution?.recruiterDisplayName ?? null;
 
-  const { messages, publish, presenceCount } = useLiveChannel({
+  const { messages, publish, presenceCount, connected } = useLiveChannel({
     channelName: CHAT_CHANNEL,
     clientId: account,
     enabled: ready,
@@ -82,6 +82,7 @@ const Live = () => {
             wallet={account}
             handle={handle}
             squadCallsign={squadCallsign}
+            disabled={!connected}
             onSend={publish}
           />
         </Card>
