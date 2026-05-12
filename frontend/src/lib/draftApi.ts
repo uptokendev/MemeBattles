@@ -558,6 +558,7 @@ export type DraftPopularity = {
   reactions: number;
   shares: number;
   signedActions: number;
+  armedCount: number;
   popularityPercentage: number;
   heatLabel: "Cold" | "Warming" | "Hot" | "On Fire";
   rankingScore: number;
@@ -610,7 +611,7 @@ function emptyPromotion(draftId: string): CampaignDraftPromotion {
 }
 
 function emptyPopularity(): DraftPopularity {
-  return { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0, popularityPercentage: 0, heatLabel: "Cold", rankingScore: 0 };
+  return { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0, armedCount: 0, popularityPercentage: 0, heatLabel: "Cold", rankingScore: 0 };
 }
 
 function cacheJustCreatedDraft(draft: CampaignDraft) {

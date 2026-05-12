@@ -752,7 +752,7 @@ export default function Prepare() {
 
           <div className="mwz-card mt-12 grid overflow-hidden border-orange-400/35 bg-black/45 md:grid-cols-4">
             {[
-              ["Armed recruits", String(pop.signedActions || 0), Users],
+              ["Armed recruits", String(pop.armedCount ?? 0), Users],
               ["Watchlists", String(followCount ?? pop.follows), Star],
               ["Heat", `${pop.popularityPercentage}%`, Flame],
               ["Status", statusLabel(draft.status), Shield],
