@@ -21,7 +21,7 @@ import LeagueDetail from "./pages/LeagueDetail";
 import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
-import PrepareCompact from "./pages/PrepareCompact";
+import Prepare from "./pages/Prepare";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
 import PushDraftLive from "./pages/PushDraftLive";
 import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
@@ -40,7 +40,6 @@ import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
-import { DraftVisibilityDock } from "@/components/drafts/DraftVisibilityDock";
 import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
@@ -140,9 +139,9 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
-                    <Route path="/drafts/:draftId/promotion" element={<><DraftPromotionSetup /><DraftVisibilityDock /></>} />
+                    <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
-                    <Route path="/prepare/:slug" element={<PrepareCompact />} />
+                    <Route path="/prepare/:slug" element={<div className="prepare-compact"><Prepare /></div>} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
