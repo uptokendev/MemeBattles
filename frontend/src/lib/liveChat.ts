@@ -15,6 +15,21 @@ export type LiveChatDelete = {
   ts: number;
 };
 
+// SYNC: docs/superpowers/specs/2026-05-12-chat-moderation-design.md Section 4
+// — keep LiveChatMute / LiveChatUnmute in sync with mw-dashboard/src/lib/liveChat.ts.
+export type LiveChatMute = {
+  type: "mute";
+  wallet: string;             // lowercased convention
+  until: number | null;       // null = perma; otherwise ms-epoch expiry
+  ts: number;                 // when the mute was issued
+};
+
+export type LiveChatUnmute = {
+  type: "unmute";
+  wallet: string;             // lowercased
+  ts: number;
+};
+
 const URL_REGEX = /\bhttps?:\/\/\S+|\bwww\.\S+/gi;
 // ASCII C0 controls (\x00 through \x1F) plus DEL (\x7F). Use explicit hex to avoid
 // the range silently being interpreted as printable space-to-hyphen if the source
