@@ -1,0 +1,24 @@
+/* Active /prepare/:slug token title size override.
+   This page is wrapped with .prepare-compact in App.tsx. The original hero
+   title uses very large Tailwind classes plus earlier compact overrides, so
+   this file is loaded last and targets only the token name hero title. */
+
+.prepare-compact > div > main > section:first-child h1 {
+  max-width: 54rem !important;
+  font-size: clamp(2.75rem, 6vw, 5.75rem) !important;
+  line-height: 0.9 !important;
+  letter-spacing: 0.025em !important;
+}
+
+@media (max-width: 767px) {
+  .prepare-compact > div > main > section:first-child h1 {
+    font-size: clamp(2.35rem, 13vw, 3.6rem) !important;
+    line-height: 0.92 !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .prepare-compact > div > main > section:first-child h1 {
+    font-size: clamp(3.5rem, 5.5vw, 6.25rem) !important;
+  }
+}
