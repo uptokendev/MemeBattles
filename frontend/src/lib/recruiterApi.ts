@@ -407,9 +407,17 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
   }
 }
 
-export async function requestRecruiterSignupNonce(walletAddress: string): Promise<RecruiterSignupNonceResponse> {
+export async function requestRecruiterSignupNonce(
+  walletAddress: string,
+  chainId: number,
+): Promise<RecruiterSignupNonceResponse> {
   const normalized = normalizeWalletAddress(walletAddress);
-  const json = await postJson("/api/recruiter-signup/nonce", { walletAddress: normalized });
+  // Backend keys nonces by (chain_id, address). Must pass the same chainId
+  // used on submit so the saved row and the consume lookup match.
+  const json = await postJson("/api/recruiter-signup/nonce", {
+    walletAddress: normalized,
+    chainId,
+  });
   if (!json?.nonce) throw new Error("Recruiter signup nonce missing from response.");
   return { nonce: String(json.nonce) };
 }

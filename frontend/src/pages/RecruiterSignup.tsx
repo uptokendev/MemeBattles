@@ -162,9 +162,10 @@ export default function RecruiterSignup() {
     try {
       // Map unsupported wallet chains (e.g. ETH mainnet=1) to the configured
       // supported chain; otherwise the signed message and submission carry an
-      // unsupported chainId that the backend rejects.
+      // unsupported chainId that the backend rejects. The same chainId must be
+      // passed to the nonce request because nonces are keyed by (chain_id, address).
       const chainId = getActiveChainId(wallet.chainId);
-      const { nonce } = await requestRecruiterSignupNonce(account);
+      const { nonce } = await requestRecruiterSignupNonce(account, chainId);
       const message = buildRecruiterSignupMessage({
         walletAddress: account,
         chainId,
