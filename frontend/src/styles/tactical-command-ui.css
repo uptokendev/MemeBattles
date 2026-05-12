@@ -418,8 +418,6 @@ h2.mwz-section-title,
 }
 
 .fixed.top-0 .mwz-hud-frame a[href="/"] img {
-  height: 56px !important;
-  width: 56px !important;
   filter: drop-shadow(0 0 10px rgba(var(--mwz-orange-rgb), 0.36))
     drop-shadow(0 8px 16px rgba(0, 0, 0, 0.72)) !important;
 }
