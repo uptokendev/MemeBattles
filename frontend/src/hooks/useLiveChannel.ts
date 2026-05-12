@@ -1,7 +1,7 @@
 // frontend/src/hooks/useLiveChannel.ts
 import { useEffect, useMemo, useRef, useState } from "react";
 import Ably from "ably";
-import type { LiveChatDelete, LiveChatMessage } from "@/lib/liveChat";
+import type { LiveChatDelete, LiveChatMessage, LiveChatMute, LiveChatUnmute } from "@/lib/liveChat";
 
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
 const ABLY_AUTH_BASE = String(import.meta.env.VITE_ABLY_AUTH_BASE || "").trim();
@@ -39,6 +39,7 @@ type Options = {
 export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 50 }: Options) {
   const [messages, setMessages] = useState<LiveChatMessage[]>([]);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [mutedWallets, setMutedWallets] = useState<Map<string, number | null>>(new Map());
   const [presenceCount, setPresenceCount] = useState(0);
   const [connected, setConnected] = useState(false);
   const clientRef = useRef<Ably.Realtime | null>(null);
@@ -78,6 +79,24 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
         });
         return;
       }
+      if (data?.type === "mute") {
+        const m = data as LiveChatMute;
+        setMutedWallets((prev) => {
+          const next = new Map(prev);
+          next.set(m.wallet.toLowerCase(), m.until);
+          return next;
+        });
+        return;
+      }
+      if (data?.type === "unmute") {
+        const m = data as LiveChatUnmute;
+        setMutedWallets((prev) => {
+          const next = new Map(prev);
+          next.delete(m.wallet.toLowerCase());
+          return next;
+        });
+        return;
+      }
       const m = data as LiveChatMessage;
       if (!m || !m.id) return;
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
@@ -90,7 +109,10 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
       .history({ limit: historyLimit })
       .then((page) => {
         const seeded: LiveChatMessage[] = [];
-        for (const item of page.items) {
+        // Replay history in chronological order so later events override earlier
+        // ones correctly (e.g. mute → unmute → re-mute lands in the right state).
+        const items = [...page.items].reverse();
+        for (const item of items) {
           const d = item.data;
           if (d?.type === "delete") {
             setDeletedIds((prev) => {
@@ -98,15 +120,44 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
               next.add((d as LiveChatDelete).msgId);
               return next;
             });
+          } else if (d?.type === "mute") {
+            const mm = d as LiveChatMute;
+            setMutedWallets((prev) => {
+              const next = new Map(prev);
+              next.set(mm.wallet.toLowerCase(), mm.until);
+              return next;
+            });
+          } else if (d?.type === "unmute") {
+            const mm = d as LiveChatUnmute;
+            setMutedWallets((prev) => {
+              const next = new Map(prev);
+              next.delete(mm.wallet.toLowerCase());
+              return next;
+            });
           } else if (d?.id) {
             seeded.push(d as LiveChatMessage);
           }
         }
-        // history returns newest-first; flip to chronological
-        seeded.reverse();
         setMessages((prev) => (prev.length === 0 ? seeded : prev));
       })
       .catch(() => { /* history is best-effort */ });
+
+    // Expire temp mutes every 30s. Operator's right-rail in mw-dashboard ticks
+    // at 1s for precision; viewers tolerate ~30s lag.
+    const expiryInterval = window.setInterval(() => {
+      setMutedWallets((prev) => {
+        const now = Date.now();
+        let mutated = false;
+        const next = new Map(prev);
+        for (const [w, until] of prev) {
+          if (until !== null && until < now) {
+            next.delete(w);
+            mutated = true;
+          }
+        }
+        return mutated ? next : prev;
+      });
+    }, 30_000);
 
     // presence
     channel.presence.enter({ at: Date.now() }).catch(() => { /* ignore */ });
@@ -120,6 +171,7 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
     refreshPresence();
 
     return () => {
+      window.clearInterval(expiryInterval);
       try { channel.presence.leave(); } catch {}
       channel.unsubscribe();
       client.connection.off();
@@ -144,5 +196,26 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
     [messages, deletedIds],
   );
 
-  return { messages: visibleMessages, publish, presenceCount, connected };
+  const isWalletMuted = (wallet: string): boolean => {
+    if (!wallet) return false;
+    const until = mutedWallets.get(wallet.toLowerCase());
+    if (until === undefined) return false; // not muted
+    if (until === null) return true;        // perma
+    return until > Date.now();              // temp, still active
+  };
+
+  const getMuteExpiry = (wallet: string): number | null | undefined => {
+    if (!wallet) return undefined;
+    return mutedWallets.get(wallet.toLowerCase());
+  };
+
+  return {
+    messages: visibleMessages,
+    publish,
+    presenceCount,
+    connected,
+    mutedWallets,
+    isWalletMuted,
+    getMuteExpiry,
+  };
 }
