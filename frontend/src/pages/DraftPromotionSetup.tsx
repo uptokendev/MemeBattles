@@ -15,6 +15,7 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { normalizeSocialUrl } from "@/lib/socialLinks";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -116,7 +117,7 @@ export default function DraftPromotionSetup() {
         const readAuth = await signDraftAction({
           signer: wallet.signer,
           walletAddress: wallet.account,
-          chainId: Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97),
+          chainId: getActiveChainId(wallet.chainId),
           action: "read_draft",
           draftId,
         });

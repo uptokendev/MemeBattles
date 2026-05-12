@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { resolveImageUri } from "@/lib/media";
 import { signDraftAction } from "@/lib/draftAuth";
+import { getActiveChainId } from "@/lib/chainConfig";
 import {
   archiveCampaignDraft,
   fetchOwnerCampaignDrafts,
@@ -67,7 +68,7 @@ export function ProfileDraftsPanel({
   const [loading, setLoading] = useState(false);
   const [busyDraftId, setBusyDraftId] = useState<string | null>(null);
 
-  const chainId = Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97);
+  const chainId = getActiveChainId(wallet.chainId);
 
   const normalizedViewedAddress = useMemo(
     () => String(viewedAddress || "").trim().toLowerCase(),

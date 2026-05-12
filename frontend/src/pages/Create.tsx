@@ -10,6 +10,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
+import { getActiveChainId } from "@/lib/chainConfig";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -76,7 +77,10 @@ const Create = () => {
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  const chainId = Number(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? 97);
+  // Reject unsupported chains (e.g. Ethereum mainnet=1). getActiveChainId returns
+  // the wallet's chain only if it's in the allowed list [56, 97]; otherwise
+  // falls back to VITE_DEFAULT_CHAIN_ID (or 97 if unset).
+  const chainId = getActiveChainId(wallet.chainId);
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
 
@@ -187,7 +191,7 @@ const Create = () => {
 
   const uploadLogo = async () => {
     if (!formData.image || !wallet.account) throw new Error("Missing logo or wallet");
-    const chainIdForUpload = String(wallet.chainId ?? import.meta.env.VITE_TARGET_CHAIN_ID ?? "97");
+    const chainIdForUpload = String(getActiveChainId(wallet.chainId));
     const address = wallet.account.toLowerCase();
     const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
     const fd = new FormData();
