@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { getActiveChainId } from "@/lib/chainConfig";
 import {
   buildRecruiterSignupMessage,
   checkRecruiterCodeAvailability,
@@ -159,10 +160,14 @@ export default function RecruiterSignup() {
 
     setSubmitting(true);
     try {
+      // Map unsupported wallet chains (e.g. ETH mainnet=1) to the configured
+      // supported chain; otherwise the signed message and submission carry an
+      // unsupported chainId that the backend rejects.
+      const chainId = getActiveChainId(wallet.chainId);
       const { nonce } = await requestRecruiterSignupNonce(account);
       const message = buildRecruiterSignupMessage({
         walletAddress: account,
-        chainId: wallet.chainId ?? null,
+        chainId,
         nonce,
         displayName: form.displayName,
         desiredCode: form.desiredCode,
@@ -176,7 +181,7 @@ export default function RecruiterSignup() {
 
       await submitRecruiterSignup({
         walletAddress: account,
-        chainId: wallet.chainId ?? null,
+        chainId,
         displayName: form.displayName.trim(),
         desiredCode: form.desiredCode.trim(),
         email: form.email.trim(),
