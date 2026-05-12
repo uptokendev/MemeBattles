@@ -32,18 +32,37 @@ const emptySocialForm: SocialLinkForm = {
   other: "",
 };
 
+function cleanHandle(raw: string) {
+  return raw
+    .trim()
+    .replace(/^https?:\/\/(www\.)?/i, "")
+    .replace(/^@+/, "")
+    .replace(/^\/+/, "")
+    .split(/[?#]/)[0]
+    .replace(/\/+$/, "");
+}
+
 function normalizeExternalUrl(raw: string | null | undefined, kind: "x" | "telegram" | "discord" | "website" | "other") {
   const value = String(raw || "").trim();
   if (!value) return "";
   if (/^https?:\/\//i.test(value)) return value;
 
-  const handle = value.replace(/^@+/, "").replace(/^\/+/, "");
+  if (kind === "x") {
+    const handle = cleanHandle(value).replace(/^(twitter\.com|x\.com)\//i, "").split("/")[0];
+    return handle ? `https://x.com/${handle}` : "";
+  }
 
-  if (kind === "x") return `https://x.com/${handle}`;
-  if (kind === "telegram") return `https://t.me/${handle}`;
-  if (kind === "discord") return value.toLowerCase().includes("discord") ? `https://${handle}` : value;
+  if (kind === "telegram") {
+    const handle = cleanHandle(value).replace(/^(t\.me|telegram\.me|telegram\.dog)\//i, "").split("/")[0];
+    return handle ? `https://t.me/${handle}` : "";
+  }
 
-  return `https://${handle}`;
+  if (kind === "discord") {
+    const handle = value.replace(/^@+/, "").replace(/^\/+/, "");
+    return value.toLowerCase().includes("discord") ? `https://${handle}` : value;
+  }
+
+  return `https://${value.replace(/^\/+/, "")}`;
 }
 
 function isTokenSelfUrl(raw: string | null | undefined, campaignAddress: string) {
@@ -185,16 +204,22 @@ export function PromotionEditSocialLinksPanel() {
         draftId,
       } as any);
 
+      const normalizedWebsite = normalizeExternalUrl(form.website, "website");
+      const normalizedX = normalizeExternalUrl(form.x, "x");
+      const normalizedTelegram = normalizeExternalUrl(form.telegram, "telegram");
+      const normalizedDiscord = normalizeExternalUrl(form.discord, "discord");
+      const normalizedOther = normalizeExternalUrl(form.other, "other");
+
       const updated = await saveDraftPromotion(draftId, {
         auth,
         missionStatement: bundle.promotion.missionStatement,
         roadmap: bundle.promotion.roadmap,
         launchStrategy: bundle.promotion.launchStrategy,
-        websiteUrl: form.website,
-        xUrl: form.x,
-        telegramUrl: form.telegram,
-        discordUrl: form.discord,
-        docs: form.other ? [form.other] : [],
+        websiteUrl: normalizedWebsite,
+        xUrl: normalizedX,
+        telegramUrl: normalizedTelegram,
+        discordUrl: normalizedDiscord,
+        docs: normalizedOther ? [normalizedOther] : [],
         creatorNote: bundle.promotion.creatorNote,
         bannerUrl: bundle.promotion.bannerUrl,
         shareMessage: bundle.promotion.shareMessage,
@@ -227,11 +252,11 @@ export function PromotionEditSocialLinksPanel() {
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
-        <Input value={form.website} onChange={(e) => setField("website", e.target.value)} placeholder="Website" type="url" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.x} onChange={(e) => setField("x", e.target.value)} placeholder="X (formally Twitter)" type="url" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.telegram} onChange={(e) => setField("telegram", e.target.value)} placeholder="Telegram" type="url" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.discord} onChange={(e) => setField("discord", e.target.value)} placeholder="Discord" type="url" className="h-9 bg-background/60 font-retro text-xs" />
-        <Input value={form.other} onChange={(e) => setField("other", e.target.value)} placeholder="Other" type="url" className="h-9 bg-background/60 font-retro text-xs sm:col-span-2" />
+        <Input value={form.website} onChange={(e) => setField("website", e.target.value)} placeholder="Website" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.x} onChange={(e) => setField("x", e.target.value)} placeholder="X handle or URL" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.telegram} onChange={(e) => setField("telegram", e.target.value)} placeholder="Telegram handle or URL" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.discord} onChange={(e) => setField("discord", e.target.value)} placeholder="Discord" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.other} onChange={(e) => setField("other", e.target.value)} placeholder="Other" className="h-9 bg-background/60 font-retro text-xs sm:col-span-2" />
       </div>
     </div>
   );
