@@ -13,9 +13,10 @@ const MODERATORS = parseModeratorEnv(import.meta.env.VITE_LIVE_CHAT_MODERATORS a
 
 type Props = {
   messages: LiveChatMessage[];
+  mutedWallets: Map<string, number | null>;
 };
 
-export const LiveChat = ({ messages }: Props) => {
+export const LiveChat = ({ messages, mutedWallets }: Props) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // autoscroll to bottom on new message, unless user has scrolled up
@@ -36,7 +37,14 @@ export const LiveChat = ({ messages }: Props) => {
           Comms channel open. Be the first to transmit.
         </div>
       )}
-      {messages.map((m) => {
+      {messages
+        .filter((m) => {
+          const until = mutedWallets.get(m.wallet.toLowerCase());
+          if (until === undefined) return true;
+          if (until === null) return false;       // perma — hide
+          return until <= Date.now();              // temp expired? show again
+        })
+        .map((m) => {
         const isMod = isModerator(m.wallet, MODERATORS);
         const name = m.handle ?? shortWallet(m.wallet);
         return (
