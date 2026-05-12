@@ -92,6 +92,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass = "mwz-button h-10 px-3 md:px-5 text-xs md:text-sm font-retro";
+  const overlayMenuClass = "fixed right-3 top-[76px] md:right-5 md:top-[82px] z-[70]";
 
   const openWalletModal = () => {
     setWalletModalOpen(true);
@@ -379,7 +380,7 @@ tickerInitialLoadedRef.current = true;
               </Button>
 
               {notificationOpen && (
-                <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] mwz-panel z-50 overflow-hidden p-2">
+                <div className={cn(overlayMenuClass, "w-80 max-w-[calc(100vw-1.5rem)] mwz-panel overflow-hidden p-2") }>
                   <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
                     <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
                     <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
@@ -428,6 +429,7 @@ tickerInitialLoadedRef.current = true;
                   openWalletModal();
                   return;
                 }
+                setNotificationOpen(false);
                 setDisconnectOpen((prev) => !prev);
               }}
             >
@@ -436,7 +438,7 @@ tickerInitialLoadedRef.current = true;
             </Button>
 
             {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-2 w-44 mwz-panel z-50 overflow-hidden p-1">
+              <div className={cn(overlayMenuClass, "w-44 mwz-panel overflow-hidden p-1")}>
                 <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
                   Change wallet
                 </button>
