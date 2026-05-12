@@ -428,6 +428,64 @@ All colors MUST be HSL.
   display: none;
 }
 
+/* Compact public promotion page */
+@media (min-width: 1024px) {
+  .prepare-compact > div > main > section:first-child {
+    min-height: 470px !important;
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .prepare-compact > div > main > section:first-child h1 {
+    font-size: clamp(4.25rem, 8vw, 7.5rem) !important;
+    line-height: 0.82 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child p {
+    margin-top: 1.25rem !important;
+    font-size: 1.125rem !important;
+    line-height: 1.55 !important;
+  }
+
+  .prepare-compact > div > main > section:first-child .mwz-card {
+    margin-top: 1.75rem !important;
+  }
+
+  .prepare-compact > div > main > section:not(:first-child) {
+    padding-top: 1.75rem !important;
+    padding-bottom: 1.75rem !important;
+  }
+
+  .prepare-compact .mwz-card {
+    padding: 1rem !important;
+  }
+
+  .prepare-compact .mwz-card h3 {
+    font-size: 1.55rem !important;
+  }
+
+  .prepare-compact .mwz-card p {
+    line-height: 1.55 !important;
+  }
+
+  .prepare-compact .mwz-radar {
+    height: 8rem !important;
+    width: 8rem !important;
+  }
+
+  .prepare-compact .mwz-radar + * {
+    margin-top: 0.75rem !important;
+  }
+
+  .prepare-compact .max-h-\[460px\] {
+    max-height: 320px !important;
+  }
+
+  .prepare-compact .min-h-\[190px\] {
+    min-height: 140px !important;
+  }
+}
+
 /* Glass Button Styles */
 @layer components {
   .glass-button-wrap {
