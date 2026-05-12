@@ -384,7 +384,7 @@ tickerInitialLoadedRef.current = true;
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label="Open search"
-            className="mwz-button group flex h-10 w-full items-center justify-center gap-2 px-3 sm:justify-between sm:gap-3 sm:px-3 md:w-[260px] lg:w-[110px] 2xl:w-[300px]"
+            className="mwz-button group flex h-10 w-full items-center justify-center gap-1 px-3 sm:justify-between sm:gap-1.5 sm:px-3 md:w-[260px] lg:w-[110px] 2xl:w-[300px]"
           >
             <span className="flex items-center gap-2 min-w-0">
               <Search className="h-4 w-4 shrink-0" />
