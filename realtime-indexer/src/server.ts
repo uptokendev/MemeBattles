@@ -314,6 +314,29 @@ app.get("/api/ably/token", async (req, res) => {
     const chainId = Number(req.query.chainId || 97);
     const scope = String(req.query.scope || "token");
 
+    if (scope === "live") {
+      // Live launch-party / AMA chat channel. Bilateral: clients subscribe AND
+      // publish, enter presence, fetch history. Channel name is restricted to
+      // live:<safe-slug> to prevent tokens being minted for unrelated channels.
+      const liveChannel = String(req.query.channel || "").toLowerCase();
+      if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
+        return res.status(400).json({ error: "Invalid live channel name" });
+      }
+      // For presence to count each wallet uniquely, the token must be bound to
+      // the caller's clientId (defaults to the wallet address passed by the
+      // useLiveChannel hook). Falls back to "public" if absent (history-only).
+      const liveClientId = String(req.query.clientId || "public");
+      const capability = {
+        [liveChannel]: ["subscribe", "publish", "presence", "history"],
+      };
+      const tokenRequest = await ablyRest.auth.createTokenRequest({
+        clientId: liveClientId,
+        capability: JSON.stringify(capability),
+        ttl: 60 * 60 * 1000,
+      });
+      return res.json(tokenRequest);
+    }
+
     if (scope === "league") {
       const channel = leagueChannel(chainId);
       const capability = { [channel]: ["subscribe"] };
