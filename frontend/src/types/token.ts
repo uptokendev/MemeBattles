@@ -15,6 +15,8 @@ export interface TokenFormData {
   imagePreview: string;
   website: string;
   twitter: string;
+  telegram: string;
+  discord: string;
   otherLink: string;
   showSocialLinks: boolean;
 }
@@ -34,6 +36,9 @@ export interface Token {
   timeAgo: string;
   hasWebsite?: boolean;
   hasTwitter?: boolean;
+  hasTelegram?: boolean;
+  hasDiscord?: boolean;
+  hasOtherLink?: boolean;
 }
 
 export interface TokenMetrics {
@@ -61,6 +66,8 @@ export interface TokenDetailsData {
   hasWebsite: boolean;
   hasTwitter: boolean;
   hasTelegram: boolean;
+  hasDiscord: boolean;
+  hasOtherLink: boolean;
 }
 
 export interface Transaction {
