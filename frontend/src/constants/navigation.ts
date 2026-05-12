@@ -2,7 +2,7 @@
  * Navigation and social link configuration
  */
 
-import { Plus, Trophy, BookOpen } from "lucide-react";
+import { Plus, BookOpen } from "lucide-react";
 import carouselIcon from "@/assets/menu-icons/carousel.png";
 import userIcon from "@/assets/menu-icons/user.png";
 import twitterIcon from "@/assets/social/twitter.png";
@@ -19,7 +19,6 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
   { icon: Plus, label: "Create Coin", path: "/create" },
-  { icon: Trophy, label: "Battle Leagues", path: "/battle-leagues" },
   { icon: userIcon, label: "Command Center", path: "/command" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
 ];

@@ -111,7 +111,6 @@ export function CommandPalette({ open, onOpenChange, allCampaigns }: Props) {
             <CommandGroup heading="Jump to">
               <CommandItem onSelect={() => handleNavigate("/")}>Launchpad</CommandItem>
               <CommandItem onSelect={() => handleNavigate("/create")}>Create a coin</CommandItem>
-              <CommandItem onSelect={() => handleNavigate("/battle-leagues")}>Battle Leagues</CommandItem>
               <CommandItem onSelect={() => handleNavigate("/recruiter")}>Recruiter dashboard</CommandItem>
               <CommandItem onSelect={() => handleNavigate("/profile")}>My profile</CommandItem>
               <CommandItem onSelect={() => handleNavigate("/docs")}>Docs &amp; playbook</CommandItem>

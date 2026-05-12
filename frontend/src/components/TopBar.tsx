@@ -148,7 +148,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navLinks = useMemo(
     () => [
       { label: "Launchpad", path: "/", priority: "primary" as const },
-      { label: "Battle Leagues", path: "/battle-leagues", priority: "primary" as const },
       { label: "Docs", path: "/docs", priority: "primary" as const },
       { label: "Profile", path: "/profile?tab=balances", priority: "secondary" as const },
     ],

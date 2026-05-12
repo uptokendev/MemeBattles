@@ -16,8 +16,6 @@ import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
-import League from "./pages/League";
-import LeagueDetail from "./pages/LeagueDetail";
 import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
@@ -144,9 +142,6 @@ const App = () => {
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
                     <Route path="/prepare/:slug" element={<div className="prepare-compact"><Prepare /></div>} />
                     <Route path="/live" element={<Live />} />
-                    <Route path="/battle-leagues" element={<League />} />
-                    <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
-                    <Route path="/league" element={<League />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />
                     <Route path="/command/overview" element={<LegacyCommandCenterRedirect section="overview" />} />
