@@ -9,5 +9,6 @@ import "./index.css";
 import "./styles/mwz-hud.css";
 import "./styles/tactical-command-ui.css";
 import "./styles/page-density-fixes.css";
+import "./styles/card-cleanup.css";
 
 createRoot(document.getElementById("root")!).render(<App />);
