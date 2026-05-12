@@ -42,12 +42,12 @@ const Showcase = () => {
             {isDraftRow ? "Prepare Mode" : "Live Warzone"}
           </div>
           <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-            {isDraftRow ? "Draft Campaigns" : "Live Campaigns"}
+            {isDraftRow ? "Draft Campaigns" : "Explore Campaigns"}
           </h2>
           <p className="max-w-2xl text-sm text-success/65">
             {isDraftRow
-              ? "Published Prepare Pages appear in the normal campaign row before trading goes live. Draft cards keep their Prepare Mode layout and route to the promotion page."
-              : "Active and graduated campaigns with trading metrics, UpVotes, curve progress, and token detail pages."}
+              ? ""
+              : ""}
           </p>
         </div>
 
