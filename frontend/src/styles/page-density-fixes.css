@@ -121,11 +121,11 @@
     inset: 0.75rem !important;
   }
 
-  .prepare-compact .max-h-[460px] {
+  .prepare-compact [class~="max-h-[460px]"] {
     max-height: 280px !important;
   }
 
-  .prepare-compact .min-h-[190px] {
+  .prepare-compact [class~="min-h-[190px]"] {
     min-height: 120px !important;
   }
 
