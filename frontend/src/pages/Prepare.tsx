@@ -20,7 +20,6 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import {
@@ -656,10 +655,6 @@ export default function Prepare() {
   if (armingNotification) armLabel = "Arming...";
   else if (hasArmed) armLabel = "Armed";
 
-  let armCtaLabel = "Arm me";
-  if (armingNotification) armCtaLabel = "Arming...";
-  else if (hasArmed) armCtaLabel = "Armed";
-
   let followLabel = "Follow";
   if (followingDraft) followLabel = "Following...";
   else if (hasFollowed) followLabel = "Following";
@@ -724,7 +719,7 @@ export default function Prepare() {
                   : "mwz-button-orange"
               }`}
             >
-              <Bell className="mr-2 h-4 w-4" />
+              <Bell className="mr-2 h-4 w-4" fill={hasArmed ? "currentColor" : "none"} />
               {armLabel}
             </Button>
 
@@ -735,7 +730,7 @@ export default function Prepare() {
                 hasFollowed ? "mwz-button-orange !bg-orange-500/25 !text-orange-100" : ""
               }`}
             >
-              <Star className="mr-2 h-4 w-4" />
+              <Star className="mr-2 h-4 w-4" fill={hasFollowed ? "currentColor" : "none"} />
               {followLabel}
             </Button>
 
@@ -789,8 +784,6 @@ export default function Prepare() {
 
           <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr_1fr]">
             <div className="mwz-card p-6 md:p-8">
-              <TokenLogo src={draft.logoUrl} ticker={draft.ticker} />
-
               <div className="text-xs uppercase tracking-[0.22em] text-orange-300">
                 // Lore
               </div>
@@ -918,21 +911,18 @@ export default function Prepare() {
               The moment {ticker} moves from draft to live campaign, the alert fires.
             </p>
 
-            <div className="mx-auto mt-7 flex max-w-xl gap-2">
-              <Input
-                className="h-12 border-border/70 bg-background/50 font-retro"
-                placeholder="wallet or call sign"
-              />
+            <div className="mt-7 flex justify-center">
               <Button
                 onClick={handleArmNotification}
                 disabled={armingNotification}
-                className={`mwz-button h-12 px-6 font-retro active:!translate-y-px ${
+                className={`mwz-button h-13 px-6 font-retro text-base active:!translate-y-px ${
                   hasArmed
                     ? "!border-green-400 !bg-green-500/25 !text-green-100"
                     : "mwz-button-orange"
                 }`}
               >
-                {armCtaLabel}
+                <Bell className="mr-2 h-4 w-4" fill={hasArmed ? "currentColor" : "none"} />
+                {armLabel}
               </Button>
             </div>
           </div>

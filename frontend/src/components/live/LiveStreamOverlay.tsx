@@ -1,10 +1,31 @@
 import { Link, useLocation } from "react-router-dom";
 import { Play } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+
+const PLAYBACK_ID = String(import.meta.env.VITE_MUX_PLAYBACK_ID || "").trim();
+
+async function checkLive(playbackId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://stream.mux.com/${playbackId}.m3u8`, { method: "HEAD" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export function LiveStreamOverlay() {
   const location = useLocation();
+  // Reuse the LivestreamPlayer query key so react-query dedupes the probe.
+  const { data: isLive = false } = useQuery({
+    queryKey: ["mux-live-status", PLAYBACK_ID],
+    queryFn: () => checkLive(PLAYBACK_ID),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
+    enabled: Boolean(PLAYBACK_ID),
+  });
 
   if (location.pathname === "/live") return null;
+  if (!isLive) return null;
 
   return (
     <Link

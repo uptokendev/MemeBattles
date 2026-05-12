@@ -177,7 +177,7 @@ export default function RecruiterProfile() {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.85fr]">
+      <div className={`grid gap-6 ${summary.status === "closed" && replacements.length > 0 ? "xl:grid-cols-[1.35fr_0.85fr]" : ""}`}>
         <Card className="border-border/60 bg-card/65 p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
