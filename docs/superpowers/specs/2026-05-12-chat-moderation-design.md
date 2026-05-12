@@ -80,7 +80,7 @@ type LiveChatUnmute = {
 };
 ```
 
-These types live in **both** repos. Source of truth = this spec. They are tiny enough that manual sync between repos is acceptable; no shared package needed for V1.
+These types live in **both** repos. Source of truth = this spec; if the two TypeScript declarations ever drift, this document is canonical until V2 (Section 11) introduces a shared package. They are tiny enough that manual sync between repos is acceptable; no shared package needed for V1.
 
 Convention: all `wallet` values in mute/unmute events are **lowercased** by the publisher to keep comparison simple. Receivers also lowercase before comparing, defensively.
 
@@ -107,7 +107,7 @@ Convention: all `wallet` values in mute/unmute events are **lowercased** by the 
 ```
 
 **Top bar:**
-- `<LiveStatusPill />` — LIVE (red pulsing dot) or OFFLINE, driven by Mux HEAD probe against the same `VITE_LIVE_MUX_PLAYBACK_ID` MemeBattles uses
+- `<LiveStatusPill />` — LIVE (red pulsing dot) or OFFLINE, driven by Mux HEAD probe against the same `VITE_MUX_PLAYBACK_ID` MemeBattles uses
 - `<ViewerCountChip />` — Ably presence count
 - Channel name shown small, monospaced (operational reassurance: "you're looking at the right channel")
 
@@ -172,20 +172,30 @@ Differs from MemeBattles' equivalent:
 # Shared with MemeBattles /live
 VITE_LIVE_ABLY_AUTH_URL=https://memebattles.xyz/api/ably/token
 VITE_LIVE_CHAT_CHANNEL=live:launch-party
-VITE_LIVE_MUX_PLAYBACK_ID=
+VITE_MUX_PLAYBACK_ID=
 ```
 
 ## 6. MemeBattles side — what changes
 
 ### 6.1 CORS allow-list on `/api/ably/token`
 
-[`MemeBattles/frontend/api/ably/token.js`](../../frontend/api/ably/token.js) currently issues Ably tokens. Add an `Access-Control-Allow-Origin` response header allow-listing:
-- `https://<mw-dashboard production origin>`
-- `http://localhost:<mw-dashboard dev port>` (Vite default — confirm exact port)
+**Prerequisite already done (commit `6a67883`):** `frontend/api/ably/token.js` now supports `scope=live&channel=<name>` and mints tokens with `subscribe`, `publish`, `presence`, `history` capabilities for `live:<safe-slug>` channels. This was a blocker for the existing MemeBattles `/live` chat too — without it, the token endpoint returned 400 for the live channel.
 
-Also support preflight `OPTIONS` if it isn't already.
+**Still needed for mw-dashboard:**
 
-~5 lines of change.
+Add `Access-Control-Allow-Origin` response headers + preflight `OPTIONS` handling so the mw-dashboard browser can call `https://<memebattles-prod-host>/api/ably/token?scope=live&channel=...` cross-origin. Allow-list:
+- `https://<mw-dashboard production origin>` (TBD by deploy config — confirm at implementation time)
+- `http://localhost:<dev port>` for local dev (mw-dashboard's Vite default; confirm in its `vite.config.ts`)
+
+**Identity model for the token endpoint:**
+
+The endpoint is currently **unauthenticated** — anyone reaching it gets a token. The mute model relies on this: mw-dashboard operators receive the same token as MemeBattles viewers, both with `publish` capability. The Supabase login on mw-dashboard provides operational gating (you have to log in to reach the dashboard); Ably itself doesn't differentiate operator vs viewer.
+
+The mw-dashboard browser does NOT forward its Supabase JWT to the token endpoint — there's nothing on the MemeBattles side that would verify it. Authorization is purely "did you reach `/live` in mw-dashboard," which Supabase enforces inside mw-dashboard.
+
+**Implication:** anyone who knows the MemeBattles token endpoint URL and the live channel name can mint a token and publish to the channel — including publishing `delete` or `mute` events as if they were an operator. For V1 (one-off launch, no public mw-dashboard URL, dashboard origin not widely known) this is acceptable. V2's server-side enforcement (Future Work, Section 11) should add a JWT check or move moderation publishes to a server-side endpoint.
+
+~10 lines of change in `token.js` (CORS headers + OPTIONS branch).
 
 ### 6.2 Mute consumption in `useLiveChannel`
 
@@ -194,7 +204,7 @@ Extend `MemeBattles/frontend/src/hooks/useLiveChannel.ts`:
 - Subscribe to `mute` and `unmute` events alongside the existing `delete` handler
 - Maintain a new `mutedWallets: Map<string, number | null>` (wallet lowercase → expiresAt or null for perma)
 - Seed from `channel.history({ limit: 50 })` like delete events
-- Auto-expire temp mutes via a 30-second `setInterval` tick that re-renders (drops entries with `expiresAt !== null && expiresAt < Date.now()`)
+- Auto-expire temp mutes via a 30-second `setInterval` tick that re-renders (drops entries with `expiresAt !== null && expiresAt < Date.now()`). The 30-second cadence is intentional — viewers only need approximate accuracy. mw-dashboard's right-rail panel ticks at 1-second cadence instead because operators want a precise countdown to decide whether to escalate. The asymmetry is deliberate.
 - Expose `mutedWallets`, plus a derived `isWalletMuted(wallet: string): boolean` helper
 - On `unmute` event: drop matching entry from the map immediately
 
@@ -210,6 +220,7 @@ Add a `mutedUntil` prop:
   - `null` (perma): `"You have been muted."`
   - temp: `"Muted — wait X more"` with countdown (live-updating)
 - On the moment of transition from "not muted" → "muted", fire a sonner toast: `"You have been muted for X"` or `"You have been muted (perma)"`. Use a small `useEffect` watching for the transition (similar to the stream-interruption toast already in `LivestreamPlayer.tsx`).
+- On the reverse transition (muted → unmuted, whether by explicit unmute or temp expiry), fire a softer toast: `"You can chat again."`. Same `useEffect` pattern as above.
 
 ### 6.5 Type updates
 
@@ -266,8 +277,8 @@ Extend `MemeBattles/frontend/src/lib/liveChat.ts` to export the new `LiveChatMut
 - T-30: open mw-dashboard `/live`, see "No active mutes", `OFFLINE` pill, presence count `0` (you don't enter presence as operator)
 - Connect a test wallet on MemeBattles `/live` from another browser → presence `1`, message appears when you type
 - From mw-dashboard, click ⋮ → Delete → confirm → message vanishes on the MemeBattles side within ~1s
-- From mw-dashboard, click ⋮ → Mute 1m → the test wallet's input disables + sees a toast; right-rail panel shows the wallet with `0m 59s` counting down
-- Wait 1 minute → input re-enables, panel empties
+- From mw-dashboard, click ⋮ → Mute 1m → the test wallet's input disables + sees a "You have been muted for 1m" toast; right-rail panel shows the wallet with `0m 59s` counting down
+- Wait 1 minute → input re-enables, panel empties, test wallet sees a "You can chat again." toast
 - Mute → Unmute mid-mute → confirm immediate restore
 - Perma-mute → reload the mw-dashboard page → confirm the mute persists in the right-rail panel (history seed works)
 - New stream on a fresh channel name → confirm all mutes are gone
