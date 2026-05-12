@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bell, Menu } from "lucide-react";
 import { SearchBar } from "./ui/search-bar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -92,7 +93,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass = "mwz-button h-10 px-3 md:px-5 text-xs md:text-sm font-retro";
-  const overlayMenuClass = "fixed right-3 top-[76px] md:right-5 md:top-[82px] z-[70]";
+  const overlayMenuClass = "fixed right-3 top-[76px] md:right-5 md:top-[82px] z-[100]";
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
 
   const openWalletModal = () => {
     setWalletModalOpen(true);
@@ -123,24 +125,24 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
-if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
-  setTickerMetricsByCampaign({});
-  tickerInitialLoadedRef.current = true;
-  return;
-}
+        if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
+          setTickerMetricsByCampaign({});
+          tickerInitialLoadedRef.current = true;
+          return;
+        }
 
-const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
+        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
 
-if (cancelled) return;
+        if (cancelled) return;
 
-const next: Record<string, CampaignMetrics | null> = {};
-top.forEach((c, idx) => {
-  const r = results[idx];
-  next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
-});
+        const next: Record<string, CampaignMetrics | null> = {};
+        top.forEach((c, idx) => {
+          const r = results[idx];
+          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
+        });
 
-setTickerMetricsByCampaign(next);
-tickerInitialLoadedRef.current = true;
+        setTickerMetricsByCampaign(next);
+        tickerInitialLoadedRef.current = true;
       } catch (err) {
         console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
@@ -306,9 +308,66 @@ tickerInitialLoadedRef.current = true;
     setDraftNotifications(getDraftNotifications());
   };
 
+  const notificationDropdown = portalTarget && notificationOpen
+    ? createPortal(
+        <div className={cn(overlayMenuClass, "w-80 max-w-[calc(100vw-1.5rem)] mwz-panel overflow-hidden p-2") }>
+          <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
+            <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
+            <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+              Mark read
+            </button>
+          </div>
+          <div className="max-h-80 overflow-y-auto py-1">
+            {draftNotifications.slice(0, 5).map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                onClick={() => openNotificationTarget(notification)}
+                className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-retro text-xs text-foreground">{notification.title}</span>
+                  {!notification.read && <span className="h-2 w-2 shrink-0 bg-accent" />}
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{notification.body}</p>
+              </button>
+            ))}
+            {draftNotifications.length === 0 && (
+              <div className="px-2 py-4 text-xs text-muted-foreground">No notifications yet.</div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setNotificationOpen(false);
+              navigate("/profile?tab=notifications");
+            }}
+            className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+          >
+            View all
+          </button>
+        </div>,
+        portalTarget,
+      )
+    : null;
+
+  const walletDropdown = portalTarget && wallet.isConnected && disconnectOpen
+    ? createPortal(
+        <div className={cn(overlayMenuClass, "w-44 mwz-panel overflow-hidden p-1")}>
+          <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
+            Change wallet
+          </button>
+          <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
+            Disconnect
+          </button>
+        </div>,
+        portalTarget,
+      )
+    : null;
+
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-2 px-3 md:px-5 py-2.5 min-h-[66px]">
+      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-2 px-3 md:px-5 py-2.5 h-[66px] overflow-visible">
         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden mwz-button p-2" aria-label="Toggle menu">
           <Menu className="h-5 w-5" />
         </button>
@@ -361,96 +420,43 @@ tickerInitialLoadedRef.current = true;
           </Button>
 
           {wallet.isConnected && (
-            <div className="relative">
-              <Button
-                type="button"
-                onClick={() => {
-                  setDisconnectOpen(false);
-                  setNotificationOpen((prev) => !prev);
-                }}
-                className={cn(topbarButtonClass, "relative px-3")}
-                aria-label="Notifications"
-              >
-                <Bell className="h-4 w-4" />
-                {unreadNotifications > 0 && (
-                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center border border-accent bg-background px-1 text-[10px] text-accent">
-                    {unreadNotifications}
-                  </span>
-                )}
-              </Button>
-
-              {notificationOpen && (
-                <div className={cn(overlayMenuClass, "w-80 max-w-[calc(100vw-1.5rem)] mwz-panel overflow-hidden p-2") }>
-                  <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
-                    <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
-                    <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
-                      Mark read
-                    </button>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto py-1">
-                    {draftNotifications.slice(0, 5).map((notification) => (
-                      <button
-                        key={notification.id}
-                        type="button"
-                        onClick={() => openNotificationTarget(notification)}
-                        className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-retro text-xs text-foreground">{notification.title}</span>
-                          {!notification.read && <span className="h-2 w-2 shrink-0 bg-accent" />}
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{notification.body}</p>
-                      </button>
-                    ))}
-                    {draftNotifications.length === 0 && (
-                      <div className="px-2 py-4 text-xs text-muted-foreground">No notifications yet.</div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNotificationOpen(false);
-                      navigate("/profile?tab=notifications");
-                    }}
-                    className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
-                  >
-                    View all
-                  </button>
-                </div>
+            <Button
+              type="button"
+              onClick={() => {
+                setDisconnectOpen(false);
+                setNotificationOpen((prev) => !prev);
+              }}
+              className={cn(topbarButtonClass, "relative px-3")}
+              aria-label="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadNotifications > 0 && (
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center border border-accent bg-background px-1 text-[10px] text-accent">
+                  {unreadNotifications}
+                </span>
               )}
-            </div>
+            </Button>
           )}
 
-          <div className="relative">
-            <Button
-              className={topbarButtonClass}
-              onClick={() => {
-                if (!wallet.isConnected) {
-                  openWalletModal();
-                  return;
-                }
-                setNotificationOpen(false);
-                setDisconnectOpen((prev) => !prev);
-              }}
-            >
-              <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
-              <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
-            </Button>
-
-            {wallet.isConnected && disconnectOpen && (
-              <div className={cn(overlayMenuClass, "w-44 mwz-panel overflow-hidden p-1")}>
-                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
-                  Change wallet
-                </button>
-                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
-                  Disconnect
-                </button>
-              </div>
-            )}
-          </div>
+          <Button
+            className={topbarButtonClass}
+            onClick={() => {
+              if (!wallet.isConnected) {
+                openWalletModal();
+                return;
+              }
+              setNotificationOpen(false);
+              setDisconnectOpen((prev) => !prev);
+            }}
+          >
+            <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
+            <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
+          </Button>
         </div>
       </div>
 
+      {notificationDropdown}
+      {walletDropdown}
       <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
     </div>
   );
