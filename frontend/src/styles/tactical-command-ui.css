@@ -194,11 +194,15 @@ h2.mwz-section-title,
   background-color: rgba(var(--mwz-orange-rgb), 0.08) !important;
 }
 
-/* Core panels */
-.mwz-hud-frame,
-.mwz-panel,
-.mwz-card {
-  position: relative !important;
+/* Core panels.
+   Selector excludes `.absolute` so popovers using `.mwz-panel.absolute`
+   (e.g. the topbar notification + wallet dropdowns) keep their Tailwind
+   `position: absolute` — otherwise this rule would force them into flow
+   and the topbar would stretch vertically. */
+.mwz-hud-frame:not(.absolute),
+.mwz-panel:not(.absolute),
+.mwz-card:not(.absolute) {
+  position: relative;
   isolation: isolate;
   border: 1px solid var(--mwz-border) !important;
   background:
@@ -288,18 +292,25 @@ h2.mwz-section-title,
 }
 
 .fixed.top-0 .mwz-hud-frame a[href='/'] {
-  min-width: 250px;
-  height: 56px;
-  padding: 0 18px 0 8px;
+  /* min-width is only meaningful when the MEMEWARZONE label is visible (2xl).
+     Below that, let the badge shrink to fit the icon. */
+  height: 60px;
+  padding: 0 22px 0 10px;
   margin-left: -4px;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.045), transparent 68%), linear-gradient(135deg, rgba(24, 27, 26, 0.96), rgba(7, 8, 8, 0.96));
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%);
 }
 
+@media (min-width: 1536px) {
+  .fixed.top-0 .mwz-hud-frame a[href='/'] {
+    min-width: 250px;
+  }
+}
+
 .fixed.top-0 .mwz-hud-frame a[href='/'] img {
-  height: 46px !important;
-  width: 46px !important;
+  height: 56px !important;
+  width: 56px !important;
   filter: drop-shadow(0 0 10px rgba(var(--mwz-orange-rgb), 0.36)) drop-shadow(0 8px 16px rgba(0, 0, 0, 0.72)) !important;
 }
 
@@ -321,6 +332,7 @@ h2.mwz-section-title,
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 42%), linear-gradient(135deg, rgba(21, 24, 23, 0.98), rgba(5, 7, 7, 0.97)) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.065), inset 0 -1px 0 rgba(0, 0, 0, 0.72), 0 10px 24px rgba(0, 0, 0, 0.28) !important;
   text-shadow: none !important;
+  cursor: pointer;
   transition: color 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease !important;
 }
 
@@ -353,19 +365,44 @@ h2.mwz-section-title,
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.52), 0 0 20px rgba(var(--mwz-orange-rgb), 0.34), 0 14px 30px rgba(0, 0, 0, 0.38) !important;
 }
 
+/* Press feedback (momentary :active) for nav links + chips + non-topbar
+   buttons. Topbar buttons have their own :active rule scoped to .fixed.top-0
+   that adds an even stronger inset. */
+.mwz-button:active,
+.mwz-chip:active,
+.mwz-nav-link:active {
+  transform: translateY(1px) !important;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.32),
+    0 4px 10px rgba(0, 0, 0, 0.24) !important;
+  transition-duration: 80ms !important;
+}
+
+/* Keyboard focus ring. Visible only for keyboard navigation, not mouse focus. */
+.mwz-button:focus-visible,
+.mwz-chip:focus-visible,
+.mwz-nav-link:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.92),
+    0 0 0 4px rgba(var(--mwz-orange-rgb), 0.85),
+    0 0 22px rgba(var(--mwz-orange-rgb), 0.4) !important;
+}
+
 .fixed.top-0 .mwz-nav-link {
-  display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  min-height: 54px !important;
-  min-width: 122px;
-  padding-left: 1.4rem !important;
-  padding-right: 1.4rem !important;
+  min-height: 54px;
   margin-left: -1px;
-  border-color: rgba(255, 255, 255, 0.07) !important;
-  color: rgba(236, 232, 220, 0.76) !important;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 46%), linear-gradient(90deg, rgba(16, 18, 17, 0.96), rgba(8, 10, 10, 0.98)) !important;
+  border-color: rgba(255, 255, 255, 0.07);
+  color: rgba(236, 232, 220, 0.76);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 46%), linear-gradient(90deg, rgba(16, 18, 17, 0.96), rgba(8, 10, 10, 0.98));
   clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px);
+}
+
+.fixed.top-0 .mwz-nav-link:not(.hidden) {
+  display: inline-flex;
 }
 
 .fixed.top-0 .mwz-nav-link-active {
@@ -387,12 +424,68 @@ h2.mwz-section-title,
 .fixed.top-0 .mwz-button {
   min-height: 48px !important;
   clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px);
+  cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.2, 0.7, 0.2, 1),
+              box-shadow 160ms ease,
+              border-color 160ms ease,
+              background 160ms ease,
+              color 160ms ease !important;
 }
 
 .fixed.top-0 .mwz-button:first-of-type {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 40%), linear-gradient(135deg, rgba(232, 91, 10, 0.96), rgba(118, 42, 6, 0.98)) !important;
   border-color: rgba(var(--mwz-orange-rgb), 0.92) !important;
   box-shadow: 0 0 20px rgba(var(--mwz-orange-rgb), 0.36), inset 0 1px 0 rgba(255,255,255,0.14) !important;
+}
+
+/* Topbar button interaction polish: stronger hover glow, pressed-in :active,
+   and a visible keyboard focus ring. Scoped to topbar so other buttons stay
+   unchanged. */
+
+.fixed.top-0 .mwz-button:hover {
+  transform: translateY(-1px) !important;
+  box-shadow:
+    0 0 22px rgba(var(--mwz-orange-rgb), 0.32),
+    0 14px 28px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+}
+
+.fixed.top-0 .mwz-button:first-of-type:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 40%),
+    linear-gradient(135deg, rgba(255, 117, 26, 0.98), rgba(140, 52, 8, 0.99)) !important;
+  border-color: rgba(var(--mwz-orange-rgb), 1) !important;
+  box-shadow:
+    0 0 32px rgba(var(--mwz-orange-rgb), 0.55),
+    0 16px 32px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+
+.fixed.top-0 .mwz-button:active {
+  transform: translateY(1px) !important;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.35),
+    0 4px 10px rgba(0, 0, 0, 0.28) !important;
+  transition-duration: 80ms !important;
+}
+
+.fixed.top-0 .mwz-button:first-of-type:active {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 50%),
+    linear-gradient(135deg, rgba(196, 76, 8, 0.98), rgba(96, 34, 4, 0.99)) !important;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.92),
+    0 4px 12px rgba(0, 0, 0, 0.32) !important;
+}
+
+.fixed.top-0 .mwz-button:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.92),
+    0 0 0 4px rgba(var(--mwz-orange-rgb), 0.85),
+    0 0 22px rgba(var(--mwz-orange-rgb), 0.45) !important;
 }
 
 .fixed.top-0 input,
@@ -605,19 +698,23 @@ h2.mwz-section-title,
   );
   mix-blend-mode: screen;
 }
-/* Cards and card frame assets */
+/* Cards and card frame assets.
+   The frame is drawn via CSS border-image (9-slice) so the corner decorations
+   stay native size — only the thin straight edges stretch. */
 .mwz-card {
   --mwz-cut: var(--mwz-card-cut);
   --mwz-card-frame-image: var(--mwz-card-bg-vertical);
-  --mwz-card-frame-padding: clamp(10px, 0.75vw, 15px);
+  --mwz-card-frame-slice: 80;
+  --mwz-card-frame-border: clamp(14px, 1.2vw, 22px);
   overflow: hidden !important;
-  border-color: transparent !important;
   clip-path: none !important;
+  border-color: rgba(57, 255, 79, 0.04) !important;
   background-color: transparent !important;
-background-image: var(--mwz-card-frame-image) !important;
-background-size: 100% 100% !important;
-background-position: center !important;
-background-repeat: no-repeat !important;
+  background-image:
+    linear-gradient(180deg, rgba(4, 12, 6, 0.92), rgba(0, 4, 1, 0.96)) !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, filter 180ms ease !important;
 }
 
@@ -626,14 +723,16 @@ background-repeat: no-repeat !important;
 .mwz-featured-layout > .space-y-3 .mwz-card,
 .mwz-launchpad-page section.mwz-card {
   --mwz-card-frame-image: var(--mwz-card-bg-horizontal);
-  --mwz-card-frame-padding: clamp(10px, 0.85vw, 18px);
+  --mwz-card-frame-slice: 70;
+  --mwz-card-frame-border: clamp(14px, 1.1vw, 20px);
 }
 
 .mwz-card--vertical,
 .mwz-launchpad-page .grid .mwz-card.group,
 .mwz-launchpad-page article.mwz-card {
   --mwz-card-frame-image: var(--mwz-card-bg-vertical);
-  --mwz-card-frame-padding: clamp(10px, 0.9vw, 16px);
+  --mwz-card-frame-slice: 80;
+  --mwz-card-frame-border: clamp(12px, 1vw, 18px);
 }
 
 .mwz-card::before {
@@ -643,16 +742,19 @@ background-repeat: no-repeat !important;
   z-index: 5 !important;
   pointer-events: none !important;
   opacity: var(--mwz-card-frame-opacity) !important;
-  padding: var(--mwz-card-frame-padding) !important;
-  background-image: var(--mwz-card-frame-image) !important;
-  background-size: 100% 100% !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  border: 0 !important;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
+  /* 9-slice frame from the card asset. No `fill` keyword → middle stays
+     transparent so the dark gradient below shows through. */
+  border-style: solid !important;
+  border-color: transparent !important;
+  border-width: var(--mwz-card-frame-border) !important;
+  border-image-source: var(--mwz-card-frame-image) !important;
+  border-image-slice: var(--mwz-card-frame-slice) !important;
+  border-image-width: 1 !important;
+  border-image-repeat: stretch !important;
+  background: none !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  padding: 0 !important;
 }
 
 .mwz-card::after {

@@ -3,9 +3,10 @@
  * Responsive header with search, actions, and ticker feed
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { Bell, Menu } from "lucide-react";
-import { SearchBar } from "./ui/search-bar";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Bell, Menu, Search } from "lucide-react";
+import { CommandPalette } from "@/components/search/CommandPalette";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,6 @@ import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
-import { useTokenSearch } from "@/hooks/useTokenSearch";
 import { ethers } from "ethers";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import {
@@ -66,10 +66,30 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
   const [notificationsFromApi, setNotificationsFromApi] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const bellRef = useRef<HTMLButtonElement | null>(null);
+  const walletRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; right: number } | null>(null);
+
+  useEffect(() => {
+    const updateAnchor = () => {
+      const anchorEl = notificationOpen ? bellRef.current : disconnectOpen ? walletRef.current : null;
+      if (!anchorEl) return;
+      const rect = anchorEl.getBoundingClientRect();
+      setPopoverAnchor({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+    };
+    updateAnchor();
+    if (!notificationOpen && !disconnectOpen) return;
+    window.addEventListener("resize", updateAnchor);
+    window.addEventListener("scroll", updateAnchor, true);
+    return () => {
+      window.removeEventListener("resize", updateAnchor);
+      window.removeEventListener("scroll", updateAnchor, true);
+    };
+  }, [notificationOpen, disconnectOpen]);
 
   const { price: bnbUsd } = useBnbUsdPrice(true);
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [allCampaigns, setAllCampaigns] = useState<CampaignInfo[]>([]);
 
   const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
@@ -78,10 +98,38 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<Record<string, CampaignMetrics | null>>({});
   const [tickerLoading, setTickerLoading] = useState(true);
 
-  const { results: searchResults, loading: searchLoading, error: searchError } = useTokenSearch(searchQuery, allCampaigns, {
-    limit: 10,
-    debounceMs: 250,
-  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (e.key === "Escape") {
+        setNotificationOpen(false);
+        setDisconnectOpen(false);
+      } else if (e.key === "/" && !meta) {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (!notificationOpen && !disconnectOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-topbar-popover]")) return;
+      setNotificationOpen(false);
+      setDisconnectOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => window.removeEventListener("pointerdown", onPointerDown);
+  }, [notificationOpen, disconnectOpen]);
 
   const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
@@ -94,11 +142,10 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   const navLinks = useMemo(
     () => [
-      { label: "Launchpad", path: "/" },
-      { label: "Create Coin", path: "/create" },
-      { label: "Battle Leagues", path: "/battle-leagues" },
-      { label: "Profile", path: "/profile?tab=balances" },
-      { label: "Docs", path: "/docs" },
+      { label: "Launchpad", path: "/", priority: "primary" as const },
+      { label: "Battle Leagues", path: "/battle-leagues", priority: "primary" as const },
+      { label: "Docs", path: "/docs", priority: "primary" as const },
+      { label: "Profile", path: "/profile?tab=balances", priority: "secondary" as const },
     ],
     []
   );
@@ -298,45 +345,44 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
           <Menu className="h-5 w-5" />
         </button>
 
-        <div className="hidden lg:flex items-center gap-5 flex-1 min-w-0">
-          <Link to="/" className="flex items-center gap-2 mr-2 shrink-0">
-            <img src={brandMark} alt="MemeWarzone" className="h-10 w-10 object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
-            <span className="mwz-section-title text-base">MemeWarzone</span>
-          </Link>
+        <Link to="/" className="hidden md:flex items-center gap-2 mr-2 shrink-0">
+          <img src={brandMark} alt="MemeWarzone" className="h-10 w-10 object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
+          <span className="mwz-section-title hidden 2xl:inline text-base">MemeWarzone</span>
+        </Link>
 
-          <div className="flex items-center gap-1 min-w-0">
-            {navLinks.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn("mwz-nav-link px-3 py-2 text-sm font-retro whitespace-nowrap", isActive(item.path) && "mwz-nav-link-active")}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
+        <div className="hidden lg:flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+          {navLinks.map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={cn(
+                "mwz-nav-link px-3 py-2 text-sm whitespace-nowrap 2xl:px-4 2xl:text-base",
+                item.priority === "secondary" && "hidden 2xl:inline-flex",
+                isActive(item.path) && "mwz-nav-link-active",
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
         </div>
 
-        <div className="min-w-0 flex-1 lg:flex-none lg:w-[340px] xl:w-[420px] mx-1 lg:mx-4">
-          <SearchBar
-            placeholder="Search campaigns..."
-            value={searchQuery}
-            onValueChange={(q) => {
-              setSearchQuery(q);
-              try {
-                window.dispatchEvent(new CustomEvent("memebattles:homeSearch", { detail: String(q ?? "") }));
-              } catch {
-                // ignore
-              }
-            }}
-            results={searchResults}
-            loading={searchLoading}
-            error={searchError}
-            onSelectResult={(r) => {
-              setSearchQuery("");
-              navigate(`/token/${r.campaignAddress.toLowerCase()}`);
-            }}
-          />
+        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-3 xl:mx-4">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Open search"
+            className="mwz-button group flex h-10 w-full items-center justify-center gap-2 px-3 sm:justify-between sm:gap-3 sm:px-3 md:w-[260px] lg:w-[110px] 2xl:w-[300px]"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="hidden truncate text-xs uppercase tracking-[0.14em] text-success/70 sm:inline lg:hidden 2xl:inline">
+                Search the warzone
+              </span>
+            </span>
+            <kbd className="hidden items-center gap-1 border border-success/30 bg-black/60 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-success/65 group-hover:text-accent sm:inline-flex">
+              <span className="text-[11px]">⌘</span>K
+            </kbd>
+          </button>
         </div>
 
         <div className="relative flex items-center gap-2 shrink-0">
@@ -346,8 +392,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
           </Button>
 
           {wallet.isConnected && (
-            <div className="relative">
+            <div className="relative" data-topbar-popover>
               <Button
+                ref={bellRef}
                 type="button"
                 onClick={() => {
                   setDisconnectOpen(false);
@@ -364,8 +411,12 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                 )}
               </Button>
 
-              {notificationOpen && (
-                <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] mwz-panel z-50 overflow-hidden p-2">
+              {notificationOpen && popoverAnchor && createPortal(
+                <div
+                  data-topbar-popover
+                  className="w-80 max-w-[calc(100vw-2rem)] mwz-panel overflow-hidden p-2"
+                  style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
+                >
                   <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
                     <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
                     <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
@@ -401,19 +452,22 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                   >
                     View all
                   </button>
-                </div>
+                </div>,
+                document.body,
               )}
             </div>
           )}
 
-          <div className="relative">
+          <div className="relative" data-topbar-popover>
             <Button
+              ref={walletRef}
               className={topbarButtonClass}
               onClick={() => {
                 if (!wallet.isConnected) {
                   openWalletModal();
                   return;
                 }
+                setNotificationOpen(false);
                 setDisconnectOpen((prev) => !prev);
               }}
             >
@@ -421,15 +475,20 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
             </Button>
 
-            {wallet.isConnected && disconnectOpen && (
-              <div className="absolute right-0 mt-2 w-44 mwz-panel z-50 overflow-hidden p-1">
+            {wallet.isConnected && disconnectOpen && popoverAnchor && createPortal(
+              <div
+                data-topbar-popover
+                className="w-44 mwz-panel overflow-hidden p-1"
+                style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
+              >
                 <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
                   Change wallet
                 </button>
                 <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
                   Disconnect
                 </button>
-              </div>
+              </div>,
+              document.body,
             )}
           </div>
         </div>
@@ -448,6 +507,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
       </div>
 
       <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} allCampaigns={allCampaigns} />
 
       <style>{`
         @keyframes scroll {

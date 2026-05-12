@@ -73,7 +73,7 @@ const App = () => {
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
-                <main className="flex-1 overflow-auto pt-[5.1rem] md:pt-[5.4rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
+                <main className="flex-1 overflow-auto scroll-pt-[5.5rem] md:scroll-pt-[6rem] pt-[5.1rem] md:pt-[5.4rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />

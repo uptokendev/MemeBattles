@@ -17,64 +17,30 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Warzone palette: scorched steel, ember orange, NVG green */
-    --background: 220 20% 6%;
-    --foreground: 45 22% 94%;
-
-    --card: 218 16% 12%;
-    --card-foreground: 45 18% 94%;
-
-    --popover: 220 18% 8%;
-    --popover-foreground: 45 18% 94%;
-
-    --primary: 218 15% 15%;
-    --primary-foreground: 45 18% 94%;
-
-    --secondary: 218 14% 18%;
-    --secondary-foreground: 45 14% 92%;
-
-    --muted: 218 13% 16%;
-    --muted-foreground: 214 12% 73%;
-
-    --accent: 23 88% 52%;
-    --accent-foreground: 45 22% 96%;
-
+    /* Semantic tokens (--background, --accent, --success, etc.) live in
+       styles/mwz-hud.css — the HUD theme wins on cascade. Only vars not
+       declared there belong here. */
     --destructive: 2 78% 58%;
     --destructive-foreground: 0 0% 98%;
-
-    --success: 109 81% 49%;
-    --success-foreground: 220 20% 8%;
-
-    --border: 218 12% 24%;
-    --input: 218 15% 14%;
-    --ring: 23 88% 52%;
-
-    --radius: 0.9rem;
 
     --glow-primary: 218 15% 18%;
     --glow-accent: 23 88% 52%;
     --glow-success: 109 81% 49%;
     --glow-olive: 78 21% 45%;
 
-    --sidebar-background: 220 18% 8%;
-    --sidebar-foreground: 214 13% 79%;
-    --sidebar-primary: 23 88% 52%;
-    --sidebar-primary-foreground: 45 22% 96%;
-    --sidebar-accent: 218 15% 13%;
-    --sidebar-accent-foreground: 23 88% 52%;
-    --sidebar-border: 218 12% 22%;
-    --sidebar-ring: 23 88% 52%;
+    /* RGB triplets for rgba() composition (ember/NVG/steel raw channels). */
+    --ember-rgb: 240, 106, 26;
+    --nvg-rgb: 57, 227, 23;
+    --steel-rgb: 58, 64, 72;
 
+    /* Used by legacy .holo-card / .holo-button / scrolling feed components.
+       Names ("cyan-*") predate the warzone palette; values are orange/green. */
     --bg-primary: #0b0d10;
     --text-primary: #f2f2ee;
     --cyan-glow: #f06a1a;
     --cyan-bright: #39e317;
     --cyan-border: rgba(240, 106, 26, 0.3);
     --card-bg: linear-gradient(160deg, rgba(19, 23, 28, 0.82), rgba(11, 13, 16, 0.92));
-
-    --ember-rgb: 240, 106, 26;
-    --nvg-rgb: 57, 227, 23;
-    --steel-rgb: 58, 64, 72;
   }
 }
 

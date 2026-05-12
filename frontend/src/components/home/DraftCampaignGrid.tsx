@@ -52,8 +52,8 @@ function formatCreatedAt(value?: string | null) {
 }
 
 function heatClass(label?: string) {
-  if (label === "On Fire") return "border-orange-400/70 text-orange-300";
-  if (label === "Hot") return "border-orange-400/60 text-orange-400";
+  if (label === "On Fire") return "border-accent/70 text-accent";
+  if (label === "Hot") return "border-accent/60 text-accent/85";
   if (label === "Warming") return "border-success/55 text-success";
   return "border-success/30 text-success/65";
 }
@@ -170,7 +170,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
   }, [items, query.search, query.sort]);
 
   const resultsMeta = `Showing ${visibleItems.length} draft campaigns`;
-  const gridClass = "grid justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(172px,220px))] sm:gap-4";
+  const gridClass = "grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5";
 
   return (
     <div className={cn("w-full", className)}>
@@ -180,10 +180,10 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
 
       {loading && visibleItems.length === 0 ? (
         <div className={gridClass}>
-          {Array.from({ length: 12 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={i}
-              className="aspect-[1/2] w-full animate-pulse rounded-2xl border border-border/40 bg-card/40"
+              className="min-h-[322px] w-full animate-pulse border border-success/25 bg-black/60"
             />
           ))}
         </div>
@@ -241,7 +241,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
-                        <div className="mwz-section-title truncate text-lg leading-none hover:text-orange-400">
+                        <div className="mwz-section-title truncate text-lg leading-none hover:text-accent">
                           {draft.name}
                         </div>
                       </Link>

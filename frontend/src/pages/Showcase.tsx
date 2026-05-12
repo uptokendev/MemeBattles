@@ -38,7 +38,7 @@ const Showcase = () => {
         </div>
 
         <div className="mwz-live-heading flex flex-col gap-1 pt-2">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
             {isDraftRow ? "Prepare Mode" : "Live Warzone"}
           </div>
           <h2 className="mwz-section-title text-2xl text-success md:text-3xl">

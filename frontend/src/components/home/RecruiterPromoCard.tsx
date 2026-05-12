@@ -1,21 +1,24 @@
-import { Link } from "react-router-dom";
-import { ArrowRight, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 type RecruiterPromoCardProps = {
   className?: string;
 };
 
 export function RecruiterPromoCard({ className }: RecruiterPromoCardProps) {
+  const navigate = useNavigate();
+
   return (
     <div className={cn("mwz-card w-full min-h-[220px] p-4 md:p-5", className)}>
       <div className="grid min-h-[188px] grid-cols-[140px_minmax(0,1fr)] gap-4 items-center">
         <div className="relative flex items-center justify-center h-full border-r border-success/25 pr-4">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(57,255,79,0.18),transparent_58%)]" />
-          <div className="relative z-10 flex h-28 w-28 items-center justify-center border border-success/40 bg-success/10 shadow-[0_0_30px_rgba(57,255,79,0.18)]">
-            <Users className="h-14 w-14 text-success" />
-          </div>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,153,0,0.18),transparent_58%)]" />
+          <Users
+            className="relative z-10 h-32 w-32 text-accent drop-shadow-[0_0_22px_rgba(255,153,0,0.55)]"
+            strokeWidth={1.4}
+          />
         </div>
 
         <div className="flex min-w-0 flex-col justify-between h-full py-1">
@@ -24,20 +27,16 @@ export function RecruiterPromoCard({ className }: RecruiterPromoCardProps) {
               <Users className="h-5 w-5" />
               Recruiters
             </div>
-            <div className="mwz-muted text-base leading-7">
+            <div className="mwz-muted text-base leading-8">
               <div>Build your squad.</div>
               <div>Bring creators and traders.</div>
               <div>Prepare for rewards.</div>
             </div>
           </div>
 
-          <div className="mt-4">
-            <Button asChild className="mwz-button mwz-button-active w-full h-10 text-xs">
-              <Link to="/recruiter">
-                Become a Recruiter
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <Button className="mwz-button h-10 px-2 text-[11px] whitespace-nowrap" onClick={() => navigate("/recruiter")}>Learn More</Button>
+            <Button className="mwz-button mwz-button-active h-10 px-2 text-[11px] whitespace-nowrap" onClick={() => navigate("/recruiter/signup")}>Sign Up</Button>
           </div>
         </div>
       </div>

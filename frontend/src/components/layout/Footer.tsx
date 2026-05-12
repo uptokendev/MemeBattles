@@ -40,10 +40,10 @@ function FooterLinkList(props: { title: string; children: React.ReactNode }) {
 
 export function Footer() {
   return (
-    <footer className="mt-12 rounded-[2rem] border border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(240,106,26,0.12),transparent_34%),linear-gradient(180deg,rgba(18,22,28,0.94),rgba(9,12,16,0.99))] p-6 md:p-8">
+    <footer className="mwz-panel mt-12 p-6 md:p-8 bg-[radial-gradient(circle_at_top_left,rgba(255,153,0,0.12),transparent_34%),linear-gradient(180deg,rgba(18,22,28,0.94),rgba(9,12,16,0.99))]">
       <div className="grid gap-8 xl:grid-cols-[1.15fr_1.85fr]">
         <div className="space-y-4">
-          <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">MemeWarzone</p>
+          <p className="font-retro text-xs uppercase tracking-[0.24em] text-accent/70">MemeWarzone</p>
           <h2 className="font-retro text-3xl text-foreground">Build your squad and prepare for the Warzone.</h2>
           <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
             The frontend now separates public discovery from your personal incentive hub. Use Profile for your wallet-specific airdrops, squad state, and recruiter rewards, while public leaderboards stay open to everyone.

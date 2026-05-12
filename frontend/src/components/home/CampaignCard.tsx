@@ -123,7 +123,7 @@ export function CampaignCard({
   return (
     <div
       className={cn(
-        "mwz-card group relative flex w-full max-w-none sm:max-w-[clamp(172px,19vw,220px)] flex-col overflow-hidden rounded-none",
+        "mwz-card group relative flex w-full flex-col overflow-hidden rounded-none",
         "min-h-[322px] border-success/35 bg-black/70",
         className
       )}
@@ -142,7 +142,7 @@ export function CampaignCard({
           <div className="absolute left-2 top-2 z-30 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success shadow-[0_0_12px_rgba(57,255,79,0.14)]">
             {statusLabel}
           </div>
-          <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 border border-orange-400/60 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-orange-400">
+          <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 border border-accent/60 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-accent">
             <Flame className="h-3 w-3" />
             {Number(vm.votes24h ?? 0)}/24h
           </div>
@@ -166,7 +166,7 @@ export function CampaignCard({
           <img
             src="/assets/profile_placeholder.png"
             alt="Creator"
-            className={cn("h-7 w-7 rounded-full border border-success/35 object-cover", canOpenProfile ? "cursor-pointer hover:border-orange-400/70" : "")}
+            className={cn("h-7 w-7 rounded-full border border-success/35 object-cover", canOpenProfile ? "cursor-pointer hover:border-accent/70" : "")}
             draggable={false}
             role={canOpenProfile ? "button" : undefined}
             tabIndex={canOpenProfile ? 0 : undefined}
@@ -185,7 +185,7 @@ export function CampaignCard({
             }}
           />
           <div
-            className={cn("truncate text-xs text-success/65", canOpenProfile ? "cursor-pointer hover:text-orange-400" : "")}
+            className={cn("truncate text-xs text-success/65", canOpenProfile ? "cursor-pointer hover:text-accent" : "")}
             role={canOpenProfile ? "button" : undefined}
             tabIndex={canOpenProfile ? 0 : undefined}
             onClick={(e) => {
@@ -238,7 +238,7 @@ export function CampaignCard({
             aria-label={followed ? "Unfollow campaign" : "Follow campaign"}
             title={followed ? "Unfollow" : "Follow"}
           >
-            <Star className={cn("h-4 w-4 transition-all", followed ? "fill-current text-orange-400" : "text-success/75")} />
+            <Star className={cn("h-4 w-4 transition-all", followed ? "fill-current text-accent" : "text-success/75")} />
           </Button>
 
           <UpvoteDialog campaignAddress={addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />

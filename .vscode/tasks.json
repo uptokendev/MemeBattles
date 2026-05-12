@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Launchpad audit: list changed screenshots",
+      "type": "shell",
+      "command": "for f in 00-baseline/*.png; do n=$(basename \"$f\"); a=$(shasum -a 256 \"$f\" | awk '{print $1}'); b=$(shasum -a 256 \"99-final-state/$n\" 2>/dev/null | awk '{print $1}'); [ \"$a\" != \"$b\" ] && echo \"$n\"; done",
+      "options": {
+        "cwd": "${workspaceFolder}/screenshots/launchpad-audit"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": [],
+      "icon": {
+        "id": "diff"
+      },
+      "detail": "Diffs every baseline vs 99-final-state PNG pair via shasum and prints filenames that changed. Use this list to refresh the CHANGED manifest in compare.html."
+    },
+    {
+      "label": "Launchpad audit: open compare.html",
+      "type": "shell",
+      "command": "open compare.html",
+      "options": {
+        "cwd": "${workspaceFolder}/screenshots/launchpad-audit"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "silent",
+        "focus": false,
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": [],
+      "icon": {
+        "id": "browser"
+      },
+      "detail": "Opens screenshots/launchpad-audit/compare.html in the default browser for visual baseline vs final-state comparison."
+    }
+  ]
+}

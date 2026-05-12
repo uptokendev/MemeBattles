@@ -29,7 +29,7 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
 
       {/* Sidebar - Desktop: Fixed, Mobile/Tablet: Drawer */}
       <aside className={`
-        fixed top-4 bottom-4 w-64 bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] backdrop-blur-xl border border-sidebar-border/70 rounded-3xl flex flex-col shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(240,106,26,0.08)] z-50 transition-transform duration-300 ease-in-out
+        fixed top-4 bottom-4 w-64 bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] backdrop-blur-xl border border-sidebar-border/70 rounded-3xl flex flex-col shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(255,153,0,0.08)] z-50 transition-transform duration-300 ease-in-out
         ${mobileMenuOpen ? 'left-4' : '-left-72'}
         lg:hidden
       `}>

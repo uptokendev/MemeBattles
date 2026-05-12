@@ -112,7 +112,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                 key={t.key}
                 variant="ghost"
                 size="sm"
-                className={cn("mwz-chip gap-2 h-9 px-3 font-retro text-xs", active && "mwz-chip-active")}
+                className={cn("mwz-chip gap-2 h-9 px-3 text-xs", active && "mwz-chip-active")}
                 onClick={() => {
                   const nextTab = t.key;
                   const nextStatus = nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
@@ -134,7 +134,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                     key={k}
                     size="sm"
                     variant="ghost"
-                    className={cn("mwz-chip h-8 px-3 text-xs", active && "mwz-chip-active")}
+                    className={cn("mwz-chip h-9 px-3 text-xs", active && "mwz-chip-active")}
                     onClick={() => onChange({ ...query, timeFilter: k })}
                   >
                     {k.toUpperCase()}

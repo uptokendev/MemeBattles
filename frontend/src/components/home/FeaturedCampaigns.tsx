@@ -381,7 +381,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       <div className="mwz-section-title truncate text-lg leading-none">{c.name}</div>
                       <div className="mt-1 truncate text-sm text-success/70">{c.symbol ? `$${c.symbol}` : ""}</div>
                     </div>
-                    <div className="inline-flex items-center gap-1 text-xs text-orange-400 shrink-0">
+                    <div className="inline-flex items-center gap-1 text-xs text-accent shrink-0">
                       <Flame className="h-4 w-4" />
                       <span>{voteMode === "24h" ? c.votes24h : c.votesAll}</span>
                       <span>{voteMode === "24h" ? "/24h" : "all"}</span>
@@ -392,7 +392,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                     <img
                       src="/assets/profile_placeholder.png"
                       alt="Creator"
-                      className="h-7 w-7 rounded-full border border-success/35 object-cover hover:border-orange-400/70"
+                      className="h-7 w-7 rounded-full border border-success/35 object-cover hover:border-accent/70"
                       draggable={false}
                       role="button"
                       tabIndex={0}
@@ -409,7 +409,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                       }}
                     />
                     <div
-                      className="truncate text-xs text-success/65 hover:text-orange-400"
+                      className="truncate text-xs text-success/65 hover:text-accent"
                       role="button"
                       tabIndex={0}
                       onClick={(e) => {
@@ -445,7 +445,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
                         aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"}
                         title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}
                       >
-                        <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/75")} />
+                        <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-accent" : "text-success/75")} />
                       </Button>
                       <UpvoteDialog campaignAddress={c.addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
                     </div>

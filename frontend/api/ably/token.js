@@ -1,6 +1,26 @@
 import Ably from "ably";
 import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
 
+// CORS allow-list for cross-origin access from mw-dashboard.
+// Production origin is TBD by deploy config; set MW_DASHBOARD_ORIGIN env var.
+// Vite default dev port for mw-dashboard is 5173 — confirm in mw-dashboard/vite.config.ts.
+const MW_DASHBOARD_ALLOWED_ORIGINS = [
+  String(process.env.MW_DASHBOARD_ORIGIN || "").trim(),
+  "http://localhost:5173",
+  "http://localhost:5174",
+].filter(Boolean);
+
+function applyCors(req, res) {
+  const origin = String(req.headers.origin || "").trim();
+  if (MW_DASHBOARD_ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("access-control-allow-origin", origin);
+    res.setHeader("vary", "origin");
+    res.setHeader("access-control-allow-methods", "GET, OPTIONS");
+    res.setHeader("access-control-allow-headers", "content-type");
+    res.setHeader("access-control-max-age", "600");
+  }
+}
+
 function p(v) {
   return String(v ?? "").trim().replace(/^['"]|['"]$/g, "");
 }
@@ -35,6 +55,12 @@ function resolveAblyApiKey() {
   return raw;
 }
 export default async function handler(req, res) {
+  applyCors(req, res);
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
   if (req.method !== "GET") return badMethod(res);
 
   res.setHeader("cache-control", "no-store");
