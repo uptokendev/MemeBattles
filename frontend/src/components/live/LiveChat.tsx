@@ -41,25 +41,25 @@ export const LiveChat = ({ messages }: Props) => {
         const name = m.handle ?? shortWallet(m.wallet);
         return (
           <div key={m.id} className="leading-snug">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 font-semibold",
-                isMod ? "text-amber-400" : "text-foreground/90",
-              )}
-            >
-              {isMod && (
-                <>
-                  <Shield className="h-3.5 w-3.5" aria-hidden />
-                  <span className="sr-only">Moderator. </span>
-                  <span className="text-[10px] uppercase tracking-widest">[MOD]</span>
-                </>
-              )}
-              {!isMod && m.squadCallsign && (
-                <span className="text-[10px] uppercase tracking-widest text-cyan-400">
-                  [{m.squadCallsign}]
+            {isMod && (
+              <>
+                <Shield
+                  className="mr-1 inline-block h-3.5 w-3.5 align-text-bottom text-amber-400"
+                  aria-hidden
+                />
+                <span className="sr-only">Moderator. </span>
+                <span className="mr-1 font-semibold uppercase tracking-wider text-amber-400">
+                  [MOD]
                 </span>
-              )}
-              <span>{name}</span>
+              </>
+            )}
+            {!isMod && m.squadCallsign && (
+              <span className="mr-1 font-semibold uppercase tracking-wider text-cyan-400">
+                [{m.squadCallsign}]
+              </span>
+            )}
+            <span className={cn("font-semibold", isMod ? "text-amber-400" : "text-foreground/90")}>
+              {name}
             </span>
             <span className="text-muted-foreground">: </span>
             <span className="text-foreground/95">{m.text}</span>
