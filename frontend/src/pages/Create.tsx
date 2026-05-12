@@ -4,23 +4,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
 import { z } from "zod";
-import ProcessingCard from "@/components/ui/processing-card";
 import { useTokenForm } from "@/hooks/useTokenForm";
-import { useTokenProcessing } from "@/hooks/useTokenProcessing";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
-import { LaunchpadReadinessNotice } from "@/components/launchpad/LaunchpadReadinessNotice";
-import { useLaunchpadWriteReadiness } from "@/hooks/useLaunchpadWriteReadiness";
 import { useWallet } from "@/contexts/WalletContext";
 import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
-import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
-const IS_PREPARE_MODE = true;
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -54,6 +48,8 @@ const Create = () => {
     setCategory,
     setWebsite,
     setTwitter,
+    setTelegram,
+    setDiscord,
     setOtherLink,
     setShowSocialLinks,
     handleImageChange,
@@ -62,18 +58,8 @@ const Create = () => {
     clearSocialLinks,
   } = useTokenForm();
 
-  const {
-    isProcessing,
-    processingStatus,
-    processingProgress,
-    startProcessing,
-    setProcessingRedirectTo,
-  } = useTokenProcessing();
-
   const wallet = useWallet();
   const navigate = useNavigate();
-  const { createCampaign, fetchCampaigns } = useLaunchpad();
-  const launchpadReadiness = useLaunchpadWriteReadiness();
   const [isDrafting, setIsDrafting] = useState(false);
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
@@ -177,9 +163,7 @@ const Create = () => {
     }
 
     if (formData.image.size > MAX_LOGO_UPLOAD_BYTES) {
-      toast.error(
-        `Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 5 MB.`,
-      );
+      toast.error(`Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 5 MB.`);
       return false;
     }
 
@@ -217,6 +201,7 @@ const Create = () => {
   const handleCreateDraft = async () => {
     if (!validateCoreForm()) return;
     setIsDrafting(true);
+
     try {
       const auth = await signDraftAction({
         signer: wallet.signer,
@@ -226,7 +211,6 @@ const Create = () => {
       });
 
       const logoUrl = await uploadLogo();
-
       const draft = await createCampaignDraft({
         auth,
         chainId,
@@ -238,9 +222,11 @@ const Create = () => {
         logoUrl,
         websiteUrl: formData.website || null,
         xUrl: formData.twitter || null,
+        telegramUrl: formData.telegram || null,
+        discordUrl: formData.discord || null,
         otherUrl: formData.otherLink || null,
         visibility: "private",
-      });
+      } as any);
 
       cacheDraftLogo(draft.id, logoUrl);
       toast.success("Draft saved. No gas spent.");
@@ -253,317 +239,168 @@ const Create = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
-    if (IS_PREPARE_MODE) {
-      toast.error("Deploy Mode is locked during Prepare Mode. Save a draft instead.");
-      return;
-    }
-
-    if (!validateCoreForm()) return;
-
-    if (!launchpadReadiness.ready) {
-      toast.error(launchpadReadiness.message || launchpadReadiness.title);
-      return;
-    }
-
-    try {
-      startProcessing();
-      const logoURI = await uploadLogo();
-
-      await createCampaign({
-        name: formData.name,
-        symbol: normalizedTicker,
-        logoURI,
-        xAccount: formData.twitter || "",
-        website: formData.website || "",
-        extraLink: formData.otherLink || "",
-        basePriceWei: 0n,
-        priceSlopeWei: 0n,
-        graduationTargetWei: 0n,
-        lpReceiver: "",
-      });
-
-      toast.success("Coin deployed on-chain!");
-
-      try {
-        const symbol = normalizedTicker;
-        const creator = (wallet.account ?? "").toLowerCase();
-        const maxAttempts = 10;
-        const delayMs = 800;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          const campaigns = (await fetchCampaigns()) ?? [];
-          const matches = campaigns.filter((c) =>
-            (c.creator ?? "").toLowerCase() === creator &&
-            (c.symbol ?? "").toUpperCase() === symbol
-          );
-
-          if (matches.length > 0) {
-            matches.sort((a, b) => {
-              const at = (a.createdAt ?? 0);
-              const bt = (b.createdAt ?? 0);
-              if (bt !== at) return bt - at;
-              return (b.id ?? 0) - (a.id ?? 0);
-            });
-            const newest = matches[0];
-            if (newest?.campaign) {
-              setProcessingRedirectTo(`/token/${newest.campaign}`);
-              break;
-            }
-          }
-
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      } catch (e) {
-        console.warn("[Create] Failed to resolve created campaign address", e);
-      }
-    } catch (error: any) {
-      console.error(error);
-      const message = error?.shortMessage || error?.reason || error?.message || "Failed to deploy coin";
-      toast.error(message);
-    }
+    toast.error("Deploy Mode is locked during Prepare Mode. Save a draft instead.");
   };
 
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
-  const isCreateDisabled = true;
   const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
 
   return (
-    <>
-      {isProcessing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl px-4">
-            <ProcessingCard
-              name={formData.name || "Token"}
-              status={processingStatus}
-              progress={processingProgress}
-              className="rounded-2xl border border-white/20 bg-white/[0.03] shadow-lg"
-            />
-          </div>
+    <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
+      <div className="mb-3 flex flex-col gap-3 md:mb-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="font-retro text-xs uppercase tracking-[0.22em] text-accent">Create Coin</p>
+          <h1 className="font-retro text-3xl tracking-tight text-foreground md:text-4xl lg:text-5xl">Create a new coin</h1>
         </div>
-      )}
-
-      <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
-        <div className="mb-3 flex flex-col gap-3 md:mb-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="font-retro text-xs uppercase tracking-[0.22em] text-accent">Create Coin</p>
-            <h1 className="font-retro text-3xl tracking-tight text-foreground md:text-4xl lg:text-5xl">
-              Create a new coin
-            </h1>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-muted-foreground md:max-w-md">
+            <span className="font-retro uppercase tracking-[0.14em] text-accent">Prepare Mode:</span>{" "}
+            Drafts and promotion pages are open now. Direct deploy unlocks at live launch.
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {IS_PREPARE_MODE && (
-              <div className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-muted-foreground md:max-w-md">
-                <span className="font-retro uppercase tracking-[0.14em] text-accent">Prepare Mode:</span>{" "}
-                Drafts and promotion pages are open now. Direct deploy unlocks at live launch.
+          <Button asChild size="sm" className="mwz-button mwz-button-orange shrink-0 font-retro">
+            <Link to="/playbook">
+              <BookOpen className="mr-2 h-4 w-4" />
+              Playbook
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="mwz-card grid flex-1 gap-3 overflow-visible p-3 md:min-h-0 md:grid-cols-[0.9fr_1.25fr_0.85fr] md:overflow-hidden md:p-4 lg:grid-cols-[0.86fr_1.28fr_0.86fr]">
+        <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-retro text-xs uppercase tracking-[0.16em] text-muted-foreground">Logo</p>
+              <h2 className="font-retro text-lg text-foreground">Token Image</h2>
+            </div>
+            <button type="button" onClick={handleReset} className="font-retro text-xs text-accent transition-colors hover:text-accent/80">
+              Reset all
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 md:flex-col md:items-stretch">
+            {!formData.imagePreview ? (
+              <label htmlFor="image-upload" className="flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-border bg-background/50 transition-colors hover:border-accent md:h-48 md:w-full lg:h-56">
+                <ImageIcon className="h-10 w-10 text-muted-foreground md:h-14 md:w-14" />
+              </label>
+            ) : (
+              <div className="relative h-28 w-28 shrink-0 md:h-48 md:w-full lg:h-56">
+                <img src={formData.imagePreview} alt="Token preview" className="h-full w-full rounded-2xl border-2 border-border object-cover" />
+                <button type="button" onClick={handleRemoveImage} className="absolute -right-2 -top-2 rounded-full bg-accent p-1 transition-colors hover:bg-accent/90">
+                  <X className="h-4 w-4 text-accent-foreground" />
+                </button>
               </div>
             )}
-            <Button asChild size="sm" className="mwz-button mwz-button-orange shrink-0 font-retro">
-              <Link to="/playbook">
-                <BookOpen className="mr-2 h-4 w-4" />
-                Playbook
-              </Link>
-            </Button>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <input id="image-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" disabled={isProjectDisabled} />
+              <p>Upload a compressed PNG, JPG, or WebP.</p>
+              <p>Max upload size: 5 MB.</p>
+            </div>
           </div>
-        </div>
 
-        {!IS_PREPARE_MODE && (
-          <div className="mb-3 shrink-0">
-            <LaunchpadReadinessNotice readiness={launchpadReadiness} compact={launchpadReadiness.ready} />
+          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+            <div className="mb-1 font-retro text-foreground">Launch path</div>
+            Draft Mode opens promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
           </div>
-        )}
+        </section>
 
-        <form onSubmit={handleSubmit} className="mwz-card grid flex-1 gap-3 overflow-visible p-3 md:min-h-0 md:grid-cols-[0.9fr_1.25fr_0.85fr] md:overflow-hidden md:p-4 lg:grid-cols-[0.86fr_1.28fr_0.86fr]">
-          <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-retro text-xs uppercase tracking-[0.16em] text-muted-foreground">Logo</p>
-                <h2 className="font-retro text-lg text-foreground">Token Image</h2>
-              </div>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="font-retro text-xs text-accent transition-colors hover:text-accent/80"
-              >
-                Reset all
+        <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
+              <Input value={formData.name} onChange={(e) => setTokenName(e.target.value)} placeholder="Token" className="h-11 rounded-lg border-border bg-background/50 font-retro text-base text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} maxLength={TOKEN_VALIDATION_LIMITS.NAME_MAX_LENGTH} />
+            </div>
+
+            <div>
+              <label className="mb-2 block font-retro text-sm text-foreground">Token ticker</label>
+              <Input value={formData.ticker} onChange={(e) => setTicker(normalizeTicker(e.target.value))} placeholder="TICKER" maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH} className="h-11 rounded-lg border-border bg-background/50 font-retro text-base uppercase text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
+              {normalizedTicker && (
+                <div className={`mt-1 text-[0.68rem] font-retro uppercase tracking-[0.12em] ${tickerConfirmedAvailable ? "text-green-300" : tickerBlocked || tickerCheckError ? "text-red-300" : "text-orange-300"}`}>
+                  {checkingTicker ? "Checking ticker availability..." : tickerConfirmedAvailable ? `$${normalizedTicker} available` : tickerCheckError ? tickerCheckError : tickerAvailability?.reason || "Ticker availability pending"}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <label className="font-retro text-sm text-foreground">Token Category</label>
+              <Info className="h-4 w-4 text-accent" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setCategory("meme")} className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "meme" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}>
+                Meme
+              </button>
+              <button type="button" onClick={() => setCategory("project")} className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "project" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}>
+                Project
               </button>
             </div>
+          </div>
 
-            <div className="flex items-center gap-4 md:flex-col md:items-stretch">
-              {!formData.imagePreview ? (
-                <label
-                  htmlFor="image-upload"
-                  className="flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-border bg-background/50 transition-colors hover:border-accent md:h-48 md:w-full lg:h-56"
-                >
-                  <ImageIcon className="h-10 w-10 text-muted-foreground md:h-14 md:w-14" />
-                </label>
-              ) : (
-                <div className="relative h-28 w-28 shrink-0 md:h-48 md:w-full lg:h-56">
-                  <img src={formData.imagePreview} alt="Token preview" className="h-full w-full rounded-2xl border-2 border-border object-cover" />
-                  <button type="button" onClick={handleRemoveImage} className="absolute -right-2 -top-2 rounded-full bg-accent p-1 transition-colors hover:bg-accent/90">
-                    <X className="h-4 w-4 text-accent-foreground" />
-                  </button>
+          <div>
+            <label className="mb-2 block font-retro text-sm text-foreground">
+              Token description <span className="text-muted-foreground">(optional)</span>
+            </label>
+            <Textarea value={formData.description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="min-h-20 resize-none rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[6.5rem] lg:min-h-[7rem]" maxLength={TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH} disabled={isProjectDisabled} />
+          </div>
+
+          <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
+            {!formData.showSocialLinks ? (
+              <button type="button" onClick={() => setShowSocialLinks(true)} className="font-retro text-sm text-accent transition-colors hover:text-accent/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled}>
+                Add Social Links
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-retro text-sm text-foreground">Social Links</label>
+                  <button type="button" onClick={clearSocialLinks} className="text-muted-foreground transition-colors hover:text-foreground"><X className="h-4 w-4" /></button>
                 </div>
-              )}
-              <div className="space-y-2 text-xs text-muted-foreground">
-                <input id="image-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" disabled={isProjectDisabled} />
-                <p>Upload a compressed PNG, JPG, or WebP.</p>
-                <p>Max upload size: 5 MB.</p>
-              </div>
-            </div>
 
-            <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-              <div className="mb-1 font-retro text-foreground">Launch path</div>
-              Draft Mode opens promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
-                <Input
-                  value={formData.name}
-                  onChange={(e) => setTokenName(e.target.value)}
-                  placeholder="Token"
-                  className="h-11 rounded-lg border-border bg-background/50 font-retro text-base text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isProjectDisabled}
-                  maxLength={TOKEN_VALIDATION_LIMITS.NAME_MAX_LENGTH}
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block font-retro text-sm text-foreground">Token ticker</label>
-                <Input
-                  value={formData.ticker}
-                  onChange={(e) => setTicker(normalizeTicker(e.target.value))}
-                  placeholder="TICKER"
-                  maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH}
-                  className="h-11 rounded-lg border-border bg-background/50 font-retro text-base uppercase text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isProjectDisabled}
-                />
-                {normalizedTicker && (
-                  <div className={`mt-1 text-[0.68rem] font-retro uppercase tracking-[0.12em] ${tickerConfirmedAvailable ? "text-green-300" : tickerBlocked || tickerCheckError ? "text-red-300" : "text-orange-300"}`}>
-                    {checkingTicker
-                      ? "Checking ticker availability..."
-                      : tickerConfirmedAvailable
-                        ? `$${normalizedTicker} available`
-                        : tickerCheckError
-                          ? tickerCheckError
-                          : tickerAvailability?.reason || "Ticker availability pending"}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                <label className="font-retro text-sm text-foreground">Token Category</label>
-                <Info className="h-4 w-4 text-accent" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCategory("meme")}
-                  className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "meme" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                >
-                  Meme
-                </button>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setCategory("project")}
-                    className={`w-full rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "project" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                  >
-                    Project
-                  </button>
-                  {formData.category === "project" && (
-                    <div className="absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-background/90 px-3 py-1 font-retro text-xs text-accent backdrop-blur-sm">
-                      UP meme projects coming soon
-                    </div>
-                  )}
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  <Input value={formData.website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
+                  <Input value={formData.twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="X (formally Twitter)" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
+                  <Input value={formData.telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="Telegram" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
+                  <Input value={formData.discord} onChange={(e) => setDiscord(e.target.value)} placeholder="Discord" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
+                  <Input value={formData.otherLink} onChange={(e) => setOtherLink(e.target.value)} placeholder="Other" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
                 </div>
               </div>
-            </div>
+            )}
+          </div>
+        </section>
 
-            <div>
-              <label className="mb-2 block font-retro text-sm text-foreground">
-                Token description <span className="text-muted-foreground">(optional)</span>
-              </label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Description"
-                className="min-h-20 resize-none rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[6.5rem] lg:min-h-[7rem]"
-                maxLength={TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH}
-                disabled={isProjectDisabled}
-              />
+        <section className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+          <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
+            <div className="mb-3">
+              <div className="font-retro text-sm text-foreground">Draft Mode</div>
+              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.</p>
             </div>
+            <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
+              <FileText className="mr-2 h-5 w-5" />
+              {isDrafting ? "Saving Draft..." : "Save Draft"}
+            </Button>
+          </div>
 
-            <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
-              {!formData.showSocialLinks ? (
-                <button type="button" onClick={() => setShowSocialLinks(true)} className="font-retro text-sm text-accent transition-colors hover:text-accent/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled}>
-                  Add Social Links
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="font-retro text-sm text-foreground">Social Links</label>
-                    <button type="button" onClick={clearSocialLinks} className="text-muted-foreground transition-colors hover:text-foreground"><X className="h-4 w-4" /></button>
-                  </div>
-
-                  <div className="grid gap-2 lg:grid-cols-3">
-                    <Input value={formData.website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
-                    <Input value={formData.twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="X / Twitter" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
-                    <Input value={formData.otherLink} onChange={(e) => setOtherLink(e.target.value)} placeholder="Other Link" type="url" className="h-10 rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
-                  </div>
-                </div>
-              )}
+          <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
+            <div className="mb-3">
+              <div className="font-retro text-sm text-foreground">Deploy Mode</div>
+              <p className="mt-1 text-xs text-muted-foreground">Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.</p>
             </div>
-          </section>
+            <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
+              <Rocket className="mr-2 h-5 w-5" />
+              Locked in Prepare Mode
+            </Button>
+          </div>
 
-          <section className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-            <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
-              <div className="mb-3">
-                <div className="font-retro text-sm text-foreground">Draft Mode</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.
-                </p>
-              </div>
-              <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
-                <FileText className="mr-2 h-5 w-5" />
-                {isDrafting ? "Saving Draft..." : "Save Draft"}
-              </Button>
-            </div>
-
-            <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
-              <div className="mb-3">
-                <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.
-                </p>
-              </div>
-              <Button
-                type="submit"
-                disabled={isCreateDisabled}
-                className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none"
-              >
-                <Rocket className="mr-2 h-5 w-5" />
-                Locked in Prepare Mode
-              </Button>
-            </div>
-
-            <div className="mt-auto rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-              <div className="mb-1 font-retro text-foreground">Fit-to-screen layout</div>
-              Desktop keeps the full create form in view. Mobile keeps natural scrolling for smaller screens.
-            </div>
-          </section>
-        </form>
-      </div>
-    </>
+          <div className="mt-auto rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+            <div className="mb-1 font-retro text-foreground">Official links</div>
+            Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
+          </div>
+        </section>
+      </form>
+    </div>
   );
 };
 
