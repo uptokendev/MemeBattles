@@ -534,6 +534,8 @@ export default function Prepare() {
   const [shareOpen, setShareOpen] = useState(false);
   const [armingNotification, setArmingNotification] = useState(false);
   const [followingDraft, setFollowingDraft] = useState(false);
+  const [hasArmed, setHasArmed] = useState(false);
+  const [hasFollowed, setHasFollowed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -583,6 +585,7 @@ export default function Prepare() {
       await armDraftNotifications(draft.id, wallet.account);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
+      setHasArmed(true);
       toast.success("Notifications armed for this draft.");
     } catch (err: any) {
       toast.error(err?.message || "Failed to arm notifications.");
@@ -606,6 +609,7 @@ export default function Prepare() {
       setFollowCount(result.followCount);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
+      setHasFollowed(true);
       toast.success("Draft followed.");
     } catch (err: any) {
       toast.error(err?.message || "Failed to follow draft.");
@@ -647,6 +651,18 @@ export default function Prepare() {
     ["Discord", normalizeExternalUrl(promo.discordUrl, "discord"), "Bunker voice", "DC"],
     ["Website", normalizeExternalUrl(promo.websiteUrl || draft.websiteUrl, "website"), "Lore + docs", "WEB"],
   ].filter(([, url]) => Boolean(url));
+
+  let armLabel = "Arm notification";
+  if (armingNotification) armLabel = "Arming...";
+  else if (hasArmed) armLabel = "Armed";
+
+  let armCtaLabel = "Arm me";
+  if (armingNotification) armCtaLabel = "Arming...";
+  else if (hasArmed) armCtaLabel = "Armed";
+
+  let followLabel = "Follow";
+  if (followingDraft) followLabel = "Following...";
+  else if (hasFollowed) followLabel = "Following";
 
   return (
     <div className="relative -mx-2 -mt-1 min-h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top,rgba(255,153,0,0.20),transparent_48%),radial-gradient(ellipse_at_bottom,rgba(57,255,79,0.09),transparent_52%),linear-gradient(180deg,rgba(26,8,2,0.96),rgba(1,6,0,0.98))] md:-mx-3 lg:-mx-4">
@@ -702,25 +718,31 @@ export default function Prepare() {
             <Button
               onClick={handleArmNotification}
               disabled={armingNotification}
-              className="mwz-button mwz-button-orange h-13 px-6 font-retro text-base"
+              className={`mwz-button h-13 px-6 font-retro text-base active:!translate-y-px ${
+                hasArmed
+                  ? "!border-green-400 !bg-green-500/25 !text-green-100"
+                  : "mwz-button-orange"
+              }`}
             >
               <Bell className="mr-2 h-4 w-4" />
-              {armingNotification ? "Arming..." : "Arm notification"}
+              {armLabel}
             </Button>
 
             <Button
               onClick={handleFollow}
               disabled={followingDraft}
-              className="mwz-button h-13 px-6 font-retro text-base"
+              className={`mwz-button h-13 px-6 font-retro text-base active:!translate-y-px ${
+                hasFollowed ? "mwz-button-orange !bg-orange-500/25 !text-orange-100" : ""
+              }`}
             >
               <Star className="mr-2 h-4 w-4" />
-              {followingDraft ? "Following..." : "Follow"}
+              {followLabel}
             </Button>
 
             <Button
               onClick={() => setShareOpen(true)}
               variant="outline"
-              className="mwz-button h-13 px-6 font-retro text-base"
+              className="mwz-button h-13 px-6 font-retro text-base active:!translate-y-px active:!bg-orange-500/15"
             >
               <Share2 className="mr-2 h-4 w-4" />
               Generate share card
@@ -904,9 +926,13 @@ export default function Prepare() {
               <Button
                 onClick={handleArmNotification}
                 disabled={armingNotification}
-                className="mwz-button mwz-button-orange h-12 px-6 font-retro"
+                className={`mwz-button h-12 px-6 font-retro active:!translate-y-px ${
+                  hasArmed
+                    ? "!border-green-400 !bg-green-500/25 !text-green-100"
+                    : "mwz-button-orange"
+                }`}
               >
-                {armingNotification ? "Arming..." : "Arm me"}
+                {armCtaLabel}
               </Button>
             </div>
           </div>
