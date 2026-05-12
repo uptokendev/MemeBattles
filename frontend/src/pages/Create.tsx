@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
+const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -34,6 +35,15 @@ function cacheDraftLogo(draftId: string, logoUrl: string) {
   if (typeof window === "undefined" || !draftId || !logoUrl) return;
   try {
     window.sessionStorage.setItem(`mwz:draft-logo:${draftId}`, logoUrl);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function clearJustCreatedDraftCache(draftId: string) {
+  if (typeof window === "undefined" || !draftId) return;
+  try {
+    window.sessionStorage.removeItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`);
   } catch {
     // Ignore storage failures.
   }
@@ -250,6 +260,7 @@ const Create = () => {
         console.warn("[Create] Failed to seed promotion social links", promotionError);
       }
 
+      clearJustCreatedDraftCache(draft.id);
       cacheDraftLogo(draft.id, logoUrl);
       toast.success("Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);
