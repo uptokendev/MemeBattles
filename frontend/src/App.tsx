@@ -40,6 +40,7 @@ import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
+import { PrepareSocialLinksOverlay, PromotionEditSocialLinksPanel, TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
@@ -106,7 +107,6 @@ function InternalLinkInterceptor() {
   return null;
 }
 
-
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showContent, setShowContent] = useState(false);
@@ -130,7 +130,7 @@ const App = () => {
             }`}
           >
             <BrowserRouter>
-            <InternalLinkInterceptor />
+              <InternalLinkInterceptor />
               <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
@@ -139,9 +139,9 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
-                    <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
+                    <Route path="/drafts/:draftId/promotion" element={<><DraftPromotionSetup /><PromotionEditSocialLinksPanel /></>} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
-                    <Route path="/prepare/:slug" element={<Prepare />} />
+                    <Route path="/prepare/:slug" element={<><Prepare /><PrepareSocialLinksOverlay /></>} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
@@ -181,7 +181,7 @@ const App = () => {
                     <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
                     <Route path="/ops/rewards" element={<RewardOps />} />
                     <Route path="/r/:code" element={<RecruiterReferral />} />
-                    <Route path="/token/:campaignAddress" element={<TokenDetails />} />
+                    <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /></>} />
                     <Route path="/playbook" element={<Playbook />} />
                     <Route path="/docs" element={<Playbook />} />
                     <Route path="/status" element={<Status />} />
