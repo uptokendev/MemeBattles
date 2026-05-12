@@ -141,7 +141,7 @@ const App = () => {
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
-                    <Route path="/prepare/:slug" element={<Prepare />} />
+                    <Route path="/prepare/:slug" element={<div className="prepare-compact"><Prepare /></div>} />
                     <Route path="/battle-leagues" element={<League />} />
                     <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/league" element={<League />} />
