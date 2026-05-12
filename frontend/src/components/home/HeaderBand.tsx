@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { cn } from "@/lib/utils";
 
@@ -5,7 +6,53 @@ type HeaderBandProps = {
   className?: string;
 };
 
+// Launch reference timestamp. Override via VITE_LAUNCH_TS (ISO string, e.g.
+// "2026-05-12T00:00:00Z"). Falls back to the platform site's creation date.
+const LAUNCH_FALLBACK_ISO = "2026-04-24T12:26:01Z";
+
+function getLaunchMs(): number {
+  const raw = String(import.meta.env.VITE_LAUNCH_TS || "").trim();
+  const parsed = raw ? Date.parse(raw) : NaN;
+  if (Number.isFinite(parsed)) return parsed;
+  return Date.parse(LAUNCH_FALLBACK_ISO);
+}
+
+function formatUptime(now: number, launch: number): string {
+  const elapsed = Math.max(0, now - launch);
+  const totalMinutes = Math.floor(elapsed / 60_000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(days)}D ${pad(hours)}H ${pad(minutes)}M`;
+}
+
+function useSystemUptime(): string {
+  const [uptime, setUptime] = useState(() => formatUptime(Date.now(), getLaunchMs()));
+  useEffect(() => {
+    const launch = getLaunchMs();
+    const tick = () => setUptime(formatUptime(Date.now(), launch));
+    tick();
+    // Align the first interval to the next minute boundary so the M digit
+    // changes when the wall clock minute rolls over.
+    const msToNextMinute = 60_000 - (Date.now() % 60_000);
+    const initial = window.setTimeout(() => {
+      tick();
+      const id = window.setInterval(tick, 60_000);
+      // Smuggle the interval id out so the outer cleanup can clear it.
+      (initial as unknown as { _intervalId?: number })._intervalId = id;
+    }, msToNextMinute);
+    return () => {
+      const id = (initial as unknown as { _intervalId?: number })._intervalId;
+      if (id) window.clearInterval(id);
+      window.clearTimeout(initial);
+    };
+  }, []);
+  return uptime;
+}
+
 export function HeaderBand({ className }: HeaderBandProps) {
+  const uptime = useSystemUptime();
   return (
     <>
       <section className={cn("mwz-tactical-hero", className)} aria-label="MemeWarzone command banner">
@@ -22,7 +69,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
 
         <div className="mwz-tactical-hero__terminal mwz-tactical-hero__terminal--right" aria-hidden="true">
           <div>SYSTEM UPTIME</div>
-          <strong>12D 04H 32M</strong>
+          <strong>{uptime}</strong>
           <div className="mwz-tactical-hero__pulse" />
         </div>
 

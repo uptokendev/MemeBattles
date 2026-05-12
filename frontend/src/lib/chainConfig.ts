@@ -167,6 +167,24 @@ export function getExplorerTxBase(chainId: SupportedChainId): string {
   return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
 }
 
+// Common chains the wallet may be connected to but the app doesn't support.
+// Used purely for human-readable labels on settings/diagnostic screens.
+const CHAIN_LABELS: Record<number, string> = {
+  1: "Ethereum",
+  56: "BNB Smart Chain",
+  97: "BNB Smart Chain Testnet",
+  137: "Polygon",
+  8453: "Base",
+  42161: "Arbitrum One",
+  10: "Optimism",
+  43114: "Avalanche C-Chain",
+};
+
+export function getChainLabel(chainId?: number | null): string | null {
+  if (!chainId) return null;
+  return CHAIN_LABELS[chainId] || `Chain ${chainId}`;
+}
+
 export function getChainParams(chainId: SupportedChainId) {
   if (chainId === 56) {
     return {

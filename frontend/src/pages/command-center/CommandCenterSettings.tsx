@@ -6,6 +6,7 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
+import { getChainLabel, isAllowedChainId } from "@/lib/chainConfig";
 
 function shortenWallet(addr?: string | null) {
   if (!addr) return "";
@@ -109,7 +110,14 @@ export default function CommandCenterSettings() {
                 <ShieldCheck className="h-4 w-4 text-accent" />
                 Chain
               </div>
-              <div className="font-retro text-sm text-muted-foreground">{chainId ? `Chain ${chainId}` : "Not detected"}</div>
+              <div className="font-retro text-sm text-muted-foreground">
+                {getChainLabel(chainId) ?? "Not detected"}
+              </div>
+              {chainId && !isAllowedChainId(chainId) ? (
+                <div className="mt-2 text-[11px] uppercase tracking-[0.14em] text-amber-300">
+                  Unsupported network — switch your wallet to BNB Smart Chain to interact.
+                </div>
+              ) : null}
             </div>
           </div>
 

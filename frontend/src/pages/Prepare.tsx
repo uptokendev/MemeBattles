@@ -546,6 +546,10 @@ export default function Prepare() {
         if (cancelled) return;
         setBundle(data);
         setFollowCount(data.popularity.follows);
+        // Hydrate post-click visual from server-side per-viewer state so a
+        // refresh doesn't reset Armed/Following back to the orange CTA.
+        setHasArmed(Boolean(data.viewer?.isArmed));
+        setHasFollowed(Boolean(data.viewer?.isFollowing));
       })
       .catch((err) => {
         if (!cancelled) toast.error(err?.message || "Prepare page not found");

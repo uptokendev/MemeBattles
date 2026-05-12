@@ -578,6 +578,11 @@ export type PrepareDraftBundle = {
   draft: CampaignDraft;
   promotion: CampaignDraftPromotion;
   popularity: DraftPopularity;
+  viewer?: {
+    wallet: string | null;
+    isFollowing: boolean;
+    isArmed: boolean;
+  };
 };
 
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";

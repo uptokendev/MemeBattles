@@ -201,9 +201,41 @@ export async function signedPrepareBySlug(req, res) {
   const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
   const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
 
+  // Per-viewer engagement state. Lets the frontend hydrate the Prepare page CTAs
+  // (Arm / Follow) into their post-click visual on reload, instead of always
+  // showing the orange "do it" state regardless of subscription status.
+  const viewer = normalizeAddress(
+    typeof req.query?.viewer === "string" ? req.query.viewer : "",
+  );
+  let viewerFollowing = false;
+  let viewerArmed = false;
+  if (viewer) {
+    const [followRes, armRes] = await Promise.all([
+      pool
+        .query(
+          "select 1 from campaign_draft_follows where draft_id = $1 and wallet_address = $2 limit 1",
+          [draft.id, viewer],
+        )
+        .catch(() => ({ rowCount: 0 })),
+      pool
+        .query(
+          "select 1 from public.campaign_draft_notification_subscriptions where draft_id = $1 and wallet_address = $2 limit 1",
+          [draft.id, viewer],
+        )
+        .catch(() => ({ rowCount: 0 })),
+    ]);
+    viewerFollowing = (followRes.rowCount || 0) > 0;
+    viewerArmed = (armRes.rowCount || 0) > 0;
+  }
+
   return json(res, 200, {
     draft,
     promotion: mapPromotionRow(promoRes.rows[0], draft.id),
     popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO),
+    viewer: {
+      wallet: viewer || null,
+      isFollowing: viewerFollowing,
+      isArmed: viewerArmed,
+    },
   });
 }
