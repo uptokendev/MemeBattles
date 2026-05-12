@@ -40,6 +40,7 @@ import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
+import { DraftVisibilityDock } from "@/components/drafts/DraftVisibilityDock";
 import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
@@ -139,7 +140,7 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
-                    <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
+                    <Route path="/drafts/:draftId/promotion" element={<><DraftPromotionSetup /><DraftVisibilityDock /></>} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
                     <Route path="/prepare/:slug" element={<PrepareCompact />} />
                     <Route path="/battle-leagues" element={<League />} />
