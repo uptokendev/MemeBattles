@@ -22,21 +22,21 @@ function applyCors(req, res) {
 }
 
 function p(v) {
-  return String(v ?? "").trim().replace(/^[']|[']$/g, "").replace(/^[\"]|[\"]$/g, "");
+  return String(v ?? "")
+    .trim()
+    .replace(/^[']|[']$/g, "")
+    .replace(/^[\"]|[\"]$/g, "");
 }
 function resolveAblyApiKey() {
   const raw = p(process.env.ABLY_API_KEY);
 
-  const keyName = p(
-    process.env.ABLY_API_KEY_NAME ||
-    process.env.ABLY_KEY_NAME
-  );
+  const keyName = p(process.env.ABLY_API_KEY_NAME || process.env.ABLY_KEY_NAME);
 
   const keySecret = p(
     process.env.ABLY_API_KEY_SECRET ||
-    process.env.ABLY_KEY_SECRET ||
-    process.env.ABLY_API_SECRET ||
-    process.env.ABLY_SECRET
+      process.env.ABLY_KEY_SECRET ||
+      process.env.ABLY_API_SECRET ||
+      process.env.ABLY_SECRET,
   );
 
   // Preferred production format.
@@ -68,7 +68,9 @@ export default async function handler(req, res) {
   try {
     const ABLY_API_KEY = resolveAblyApiKey();
     if (!ABLY_API_KEY) {
-      return json(res, 500, { error: "Server misconfigured: ABLY_API_KEY missing" });
+      return json(res, 500, {
+        error: "Server misconfigured: ABLY_API_KEY missing",
+      });
     }
     const colon = ABLY_API_KEY.indexOf(":");
     if (colon <= 0) {
@@ -86,20 +88,37 @@ export default async function handler(req, res) {
 
     const capability = {};
 
+    console.log("[api/ably/token] Requesting token with scope:", {
+      scope,
+      chainId,
+      campaign,
+      liveChannel,
+    });
     if (scope === "live") {
       // Live launch-party / AMA chat channel. Bilateral: clients subscribe AND
       // publish chat messages, enter presence, fetch history.
       // Channel name pattern is restricted to live:<safe-slug> to prevent
       // tokens from being minted for unrelated channels.
+      console.log("[api/ably/token] live channel requested:", liveChannel);
       if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
+        console.error(
+          "[api/ably/token] Invalid live channel name:",
+          liveChannel,
+        );
         return json(res, 400, { error: "Invalid live channel name" });
       }
+      console.log(
+        "[api/ably/token] Granting access to live channel:",
+        liveChannel,
+      );
       capability[liveChannel] = ["subscribe", "publish", "presence", "history"];
     } else if (scope === "league") {
-      if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+      if (!Number.isFinite(chainId))
+        return json(res, 400, { error: "Invalid chainId" });
       capability[`league:${chainId}`] = ["subscribe"];
     } else {
-      if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+      if (!Number.isFinite(chainId))
+        return json(res, 400, { error: "Invalid chainId" });
       if (!isAddress(campaign)) {
         return json(res, 400, { error: "Invalid campaign address" });
       }
