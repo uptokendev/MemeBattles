@@ -48,8 +48,12 @@ export function useLiveChannel({ channelName, clientId, enabled, historyLimit = 
     const authBase = getAuthBase();
     if (!authBase) return; // local-dev with Ably disabled — no-op
 
+    // Pass scope=live + the exact channel name so the token endpoint mints a
+    // token with subscribe/publish/presence/history capabilities for THIS
+    // channel (not the default subscribe-only campaign/token scope).
+    const authUrl = `${authBase}/api/ably/token?scope=live&channel=${encodeURIComponent(channelName)}`;
     const client = new Ably.Realtime({
-      authUrl: `${authBase}/api/ably/token`,
+      authUrl,
       authMethod: "GET",
       clientId,
     });

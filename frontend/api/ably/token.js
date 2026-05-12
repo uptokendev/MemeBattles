@@ -56,26 +56,39 @@ export default async function handler(req, res) {
     const chainId = Number(q.chainId ?? 97);
     const campaign = p(q.campaign).toLowerCase();
     const scope = p(q.scope).toLowerCase();
-
-    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+    const liveChannel = p(q.channel).toLowerCase();
 
     let channel = "";
+    let capability;
 
-if (scope === "league") {
-  channel = `league:${chainId}`;
-} else {
-  if (!isAddress(campaign)) {
-    return json(res, 400, { error: "Invalid campaign address" });
-  }
+    if (scope === "live") {
+      // Live launch-party / AMA chat channel. Bilateral: clients subscribe AND
+      // publish chat messages, enter presence, fetch history.
+      // Channel name pattern is restricted to live:<safe-slug> to prevent
+      // tokens from being minted for unrelated channels.
+      if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
+        return json(res, 400, { error: "Invalid live channel name" });
+      }
+      channel = liveChannel;
+      capability = { [channel]: ["subscribe", "publish", "presence", "history"] };
+    } else {
+      if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
-  if (scope === "warroom") {
-    channel = `warroom:${chainId}:${campaign}`;
-  } else {
-    channel = `token:${chainId}:${campaign}`;
-  }
-}
+      if (scope === "league") {
+        channel = `league:${chainId}`;
+      } else {
+        if (!isAddress(campaign)) {
+          return json(res, 400, { error: "Invalid campaign address" });
+        }
 
-    const capability = { [channel]: ["subscribe"] };
+        if (scope === "warroom") {
+          channel = `warroom:${chainId}:${campaign}`;
+        } else {
+          channel = `token:${chainId}:${campaign}`;
+        }
+      }
+      capability = { [channel]: ["subscribe"] };
+    }
     const ably = new Ably.Rest({ key: ABLY_API_KEY });
     const tokenRequest = await ably.auth.createTokenRequest({
       ttl: 60 * 60 * 1000,
