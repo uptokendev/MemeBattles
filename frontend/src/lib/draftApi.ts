@@ -567,6 +567,7 @@ export type DraftComment = {
   id: string;
   draftId: string;
   walletAddress: string;
+  displayName: string | null;
   body: string;
   parentCommentId: string | null;
   reactionCount: number;

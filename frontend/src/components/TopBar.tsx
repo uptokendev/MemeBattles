@@ -41,7 +41,7 @@ type TickerItem = {
   route: string;
 };
 
-const brandMark = "/assets/logo.png";
+const brandMark = "/assets/navbar-logo.png";
 
 const ENABLE_TOPBAR_ONCHAIN_METRICS = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_ENABLE_TOPBAR_ONCHAIN_METRICS || "").trim().toLowerCase(),

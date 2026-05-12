@@ -372,7 +372,9 @@ function TransmissionList({
 
     try {
       const prefix =
-        reply && replyingTo ? `↳ Creator reply to ${shortWallet(replyingTo.walletAddress)}: ` : "";
+        reply && replyingTo
+          ? `↳ Creator reply to ${replyingTo.displayName || shortWallet(replyingTo.walletAddress)}: `
+          : "";
 
       const comment = await addDraftComment(draftId, wallet.account, `${prefix}${text}`);
 
@@ -400,7 +402,7 @@ function TransmissionList({
                   // Creator reply
                 </div>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Replying to {shortWallet(replyingTo.walletAddress)}: “{replyingTo.body}”
+                  Replying to {replyingTo.displayName || shortWallet(replyingTo.walletAddress)}: “{replyingTo.body}”
                 </p>
               </div>
 
@@ -442,28 +444,28 @@ function TransmissionList({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-        <div className="max-h-[460px] overflow-y-auto pr-1">
-          <div className="grid gap-4 md:grid-cols-3">
+        <div className="max-h-[720px] overflow-y-auto pr-1">
+          <div className="grid gap-4 md:grid-cols-2">
             {items.length === 0 ? (
-              <div className="mwz-card p-5 text-sm text-muted-foreground md:col-span-3">
+              <div className="mwz-card p-5 text-sm text-muted-foreground md:col-span-2">
                 No transmissions intercepted yet. Be the first soldier in the bunker.
               </div>
             ) : (
               items.map((item) => (
-                <div key={item.id} className="mwz-card flex min-h-[190px] gap-3 p-4">
+                <div key={item.id} className="mwz-card flex gap-3 p-4">
                   <div className="h-10 w-10 shrink-0 rounded-full border border-orange-400/40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,153,0,0.55),rgba(25,8,2,0.9))]" />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-retro text-sm text-foreground">
-                        {shortWallet(item.walletAddress)}
+                      <span className="truncate font-retro text-sm text-foreground" title={item.walletAddress}>
+                        {item.displayName || shortWallet(item.walletAddress)}
                       </span>
-                      <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                         {new Date(item.createdAt).toLocaleDateString()}
                       </span>
                     </div>
 
-                    <p className="mt-2 line-clamp-4 text-sm leading-relaxed text-muted-foreground">
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
                       {item.body}
                     </p>
 

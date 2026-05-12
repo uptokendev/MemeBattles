@@ -47,10 +47,16 @@ function memoryStore() {
 }
 
 function mapCommentRow(row) {
+  const rawDisplayName = row.author_display_name ?? row.display_name ?? null;
+  const displayName =
+    typeof rawDisplayName === "string" && rawDisplayName.trim().length > 0
+      ? rawDisplayName.trim()
+      : null;
   return {
     id: String(row.id),
     draftId: String(row.draft_id),
     walletAddress: String(row.wallet_address),
+    displayName,
     body: row.body,
     parentCommentId: row.parent_comment_id ? String(row.parent_comment_id) : null,
     reactionCount: Number(row.reaction_count || 0),
@@ -289,8 +295,18 @@ export async function signedDraftComments(req, res) {
   if (req.method === "GET") {
     const pool = await getPool();
     if (pool) {
+      // LEFT JOIN user_profiles on (chain_id, address) to fetch the author's
+      // display name without forcing a separate per-comment lookup on the
+      // client. Falls back to null if the author hasn't set a display name.
       const result = await pool.query(
-        "select * from campaign_draft_comments where draft_id = $1 and moderation_status = 'visible' order by created_at asc limit 120",
+        `select c.*, up.display_name as author_display_name
+           from campaign_draft_comments c
+           left join campaign_drafts d on d.id = c.draft_id
+           left join user_profiles up
+             on up.chain_id = d.chain_id and up.address = c.wallet_address
+          where c.draft_id = $1 and c.moderation_status = 'visible'
+          order by c.created_at asc
+          limit 120`,
         [draftId],
       );
       return json(res, 200, { items: nestComments(result.rows.map(mapCommentRow)) });

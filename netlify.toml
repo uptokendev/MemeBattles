@@ -6,6 +6,15 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Proxy /api/* to the Railway API gateway. Must come before the SPA fallback so
+# relative API URLs in rendered HTML (e.g. share-card <img> src) don't fall
+# through to /index.html.
+[[redirects]]
+  from = "/api/*"
+  to = "https://memewarzonefrontend-production.up.railway.app/api/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
