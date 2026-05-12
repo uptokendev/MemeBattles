@@ -26,6 +26,13 @@ function normalizeExternalUrl(raw: string | null | undefined, kind: "x" | "teleg
   return `https://${handle}`;
 }
 
+function isTokenSelfUrl(raw: string | null | undefined, campaignAddress: string) {
+  const value = String(raw || "").trim().toLowerCase();
+  const address = String(campaignAddress || "").trim().toLowerCase();
+  if (!value || !address) return false;
+  return value.includes(`/token/${address}`);
+}
+
 function SocialLinksPanel({ links }: { links: SocialLink[] }) {
   if (!links.length) return null;
 
@@ -60,13 +67,14 @@ function prepareLinks(bundle: PrepareDraftBundle | null): SocialLink[] {
 
   const draft = bundle.draft;
   const promo = bundle.promotion;
+  const otherFromPromotionDocs = Array.isArray(promo.docs) ? promo.docs.find(Boolean) : "";
 
   return [
     { label: "Website", short: "WEB", url: normalizeExternalUrl(promo.websiteUrl || draft.websiteUrl, "website") },
     { label: "X (formally Twitter)", short: "X", url: normalizeExternalUrl(promo.xUrl || draft.xUrl, "x") },
     { label: "Telegram", short: "TG", url: normalizeExternalUrl(promo.telegramUrl, "telegram") },
     { label: "Discord", short: "DC", url: normalizeExternalUrl(promo.discordUrl, "discord") },
-    { label: "Other", short: "OTHER", url: normalizeExternalUrl(draft.otherUrl, "other") },
+    { label: "Other", short: "OTHER", url: normalizeExternalUrl(draft.otherUrl || otherFromPromotionDocs, "other") },
   ].filter((item) => Boolean(item.url));
 }
 
@@ -124,14 +132,16 @@ export function TokenSocialLinksOverlay() {
 
   const links = useMemo(() => {
     const props = metadata?.properties || {};
+    const externalUrl = isTokenSelfUrl(metadata?.external_url, campaignAddress) ? "" : metadata?.external_url;
+
     return [
       { label: "Website", short: "WEB", url: normalizeExternalUrl(props.website, "website") },
       { label: "X (formally Twitter)", short: "X", url: normalizeExternalUrl(props.x, "x") },
       { label: "Telegram", short: "TG", url: normalizeExternalUrl(props.telegram, "telegram") },
       { label: "Discord", short: "DC", url: normalizeExternalUrl(props.discord, "discord") },
-      { label: "Other", short: "OTHER", url: normalizeExternalUrl(metadata?.external_url, "other") },
+      { label: "Other", short: "OTHER", url: normalizeExternalUrl(externalUrl, "other") },
     ].filter((item) => Boolean(item.url));
-  }, [metadata]);
+  }, [metadata, campaignAddress]);
 
   return <SocialLinksPanel links={links} />;
 }
