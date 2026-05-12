@@ -234,24 +234,19 @@ export default function RecruiterProfile() {
           ) : null}
         </Card>
 
-        <Card className="border-border/60 bg-card/65 p-6">
-          <div>
-            <p className="font-retro text-xs uppercase tracking-[0.22em] text-muted-foreground">Replacement path</p>
-            <h2 className="mt-1 font-retro text-xl text-foreground">If this recruiter closes</h2>
-          </div>
+        {summary.status === "closed" && replacements.length > 0 ? (
+          <Card className="border-border/60 bg-card/65 p-6">
+            <div>
+              <p className="font-retro text-xs uppercase tracking-[0.22em] text-muted-foreground">Pick a new recruiter</p>
+              <h2 className="mt-1 font-retro text-xl text-foreground">This recruiter is closed</h2>
+            </div>
 
-          <p className="mt-3 text-sm text-muted-foreground">
-            Closed recruiters detach linked users back to solo status. These are active alternatives the frontend can
-            surface when someone needs to rejoin under a different recruiter.
-          </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Anyone who was in their squad is back to solo and can join a new recruiter below.
+            </p>
 
-          <div className="mt-5 space-y-3">
-            {replacements.length === 0 ? (
-              <div className="rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">
-                No replacement suggestions are available yet.
-              </div>
-            ) : (
-              replacements.map((replacement) => (
+            <div className="mt-5 space-y-3">
+              {replacements.map((replacement) => (
                 <Link
                   key={replacement.code}
                   to={`/recruiters/${encodeURIComponent(replacement.code)}`}
@@ -272,10 +267,10 @@ export default function RecruiterProfile() {
                     </div>
                   </div>
                 </Link>
-              ))
-            )}
-          </div>
-        </Card>
+              ))}
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
