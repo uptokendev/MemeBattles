@@ -425,16 +425,20 @@ export default function DraftPromotionSetup() {
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 md:min-w-[21rem]">
-                {(["public", "unlisted", "private"] as DraftVisibility[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setVisibility(item)}
-                    className={`mwz-button h-9 text-[10px] uppercase tracking-[0.14em] ${visibility === item ? "mwz-button-orange" : ""}`}
-                  >
-                    {item}
-                  </button>
-                ))}
+                {(["public", "unlisted", "private"] as DraftVisibility[]).map((item) => {
+                  const isSelected = visibility === item;
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => setVisibility(item)}
+                      className={`mwz-button h-9 text-[10px] uppercase tracking-[0.14em] ${isSelected ? "mwz-button-orange !bg-orange-500/25 !text-orange-100 font-semibold" : ""}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           </div>

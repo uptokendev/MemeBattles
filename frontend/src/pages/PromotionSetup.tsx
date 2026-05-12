@@ -356,19 +356,30 @@ const PromotionSetup = () => {
             {sectionTitle(<Share2 className="h-4 w-4" />, "Visibility And Share Message", "Distribution controls")}
             <div className="space-y-4 p-4">
               <div className="grid gap-2 md:grid-cols-3">
-                {(["public", "unlisted", "private"] as DraftVisibility[]).map((visibility) => (
-                  <button
-                    key={visibility}
-                    type="button"
-                    onClick={() => updateDraft({ visibility })}
-                    className={cn("mwz-button p-3 text-left font-retro text-xs", draft.visibility === visibility && "mwz-button-orange")}
-                  >
-                    <span className="block uppercase tracking-[0.16em]">{visibility}</span>
-                    <span className="mt-1 block text-[11px] normal-case tracking-normal text-muted-foreground">
-                      {visibility === "public" ? "Listed and shareable" : visibility === "unlisted" ? "Share link only" : "Owner only"}
-                    </span>
-                  </button>
-                ))}
+                {(["public", "unlisted", "private"] as DraftVisibility[]).map((visibility) => {
+                  const isSelected = draft.visibility === visibility;
+                  let description: string;
+                  if (visibility === "public") description = "Listed and shareable";
+                  else if (visibility === "unlisted") description = "Share link only";
+                  else description = "Owner only";
+                  return (
+                    <button
+                      key={visibility}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => updateDraft({ visibility })}
+                      className={cn(
+                        "mwz-button p-3 text-left font-retro text-xs",
+                        isSelected && "mwz-button-orange !bg-orange-500/25 !text-orange-100 font-semibold",
+                      )}
+                    >
+                      <span className="block uppercase tracking-[0.16em]">{visibility}</span>
+                      <span className="mt-1 block text-[11px] normal-case tracking-normal text-muted-foreground">
+                        {description}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
               <Textarea
                 value={draft.shareMessage}

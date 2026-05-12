@@ -142,7 +142,7 @@ const App = () => {
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
-                    <Route path="/prepare/:slug" element={<div className="prepare-compact"><Prepare /></div>} />
+                    <Route path="/prepare/:slug" element={<Prepare />} />
                     <Route path="/live" element={<Live />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />

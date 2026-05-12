@@ -369,7 +369,7 @@ tickerInitialLoadedRef.current = true;
               key={item.path}
               to={item.path}
               className={cn(
-                "mwz-nav-link px-3 py-2 text-sm whitespace-nowrap 2xl:px-4 2xl:text-base",
+                "mwz-nav-link px-3 md:px-5 py-2 text-sm whitespace-nowrap 2xl:text-base",
                 item.priority === "secondary" && "hidden 2xl:inline-flex",
                 isActive(item.path) && "mwz-nav-link-active",
               )}

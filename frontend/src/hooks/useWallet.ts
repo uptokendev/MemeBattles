@@ -303,6 +303,7 @@ export function useWallet(): WalletHook {
   const eip1193Ref = useRef<Eip1193Provider | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const hydrateInFlightRef = useRef(false);
+  const accountRef = useRef<string>("");
 
   const syncRecruiterAttribution = useCallback(async (walletAddress: string) => {
     if (!walletAddress) return;
@@ -322,6 +323,7 @@ export function useWallet(): WalletHook {
 
   const resetWalletState = useCallback((clearSelectedWallet = false) => {
     eip1193Ref.current = null;
+    accountRef.current = "";
     setAccount("");
     setSigner(null);
     setProvider(null);
@@ -332,6 +334,7 @@ export function useWallet(): WalletHook {
 
   const applyProviderState = useCallback(async (selectedProvider: Eip1193Provider, chosen: string, selectedWalletId?: WalletType) => {
     eip1193Ref.current = selectedProvider;
+    accountRef.current = chosen;
     const browserProvider = new BrowserProvider(selectedProvider);
     setProvider(browserProvider);
     setAccount(chosen);
@@ -359,10 +362,21 @@ export function useWallet(): WalletHook {
           resetWalletState(false);
           return;
         }
+        if (
+          eip1193Ref.current === selectedProvider &&
+          chosen.toLowerCase() === accountRef.current.toLowerCase()
+        ) {
+          return;
+        }
         await applyProviderState(selectedProvider, chosen);
       } catch {
         setSigner(null);
       }
+    };
+
+    const onVisibilityChange = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void rebuild();
     };
 
     const onAccountsChanged = async (accounts: unknown) => {
@@ -391,14 +405,14 @@ export function useWallet(): WalletHook {
     selectedProvider.on("chainChanged", onChainChanged);
     selectedProvider.on("disconnect", rebuild);
     window.addEventListener("focus", rebuild);
-    document.addEventListener("visibilitychange", rebuild);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     cleanupRef.current = () => {
       selectedProvider.removeListener?.("accountsChanged", onAccountsChanged);
       selectedProvider.removeListener?.("chainChanged", onChainChanged);
       selectedProvider.removeListener?.("disconnect", rebuild);
       window.removeEventListener("focus", rebuild);
-      document.removeEventListener("visibilitychange", rebuild);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [applyProviderState, resetWalletState]);
 
