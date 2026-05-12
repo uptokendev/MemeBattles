@@ -10,6 +10,8 @@ export const TOKEN_VALIDATION_LIMITS = {
   DESCRIPTION_MAX_LENGTH: 1000,
 } as const;
 
+const socialInput = z.string().trim().max(500, "Social link must be less than 500 characters").optional().or(z.literal(""));
+
 export const tokenSchema = z.object({
   name: z
     .string()
@@ -26,6 +28,6 @@ export const tokenSchema = z.object({
     .max(TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH, `Description must be less than ${TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH} characters`)
     .optional(),
   website: z.string().url("Invalid URL").optional().or(z.literal("")),
-  twitter: z.string().url("Invalid URL").optional().or(z.literal("")),
+  twitter: socialInput,
   otherLink: z.string().url("Invalid URL").optional().or(z.literal("")),
 });
