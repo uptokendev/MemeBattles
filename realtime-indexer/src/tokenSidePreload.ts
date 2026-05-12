@@ -32,6 +32,26 @@ const patchedAblyToken = wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
   const scope = String(req.query.scope || "token").toLowerCase();
 
+  if (scope === "live") {
+    // Live launch-party / AMA chat channel — bilateral pub/sub + presence + history.
+    // Channel slug restricted to live:<safe-slug> per spec Section 6.1.
+    const liveChannel = String(req.query.channel || "").toLowerCase();
+    if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
+      return res.status(400).json({ error: "Invalid live channel name" });
+    }
+    // Bind the token to the caller's clientId so Ably presence counts each
+    // wallet uniquely. Falls back to "public" if absent (history-only consumer).
+    const liveClientId = String(req.query.clientId || "public");
+    const tokenRequest = await ablyRest.auth.createTokenRequest({
+      clientId: liveClientId,
+      capability: JSON.stringify({
+        [liveChannel]: ["subscribe", "publish", "presence", "history"],
+      }),
+      ttl: 60 * 60 * 1000,
+    });
+    return res.json(tokenRequest);
+  }
+
   if (!Number.isFinite(chainId)) {
     return res.status(400).json({ error: "Invalid chainId" });
   }

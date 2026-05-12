@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { FeedTabKey, HomeQuery } from "./CampaignGrid";
-import { FileText, Filter, Flame, Sparkles, Timer, TrendingUp } from "lucide-react";
+import { FileText, Filter } from "lucide-react";
 
 type DiscoveryControlsProps = {
   className?: string;
@@ -29,12 +29,9 @@ type DiscoveryControlsProps = {
 };
 
 const TAB_DEFS: Array<{ key: FeedTabKey; label: string; icon: ReactNode }> = [
-  // Pre-live ordering: Drafts first. Move this item to the end when live campaigns become the default row.
+  // Pre-launch: only Drafts. Other tabs (Trending, New, Ending Soon, Trading on DEX)
+  // surface real live campaigns and are re-enabled post-launch — see git blame.
   { key: "drafts", label: "Drafts", icon: <FileText className="h-4 w-4" /> },
-  { key: "trending", label: "Trending", icon: <TrendingUp className="h-4 w-4" /> },
-  { key: "new", label: "New", icon: <Sparkles className="h-4 w-4" /> },
-  { key: "ending", label: "Ending Soon", icon: <Timer className="h-4 w-4" /> },
-  { key: "dex", label: "Trading on DEX", icon: <Flame className="h-4 w-4" /> },
 ];
 
 const SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }> = [
