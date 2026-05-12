@@ -1,15 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Save } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId } from "@/lib/chainConfig";
-import { fetchPrepareDraft, type PrepareDraftBundle } from "@/lib/draftApi";
+import { fetchCampaignDraft, fetchPrepareDraft, saveDraftPromotion, type PrepareDraftBundle } from "@/lib/draftApi";
+import { signDraftAction } from "@/lib/draftAuth";
 import { useWallet } from "@/contexts/WalletContext";
 
 type SocialLink = {
   label: string;
   short: string;
   url: string;
+};
+
+type SocialLinkForm = {
+  website: string;
+  x: string;
+  telegram: string;
+  discord: string;
+  other: string;
+};
+
+const emptySocialForm: SocialLinkForm = {
+  website: "",
+  x: "",
+  telegram: "",
+  discord: "",
+  other: "",
 };
 
 function normalizeExternalUrl(raw: string | null | undefined, kind: "x" | "telegram" | "discord" | "website" | "other") {
@@ -31,6 +51,22 @@ function isTokenSelfUrl(raw: string | null | undefined, campaignAddress: string)
   const address = String(campaignAddress || "").trim().toLowerCase();
   if (!value || !address) return false;
   return value.includes(`/token/${address}`);
+}
+
+function formFromBundle(bundle: PrepareDraftBundle | null): SocialLinkForm {
+  if (!bundle) return emptySocialForm;
+
+  const draft = bundle.draft;
+  const promo = bundle.promotion;
+  const otherFromPromotionDocs = Array.isArray(promo.docs) ? promo.docs.find(Boolean) : "";
+
+  return {
+    website: promo.websiteUrl || draft.websiteUrl || "",
+    x: promo.xUrl || draft.xUrl || "",
+    telegram: promo.telegramUrl || "",
+    discord: promo.discordUrl || "",
+    other: draft.otherUrl || otherFromPromotionDocs || "",
+  };
 }
 
 function SocialLinksPanel({ links }: { links: SocialLink[] }) {
@@ -63,18 +99,14 @@ function SocialLinksPanel({ links }: { links: SocialLink[] }) {
 }
 
 function prepareLinks(bundle: PrepareDraftBundle | null): SocialLink[] {
-  if (!bundle) return [];
-
-  const draft = bundle.draft;
-  const promo = bundle.promotion;
-  const otherFromPromotionDocs = Array.isArray(promo.docs) ? promo.docs.find(Boolean) : "";
+  const form = formFromBundle(bundle);
 
   return [
-    { label: "Website", short: "WEB", url: normalizeExternalUrl(promo.websiteUrl || draft.websiteUrl, "website") },
-    { label: "X (formally Twitter)", short: "X", url: normalizeExternalUrl(promo.xUrl || draft.xUrl, "x") },
-    { label: "Telegram", short: "TG", url: normalizeExternalUrl(promo.telegramUrl, "telegram") },
-    { label: "Discord", short: "DC", url: normalizeExternalUrl(promo.discordUrl, "discord") },
-    { label: "Other", short: "OTHER", url: normalizeExternalUrl(draft.otherUrl || otherFromPromotionDocs, "other") },
+    { label: "Website", short: "WEB", url: normalizeExternalUrl(form.website, "website") },
+    { label: "X (formally Twitter)", short: "X", url: normalizeExternalUrl(form.x, "x") },
+    { label: "Telegram", short: "TG", url: normalizeExternalUrl(form.telegram, "telegram") },
+    { label: "Discord", short: "DC", url: normalizeExternalUrl(form.discord, "discord") },
+    { label: "Other", short: "OTHER", url: normalizeExternalUrl(form.other, "other") },
   ].filter((item) => Boolean(item.url));
 }
 
@@ -102,6 +134,107 @@ export function PrepareSocialLinksOverlay() {
 
   const links = useMemo(() => prepareLinks(bundle), [bundle]);
   return <SocialLinksPanel links={links} />;
+}
+
+export function PromotionEditSocialLinksPanel() {
+  const { draftId = "" } = useParams();
+  const wallet = useWallet();
+  const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
+  const [form, setForm] = useState<SocialLinkForm>(emptySocialForm);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!draftId) return;
+    let cancelled = false;
+
+    void fetchCampaignDraft(draftId, wallet.account)
+      .then((data) => {
+        if (cancelled) return;
+        setBundle(data);
+        setForm(formFromBundle(data));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBundle(null);
+        setForm(emptySocialForm);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftId, wallet.account]);
+
+  const setField = (key: keyof SocialLinkForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!bundle || !draftId) return;
+    if (!wallet.account) {
+      toast.error("Connect the creator wallet to save social links.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const auth = await signDraftAction({
+        signer: wallet.signer,
+        walletAddress: wallet.account,
+        chainId: Number(bundle.draft.chainId),
+        action: "save_promotion",
+        draftId,
+      } as any);
+
+      const updated = await saveDraftPromotion(draftId, {
+        auth,
+        missionStatement: bundle.promotion.missionStatement,
+        roadmap: bundle.promotion.roadmap,
+        launchStrategy: bundle.promotion.launchStrategy,
+        websiteUrl: form.website,
+        xUrl: form.x,
+        telegramUrl: form.telegram,
+        discordUrl: form.discord,
+        docs: form.other ? [form.other] : [],
+        creatorNote: bundle.promotion.creatorNote,
+        bannerUrl: bundle.promotion.bannerUrl,
+        shareMessage: bundle.promotion.shareMessage,
+        visibility: bundle.draft.visibility,
+      });
+
+      setBundle(updated);
+      setForm(formFromBundle(updated));
+      toast.success("Social links saved.");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to save social links.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!bundle) return null;
+
+  return (
+    <div className="fixed bottom-5 right-4 z-40 w-[min(92vw,26rem)] rounded-2xl border border-border/60 bg-black/80 p-3 shadow-xl backdrop-blur-md">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Official links</div>
+          <div className="font-retro text-sm text-foreground">Promotion social links</div>
+        </div>
+        <Button type="button" onClick={handleSave} disabled={saving} size="sm" className="mwz-button h-8 px-3 font-retro text-xs">
+          <Save className="mr-1.5 h-3.5 w-3.5" />
+          {saving ? "Saving" : "Save"}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input value={form.website} onChange={(e) => setField("website", e.target.value)} placeholder="Website" type="url" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.x} onChange={(e) => setField("x", e.target.value)} placeholder="X (formally Twitter)" type="url" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.telegram} onChange={(e) => setField("telegram", e.target.value)} placeholder="Telegram" type="url" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.discord} onChange={(e) => setField("discord", e.target.value)} placeholder="Discord" type="url" className="h-9 bg-background/60 font-retro text-xs" />
+        <Input value={form.other} onChange={(e) => setField("other", e.target.value)} placeholder="Other" type="url" className="h-9 bg-background/60 font-retro text-xs sm:col-span-2" />
+      </div>
+    </div>
+  );
 }
 
 export function TokenSocialLinksOverlay() {
