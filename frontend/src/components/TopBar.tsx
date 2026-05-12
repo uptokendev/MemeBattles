@@ -384,10 +384,10 @@ tickerInitialLoadedRef.current = true;
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label="Open search"
-            className="mwz-button group flex h-10 w-full items-center justify-center gap-1 px-3 sm:gap-1.5 sm:px-3 md:w-[260px] lg:w-[110px] 2xl:w-[300px]"
+            className="mwz-button group flex h-8 w-full items-center justify-center gap-1 px-2.5 sm:gap-1.5 sm:px-2.5 md:w-[220px] lg:w-[96px] 2xl:w-[260px]"
           >
             <span className="flex items-center gap-2 min-w-0">
-              <Search className="h-4 w-4 shrink-0" />
+              <Search className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden truncate text-xs uppercase tracking-[0.14em] text-success/70 sm:inline lg:hidden 2xl:inline">
                 Search the warzone
               </span>
