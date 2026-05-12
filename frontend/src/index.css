@@ -477,11 +477,11 @@ All colors MUST be HSL.
     margin-top: 0.75rem !important;
   }
 
-  .prepare-compact .max-h-\[460px\] {
+  .prepare-compact [class*="max-h-"][class*="460px"] {
     max-height: 320px !important;
   }
 
-  .prepare-compact .min-h-\[190px\] {
+  .prepare-compact [class*="min-h-"][class*="190px"] {
     min-height: 140px !important;
   }
 }
