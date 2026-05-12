@@ -55,7 +55,7 @@ export const LiveChat = ({ messages }: Props) => {
                 </>
               )}
               {!isMod && m.squadCallsign && (
-                <span className="text-[10px] uppercase tracking-widest text-primary">
+                <span className="text-[10px] uppercase tracking-widest text-cyan-400">
                   [{m.squadCallsign}]
                 </span>
               )}
