@@ -64,9 +64,11 @@ sed -n '1,20p' /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/Meme
 
 Expected: file starts with `// frontend/src/lib/liveChat.ts` and has `LiveChatMessage` + `LiveChatDelete` types already.
 
-- [ ] **Step A1.2** — Insert these two new types right after the existing `LiveChatDelete` type definition (around line 16). Code to add **verbatim**:
+- [ ] **Step A1.2** — Insert these two new types right after the existing `LiveChatDelete` type definition (around line 16). Code to add **verbatim** (the `SYNC:` magic comment helps grep-confirm this file stays aligned with the mw-dashboard copy):
 
 ```ts
+// SYNC: docs/superpowers/specs/2026-05-12-chat-moderation-design.md Section 4
+// — keep LiveChatMute / LiveChatUnmute in sync with mw-dashboard/src/lib/liveChat.ts.
 export type LiveChatMute = {
   type: "mute";
   wallet: string;             // lowercased convention
@@ -179,7 +181,7 @@ const onMessage = (msg: Ably.Message) => {
 };
 ```
 
-- [ ] **Step A2.4** — Extend the history-seed block to also seed mute/unmute events. Find the existing history block (around line 95-110):
+- [ ] **Step A2.4** — Extend the history-seed block to also seed mute/unmute events. Find the existing history block (around line 95-110). **Important:** the actual file has a `// history returns newest-first; flip to chronological` comment between the for-loop and `seeded.reverse();` — include it in the Find string so the exact-match Edit succeeds:
 
 ```ts
 channel
@@ -198,13 +200,14 @@ channel
         seeded.push(d as LiveChatMessage);
       }
     }
+    // history returns newest-first; flip to chronological
     seeded.reverse();
     setMessages((prev) => (prev.length === 0 ? seeded : prev));
   })
   .catch(() => { /* history is best-effort */ });
 ```
 
-Replace with:
+Replace with (note the **trailing `seeded.reverse()` is intentionally removed** — the new loop already iterates in chronological order via `[...page.items].reverse()` so the resulting `seeded` array is already chronological):
 
 ```ts
 channel
@@ -548,7 +551,7 @@ Replace with:
     if (!text) return;
 ```
 
-- [ ] **Step A4.7** — Update the `<Input>` to reflect muted state. Find:
+- [ ] **Step A4.7** — Update the `<Input>` AND `<Button>` together so the disabled-when-muted state covers both, in one clean find/replace. Find this exact block (Input + closing tag + Button opening):
 
 ```tsx
       <Input
@@ -559,6 +562,7 @@ Replace with:
         maxLength={MAX_CHAT_LENGTH}
         className="font-mono"
       />
+      <Button type="submit" size="icon" disabled={disabled || pending || !value.trim()}>
 ```
 
 Replace with:
@@ -569,9 +573,7 @@ Replace with:
         onChange={(e) => setValue(e.target.value.slice(0, MAX_CHAT_LENGTH))}
         placeholder={
           isMuted
-            ? mutedUntil === null
-              ? "You have been muted."
-              : "You have been muted."
+            ? "You have been muted."
             : disabled
               ? "Comms disabled"
               : "Send transmission…"
@@ -583,13 +585,7 @@ Replace with:
       <Button type="submit" size="icon" disabled={disabled || pending || isMuted || !value.trim()}>
 ```
 
-Note: this update REPLACES both the Input and the start of the Button line that follows it. Find the existing Button line:
-
-```tsx
-      <Button type="submit" size="icon" disabled={disabled || pending || !value.trim()}>
-```
-
-If the replace above didn't cover both, also update the Button disabled prop to include `isMuted`.
+Note: the perma vs temp wording is intentionally the same ("You have been muted.") for V1 — the duration detail is carried by the toast (Task A4.4). A live countdown in the placeholder is V2 polish.
 
 - [ ] **Step A4.8** — Build:
 
@@ -778,7 +774,20 @@ cd /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/MemeBattles/fron
 
 Expected: `syntax ok`. If you get a parse error, re-read the inserted blocks.
 
-- [ ] **Step A6.5** — Commit:
+- [ ] **Step A6.5 (optional but recommended)** — Smoke-test CORS preflight against a running netlify dev server. With `yarn dev` running in `frontend/`:
+
+```bash
+curl -is -X OPTIONS \
+  -H "Origin: http://localhost:5173" \
+  -H "Access-Control-Request-Method: GET" \
+  http://localhost:8888/api/ably/token | head -20
+```
+
+(Replace `8888` with whichever port netlify dev binds to.)
+
+Expected: `HTTP/1.1 204 No Content` with response headers including `access-control-allow-origin: http://localhost:5173`. If the header is missing, the allow-list isn't matching — check that `localhost:5173` is in `MW_DASHBOARD_ALLOWED_ORIGINS` and that `req.headers.origin` is being read correctly.
+
+- [ ] **Step A6.6** — Commit:
 
 ```bash
 git -C /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/MemeBattles add frontend/api/ably/token.js
@@ -882,18 +891,14 @@ Replace with:
                   <Route path="/stats" element={<StatsPage />} />
 ```
 
-- [ ] **Step B1.5** — DON'T build yet — `LivePage` doesn't exist; build will fail at this point. That's fine; we'll keep it staged and create the file in subsequent tasks before committing this one.
-
-- [ ] **Step B1.6** — Hold this task's commit until Task B8 creates `LivePage.tsx`. (Phase B commits its parts in a slightly different order than Phase A — file creates land before the route registration is committed, to keep each commit self-contained.)
-
-Actually: re-order — commit the dep install + env file now (those are self-contained); commit App.tsx with the route at the end after LivePage exists. Stage the package.json + lock + env now and commit:
+- [ ] **Step B1.5** — Commit JUST the dep install and env file now. Leave `src/App.tsx` modified but **unstaged** — the route registration will land in Task B9 after `LivePage.tsx` exists. (If we committed the `App.tsx` change now, the build would fail because `LivePage` doesn't exist yet.)
 
 ```bash
 git -C /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/mw-dashboard add package.json package-lock.json .env.example
 git -C /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/mw-dashboard commit -m "feat(live): install ably and document /live env vars"
 ```
 
-LEAVE `src/App.tsx` modified but unstaged for now. The route registration will be Task B9 (committed once `LivePage` exists).
+After this step, `git status` should show `src/App.tsx` still in "Changes not staged for commit" — that's expected and intentional.
 
 ---
 
@@ -907,9 +912,9 @@ LEAVE `src/App.tsx` modified but unstaged for now. The route registration will b
 ```ts
 // src/lib/liveChat.ts
 // Mirror of MemeBattles' live-chat type contract.
-// Source of truth: docs/superpowers/specs/2026-05-12-chat-moderation-design.md
-// Keep this file in sync with MemeBattles/frontend/src/lib/liveChat.ts when the
-// shared schema evolves.
+// SYNC: docs/superpowers/specs/2026-05-12-chat-moderation-design.md Section 4
+// — keep this file aligned with MemeBattles/frontend/src/lib/liveChat.ts.
+// Grep for `SYNC:` across both repos to confirm alignment.
 
 export type LiveChatMessage = {
   id: string;
@@ -1342,6 +1347,18 @@ git -C /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/mw-dashboard
 **Files:**
 - Create: `src/components/live/DeleteConfirmPopover.tsx`
 - Create: `src/components/live/MessageRow.tsx`
+
+- [ ] **Step B6.0** — Pre-check which shadcn primitives already exist so the install step is deterministic:
+
+```bash
+ls /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/mw-dashboard/src/components/ui/ | grep -E "^(popover|dropdown-menu)\.tsx$"
+```
+
+If both `popover.tsx` and `dropdown-menu.tsx` are listed, skip the install fallback further down. If either is missing, run this BEFORE creating the files in B6.1/B6.2:
+
+```bash
+cd /Users/sven.vanthoenderdaal/PersonalDevelopment/meme-warzone/mw-dashboard && npx shadcn@latest add popover dropdown-menu
+```
 
 - [ ] **Step B6.1** — First the popover wrapper. Create `DeleteConfirmPopover.tsx`:
 
