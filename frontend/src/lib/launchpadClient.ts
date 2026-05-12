@@ -851,7 +851,7 @@ try {
 
       const valueToSend = initialBuyBnbWei;
       if (!wallet.account) throw new Error("Wallet not connected");
-      const authResponse = await fetchCampaignCreateAuthorization(wallet.account, wallet.chainId);
+      const authResponse = await fetchCampaignCreateAuthorization(wallet.account, activeChainId);
       const auth = authResponse.authorization;
 
       const metadataURI = params.metadataURI || buildMetadataURI(activeChainId);
@@ -892,7 +892,7 @@ try {
       if (!signer) throw new Error("Wallet not connected");
       if (!wallet.account) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
-      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, wallet.chainId);
+      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
       const auth = authResponse.authorization;
 
       const tx = await campaign.buyExactTokensAuthorized(
@@ -916,7 +916,7 @@ try {
       if (!signer) throw new Error("Wallet not connected");
       if (!wallet.account) throw new Error("Wallet not connected");
       const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
-      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, wallet.chainId);
+      const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
       const auth = authResponse.authorization;
 
       const tx = await campaign.sellExactTokensAuthorized(

@@ -8,7 +8,7 @@
 export type SupportedChainId = 56 | 97;
 
 const DEFAULT_ALLOWED: SupportedChainId[] = [56, 97];
-const DEFAULT_CHAIN: SupportedChainId = 97;
+const DEFAULT_CHAIN: SupportedChainId = 56;
 
 const parseCsvNumbers = (raw?: string): number[] => {
   if (!raw) return [];

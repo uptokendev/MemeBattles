@@ -1,4 +1,4 @@
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 
 const STATUSES = new Set([
@@ -204,9 +204,7 @@ export async function signedPrepareBySlug(req, res) {
   // Per-viewer engagement state. Lets the frontend hydrate the Prepare page CTAs
   // (Arm / Follow) into their post-click visual on reload, instead of always
   // showing the orange "do it" state regardless of subscription status.
-  const viewer = normalizeAddress(
-    typeof req.query?.viewer === "string" ? req.query.viewer : "",
-  );
+  const viewer = normalizeAddress(getQuery(req).viewer || "");
   let viewerFollowing = false;
   let viewerArmed = false;
   if (viewer) {

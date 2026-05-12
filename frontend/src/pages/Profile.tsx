@@ -5,6 +5,7 @@ import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import type { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import { formatWeiToBnb } from "@/lib/rewardsApi";
@@ -66,7 +67,10 @@ const Profile = () => {
       account.toLowerCase() === viewedAddress.toLowerCase()
   );
 
-  const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
+  // Map to the active app chain so signed messages (profile upsert, rewards
+  // claim) and chain-keyed API calls never carry an unsupported chainId.
+  const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
+  const chainId: number | undefined = walletChainId ? getActiveChainId(walletChainId) : undefined;
 const [profileDrafts, setProfileDrafts] = useState<CampaignDraft[]>([]);
 const [loadingDrafts, setLoadingDrafts] = useState(false);
 const [draftsError, setDraftsError] = useState<string | null>(null);

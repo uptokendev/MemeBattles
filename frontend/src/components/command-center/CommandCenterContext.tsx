@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
 import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
@@ -18,6 +19,7 @@ function shortenWallet(addr?: string | null) {
 type CommandCenterData = {
   walletAddress: string;
   chainId?: number;
+  walletChainId?: number;
   profile: ReturnType<typeof useEditableProfile>["profile"];
   loadingProfile: boolean;
   editOpen: boolean;
@@ -58,7 +60,13 @@ export function CommandCenterDataProvider({
 }) {
   const wallet = useWallet();
   const anyWallet: any = wallet as any;
-  const chainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
+  // `walletChainId` is what the wallet reports (could be unsupported, e.g. ETH=1
+  // for an ETH-mainnet wallet). `chainId` is the active app chain — mapped to a
+  // supported value so signed messages and reads never carry an unsupported id.
+  const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
+  const chainId: number | undefined = walletChainId
+    ? getActiveChainId(walletChainId)
+    : undefined;
   const account = wallet.account || walletAddress;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
@@ -156,6 +164,7 @@ export function CommandCenterDataProvider({
   const value = useMemo<CommandCenterData>(() => ({
     walletAddress,
     chainId,
+    walletChainId,
     profile,
     loadingProfile,
     editOpen,
@@ -186,6 +195,7 @@ export function CommandCenterDataProvider({
   }), [
     walletAddress,
     chainId,
+    walletChainId,
     profile,
     loadingProfile,
     editOpen,

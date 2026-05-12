@@ -16,6 +16,7 @@ import {
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useDexPairTrades } from "@/hooks/useDexPairTrades";
 import { useWallet } from "@/contexts/WalletContext";
+import { getActiveChainId } from "@/lib/chainConfig";
 
 type ChartStage = "curve" | "dex";
 
@@ -114,7 +115,9 @@ export function TokenCandlestickChart(props: {
 }) {
   const { stage, symbol, campaignAddress, tokenAddress, dexPairAddress, chainId: chainIdProp, curvePointsOverride, className } = props;
   const wallet = useWallet();
-  const chainId = chainIdProp ?? wallet.chainId ?? 97; // or 56 for BSC mainnet
+  // RPC reads only work on supported chains; map unsupported wallet chains
+  // (e.g. ETH mainnet=1) to the active app chain so the chart still renders.
+  const chainId = chainIdProp ?? getActiveChainId(wallet.chainId);
 
   const [tf, setTf] = useState<TimeframeKey>("15m");
   const tfSeconds = useMemo(() => TIMEFRAMES.find((x) => x.key === tf)?.seconds ?? 900, [tf]);

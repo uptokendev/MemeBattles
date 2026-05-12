@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useWallet } from "@/contexts/WalletContext";
 import { useAblyLeagueChannel } from "@/hooks/useAblyLeagueChannel";
+import { getActiveChainId } from "@/lib/chainConfig";
 import {
   isRankUpgrade,
   normalizeRank,
@@ -16,10 +17,14 @@ function normalizeAddress(value: unknown): string {
 export function RankPromotionListener() {
   const wallet = useWallet();
   const anyWallet: any = wallet as any;
-  const chainId: number | null = Number(anyWallet?.chainId ?? anyWallet?.network?.chainId ?? 0) || null;
+  // Always map to the active app chain — rank events are emitted on supported
+  // chains only, so a wallet on (e.g.) ETH mainnet=1 would otherwise listen on
+  // the wrong Ably channel and miss promotions.
+  const walletChainId = Number(anyWallet?.chainId ?? anyWallet?.network?.chainId ?? 0) || null;
+  const chainId = getActiveChainId(walletChainId);
   const account = useMemo(() => normalizeAddress(wallet.account), [wallet.account]);
-  const enabled = Boolean(chainId && account);
-  const { channel } = useAblyLeagueChannel({ enabled, chainId: chainId || 97 });
+  const enabled = Boolean(account);
+  const { channel } = useAblyLeagueChannel({ enabled, chainId });
 
   useEffect(() => {
     if (!chainId || !account) return;

@@ -1946,7 +1946,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   <TabsContent value="comments" className="mt-0 min-h-0">
                     {campaign?.campaign ? (
                       <TokenComments
-                        chainId={Number(wallet.chainId ?? 97)}
+                        chainId={getActiveChainId(wallet.chainId)}
                         campaignAddress={campaign.campaign}
                         tokenAddress={campaign.token}
                       />
@@ -1958,7 +1958,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   <TabsContent value="updates" className="mt-0 min-h-0">
                     {campaign?.campaign ? (
                       <TokenComments
-                        chainId={Number(wallet.chainId ?? 97)}
+                        chainId={getActiveChainId(wallet.chainId)}
                         campaignAddress={campaign.campaign}
                         tokenAddress={campaign.token}
                         mode="updates"
@@ -2318,7 +2318,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
             {campaign?.campaign ? (
               <TokenWarRoom
-                chainId={Number(wallet.chainId ?? 97)}
+                chainId={getActiveChainId(wallet.chainId)}
                 campaignAddress={campaign.campaign}
                 creatorAddress={campaign.creator}
               />

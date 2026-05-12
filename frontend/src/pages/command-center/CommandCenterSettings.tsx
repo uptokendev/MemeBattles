@@ -1,12 +1,16 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, ExternalLink, Eye, Image, Lock, Settings, ShieldCheck, Wallet } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
-import { getChainLabel, isAllowedChainId } from "@/lib/chainConfig";
+import { useWallet } from "@/contexts/WalletContext";
+import { getActiveChainId, getChainLabel, isAllowedChainId } from "@/lib/chainConfig";
+import { requestWalletChainSwitch } from "@/lib/launchpadReadiness";
 
 function shortenWallet(addr?: string | null) {
   if (!addr) return "";
@@ -16,7 +20,7 @@ function shortenWallet(addr?: string | null) {
 export default function CommandCenterSettings() {
   const {
     walletAddress,
-    chainId,
+    walletChainId,
     profile,
     loadingProfile,
     displayName,
@@ -32,6 +36,30 @@ export default function CommandCenterSettings() {
     handleAvatarSelected,
     handleSaveProfile,
   } = useCommandCenterData();
+
+  const wallet = useWallet();
+  const [switchingChain, setSwitchingChain] = useState(false);
+  const handleSwitchChain = async () => {
+    if (!wallet.provider) {
+      toast.error("Connect a wallet first.");
+      return;
+    }
+    setSwitchingChain(true);
+    try {
+      const target = getActiveChainId(wallet.chainId);
+      await requestWalletChainSwitch(wallet.provider, target);
+      toast.success(`Switched to ${getChainLabel(target) ?? `Chain ${target}`}.`);
+    } catch (err: any) {
+      const message = String(err?.message || err || "");
+      if (/user rejected|user denied|4001/i.test(message)) {
+        toast("Switch cancelled.");
+      } else {
+        toast.error(message || "Failed to switch network.");
+      }
+    } finally {
+      setSwitchingChain(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -111,11 +139,22 @@ export default function CommandCenterSettings() {
                 Chain
               </div>
               <div className="font-retro text-sm text-muted-foreground">
-                {getChainLabel(chainId) ?? "Not detected"}
+                {getChainLabel(walletChainId) ?? "Not detected"}
               </div>
-              {chainId && !isAllowedChainId(chainId) ? (
-                <div className="mt-2 text-[11px] uppercase tracking-[0.14em] text-amber-300">
-                  Unsupported network — switch your wallet to BNB Smart Chain to interact.
+              {walletChainId && !isAllowedChainId(walletChainId) ? (
+                <div className="mt-2 space-y-2">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-amber-300">
+                    Unsupported network — switch your wallet to BNB Smart Chain to interact.
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="font-retro"
+                    disabled={switchingChain || !wallet.provider}
+                    onClick={handleSwitchChain}
+                  >
+                    {switchingChain ? "Switching..." : "Switch network"}
+                  </Button>
                 </div>
               ) : null}
             </div>
