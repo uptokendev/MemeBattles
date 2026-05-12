@@ -7,7 +7,7 @@ import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
-import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
+import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import type React from "react";
@@ -227,6 +227,28 @@ const Create = () => {
         otherUrl: formData.otherLink || null,
         visibility: "private",
       } as any);
+
+      try {
+        const promotionAuth = await signDraftAction({
+          signer: wallet.signer,
+          walletAddress: wallet.account!,
+          chainId,
+          action: "save_promotion" as any,
+          draftId: draft.id,
+        } as any);
+
+        await saveDraftPromotion(draft.id, {
+          auth: promotionAuth,
+          websiteUrl: formData.website || "",
+          xUrl: formData.twitter || "",
+          telegramUrl: formData.telegram || "",
+          discordUrl: formData.discord || "",
+          docs: formData.otherLink ? [formData.otherLink] : [],
+          visibility: "private",
+        });
+      } catch (promotionError) {
+        console.warn("[Create] Failed to seed promotion social links", promotionError);
+      }
 
       cacheDraftLogo(draft.id, logoUrl);
       toast.success("Draft saved. No gas spent.");
