@@ -20,7 +20,9 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
     followersCount,
     followingCount,
     createdCount,
+    draftCount,
     loadingFollows,
+    loadingDraftCount,
   } = useCommandCenterData();
 
   const short = shortenWallet(walletAddress);
@@ -74,7 +76,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
+        <div className="grid grid-cols-2 gap-2 text-center sm:min-w-[460px] sm:grid-cols-4">
           <Link to={`${commandBase}/followers`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followersCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Followers</div>
@@ -86,6 +88,10 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
           <Link to={`${commandBase}/coins`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
+          </Link>
+          <Link to={`${commandBase}/coins`} className="rounded-2xl border border-border/50 bg-card/35 p-3 transition hover:border-accent/50 hover:bg-card/50">
+            <div className="font-retro text-lg text-foreground">{loadingDraftCount ? "..." : draftCount}</div>
+            <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Drafts</div>
           </Link>
         </div>
       </div>
