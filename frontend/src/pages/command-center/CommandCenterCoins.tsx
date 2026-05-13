@@ -18,10 +18,6 @@ function draftHref(draft: CampaignDraft) {
   return draft.slug ? `/prepare/${draft.slug}` : `/drafts/${draft.id}`;
 }
 
-function compactStatus(value?: string | null) {
-  return String(value || "draft").replace(/_/g, " ");
-}
-
 export default function CommandCenterCoins() {
   const { walletAddress, chainId, created } = useCommandCenterData();
   const [drafts, setDrafts] = useState<CampaignDraft[]>([]);
@@ -130,37 +126,33 @@ export default function CommandCenterCoins() {
         ) : draftsError ? (
           <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{draftsError}</div>
         ) : drafts.length > 0 ? (
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {drafts.map((draft) => (
-              <Link
-                key={draft.id}
-                to={draftHref(draft)}
-                className="group flex min-h-[142px] flex-col rounded-2xl border border-border/50 bg-background/25 p-3 transition hover:border-accent/50 hover:bg-card/35"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <img
-                    src={draft.logoUrl || "/placeholder.svg"}
-                    alt={draft.name}
-                    className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-border/60 transition group-hover:ring-accent/50"
-                  />
+              <Link key={draft.id} to={draftHref(draft)} className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35">
+                <div className="flex items-center gap-3">
+                  <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
                   <div className="min-w-0">
-                    <div className="truncate font-retro text-xs text-foreground">{draft.name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">${draft.ticker}</div>
+                    <div className="truncate font-retro text-sm text-foreground">{draft.name}</div>
+                    <div className="text-xs text-muted-foreground">${draft.ticker}</div>
                   </div>
                 </div>
-
-                <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] capitalize leading-none">
-                  <span className="rounded-full border border-border/50 bg-card/30 px-2 py-1 text-muted-foreground">
-                    {compactStatus(draft.status)}
-                  </span>
-                  <span className="rounded-full border border-border/50 bg-card/30 px-2 py-1 text-muted-foreground">
-                    {draft.visibility}
-                  </span>
-                </div>
-
-                <div className="mt-auto flex items-end justify-between gap-2 pt-3 text-[10px] text-muted-foreground">
-                  <span className="truncate capitalize">{draft.category || "meme"}</span>
-                  <span className="shrink-0">{formatDate(draft.updatedAt)}</span>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Status</div>
+                    <div className="capitalize text-foreground">{draft.status.replace(/_/g, " ")}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Visibility</div>
+                    <div className="capitalize text-foreground">{draft.visibility}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Updated</div>
+                    <div className="text-foreground">{formatDate(draft.updatedAt)}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Category</div>
+                    <div className="capitalize text-foreground">{draft.category || "—"}</div>
+                  </div>
                 </div>
               </Link>
             ))}
