@@ -10,6 +10,7 @@ import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
 import { useProfileRank } from "@/hooks/profile/useProfileRank";
 import { useLeagueCabinet } from "@/hooks/profile/useLeagueCabinet";
 import { fetchWalletAttributionState, type WalletAttributionPublicState } from "@/lib/recruiterApi";
+import { fetchOwnerCampaignDrafts } from "@/lib/draftApi";
 
 function shortenWallet(addr?: string | null) {
   if (!addr) return "";
@@ -41,6 +42,8 @@ type CommandCenterData = {
   loadingFollows: boolean;
   createdCount: number;
   created: ReturnType<typeof useCreatedCampaigns>;
+  draftCount: number;
+  loadingDraftCount: boolean;
   nativeBalance: string;
   tokenBalances: ReturnType<typeof useProfileBalances>["tokenBalances"];
   loadingBalances: boolean;
@@ -71,6 +74,8 @@ export function CommandCenterDataProvider({
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [loadingAttribution, setLoadingAttribution] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
+  const [loadingDraftCount, setLoadingDraftCount] = useState(false);
 
   const editableProfile = useEditableProfile({
     chainId,
@@ -135,6 +140,26 @@ export function CommandCenterDataProvider({
     fetchCampaignSummary,
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingDraftCount(true);
+
+    void fetchOwnerCampaignDrafts(walletAddress, { chainId, limit: 100 })
+      .then((items) => {
+        if (!cancelled) setDraftCount(Array.isArray(items) ? items.length : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setDraftCount(0);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDraftCount(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress, chainId]);
+
   const { nativeBalance, tokenBalances, loadingBalances } = useProfileBalances({
     viewedAddress: walletAddress,
     account,
@@ -186,6 +211,8 @@ export function CommandCenterDataProvider({
     loadingFollows,
     createdCount: created.length,
     created,
+    draftCount,
+    loadingDraftCount,
     nativeBalance,
     tokenBalances,
     loadingBalances,
@@ -216,6 +243,8 @@ export function CommandCenterDataProvider({
     followingCount,
     loadingFollows,
     created,
+    draftCount,
+    loadingDraftCount,
     nativeBalance,
     tokenBalances,
     loadingBalances,
