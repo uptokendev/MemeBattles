@@ -126,9 +126,13 @@ export default function CommandCenterCoins() {
         ) : draftsError ? (
           <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{draftsError}</div>
         ) : drafts.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-0 overflow-hidden rounded-2xl border border-border/50 md:grid-cols-2 xl:grid-cols-3">
             {drafts.map((draft) => (
-              <Link key={draft.id} to={draftHref(draft)} className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35">
+              <Link
+                key={draft.id}
+                to={draftHref(draft)}
+                className="rounded-none border-0 border-b border-r border-border/50 bg-background/25 p-4 transition hover:bg-card/35"
+              >
                 <div className="flex items-center gap-3">
                   <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
                   <div className="min-w-0">
