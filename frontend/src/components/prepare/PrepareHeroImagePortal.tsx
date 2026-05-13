@@ -15,6 +15,10 @@ function findHeroChip() {
   return document.querySelector("main section .mwz-chip.mwz-chip-active") as HTMLElement | null;
 }
 
+function findHeroSection() {
+  return findHeroChip()?.closest("section") as HTMLElement | null;
+}
+
 export function PrepareHeroImagePortal() {
   const location = useLocation();
   const wallet = useWallet();
@@ -51,6 +55,8 @@ export function PrepareHeroImagePortal() {
 
     let cancelled = false;
     let localMount: HTMLElement | null = null;
+    let heroSection: HTMLElement | null = null;
+    let previousStyle = "";
     let observer: MutationObserver | null = null;
 
     const attach = () => {
@@ -62,6 +68,12 @@ export function PrepareHeroImagePortal() {
 
       const chip = findHeroChip();
       if (!chip?.parentElement) return false;
+
+      heroSection = findHeroSection();
+      if (heroSection) {
+        previousStyle = heroSection.getAttribute("style") || "";
+        heroSection.style.paddingTop = "1.25rem";
+      }
 
       localMount = document.createElement("div");
       localMount.setAttribute("data-mwz-prepare-hero-image-portal", "true");
@@ -81,6 +93,10 @@ export function PrepareHeroImagePortal() {
       cancelled = true;
       observer?.disconnect();
       localMount?.remove();
+      if (heroSection) {
+        if (previousStyle) heroSection.setAttribute("style", previousStyle);
+        else heroSection.removeAttribute("style");
+      }
       setMount(null);
     };
   }, [slug]);
@@ -91,7 +107,7 @@ export function PrepareHeroImagePortal() {
   const ticker = bundle.draft.ticker ? `$${bundle.draft.ticker}` : "Draft";
 
   return createPortal(
-    <div className="mx-auto mt-2 flex w-full justify-center px-4 md:mt-4">
+    <div className="mx-auto mt-2 flex w-full justify-center px-4 md:mt-3">
       <div className="relative h-36 w-36 overflow-hidden rounded-xl border border-orange-400/60 bg-black/55 shadow-[0_0_55px_rgba(255,153,0,0.20)] md:h-48 md:w-48 lg:h-56 lg:w-56">
         <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(255,153,0,0.08),transparent_45%,rgba(0,0,0,0.20))]" />
         <img
