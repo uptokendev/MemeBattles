@@ -170,7 +170,8 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
   }, [items, query.search, query.sort]);
 
   const resultsMeta = `Showing ${visibleItems.length} draft campaigns`;
-  const gridClass = "grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5";
+  const gridClass = "flex flex-wrap items-start justify-start gap-3 sm:gap-4";
+  const cardClass = "w-[calc(50%-0.375rem)] min-w-[0] sm:w-[220px] lg:w-[230px]";
 
   return (
     <div className={cn("w-full", className)}>
@@ -183,7 +184,10 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={i}
-              className="min-h-[322px] w-full animate-pulse border border-success/25 bg-black/60"
+              className={cn(
+                "min-h-[322px] animate-pulse border border-success/25 bg-black/60",
+                cardClass,
+              )}
             />
           ))}
         </div>
@@ -204,7 +208,10 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
             return (
               <article
                 key={draft.id}
-                className="mwz-card group relative flex min-h-[322px] w-full flex-col overflow-hidden rounded-none border-success/30 bg-black/70"
+                className={cn(
+                  "mwz-card group relative flex min-h-[322px] flex-col overflow-hidden rounded-none border-success/30 bg-black/70",
+                  cardClass,
+                )}
               >
                 <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
                   <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black">
