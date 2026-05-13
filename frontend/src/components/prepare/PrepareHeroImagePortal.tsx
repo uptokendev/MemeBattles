@@ -11,9 +11,8 @@ function getPrepareSlug(pathname: string) {
   return match?.[1] ? decodeURIComponent(match[1]) : "";
 }
 
-function findHeroSection() {
-  const chip = document.querySelector("main section .mwz-chip.mwz-chip-active") as HTMLElement | null;
-  return chip?.closest("section") as HTMLElement | null;
+function findHeroChip() {
+  return document.querySelector("main section .mwz-chip.mwz-chip-active") as HTMLElement | null;
 }
 
 export function PrepareHeroImagePortal() {
@@ -61,12 +60,12 @@ export function PrepareHeroImagePortal() {
         .querySelectorAll("[data-mwz-prepare-hero-image-portal]")
         .forEach((node) => node.remove());
 
-      const heroSection = findHeroSection();
-      if (!heroSection) return false;
+      const chip = findHeroChip();
+      if (!chip?.parentElement) return false;
 
       localMount = document.createElement("div");
       localMount.setAttribute("data-mwz-prepare-hero-image-portal", "true");
-      heroSection.insertBefore(localMount, heroSection.firstChild);
+      chip.insertAdjacentElement("beforebegin", localMount);
       setMount(localMount);
       return true;
     };
@@ -86,21 +85,22 @@ export function PrepareHeroImagePortal() {
     };
   }, [slug]);
 
-  if (!slug || !mount || !bundle?.draft?.logoUrl) return null;
+  if (!slug || !mount || !bundle?.draft) return null;
 
-  const imageUrl = resolveImageUri(bundle.draft.logoUrl);
-  if (!imageUrl) return null;
+  const imageUrl = resolveImageUri(bundle.draft.logoUrl) || "/placeholder.svg";
+  const ticker = bundle.draft.ticker ? `$${bundle.draft.ticker}` : "Draft";
 
   return createPortal(
-    <div className="pointer-events-none absolute left-1/2 top-0 z-0 h-[410px] w-[min(820px,86vw)] -translate-x-1/2 overflow-hidden opacity-45 md:h-[440px] lg:h-[470px]">
-      <img
-        src={imageUrl}
-        alt=""
-        aria-hidden="true"
-        className="h-full w-full object-contain drop-shadow-[0_0_80px_rgba(255,153,0,0.35)]"
-        draggable={false}
-      />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(26,8,2,0.58)_78%,rgba(26,8,2,0.92)_100%)]" />
+    <div className="mx-auto mt-2 flex w-full justify-center px-4 md:mt-4">
+      <div className="relative h-36 w-36 overflow-hidden rounded-xl border border-orange-400/60 bg-black/55 shadow-[0_0_55px_rgba(255,153,0,0.20)] md:h-48 md:w-48 lg:h-56 lg:w-56">
+        <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(255,153,0,0.08),transparent_45%,rgba(0,0,0,0.20))]" />
+        <img
+          src={imageUrl}
+          alt={`${ticker} token image`}
+          className="h-full w-full object-cover"
+          draggable={false}
+        />
+      </div>
     </div>,
     mount,
   );
