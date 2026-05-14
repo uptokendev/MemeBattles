@@ -34,6 +34,20 @@ function cleanPlatforms(value) {
   return requested.filter((platform) => Object.hasOwn(PLATFORM_GUIDE, platform));
 }
 
+function getOpenAiErrorMessage(payload, fallback) {
+  return cleanString(
+    payload?.error?.message ||
+      payload?.message ||
+      payload?.error ||
+      fallback,
+    fallback
+  );
+}
+
+function getOpenAiErrorCode(payload) {
+  return cleanString(payload?.error?.code || payload?.code || payload?.error?.type || payload?.type);
+}
+
 function parseJsonObject(text) {
   try {
     return JSON.parse(text);
@@ -134,7 +148,26 @@ export async function contentAiGenerateVariants(req, res) {
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    return sendError(res, response.status, "OpenAI request failed", payload);
+    const openAiMessage = getOpenAiErrorMessage(payload, "OpenAI request failed");
+    const openAiCode = getOpenAiErrorCode(payload);
+    const friendlyMessage = response.status === 429
+      ? `OpenAI 429: ${openAiMessage}. Check API billing, credits, rate limits, model access, or project usage limits.`
+      : `OpenAI ${response.status}: ${openAiMessage}`;
+
+    console.error("[content-ai] OpenAI request failed", {
+      status: response.status,
+      model,
+      code: openAiCode,
+      message: openAiMessage,
+    });
+
+    return sendError(res, response.status, friendlyMessage, {
+      provider: "openai",
+      status: response.status,
+      model,
+      code: openAiCode,
+      message: openAiMessage,
+    });
   }
 
   const outputText =
