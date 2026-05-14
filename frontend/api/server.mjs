@@ -34,6 +34,18 @@ import tokenMetadata from "./token-metadata.js";
 import upload from "./upload.js";
 import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
+import {
+  contentPlannerCalendar,
+  contentPlannerCampaignById,
+  contentPlannerCampaigns,
+  contentPlannerPostById,
+  contentPlannerPostVariants,
+  contentPlannerPosts,
+  contentPlannerSchedulesById,
+  contentPlannerTags,
+  contentPlannerVariantById,
+  contentPlannerVariantSchedule,
+} from "./content-planner.js";
 import { draftDeploy } from "./dev-fix/draft-deploy.js";
 import {
   followedDrafts,
@@ -90,6 +102,8 @@ app.disable("x-powered-by");
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
   "http://localhost:8888",
   "https://memewar.zone",
   "https://www.memewar.zone",
@@ -192,6 +206,16 @@ router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
+router.all("/posts", wrap(contentPlannerPosts));
+router.all("/posts/:id/variants", wrap(contentPlannerPostVariants));
+router.all("/posts/:id", wrap(contentPlannerPostById));
+router.all("/variants/:variantId/schedule", wrap(contentPlannerVariantSchedule));
+router.all("/variants/:id", wrap(contentPlannerVariantById));
+router.all("/calendar", wrap(contentPlannerCalendar));
+router.all("/schedules/:id", wrap(contentPlannerSchedulesById));
+router.all("/content-campaigns/:id", wrap(contentPlannerCampaignById));
+router.all("/content-campaigns", wrap(contentPlannerCampaigns));
+router.all("/content-tags", wrap(contentPlannerTags));
 router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
 router.all("/drafts/ticker-availability", wrap(tickerAvailability));
