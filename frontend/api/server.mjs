@@ -34,6 +34,7 @@ import tokenMetadata from "./token-metadata.js";
 import upload from "./upload.js";
 import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
+import { contentAiGenerateVariants } from "./content-ai.js";
 import {
   contentPlannerCalendar,
   contentPlannerCampaignById,
@@ -206,6 +207,7 @@ router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
+router.all("/content-ai/generate-variants", wrap(contentAiGenerateVariants));
 router.all("/posts", wrap(contentPlannerPosts));
 router.all("/posts/:id/variants", wrap(contentPlannerPostVariants));
 router.all("/posts/:id", wrap(contentPlannerPostById));
