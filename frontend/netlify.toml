@@ -1,17 +1,18 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/no-functions"
 
 [[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Proxy /api/* to the Railway API gateway. Without this rule, relative API URLs
-# in the rendered HTML (e.g. the prepare-share-card <img> src) fall through to
-# the SPA catch-all below and render the 404 component. `force = true` makes
-# this win over the static SPA fallback; status 200 keeps the browser URL on
-# memewar.zone (proxy passthrough rather than HTTP redirect).
+# Proxy /api/* to the Railway API gateway. Netlify should stay static-only;
+# backend runtime, database writes, OpenAI, Ably, uploads, and private envs live
+# on Railway. The empty functions directory above prevents Netlify from trying
+# to package legacy netlify/functions as AWS Lambda functions, which can fail
+# when the site environment exceeds Lambda's 4KB env limit.
 [[redirects]]
   from = "/api/*"
   to = "https://memewarzonefrontend-production.up.railway.app/api/:splat"
