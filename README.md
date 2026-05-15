@@ -1,4 +1,4 @@
-# MemeBattles wallet connection upgrade
+# MemeWarzone wallet connection upgrade
 
 This package replaces the old hard-coded wallet modal with a 2026-style EVM wallet flow:
 

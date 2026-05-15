@@ -4,7 +4,7 @@
 
 **Spec:** [docs/superpowers/specs/2026-05-12-livestream-page-design.md](../specs/2026-05-12-livestream-page-design.md)
 
-**Goal:** Ship a wallet-gated `/live` page in the MemeBattles frontend that plays a Mux-hosted livestream and renders an Ably-powered chat with squad callsigns and a moderator shield, for a one-off launch-party event.
+**Goal:** Ship a wallet-gated `/live` page in the MemeWarzone frontend that plays a Mux-hosted livestream and renders an Ably-powered chat with squad callsigns and a moderator shield, for a one-off launch-party event.
 
 **Architecture:** New React route in the existing SPA. Mux Player (`@mux/mux-player-react`) for live video; existing Ably token-auth pattern (mirrored from `useAblyTokenChannel.ts`) for chat + presence; existing `WalletProvider` for access gating; existing `fetchWalletAttributionState` for squad callsign lookup. No backend changes; feature-flagged at the route level for clean retirement.
 
@@ -495,7 +495,7 @@ export const LivestreamPlayer = ({ playbackId }: Props) => {
         <MuxPlayer
           streamType="live"
           playbackId={playbackId}
-          metadata={{ video_title: "MemeBattles Launch Party" }}
+          metadata={{ video_title: "MemeWarzone Launch Party" }}
           autoPlay
           accentColor="#ef4444"
           className="aspect-video w-full overflow-hidden rounded-md bg-black"
@@ -938,7 +938,7 @@ Run all of these end-to-end before going live.
 - [ ] Incognito with no wallet: gate works
 - [ ] Two wallets in different browsers: chat round-trips
 - [ ] Stop OBS: `/live` flips to offline within ~15s, no console errors
-- [ ] mw-dashboard publishes a `delete:{msgId}` event on the same channel — message disappears from MemeBattles within ~1s (coordinate with the dashboard repo; can be smoke-tested by manually publishing a delete event via Ably dev tools if dashboard isn't ready)
+- [ ] mw-dashboard publishes a `delete:{msgId}` event on the same channel — message disappears from MemeWarzone within ~1s (coordinate with the dashboard repo; can be smoke-tested by manually publishing a delete event via Ably dev tools if dashboard isn't ready)
 
 ---
 
@@ -946,6 +946,6 @@ Run all of these end-to-end before going live.
 
 - Adding Vitest infrastructure (deferred — see "Test strategy" at the top)
 - Recording / VOD playback on `/live` (handled later by manually uploading edited recording to a Mux Asset and swapping `playbackId` post-event, per spec Section 2)
-- Moderator UI inside MemeBattles (lives in `mw-dashboard` repo per spec Section 12)
+- Moderator UI inside MemeWarzone (lives in `mw-dashboard` repo per spec Section 12)
 - Persistent chat history in Supabase (Ably history is enough)
 - Countdown timer (spec Section 7 chose generic placeholder)
