@@ -21,26 +21,26 @@ export const navItems: NavItem[] = [
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: userIcon, label: "Command Center", path: "/command" },
   { icon: User, label: "Profile", path: "/profile" },
-  { icon: BookOpen, label: "Docs", path: "https://docs.memebattles.gg" },
+  { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone" },
 ];
 
 export const socialLinks: SocialItem[] = [
   {
-    href: "https://twitter.com/_MemeBattles",
+    href: "https://x.com/memewarzone",
     ariaLabel: "X",
     tooltip: "X",
     color: "#000000",
     svgUrl: twitterIcon,
   },
   {
-    href: "https://discord.gg/launchpad",
+    href: "https://discord.gg/aXTkn3Asu",
     ariaLabel: "Discord",
     tooltip: "Discord",
     color: "#5865F2",
     svgUrl: discordIcon,
   },
   {
-    href: "https://t.me/launchpad",
+    href: "https://t.me/memewarzonehq",
     ariaLabel: "Telegram",
     tooltip: "Telegram",
     color: "#0088cc",
