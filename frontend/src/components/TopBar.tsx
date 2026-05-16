@@ -10,6 +10,8 @@ import { CommandPalette } from "@/components/search/CommandPalette";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { SocialTooltip } from "@/components/ui/social-media";
+import { socialLinks } from "@/constants/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -47,7 +49,13 @@ const ENABLE_TOPBAR_ONCHAIN_METRICS = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_ENABLE_TOPBAR_ONCHAIN_METRICS || "").trim().toLowerCase(),
 );
 
+function isExternalHref(target: string): boolean {
+  return /^https?:\/\//i.test(target);
+}
+
 function navPathMatches(currentPathname: string, currentSearch: string, target: string): boolean {
+  if (isExternalHref(target)) return false;
+
   try {
     const url = new URL(target, "https://memewarzone.local");
     if (url.pathname !== currentPathname) return false;
@@ -149,7 +157,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     () => [
       { label: "Launchpad", path: "/", priority: "primary" as const },
       { label: "Profile", path: "/profile?tab=balances", priority: "primary" as const },
-      { label: "Docs", path: "/docs", priority: "primary" as const },
+      { label: "Docs", path: "https://docs.memewar.zone", priority: "primary" as const },
     ],
     []
   );
@@ -370,37 +378,50 @@ tickerInitialLoadedRef.current = true;
         </Link>
 
         <div className="hidden lg:flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-          {navLinks.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "mwz-nav-link px-3 md:px-5 py-2 text-sm whitespace-nowrap 2xl:text-base",
-                item.priority === "secondary" && "hidden 2xl:inline-flex",
-                isActive(item.path) && "mwz-nav-link-active",
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {navLinks.map((item) => {
+            const external = isExternalHref(item.path);
+            const className = cn(
+              "mwz-nav-link px-3 md:px-5 py-2 text-sm whitespace-nowrap 2xl:text-base",
+              item.priority === "secondary" && "hidden 2xl:inline-flex",
+              !external && isActive(item.path) && "mwz-nav-link-active",
+            );
+
+            return external ? (
+              <a
+                key={item.path}
+                href={item.path}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={className}
+              >
+                {item.label}
+              </a>
+            ) : (
+              <Link key={item.path} to={item.path} className={className}>
+                {item.label}
+              </Link>
+            );
+          })}
         </div>
 
-        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-3 xl:mx-4">
+        <div className="hidden lg:flex items-center shrink-0">
+          <SocialTooltip
+            items={socialLinks}
+            className="gap-1.5 [&_a]:h-8 [&_a]:w-8 [&_img]:h-4 [&_img]:w-4"
+          />
+        </div>
+
+        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-2 xl:mx-3">
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label="Open search"
-            className="mwz-button group flex h-8 w-full items-center justify-center gap-1 px-2.5 sm:gap-1.5 sm:px-2.5 md:w-[220px] lg:w-[96px] 2xl:w-[260px]"
+            className="mwz-button group flex h-8 w-full items-center justify-center gap-1.5 px-2.5 md:w-[150px] lg:w-[110px] 2xl:w-[125px]"
           >
-            <span className="flex items-center gap-2 min-w-0">
-              <Search className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden truncate text-xs uppercase tracking-[0.14em] text-success/70 sm:inline lg:hidden 2xl:inline">
-                Search the warzone
-              </span>
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate text-xs uppercase tracking-[0.14em] text-success/70">
+              Search
             </span>
-            <kbd className="hidden items-center gap-1 border border-success/30 bg-black/60 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-success/65 group-hover:text-accent sm:inline-flex">
-              <span className="text-[11px]">⌘</span>K
-            </kbd>
           </button>
         </div>
 
