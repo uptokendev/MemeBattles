@@ -24,15 +24,13 @@ const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
       "relative z-10 w-5 h-5 grayscale brightness-75 transition-all duration-300 ease-in-out group-hover:grayscale-0 group-hover:brightness-100";
     const baseFilledStyles =
       "absolute bottom-0 left-0 w-full h-0 transition-all duration-300 ease-in-out group-hover:h-full";
-    const baseTooltipStyles =
-      "pointer-events-none absolute z-[120] bottom-[-40px] left-1/2 -translate-x-1/2 px-2.5 py-1.5 text-sm text-white whitespace-nowrap rounded-md opacity-0 invisible shadow-[0_10px_28px_rgba(0,0,0,0.65)] transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:visible group-hover:bottom-[-50px]";
 
     const isExternalHref = (href: string) => /^https?:\/\//i.test(href);
 
     return (
       <ul
         ref={ref}
-        className={cn("relative z-[70] flex items-center justify-center gap-3 overflow-visible", className)}
+        className={cn("flex items-center justify-center gap-3", className)}
         {...props}
       >
         {items.map((item, index) => {
@@ -46,11 +44,12 @@ const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
           );
 
           return (
-            <li key={index} className="relative group z-0 hover:z-[120]">
+            <li key={index} className="relative group">
               {external ? (
                 <a
                   href={item.href}
                   aria-label={item.ariaLabel}
+                  title={item.tooltip}
                   className={cn(baseIconStyles)}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -61,15 +60,12 @@ const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
                 <Link
                   to={item.href}
                   aria-label={item.ariaLabel}
+                  title={item.tooltip}
                   className={cn(baseIconStyles)}
                 >
                   {Content}
                 </Link>
               )}
-
-              <div className={cn(baseTooltipStyles)} style={{ backgroundColor: item.color }}>
-                {item.tooltip}
-              </div>
             </li>
           );
         })}
