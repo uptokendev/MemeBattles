@@ -78,6 +78,12 @@ function readCookie(req, name) {
   return "";
 }
 
+function readBearerToken(req) {
+  const header = String(req.headers?.authorization || req.headers?.Authorization || "").trim();
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
+}
+
 function isSecureRequest(req) {
   const proto = String(req.headers?.["x-forwarded-proto"] || req.protocol || "").toLowerCase();
   const host = String(req.headers?.host || "").toLowerCase();
@@ -150,7 +156,7 @@ async function findRecruiterById(recruiterId) {
 }
 
 async function getSessionRecruiter(req) {
-  const session = decodeSession(readCookie(req, COOKIE_NAME));
+  const session = decodeSession(readCookie(req, COOKIE_NAME) || readBearerToken(req));
   if (!session) return null;
   const recruiter = await findRecruiterById(Number(session.recruiterId));
   if (!recruiter) return null;
@@ -282,7 +288,7 @@ export async function recruiterAuthVerify(req, res) {
 
     const token = encodeSession({ recruiterId: Number(recruiter.id), walletAddress, exp: Date.now() + SESSION_TTL_MS });
     setSessionCookie(req, res, token);
-    return json(res, 200, { ok: true, recruiter: recruiterShape(recruiter) });
+    return json(res, 200, { ok: true, recruiter: recruiterShape(recruiter), sessionToken: token });
   } catch (error) {
     console.error("[api/recruiter auth verify]", error);
     const message = String(error?.message || "");
