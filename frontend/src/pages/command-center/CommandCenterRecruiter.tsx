@@ -25,10 +25,10 @@ import {
 const benefits = [
   "Your own recruiter code and referral link",
   "Public recruiter profile and leaderboard visibility",
-  "Linked creator and trader attribution",
-  "Weekly recruiter reward accounting",
+  "Track the creators and traders who join through your link",
+  "Weekly recruiter rewards",
   "Claimable recruiter rewards through Command Center",
-  "Squad-growth path when your network becomes active",
+  "Grow your squad as more creators and traders join",
 ];
 
 const programSteps = [
@@ -381,7 +381,7 @@ export default function CommandCenterRecruiter() {
                 <div>
                   <div className="font-retro text-sm text-foreground">Program rule</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Recruiter routing, attribution locks, reward eligibility, and anti-abuse checks are handled automatically by the reward system.
+                    Your recruiter link is tracked automatically. When creators and traders join through you, MemeWarzone keeps the squad and reward records updated.
                   </p>
                 </div>
               </div>
@@ -420,7 +420,7 @@ export default function CommandCenterRecruiter() {
     <div className="space-y-4">
       <CommandCenterPageHeader
         title="Recruiter Management"
-        description="Manage your recruiter link, public recruiter profile, reward flow, and account actions from Command Center."
+        description="Manage your recruiter link, public recruiter profile, rewards, squad growth, and account settings from Command Center."
       >
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="font-retro">
@@ -466,22 +466,22 @@ export default function CommandCenterRecruiter() {
             <div className="font-retro text-sm text-foreground">Referral links</div>
             <div className="mt-3 space-y-2">
               <div className="rounded-xl border border-border/40 bg-card/25 p-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Canonical</div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Main invite link</div>
                 <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{canonicalLink}</div>
               </div>
               <div className="rounded-xl border border-border/40 bg-card/25 p-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Universal</div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Home-page referral link</div>
                 <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{queryLink}</div>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button onClick={() => copyText(canonicalLink, "Canonical link")} variant="outline" className="font-retro">
                 <Copy className="mr-2 h-4 w-4" />
-                Copy canonical
+                Copy invite link
               </Button>
               <Button onClick={() => copyText(queryLink, "Universal link")} variant="outline" className="font-retro">
                 <Copy className="mr-2 h-4 w-4" />
-                Copy universal
+                Copy home link
               </Button>
             </div>
           </div>
@@ -508,7 +508,7 @@ export default function CommandCenterRecruiter() {
                     value={preferredCode}
                     onChange={(event) => setPreferredCode(normalizeCode(event.target.value))}
                     className="min-h-10 flex-1 rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60"
-                    placeholder="KOL123"
+                    placeholder="YOURCODE"
                   />
                   <Button onClick={saveCode} disabled={savingCode} className="font-retro">
                     {savingCode ? "Saving..." : "Save code"}
@@ -597,7 +597,7 @@ export default function CommandCenterRecruiter() {
               <div className="mt-2 font-retro text-2xl text-foreground">{portal.squad.counts.traders}</div>
             </div>
             <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Unknown</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Role pending</div>
               <div className="mt-2 font-retro text-2xl text-foreground">{portal.squad.counts.unknown}</div>
             </div>
           </div>
@@ -613,7 +613,7 @@ export default function CommandCenterRecruiter() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="font-retro text-sm text-foreground">{shortAddress(row.wallet_address)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">Bound {formatDate(row.bound_at)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Joined {formatDate(row.bound_at)}</div>
                     </div>
                     <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-accent">
                       {row.role}

@@ -3,6 +3,8 @@ import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
 import { HeaderBand } from "@/components/home/HeaderBand";
+import { HomeAudienceCtas } from "@/components/home/HomeAudienceCtas";
+
 
 const Showcase = () => {
   const [query, setQuery] = useState<HomeQuery>({ tab: "drafts", timeFilter: "24h", search: "" });
@@ -29,6 +31,8 @@ const Showcase = () => {
     <div className="mwz-launchpad-page h-full overflow-y-auto">
       <div className="mwz-launchpad-inner relative px-1 md:px-2 pb-10 space-y-3">
         <HeaderBand />
+
+        <HomeAudienceCtas />
 
         <div className="mwz-live-heading flex flex-col gap-1 pt-2">
           <div className="text-[10px] uppercase tracking-[0.22em] text-accent">

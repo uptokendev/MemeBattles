@@ -118,9 +118,9 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     return (
       <Card className="border-border/60 bg-card/65 p-6">
         <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recruiter</p>
-        <h3 className="mt-2 font-retro text-2xl text-foreground">Recruiter earnings and claims are private to the owning wallet.</h3>
+        <h3 className="mt-2 font-retro text-2xl text-foreground">Recruiter rewards and claim history are only visible to the connected recruiter wallet.</h3>
         <p className="mt-3 text-sm text-muted-foreground">
-          Public recruiter standings and profile stats still live on the recruiter pages, but routed earnings and claim history only show on your own profile.
+          Public recruiter standings and profile stats still live on the recruiter pages, but recruiter rewards and claim history only show on your own profile.
         </p>
         <div className="mt-5">
           <Button asChild variant="outline" className="font-retro">
@@ -207,8 +207,8 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
               <div className="flex items-center gap-3">
                 <Wallet className="h-4 w-4 text-sky-200" />
                 <div>
-                  <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Current state</p>
-                  <h3 className="mt-1 font-retro text-xl text-foreground">Recruiter + wallet posture</h3>
+                  <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recruiter status</p>
+                  <h3 className="mt-1 font-retro text-xl text-foreground">Your recruiter status</h3>
                 </div>
               </div>
 
@@ -222,7 +222,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
                   <p className="mt-2 font-retro text-lg text-foreground">{recruiter.status}</p>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Wallet recruiter link state</p>
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Recruiter link</p>
                   <p className="mt-2 font-retro text-lg text-foreground">{attribution?.recruiterLinkState ?? "unknown"}</p>
                 </div>
                 <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
@@ -246,7 +246,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
                 <Clock3 className="h-4 w-4 text-amber-200" />
                 <div>
                   <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Claim history</p>
-                  <h3 className="mt-1 font-retro text-xl text-foreground">Recorded settlements</h3>
+                  <h3 className="mt-1 font-retro text-xl text-foreground">Claim history</h3>
                 </div>
               </div>
 
@@ -276,27 +276,27 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
           <Card className="border-border/60 bg-card/65 p-6">
             <div>
               <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Reward history</p>
-              <h3 className="mt-1 font-retro text-xl text-foreground">Weekly recruiter ledger entries</h3>
+              <h3 className="mt-1 font-retro text-xl text-foreground">Weekly recruiter rewards</h3>
             </div>
 
             <div className="mt-5 space-y-3">
               {history.length === 0 ? (
                 <div className="rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">
-                  No recruiter reward history has been published for this wallet yet.
+                  No recruiter rewards have been recorded for this wallet yet.
                 </div>
               ) : (
                 history.slice(0, 5).map((item) => (
                   <div key={item.id} className="rounded-2xl border border-border/60 bg-background/35 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <p className="font-retro text-sm text-foreground">Epoch #{item.epochId}</p>
+                        <p className="font-retro text-sm text-foreground">Battle Week #{item.epochId}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {formatDate(item.startAt)} to {formatDate(item.endAt)}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-4 text-sm">
                         <div>
-                          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Net</p>
+                          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Reward</p>
                           <p className="mt-1 font-retro text-foreground">{formatBnb(item.netAmount)} BNB</p>
                         </div>
                         <div>
