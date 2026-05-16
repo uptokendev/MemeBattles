@@ -8,6 +8,10 @@ import {
   captureRecruiterReferral,
   fetchRecruiterReplacements,
   fetchWalletAttributionState,
+  getRecruiterReferralMemberRole,
+  setRecruiterReferralMemberRole,
+  syncWalletRecruiterAttribution,
+  type RecruiterMemberRole,
   type RecruiterSummary,
   type WalletAttributionPublicState,
 } from "@/lib/recruiterApi";
@@ -26,7 +30,10 @@ export default function RecruiterReferral() {
   const { code = "" } = useParams<{ code: string }>();
   const wallet = useWallet();
   const [loading, setLoading] = useState(true);
+  const [syncingRole, setSyncingRole] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [roleMessage, setRoleMessage] = useState<string | null>(null);
+  const [memberRole, setMemberRole] = useState<RecruiterMemberRole | null>(() => getRecruiterReferralMemberRole());
   const [state, setState] = useState<ReferralState | null>(null);
   const [walletState, setWalletState] = useState<WalletAttributionPublicState | null>(null);
   const [replacementSuggestions, setReplacementSuggestions] = useState<RecruiterSummary[]>([]);
@@ -81,6 +88,28 @@ export default function RecruiterReferral() {
     );
   }, [code, state?.recruiter?.code, walletState]);
 
+  const chooseRole = async (role: RecruiterMemberRole) => {
+    setMemberRole(role);
+    setRecruiterReferralMemberRole(role);
+    setRoleMessage(`Selected ${role}. Connect your wallet to lock this recruiter link.`);
+
+    if (!wallet.account) return;
+    setSyncingRole(true);
+    try {
+      const result = await syncWalletRecruiterAttribution(wallet.account, role);
+      const nextWalletState = await fetchWalletAttributionState(wallet.account).catch(() => null);
+      setWalletState(nextWalletState);
+      if (result?.linked) setRoleMessage(`Wallet linked as ${role}.`);
+      else if (result?.needsRoleSelection) setRoleMessage("Role saved. Reconnect or refresh if the backend has not linked yet.");
+      else if (result?.blocked) setRoleMessage(result.reason || "This wallet cannot be linked as a squad member.");
+      else setRoleMessage(result?.reason || `Selected ${role}. Connect your wallet to lock this recruiter link.`);
+    } catch (err: any) {
+      setRoleMessage(String(err?.message || err || "Could not sync recruiter attribution."));
+    } finally {
+      setSyncingRole(false);
+    }
+  };
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 py-10">
       <Card className="overflow-hidden border-border/50 bg-card/70 p-6 md:p-8">
@@ -92,8 +121,8 @@ export default function RecruiterReferral() {
             {loading ? "Saving your recruiter link..." : "Recruiter referral captured"}
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
-            This page stores the recruiter referral first, then your wallet can link on connect. If you already have
-            first activity on this wallet, the recruiter link stays locked to your existing backend attribution state.
+            This page stores the recruiter referral first. Choose whether this wallet joins as a creator or trader,
+            then connect the wallet you want to lock to this recruiter.
           </p>
         </div>
       </Card>
@@ -124,8 +153,35 @@ export default function RecruiterReferral() {
                 Referral window: {state?.expiresAt ? new Date(state.expiresAt).toLocaleString() : "stored"}
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                Connect the wallet you want to use. The backend will attempt to link this referral on wallet connect.
+                Select your role before connecting. Without a role, the backend will hold the referral window but will
+                not add the wallet to the squad roster.
               </p>
+            </div>
+
+            <div className="rounded-2xl border border-orange-400/25 bg-orange-400/10 p-4">
+              <p className="font-retro text-xs uppercase tracking-[0.2em] text-orange-100">Choose your squad role</p>
+              <p className="mt-2 text-sm text-orange-50/80">
+                Creators prepare and launch campaigns. Traders join campaigns, trade, and support the battlefield.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  variant={memberRole === "creator" ? "default" : "outline"}
+                  onClick={() => void chooseRole("creator")}
+                  disabled={syncingRole}
+                >
+                  I am a creator
+                </Button>
+                <Button
+                  type="button"
+                  variant={memberRole === "trader" ? "default" : "outline"}
+                  onClick={() => void chooseRole("trader")}
+                  disabled={syncingRole}
+                >
+                  I am a trader
+                </Button>
+              </div>
+              {roleMessage ? <p className="mt-3 text-sm text-orange-50/80">{roleMessage}</p> : null}
             </div>
 
             {lockedToOtherRecruiter ? (
