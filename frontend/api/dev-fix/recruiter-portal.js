@@ -160,14 +160,14 @@ async function getSessionRecruiter(req) {
 
 async function getSquadRows(recruiterId) {
   const { rows } = await pool.query(
-    `select wallet_address,
-            recruiter_id,
-            'member'::text as role,
-            coalesce(link_source, 'recruiter') as source,
-            created_at as bound_at
-       from public.wallet_squad_memberships
-      where recruiter_id = $1 and is_active = true
-      order by created_at desc
+    `select s.wallet_address,
+            s.recruiter_id,
+            coalesce(nullif(s.member_role, ''), 'member') as role,
+            coalesce(nullif(s.link_source, ''), 'recruiter') as source,
+            coalesce(s.joined_at, s.created_at) as bound_at
+       from public.wallet_squad_memberships s
+      where s.recruiter_id = $1 and s.is_active = true
+      order by coalesce(s.joined_at, s.created_at) desc
       limit 250`,
     [recruiterId],
   );
@@ -185,7 +185,7 @@ function summarizeSquad(rows) {
 }
 
 async function portalResponse(recruiter) {
-  const rows = await getSquadRows(recruiter.id).catch(() => []);
+  const rows = await getSquadRows(recruiter.id);
   const imageUrl = recruiter.squad_image_url || null;
   return {
     ok: true,
