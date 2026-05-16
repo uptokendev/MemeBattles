@@ -37,13 +37,13 @@ update public.wallet_squad_memberships s
 
 update public.wallet_recruiter_links l
    set is_active = false,
-       closed_at = coalesce(closed_at, now()),
-       close_reason = coalesce(close_reason, 'cleanup_recruiter_wallet_cookie_self_link'),
+       detached_at = coalesce(detached_at, now()),
+       detach_reason = coalesce(detach_reason, 'cleanup_recruiter_wallet_cookie_self_link'),
        updated_at = now()
   from public.recruiters r
  where l.is_active = true
    and lower(l.wallet_address) = lower(r.wallet_address)
-   and coalesce(l.link_source, '') in ('referral_cookie', 'recruiter', '');
+   and coalesce(l.link_source, '') in ('referral_cookie', 'manual', 'admin_override', 'migration');
 
 comment on table public.recruiters is
   'Recruiters are pre-launch OG by default until full live deployment rules change.';
