@@ -12,6 +12,8 @@ import Create from "./pages/Create";
 import Prepare from "./pages/Prepare";
 import Live from "./pages/Live";
 import ProfilePage from "./pages/Profile";
+import Launchpad from "./pages/Launchpad";
+import LaunchDetails from "./pages/LaunchDetails";
 import TokenDetails from "./pages/TokenDetails";
 import HowItWorks from "./pages/HowItWorks";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
@@ -123,7 +125,6 @@ const App = () => {
                 <main className="flex-1 overflow-auto scroll-pt-[2.75rem] pt-[2.45rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
-                    <Route path="/launchpad" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
@@ -150,8 +151,9 @@ const App = () => {
                     </Route>
                     <Route path="/profile/command" element={<ProfileWalletFallbackRedirect />} />
                     <Route path="/profile/command/:section" element={<ProfileWalletFallbackRedirect />} />
-                    <Route path="/token/:campaignAddress" element={<TokenDetails />} />
-                    <Route path="/launch/:campaignAddress" element={<TokenDetails />} />
+                    <Route path="/launchpad" element={<Launchpad />} />
+                    <Route path="/launch/:campaign" element={<LaunchDetails />} />
+                    <Route path="/token/:campaign" element={<TokenDetails />} />
                     <Route path="/how-it-works" element={<HowItWorks />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
