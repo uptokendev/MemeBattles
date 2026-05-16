@@ -15,8 +15,8 @@
 --      preserve legacy role/source values for recruiter dashboard counts.
 --   2. Backfills ref_wallets into wallet_recruiter_links.
 --   3. Backfills ref_wallets into wallet_squad_memberships.
---   4. Marks existing/new legacy links locked at their original bound time so
---      the migrated attribution behaves like a signed wallet binding.
+--   4. Marks legacy links locked at their original bound time so the migrated
+--      attribution behaves like a signed wallet binding.
 --
 -- Safe behavior:
 --   * If ref_wallets does not exist in an environment, the migration no-ops.
@@ -57,11 +57,7 @@ begin
       select distinct on (lower(rw.wallet_address))
         lower(rw.wallet_address) as wallet_address,
         r.id as recruiter_id,
-        coalesce(rw.bound_at, now()) as linked_at,
-        rw.role,
-        rw.source,
-        rw.recruiter_code,
-        rw.recruiter_id as legacy_recruiter_id
+        coalesce(rw.bound_at, now()) as linked_at
       from public.ref_wallets rw
       join public.recruiter_waitlist wl on wl.id = rw.recruiter_id
       join public.recruiters r on lower(r.code) = lower(coalesce(rw.recruiter_code, wl.recruiter_code))
@@ -78,7 +74,6 @@ begin
       linked_at,
       locked_at,
       is_active,
-      metadata,
       created_at,
       updated_at
     )
@@ -89,13 +84,6 @@ begin
       l.linked_at,
       l.linked_at,
       true,
-      jsonb_build_object(
-        'source', 'legacy_ref_wallets',
-        'legacyRecruiterId', l.legacy_recruiter_id,
-        'legacyRecruiterCode', l.recruiter_code,
-        'legacyRole', l.role,
-        'legacySource', l.source
-      ),
       l.linked_at,
       now()
     from legacy l
@@ -119,9 +107,7 @@ begin
           else 'member'
         end as member_role,
         coalesce(nullif(lower(coalesce(rw.source, '')), ''), 'migration') as link_source,
-        coalesce(rw.bound_at, now()) as joined_at,
-        rw.recruiter_code,
-        rw.recruiter_id as legacy_recruiter_id
+        coalesce(rw.bound_at, now()) as joined_at
       from public.ref_wallets rw
       join public.recruiter_waitlist wl on wl.id = rw.recruiter_id
       join public.recruiters r on lower(r.code) = lower(coalesce(rw.recruiter_code, wl.recruiter_code))
