@@ -1,26 +1,42 @@
-import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+/**
+ * Main Application Component
+ * Handles routing, layout structure, and loading screen display
+ * Sets up global providers for query client, tooltips, and toasts
+ */
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { WalletProvider } from "@/contexts/WalletContext";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
-import { RankPromotionListener } from "@/components/RankPromotionListener";
+import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
+import PromotionSetup from "./pages/PromotionSetup";
+import PublicPromotion from "./pages/PublicPromotion";
+import ProfilePage from "./pages/ProfilePage";
+import TokenDetails from "./pages/TokenDetails";
+import Playbook from "@/pages/Playbook";
 import Prepare from "./pages/Prepare";
 import Live from "./pages/Live";
-import ProfilePage from "./pages/Profile";
-import Launchpad from "./pages/Launchpad";
-import LaunchDetails from "./pages/LaunchDetails";
-import TokenDetails from "./pages/TokenDetails";
-import HowItWorks from "./pages/HowItWorks";
 import DraftPromotionSetup from "./pages/DraftPromotionSetup";
 import PushDraftLive from "./pages/PushDraftLive";
+import RecruiterLeaderboard from "./pages/RecruiterLeaderboard";
+import Recruiter from "./pages/Recruiter";
+import RecruiterProfile from "./pages/RecruiterProfile";
+import RecruiterSignup from "./pages/RecruiterSignup";
+import RecruiterReferral from "./pages/RecruiterReferral";
+import AirdropOverview from "./pages/AirdropOverview";
+import AirdropWinners from "./pages/AirdropWinners";
+import SquadLeaderboard from "./pages/SquadLeaderboard";
+import RewardOps from "./pages/RewardOps";
+import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
@@ -122,7 +138,7 @@ const App = () => {
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
                 <LiveStreamOverlay />
-                <main className="flex-1 overflow-auto scroll-pt-[2.75rem] pt-[2.45rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
+                <main className="flex-1 overflow-auto scroll-pt-[5.5rem] md:scroll-pt-[6rem] pt-[5.1rem] md:pt-[5.4rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
@@ -132,35 +148,49 @@ const App = () => {
                     <Route path="/live" element={<Live />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />
+                    <Route path="/command/overview" element={<LegacyCommandCenterRedirect section="overview" />} />
                     <Route path="/command/recruiter" element={<LegacyCommandCenterRedirect section="recruiter" />} />
                     <Route path="/command/squad" element={<LegacyCommandCenterRedirect section="squad" />} />
                     <Route path="/command/airdrops" element={<LegacyCommandCenterRedirect section="airdrops" />} />
                     <Route path="/command/claims" element={<LegacyCommandCenterRedirect section="claims" />} />
-                    <Route path="/command/social" element={<LegacyCommandCenterRedirect section="social" />} />
+                    <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
+                    <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
+                    <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
                     <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="coins" />} />
-                    <Route path="/profile/:address/command" element={<CommandCenterShell />}>
-                      <Route index element={<CommandCenterOverview />} />
-                      <Route path="overview" element={<CommandCenterOverview />} />
-                      <Route path="recruiter" element={<CommandCenterRecruiter />} />
-                      <Route path="squad" element={<CommandCenterSquad />} />
-                      <Route path="airdrops" element={<CommandCenterAirdrops />} />
-                      <Route path="claims" element={<CommandCenterClaims />} />
-                      <Route path="social" element={<CommandCenterSocial />} />
-                      <Route path="coins" element={<CommandCenterCoins />} />
-                      <Route path="settings" element={<CommandCenterSettings />} />
-                    </Route>
-                    <Route path="/profile/command" element={<ProfileWalletFallbackRedirect />} />
-                    <Route path="/profile/command/:section" element={<ProfileWalletFallbackRedirect />} />
-                    <Route path="/launchpad" element={<Launchpad />} />
-                    <Route path="/launch/:campaign" element={<LaunchDetails />} />
-                    <Route path="/token/:campaign" element={<TokenDetails />} />
-                    <Route path="/how-it-works" element={<HowItWorks />} />
+                    <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
+                    <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterCoins /></CommandCenterShell>} />
+                    <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+                    <Route path="/profile/:identifier" element={<ProfilePage />} />
+                    <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
+                    <Route path="/airdrops" element={<AirdropOverview />} />
+                    <Route path="/airdrops/winners" element={<AirdropWinners />} />
+                    <Route path="/recruiter" element={<Recruiter />} />
+                    <Route path="/recruiter/signup" element={<RecruiterSignup />} />
+                    <Route path="/recruiters" element={<RecruiterLeaderboard />} />
+                    <Route path="/recruiters/:code" element={<RecruiterProfile />} />
+                    <Route path="/recruiter-dashboard" element={<LegacyCommandCenterRedirect section="recruiter" />} />
+                    <Route path="/squads" element={<SquadLeaderboard />} />
+                    <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
+                    <Route path="/ops/rewards" element={<RewardOps />} />
+                    <Route path="/r/:code" element={<RecruiterReferral />} />
+                    <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /></>} />
+                    <Route path="/playbook" element={<Playbook />} />
+                    <Route path="/docs" element={<Playbook />} />
+                    <Route path="/status" element={<Status />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
+                  <Footer />
                 </main>
-                <Footer />
                 <ScreenFrame />
-                <TokenSocialLinksOverlay />
               </div>
             </BrowserRouter>
           </div>
