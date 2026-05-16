@@ -28,6 +28,11 @@ function normalizeText(value, max = 280) {
   return String(value || "").trim().slice(0, max);
 }
 
+function normalizeMemberRole(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "creator" || raw === "trader" ? raw : "";
+}
+
 function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
 }
@@ -140,6 +145,17 @@ async function findWalletAttributionState(walletAddress) {
   return rows[0] || null;
 }
 
+async function findActiveSquadMembership(walletAddress) {
+  const { rows } = await pool.query(
+    `select wallet_address, recruiter_id, member_role, link_source, joined_at, is_active
+       from public.wallet_squad_memberships
+      where wallet_address = lower($1) and is_active = true
+      limit 1`,
+    [walletAddress],
+  );
+  return rows[0] || null;
+}
+
 async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress }) {
   const { rows } = await pool.query(
     `select w.*, r.code, r.display_name, r.is_og, r.status
@@ -169,7 +185,9 @@ async function getRecruiterStats(recruiterId) {
       [recruiterId],
     ),
     pool.query(
-      `select count(*)::int as active_squad_member_count
+      `select count(*)::int as active_squad_member_count,
+              count(*) filter (where member_role = 'creator')::int as linked_creators_count,
+              count(*) filter (where member_role = 'trader')::int as linked_traders_count
          from public.wallet_squad_memberships
         where recruiter_id = $1 and is_active = true`,
       [recruiterId],
@@ -179,6 +197,8 @@ async function getRecruiterStats(recruiterId) {
   return {
     linkedWalletCount: linkRows[0]?.linked_wallet_count || 0,
     activeSquadMemberCount: squadRows[0]?.active_squad_member_count || 0,
+    linkedCreatorsCount: squadRows[0]?.linked_creators_count || 0,
+    linkedTradersCount: squadRows[0]?.linked_traders_count || 0,
     latestLinkedActivityAt: linkRows[0]?.latest_linked_activity_at || null,
   };
 }
@@ -280,6 +300,7 @@ export async function attributionWalletConnect(req, res) {
     const walletAddress = normalizeAddress(body.walletAddress);
     const sessionToken = String(body.sessionToken || "").trim();
     const clientFingerprint = String(body.clientFingerprint || "").trim();
+    const memberRole = normalizeMemberRole(body.memberRole);
 
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
 
@@ -291,17 +312,47 @@ export async function attributionWalletConnect(req, res) {
       [walletAddress],
     );
 
+    const recruiterWallet = await findRecruiterByWallet(walletAddress);
+    if (recruiterWallet) {
+      const existingState = await findWalletAttributionState(walletAddress);
+      return json(res, 200, {
+        linked: false,
+        blocked: true,
+        state: publicState({ walletAddress, state: existingState }),
+        reason: "Recruiter wallets cannot be added as squad members through recruiter referral cookies.",
+      });
+    }
+
     const existingState = await findWalletAttributionState(walletAddress);
     if (
       existingState?.recruiter_id ||
       existingState?.has_activity ||
       existingState?.recruiter_link_state === "linked_locked"
     ) {
+      const existingMembership = await findActiveSquadMembership(walletAddress).catch(() => null);
+      if (
+        memberRole &&
+        existingMembership?.recruiter_id &&
+        String(existingMembership.member_role || "member") === "member"
+      ) {
+        await pool.query(
+          `update public.wallet_squad_memberships
+              set member_role = $1,
+                  link_source = coalesce(nullif(link_source, ''), 'referral_cookie'),
+                  updated_at = now()
+            where wallet_address = $2 and is_active = true`,
+          [memberRole, walletAddress],
+        );
+      }
+
+      const updatedState = await findWalletAttributionState(walletAddress);
       return json(res, 200, {
-        linked: Boolean(existingState?.recruiter_id),
-        locked: Boolean(existingState?.has_activity || existingState?.locked_at),
-        state: publicState({ walletAddress, state: existingState }),
-        reason: "Existing canonical wallet attribution is already linked or locked.",
+        linked: Boolean(updatedState?.recruiter_id),
+        locked: Boolean(updatedState?.has_activity || updatedState?.locked_at),
+        state: publicState({ walletAddress, state: updatedState }),
+        reason: memberRole && existingMembership?.member_role === "member"
+          ? "Existing squad membership role was updated."
+          : "Existing canonical wallet attribution is already linked or locked.",
       });
     }
 
@@ -316,6 +367,20 @@ export async function attributionWalletConnect(req, res) {
       });
     }
 
+    if (!memberRole) {
+      return json(res, 200, {
+        linked: false,
+        needsRoleSelection: true,
+        state: publicState({ walletAddress }),
+        recruiter: {
+          code: recruiter.code,
+          displayName: recruiter.display_name,
+          isOg: Boolean(recruiter.is_og),
+        },
+        reason: "Choose whether this wallet joins as a creator or trader before locking recruiter attribution.",
+      });
+    }
+
     await pool.query("BEGIN");
     try {
       await pool.query(
@@ -327,11 +392,13 @@ export async function attributionWalletConnect(req, res) {
       );
 
       await pool.query(
-        `insert into public.wallet_squad_memberships (wallet_address, recruiter_id)
-         values ($1, $2)
+        `insert into public.wallet_squad_memberships (wallet_address, recruiter_id, member_role, link_source)
+         values ($1, $2, $3, 'referral_cookie')
          on conflict (wallet_address) where is_active = true
-         do nothing`,
-        [walletAddress, recruiter.id],
+         do update set member_role = excluded.member_role,
+                       link_source = excluded.link_source,
+                       updated_at = now()`,
+        [walletAddress, recruiter.id, memberRole],
       );
 
       await pool.query(
@@ -352,6 +419,7 @@ export async function attributionWalletConnect(req, res) {
     const updatedState = await findWalletAttributionState(walletAddress);
     return json(res, 200, {
       linked: Boolean(updatedState?.recruiter_id),
+      memberRole,
       state: publicState({ walletAddress, state: updatedState, recruiter }),
     });
   } catch (error) {
@@ -452,6 +520,8 @@ export async function recruiters(req, res) {
               r.updated_at,
               count(distinct l.wallet_address)::int as linked_wallet_count,
               count(distinct s.wallet_address)::int as active_squad_member_count,
+              count(distinct s.wallet_address) filter (where s.member_role = 'creator')::int as linked_creators_count,
+              count(distinct s.wallet_address) filter (where s.member_role = 'trader')::int as linked_traders_count,
               max(l.linked_at) as latest_linked_activity_at
          from public.recruiters r
          left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true
@@ -466,6 +536,8 @@ export async function recruiters(req, res) {
     return json(res, 200, {
       recruiters: rows.map((r) => recruiterSummaryShape(r, {
         linkedWalletCount: r.linked_wallet_count,
+        linkedCreatorsCount: r.linked_creators_count,
+        linkedTradersCount: r.linked_traders_count,
         activeSquadMemberCount: r.active_squad_member_count,
         latestLinkedActivityAt: r.latest_linked_activity_at,
       })),

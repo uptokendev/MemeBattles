@@ -3,6 +3,9 @@ import { apiFetch } from "@/lib/apiBase";
 
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
+const MEMBER_ROLE_KEY = "mwz:recruiter:memberRole";
+
+export type RecruiterMemberRole = "creator" | "trader";
 
 type StoredRecruiterSession = {
   sessionToken: string;
@@ -18,6 +21,35 @@ function ensureStorageValue(key: string): string {
     return next;
   } catch {
     return crypto.randomUUID();
+  }
+}
+
+function normalizeMemberRole(value?: string | null): RecruiterMemberRole | null {
+  const role = String(value || "").trim().toLowerCase();
+  return role === "creator" || role === "trader" ? role : null;
+}
+
+export function setRecruiterReferralMemberRole(role: RecruiterMemberRole) {
+  try {
+    window.localStorage.setItem(MEMBER_ROLE_KEY, role);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function getRecruiterReferralMemberRole(): RecruiterMemberRole | null {
+  try {
+    return normalizeMemberRole(window.localStorage.getItem(MEMBER_ROLE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function clearRecruiterReferralMemberRole() {
+  try {
+    window.localStorage.removeItem(MEMBER_ROLE_KEY);
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -60,13 +92,17 @@ export async function captureRecruiterReferral(recruiterCode: string, walletAddr
   });
 }
 
-export async function syncWalletRecruiterAttribution(walletAddress: string) {
+export async function syncWalletRecruiterAttribution(walletAddress: string, memberRole?: RecruiterMemberRole | null) {
   const session = getRecruiterSession();
-  return postJson("/api/attribution/wallet-connect", {
+  const role = normalizeMemberRole(memberRole) || getRecruiterReferralMemberRole();
+  const result = await postJson("/api/attribution/wallet-connect", {
     walletAddress,
     sessionToken: session.sessionToken,
     clientFingerprint: session.clientFingerprint,
+    memberRole: role,
   });
+  if (result?.linked && role) clearRecruiterReferralMemberRole();
+  return result;
 }
 
 export async function fetchCampaignCreateAuthorization(walletAddress: string, walletChainId?: number | null) {
@@ -318,8 +354,6 @@ export async function fetchRecruiterSignupStatus(walletAddress: string): Promise
     const isRecruiter = Boolean(json?.isRecruiter);
     let recruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
 
-    // The signup-status endpoint is the source of truth for whether a wallet is a recruiter.
-    // Only hydrate missing management details after that endpoint explicitly confirms recruiter status.
     if (isRecruiter && !recruiter) {
       recruiter = await fetchRecruiterSummaryByWallet(normalized).catch(() => null);
     }
@@ -412,8 +446,6 @@ export async function requestRecruiterSignupNonce(
   chainId: number,
 ): Promise<RecruiterSignupNonceResponse> {
   const normalized = normalizeWalletAddress(walletAddress);
-  // Backend keys nonces by (chain_id, address). Must pass the same chainId
-  // used on submit so the saved row and the consume lookup match.
   const json = await postJson("/api/recruiter-signup/nonce", {
     walletAddress: normalized,
     chainId,

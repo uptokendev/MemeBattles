@@ -44,6 +44,39 @@ export type RecruiterAuthNonceResponse = {
 };
 
 const PORTAL_CREDENTIALS: RequestCredentials = "include";
+const PORTAL_TOKEN_KEY = "mwz:recruiterPortal:sessionToken";
+
+function getPortalSessionToken(): string {
+  try {
+    return String(window.localStorage.getItem(PORTAL_TOKEN_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function setPortalSessionToken(token: string) {
+  try {
+    if (token) window.localStorage.setItem(PORTAL_TOKEN_KEY, token);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearPortalSessionToken() {
+  try {
+    window.localStorage.removeItem(PORTAL_TOKEN_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function portalHeaders(extra?: HeadersInit): HeadersInit {
+  const token = getPortalSessionToken();
+  return {
+    ...(extra || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
@@ -67,6 +100,7 @@ export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null
   const res = await apiFetch("/api/recruiter-portal", {
     credentials: PORTAL_CREDENTIALS,
     cache: "no-store",
+    headers: portalHeaders(),
   });
 
   if (res.status === 401) return null;
@@ -90,14 +124,16 @@ export async function verifyRecruiterAuth(address: string, signature: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ address, signature }),
   });
-  return parseJson(res);
+  const json = await parseJson(res);
+  if (json?.sessionToken) setPortalSessionToken(String(json.sessionToken));
+  return json;
 }
 
 export async function updateRecruiterPortalCode(code: string): Promise<{ recruiter_code: string }> {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: { "Content-Type": "application/json" },
+    headers: portalHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "setCode", code }),
   });
   const json = await parseJson(res);
@@ -108,7 +144,7 @@ export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: { "Content-Type": "application/json" },
+    headers: portalHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "setSquadImage", imageUrl }),
   });
   const json = await parseJson(res);
@@ -116,8 +152,10 @@ export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise
 }
 
 export async function logoutRecruiterPortal() {
+  clearPortalSessionToken();
   await apiFetch("/api/recruiter-logout", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders(),
   }).catch(() => undefined);
 }

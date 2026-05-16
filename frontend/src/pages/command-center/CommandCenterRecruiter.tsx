@@ -161,21 +161,27 @@ export default function CommandCenterRecruiter() {
   const recruiter = status?.recruiter ?? null;
   const isRecruiter = Boolean(status?.isRecruiter && recruiter);
 
+  const applyPortal = useCallback((nextPortal: RecruiterPortalData | null) => {
+    setPortal(nextPortal);
+    setPreferredCode(nextPortal?.recruiter?.recruiter_code || recruiter?.code || "");
+    setSquadImageUrl(getPortalSquadImageUrl(nextPortal));
+  }, [recruiter?.code]);
+
   const loadPortal = useCallback(async () => {
     setLoadingPortal(true);
     setPortalError(null);
     try {
       const nextPortal = await fetchRecruiterPortal();
-      setPortal(nextPortal);
-      setPreferredCode(nextPortal?.recruiter?.recruiter_code || recruiter?.code || "");
-      setSquadImageUrl(getPortalSquadImageUrl(nextPortal));
+      applyPortal(nextPortal);
+      return nextPortal;
     } catch (err: any) {
       setPortal(null);
       setPortalError(String(err?.message || err || "Failed to load recruiter tools."));
+      return null;
     } finally {
       setLoadingPortal(false);
     }
-  }, [recruiter?.code]);
+  }, [applyPortal]);
 
   useEffect(() => {
     if (!isRecruiter) {
@@ -219,11 +225,15 @@ export default function CommandCenterRecruiter() {
       const challenge = await requestRecruiterAuthNonce(wallet.account);
       const signature = await wallet.signer.signMessage(challenge.message);
       await verifyRecruiterAuth(wallet.account, signature);
-      await loadPortal();
+      const nextPortal = await fetchRecruiterPortal();
+      if (!nextPortal) throw new Error("Signature accepted, but recruiter tools session was not restored. Please try again or refresh once.");
+      applyPortal(nextPortal);
       toast.success("Recruiter tools unlocked");
     } catch (err: any) {
-      setPortalError(String(err?.message || err || "Wallet sign-in failed."));
-      toast.error(String(err?.message || "Wallet sign-in failed."));
+      const message = String(err?.message || err || "Wallet sign-in failed.");
+      setPortal(null);
+      setPortalError(message);
+      toast.error(message);
     } finally {
       setAuthing(false);
     }
