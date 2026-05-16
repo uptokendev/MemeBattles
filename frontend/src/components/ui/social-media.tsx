@@ -25,14 +25,14 @@ const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
     const baseFilledStyles =
       "absolute bottom-0 left-0 w-full h-0 transition-all duration-300 ease-in-out group-hover:h-full";
     const baseTooltipStyles =
-      "absolute bottom-[-40px] left-1/2 -translate-x-1/2 px-2.5 py-1.5 text-sm text-white whitespace-nowrap rounded-md opacity-0 invisible transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:visible group-hover:bottom-[-50px]";
+      "pointer-events-none absolute z-[120] bottom-[-40px] left-1/2 -translate-x-1/2 px-2.5 py-1.5 text-sm text-white whitespace-nowrap rounded-md opacity-0 invisible shadow-[0_10px_28px_rgba(0,0,0,0.65)] transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:visible group-hover:bottom-[-50px]";
 
     const isExternalHref = (href: string) => /^https?:\/\//i.test(href);
 
     return (
       <ul
         ref={ref}
-        className={cn("flex items-center justify-center gap-3", className)}
+        className={cn("relative z-[70] flex items-center justify-center gap-3 overflow-visible", className)}
         {...props}
       >
         {items.map((item, index) => {
@@ -46,7 +46,7 @@ const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
           );
 
           return (
-            <li key={index} className="relative group">
+            <li key={index} className="relative group z-0 hover:z-[120]">
               {external ? (
                 <a
                   href={item.href}
