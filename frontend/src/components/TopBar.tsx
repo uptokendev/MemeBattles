@@ -147,7 +147,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
-  const topbarButtonClass = "mwz-button h-10 px-3 md:px-5 text-xs md:text-sm font-retro";
+  const topbarButtonClass = "mwz-button h-8 px-2.5 md:px-3 text-[10px] md:text-xs font-retro leading-none";
 
   const openWalletModal = () => {
     setWalletModalOpen(true);
@@ -361,9 +361,9 @@ tickerInitialLoadedRef.current = true;
 
   return (
     <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-2 px-3 md:px-5 py-2.5 min-h-[66px]">
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden mwz-button p-2" aria-label="Toggle menu">
-          <Menu className="h-5 w-5" />
+      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-1.5 px-2.5 md:px-4 py-1.5 min-h-[50px]">
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden mwz-button h-8 w-8 p-0" aria-label="Toggle menu">
+          <Menu className="h-4 w-4" />
         </button>
 
         <Link to="/" className="hidden md:flex items-center mr-2 shrink-0">
@@ -372,7 +372,7 @@ tickerInitialLoadedRef.current = true;
           <img
             src={brandMark}
             alt="MemeWarzone"
-            className="h-8 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-9 2xl:h-10"
+            className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-8 2xl:h-9"
             draggable={false}
           />
         </Link>
@@ -381,7 +381,7 @@ tickerInitialLoadedRef.current = true;
           {navLinks.map((item) => {
             const external = isExternalHref(item.path);
             const className = cn(
-              "mwz-nav-link px-3 md:px-5 py-2 text-sm whitespace-nowrap 2xl:text-base",
+              "mwz-nav-link px-2.5 md:px-3.5 py-1.5 text-xs whitespace-nowrap 2xl:text-sm",
               item.priority === "secondary" && "hidden 2xl:inline-flex",
               !external && isActive(item.path) && "mwz-nav-link-active",
             );
@@ -407,25 +407,25 @@ tickerInitialLoadedRef.current = true;
         <div className="hidden lg:flex items-center shrink-0">
           <SocialTooltip
             items={socialLinks}
-            className="gap-1.5 [&_a]:h-8 [&_a]:w-8 [&_img]:h-4 [&_img]:w-4"
+            className="gap-1 [&_a]:h-7 [&_a]:w-7 [&_img]:h-3.5 [&_img]:w-3.5"
           />
         </div>
 
-        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-2 xl:mx-3">
+        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-2">
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label="Open search"
-            className="mwz-button group flex h-8 w-full items-center justify-center gap-1.5 px-2.5 md:w-[150px] lg:w-[110px] 2xl:w-[125px]"
+            className="mwz-button group flex h-8 w-full items-center justify-center gap-1.5 px-2 md:w-[130px] lg:w-[96px] 2xl:w-[110px]"
           >
-            <Search className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate text-xs uppercase tracking-[0.14em] text-success/70">
+            <Search className="h-3 w-3 shrink-0" />
+            <span className="truncate text-[10px] uppercase tracking-[0.14em] text-success/70 2xl:text-xs">
               Search
             </span>
           </button>
         </div>
 
-        <div className="relative flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-1.5 shrink-0">
           <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
@@ -440,12 +440,12 @@ tickerInitialLoadedRef.current = true;
                   setDisconnectOpen(false);
                   setNotificationOpen((prev) => !prev);
                 }}
-                className={cn(topbarButtonClass, "relative px-3")}
+                className={cn(topbarButtonClass, "relative px-2.5")}
                 aria-label="Notifications"
               >
-                <Bell className="h-4 w-4" />
+                <Bell className="h-3.5 w-3.5" />
                 {unreadNotifications > 0 && (
-                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center border border-accent bg-background px-1 text-[10px] text-accent">
+                  <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center border border-accent bg-background px-1 text-[9px] text-accent">
                     {unreadNotifications}
                   </span>
                 )}
