@@ -343,9 +343,9 @@ h2.mwz-section-title,
 .fixed.top-0 .mwz-hud-frame {
   --mwz-cut: 18px;
   min-height: 78px !important;
-  margin: 4px 8px 0 !important;
-  padding-top: 10px !important;
-  padding-bottom: 10px !important;
+  margin: 0 8px 0 !important;
+  padding-top: 5px !important;
+  padding-bottom: 0px !important;
   gap: 0.75rem !important;
   overflow: visible !important;
   border-color: rgba(112, 104, 84, 0.42) !important;
@@ -389,7 +389,7 @@ h2.mwz-section-title,
   align-self: stretch;
 }
 
-.fixed.top-0 .mwz-hud-frame a[href="/"] {
+.fixed.top-0 .mwz-hud-frame .mwz-brand-link {
   /* min-width is only meaningful when the MEMEWARZONE label is visible (2xl).
      Below that, let the badge shrink to fit the icon. */
   height: 60px;
@@ -412,12 +412,12 @@ h2.mwz-section-title,
 }
 
 @media (min-width: 1536px) {
-  .fixed.top-0 .mwz-hud-frame a[href="/"] {
+  .fixed.top-0 .mwz-hud-frame .mwz-brand-link {
     min-width: 250px;
   }
 }
 
-.fixed.top-0 .mwz-hud-frame a[href="/"] img {
+.fixed.top-0 .mwz-hud-frame .mwz-brand-link img {
   filter: drop-shadow(0 0 10px rgba(var(--mwz-orange-rgb), 0.36))
     drop-shadow(0 8px 16px rgba(0, 0, 0, 0.72)) !important;
 }

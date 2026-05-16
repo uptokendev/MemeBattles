@@ -19,7 +19,7 @@ export interface SocialTooltipProps extends React.HTMLAttributes<HTMLUListElemen
 const SocialTooltip = React.forwardRef<HTMLUListElement, SocialTooltipProps>(
   ({ className, items, ...props }, ref) => {
     const baseIconStyles =
-      "relative flex items-center justify-center w-10 h-10 rounded-full bg-transparent overflow-hidden transition-all duration-300 ease-in-out group-hover:shadow-lg";
+      "relative flex items-center justify-center w-8 h-8 rounded-full bg-transparent overflow-hidden transition-all duration-300 ease-in-out group-hover:shadow-lg";
     const baseSvgStyles =
       "relative z-10 w-5 h-5 grayscale brightness-75 transition-all duration-300 ease-in-out group-hover:grayscale-0 group-hover:brightness-100";
     const baseFilledStyles =

@@ -371,13 +371,13 @@ tickerInitialLoadedRef.current = true;
   <Menu className="h-4 w-4" />
 </button>
 
-        <Link to="/" className="hidden md:flex items-center mr-2 shrink-0">
+        <Link to="/" className="mwz-brand-link hidden md:flex items-center mr-2 shrink-0">
           {/* navbar-logo is a wide strip (~5.5:1) that already contains the
               MemeWarzone wordmark, so fix the height and let the width scale. */}
           <img
             src={brandMark}
             alt="MemeWarzone"
-            className="h-6 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-7 2xl:h-8"
+            className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-9 2xl:h-10"
             draggable={false}
           />
         </Link>
@@ -412,7 +412,7 @@ tickerInitialLoadedRef.current = true;
         <div className="hidden lg:flex items-center shrink-0">
           <SocialTooltip
             items={socialLinks}
-            className="gap-1.5 [&_a]:h-8 [&_a]:w-8 [&_img]:h-4 [&_img]:w-4"
+            className="gap-1.5 [&_a]:!h-8 [&_a]:!w-8 [&_img]:!h-4 [&_img]:!w-4"
           />
         </div>
 

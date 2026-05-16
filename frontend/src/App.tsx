@@ -138,7 +138,7 @@ const App = () => {
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
                 <LiveStreamOverlay />
-                <main className="flex-1 overflow-auto scroll-pt-[4rem] md:scroll-pt-[4.25rem] pt-[3.75rem] md:pt-[4rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
+                <main className="flex-1 overflow-auto scroll-pt-[4rem] md:scroll-pt-[4.25rem] pt-[4.5rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     <Route path="/create" element={<Create />} />
