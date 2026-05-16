@@ -1,18 +1,15 @@
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
+import { useWallet } from "@/contexts/WalletContext";
 import creatorBg from "@/assets/home/cta-creators-bg.png";
 import recruiterBg from "@/assets/home/cta-recruiters-bg.png";
 import creatorSoldier from "@/assets/home/cta-creator-soldier.png";
 import recruiterSoldier from "@/assets/home/cta-recruiter-soldier.png";
 
 const CREATE_DRAFT_PATH = "/create";
-
-// Change this single constant if your Command Center route is named differently.
-// The CTA is intentionally isolated so it does not touch CampaignGrid or draft logic.
-const RECRUITER_SIGNUP_PATH = "/command-center/recruiter";
 
 type AudienceCardProps = {
   tone: "creator" | "recruiter";
@@ -42,24 +39,38 @@ function AudienceCard({
   return (
     <article
       className={cn(
-        "relative isolate min-h-[255px] overflow-visible bg-cover bg-center",
-        "px-6 py-6 sm:px-8 sm:py-7 lg:px-10",
-        "flex items-center",
-        "transition-transform duration-200 hover:-translate-y-0.5"
+        "relative isolate w-full overflow-visible",
+        "h-[245px] sm:h-[265px] lg:h-[285px] 2xl:h-[300px]",
+        "bg-transparent border-0 shadow-none"
       )}
-      style={{ backgroundImage: `url(${bg})` }}
     >
-      <div
-        className={cn(
-          "relative z-20 max-w-[470px]",
-          "pr-[115px] sm:pr-[190px] md:pr-[220px] xl:pr-[250px]"
-        )}
-      >
+      {/* Background art: stretched to fully fill the card */}
+      <div className="absolute inset-0 z-0 overflow-hidden bg-transparent">
+        <img
+          src={bg}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="h-full w-full select-none object-fill"
+        />
+      </div>
+
+      {/* Text block */}
+<div
+  className={cn(
+    "absolute z-30",
+    "top-[8%] sm:top-[9%] lg:top-[10%] 2xl:top-[8%]",
+    isCreator
+      ? "left-[7%] w-[74%] sm:left-[8%] sm:w-[66%] lg:left-[12%] lg:w-[42%]"
+      : "left-[7%] w-[74%] sm:left-[8%] sm:w-[66%] lg:left-[12%] lg:w-[42%]"
+  )}
+>
         <h2
           className={cn(
-            "font-black uppercase leading-none tracking-[0.045em]",
-            "text-[34px] sm:text-[42px] xl:text-[52px]",
-            "text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.8)]"
+            "font-black uppercase leading-[0.95] tracking-[0.045em]",
+            "text-[26px] sm:text-[29px] md:text-[31px] 2xl:text-[34px]",
+            "whitespace-nowrap text-white",
+            "drop-shadow-[0_3px_10px_rgba(0,0,0,0.9)]"
           )}
         >
           {title}
@@ -67,36 +78,58 @@ function AudienceCard({
 
         <p
           className={cn(
-            "mt-3 text-[17px] sm:text-[19px] xl:text-[21px] font-extrabold leading-tight",
-            isCreator ? "text-[#61ff25]" : "text-[#ff941f]"
+            "mt-3 max-w-[430px]",
+            "text-[13px] sm:text-[15px] md:text-[16px] 2xl:text-[18px]",
+            "font-extrabold leading-[1.12]",
+            isCreator ? "text-[#5cff22]" : "text-[#ff981f]"
           )}
         >
           {kicker}
         </p>
 
-        <p className="mt-3 max-w-[410px] text-[15px] sm:text-[16px] xl:text-[18px] font-medium leading-snug text-white/86">
+        <p
+          className={cn(
+            "mt-3 max-w-[430px]",
+            "text-[11px] sm:text-[12px] md:text-[13px] 2xl:text-[14px]",
+            "font-semibold leading-[1.32]",
+            "text-white/88 drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]"
+          )}
+        >
           {body}
         </p>
 
         <Button
           type="button"
           onClick={onClick}
+          style={{
+            clipPath:
+              "polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px)",
+          }}
           className={cn(
-            "mt-5 h-11 min-w-[210px] rounded-none px-6",
-            "border text-[13px] font-black uppercase tracking-[0.08em]",
-            "shadow-[0_0_18px_rgba(0,0,0,0.55)]",
+            "mt-4 md:mt-5",
+            "h-[38px] sm:h-[40px] md:h-[42px] 2xl:h-[44px]",
+            "min-w-[210px] sm:min-w-[245px] md:min-w-[270px] 2xl:min-w-[285px]",
+            "rounded-none px-5 md:px-7",
+            "border text-[10px] sm:text-[11px] md:text-[12px] 2xl:text-[13px]",
+            "font-black uppercase tracking-[0.08em]",
+            "shadow-[0_0_18px_rgba(0,0,0,0.7)]",
+            "flex items-center justify-center gap-4",
             isCreator
-              ? "border-[#73ff2c]/70 bg-gradient-to-b from-[#29b800] to-[#126800] text-white hover:from-[#39d900] hover:to-[#168000]"
-              : "border-[#ff9a22]/70 bg-gradient-to-b from-[#df750e] to-[#9b3d05] text-white hover:from-[#ff8b14] hover:to-[#b84907]"
+              ? "border-[#75ff2d]/75 bg-gradient-to-b from-[#24bd00] to-[#126900] text-white hover:from-[#35d900] hover:to-[#168000]"
+              : "border-[#ff9a22]/75 bg-gradient-to-b from-[#df780d] to-[#9b3e05] text-white hover:from-[#ff8d15] hover:to-[#b84907]"
           )}
         >
           <span>{buttonLabel}</span>
-          <ChevronRight className="ml-4 h-4 w-4" />
+          <ChevronRight className="h-4 w-4" />
         </Button>
 
         <div
           className={cn(
-            "mt-4 text-center text-[12px] sm:text-[13px] font-black uppercase tracking-[0.28em]",
+            "mt-3 md:mt-4",
+            "w-[210px] sm:w-[245px] md:w-[270px] 2xl:w-[285px]",
+            "text-center whitespace-nowrap",
+            "text-[9px] sm:text-[10px] md:text-[11px] 2xl:text-[12px]",
+            "font-black uppercase tracking-[0.32em]",
             isCreator ? "text-[#4df313]" : "text-[#ff9a22]"
           )}
         >
@@ -104,26 +137,67 @@ function AudienceCard({
         </div>
       </div>
 
-      <img
-        src={soldier}
-        alt=""
-        aria-hidden="true"
-        draggable={false}
-        className={cn(
-          "pointer-events-none absolute z-10 select-none object-contain",
-          "bottom-0",
-          isCreator
-            ? "right-[2%] h-[118%] max-h-[330px] sm:right-[4%] xl:right-[6%]"
-            : "right-[-1%] h-[126%] max-h-[350px] sm:right-[1%] xl:right-[3%]",
-          "max-w-[48%] sm:max-w-[46%] md:max-w-[50%]"
-        )}
-      />
+      {/* Soldier art: smaller, shifted right, bottom-aligned */}
+<img
+  src={soldier}
+  alt=""
+  aria-hidden="true"
+  draggable={false}
+  className={cn(
+    "pointer-events-none absolute bottom-0 z-20 select-none object-contain max-w-none",
+    isCreator
+      ? [
+          // Mobile/tablet only: compensate for transparent PNG canvas and push visible soldier right
+          "right-[-30%] h-[94%]",
+          "sm:right-[-22%] sm:h-[100%]",
+          // Desktop unchanged
+          "lg:right-[-6%] lg:h-[108%]",
+          "2xl:right-[-5%] 2xl:h-[110%]",
+        ].join(" ")
+      : [
+          // Mobile/tablet only: compensate for transparent PNG canvas and push visible soldier right
+          "right-[-32%] h-[98%]",
+          "sm:right-[-24%] sm:h-[104%]",
+          // Desktop unchanged
+          "lg:right-[-11%] lg:h-[114%]",
+          "2xl:right-[-9%] 2xl:h-[116%]",
+        ].join(" ")
+  )}
+/>
     </article>
   );
 }
 
 export function HomeAudienceCtas() {
   const navigate = useNavigate();
+  const wallet = useWallet();
+  const [pendingRecruiterRedirect, setPendingRecruiterRedirect] = useState(false);
+
+  const recruiterPath = wallet.account
+    ? `/profile/${wallet.account.toLowerCase()}/command/recruiter`
+    : "";
+
+  useEffect(() => {
+    if (!pendingRecruiterRedirect || !wallet.account) return;
+
+    setPendingRecruiterRedirect(false);
+    navigate(`/profile/${wallet.account.toLowerCase()}/command/recruiter`);
+  }, [pendingRecruiterRedirect, wallet.account, navigate]);
+
+  const handleRecruiterClick = async () => {
+    if (wallet.account) {
+      navigate(recruiterPath);
+      return;
+    }
+
+    setPendingRecruiterRedirect(true);
+
+    try {
+      await wallet.connect();
+    } catch {
+      setPendingRecruiterRedirect(false);
+    }
+  };
 
   return (
     <section
@@ -154,7 +228,7 @@ export function HomeAudienceCtas() {
         footer="Scout • Recruit • Earn"
         bg={recruiterBg}
         soldier={recruiterSoldier}
-        onClick={() => navigate(RECRUITER_SIGNUP_PATH)}
+        onClick={handleRecruiterClick}
       />
     </section>
   );

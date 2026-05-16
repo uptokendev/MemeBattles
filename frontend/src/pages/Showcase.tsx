@@ -32,7 +32,9 @@ const Showcase = () => {
       <div className="mwz-launchpad-inner relative px-1 md:px-2 pb-10 space-y-3">
         <HeaderBand />
 
-        <HomeAudienceCtas />
+        <div className="relative z-20 -mt-1 mb-2 md:-mt-2 md:mb-3">
+          <HomeAudienceCtas />
+        </div>
 
         <div className="mwz-live-heading flex flex-col gap-1 pt-2">
           <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
