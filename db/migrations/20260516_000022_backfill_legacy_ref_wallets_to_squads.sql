@@ -15,13 +15,17 @@
 --      preserve legacy role/source values for recruiter dashboard counts.
 --   2. Backfills ref_wallets into wallet_recruiter_links.
 --   3. Backfills ref_wallets into wallet_squad_memberships.
---   4. Marks legacy links locked at their original bound time so the migrated
+--   4. Upgrades previously-imported legacy member rows to creator/trader where
+--      public.ref_wallets.role has that old coming-soon status.
+--   5. Marks legacy links locked at their original bound time so the migrated
 --      attribution behaves like a signed wallet binding.
 --
 -- Safe behavior:
 --   * If ref_wallets does not exist in an environment, the migration no-ops.
 --   * If a wallet is already actively linked to any recruiter, it is not moved.
 --   * If a wallet is already actively in any squad, it is not moved.
+--   * Existing legacy-imported member rows are upgraded to creator/trader only
+--     when the old ref_wallets.role is creator/trader.
 --   * Self-referrals are skipped.
 --
 -- Production compatibility note:
@@ -153,6 +157,45 @@ begin
       where existing.wallet_address = l.wallet_address
         and existing.is_active = true
     )
+  $sql$;
+
+  -- If an earlier run inserted legacy rows as member/unknown, upgrade them
+  -- using the old coming-soon role value from public.ref_wallets.
+  execute $sql$
+    with legacy as (
+      select distinct on (lower(rw.wallet_address))
+        md5(
+          lower(coalesce(rw.wallet_address, '')) || ':' ||
+          lower(coalesce(rw.recruiter_code, wl.recruiter_code, '')) || ':' ||
+          coalesce(rw.bound_at::text, '')
+        ) as legacy_ref_wallet_key,
+        lower(rw.wallet_address) as wallet_address,
+        r.id as recruiter_id,
+        case
+          when lower(coalesce(rw.role, '')) in ('creator', 'trader') then lower(rw.role)
+          else null
+        end as legacy_role,
+        coalesce(nullif(lower(coalesce(rw.source, '')), ''), 'migration') as legacy_source
+      from public.ref_wallets rw
+      join public.recruiter_waitlist wl on wl.id = rw.recruiter_id
+      join public.recruiters r on lower(r.code) = lower(coalesce(rw.recruiter_code, wl.recruiter_code))
+      where rw.wallet_address is not null
+        and length(trim(rw.wallet_address)) > 0
+        and lower(rw.wallet_address) <> lower(r.wallet_address)
+        and coalesce(r.status, '') in ('active', 'approved')
+      order by lower(rw.wallet_address), coalesce(rw.bound_at, now()) asc
+    )
+    update public.wallet_squad_memberships s
+       set member_role = legacy.legacy_role,
+           link_source = coalesce(nullif(s.link_source, ''), legacy.legacy_source, 'migration'),
+           legacy_ref_wallet_key = coalesce(s.legacy_ref_wallet_key, legacy.legacy_ref_wallet_key),
+           updated_at = now()
+      from legacy
+     where legacy.legacy_role in ('creator', 'trader')
+       and s.is_active = true
+       and s.recruiter_id = legacy.recruiter_id
+       and lower(s.wallet_address) = legacy.wallet_address
+       and coalesce(s.member_role, 'member') not in ('creator', 'trader')
   $sql$;
 
   raise notice 'Legacy recruiter squad backfill from public.ref_wallets completed.';
