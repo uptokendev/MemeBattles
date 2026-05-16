@@ -23,6 +23,10 @@
 --   * If a wallet is already actively linked to any recruiter, it is not moved.
 --   * If a wallet is already actively in any squad, it is not moved.
 --   * Self-referrals are skipped.
+--
+-- Production compatibility note:
+--   Some legacy ref_wallets tables do not have an id column, so this migration
+--   stores a deterministic legacy_ref_wallet_key instead of referencing rw.id.
 
 begin;
 
@@ -33,14 +37,14 @@ alter table public.wallet_squad_memberships
   add column if not exists link_source text not null default 'recruiter';
 
 alter table public.wallet_squad_memberships
-  add column if not exists legacy_ref_wallet_id bigint null;
+  add column if not exists legacy_ref_wallet_key text null;
 
 create index if not exists wallet_squad_memberships_recruiter_role_idx
   on public.wallet_squad_memberships (recruiter_id, member_role, is_active);
 
-create index if not exists wallet_squad_memberships_legacy_ref_wallet_idx
-  on public.wallet_squad_memberships (legacy_ref_wallet_id)
-  where legacy_ref_wallet_id is not null;
+create index if not exists wallet_squad_memberships_legacy_ref_wallet_key_idx
+  on public.wallet_squad_memberships (legacy_ref_wallet_key)
+  where legacy_ref_wallet_key is not null;
 
 do $$
 begin
@@ -99,7 +103,11 @@ begin
   execute $sql$
     with legacy as (
       select distinct on (lower(rw.wallet_address))
-        rw.id as legacy_ref_wallet_id,
+        md5(
+          lower(coalesce(rw.wallet_address, '')) || ':' ||
+          lower(coalesce(rw.recruiter_code, wl.recruiter_code, '')) || ':' ||
+          coalesce(rw.bound_at::text, '')
+        ) as legacy_ref_wallet_key,
         lower(rw.wallet_address) as wallet_address,
         r.id as recruiter_id,
         case
@@ -124,7 +132,7 @@ begin
       is_active,
       member_role,
       link_source,
-      legacy_ref_wallet_id,
+      legacy_ref_wallet_key,
       created_at,
       updated_at
     )
@@ -135,7 +143,7 @@ begin
       true,
       l.member_role,
       l.link_source,
-      l.legacy_ref_wallet_id,
+      l.legacy_ref_wallet_key,
       l.joined_at,
       now()
     from legacy l
@@ -156,7 +164,7 @@ comment on column public.wallet_squad_memberships.member_role is
 comment on column public.wallet_squad_memberships.link_source is
   'How the squad membership was created, for example recruiter, session, referral_cookie, or migration.';
 
-comment on column public.wallet_squad_memberships.legacy_ref_wallet_id is
-  'Original public.ref_wallets.id when this squad membership was backfilled from the coming-soon recruiter portal.';
+comment on column public.wallet_squad_memberships.legacy_ref_wallet_key is
+  'Deterministic hash for the original public.ref_wallets row when this squad membership was backfilled from the coming-soon recruiter portal.';
 
 commit;
