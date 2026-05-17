@@ -726,7 +726,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,153,0,0.22),transparent_34%)]" />
 
       <main className="relative z-10">
-        <section className="relative isolate flex min-h-[680px] flex-col items-center px-2 pt-0 pb-4 text-center md:px-4 md:py-6">
+        <section className="relative isolate flex min-h-[680px] flex-col items-center px-2 py-4 text-center md:px-4 md:py-6">
           <div className="absolute left-4 top-6 hidden gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground md:flex">
             <span className="text-orange-300">// COORD: 47.6° N · 11.2° E</span>
             <span>SECTOR: 04-RECON</span>
@@ -748,7 +748,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
             </div>
           )}
 
-<div className="mwz-chip mwz-chip-active relative z-20 mt-0 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-4">
+<div className="mwz-chip mwz-chip-active relative z-20 mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-4">
   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
   Incoming transmission · Prepare Mode
 </div>
@@ -759,6 +759,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
 
           <p className="relative z-20 mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-2xl">
             {heroTagline}{" "}
+
           </p>
 
           <div className="relative z-20 mt-6 flex flex-wrap justify-center gap-3">
