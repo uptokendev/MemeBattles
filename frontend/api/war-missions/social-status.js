@@ -27,7 +27,7 @@ export default async function wmSocialStatus(req, res) {
     const [accountsResult, profile] = await Promise.all([
       pool.query(
         `
-          select provider, provider_user_id, username, last_verified_at, created_at
+          select provider, provider_user_id, username, last_verified_at
           from public.wm_social_accounts
           where user_id = $1
           order by provider asc
@@ -46,8 +46,8 @@ export default async function wmSocialStatus(req, res) {
         provider: account.provider,
         providerUserId: account.provider_user_id,
         username: account.username || account.provider_user_id,
-        lastVerifiedAt: account.last_verified_at,
-        createdAt: account.created_at || null,
+        lastVerifiedAt: account.last_verified_at || null,
+        createdAt: null,
       })),
     });
   } catch (error) {
