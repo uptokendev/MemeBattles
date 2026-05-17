@@ -1,4 +1,6 @@
 import { pool } from "../../../server/db.js";
+import { normalizeAddress } from "./auth.js";
+import { ensureCurrentQuestInstance } from "./periods.js";
 
 export async function getUserById(userId) {
   const { rows } = await pool.query(
@@ -6,6 +8,33 @@ export async function getUserById(userId) {
     [userId],
   );
   return rows[0] || null;
+}
+
+export async function getUserByWallet(address) {
+  const walletAddress = normalizeAddress(address);
+  const { rows } = await pool.query(
+    `select * from public.wm_users where lower(wallet_address) = $1 limit 1`,
+    [walletAddress],
+  );
+  return rows[0] || null;
+}
+
+export async function ensureUser(address) {
+  const walletAddress = normalizeAddress(address);
+  const existing = await getUserByWallet(walletAddress);
+  if (existing) return existing;
+
+  const { rows } = await pool.query(
+    `
+      insert into public.wm_users (wallet_address, role)
+      values ($1, 'user')
+      on conflict (wallet_address) do update set wallet_address = excluded.wallet_address
+      returning *
+    `,
+    [walletAddress],
+  );
+  if (!rows[0]) throw new Error("Unable to create War Missions profile.");
+  return rows[0];
 }
 
 async function getXpTotal(userId) {
@@ -18,6 +47,49 @@ async function getXpTotal(userId) {
 
 function utcDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
+}
+
+async function updateDailyProgressForAward(userId, questSlug, amount) {
+  const dailyQuestSlugs = new Set([
+    "drop-frontline-propaganda",
+    "provide-covering-fire",
+    "relay-the-battleplan",
+    "maintain-radio-discipline",
+    "complete-daily-warpath",
+  ]);
+  if (!dailyQuestSlugs.has(questSlug)) return;
+
+  const dateUtc = utcDateString();
+  const { rows } = await pool.query(
+    `select * from public.wm_daily_progress where user_id = $1 and date_utc = $2 limit 1`,
+    [userId, dateUtc],
+  );
+  const existing = rows[0];
+  const completedAll = questSlug === "complete-daily-warpath";
+
+  if (existing) {
+    await pool.query(
+      `
+        update public.wm_daily_progress
+        set quests_completed = coalesce(quests_completed, 0) + 1,
+            daily_xp_earned = coalesce(daily_xp_earned, 0) + $3,
+            completed_all = completed_all or $4,
+            updated_at = now()
+        where user_id = $1 and date_utc = $2
+      `,
+      [userId, dateUtc, amount, completedAll],
+    );
+    return;
+  }
+
+  await pool.query(
+    `
+      insert into public.wm_daily_progress
+        (user_id, date_utc, quests_completed, daily_xp_earned, completed_all, streak_count)
+      values ($1, $2, 1, $3, $4, 0)
+    `,
+    [userId, dateUtc, amount, completedAll],
+  );
 }
 
 async function getDailyProgress(userId) {
@@ -152,4 +224,101 @@ export async function updateUserProfile(userId, body = {}) {
   );
   if (!rows[0]) throw new Error("Unable to update War Missions profile.");
   return rows[0];
+}
+
+export async function awardQuestForUser(userId, slug, reason, verificationPayload = {}) {
+  const { rows: templateRows } = await pool.query(
+    `select * from public.wm_quest_templates where slug = $1 and active = true limit 1`,
+    [slug],
+  );
+  const template = templateRows[0];
+  if (!template) return { awarded: false, completionId: null, reason: "quest_template_missing" };
+
+  const instance = await ensureCurrentQuestInstance(template);
+  const now = new Date().toISOString();
+
+  const { rows: existingRows } = await pool.query(
+    `
+      select id, status
+      from public.wm_quest_completions
+      where user_id = $1 and quest_instance_id = $2
+      limit 1
+    `,
+    [userId, instance.id],
+  );
+
+  let completionId = existingRows[0]?.id || null;
+  if (existingRows[0]?.status === "verified") {
+    completionId = existingRows[0].id;
+  } else if (existingRows[0]) {
+    const { rows } = await pool.query(
+      `
+        update public.wm_quest_completions
+        set status = 'verified',
+            verification_payload = $2::jsonb,
+            rejection_reason = null,
+            verified_at = $3,
+            updated_at = $3
+        where id = $1
+        returning *
+      `,
+      [existingRows[0].id, JSON.stringify(verificationPayload), now],
+    );
+    completionId = rows[0]?.id || existingRows[0].id;
+  } else {
+    const { rows } = await pool.query(
+      `
+        insert into public.wm_quest_completions
+          (user_id, quest_instance_id, status, submitted_value, verification_payload, verified_at, updated_at)
+        values ($1, $2, 'verified', $3, $4::jsonb, $5, $5)
+        returning *
+      `,
+      [userId, instance.id, reason, JSON.stringify(verificationPayload), now],
+    );
+    completionId = rows[0]?.id || null;
+  }
+
+  if (!completionId) throw new Error("Unable to create quest completion.");
+
+  const { rows: ledgerRows } = await pool.query(
+    `select id from public.wm_xp_ledger where quest_completion_id = $1 and status = 'active' limit 1`,
+    [completionId],
+  );
+  if (ledgerRows[0]) return { awarded: false, completionId, reason: "already_awarded" };
+
+  const amount = Number(instance.xp_reward || template.xp_reward || 0);
+  await pool.query(
+    `
+      insert into public.wm_xp_ledger (user_id, quest_completion_id, amount, status, reason)
+      values ($1, $2, $3, 'active', $4)
+    `,
+    [userId, completionId, amount, reason],
+  );
+  await updateDailyProgressForAward(userId, template.slug, amount);
+  return { awarded: true, completionId, reason: "awarded" };
+}
+
+async function hasCompletedStartHere(userId) {
+  const required = ["intercept-global-comms", "access-underground-comms", "report-to-base-camp", "take-the-oath"];
+  const completed = new Set(await getCompletedQuestSlugs(userId));
+  return required.every((slug) => completed.has(slug));
+}
+
+export async function maybeVerifyReferralForUser(userId) {
+  if (!(await hasCompletedStartHere(userId))) return { verified: false, recruitersSynced: 0 };
+
+  await pool.query(
+    `
+      update public.wm_referral_attributions
+      set status = 'verified', verified_at = now()
+      where referred_user_id = $1 and status = any($2::text[])
+    `,
+    [userId, ["pending", "linked"]],
+  );
+
+  const { rows } = await pool.query(
+    `select distinct recruiter_user_id from public.wm_referral_attributions where referred_user_id = $1 and status = 'verified'`,
+    [userId],
+  );
+  return { verified: rows.length > 0, recruitersSynced: rows.length };
 }
