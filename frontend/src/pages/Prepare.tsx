@@ -22,6 +22,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { resolveImageUri } from "@/lib/media";
+import warzoneHud from "@/assets/promotion/warzonehud.png";
 import {
   addDraftComment,
   armDraftNotifications,
@@ -31,6 +33,7 @@ import {
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
+
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
 
@@ -196,7 +199,7 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
         // RECON HEAT
       </div>
 
-      <div className="mx-auto mt-5 flex h-48 w-48 items-center justify-center rounded-full border border-orange-400/50 bg-[radial-gradient(circle,rgba(255,153,0,0.20),transparent_58%)] shadow-[0_0_40px_rgba(255,153,0,0.13)]">
+      <div className="mx-auto mt-5 flex h-48 w-48 items-center justify-center rounded-full bg-[radial-gradient(circle,rgba(255,153,0,0.20),transparent_58%)] shadow-[0_0_40px_rgba(255,153,0,0.13)]">
         <div className="mwz-radar h-40 w-40">
           <span className="mwz-radar-sweep" />
 
@@ -223,9 +226,9 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
   );
 }
 
-function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) {
+function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) { 
   return (
-    <div className="mb-5 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-orange-400/50 bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-2xl text-white">
+    <div className="mb-5 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-2xl text-white">
       {src ? (
         <img src={src} alt={`${ticker} logo`} className="h-full w-full object-cover" />
       ) : (
@@ -234,7 +237,56 @@ function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) {
     </div>
   );
 }
+function WarzoneHudPreview({
+  imageUrl,
+  ticker,
+  name,
+}: {
+  imageUrl: string;
+  ticker: string;
+  name: string;
+}) {
+  return (
+    <div className="relative mx-auto w-[min(500px,92vw)] drop-shadow-[0_0_45px_rgba(255,122,26,0.28)] md:w-[min(540px,86vw)]">
+      <div className="relative aspect-[1080/1024]">
+        {/* Screen content behind the transparent HUD PNG */}
+        <div className="absolute left-[20.4%] right-[19.4%] top-[12.1%] bottom-[12.2%] z-0 flex translate-x-[-2px] translate-y-[1px] flex-col overflow-hidden bg-black">
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+            <img
+  src={imageUrl}
+  alt={`${ticker} campaign image`}
+  className="h-full w-full object-contain p-4 md:p-6"
+  draggable={false}
+/>
 
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,transparent_0%,rgba(0,0,0,0.12)_45%,rgba(0,0,0,0.70)_100%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,122,26,0.08),transparent_45%,rgba(0,0,0,0.60))]" />
+          </div>
+
+          <div className="border-y border-orange-400/40 bg-black/95 px-3 py-2 text-center">
+            <div className="truncate font-mono text-[11px] uppercase tracking-[0.28em] text-orange-300 md:text-xs">
+              {ticker}
+            </div>
+          </div>
+
+          <div className="flex min-h-[4.8rem] items-center justify-center border-t border-orange-400/30 bg-black/95 px-4 py-3 text-center md:min-h-[5.6rem]">
+            <div className="line-clamp-2 font-retro text-2xl uppercase leading-[0.9] tracking-[0.06em] text-orange-100 drop-shadow-[0_0_14px_rgba(255,122,26,0.35)] md:text-3xl">
+              {name}
+            </div>
+          </div>
+        </div>
+
+        {/* HUD frame above the dynamic content */}
+        <img
+          src={warzoneHud}
+          alt=""
+          className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain"
+          draggable={false}
+        />
+      </div>
+    </div>
+  );
+}
 function ShareModal({
   bundle,
   onClose,
@@ -453,7 +505,7 @@ function TransmissionList({
             ) : (
               items.map((item) => (
                 <div key={item.id} className="mwz-card flex gap-3 p-4">
-                  <div className="h-10 w-10 shrink-0 rounded-full border border-orange-400/40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,153,0,0.55),rgba(25,8,2,0.9))]" />
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,153,0,0.55),rgba(25,8,2,0.9))]" />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
@@ -642,8 +694,9 @@ export default function Prepare() {
     );
   }
 
-  const ticker = `$${draft.ticker}`;
-  const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
+const ticker = `$${draft.ticker}`;
+const heroImageUrl = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
+const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
   const isCreator = Boolean(
     wallet.account &&
       draft.creatorWallet &&
@@ -673,7 +726,7 @@ export default function Prepare() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,153,0,0.22),transparent_34%)]" />
 
       <main className="relative z-10">
-        <section className="relative flex min-h-[620px] flex-col items-center px-4 py-16 text-center md:px-8 md:py-20">
+        <section className="relative isolate flex min-h-[680px] flex-col items-center px-2 py-4 text-center md:px-4 md:py-6">
           <div className="absolute left-4 top-6 hidden gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground md:flex">
             <span className="text-orange-300">// COORD: 47.6° N · 11.2° E</span>
             <span>SECTOR: 04-RECON</span>
@@ -695,27 +748,23 @@ export default function Prepare() {
             </div>
           )}
 
-          <div className="mwz-chip mwz-chip-active mt-8 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-14">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
-            Incoming transmission · Prepare Mode
-          </div>
+<div className="mwz-chip mwz-chip-active relative z-20 mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-4">
+  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
+  Incoming transmission · Prepare Mode
+</div>
 
-          <div className="mt-8 font-mono text-xl uppercase tracking-[0.5em] text-orange-300">
-            {ticker}
-          </div>
+<div className="relative z-10 mt-4">
+  <WarzoneHudPreview imageUrl={heroImageUrl} ticker={ticker} name={draft.name} />
+</div>
 
-          <h1 className="mt-3 max-w-5xl bg-gradient-to-b from-white via-orange-200 to-orange-600 bg-clip-text font-retro text-6xl uppercase leading-[0.82] tracking-[0.03em] text-transparent drop-shadow-[0_0_40px_rgba(255,153,0,0.38)] md:text-8xl lg:text-[9rem]">
-            {draft.name}
-          </h1>
-
-          <p className="mt-8 max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-2xl">
+          <p className="relative z-20 mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-2xl">
             {heroTagline}{" "}
             <span className="text-muted-foreground/70">
               Prepare Mode is live, but trading is locked until deployment.
             </span>
           </p>
 
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <div className="relative z-20 mt-6 flex flex-wrap justify-center gap-3">
             <Button
               onClick={handleArmNotification}
               disabled={armingNotification}
@@ -750,7 +799,7 @@ export default function Prepare() {
             </Button>
           </div>
 
-          <div className="mwz-card mt-12 grid overflow-hidden border-orange-400/35 bg-black/45 md:grid-cols-4">
+          <div className="mwz-card relative z-20 mt-10 grid w-full max-w-6xl overflow-hidden border-orange-400/35 bg-black/45 md:grid-cols-4">
             {[
               ["Armed recruits", String(pop.armedCount ?? 0), Users],
               ["Watchlists", String(followCount ?? pop.follows), Star],

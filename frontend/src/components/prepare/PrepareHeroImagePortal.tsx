@@ -106,18 +106,18 @@ export function PrepareHeroImagePortal() {
   const imageUrl = resolveImageUri(bundle.draft.logoUrl) || "/placeholder.svg";
   const ticker = bundle.draft.ticker ? `$${bundle.draft.ticker}` : "Draft";
 
-  return createPortal(
-    <div className="mx-auto mt-2 flex w-full justify-center px-4 md:mt-3">
-      <div className="relative h-36 w-36 overflow-hidden rounded-xl border border-orange-400/60 bg-black/55 shadow-[0_0_55px_rgba(255,153,0,0.20)] md:h-48 md:w-48 lg:h-56 lg:w-56">
-        <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(255,153,0,0.08),transparent_45%,rgba(0,0,0,0.20))]" />
-        <img
-          src={imageUrl}
-          alt={`${ticker} token image`}
-          className="h-full w-full object-cover"
-          draggable={false}
-        />
-      </div>
-    </div>,
-    mount,
-  );
+return createPortal(
+  <div className="pointer-events-none absolute left-1/2 top-0 z-0 flex -translate-x-1/2 justify-center">
+    <div className="relative h-[28rem] w-[28rem] overflow-hidden rounded-xl border border-orange-400/50 bg-black/25 shadow-[0_0_90px_rgba(255,153,0,0.28)] md:h-[28rem] md:w-[28rem] lg:h-[36rem] lg:w-[36rem]">
+      <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_45%,rgba(0,0,0,0.18))]" />
+      <img
+        src={imageUrl}
+        alt={`${ticker} token image`}
+        className="h-full w-full object-cover"
+        draggable={false}
+      />
+    </div>
+  </div>,
+  mount,
+);
 }

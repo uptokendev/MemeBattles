@@ -41,7 +41,6 @@ import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
-import { PrepareHeroImagePortal } from "@/components/prepare/PrepareHeroImagePortal";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
@@ -132,7 +131,6 @@ const App = () => {
           >
             <BrowserRouter>
               <InternalLinkInterceptor />
-              <PrepareHeroImagePortal />
               <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
