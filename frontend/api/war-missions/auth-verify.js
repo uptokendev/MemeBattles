@@ -1,0 +1,55 @@
+import { pool } from "../../server/db.js";
+import {
+  createWarAuthCookie,
+  isWalletAddress,
+  normalizeAddress,
+  verifyWalletSignature,
+  warLoginMessage,
+} from "./_lib/auth.js";
+import { awardQuestForUser, buildWarProfile, ensureUser, maybeVerifyReferralForUser } from "./_lib/profile.js";
+
+export default async function wmAuthVerify(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
+
+  const address = normalizeAddress(String(req.body?.address || ""));
+  const signature = String(req.body?.signature || "").trim();
+  if (!isWalletAddress(address)) return res.status(400).json({ error: "Enter a valid wallet address." });
+  if (!signature) return res.status(400).json({ error: "Missing signature." });
+
+  try {
+    const { rows: nonceRows } = await pool.query(
+      `
+        select id, wallet_address, nonce, expires_at, used_at
+        from public.wm_wallet_auth_nonces
+        where lower(wallet_address) = $1 and used_at is null
+        order by created_at desc
+        limit 1
+      `,
+      [address],
+    );
+    const nonceRow = nonceRows[0];
+    if (!nonceRow) return res.status(400).json({ error: "No login challenge found. Request a new nonce." });
+    if (new Date(nonceRow.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ error: "This login challenge expired. Request a new nonce." });
+    }
+
+    const isValid = await verifyWalletSignature(warLoginMessage(address, nonceRow.nonce), signature, address);
+    if (!isValid) return res.status(401).json({ error: "Signature verification failed." });
+
+    const user = await ensureUser(address);
+    if (user.is_banned) return res.status(403).json({ error: "This wallet is excluded from War Missions." });
+
+    await Promise.all([
+      pool.query(`update public.wm_wallet_auth_nonces set used_at = now() where id = $1`, [nonceRow.id]),
+      awardQuestForUser(user.id, "take-the-oath", "wallet_signature", { address }),
+    ]);
+    await maybeVerifyReferralForUser(user.id).catch(() => undefined);
+
+    const profile = await buildWarProfile(user);
+    res.setHeader("Set-Cookie", createWarAuthCookie(req, { userId: user.id, address }));
+    return res.status(200).json({ ok: true, profile });
+  } catch (error) {
+    console.error("[war-missions/auth-verify] failed", error);
+    return res.status(500).json({ error: error?.message || "Unexpected server error." });
+  }
+}
