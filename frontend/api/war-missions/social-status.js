@@ -10,11 +10,17 @@ function isTelegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME);
 }
 
+function isDiscordConfigured() {
+  return Boolean(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_REDIRECT_URI);
+}
+
 function socialConfig() {
   return {
     xOAuthConfigured: isXOAuthConfigured(),
     telegramConfigured: isTelegramConfigured(),
     telegramInviteUrl: process.env.TELEGRAM_INVITE_URL || null,
+    discordConfigured: isDiscordConfigured(),
+    discordInviteUrl: process.env.DISCORD_INVITE_URL || null,
     questsUrl: process.env.WAR_MISSIONS_QUESTS_URL || "https://quests.memewar.zone",
   };
 }
