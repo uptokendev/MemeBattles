@@ -155,11 +155,17 @@ export default async function wmTelegramWebhook(req, res) {
     const update = req.body || {};
     const message = update.message || update.edited_message || null;
     const telegramUser = message?.from || null;
+    const chatType = String(message?.chat?.type || "");
     const chatId = message?.chat?.id || telegramUser?.id || null;
     const text = String(message?.text || "").trim();
     const command = getCommand(text);
 
     if (!telegramUser?.id || !text) return res.status(200).json({ ok: true, ignored: true });
+
+    // Never reply in groups, supergroups or channels. The connector flow must happen in a private bot chat only.
+    if (chatType && chatType !== "private") {
+      return res.status(200).json({ ok: true, ignored: true, reason: "non_private_chat", chatType });
+    }
 
     if (command === "/quests") {
       await sendBackToQuests(chatId);
