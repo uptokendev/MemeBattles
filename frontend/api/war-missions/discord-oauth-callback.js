@@ -184,6 +184,14 @@ export default async function wmDiscordOAuthCallback(req, res) {
 
     const code = String(req.query?.code || "").trim();
     const state = String(req.query?.state || "").trim();
+    const guildId = String(req.query?.guild_id || "").trim();
+
+    // Discord bot installs are callback-less. If a generated bot invite accidentally redirects here,
+    // do not treat it as a user social-link attempt.
+    if (code && guildId && !state) {
+      return res.redirect(questsUrl({ discord_bot_added: "1" }));
+    }
+
     if (!code || !state) return res.redirect(questsUrl({ social_error: "discord_missing_code" }));
 
     const challenge = await consumeDiscordChallenge(state);
