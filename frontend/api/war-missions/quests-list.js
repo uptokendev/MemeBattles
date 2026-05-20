@@ -2,14 +2,15 @@ import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { ensureCurrentQuestInstances } from "./_lib/periods.js";
 import { buildWarProfile, getUserById } from "./_lib/profile.js";
+import { verifyCommunityJoinQuestsForUser } from "./_lib/community-membership.js";
 
-async function getOptionalProfile(req) {
+async function getOptionalUser(req) {
   const auth = readWarAuth(req);
   if (!auth) return null;
 
   const user = await getUserById(auth.userId);
   if (!user || user.wallet_address !== auth.address || user.is_banned) return null;
-  return buildWarProfile(user);
+  return user;
 }
 
 function normalizeQuest(template, instance, completion) {
@@ -33,10 +34,17 @@ export default async function wmQuestsList(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed." });
 
   try {
+    const user = await getOptionalUser(req);
+    if (user) {
+      await verifyCommunityJoinQuestsForUser(user, "quests_list_auto_check").catch((error) => {
+        console.warn("[war-missions/quests-list] community auto-check skipped", error?.message || error);
+      });
+    }
+
     const [categoriesResult, templatesResult, profile] = await Promise.all([
       pool.query(`select * from public.wm_quest_categories where active = true order by display_order asc`),
       pool.query(`select * from public.wm_quest_templates where active = true order by created_at asc`),
-      getOptionalProfile(req),
+      user ? buildWarProfile(user) : Promise.resolve(null),
     ]);
 
     const categories = categoriesResult.rows;
