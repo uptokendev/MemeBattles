@@ -1,6 +1,7 @@
 import { pool } from "../../server/db.js";
 import { getUserById } from "./_lib/profile.js";
 import { submitSocialStartHereQuest } from "./_lib/social-quests.js";
+import { checkDiscordMembership, verifyCommunityJoinQuestByProviderUserId } from "./_lib/community-membership.js";
 
 function questsUrl(params = {}) {
   const url = new URL(String(process.env.WAR_MISSIONS_QUESTS_URL || "https://quests.memewar.zone"));
@@ -80,35 +81,6 @@ async function fetchDiscordUser(accessToken) {
   return json;
 }
 
-async function getDiscordGuildMemberStatus(discordUserId) {
-  const botToken = String(process.env.DISCORD_BOT_TOKEN || "").trim();
-  const guildId = String(process.env.DISCORD_REQUIRED_GUILD_ID || "").trim();
-
-  if (!botToken || !guildId || !discordUserId) {
-    return { checked: false, ok: false, status: null, error: "Discord membership check is not configured." };
-  }
-
-  const response = await fetch(`https://discord.com/api/guilds/${guildId}/members/${discordUserId}`, {
-    headers: { authorization: `Bot ${botToken}` },
-  });
-
-  if (response.status === 404) {
-    return { checked: true, ok: false, status: "not_member", error: null };
-  }
-
-  const json = await response.json().catch(() => null);
-  if (!response.ok) {
-    return {
-      checked: true,
-      ok: false,
-      status: null,
-      error: json?.message || `Discord get guild member failed (${response.status}).`,
-    };
-  }
-
-  return { checked: true, ok: true, status: "member", error: null };
-}
-
 function discordDisplayName(discordUser) {
   const globalName = String(discordUser?.global_name || "").trim();
   if (globalName) return globalName;
@@ -178,21 +150,14 @@ export default async function wmDiscordOAuthCallback(req, res) {
 
   try {
     const error = String(req.query?.error || "");
-    if (error) {
-      return res.redirect(questsUrl({ social_error: error }));
-    }
+    if (error) return res.redirect(questsUrl({ social_error: error }));
 
     const code = String(req.query?.code || "").trim();
     const state = String(req.query?.state || "").trim();
     const guildId = String(req.query?.guild_id || "").trim();
     const permissions = String(req.query?.permissions || "").trim();
 
-    // Discord bot installs are callback-less. If a generated bot invite accidentally redirects here,
-    // do not treat it as a user social-link attempt. Some Discord install returns include code, some do not.
-    if ((guildId || permissions) && !state) {
-      return res.redirect(questsUrl({ discord_bot_added: "1" }));
-    }
-
+    if ((guildId || permissions) && !state) return res.redirect(questsUrl({ discord_bot_added: "1" }));
     if (!code || !state) return res.redirect(questsUrl({ social_error: "discord_missing_code" }));
 
     const challenge = await consumeDiscordChallenge(state);
@@ -203,7 +168,7 @@ export default async function wmDiscordOAuthCallback(req, res) {
 
     const token = await exchangeCodeForToken({ code, redirectUri: discordRedirectUri(req) });
     const discordUser = await fetchDiscordUser(token.access_token);
-    const membership = await getDiscordGuildMemberStatus(discordUser.id);
+    const membership = await checkDiscordMembership(discordUser.id);
     const linked = await upsertDiscordAccount({ userId: user.id, discordUser });
 
     await submitSocialStartHereQuest({
@@ -211,11 +176,10 @@ export default async function wmDiscordOAuthCallback(req, res) {
       provider: "discord",
       username: linked.username,
       providerUserId: linked.providerUserId,
-      verified: true,
-      source: "discord_oauth_callback",
-      note: membership.ok
-        ? "Discord identity linked and required server membership confirmed."
-        : "Discord identity linked through OAuth. Server membership check was not confirmed yet.",
+      verified: false,
+      status: "pending",
+      source: "discord_oauth_identity_link",
+      note: "Discord identity linked. Join quest is awarded only when required server membership is confirmed.",
       manualFallback: false,
       metadata: {
         discord: {
@@ -229,7 +193,13 @@ export default async function wmDiscordOAuthCallback(req, res) {
       },
     });
 
-    return res.redirect(questsUrl({ social: "discord-connected" }));
+    if (membership.ok) {
+      await verifyCommunityJoinQuestByProviderUserId("discord", discordUser.id, "discord_oauth_membership_check", {
+        source: "oauth_callback",
+      });
+    }
+
+    return res.redirect(questsUrl({ social: membership.ok ? "discord-connected-and-joined" : "discord-connected" }));
   } catch (error) {
     console.error("[war-missions/discord-oauth-callback] failed", error);
     return res.redirect(questsUrl({ social_error: error?.message || "discord_connection_failed" }));
