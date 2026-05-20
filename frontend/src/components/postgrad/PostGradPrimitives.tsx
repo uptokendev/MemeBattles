@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BellRing, ChevronRight, Crown, Flame, Shield, Swords, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ function PostGradPanel({
 }: {
   title: string;
   eyebrow?: string;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
