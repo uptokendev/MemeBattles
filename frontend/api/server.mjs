@@ -42,6 +42,7 @@ import wmAdminSocialRecheck from "./war-missions/admin-social-recheck.js";
 import wmAuthNonce from "./war-missions/auth-nonce.js";
 import wmAuthVerify from "./war-missions/auth-verify.js";
 import wmBadgesList from "./war-missions/badges-list.js";
+import wmCommunityMembershipSweep from "./war-missions/community-membership-sweep.js";
 import wmDiscordMemberCheck from "./war-missions/discord-member-check.js";
 import wmDiscordOAuthCallback from "./war-missions/discord-oauth-callback.js";
 import wmDiscordOAuthStart from "./war-missions/discord-oauth-start.js";
@@ -164,7 +165,7 @@ app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Credentials", "true");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token, x-war-missions-internal-token");
   }
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
@@ -295,6 +296,7 @@ router.all("/wm-telegram-member-check", wrap(wmTelegramMemberCheck));
 router.all("/wm-discord-oauth-start", wrap(wmDiscordOAuthStart));
 router.all("/wm-discord-oauth-callback", wrap(wmDiscordOAuthCallback));
 router.all("/wm-discord-member-check", wrap(wmDiscordMemberCheck));
+router.all("/wm-community-membership-sweep", wrap(wmCommunityMembershipSweep));
 router.all("/wm-admin-auth", wrap(wmAdminAuth));
 router.all("/wm-admin-console-data", wrap(wmAdminConsoleData));
 router.all("/wm-admin-social-checks-list", wrap(wmAdminSocialChecksList));
