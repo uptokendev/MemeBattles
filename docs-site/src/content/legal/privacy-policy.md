@@ -5,15 +5,12 @@ description: How MemeWarzone collects, uses, protects, and shares information.
 
 # Privacy Statement
 
-Last updated: 19 May 2026
+Last updated: 20 May 2026
 
 This Privacy Statement explains how MemeWarzone collects, uses, stores, shares, and protects information when you use the MemeWarzone website, docs site, app, campaign pages, dashboards, rewards pages, recruiter flows, squad features, chat/comment features, and related services.
 
-Before publishing to production, replace the bracketed legal details below with the final company details approved by counsel.
-
-- Legal operator: **[insert legal entity name]**
-- Contact email: **[insert privacy/legal contact email]**
-- Registered address: **[insert registered business address]**
+- Legal operator: **MemeWarzone**
+- Contact email: **legal@memewar.zone**
 
 ## 1. What this statement covers
 
@@ -50,7 +47,7 @@ If you create or edit a profile, campaign, recruiter profile, squad profile, or 
 
 - display name, username, avatar, bio, and social links
 - campaign name, ticker, description, media, links, and updates
-- comments, chat messages, support messages, and other user-submitted content
+- comments, chat messages, and other user-submitted content
 - recruiter code, attribution status, squad membership, leaderboard identity, and public profile details
 
 ### Contact and support information
@@ -194,4 +191,4 @@ We may update this Privacy Statement as the platform, legal requirements, infras
 
 For privacy questions, data requests, or legal notices, contact:
 
-**[insert privacy/legal contact email]**
+**legal@memewar.zone**
