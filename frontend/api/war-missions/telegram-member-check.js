@@ -1,6 +1,6 @@
 import { pool } from "../../server/db.js";
 import { readWarAuth, unauthorized } from "./_lib/auth.js";
-import { getUserById } from "./_lib/profile.js";
+import { awardQuestForUser, getUserById, maybeVerifyReferralForUser } from "./_lib/profile.js";
 
 async function checkMembership(telegramUserId) {
   const botToken = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
@@ -35,6 +35,33 @@ async function checkMembership(telegramUserId) {
   };
 }
 
+async function getQuestTemplate(slug) {
+  if (!slug) return null;
+  const { rows } = await pool.query(
+    `select slug, title, verification_type from public.wm_quest_templates where slug = $1 and active = true limit 1`,
+    [slug],
+  );
+  return rows[0] || null;
+}
+
+async function writeVerificationLog(input) {
+  await pool.query(
+    `
+      insert into public.wm_verification_logs
+        (user_id, quest_completion_id, provider, verification_type, status, message, metadata)
+      values ($1, $2, 'telegram', $3, $4, $5, $6::jsonb)
+    `,
+    [
+      input.userId,
+      input.completionId || null,
+      input.verificationType || "telegram_join",
+      input.status,
+      input.message,
+      JSON.stringify(input.metadata || {}),
+    ],
+  ).catch(() => undefined);
+}
+
 export default async function wmTelegramMemberCheck(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
@@ -59,7 +86,13 @@ export default async function wmTelegramMemberCheck(req, res) {
     );
 
     const account = rows[0];
-    if (!account) return res.status(404).json({ error: "Telegram is not linked yet." });
+    if (!account) {
+      return res.status(409).json({
+        ok: false,
+        code: "telegram_account_not_linked",
+        error: "Telegram account must be connected once for verification before this join quest can be checked.",
+      });
+    }
 
     const membership = await checkMembership(account.provider_user_id);
     if (membership.ok) {
@@ -73,11 +106,57 @@ export default async function wmTelegramMemberCheck(req, res) {
       );
     }
 
+    const questSlug = String(req.body?.questSlug || "").trim();
+    let quest = null;
+    let award = null;
+    let questStatus = membership.ok ? "verified" : "pending";
+
+    if (questSlug) {
+      quest = await getQuestTemplate(questSlug);
+      if (!quest) return res.status(404).json({ error: "Telegram join quest was not found." });
+      if (quest.verification_type !== "telegram_join") {
+        return res.status(400).json({ error: "Quest is not a Telegram join quest." });
+      }
+
+      if (membership.ok) {
+        const verificationPayload = {
+          provider: "telegram",
+          username: account.username || account.provider_user_id,
+          provider_user_id: account.provider_user_id,
+          membership,
+          checked_at: new Date().toISOString(),
+          source: "telegram_member_check",
+        };
+        award = await awardQuestForUser(user.id, quest.slug, "telegram_join_verified", verificationPayload);
+        await maybeVerifyReferralForUser(user.id).catch(() => undefined);
+        await writeVerificationLog({
+          userId: user.id,
+          completionId: award.completionId,
+          verificationType: quest.verification_type,
+          status: "verified",
+          message: "Telegram group membership confirmed.",
+          metadata: verificationPayload,
+        });
+      } else {
+        await writeVerificationLog({
+          userId: user.id,
+          verificationType: quest.verification_type,
+          status: "pending",
+          message: membership.error || "Telegram group membership was not confirmed.",
+          metadata: { provider: "telegram", username: account.username || account.provider_user_id, membership },
+        });
+      }
+    }
+
     return res.status(200).json({
       ok: true,
       provider: "telegram",
       username: account.username || account.provider_user_id,
       membership,
+      questSlug: quest?.slug || null,
+      status: questStatus,
+      award,
+      inviteUrl: process.env.TELEGRAM_INVITE_URL || null,
     });
   } catch (error) {
     console.error("[war-missions/telegram-member-check] failed", error);
