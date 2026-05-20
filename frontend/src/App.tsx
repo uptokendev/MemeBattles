@@ -13,6 +13,12 @@ import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
+import Arena from "./pages/Arena";
+import WarRoom from "./pages/WarRoom";
+import BattleDetails from "./pages/BattleDetails";
+import PostGradEvents from "./pages/PostGradEvents";
+import PostGradLeague from "./pages/PostGradLeague";
+import TournamentDetails from "./pages/TournamentDetails";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
@@ -52,6 +58,7 @@ import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
+import { isPostGradRouteEnabled, postGradFlags } from "@/features/postgrad/config";
 
 const queryClient = new QueryClient();
 
@@ -111,6 +118,7 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showContent, setShowContent] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const postGradEnabled = isPostGradRouteEnabled();
 
   const handleLoadComplete = () => {
     setIsLoading(false);
@@ -139,6 +147,12 @@ const App = () => {
                 <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />
+                    {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
+                    {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
+                    {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
+                    {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<PostGradEvents />} /> : null}
+                    {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<PostGradLeague />} /> : null}
+                    {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
