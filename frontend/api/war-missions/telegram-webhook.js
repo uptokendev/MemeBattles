@@ -1,6 +1,11 @@
 import { pool } from "../../server/db.js";
 import { getUserById } from "./_lib/profile.js";
 import { submitSocialStartHereQuest } from "./_lib/social-quests.js";
+import {
+  isCommunityMemberStatus,
+  telegramChatMatchesRequired,
+  verifyCommunityJoinQuestByProviderUserId,
+} from "./_lib/community-membership.js";
 
 function getStartPayload(text) {
   const value = String(text || "").trim();
@@ -142,6 +147,34 @@ async function upsertTelegramAccount({ userId, telegramUser }) {
   return { providerUserId, username };
 }
 
+async function handleChatMemberUpdate(update) {
+  const memberUpdate = update.chat_member || update.my_chat_member || null;
+  if (!memberUpdate?.chat || !telegramChatMatchesRequired(memberUpdate.chat)) {
+    return { ok: true, ignored: true, reason: "not_required_chat" };
+  }
+
+  const newStatus = String(memberUpdate.new_chat_member?.status || "");
+  if (!isCommunityMemberStatus(newStatus)) {
+    return { ok: true, ignored: true, reason: "not_member_status", status: newStatus };
+  }
+
+  const telegramUser = memberUpdate.new_chat_member?.user || memberUpdate.from || null;
+  if (!telegramUser?.id) return { ok: true, ignored: true, reason: "missing_user" };
+
+  const result = await verifyCommunityJoinQuestByProviderUserId("telegram", telegramUser.id, "telegram_chat_member_webhook", {
+    chat: {
+      id: memberUpdate.chat.id,
+      title: memberUpdate.chat.title || null,
+      username: memberUpdate.chat.username || null,
+      type: memberUpdate.chat.type || null,
+    },
+    oldStatus: memberUpdate.old_chat_member?.status || null,
+    newStatus,
+  });
+
+  return { ok: true, handled: true, result };
+}
+
 export default async function wmTelegramWebhook(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
@@ -153,6 +186,12 @@ export default async function wmTelegramWebhook(req, res) {
 
   try {
     const update = req.body || {};
+
+    if (update.chat_member || update.my_chat_member) {
+      const result = await handleChatMemberUpdate(update);
+      return res.status(200).json(result);
+    }
+
     const message = update.message || update.edited_message || null;
     const telegramUser = message?.from || null;
     const chatType = String(message?.chat?.type || "");
@@ -233,11 +272,10 @@ export default async function wmTelegramWebhook(req, res) {
       provider: "telegram",
       username: linked.username,
       providerUserId: linked.providerUserId,
-      verified: true,
-      source: "telegram_bot_webhook",
-      note: membership.ok
-        ? "Telegram identity linked and official group membership confirmed."
-        : "Telegram identity linked through bot webhook. Membership check was not confirmed yet.",
+      verified: false,
+      status: "pending",
+      source: "telegram_bot_identity_link",
+      note: "Telegram identity linked. Join quest is awarded only when official group membership is confirmed.",
       manualFallback: false,
       metadata: {
         telegram: {
@@ -251,7 +289,18 @@ export default async function wmTelegramWebhook(req, res) {
       },
     });
 
-    await sendBackToQuests(chatId, "✅ Telegram connected to MemeWarzone.\n\nReturn to your War Missions quests page:");
+    if (membership.ok) {
+      await verifyCommunityJoinQuestByProviderUserId("telegram", telegramUser.id, "telegram_identity_link_membership_check", {
+        chatType: "private_start_flow",
+      });
+    }
+
+    await sendBackToQuests(
+      chatId,
+      membership.ok
+        ? "✅ Telegram connected and official group membership confirmed.\n\nReturn to your War Missions quests page:"
+        : "✅ Telegram connected. Now join the official group from the quests page to complete Access the Underground Comms."
+    );
 
     return res.status(200).json({ ok: true, linked: true, membership });
   } catch (error) {
