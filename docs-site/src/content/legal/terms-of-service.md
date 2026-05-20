@@ -5,15 +5,12 @@ description: The rules for using MemeWarzone.
 
 # Terms of Service
 
-Last updated: 19 May 2026
+Last updated: 20 May 2026
 
 These Terms of Service govern your access to and use of MemeWarzone, including the website, docs site, app, campaign pages, trading interface, dashboards, profiles, comments, chats, recruiter flows, squad features, league features, airdrops, rewards, APIs, and related services.
 
-Before publishing to production, replace the bracketed legal details below with the final company details approved by counsel.
-
-- Legal operator: **[insert legal entity name]**
-- Contact email: **[insert legal/support contact email]**
-- Registered address: **[insert registered business address]**
+- Legal operator: **MemeWarzone**
+- Contact email: **legal@memewar.zone**
 
 By accessing or using MemeWarzone, you agree to these Terms. If you do not agree, do not use the platform.
 
@@ -181,11 +178,9 @@ We may suspend, restrict, or terminate access to the platform at any time where 
 
 Sections that by their nature should survive termination will survive, including risk warnings, disclaimers, limitation of liability, indemnity, intellectual property, dispute terms, and records needed for legal, security, or operational purposes.
 
-## 18. Governing law and disputes
+## 18. Governing law
 
-These Terms are governed by the laws of **[insert governing law/jurisdiction]**, without regard to conflict-of-law rules.
-
-The courts of **[insert venue/courts]** will have exclusive jurisdiction unless applicable consumer or data-protection law requires otherwise.
+These Terms are governed by the laws of the Netherlands, without regard to conflict-of-law rules.
 
 ## 19. Changes to these Terms
 
@@ -197,4 +192,4 @@ Continued use of the platform after updates means you accept the updated Terms.
 
 For legal questions, notices, or support issues, contact:
 
-**[insert legal/support contact email]**
+**legal@memewar.zone**
