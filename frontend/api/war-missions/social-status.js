@@ -1,6 +1,7 @@
 import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { buildWarProfile, getUserById } from "./_lib/profile.js";
+import { verifyCommunityJoinQuestsForUser } from "./_lib/community-membership.js";
 
 function isXOAuthConfigured() {
   return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET && process.env.X_REDIRECT_URI);
@@ -34,6 +35,7 @@ export default async function wmSocialStatus(req, res) {
     ...socialConfig(),
     profile: null,
     accounts: [],
+    communityChecks: [],
   };
 
   try {
@@ -42,6 +44,11 @@ export default async function wmSocialStatus(req, res) {
 
     const user = await getUserById(auth.userId);
     if (!user || user.wallet_address !== auth.address || user.is_banned) return res.status(200).json(unauthenticated);
+
+    const communityChecks = await verifyCommunityJoinQuestsForUser(user, "social_status_auto_check").catch((error) => [{
+      ok: false,
+      error: error?.message || "Community membership auto-check failed.",
+    }]);
 
     const [accountsResult, profile] = await Promise.all([
       pool.query(
@@ -68,6 +75,7 @@ export default async function wmSocialStatus(req, res) {
         lastVerifiedAt: account.last_verified_at || null,
         createdAt: null,
       })),
+      communityChecks,
     });
   } catch (error) {
     console.error("[war-missions/social-status] failed", error);
