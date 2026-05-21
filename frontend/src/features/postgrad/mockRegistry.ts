@@ -434,3 +434,10 @@ export function getMockTokenById(tokenId?: string | null) {
 export function getMockBattleById(battleId?: string | null) {
   return [...liveBattles, ...openForBattleQueue].find((battle) => battle.id === battleId) ?? null;
 }
+
+export function getMockBattleForToken(tokenId?: string | null) {
+  if (!tokenId) return null;
+  return [...liveBattles, ...openForBattleQueue].find((battle) =>
+    battle.participants.some((participant) => participant.tokenId === tokenId),
+  ) ?? null;
+}
