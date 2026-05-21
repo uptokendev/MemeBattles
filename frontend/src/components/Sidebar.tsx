@@ -8,6 +8,8 @@ import { Link } from "react-router-dom";
 import AnimatedNav from "./ui/animated-nav";
 import { SocialTooltip } from "./ui/social-media";
 import { navItems, socialLinks } from "@/constants/navigation";
+import { isPostGradNavEnabled } from "@/features/postgrad/config";
+import { ArenaMobileNav } from "@/components/postgrad/ArenaMobileNav";
 
 // Use public brand assets so we can swap without touching the build pipeline.
 const brandMark = "/assets/ticker.png";
@@ -51,6 +53,7 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
         </div>
 
         <nav className="flex-1 px-4 overflow-y-auto">
+          {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
           <AnimatedNav options={navItems} onNavigate={() => setMobileMenuOpen(false)} />
         </nav>
 
