@@ -68,14 +68,26 @@ function normalizeCount(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 }
 
+function hasNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function normalizeState(input: Partial<MockCommanderStreakRuntimeState> | null | undefined): MockCommanderStreakRuntimeState {
   const base = createDefaultState();
+  const currentStreakDays = hasNumber(input?.currentStreakDays) ? normalizeCount(input.currentStreakDays) : base.currentStreakDays;
+  const bestStreakDays = hasNumber(input?.bestStreakDays)
+    ? Math.max(normalizeCount(input.bestStreakDays), currentStreakDays)
+    : Math.max(base.bestStreakDays, currentStreakDays);
+  const weekProgressDays = hasNumber(input?.weekProgressDays)
+    ? Math.min(WEEKLY_GOAL_DAYS, normalizeCount(input.weekProgressDays))
+    : base.weekProgressDays;
+
   return {
-    currentStreakDays: normalizeCount(input?.currentStreakDays) || base.currentStreakDays,
-    bestStreakDays: Math.max(normalizeCount(input?.bestStreakDays), normalizeCount(input?.currentStreakDays), base.bestStreakDays),
-    weekProgressDays: Math.min(WEEKLY_GOAL_DAYS, normalizeCount(input?.weekProgressDays) || base.weekProgressDays),
-    rewardCycle: normalizeCount(input?.rewardCycle),
-    claimedRewardsCount: normalizeCount(input?.claimedRewardsCount),
+    currentStreakDays,
+    bestStreakDays,
+    weekProgressDays,
+    rewardCycle: hasNumber(input?.rewardCycle) ? normalizeCount(input.rewardCycle) : base.rewardCycle,
+    claimedRewardsCount: hasNumber(input?.claimedRewardsCount) ? normalizeCount(input.claimedRewardsCount) : base.claimedRewardsCount,
     nextCheckInAt: typeof input?.nextCheckInAt === "string" ? input.nextCheckInAt : base.nextCheckInAt,
     lastClaimedRewardLabel: typeof input?.lastClaimedRewardLabel === "string" ? input.lastClaimedRewardLabel : undefined,
     lastClaimedAt: typeof input?.lastClaimedAt === "string" ? input.lastClaimedAt : undefined,
