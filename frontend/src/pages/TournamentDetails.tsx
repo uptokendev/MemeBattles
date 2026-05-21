@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { EventCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { EventCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { useMockEventDetails } from "@/hooks/useMockEventRuntime";
@@ -51,6 +51,8 @@ const TournamentDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
+      {postGradFlags.mocks ? <MockModeBanner subject="Tournament sandbox" /> : null}
+
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
