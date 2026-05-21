@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { Activity, CalendarDays, Coins, Crosshair, Eye, Swords, Trophy } from "lucide-react";
+import { Activity, CalendarDays, Coins, Crosshair, Eye, RotateCcw, Swords, Trophy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
@@ -47,12 +48,12 @@ function StatusTile({
 }
 
 export function PostGradStatusStrip() {
-  const { featuredTokens, sponsoredTokenIds } = useMockArenaState();
-  const { liveBattles, openForBattleQueue } = useMockBattleLists();
-  const { events, archivedEvents } = useMockEvents();
-  const { season, history } = useMockLeagueSeason();
-  const { summary: warPoolSummary } = useMockWarPoolSummary();
-  const { watchlistTokenIds } = useMockWarRoomState();
+  const { featuredTokens, sponsoredTokenIds, resetMockArenaRuntime } = useMockArenaState();
+  const { liveBattles, openForBattleQueue, resetMockBattleRuntime } = useMockBattleLists();
+  const { events, archivedEvents, resetMockEventRuntime } = useMockEvents();
+  const { season, history, resetMockLeagueRuntime } = useMockLeagueSeason();
+  const { summary: warPoolSummary, resetMockWarPoolRuntime } = useMockWarPoolSummary();
+  const { watchlistTokenIds, resetMockWarRoomRuntime } = useMockWarRoomState();
 
   if (!postGradFlags.mocks) return null;
 
@@ -60,15 +61,30 @@ export function PostGradStatusStrip() {
   const completedEvents = events.filter((event) => event.status === "completed").length + archivedEvents.length;
   const topLeagueToken = season.entries[0];
 
+  const resetAllSandboxState = () => {
+    resetMockBattleRuntime();
+    resetMockArenaRuntime();
+    resetMockWarRoomRuntime();
+    resetMockWarPoolRuntime();
+    resetMockEventRuntime();
+    resetMockLeagueRuntime();
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,17,23,0.78),rgba(7,8,12,0.88))] p-4 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)]">
-      <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Post-grad ops snapshot</div>
           <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, and League.</div>
         </div>
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
-          <Activity className="h-3.5 w-3.5" /> Live mock runtime
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
+            <Activity className="h-3.5 w-3.5" /> Live mock runtime
+          </div>
+          <Button size="sm" variant="outline" onClick={resetAllSandboxState}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset all sandbox state
+          </Button>
         </div>
       </div>
 
