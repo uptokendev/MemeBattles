@@ -1,5 +1,6 @@
 import type { EventCardContract, EventStatus, TournamentBracketStage } from "@/features/postgrad/contracts";
 import { POST_GRAD_EVENT_TRANSITIONS, TOURNAMENT_BRACKET_STAGES } from "@/features/postgrad/contracts";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-events";
@@ -180,6 +181,7 @@ export function transitionMockEvent(eventId: string, nextStatus: EventStatus) {
 
   nextMap[eventId] = nextEntry;
   writeRuntimeMap(nextMap);
+  pushMockActivity("events", "Event state changed", `${event.title}: ${event.status} → ${nextStatus}.`);
   return true;
 }
 
@@ -206,5 +208,6 @@ export function advanceTournamentBracket(eventId: string) {
   }
 
   writeRuntimeMap(nextMap);
+  pushMockActivity("events", "Tournament bracket advanced", `${event.title}: ${currentStage} → ${nextStage}.`);
   return true;
 }
