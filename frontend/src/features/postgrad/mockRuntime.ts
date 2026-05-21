@@ -1,10 +1,11 @@
 import type { Battle } from "@/features/postgrad/contracts";
 import { POST_GRAD_BATTLE_TRANSITIONS } from "@/features/postgrad/contracts";
 import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
-import { getMockBattleById, liveBattles, openForBattleQueue } from "@/features/postgrad/mockRegistry";
+import { getMockBattleById, getMockTokenById, liveBattles, openForBattleQueue } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-battles";
 const ARCHIVE_STORAGE_KEY = "mwz:postgrad:mock-battle-archive";
+const CUSTOM_QUEUE_STORAGE_KEY = "mwz:postgrad:mock-custom-open-for-battle";
 const UPDATE_EVENT = "mwz:postgrad-mock-battles-updated";
 
 type MockBattleRuntimeState = {
@@ -43,6 +44,24 @@ function writeRuntimeMap(next: MockBattleRuntimeMap) {
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
 }
 
+function readCustomQueueBattles(): Battle[] {
+  if (!isBrowser()) return [];
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_QUEUE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCustomQueueBattles(next: Battle[]) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(CUSTOM_QUEUE_STORAGE_KEY, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+}
+
 function readArchive(): MockArchivedBattle[] {
   if (!isBrowser()) return [];
   try {
@@ -76,6 +95,14 @@ function futureIso(minutesFromNow: number) {
   return new Date(Date.now() + minutesFromNow * 60_000).toISOString();
 }
 
+function getStaticBattles() {
+  return [...liveBattles, ...openForBattleQueue];
+}
+
+function getAllBaseBattles() {
+  return [...getStaticBattles(), ...readCustomQueueBattles()];
+}
+
 function mergeBattle(base: Battle): Battle {
   const overrides = readRuntimeMap()[base.id];
   if (!overrides) return base;
@@ -89,16 +116,24 @@ function mergeBattle(base: Battle): Battle {
 }
 
 export function getResolvedMockBattleById(battleId?: string | null) {
-  const base = getMockBattleById(battleId);
+  const base = getMockBattleById(battleId) ?? getAllBaseBattles().find((battle) => battle.id === battleId) ?? null;
+  return base ? mergeBattle(base) : null;
+}
+
+export function getResolvedMockBattleForToken(tokenId?: string | null) {
+  if (!tokenId) return null;
+  const base = getAllBaseBattles().find((battle) => battle.participants.some((participant) => participant.tokenId === tokenId));
   return base ? mergeBattle(base) : null;
 }
 
 export function getResolvedLiveBattles() {
-  return liveBattles.map(mergeBattle);
+  return [...liveBattles, ...readCustomQueueBattles()].map(mergeBattle).filter((battle) => battle.state === "live");
 }
 
 export function getResolvedOpenForBattleQueue() {
-  return openForBattleQueue.map(mergeBattle);
+  return [...openForBattleQueue, ...readCustomQueueBattles()]
+    .map(mergeBattle)
+    .filter((battle) => ["open_for_battle", "pending", "accepted"].includes(battle.state));
 }
 
 export function getResolvedArchivedBattles() {
@@ -116,8 +151,52 @@ export function resetMockBattleRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(ARCHIVE_STORAGE_KEY);
+  window.localStorage.removeItem(CUSTOM_QUEUE_STORAGE_KEY);
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
   pushMockActivity("battle", "Battle sandbox reset", "Battle lifecycle state returned to its baseline mock setup.");
+}
+
+export function createMockOpenForBattle(tokenId: string) {
+  const token = getMockTokenById(tokenId);
+  if (!token || !token.battleEligible) return null;
+
+  const existingBattle = getResolvedMockBattleForToken(token.id);
+  if (existingBattle) return existingBattle;
+
+  const nextBattle: Battle = {
+    id: `queue-${token.id}-${Date.now()}`,
+    state: "open_for_battle",
+    format: "duel",
+    endsAt: futureIso(90),
+    featured: false,
+    arenaLane: "open_for_battle",
+    participants: [
+      {
+        tokenId: token.id,
+        tokenName: token.name,
+        symbol: token.symbol,
+        score: 0,
+        priceChangePct: 0,
+        volumeUsd: Math.max(12_000, Math.round(token.liquidityUsd * 0.18)),
+        uniqueTraders: Math.max(28, Math.round(token.holders * 0.02)),
+        holdersDelta: 0,
+      },
+      {
+        tokenId: `pending-rival-${token.id}`,
+        tokenName: "Awaiting Rival",
+        symbol: "TBD",
+        score: 0,
+        priceChangePct: 0,
+        volumeUsd: 0,
+        uniqueTraders: 0,
+        holdersDelta: 0,
+      },
+    ],
+  };
+
+  writeCustomQueueBattles([nextBattle, ...readCustomQueueBattles()]);
+  pushMockActivity("battle", "Coin opened for battle", `${token.symbol} is now visible in the Arena battles queue awaiting a rival.`);
+  return nextBattle;
 }
 
 export function transitionMockBattle(battleId: string, nextState: Battle["state"]) {
