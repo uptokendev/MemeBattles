@@ -1,4 +1,4 @@
-import { BattleCard, EventCard, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
+import { BattleCard, EventCard, MockModeBanner, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings, scheduledEvents } from "@/features/postgrad/mockRegistry";
@@ -11,6 +11,8 @@ const Arena = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
+      {postGradFlags.mocks ? <MockModeBanner subject="Arena sandbox" /> : null}
+
       <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.22),transparent_28%),linear-gradient(180deg,rgba(13,15,20,0.92),rgba(6,7,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
