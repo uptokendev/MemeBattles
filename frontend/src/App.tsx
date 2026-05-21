@@ -19,6 +19,7 @@ import BattleDetails from "./pages/BattleDetails";
 import PostGradEvents from "./pages/PostGradEvents";
 import PostGradLeague from "./pages/PostGradLeague";
 import TournamentDetails from "./pages/TournamentDetails";
+import MockTokenDetails from "./pages/MockTokenDetails";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
@@ -148,6 +149,7 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
+                    {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<MockTokenDetails />} /> : null}
                     {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
                     {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
                     {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<PostGradEvents />} /> : null}
