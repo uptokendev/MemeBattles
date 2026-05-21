@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import type { TradeRoomFilter } from "@/features/postgrad/contracts";
 import {
   getResolvedMockTokenById,
   getResolvedWarRoomState,
   resetMockWarRoomRuntime,
-  setMockWarRoomFilters,
+  setMockWarRoomFilters as applyMockWarRoomFilters,
   subscribeToMockWarRoomRuntime,
   toggleMockWarRoomWatchlist,
   type ResolvedMockTokenProfile,
@@ -23,7 +22,7 @@ export function useMockWarRoomState() {
     filters: state.filters,
     tokens: state.tokens,
     watchlistTokenIds: state.watchlistTokenIds,
-    setMockWarRoomFilters: (nextFilters: Partial<TradeRoomFilter>) => setMockWarRoomFilters(nextFilters),
+    setMockWarRoomFilters: applyMockWarRoomFilters,
     toggleMockWarRoomWatchlist,
     resetMockWarRoomRuntime,
   };
