@@ -50,6 +50,8 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const websiteHref = resolveExternalHref(campaign.website);
   const xHref = campaign.xAccount ? `https://x.com/${campaign.xAccount.replace(/^@/, "")}` : null;
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
+  const statusLabel = metrics.status === "graduated" ? "Graduated" : metrics.status === "bonding" ? "Bonding" : "Draft";
+  const statusTone = metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : "default";
 
   const createdLabel = useMemo(() => formatAge(campaign.createdAt), [campaign.createdAt]);
 
@@ -74,7 +76,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <div className="flex flex-wrap items-center gap-2">
                 <div className="truncate text-sm font-semibold text-white lg:text-[15px]">{campaign.symbol || campaign.name}</div>
                 <div className="truncate text-xs font-semibold text-white/45 lg:text-sm">{campaign.name}</div>
-                <TacticalTag label={metrics.status === "graduated" ? "Graduated" : "Draft"} tone={metrics.status === "graduated" ? "success" : "default"} />
+                <TacticalTag label={statusLabel} tone={statusTone} />
                 {!metrics.hasRichStats ? <TacticalTag label="Syncing" tone="default" /> : null}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-white/55">
