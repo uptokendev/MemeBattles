@@ -1,5 +1,7 @@
 import type { CampaignInfo } from "@/lib/launchpadClient";
 
+export type WarRoomCampaignStatus = "graduated" | "bonding" | "draft";
+
 export type WarRoomCampaignMetrics = {
   marketCapUsd: number;
   marketCapLabel: string;
@@ -12,7 +14,7 @@ export type WarRoomCampaignMetrics = {
   athMarketCapUsd: number;
   athLabel: string;
   athProgressPct: number;
-  status: "graduated" | "draft";
+  status: WarRoomCampaignStatus;
   ageSeconds: number;
   trendScore: number;
   hasRichStats: boolean;
@@ -46,7 +48,8 @@ export function formatCompactUsd(value: number) {
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(value >= 10_000_000_000 ? 1 : 2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2)}K`;
-  return `$${value.toFixed(0)}`;
+  if (value >= 1) return `$${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 export function formatCompactCount(value: number) {
@@ -62,24 +65,26 @@ function getAgeSeconds(campaign: CampaignInfo) {
   return Math.max(0, Math.floor(Date.now() / 1000) - createdAt);
 }
 
-export function getWarRoomCampaignStatus(campaign: CampaignInfo): "graduated" | "draft" {
+export function getWarRoomCampaignStatus(campaign: CampaignInfo): WarRoomCampaignStatus {
   const rich = campaign as any;
-  return rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress || campaign.dexScreenerUrl ? "graduated" : "draft";
+  if (rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress || campaign.dexScreenerUrl) return "graduated";
+  if (rich.status === "live" || rich.isActive === true) return "bonding";
+  return "draft";
 }
 
 export function getWarRoomCampaignMetrics(campaign: CampaignInfo, bnbUsd = 0): WarRoomCampaignMetrics {
   const rich = campaign as any;
   const usd = Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0 ? Number(bnbUsd) : 0;
 
-  const marketCapBnb = toNumber(rich.marketCapBnb ?? rich.marketcapBnb ?? rich.marketcap_bnb);
-  const volumeBnb = toNumber(rich.volumeBnb ?? rich.vol24hBnb ?? rich.vol_24h_bnb);
+  const marketCapBnb = toNumber(rich.rtMarketcapBnb ?? rich.marketCapBnb ?? rich.marketcapBnb ?? rich.marketcap_bnb);
+  const volumeBnb = toNumber(rich.rtVol24hBnb ?? rich.volumeBnb ?? rich.vol24hBnb ?? rich.vol_24h_bnb);
   const raisedTotalBnb = toNumber(rich.raisedTotalBnb ?? rich.raised_total_bnb);
   const holdersCount = toNumber(rich.holdersCount ?? rich.holderCount ?? rich.holder_count) || parseCompactNumber(campaign.holders);
   const athMarketCapBnb = toNumber(rich.athMarketCapBnb ?? rich.athMarketcapBnb ?? rich.ath_marketcap_bnb);
 
   const marketCapUsd = marketCapBnb > 0 && usd > 0 ? marketCapBnb * usd : parseCompactNumber(campaign.marketCap);
   const volumeUsd = volumeBnb > 0 && usd > 0 ? volumeBnb * usd : parseCompactNumber(campaign.volume);
-  const liquidityUsd = raisedTotalBnb > 0 && usd > 0 ? raisedTotalBnb * usd : marketCapUsd > 0 ? marketCapUsd * 0.12 : 0;
+  const liquidityUsd = raisedTotalBnb > 0 && usd > 0 ? raisedTotalBnb * usd : 0;
   const athMarketCapUsd = athMarketCapBnb > 0 && usd > 0 ? athMarketCapBnb * usd : marketCapUsd;
   const athProgressPct = athMarketCapUsd > 0 && marketCapUsd > 0 ? Math.min(100, Math.max(1, Math.round((marketCapUsd / athMarketCapUsd) * 100))) : 0;
   const ageSeconds = getAgeSeconds(campaign);
