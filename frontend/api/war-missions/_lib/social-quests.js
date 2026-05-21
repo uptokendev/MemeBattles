@@ -46,7 +46,23 @@ export async function writeVerificationLog(input) {
 }
 
 function isProviderConfigured(provider) {
-  if (provider === "x") return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET && process.env.X_REDIRECT_URI);
+  if (provider === "x") {
+    const hasTarget = Boolean(
+      process.env.X_REQUIRED_USER_ID ||
+        process.env.TWITTER_REQUIRED_USER_ID ||
+        process.env.WAR_MISSIONS_X_REQUIRED_USER_ID ||
+        process.env.X_REQUIRED_USERNAME ||
+        process.env.TWITTER_REQUIRED_USERNAME ||
+        process.env.WAR_MISSIONS_X_REQUIRED_USERNAME,
+    );
+    return Boolean(
+      process.env.X_CLIENT_ID &&
+        process.env.X_CLIENT_SECRET &&
+        process.env.X_REDIRECT_URI &&
+        (process.env.X_BEARER_TOKEN || process.env.TWITTER_BEARER_TOKEN) &&
+        hasTarget,
+    );
+  }
   if (provider === "telegram") return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME);
   if (provider === "discord") return Boolean(process.env.DISCORD_BOT_TOKEN);
   return false;
@@ -145,7 +161,7 @@ export async function submitSocialStartHereQuest({
     metadata: payload,
   });
 
-  if (!verified) {
+  if (!verified && manualFallback !== false) {
     await createAdminNotification({
       type: "quest_review_requested",
       title: `${template.title} needs review`,
