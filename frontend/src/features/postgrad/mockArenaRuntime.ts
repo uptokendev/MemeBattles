@@ -1,4 +1,5 @@
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { getMockTokenById, mockTokenProfiles } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-arena";
@@ -99,11 +100,13 @@ export function resetMockArenaRuntime() {
 
 export function setFeaturedPlacement(tokenId: string) {
   const runtime = readRuntimeState();
+  const token = getMockTokenById(tokenId);
   const featuredTokenIds = [tokenId, ...runtime.featuredTokenIds.filter((id) => id !== tokenId)].slice(0, 3);
   writeRuntimeState({
     ...runtime,
     featuredTokenIds,
   });
+  pushMockActivity("arena", "Featured placement updated", `${token?.symbol ?? tokenId} moved into the Arena featured row.`);
 }
 
 export function rotateFeaturedPlacements() {
@@ -114,11 +117,14 @@ export function rotateFeaturedPlacements() {
     ...runtime,
     featuredTokenIds: [...rest, first],
   });
+  pushMockActivity("arena", "Featured row rotated", "Arena placement order was rotated for QA.");
 }
 
 export function toggleSponsoredPlacement(tokenId: string) {
   const runtime = readRuntimeState();
-  const sponsoredTokenIds = runtime.sponsoredTokenIds.includes(tokenId)
+  const token = getMockTokenById(tokenId);
+  const wasSponsored = runtime.sponsoredTokenIds.includes(tokenId);
+  const sponsoredTokenIds = wasSponsored
     ? runtime.sponsoredTokenIds.filter((id) => id !== tokenId)
     : [...runtime.sponsoredTokenIds, tokenId];
 
@@ -126,4 +132,5 @@ export function toggleSponsoredPlacement(tokenId: string) {
     ...runtime,
     sponsoredTokenIds,
   });
+  pushMockActivity("arena", wasSponsored ? "Sponsor placement removed" : "Sponsor placement added", `${token?.symbol ?? tokenId} sponsorship toggled.`);
 }
