@@ -7,7 +7,7 @@ import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 
 const Arena = () => {
-  const { liveBattles, openForBattleQueue, resetMockBattleRuntime } = useMockBattleLists();
+  const { liveBattles, openForBattleQueue, archivedBattles, resetMockBattleRuntime } = useMockBattleLists();
   const { featuredTokens, allTokens, sponsoredTokenIds, setFeaturedPlacement, rotateFeaturedPlacements, toggleSponsoredPlacement, resetMockArenaRuntime } = useMockArenaState();
 
   return (
@@ -25,6 +25,7 @@ const Arena = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label="Feature-flagged" tone="success" />
             <TacticalTag label="Additive" tone="default" />
+            <TacticalTag label={`${archivedBattles.length} settled recaps`} tone="sponsored" />
             <TacticalHint label="Hard gate" body="Arena stays isolated until battle, ranking, and indexing contracts are stable enough to replace mock data." />
             {postGradFlags.mocks ? (
               <>
@@ -143,6 +144,33 @@ const Arena = () => {
           </div>
           <EventCard event={scheduledEvents[0]} />
           <RankingsPanel payload={arenaRankings[0]} icon="flame" />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle archive</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Settled battle recaps</h2>
+          </div>
+          <TacticalTag label={`${archivedBattles.length} archived`} tone="success" />
+        </div>
+        <div className="mt-4 space-y-4">
+          {archivedBattles.length ? (
+            archivedBattles.map((entry) => (
+              <div key={`${entry.battle.id}-${entry.archivedAt}`} className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-white/55">
+                  <span>Archived {new Date(entry.archivedAt).toLocaleString()}</span>
+                  <TacticalTag label={entry.battle.state.replaceAll("_", " ")} tone="default" />
+                </div>
+                <BattleCard battle={entry.battle} ctaLabel="Open battle recap" />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              Settle a mock battle to drop it into the archive lane.
+            </div>
+          )}
         </div>
       </section>
     </div>
