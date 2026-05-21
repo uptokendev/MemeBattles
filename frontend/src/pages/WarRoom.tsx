@@ -121,7 +121,7 @@ const WarRoom = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
-  const [sortKey, setSortKey] = useState<SortKey>("marketCap");
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
@@ -162,20 +162,20 @@ const WarRoom = () => {
         return matchesSearch && matchesMode;
       })
       .sort((left, right) => {
+        if (sortKey) {
+          const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
+          const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
+          const delta = rightValue - leftValue;
+          if (delta !== 0) return sortDirection === "desc" ? delta : -delta;
+        }
+
         if (activeMode === "new") {
           return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
         }
 
-        if (activeMode === "trending") {
-          const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
-          const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
-          return rightMetrics.trendScore - leftMetrics.trendScore;
-        }
-
-        const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
-        const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
-        const delta = rightValue - leftValue;
-        return sortDirection === "desc" ? delta : -delta;
+        const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
+        const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
+        return rightMetrics.trendScore - leftMetrics.trendScore;
       });
   }, [activeMode, bnbUsd, campaigns, search, sortDirection, sortKey]);
 
@@ -185,6 +185,12 @@ const WarRoom = () => {
       return;
     }
     setSortKey(nextKey);
+    setSortDirection("desc");
+  };
+
+  const handleModeClick = (nextMode: WarRoomMode) => {
+    setActiveMode(nextMode);
+    setSortKey(null);
     setSortDirection("desc");
   };
 
@@ -204,12 +210,12 @@ const WarRoom = () => {
 
           <div className="flex flex-wrap items-center gap-3">
             {terminalModes.map((mode) => {
-              const active = activeMode === mode.key;
+              const active = activeMode === mode.key && !sortKey;
               return (
                 <button
                   key={mode.key}
                   type="button"
-                  onClick={() => setActiveMode(mode.key)}
+                  onClick={() => handleModeClick(mode.key)}
                   className={`text-sm font-semibold transition-colors md:text-base ${active ? "text-white" : "text-white/55 hover:text-white"}`}
                 >
                   {mode.label}
