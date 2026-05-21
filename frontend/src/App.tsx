@@ -8,18 +8,19 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
 import Arena from "./pages/Arena";
+import ArenaBattles from "./pages/ArenaBattles";
 import WarRoom from "./pages/WarRoom";
 import BattleDetails from "./pages/BattleDetails";
 import PostGradEvents from "./pages/PostGradEvents";
 import PostGradLeague from "./pages/PostGradLeague";
 import TournamentDetails from "./pages/TournamentDetails";
-import MockTokenDetails from "./pages/MockTokenDetails";
+import LegacyArenaTokenRedirect from "./pages/LegacyArenaTokenRedirect";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
@@ -149,11 +150,14 @@ const App = () => {
                   <Routes>
                     <Route path="/" element={<Showcase />} />
                     {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
-                    {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<MockTokenDetails />} /> : null}
+                    {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
+                    {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
+                    {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
+                    {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<LegacyArenaTokenRedirect />} /> : null}
                     {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
                     {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
-                    {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<PostGradEvents />} /> : null}
-                    {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<PostGradLeague />} /> : null}
+                    {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
+                    {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<Navigate to="/arena/leagues" replace />} /> : null}
                     {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
                     <Route path="/create" element={<Create />} />
                     <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
