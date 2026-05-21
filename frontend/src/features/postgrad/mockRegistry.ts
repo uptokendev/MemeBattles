@@ -1,4 +1,4 @@
-import type { Battle, EventCardContract, MockTokenProfile, RankingPayload, TradeRoomFilter, WarPool } from "@/features/postgrad/contracts";
+import type { Battle, EventCardContract, LeagueSeason, MockTokenProfile, RankingPayload, TradeRoomFilter, WarPool } from "@/features/postgrad/contracts";
 
 const now = new Date("2026-05-21T00:00:00.000Z");
 
@@ -390,6 +390,24 @@ export const arenaRankings: RankingPayload[] = [
     ],
   },
 ];
+
+export const mockLeagueSeason: LeagueSeason = {
+  id: "season-01",
+  label: "Season One",
+  state: "live",
+  week: 4,
+  rewardPoolUsd: 150000,
+  resetAt: atMinutes(60 * 24 * 6),
+  divisions: ["bronze", "silver", "gold", "apex"],
+  entries: [
+    { tokenId: "redline-rats", tokenName: "Redline Rats", symbol: "RATS", division: "apex", points: 144, wins: 12, losses: 2, streak: 4, movement: "promoted" },
+    { tokenId: "storm-doge", tokenName: "Storm Doge", symbol: "SDOGE", division: "gold", points: 131, wins: 11, losses: 3, streak: 3, movement: "promoted" },
+    { tokenId: "moon-ops", tokenName: "Moon Ops", symbol: "MOPS", division: "gold", points: 118, wins: 9, losses: 4, streak: 1, movement: "safe" },
+    { tokenId: "glitch-ape", tokenName: "Glitch Ape", symbol: "GAPE", division: "silver", points: 94, wins: 7, losses: 6, streak: -1, movement: "safe" },
+    { tokenId: "astro-frogs", tokenName: "Astro Frogs", symbol: "AFRG", division: "silver", points: 81, wins: 6, losses: 7, streak: 2, movement: "safe" },
+    { tokenId: "neon-shib", tokenName: "Neon Shib", symbol: "NSHB", division: "bronze", points: 63, wins: 4, losses: 8, streak: -2, movement: "relegated" },
+  ],
+};
 
 export const battleWarPool: WarPool = {
   battleId: "battle-redline-vs-sdoge",
