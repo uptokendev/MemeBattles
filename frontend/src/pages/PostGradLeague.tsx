@@ -1,5 +1,5 @@
 import { RankingsPanel, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { arenaRankings } from "@/features/postgrad/mockData";
+import { arenaRankings } from "@/features/postgrad/mockRegistry";
 
 const PostGradLeague = () => {
   return (
