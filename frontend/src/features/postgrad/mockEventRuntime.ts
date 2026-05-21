@@ -141,6 +141,7 @@ export function resetMockEventRuntime() {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(ARCHIVE_STORAGE_KEY);
   dispatchRuntimeUpdate();
+  pushMockActivity("events", "Event sandbox reset", "Scheduled events, tournament stages, and archives returned to baseline.");
 }
 
 export function transitionMockEvent(eventId: string, nextStatus: EventStatus) {
