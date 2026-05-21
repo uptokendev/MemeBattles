@@ -1,7 +1,26 @@
+import { Link } from "react-router-dom";
 import { RankingsPanel, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { Button } from "@/components/ui/button";
+import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings } from "@/features/postgrad/mockRegistry";
+import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
+
+const movementTone = {
+  promoted: "success",
+  safe: "default",
+  relegated: "hot",
+} as const;
+
+const stateTone = {
+  preseason: "default",
+  live: "success",
+  playoffs: "sponsored",
+  completed: "hot",
+} as const;
 
 const PostGradLeague = () => {
+  const { season, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions, resetMockLeagueRuntime } = useMockLeagueSeason();
+
   return (
     <div className="space-y-6 px-1 pb-10">
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.94),rgba(5,6,9,0.98))] p-5 md:p-7">
@@ -9,27 +28,87 @@ const PostGradLeague = () => {
           <div>
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Seasonal league scaffold</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Division, promotion, and reward surfaces.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">League views are now separated from the pre-grad experience so seasonal scoring, division movement, and archives can grow without destabilizing the live campaign routes.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The league route now has a mock runtime for weekly advancement, season-state changes, and promotion or relegation previews, so it can be tested as a real continuation of the battle and event loop.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label="Division-ready" tone="sponsored" />
-            <TacticalHint label="Reset hook" body="Seasonal resets and reward distribution can target this route once battle and event scoring are trusted." />
+            <TacticalTag label={season.label} tone="sponsored" />
+            <TacticalTag label={`Week ${season.week}`} tone="default" />
+            <TacticalTag label={season.state} tone={stateTone[season.state]} />
+            <TacticalHint label="Reset hook" body="Season resets, reward distribution, and final archive behavior can now be tested here before the real scoring system takes over." />
+            {postGradFlags.mocks ? (
+              <Button variant="outline" size="sm" onClick={resetMockLeagueRuntime}>
+                Reset league
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
+
+      {postGradFlags.mocks ? (
+        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock league controls</div>
+              <div className="mt-2 text-sm text-white/70">Reward pool ${season.rewardPoolUsd.toLocaleString()} · Reset window {new Date(season.resetAt).toLocaleDateString()}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={advanceLeagueWeek}>Advance week</Button>
+              <Button size="sm" variant="outline" onClick={rebalanceLeagueDivisions}>Rebalance divisions</Button>
+              <Button size="sm" variant="outline" onClick={cycleMockLeagueState}>Cycle season state</Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <RankingsPanel payload={arenaRankings[2]} icon="crown" />
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Division movement</div>
-          <div className="mt-2 text-lg font-semibold text-white">Promotion / relegation placeholder</div>
-          <ul className="mt-3 space-y-2 text-white/65">
-            <li>Bronze → Silver → Gold → Apex divisions slot into this panel.</li>
-            <li>Season history and archive cards can sit below current standings.</li>
-            <li>Reward routing stays behind the league-specific feature gate until settlement is audited.</li>
-          </ul>
+          <div className="mt-2 text-lg font-semibold text-white">Promotion / relegation lane is active</div>
+          <div className="mt-3 space-y-2 text-white/65">
+            <div>Promotions and relegations can now be previewed from the mock season state.</div>
+            <div>Season week and reward pool advance in place for QA.</div>
+            <div>Battle and event flows now have a clearer destination in the post-grad loop.</div>
+          </div>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">League table</div>
+            <div className="mt-1 text-xl font-semibold text-white">Current division standings</div>
+          </div>
+          <TacticalTag label={`${season.entries.length} entries`} tone="success" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {season.entries.map((entry, index) => (
+            <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-sm font-semibold text-white">#{index + 1} {entry.tokenName}</div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-white/45">{entry.symbol}</div>
+                    <TacticalTag label={entry.division} tone="sponsored" />
+                    <TacticalTag label={entry.movement} tone={movementTone[entry.movement]} />
+                  </div>
+                  <div className="mt-2 text-xs text-white/55">
+                    {entry.points} pts · {entry.wins}W / {entry.losses}L · Streak {entry.streak > 0 ? `+${entry.streak}` : entry.streak}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={`/arena/token/${entry.tokenId}`}>Open token</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={`/war-room?search=${encodeURIComponent(entry.symbol)}`}>Open in War Room</Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };
