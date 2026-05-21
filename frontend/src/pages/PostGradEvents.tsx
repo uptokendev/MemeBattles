@@ -1,5 +1,5 @@
 import { EventCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { scheduledEvents } from "@/features/postgrad/mockData";
+import { scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const PostGradEvents = () => {
   return (
