@@ -329,8 +329,8 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
       setTradePending(true);
 
       if (tradeTab === "buy") {
-        let costWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
-        if (amountWei > 0n && (costWei == null || costWei === 0n)) {
+        let costWei: bigint = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
+        if (amountWei > 0n && costWei === 0n) {
           const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
           costWei = await contract.quoteBuyExactTokens(amountWei);
         }
@@ -347,8 +347,8 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
           description: receipt?.transactionHash ? `Tx: ${receipt.transactionHash.slice(0, 10)}...` : "Transaction confirmed.",
         });
       } else {
-        let payoutWei = tradeInputDenom === "BNB" ? inputBnbWei : quoteWei;
-        if (amountWei > 0n && (payoutWei == null || payoutWei === 0n)) {
+        let payoutWei: bigint = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
+        if (amountWei > 0n && payoutWei === 0n) {
           const contract = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider ?? wallet.signer) as any;
           payoutWei = await contract.quoteSellExactTokens(amountWei);
         }
@@ -397,8 +397,6 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
   return (
     <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-4">
       <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Trade</div>
-      <div className="mt-2 text-sm text-white/70">Direct token-style buy and sell controls inside War Room.</div>
-
       <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3">
         <Tabs value={tradeTab} onValueChange={(value) => setTradeTab(value as "buy" | "sell")}>
           <TabsList className={ctaTabsListClass}>
