@@ -1,185 +1,87 @@
-import { useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
-import { MockModeBanner, RankingsPanel, TacticalHint, TacticalTag, WeeklyRewardPanel } from "@/components/postgrad/PostGradPrimitives";
-import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
-import { WarRoomTokenIntelRow } from "@/components/postgrad/WarRoomTokenIntelRow";
-import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
-import { arenaRankings } from "@/features/postgrad/mockRegistry";
-import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
-import { useMockWarRoomState } from "@/hooks/useMockWarRoomRuntime";
-
-const sortLabels = {
-  heat: "Heat",
-  volume: "Volume",
-  holders: "Holders",
-  watchers: "Watchers",
-} as const;
-
-const liquidityOptions = [0, 100000, 250000, 400000] as const;
+import { useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignInfo } from "@/lib/launchpadClient";
 
 const WarRoom = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { filters, tokens, watchlistTokenIds, setMockWarRoomFilters, toggleMockWarRoomWatchlist, resetMockWarRoomRuntime } = useMockWarRoomState();
-  const { streak, recordMockCommanderCheckIn, claimMockWeeklyReward, resetMockCommanderStreakRuntime } = useMockCommanderStreak();
+  const { fetchCampaigns } = useLaunchpad();
+  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const search = searchParams.get("search");
-    if (search && search !== filters.search) {
-      setMockWarRoomFilters({ search });
-    }
-  }, [filters.search, searchParams, setMockWarRoomFilters]);
+    let cancelled = false;
 
-  const filtered = useMemo(() => {
-    return tokens
-      .filter((token) => {
-        const matchesSearch = !filters.search || `${token.name} ${token.symbol}`.toLowerCase().includes(filters.search.toLowerCase());
-        const matchesWatchlist = !filters.watchlistOnly || token.watched;
-        const matchesLiquidity = token.liquidityUsd >= filters.minimumLiquidityUsd;
-        return matchesSearch && matchesWatchlist && matchesLiquidity;
-      })
-      .sort((left, right) => {
-        switch (filters.sort) {
-          case "volume": {
-            const leftBattleVolume = left.relatedBattleId ? 1 : 0;
-            const rightBattleVolume = right.relatedBattleId ? 1 : 0;
-            return rightBattleVolume - leftBattleVolume || right.liquidityUsd - left.liquidityUsd;
-          }
-          case "holders":
-            return right.holders - left.holders;
-          case "watchers":
-            return right.effectiveWatchlistCount - left.effectiveWatchlistCount;
-          case "heat":
-          default: {
-            const heatScore = (token: typeof left) => (token.sentiment === "heating_up" ? 3 : token.sentiment === "volatile" ? 2 : 1);
-            return heatScore(right) - heatScore(left) || right.marketCapUsd - left.marketCapUsd;
-          }
-        }
-      });
-  }, [filters, tokens]);
+    const load = async () => {
+      try {
+        setLoading(true);
+        const results = await fetchCampaigns();
+        if (cancelled) return;
+        setCampaigns(
+          [...(results ?? [])].sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0)),
+        );
+      } catch (error) {
+        console.error("[WarRoom] failed to load campaigns", error);
+        if (!cancelled) setCampaigns([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-  const setSearch = (value: string) => {
-    setMockWarRoomFilters({ search: value });
-    const next = new URLSearchParams(searchParams);
-    if (value) next.set("search", value);
-    else next.delete("search");
-    setSearchParams(next, { replace: true });
-  };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchCampaigns]);
+
+  const filteredCampaigns = useMemo(() => {
+    if (!search.trim()) return campaigns;
+    const query = search.trim().toLowerCase();
+    return campaigns.filter((campaign) =>
+      `${campaign.name} ${campaign.symbol} ${campaign.creator} ${campaign.campaign}`.toLowerCase().includes(query),
+    );
+  }, [campaigns, search]);
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="War Room sandbox" /> : null}
-      <PostGradStatusStrip />
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(12,14,20,0.94),rgba(4,6,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Trade room scaffold</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">War Room search, filters, and intel foundation.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The War Room now keeps its own mock runtime for filters, watchlists, expandable token intel, quick-trade routing, and weekly commander rewards.</p>
+          <div className="max-w-3xl">
+            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">War Room</div>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Scanner list first, token actions second.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">War Room is now a simplified campaign list. Expand any coin to see its slideout chart, open the same trading surface used by token details, or jump straight to the canonical token page.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${filtered.length} visible`} tone="success" />
-            <TacticalTag label={`${watchlistTokenIds.length} watched`} tone="sponsored" />
-            <TacticalTag label={`Week ${streak.weekProgressDays}/${streak.weeklyGoalDays}`} tone="success" />
-            <TacticalHint label="Next backend" body="The runtime mirrors the filter, watchlist, quick-trade, and streak contract shapes closely, so we can replace it with indexed APIs later without changing the page behavior much." />
-            {postGradFlags.mocks ? (
-              <Button variant="outline" size="sm" onClick={resetMockWarRoomRuntime}>
-                Reset War Room
-              </Button>
-            ) : null}
+          <div className="flex flex-wrap gap-2 text-xs text-white/60">
+            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">{filteredCampaigns.length} visible</div>
+            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">{campaigns.length} total</div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
-        <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Filters</div>
-                <h2 className="mt-1 text-xl font-semibold text-white">Watch, scan, and queue targets</h2>
-              </div>
-              <label className="inline-flex items-center gap-2 text-sm text-white/70">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-white/20 bg-black/30"
-                  checked={filters.watchlistOnly}
-                  onChange={(event) => setMockWarRoomFilters({ watchlistOnly: event.target.checked })}
-                />
-                Watchlist only
-              </label>
-            </div>
+      <section className="rounded-[24px] border border-white/10 bg-black/25 p-4 md:p-5">
+        <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-white/70 focus-within:border-accent/40">
+          <Search className="h-4 w-4 text-white/45" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by coin name, symbol, creator, or campaign address"
+            className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+          />
+        </label>
+      </section>
 
-            <input
-              value={filters.search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search graduated tokens"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35"
-            />
-
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(sortLabels).map(([value, label]) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={filters.sort === value ? "default" : "outline"}
-                  onClick={() => setMockWarRoomFilters({ sort: value as typeof filters.sort })}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {liquidityOptions.map((value) => (
-                <Button
-                  key={value}
-                  size="sm"
-                  variant={filters.minimumLiquidityUsd === value ? "default" : "outline"}
-                  onClick={() => setMockWarRoomFilters({ minimumLiquidityUsd: value })}
-                >
-                  {value === 0 ? "All liquidity" : `$${Math.round(value / 1000)}K+ liquidity`}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {filtered.map((token) => (
-              <WarRoomTokenIntelRow key={token.id} token={token} onToggleWatch={toggleMockWarRoomWatchlist} />
-            ))}
-            {filtered.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-                No mock tokens match the current filters.
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <RankingsPanel payload={arenaRankings[1]} icon="trophy" />
-          {postGradFlags.mocks ? (
-            <WeeklyRewardPanel
-              streak={streak}
-              onCheckIn={recordMockCommanderCheckIn}
-              onClaim={claimMockWeeklyReward}
-              onReset={resetMockCommanderStreakRuntime}
-            />
-          ) : null}
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle intel payload</div>
-            <div className="mt-2 font-semibold text-white">Quick-trade and reward lane are live in mock mode</div>
-            <div className="mt-3 space-y-2 text-white/65">
-              <div>Rows now expand into token-specific intel without leaving the War Room.</div>
-              <div>Related battle and War Pool context can be acted on inline.</div>
-              <div>Quick-trade tickets and weekly commander rewards now share the same sandbox activity trail.</div>
-            </div>
-          </div>
-        </div>
+      <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,16,22,0.92),rgba(7,8,11,0.96))] px-4 py-2 md:px-5">
+        {loading ? (
+          <div className="py-10 text-center text-sm text-white/55">Loading War Room coins…</div>
+        ) : filteredCampaigns.length ? (
+          filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} />)
+        ) : (
+          <div className="py-10 text-center text-sm text-white/55">No coins match the current search.</div>
+        )}
       </section>
     </div>
   );
-};
+}
 
 export default WarRoom;
