@@ -2,10 +2,7 @@ import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { buildWarProfile, getUserById } from "./_lib/profile.js";
 import { verifyCommunityJoinQuestsForUser } from "./_lib/community-membership.js";
-
-function isXOAuthConfigured() {
-  return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET && process.env.X_REDIRECT_URI);
-}
+import { isXOAuthConfigured, verifyXFollowQuestForUser } from "./_lib/x-follow.js";
 
 function isTelegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME);
@@ -45,12 +42,15 @@ export default async function wmSocialStatus(req, res) {
     const user = await getUserById(auth.userId);
     if (!user || user.wallet_address !== auth.address || user.is_banned) return res.status(200).json(unauthenticated);
 
-    const communityChecks = await verifyCommunityJoinQuestsForUser(user, "social_status_auto_check").catch((error) => [{
-      ok: false,
-      error: error?.message || "Community membership auto-check failed.",
-    }]);
-
-    const [accountsResult, profile] = await Promise.all([
+    const [communityChecks, xFollowCheck, accountsResult, profile] = await Promise.all([
+      verifyCommunityJoinQuestsForUser(user, "social_status_auto_check").catch((error) => [{
+        ok: false,
+        error: error?.message || "Community membership auto-check failed.",
+      }]),
+      verifyXFollowQuestForUser(user, "social_status_auto_check").catch((error) => ({
+        linked: false,
+        follow: { checked: false, ok: false, status: null, error: error?.message || "X follow auto-check failed." },
+      })),
       pool.query(
         `
           select provider, provider_user_id, username, last_verified_at
@@ -75,7 +75,16 @@ export default async function wmSocialStatus(req, res) {
         lastVerifiedAt: account.last_verified_at || null,
         createdAt: null,
       })),
-      communityChecks,
+      communityChecks: [
+        ...communityChecks,
+        {
+          provider: "x",
+          linked: Boolean(xFollowCheck.linked),
+          ok: Boolean(xFollowCheck.follow?.ok),
+          status: xFollowCheck.follow?.status || null,
+          error: xFollowCheck.follow?.error || null,
+        },
+      ],
     });
   } catch (error) {
     console.error("[war-missions/social-status] failed", error);
