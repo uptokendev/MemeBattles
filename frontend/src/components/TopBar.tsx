@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
+import { isPostGradNavEnabled } from "@/features/postgrad/config";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -158,14 +159,15 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     setWalletModalOpen(true);
   };
 
-const navLinks = useMemo<NavLinkItem[]>(
-  () => [
-    { label: "Launchpad", path: "/", priority: "primary" },
-    { label: "Profile", path: "/profile?tab=balances", priority: "primary" },
-    { label: "Docs", path: "https://docs.memewar.zone", priority: "primary" },
-  ],
-  []
-);
+  const navLinks = useMemo<NavLinkItem[]>(
+    () => [
+      { label: "Launchpad", path: "/", priority: "primary" },
+      ...(isPostGradNavEnabled() ? [{ label: "Arena", path: "/arena", priority: "primary" as const }] : []),
+      { label: "Profile", path: "/profile?tab=balances", priority: "primary" },
+      { label: "Docs", path: "https://docs.memewar.zone", priority: "primary" },
+    ],
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -240,8 +242,8 @@ tickerInitialLoadedRef.current = true;
     const formatMarketCap = (m: CampaignMetrics | null | undefined) => {
       if (!m) return "MC —";
       try {
-        const circulating: bigint = (m as any).sold ?? 0n;
-        const priceWeiPerToken: bigint = (m as any).currentPrice ?? 0n;
+        const circulating: bigint = (m as any)?.sold ?? 0n;
+        const priceWeiPerToken: bigint = (m as any)?.currentPrice ?? 0n;
         if (circulating <= 0n || priceWeiPerToken <= 0n) return "MC —";
 
         const mcWei = (priceWeiPerToken * circulating) / 10n ** 18n;
@@ -372,8 +374,6 @@ tickerInitialLoadedRef.current = true;
 </button>
 
         <Link to="/" className="mwz-brand-link hidden md:flex items-center mr-2 shrink-0">
-          {/* navbar-logo is a wide strip (~5.5:1) that already contains the
-              MemeWarzone wordmark, so fix the height and let the width scale. */}
           <img
             src={brandMark}
             alt="MemeWarzone"
@@ -520,17 +520,27 @@ tickerInitialLoadedRef.current = true;
               <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
             </Button>
 
-            {wallet.isConnected && disconnectOpen && popoverAnchor && createPortal(
+            {disconnectOpen && popoverAnchor && createPortal(
               <div
                 data-topbar-popover
-                className="w-44 mwz-panel overflow-hidden p-1"
+                className="w-56 mwz-panel p-2"
                 style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
               >
-                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
-                  Change wallet
-                </button>
-                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
-                  Disconnect
+                <div className="border border-success/15 bg-success/5 px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-foreground">
+                  {shortAddress}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await wallet.disconnect();
+                    } finally {
+                      setDisconnectOpen(false);
+                    }
+                  }}
+                  className="mt-2 w-full border border-border/70 px-3 py-2 text-left font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                >
+                  Disconnect wallet
                 </button>
               </div>,
               document.body,
@@ -539,15 +549,30 @@ tickerInitialLoadedRef.current = true;
         </div>
       </div>
 
-      <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} allCampaigns={allCampaigns} />
+      {tickerBaseLoop.length > 0 && (
+        <div className="mx-2 md:mx-3 mt-1 overflow-hidden">
+          <div className="mwz-ticker-mask relative overflow-hidden rounded-full border border-success/10 bg-black/45 px-1 py-1 shadow-[0_14px_38px_-24px_rgba(0,0,0,0.95)]">
+            <div className="mwz-ticker-track flex min-w-max animate-[ticker-scroll_46s_linear_infinite] items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-success/78 will-change-transform hover:[animation-play-state:paused]">
+              {[0, 1].map((dup) =>
+                tickerBaseLoop.map((item, idx) => (
+                  <Link
+                    key={`${dup}-${item.key}-${idx}`}
+                    to={item.route}
+                    className="mwz-ticker-chip inline-flex h-7 items-center gap-2 whitespace-nowrap rounded-full border border-success/10 bg-black/35 px-3 text-[10px] leading-none transition-colors hover:bg-success/10"
+                  >
+                    {item.logoURI ? <img src={item.logoURI} alt={item.symbol} className="h-4 w-4 rounded-full object-cover" /> : null}
+                    <span className={cn("font-retro", item.hot ? "text-success" : "text-success/70")}>{item.symbol}</span>
+                    <span className="text-success/48">{item.subtitle}</span>
+                  </Link>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-      <style>{`
-        @keyframes scroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} campaigns={allCampaigns} />
+      <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
     </div>
   );
 };
