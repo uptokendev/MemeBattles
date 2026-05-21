@@ -1,4 +1,5 @@
 import { BattleCard, EventCard, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
+import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings, featuredTokens, liveBattles, openForBattleQueue, scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const Arena = () => {
@@ -31,7 +32,7 @@ const Arena = () => {
         </div>
         <div className="grid gap-3 xl:grid-cols-3">
           {featuredTokens.map((token) => (
-            <TokenIntelRow key={token.id} token={token} metricLabel="Battle readiness" metricValue={token.battleEligible ? "Eligible" : "Locked"} href={`/arena/token/${token.id}`} />
+            <TokenIntelRow key={token.id} token={token} metricLabel="Battle readiness" metricValue={token.battleEligible ? "Eligible" : "Locked"} href={postGradFlags.mocks ? `/arena/token/${token.id}` : undefined} />
           ))}
         </div>
       </section>
