@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { MockModeBanner, RankingsPanel, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
+import { WarRoomTokenIntelRow } from "@/components/postgrad/WarRoomTokenIntelRow";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings } from "@/features/postgrad/mockRegistry";
@@ -73,7 +74,7 @@ const WarRoom = () => {
           <div>
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Trade room scaffold</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">War Room search, filters, and intel foundation.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The War Room now keeps its own mock runtime for filters and watchlists, which makes frontend QA feel much closer to the real daily workflow we want to simplify later.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The War Room now keeps its own mock runtime for filters, watchlists, expandable token intel, War Pool context, and quick-trade placeholders.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${filtered.length} visible`} tone="success" />
@@ -143,37 +144,7 @@ const WarRoom = () => {
 
           <div className="mt-4 space-y-3">
             {filtered.map((token) => (
-              <div key={token.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <Link to={postGradFlags.mocks ? `/arena/token/${token.id}` : "/arena"} className="block rounded-xl transition-colors hover:bg-white/5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold text-white">{token.name}</div>
-                        <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
-                        {token.watched ? <TacticalTag label="Watched" tone="success" /> : null}
-                        {token.relatedBattleId ? <TacticalTag label="Battle linked" tone="hot" /> : null}
-                      </div>
-                      <div className="mt-2 text-xs text-white/55">
-                        MC ${(token.marketCapUsd / 1000000).toFixed(2)}M · Liquidity ${(token.liquidityUsd / 1000).toFixed(0)}K · Holders {token.holders.toLocaleString()} · Watchlists {token.effectiveWatchlistCount.toLocaleString()}
-                      </div>
-                      <div className="mt-2 text-sm text-white/70">{token.thesis}</div>
-                    </Link>
-                  </div>
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
-                    <Button size="sm" variant={token.watched ? "default" : "outline"} onClick={() => toggleMockWarRoomWatchlist(token.id)}>
-                      {token.watched ? "Remove watch" : "Watch token"}
-                    </Button>
-                    {token.relatedBattleId ? (
-                      <Button asChild size="sm" variant="outline">
-                        <Link to={`/battle/${token.relatedBattleId}`}>Open battle</Link>
-                      </Button>
-                    ) : null}
-                    <Button asChild size="sm" variant="outline">
-                      <Link to={`/arena/token/${token.id}`}>Open token</Link>
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <WarRoomTokenIntelRow key={token.id} token={token} onToggleWatch={toggleMockWarRoomWatchlist} />
             ))}
             {filtered.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -189,9 +160,9 @@ const WarRoom = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle intel payload</div>
             <div className="mt-2 font-semibold text-white">Prepared for quick trade integration</div>
             <div className="mt-3 space-y-2 text-white/65">
-              <div>Watchlists now persist across the mock post-grad routes.</div>
-              <div>Search can be deep-linked into the War Room from token pages.</div>
-              <div>Sorting and liquidity thresholds now behave like a real operator surface.</div>
+              <div>Rows now expand into token-specific intel without leaving the War Room.</div>
+              <div>Related battle and War Pool context can be acted on inline.</div>
+              <div>The quick-trade panel is intentionally disabled until the real trade API lands.</div>
             </div>
           </div>
         </div>
