@@ -116,11 +116,100 @@ function InternalLinkInterceptor() {
   return null;
 }
 
+function AppShellLayout({
+  mobileMenuOpen,
+  setMobileMenuOpen,
+}: {
+  mobileMenuOpen: boolean;
+  setMobileMenuOpen: (open: boolean) => void;
+}) {
+  const location = useLocation();
+  const postGradEnabled = isPostGradRouteEnabled();
+  const embeddedWarRoomView = new URLSearchParams(location.search).get("embed") === "war-room";
+
+  return (
+    <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
+      {!embeddedWarRoomView ? <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} /> : null}
+      {!embeddedWarRoomView ? <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} /> : null}
+      {!embeddedWarRoomView ? <RankPromotionListener /> : null}
+      {!embeddedWarRoomView ? <LiveStreamOverlay /> : null}
+      <main
+        className={
+          embeddedWarRoomView
+            ? "flex-1 overflow-auto bg-background px-0 pb-0 pt-0"
+            : "flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8"
+        }
+      >
+        <Routes>
+          <Route path="/" element={<Showcase />} />
+          {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
+          {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
+          {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
+          {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<LegacyArenaTokenRedirect />} /> : null}
+          {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
+          {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
+          {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<Navigate to="/arena/leagues" replace />} /> : null}
+          {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
+          <Route path="/create" element={<Create />} />
+          <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
+          <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
+          <Route path="/prepare/:slug" element={<Prepare />} />
+          <Route path="/live" element={<Live />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />
+          <Route path="/command/overview" element={<LegacyCommandCenterRedirect section="overview" />} />
+          <Route path="/command/recruiter" element={<LegacyCommandCenterRedirect section="recruiter" />} />
+          <Route path="/command/squad" element={<LegacyCommandCenterRedirect section="squad" />} />
+          <Route path="/command/airdrops" element={<LegacyCommandCenterRedirect section="airdrops" />} />
+          <Route path="/command/claims" element={<LegacyCommandCenterRedirect section="claims" />} />
+          <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
+          <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
+          <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
+          <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="coins" />} />
+          <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
+          <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterCoins /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+          <Route path="/profile/:identifier" element={<ProfilePage />} />
+          <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
+          <Route path="/airdrops" element={<AirdropOverview />} />
+          <Route path="/airdrops/winners" element={<AirdropWinners />} />
+          <Route path="/recruiter" element={<Recruiter />} />
+          <Route path="/recruiter/signup" element={<RecruiterSignup />} />
+          <Route path="/recruiters" element={<RecruiterLeaderboard />} />
+          <Route path="/recruiters/:code" element={<RecruiterProfile />} />
+          <Route path="/recruiter-dashboard" element={<LegacyCommandCenterRedirect section="recruiter" />} />
+          <Route path="/squads" element={<SquadLeaderboard />} />
+          <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
+          <Route path="/ops/rewards" element={<RewardOps />} />
+          <Route path="/r/:code" element={<RecruiterReferral />} />
+          <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /></>} />
+          <Route path="/playbook" element={<Playbook />} />
+          <Route path="/docs" element={<Playbook />} />
+          <Route path="/status" element={<Status />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+        {!embeddedWarRoomView ? <Footer /> : null}
+      </main>
+      {!embeddedWarRoomView ? <ScreenFrame /> : null}
+    </div>
+  );
+}
+
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showContent, setShowContent] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const postGradEnabled = isPostGradRouteEnabled();
 
   const handleLoadComplete = () => {
     setIsLoading(false);
@@ -141,75 +230,7 @@ const App = () => {
           >
             <BrowserRouter>
               <InternalLinkInterceptor />
-              <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
-                <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-                <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-                <RankPromotionListener />
-                <LiveStreamOverlay />
-                <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
-                  <Routes>
-                    <Route path="/" element={<Showcase />} />
-                    {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
-                    {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
-                    {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
-                    {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
-                    {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<LegacyArenaTokenRedirect />} /> : null}
-                    {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
-                    {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
-                    {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
-                    {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<Navigate to="/arena/leagues" replace />} /> : null}
-                    {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
-                    <Route path="/create" element={<Create />} />
-                    <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
-                    <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
-                    <Route path="/prepare/:slug" element={<Prepare />} />
-                    <Route path="/live" element={<Live />} />
-                    <Route path="/profile" element={<ProfilePage />} />
-                    <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />
-                    <Route path="/command/overview" element={<LegacyCommandCenterRedirect section="overview" />} />
-                    <Route path="/command/recruiter" element={<LegacyCommandCenterRedirect section="recruiter" />} />
-                    <Route path="/command/squad" element={<LegacyCommandCenterRedirect section="squad" />} />
-                    <Route path="/command/airdrops" element={<LegacyCommandCenterRedirect section="airdrops" />} />
-                    <Route path="/command/claims" element={<LegacyCommandCenterRedirect section="claims" />} />
-                    <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
-                    <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
-                    <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
-                    <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="coins" />} />
-                    <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
-                    <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/recruiter" element={<CommandCenterShell><CommandCenterRecruiter /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/squad" element={<CommandCenterShell><CommandCenterSquad /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/airdrops" element={<CommandCenterShell><CommandCenterAirdrops /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/claims" element={<CommandCenterShell><CommandCenterClaims /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterCoins /></CommandCenterShell>} />
-                    <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
-                    <Route path="/profile/:identifier" element={<ProfilePage />} />
-                    <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
-                    <Route path="/airdrops" element={<AirdropOverview />} />
-                    <Route path="/airdrops/winners" element={<AirdropWinners />} />
-                    <Route path="/recruiter" element={<Recruiter />} />
-                    <Route path="/recruiter/signup" element={<RecruiterSignup />} />
-                    <Route path="/recruiters" element={<RecruiterLeaderboard />} />
-                    <Route path="/recruiters/:code" element={<RecruiterProfile />} />
-                    <Route path="/recruiter-dashboard" element={<LegacyCommandCenterRedirect section="recruiter" />} />
-                    <Route path="/squads" element={<SquadLeaderboard />} />
-                    <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
-                    <Route path="/ops/rewards" element={<RewardOps />} />
-                    <Route path="/r/:code" element={<RecruiterReferral />} />
-                    <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /></>} />
-                    <Route path="/playbook" element={<Playbook />} />
-                    <Route path="/docs" element={<Playbook />} />
-                    <Route path="/status" element={<Status />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                  <Footer />
-                </main>
-                <ScreenFrame />
-              </div>
+              <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
             </BrowserRouter>
           </div>
         </TooltipProvider>
