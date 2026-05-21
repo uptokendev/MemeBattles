@@ -1,11 +1,10 @@
 import type { CampaignInfo } from "@/lib/launchpadClient";
 
-const ATH_MIN_RATIO = 0.42;
-const ATH_RATIO_SPREAD = 0.46;
-
 export type WarRoomCampaignMetrics = {
   marketCapUsd: number;
   marketCapLabel: string;
+  liquidityUsd: number;
+  liquidityLabel: string;
   volumeUsd: number;
   volumeLabel: string;
   holdersCount: number;
@@ -16,16 +15,8 @@ export type WarRoomCampaignMetrics = {
   status: "graduated" | "draft";
   ageSeconds: number;
   trendScore: number;
+  hasRichStats: boolean;
 };
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
 
 export function parseCompactNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -43,6 +34,11 @@ export function parseCompactNumber(value: unknown): number {
 
   const multiplier = match[2] === "b" ? 1_000_000_000 : match[2] === "m" ? 1_000_000 : match[2] === "k" ? 1_000 : 1;
   return amount * multiplier;
+}
+
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export function formatCompactUsd(value: number) {
@@ -67,46 +63,46 @@ function getAgeSeconds(campaign: CampaignInfo) {
 }
 
 export function getWarRoomCampaignStatus(campaign: CampaignInfo): "graduated" | "draft" {
-  return campaign.dexPairAddress || campaign.dexScreenerUrl ? "graduated" : "draft";
+  const rich = campaign as any;
+  return rich.status === "graduated" || rich.isDexTrading || campaign.dexPairAddress || campaign.dexScreenerUrl ? "graduated" : "draft";
 }
 
-export function getWarRoomCampaignMetrics(campaign: CampaignInfo): WarRoomCampaignMetrics {
-  const seed = hashString(`${campaign.campaign}-${campaign.symbol}`);
-  const seededBase = 18_000 + (seed % 1_350_000);
-  const seededVolume = 4_500 + (seed % 185_000);
-  const seededHolders = 32 + (seed % 4_250);
+export function getWarRoomCampaignMetrics(campaign: CampaignInfo, bnbUsd = 0): WarRoomCampaignMetrics {
+  const rich = campaign as any;
+  const usd = Number.isFinite(Number(bnbUsd)) && Number(bnbUsd) > 0 ? Number(bnbUsd) : 0;
 
-  const marketCapUsd = Number(campaign.marketCapUsd) > 0
-    ? Number(campaign.marketCapUsd)
-    : parseCompactNumber(campaign.marketCap) || seededBase;
-  const volumeUsd = Number(campaign.volumeUsd) > 0
-    ? Number(campaign.volumeUsd)
-    : parseCompactNumber(campaign.volume) || seededVolume;
-  const holdersCount = Number(campaign.holdersCount) > 0
-    ? Number(campaign.holdersCount)
-    : parseCompactNumber(campaign.holders) || seededHolders;
+  const marketCapBnb = toNumber(rich.marketCapBnb ?? rich.marketcapBnb ?? rich.marketcap_bnb);
+  const volumeBnb = toNumber(rich.volumeBnb ?? rich.vol24hBnb ?? rich.vol_24h_bnb);
+  const raisedTotalBnb = toNumber(rich.raisedTotalBnb ?? rich.raised_total_bnb);
+  const holdersCount = toNumber(rich.holdersCount ?? rich.holderCount ?? rich.holder_count) || parseCompactNumber(campaign.holders);
+  const athMarketCapBnb = toNumber(rich.athMarketCapBnb ?? rich.athMarketcapBnb ?? rich.ath_marketcap_bnb);
 
-  const deterministicRatio = ATH_MIN_RATIO + ((seed % 100) / 100) * ATH_RATIO_SPREAD;
-  const athMarketCapUsd = Number(campaign.athMarketCapUsd) > 0
-    ? Number(campaign.athMarketCapUsd)
-    : Math.max(marketCapUsd, Math.round(marketCapUsd / deterministicRatio));
-  const athProgressPct = athMarketCapUsd > 0 ? Math.min(100, Math.max(4, Math.round((marketCapUsd / athMarketCapUsd) * 100))) : 0;
+  const marketCapUsd = marketCapBnb > 0 && usd > 0 ? marketCapBnb * usd : parseCompactNumber(campaign.marketCap);
+  const volumeUsd = volumeBnb > 0 && usd > 0 ? volumeBnb * usd : parseCompactNumber(campaign.volume);
+  const liquidityUsd = raisedTotalBnb > 0 && usd > 0 ? raisedTotalBnb * usd : marketCapUsd > 0 ? marketCapUsd * 0.12 : 0;
+  const athMarketCapUsd = athMarketCapBnb > 0 && usd > 0 ? athMarketCapBnb * usd : marketCapUsd;
+  const athProgressPct = athMarketCapUsd > 0 && marketCapUsd > 0 ? Math.min(100, Math.max(1, Math.round((marketCapUsd / athMarketCapUsd) * 100))) : 0;
   const ageSeconds = getAgeSeconds(campaign);
   const recencyBoost = ageSeconds === Number.MAX_SAFE_INTEGER ? 0 : Math.max(0, 1_000_000 - ageSeconds) / 1_000_000;
-  const trendScore = volumeUsd * 0.5 + marketCapUsd * 0.28 + holdersCount * 40 + recencyBoost * 100_000;
+  const votes24h = toNumber(rich.votes24h ?? rich.votes_24h);
+  const trendScore = volumeUsd * 0.5 + marketCapUsd * 0.28 + holdersCount * 40 + votes24h * 25 + recencyBoost * 100_000;
+  const hasRichStats = marketCapBnb > 0 || volumeBnb > 0 || holdersCount > 0 || raisedTotalBnb > 0;
 
   return {
     marketCapUsd,
-    marketCapLabel: campaign.marketCap || formatCompactUsd(marketCapUsd),
+    marketCapLabel: formatCompactUsd(marketCapUsd),
+    liquidityUsd,
+    liquidityLabel: formatCompactUsd(liquidityUsd),
     volumeUsd,
-    volumeLabel: campaign.volume || formatCompactUsd(volumeUsd),
+    volumeLabel: formatCompactUsd(volumeUsd),
     holdersCount,
-    holdersLabel: campaign.holders || formatCompactCount(holdersCount),
+    holdersLabel: formatCompactCount(holdersCount),
     athMarketCapUsd,
-    athLabel: campaign.athMarketCap || formatCompactUsd(athMarketCapUsd),
+    athLabel: formatCompactUsd(athMarketCapUsd),
     athProgressPct,
     status: getWarRoomCampaignStatus(campaign),
     ageSeconds,
     trendScore,
+    hasRichStats,
   };
 }
