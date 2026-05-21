@@ -3,7 +3,7 @@ import { MockModeBanner, RankingsPanel, TacticalHint, TacticalTag } from "@/comp
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { arenaRankings } from "@/features/postgrad/mockRegistry";
+import { arenaRankings, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
 
 const movementTone = {
@@ -87,31 +87,36 @@ const PostGradLeague = () => {
           <TacticalTag label={`${season.entries.length} entries`} tone="success" />
         </div>
         <div className="mt-4 space-y-3">
-          {season.entries.map((entry, index) => (
-            <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-sm font-semibold text-white">#{index + 1} {entry.tokenName}</div>
-                    <div className="text-xs uppercase tracking-[0.22em] text-white/45">{entry.symbol}</div>
-                    <TacticalTag label={entry.division} tone="sponsored" />
-                    <TacticalTag label={entry.movement} tone={movementTone[entry.movement]} />
+          {season.entries.map((entry, index) => {
+            const tokenRoute = getMockTokenRouteById(entry.tokenId);
+            return (
+              <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-white">#{index + 1} {entry.tokenName}</div>
+                      <div className="text-xs uppercase tracking-[0.22em] text-white/45">{entry.symbol}</div>
+                      <TacticalTag label={entry.division} tone="sponsored" />
+                      <TacticalTag label={entry.movement} tone={movementTone[entry.movement]} />
+                    </div>
+                    <div className="mt-2 text-xs text-white/55">
+                      {entry.points} pts · {entry.wins}W / {entry.losses}L · Streak {entry.streak > 0 ? `+${entry.streak}` : entry.streak}
+                    </div>
                   </div>
-                  <div className="mt-2 text-xs text-white/55">
-                    {entry.points} pts · {entry.wins}W / {entry.losses}L · Streak {entry.streak > 0 ? `+${entry.streak}` : entry.streak}
+                  <div className="flex flex-wrap gap-2">
+                    {tokenRoute ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={tokenRoute}>Open token</Link>
+                      </Button>
+                    ) : null}
+                    <Button asChild size="sm" variant="outline">
+                      <Link to={`/war-room?search=${encodeURIComponent(entry.symbol)}`}>Open in War Room</Link>
+                    </Button>
                   </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link to={`/arena/token/${entry.tokenId}`}>Open token</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link to={`/war-room?search=${encodeURIComponent(entry.symbol)}`}>Open in War Room</Link>
-                  </Button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
