@@ -9,6 +9,7 @@ import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 import { useMockEvents } from "@/hooks/useMockEventRuntime";
 import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
+import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
 import { useMockWarPoolSummary } from "@/hooks/useMockWarPoolRuntime";
 import { useMockWarRoomState } from "@/hooks/useMockWarRoomRuntime";
 
@@ -56,6 +57,7 @@ export function PostGradStatusStrip() {
   const { liveBattles, openForBattleQueue, resetMockBattleRuntime } = useMockBattleLists();
   const { events, archivedEvents, resetMockEventRuntime } = useMockEvents();
   const { season, history, resetMockLeagueRuntime } = useMockLeagueSeason();
+  const { streak, resetMockCommanderStreakRuntime } = useMockCommanderStreak();
   const { summary: warPoolSummary, resetMockWarPoolRuntime } = useMockWarPoolSummary();
   const { watchlistTokenIds, resetMockWarRoomRuntime } = useMockWarRoomState();
 
@@ -72,6 +74,7 @@ export function PostGradStatusStrip() {
     resetMockWarPoolRuntime();
     resetMockEventRuntime();
     resetMockLeagueRuntime();
+    resetMockCommanderStreakRuntime();
     resetMockActivityRuntime();
     pushMockActivity("system", "Sandbox reset", "All post-grad mock state was reset to baseline.");
   };
@@ -82,11 +85,14 @@ export function PostGradStatusStrip() {
         <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Post-grad ops snapshot</div>
-            <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, and League.</div>
+            <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, League, and commander streak rewards.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
               <Activity className="h-3.5 w-3.5" /> Live mock runtime
+            </div>
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-emerald-100">
+              Day {streak.currentStreakDays} streak
             </div>
             <Button size="sm" variant="outline" onClick={resetAllSandboxState}>
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -122,7 +128,7 @@ export function PostGradStatusStrip() {
             icon={Eye}
             label="War Room"
             value={`${watchlistTokenIds.length} watched`}
-            detail="Persistent QA watchlist"
+            detail={`Week ${streak.weekProgressDays}/${streak.weeklyGoalDays} · ${streak.activeReward.status === "claimable" ? "reward ready" : "reward locked"}`}
           />
           <StatusTile
             to="/events"
