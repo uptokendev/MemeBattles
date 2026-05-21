@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS public.wm_quiz_questions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Backfill columns when this migration is re-run after a partial/older import.
+-- CREATE TABLE IF NOT EXISTS does not add new columns to an existing table.
+ALTER TABLE IF EXISTS public.wm_quiz_questions
+  ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_wm_quiz_questions_template
   ON public.wm_quiz_questions (quest_template_id, active, display_order, created_at);
 
