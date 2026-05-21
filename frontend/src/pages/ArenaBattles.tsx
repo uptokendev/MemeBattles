@@ -3,6 +3,7 @@ import { CircleSlash, Rocket, ShieldAlert, Swords } from "lucide-react";
 import { BattleCard, MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
+import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 
@@ -21,6 +22,10 @@ function getBattleStateTone(state: string) {
   return "default" as const;
 }
 
+function isTokenProfile(token: MockTokenProfile | null): token is MockTokenProfile {
+  return Boolean(token);
+}
+
 const ArenaBattles = () => {
   const {
     liveBattles,
@@ -31,7 +36,7 @@ const ArenaBattles = () => {
     resetMockBattleRuntime,
   } = useMockBattleLists();
 
-  const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(Boolean);
+  const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(isTokenProfile);
 
   return (
     <div className="space-y-6 px-1 pb-10">
