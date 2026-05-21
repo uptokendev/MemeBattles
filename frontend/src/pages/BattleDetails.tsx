@@ -1,16 +1,14 @@
-import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BattleCard, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
+import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
-import { battleWarPool, getMockBattleById, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { battleWarPool, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { useMockBattleDetails } from "@/hooks/useMockBattleRuntime";
 
 const BattleDetails = () => {
   const { id } = useParams();
-
-  const battle = useMemo(() => {
-    return getMockBattleById(id) ?? getMockBattleById("battle-redline-vs-sdoge");
-  }, [id]);
+  const { battle, transitionMockBattle, resetMockBattleRuntime } = useMockBattleDetails(id);
 
   const participantTokens = battle
     ? battle.participants
@@ -19,6 +17,17 @@ const BattleDetails = () => {
     : [];
 
   if (!battle) return null;
+
+  const nextActions = {
+    draft: [{ label: "Queue battle", state: "open_for_battle" as const }],
+    open_for_battle: [{ label: "Accept challenge", state: "pending" as const }, { label: "Cancel queue", state: "cancelled" as const }],
+    pending: [{ label: "Lock matchup", state: "accepted" as const }, { label: "Decline", state: "cancelled" as const }],
+    accepted: [{ label: "Start live battle", state: "live" as const }],
+    live: [{ label: "Complete battle", state: "completed" as const }],
+    completed: [{ label: "Settle result", state: "settled" as const }],
+    settled: [],
+    cancelled: [],
+  }[battle.state];
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -32,11 +41,31 @@ const BattleDetails = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
             <TacticalHint label="Realtime next" body="The score blocks and timestamps are wired to the same contract shapes that the realtime payloads export from the post-grad feature module." />
+            {postGradFlags.mocks ? (
+              <Button variant="outline" size="sm" onClick={resetMockBattleRuntime}>
+                Reset mock battles
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
 
       <BattleCard battle={battle} ctaLabel="Challenge flow pending" />
+
+      {postGradFlags.mocks ? (
+        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock challenge controls</div>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {nextActions.map((action) => (
+              <Button key={action.state} size="sm" onClick={() => transitionMockBattle(battle.id, action.state)}>
+                {action.label}
+              </Button>
+            ))}
+            {nextActions.length === 0 ? <div className="text-sm text-white/60">No further transitions available for this mock battle state.</div> : null}
+          </div>
+        </section>
+      ) : null}
+
       <WarPoolModule pool={battleWarPool} />
 
       {participantTokens.length && postGradFlags.mocks ? (
