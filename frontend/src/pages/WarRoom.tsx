@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { RankingsPanel, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
-import { arenaRankings, defaultTradeRoomFilters, featuredTokens } from "@/features/postgrad/mockData";
+import { arenaRankings, defaultTradeRoomFilters, mockTokenProfiles } from "@/features/postgrad/mockRegistry";
 
 const WarRoom = () => {
   const [search, setSearch] = useState(defaultTradeRoomFilters.search);
   const [watchlistOnly, setWatchlistOnly] = useState(defaultTradeRoomFilters.watchlistOnly);
 
   const filtered = useMemo(() => {
-    return featuredTokens.filter((token) => {
+    return mockTokenProfiles.filter((token) => {
       const matchesSearch = !search || `${token.name} ${token.symbol}`.toLowerCase().includes(search.toLowerCase());
-      const matchesWatchlist = !watchlistOnly || token.tacticalTags.includes("Featured") || token.tacticalTags.includes("League Climber");
+      const matchesWatchlist = !watchlistOnly || token.watchlistCount >= 800;
       return matchesSearch && matchesWatchlist;
     });
   }, [search, watchlistOnly]);
@@ -50,7 +50,7 @@ const WarRoom = () => {
           />
           <div className="mt-4 space-y-3">
             {filtered.map((token) => (
-              <TokenIntelRow key={token.id} token={token} metricLabel="Intel" metricValue={token.tacticalTags.join(" · ") || "Stable"} />
+              <TokenIntelRow key={token.id} token={token} metricLabel="Intel" metricValue={token.tacticalTags.join(" · ") || "Stable"} href={`/arena/token/${token.id}`} />
             ))}
           </div>
         </div>
