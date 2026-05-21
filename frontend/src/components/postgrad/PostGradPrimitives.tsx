@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Battle, CommanderStreakState, EventCardContract, GraduatedToken, RankingPayload, WarPool } from "@/features/postgrad/contracts";
+import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
 function formatCompactUsd(value: number) {
@@ -81,6 +82,8 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
   const rightPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === right.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
   const leftShare = pool && pool.totalPotUsd > 0 ? Math.round((leftPoolUsd / pool.totalPotUsd) * 100) : 0;
   const rightShare = pool && pool.totalPotUsd > 0 ? Math.round((rightPoolUsd / pool.totalPotUsd) * 100) : 0;
+  const leftTokenRoute = getMockTokenRouteById(left.tokenId);
+  const rightTokenRoute = getMockTokenRouteById(right.tokenId);
 
   return (
     <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={battle.state.replaceAll("_", " ")}>
@@ -96,9 +99,9 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
             </div>
             <div className="mt-3 text-xs text-white/65">{left.uniqueTraders} traders · {formatCompactUsd(left.volumeUsd)} volume · {left.holdersDelta >= 0 ? "+" : ""}{left.holdersDelta} holders</div>
             {pool ? <div className="mt-2 text-xs text-orange-100/75">War Pool {formatCompactUsd(leftPoolUsd)} · {leftShare}%</div> : null}
-            {!left.tokenId.startsWith("pending-") ? (
-              <Link to={`/arena/token/${left.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
-                Inspect mock token
+            {leftTokenRoute ? (
+              <Link to={leftTokenRoute} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
+                Open token details
               </Link>
             ) : null}
           </div>
@@ -115,9 +118,9 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
             </div>
             <div className="mt-3 text-xs text-white/65">{right.uniqueTraders} traders · {formatCompactUsd(right.volumeUsd)} volume · {right.holdersDelta >= 0 ? "+" : ""}{right.holdersDelta} holders</div>
             {pool ? <div className="mt-2 text-xs text-cyan-100/75">War Pool {formatCompactUsd(rightPoolUsd)} · {rightShare}%</div> : null}
-            {!right.tokenId.startsWith("pending-") ? (
-              <Link to={`/arena/token/${right.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
-                Inspect mock token
+            {rightTokenRoute ? (
+              <Link to={rightTokenRoute} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
+                Open token details
               </Link>
             ) : null}
           </div>
