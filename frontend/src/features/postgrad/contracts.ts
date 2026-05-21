@@ -98,11 +98,14 @@ export const eventTypeSchema = z.enum([
   "seasonal_league",
 ]);
 
+export const eventStatusSchema = z.enum(["scheduled", "deploying", "live", "completed"]);
+export const tournamentBracketStageSchema = z.enum(["registration", "quarterfinals", "semifinals", "finals", "completed"]);
+
 export const eventSchema = z.object({
   id: z.string(),
   type: eventTypeSchema,
   title: z.string(),
-  status: z.enum(["scheduled", "live", "completed"]),
+  status: eventStatusSchema,
   startsAt: z.string(),
   endsAt: z.string(),
   participantCount: z.number().int().nonnegative(),
@@ -169,12 +172,29 @@ export const POST_GRAD_BATTLE_TRANSITIONS: Record<z.infer<typeof battleStateSche
   cancelled: [],
 };
 
+export const POST_GRAD_EVENT_TRANSITIONS: Record<z.infer<typeof eventStatusSchema>, z.infer<typeof eventStatusSchema>[]> = {
+  scheduled: ["deploying", "live"],
+  deploying: ["live"],
+  live: ["completed"],
+  completed: [],
+};
+
+export const TOURNAMENT_BRACKET_STAGES: z.infer<typeof tournamentBracketStageSchema>[] = [
+  "registration",
+  "quarterfinals",
+  "semifinals",
+  "finals",
+  "completed",
+];
+
 export type GraduatedToken = z.infer<typeof graduatedTokenSchema>;
 export type MockTokenProfile = z.infer<typeof mockTokenProfileSchema>;
 export type BattleState = z.infer<typeof battleStateSchema>;
 export type BattleParticipant = z.infer<typeof battleParticipantSchema>;
 export type Battle = z.infer<typeof battleSchema>;
 export type WarPool = z.infer<typeof warPoolSchema>;
+export type EventStatus = z.infer<typeof eventStatusSchema>;
+export type TournamentBracketStage = z.infer<typeof tournamentBracketStageSchema>;
 export type EventCardContract = z.infer<typeof eventSchema>;
 export type RankingEntry = z.infer<typeof rankingEntrySchema>;
 export type RankingPayload = z.infer<typeof rankingPayloadSchema>;
