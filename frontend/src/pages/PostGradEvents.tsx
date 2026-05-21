@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { EventCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
@@ -115,7 +116,7 @@ const PostGradEvents = () => {
                   </div>
                   {event.type === "tournament" ? (
                     <Button asChild size="sm" variant="outline">
-                      <a href={`/tournament/${event.id}`}>Open bracket</a>
+                      <Link to={`/tournament/${event.id}`}>Open bracket</Link>
                     </Button>
                   ) : null}
                 </div>
