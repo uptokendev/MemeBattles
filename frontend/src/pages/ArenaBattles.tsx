@@ -1,29 +1,53 @@
-import { BattleCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
+import { Link } from "react-router-dom";
+import { CircleSlash, Rocket, ShieldAlert, Swords } from "lucide-react";
+import { BattleCard, MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
+import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 
+const CREATOR_COIN_IDS = ["circuit-wolf", "sleep-driver", "astro-frogs", "redline-rats"];
+
+function formatUsd(value: number) {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function getBattleStateTone(state: string) {
+  if (state === "live") return "hot" as const;
+  if (state === "open_for_battle" || state === "accepted" || state === "pending") return "success" as const;
+  if (state === "settled" || state === "completed") return "sponsored" as const;
+  return "default" as const;
+}
+
 const ArenaBattles = () => {
-  const { liveBattles, openForBattleQueue, archivedBattles, resetMockBattleRuntime } = useMockBattleLists();
+  const {
+    liveBattles,
+    openForBattleQueue,
+    archivedBattles,
+    getBattleForToken,
+    createMockOpenForBattle,
+    resetMockBattleRuntime,
+  } = useMockBattleLists();
+
+  const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(Boolean);
 
   return (
     <div className="space-y-6 px-1 pb-10">
       {postGradFlags.mocks ? <MockModeBanner subject="Arena battles" /> : null}
-      <PostGradStatusStrip />
 
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.94),rgba(6,7,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena battles route</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Creator controls and public battle discovery live here.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This route is now locked into the revised Arena structure. The full creator coin controls are the next focused build batch, but the route and public battle surfaces are in place now.</p>
+          <div className="max-w-3xl">
+            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena battles</div>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Open creator coins for battle, then track the public queue.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page now owns the founder-side battle workflow. Pick one of your coins, check whether it is eligible, see why it is blocked when it is not, and launch it into the Arena when a slot is free.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${liveBattles.length} live`} tone="success" />
-            <TacticalTag label={`${openForBattleQueue.length} open`} tone="hot" />
-            <TacticalTag label={`${archivedBattles.length} settled`} tone="sponsored" />
-            <TacticalHint label="Next batch" body="This page becomes the creator battle-control surface next, including Your Coins, eligibility, unavailability reasons, and Open for Battle actions." />
+            <TacticalTag label={`${creatorCoins.length} creator coins`} tone="sponsored" />
+            <TacticalTag label={`${openForBattleQueue.length} in queue`} tone="success" />
+            <TacticalTag label={`${liveBattles.length} live`} tone="hot" />
             {postGradFlags.mocks ? (
               <Button variant="outline" size="sm" onClick={resetMockBattleRuntime}>
                 Reset mock battles
@@ -33,17 +57,125 @@ const ArenaBattles = () => {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-        <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Your coins</div>
-        <div className="mt-2 text-xl font-semibold text-white">Creator controls land here next</div>
-        <div className="mt-3 text-sm text-white/70">The revised plan moves all creator battle actions into this page. For this route-lock batch, the section is reserved so the navigation and product shape stop moving around.</div>
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Your coins</div>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Creator battle controls</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">Each coin shows its current battle status, whether it can enter the Arena right now, and the next action available from this screen.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <TacticalTag label="Ready" tone="success" />
+            <TacticalTag label="Queued" tone="sponsored" />
+            <TacticalTag label="Live" tone="hot" />
+            <TacticalTag label="Locked" tone="default" />
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          {creatorCoins.map((token) => {
+            const tokenRoute = getMockTokenRouteById(token.id);
+            const battle = getBattleForToken(token.id);
+            const isQueued = battle ? ["open_for_battle", "pending", "accepted"].includes(battle.state) : false;
+            const isLive = battle ? ["live", "completed", "settled"].includes(battle.state) : false;
+            const isLocked = !token.battleEligible;
+            const isReady = !battle && token.battleEligible;
+
+            const statusLabel = isReady
+              ? "Ready to open"
+              : isLocked
+                ? "Locked"
+                : isQueued
+                  ? "Already queued"
+                  : isLive
+                    ? "Already in battle"
+                    : battle?.state.replaceAll("_", " ") ?? "Unavailable";
+
+            const statusTone = isReady ? "success" : isLocked ? "default" : isQueued ? "sponsored" : "hot";
+
+            const reason = isReady
+              ? "This coin is eligible and not currently assigned to another battle slot."
+              : isLocked
+                ? "This coin is still under battle cooldown checks, so it cannot open a fresh challenge yet."
+                : isQueued
+                  ? "This coin already has an active challenge in the Arena queue and should wait for a rival or acceptance flow."
+                  : "This coin is already allocated to a live or recently settled battle and cannot open another one yet.";
+
+            return (
+              <div key={token.id} className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-xl font-semibold text-white">{token.name}</div>
+                      <div className="text-xs uppercase tracking-[0.24em] text-white/45">{token.symbol}</div>
+                      <TacticalTag label={statusLabel} tone={statusTone} />
+                    </div>
+                    <div className="mt-2 text-sm text-white/65">MC {formatUsd(token.marketCapUsd)} · Liquidity {formatUsd(token.liquidityUsd)} · {token.holders.toLocaleString()} holders</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {token.tacticalTags.slice(0, 2).map((tag) => (
+                      <TacticalTag key={`${token.id}-${tag}`} label={tag} tone={tag === "Featured" ? "hot" : tag === "Sponsored" ? "sponsored" : "default"} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-white">
+                      {isReady ? <Rocket className="h-4 w-4 text-emerald-300" /> : isLocked ? <ShieldAlert className="h-4 w-4 text-white/55" /> : <CircleSlash className="h-4 w-4 text-orange-200" />}
+                      Availability
+                    </div>
+                    <p className="mt-3 text-sm text-white/70">{reason}</p>
+                    {battle ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/60">
+                        <TacticalTag label={battle.state.replaceAll("_", " ")} tone={getBattleStateTone(battle.state)} />
+                        <span>{battle.participants[0].symbol} vs {battle.participants[1].symbol}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-white">
+                      <Swords className="h-4 w-4 text-accent" />
+                      Actions
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {tokenRoute ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to={tokenRoute}>Token details</Link>
+                        </Button>
+                      ) : null}
+
+                      {isReady ? (
+                        <Button size="sm" onClick={() => createMockOpenForBattle(token.id)}>
+                          Open for battle
+                        </Button>
+                      ) : battle ? (
+                        <Button asChild size="sm">
+                          <Link to={`/battle/${battle.id}`}>{isQueued ? "View queue" : "Open battle"}</Link>
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" disabled>
+                          Unavailable
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">
         <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Public feed</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Live battles</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Public feed</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Live battles</h2>
+            </div>
+            <TacticalTag label={`${liveBattles.length} active`} tone="hot" />
           </div>
           {liveBattles.map((battle) => (
             <BattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
@@ -51,9 +183,12 @@ const ArenaBattles = () => {
         </div>
 
         <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Open challenges</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Open for battle</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Open queue</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Open for battle</h2>
+            </div>
+            <TacticalTag label={`${openForBattleQueue.length} awaiting rivals`} tone="success" />
           </div>
           {openForBattleQueue.map((battle) => (
             <BattleCard key={battle.id} battle={battle} ctaLabel="Open challenge" />
@@ -67,7 +202,7 @@ const ArenaBattles = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Recent settled</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Battle recaps</h2>
           </div>
-          <TacticalTag label={`${archivedBattles.length} archived`} tone="success" />
+          <TacticalTag label={`${archivedBattles.length} archived`} tone="sponsored" />
         </div>
         <div className="mt-4 space-y-4">
           {archivedBattles.length ? (
