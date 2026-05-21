@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { BellRing, ChevronRight, Crown, Flame, Shield, Swords, Trophy } from "lucide-react";
+import { BellRing, ChevronRight, Coins, Crown, Flame, Shield, Swords, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Battle, EventCardContract, GraduatedToken, RankingPayload, WarPool } from "@/features/postgrad/contracts";
+import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
 function formatCompactUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -75,6 +76,12 @@ export function MockModeBanner({ subject = "Post-grad sandbox" }: { subject?: st
 
 export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battle; ctaLabel?: string }) {
   const [left, right] = battle.participants;
+  const { pool } = useMockWarPool(battle.id);
+  const leftPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === left.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
+  const rightPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === right.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
+  const leftShare = pool && pool.totalPotUsd > 0 ? Math.round((leftPoolUsd / pool.totalPotUsd) * 100) : 0;
+  const rightShare = pool && pool.totalPotUsd > 0 ? Math.round((rightPoolUsd / pool.totalPotUsd) * 100) : 0;
+
   return (
     <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={battle.state.replaceAll("_", " ")}>
       <div className="space-y-4">
@@ -88,6 +95,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
               <TacticalTag label={`${left.score.toFixed(1)} pts`} tone="hot" />
             </div>
             <div className="mt-3 text-xs text-white/65">{left.uniqueTraders} traders · {formatCompactUsd(left.volumeUsd)} volume · {left.holdersDelta >= 0 ? "+" : ""}{left.holdersDelta} holders</div>
+            {pool ? <div className="mt-2 text-xs text-orange-100/75">War Pool {formatCompactUsd(leftPoolUsd)} · {leftShare}%</div> : null}
             {!left.tokenId.startsWith("pending-") ? (
               <Link to={`/arena/token/${left.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
                 Inspect mock token
@@ -106,6 +114,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
               <TacticalTag label={`${right.score.toFixed(1)} pts`} tone="sponsored" />
             </div>
             <div className="mt-3 text-xs text-white/65">{right.uniqueTraders} traders · {formatCompactUsd(right.volumeUsd)} volume · {right.holdersDelta >= 0 ? "+" : ""}{right.holdersDelta} holders</div>
+            {pool ? <div className="mt-2 text-xs text-cyan-100/75">War Pool {formatCompactUsd(rightPoolUsd)} · {rightShare}%</div> : null}
             {!right.tokenId.startsWith("pending-") ? (
               <Link to={`/arena/token/${right.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
                 Inspect mock token
@@ -113,6 +122,14 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
             ) : null}
           </div>
         </div>
+        {pool ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+            <Coins className="h-4 w-4 text-accent" />
+            <span>War Pool {formatCompactUsd(pool.totalPotUsd)}</span>
+            <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "sponsored" : "default"} />
+            <span>Cutoff {formatWhen(pool.cutoffAt)}</span>
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/60">
           <div className="flex flex-wrap items-center gap-2">
             {battle.featured ? <TacticalTag label="Featured" tone="hot" /> : null}
@@ -259,12 +276,12 @@ export function TacticalHint({ label, body }: { label: string; body: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-white/70">
-          <Shield className="h-3.5 w-3.5" />
+        <button className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-white/65 transition-colors hover:bg-white/10">
+          <Shield className="mr-1.5 h-3.5 w-3.5 text-accent" />
           {label}
         </button>
       </TooltipTrigger>
-      <TooltipContent className="max-w-xs border-white/10 bg-zinc-950 text-xs text-white/80">
+      <TooltipContent side="bottom" className="max-w-xs border-white/10 bg-black/90 text-white">
         {body}
       </TooltipContent>
     </Tooltip>
