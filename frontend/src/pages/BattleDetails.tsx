@@ -5,7 +5,7 @@ import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
-import { getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { getMockTokenRouteById, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockBattleDetails } from "@/hooks/useMockBattleRuntime";
 
 const BattleDetails = () => {
@@ -77,18 +77,21 @@ const BattleDetails = () => {
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock roster context</div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {participantTokens.map((token) => (
-              <Link key={token.id} to={`/arena/token/${token.id}`} className="rounded-xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">{token.name}</div>
-                    <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
+            {participantTokens.map((token) => {
+              const tokenRoute = getMockTokenRouteById(token.id);
+              return tokenRoute ? (
+                <Link key={token.id} to={tokenRoute} className="rounded-xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{token.name}</div>
+                      <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
+                    </div>
+                    <TacticalTag label={token.battleStyle.replaceAll("_", " ")} tone="sponsored" />
                   </div>
-                  <TacticalTag label={token.battleStyle.replaceAll("_", " ")} tone="sponsored" />
-                </div>
-                <div className="mt-2 text-sm text-white/65">{token.thesis}</div>
-              </Link>
-            ))}
+                  <div className="mt-2 text-sm text-white/65">{token.thesis}</div>
+                </Link>
+              ) : null;
+            })}
           </div>
         </section>
       ) : null}
