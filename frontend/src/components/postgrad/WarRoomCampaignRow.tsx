@@ -142,32 +142,32 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
       </div>
 
       {expanded ? (
-        <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-3 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="min-h-[280px] rounded-[16px] border border-white/10 bg-black/30 p-3 md:min-h-[360px] md:rounded-[18px]">
-            <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-2.5 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="order-2 min-h-[220px] rounded-[16px] border border-white/10 bg-black/30 p-2.5 md:min-h-[360px] md:rounded-[18px] md:p-3 xl:order-1">
+            <div className="mb-2 flex items-center justify-between gap-3 md:mb-3">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Chart</div>
-                <div className="mt-1 text-sm font-semibold text-white">Same market view as token details</div>
+                <div className="mt-1 text-[13px] font-semibold text-white md:text-sm">Same market view as token details</div>
               </div>
               <TacticalTag label={campaign.symbol} tone="sponsored" />
             </div>
             <CurvePriceChart campaignAddress={campaign.campaign} />
           </div>
 
-          <div className="space-y-3">
+          <div className="order-1 space-y-2.5 md:space-y-3 xl:order-2">
             <WarRoomTradePanel campaign={campaign} />
 
-            <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4 md:rounded-[20px]">
+            <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
               <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Links</div>
-              <div className="mt-4 flex flex-col gap-2">
-                <Button asChild size="sm" variant="outline" className="justify-between">
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:mt-4">
+                <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm sm:col-span-2">
                   <Link to={tokenRoute}>
                     Open token details
                     <ShoppingCart className="h-4 w-4" />
                   </Link>
                 </Button>
                 {websiteHref ? (
-                  <Button asChild size="sm" variant="outline" className="justify-between">
+                  <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm">
                     <a href={websiteHref} target="_blank" rel="noreferrer">
                       Website
                       <Globe className="h-4 w-4" />
@@ -175,7 +175,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                   </Button>
                 ) : null}
                 {xHref ? (
-                  <Button asChild size="sm" variant="outline" className="justify-between">
+                  <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm">
                     <a href={xHref} target="_blank" rel="noreferrer">
                       X account
                       <ExternalLink className="h-4 w-4" />
