@@ -34,6 +34,8 @@ function normalizeSort(v) {
     "mcap_desc",
     "mcap_asc",
     "votes_desc",
+    "holders_desc",
+    "volume_desc",
     "progress_desc",
   ].includes(s)
     ? s
@@ -71,6 +73,8 @@ function mapCampaignRow(row, gradTargetBnb) {
     soldTokens: row.sold_tokens != null ? String(row.sold_tokens) : null,
     marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
     vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
+    holderCount: row.holder_count != null ? Number(row.holder_count) : 0,
+    athMarketcapBnb: row.ath_marketcap_bnb != null ? String(row.ath_marketcap_bnb) : null,
     votes24h: row.votes_24h != null ? Number(row.votes_24h) : 0,
     votesAllTime: row.votes_all_time != null ? Number(row.votes_all_time) : 0,
 
@@ -137,6 +141,8 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        null::numeric as sold_tokens,
        null::numeric as marketcap_bnb,
        null::numeric as vol_24h_bnb,
+       null::numeric as holder_count,
+       null::numeric as ath_marketcap_bnb,
        null::timestamptz as last_activity_at,
        0::numeric as votes_24h,
        0::numeric as votes_all_time,
@@ -194,6 +200,8 @@ export default async function handler(req, res) {
       if (sort === "created_asc") return "calc.created_block asc, calc.campaign_address asc";
       if (sort === "mcap_desc") return "coalesce(calc.marketcap_bnb, 0) desc, calc.created_block desc, calc.campaign_address asc";
       if (sort === "mcap_asc") return "coalesce(calc.marketcap_bnb, 0) asc, calc.created_block desc, calc.campaign_address asc";
+      if (sort === "holders_desc") return "coalesce(calc.holder_count, 0) desc, calc.created_block desc, calc.campaign_address asc";
+      if (sort === "volume_desc") return "coalesce(calc.vol_24h_bnb, 0) desc, calc.created_block desc, calc.campaign_address asc";
       if (sort === "votes_desc") return "coalesce(calc.votes_24h, 0) desc, calc.created_block desc, calc.campaign_address asc";
       if (sort === "progress_desc") return "coalesce(calc.progress_pct, -1) desc, calc.created_block desc, calc.campaign_address asc";
 
@@ -262,10 +270,23 @@ export default async function handler(req, res) {
             sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end)
               filter (where t.block_time >= now() - interval '10 minutes')
             ,0
-          ) as raised_10m_bnb
+          ) as raised_10m_bnb,
+          coalesce(count(distinct t.wallet) filter (where t.side = 'buy'), 0) as holder_count
         from base b
         left join public.curve_trades t
           on t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+        group by b.chain_id, b.campaign_address
+      ),
+      ath as (
+        select
+          b.chain_id,
+          b.campaign_address,
+          max(tc.h) as ath_price_bnb
+        from base b
+        left join public.token_candles tc
+          on tc.chain_id = b.chain_id
+          and tc.campaign_address = b.campaign_address
+          and tc.timeframe = '1m'
         group by b.chain_id, b.campaign_address
       ),
       calc as (
@@ -273,6 +294,11 @@ export default async function handler(req, res) {
           b.*,
           rt.raised_total_bnb,
           rt.raised_10m_bnb,
+          rt.holder_count,
+          case
+            when ath.ath_price_bnb is not null and b.sold_tokens is not null then ath.ath_price_bnb * b.sold_tokens
+            else b.marketcap_bnb
+          end as ath_marketcap_bnb,
           case
             when $2::numeric <= 0 then null
             else least(100, greatest(0, (rt.raised_total_bnb / $2::numeric) * 100))
@@ -288,10 +314,13 @@ export default async function handler(req, res) {
           (
             coalesce(b.vol_24h_bnb, 0) * 1000
             + coalesce(b.votes_24h, 0) * 10
+            + coalesce(rt.holder_count, 0) * 2
           ) as trending_score
         from base b
         join rt
           on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
+        left join ath
+          on ath.chain_id = b.chain_id and ath.campaign_address = b.campaign_address
       )
       select *
       from calc
