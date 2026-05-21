@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BattleCard, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
+import { postGradFlags } from "@/features/postgrad/config";
 import { battleWarPool, getMockBattleById, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const BattleDetails = () => {
@@ -37,7 +38,7 @@ const BattleDetails = () => {
       <BattleCard battle={battle} ctaLabel="Challenge flow pending" />
       <WarPoolModule pool={battleWarPool} />
 
-      {participantTokens.length ? (
+      {participantTokens.length && postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock roster context</div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
