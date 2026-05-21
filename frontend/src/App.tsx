@@ -123,23 +123,15 @@ function AppShellLayout({
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
 }) {
-  const location = useLocation();
   const postGradEnabled = isPostGradRouteEnabled();
-  const embeddedWarRoomView = new URLSearchParams(location.search).get("embed") === "war-room";
 
   return (
     <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
-      {!embeddedWarRoomView ? <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} /> : null}
-      {!embeddedWarRoomView ? <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} /> : null}
-      {!embeddedWarRoomView ? <RankPromotionListener /> : null}
-      {!embeddedWarRoomView ? <LiveStreamOverlay /> : null}
-      <main
-        className={
-          embeddedWarRoomView
-            ? "flex-1 overflow-auto bg-background px-0 pb-0 pt-0"
-            : "flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8"
-        }
-      >
+      <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+      <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+      <RankPromotionListener />
+      <LiveStreamOverlay />
+      <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
         <Routes>
           <Route path="/" element={<Showcase />} />
           {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
@@ -199,9 +191,9 @@ function AppShellLayout({
           <Route path="/status" element={<Status />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-        {!embeddedWarRoomView ? <Footer /> : null}
+        <Footer />
       </main>
-      {!embeddedWarRoomView ? <ScreenFrame /> : null}
+      <ScreenFrame />
     </div>
   );
 }
