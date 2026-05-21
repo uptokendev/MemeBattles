@@ -1,7 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeftRight, BellRing, Flame, Globe, MessagesSquare, Shield, Swords, Users } from "lucide-react";
 import { BattleCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { getMockBattleById, getMockTokenById, liveBattles, openForBattleQueue } from "@/features/postgrad/mockRegistry";
+import { Button } from "@/components/ui/button";
+import { getMockBattleForToken } from "@/features/postgrad/mockRegistry";
+import { useMockWarRoomToken } from "@/hooks/useMockWarRoomRuntime";
 
 const sentimentCopy = {
   heating_up: "Heat climbing fast",
@@ -18,7 +20,7 @@ const styleCopy = {
 
 const MockTokenDetails = () => {
   const { tokenId } = useParams();
-  const token = getMockTokenById(tokenId);
+  const { token, toggleMockWarRoomWatchlist } = useMockWarRoomToken(tokenId);
 
   if (!token) {
     return (
@@ -34,11 +36,7 @@ const MockTokenDetails = () => {
     );
   }
 
-  const relatedBattle = [...liveBattles, ...openForBattleQueue].find((battle) =>
-    battle.participants.some((participant) => participant.tokenId === token.id),
-  );
-
-  const battleDetails = relatedBattle ? getMockBattleById(relatedBattle.id) : null;
+  const battleDetails = getMockBattleForToken(token.id);
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -52,6 +50,7 @@ const MockTokenDetails = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={sentimentCopy[token.sentiment]} tone={token.sentiment === "heating_up" ? "hot" : token.sentiment === "stable" ? "success" : "default"} />
             <TacticalTag label={styleCopy[token.battleStyle]} tone="sponsored" />
+            {token.watched ? <TacticalTag label="Watched in War Room" tone="success" /> : null}
             <TacticalHint label="Frontend-only" body="This route is intentionally isolated from live token infrastructure so battle and event flows can be QA'd safely." />
           </div>
         </div>
@@ -77,7 +76,7 @@ const MockTokenDetails = () => {
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Watchlists</div>
-              <div className="mt-1 text-lg font-semibold text-white">{token.watchlistCount.toLocaleString()}</div>
+              <div className="mt-1 text-lg font-semibold text-white">{token.effectiveWatchlistCount.toLocaleString()}</div>
             </div>
           </div>
         </div>
@@ -85,9 +84,17 @@ const MockTokenDetails = () => {
         <div className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Quick actions</div>
           <div className="mt-4 space-y-3 text-sm text-white/70">
-            <Link to="/war-room" className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
+            <Button
+              size="sm"
+              variant={token.watched ? "default" : "outline"}
+              onClick={() => toggleMockWarRoomWatchlist(token.id)}
+              className="w-full justify-start"
+            >
+              {token.watched ? "Remove from War Room watchlist" : "Add to War Room watchlist"}
+            </Button>
+            <Link to={`/war-room?search=${encodeURIComponent(token.symbol)}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
               <ArrowLeftRight className="h-4 w-4 text-accent" />
-              Open War Room filters
+              Open War Room filtered to this token
             </Link>
             {battleDetails ? (
               <Link to={`/battle/${battleDetails.id}`} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
