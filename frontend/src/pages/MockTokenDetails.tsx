@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeftRight, BellRing, Flame, Globe, MessagesSquare, Shield, Swords, Users } from "lucide-react";
 import { BattleCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { getMockBattleForToken } from "@/features/postgrad/mockRegistry";
 import { useMockWarRoomToken } from "@/hooks/useMockWarRoomRuntime";
@@ -41,6 +42,7 @@ const MockTokenDetails = () => {
   return (
     <div className="space-y-6 px-1 pb-10">
       <MockModeBanner subject="Mock token sandbox" />
+      <PostGradStatusStrip />
 
       <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.14),transparent_28%),linear-gradient(180deg,rgba(13,15,20,0.92),rgba(6,7,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
