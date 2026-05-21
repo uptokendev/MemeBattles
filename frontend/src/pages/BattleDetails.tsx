@@ -1,10 +1,11 @@
 import { Link, useParams } from "react-router-dom";
-import { BattleCard, MockModeBanner, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
+import { MockWarPoolPanel } from "@/components/postgrad/MockWarPoolPanel";
+import { BattleCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
-import { battleWarPool, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockBattleDetails } from "@/hooks/useMockBattleRuntime";
 
 const BattleDetails = () => {
@@ -70,7 +71,7 @@ const BattleDetails = () => {
         </section>
       ) : null}
 
-      <WarPoolModule pool={battleWarPool} />
+      {postGradFlags.mocks ? <MockWarPoolPanel battle={battle} /> : null}
 
       {participantTokens.length && postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
