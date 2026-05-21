@@ -4,7 +4,7 @@ import { BellRing, ChevronRight, Coins, Crown, Flame, Shield, Swords, Trophy } f
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { Battle, EventCardContract, GraduatedToken, RankingPayload, WarPool } from "@/features/postgrad/contracts";
+import type { Battle, CommanderStreakState, EventCardContract, GraduatedToken, RankingPayload, WarPool } from "@/features/postgrad/contracts";
 import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
 function formatCompactUsd(value: number) {
@@ -267,6 +267,96 @@ export function StreakPopup({ streakDays, nextReward }: { streakDays: number; ne
           <div className="mt-1 text-sm text-emerald-50/80">Next weekly reward unlock: {nextReward}</div>
         </div>
         <BellRing className="h-5 w-5 text-emerald-100" />
+      </div>
+    </div>
+  );
+}
+
+export function WeeklyRewardPanel({
+  streak,
+  onCheckIn,
+  onClaim,
+  onReset,
+  className,
+}: {
+  streak: CommanderStreakState;
+  onCheckIn?: () => void;
+  onClaim?: () => void;
+  onReset?: () => void;
+  className?: string;
+}) {
+  const rewardReady = streak.activeReward.status === "claimable";
+
+  return (
+    <div className={cn("rounded-2xl border border-emerald-400/20 bg-[linear-gradient(180deg,rgba(14,40,30,0.78),rgba(5,14,11,0.92))] p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.55)]", className)}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-100/70">Weekly commander rewards</div>
+          <div className="mt-1 text-lg font-semibold">{streak.activeReward.label}</div>
+          <div className="mt-2 max-w-2xl text-sm text-emerald-50/80">{streak.activeReward.description}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <TacticalTag label={`${streak.weekProgressDays}/${streak.weeklyGoalDays} days`} tone="success" />
+          <TacticalTag label={rewardReady ? "Claimable" : "Locked"} tone={rewardReady ? "hot" : "default"} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Current streak</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{streak.currentStreakDays}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Best streak</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{streak.bestStreakDays}</div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Rewards claimed</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{streak.claimedRewardsCount}</div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {Array.from({ length: streak.weeklyGoalDays }, (_, index) => {
+          const unlocked = index < streak.weekProgressDays;
+          return (
+            <div
+              key={`streak-day-${index + 1}`}
+              className={cn(
+                "flex min-w-[72px] flex-1 items-center justify-center rounded-xl border px-3 py-2 text-xs uppercase tracking-[0.18em]",
+                unlocked ? "border-emerald-300/35 bg-emerald-400/15 text-emerald-50" : "border-white/10 bg-white/5 text-white/45",
+              )}
+            >
+              Day {index + 1}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="text-sm text-emerald-50/80">
+          <div>Next mock check-in target: {formatWhen(streak.nextCheckInAt)}</div>
+          {streak.lastClaimedRewardLabel && streak.lastClaimedAt ? (
+            <div className="mt-1 text-emerald-100/65">Last claimed: {streak.lastClaimedRewardLabel} on {formatWhen(streak.lastClaimedAt)}</div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {onCheckIn ? (
+            <Button size="sm" onClick={onCheckIn}>
+              Log mock day
+            </Button>
+          ) : null}
+          {onClaim ? (
+            <Button size="sm" variant={rewardReady ? "default" : "outline"} onClick={onClaim} disabled={!rewardReady}>
+              Claim weekly reward
+            </Button>
+          ) : null}
+          {onReset ? (
+            <Button size="sm" variant="outline" onClick={onReset}>
+              Reset streak
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
