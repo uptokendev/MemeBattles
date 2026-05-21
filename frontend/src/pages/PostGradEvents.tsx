@@ -18,8 +18,16 @@ const bracketLabels = {
   completed: "Completed",
 };
 
+const eventTypeLabels = {
+  battle_weekend: "Battle weekend",
+  battle_night: "Battle night",
+  featured_rivalry: "Featured rivalry",
+  tournament: "Tournament",
+  seasonal_league: "Seasonal league",
+};
+
 const PostGradEvents = () => {
-  const { events, transitionMockEvent, advanceTournamentBracket, resetMockEventRuntime } = useMockEvents();
+  const { events, archivedEvents, transitionMockEvent, advanceTournamentBracket, resetMockEventRuntime } = useMockEvents();
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -34,6 +42,7 @@ const PostGradEvents = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label="Schedule ready" tone="success" />
+            <TacticalTag label={`${archivedEvents.length} archived`} tone="sponsored" />
             <TacticalHint label="Progression note" body="Each event card can now move from scheduled to live to completed, and tournament brackets can advance in mock mode." />
             {postGradFlags.mocks ? (
               <Button variant="outline" size="sm" onClick={resetMockEventRuntime}>
@@ -80,6 +89,45 @@ const PostGradEvents = () => {
           );
         })}
       </div>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Archive</div>
+            <div className="mt-1 text-xl font-semibold text-white">Completed event history</div>
+          </div>
+          <TacticalTag label={`${archivedEvents.length} stored`} tone="success" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {archivedEvents.length ? (
+            archivedEvents.map((event) => (
+              <div key={`${event.id}-${event.completedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-white">{event.title}</div>
+                      <TacticalTag label={eventTypeLabels[event.type]} tone="sponsored" />
+                    </div>
+                    <div className="mt-2 text-xs text-white/55">
+                      Completed {new Date(event.completedAt).toLocaleString()} · {event.participantCount} participants
+                    </div>
+                    <div className="mt-2 text-sm text-white/70">{event.summary}</div>
+                  </div>
+                  {event.type === "tournament" ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`/tournament/${event.id}`}>Open bracket</a>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              Complete a mock event to drop it into the archive lane.
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 };
