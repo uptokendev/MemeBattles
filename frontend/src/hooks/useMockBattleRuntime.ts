@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Battle } from "@/features/postgrad/contracts";
 import {
+  createMockOpenForBattle,
   getResolvedArchivedBattles,
   getResolvedLiveBattles,
   getResolvedMockBattleById,
+  getResolvedMockBattleForToken,
   getResolvedOpenForBattleQueue,
   resetMockBattleRuntime,
   subscribeToMockBattleRuntime,
@@ -27,6 +29,8 @@ export function useMockBattleLists() {
     liveBattles: getResolvedLiveBattles(),
     openForBattleQueue: getResolvedOpenForBattleQueue(),
     archivedBattles,
+    getBattleForToken: getResolvedMockBattleForToken,
+    createMockOpenForBattle,
     resetMockBattleRuntime,
     tick,
   };
