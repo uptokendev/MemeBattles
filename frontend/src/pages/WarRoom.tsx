@@ -9,16 +9,23 @@ import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
 type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
-type WarRoomMode = "trending" | "new" | "graduated" | "draft" | "mcap" | "holders" | "volume";
+type WarRoomMode = "trending" | "new" | "graduated" | "draft";
+type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
+type SortDirection = "desc" | "asc";
 
-const terminalModes: Array<{ key: WarRoomMode; label: string; type: "feed" | "sort" }> = [
-  { key: "trending", label: "Trending", type: "feed" },
-  { key: "new", label: "New", type: "feed" },
-  { key: "graduated", label: "Graduated", type: "feed" },
-  { key: "draft", label: "Draft", type: "feed" },
-  { key: "mcap", label: "Mcap", type: "sort" },
-  { key: "holders", label: "Holders", type: "sort" },
-  { key: "volume", label: "Volume", type: "sort" },
+const terminalModes: Array<{ key: WarRoomMode; label: string }> = [
+  { key: "trending", label: "Trending" },
+  { key: "new", label: "New" },
+  { key: "graduated", label: "Graduated" },
+  { key: "draft", label: "Draft" },
+];
+
+const sortButtons: Array<{ key: SortKey; label: string }> = [
+  { key: "marketCap", label: "Market Cap" },
+  { key: "liquidity", label: "Liquidity" },
+  { key: "volume", label: "Volume" },
+  { key: "holders", label: "Holders" },
+  { key: "ath", label: "ATH" },
 ];
 
 function toNumber(value: unknown): number | undefined {
@@ -82,11 +89,29 @@ function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null,
     cursor: "0",
     tab: mode === "new" ? "new" : mode === "graduated" ? "dex" : "trending",
     status: mode === "graduated" ? "graduated" : "all",
-    sort: mode === "mcap" ? "mcap_desc" : mode === "holders" ? "holders_desc" : mode === "volume" ? "volume_desc" : mode === "new" ? "created_desc" : "default",
+    sort: mode === "new" ? "created_desc" : "default",
   });
   if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
   if (search.trim()) params.set("search", search.trim());
   return params.toString();
+}
+
+function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKey) {
+  const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
+  switch (sortKey) {
+    case "marketCap":
+      return metrics.marketCapUsd;
+    case "liquidity":
+      return metrics.liquidityUsd;
+    case "volume":
+      return metrics.volumeUsd;
+    case "holders":
+      return metrics.holdersCount;
+    case "ath":
+      return metrics.athMarketCapUsd;
+    default:
+      return 0;
+  }
 }
 
 const WarRoom = () => {
@@ -96,6 +121,8 @@ const WarRoom = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
+  const [sortKey, setSortKey] = useState<SortKey>("marketCap");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
     let cancelled = false;
@@ -135,57 +162,37 @@ const WarRoom = () => {
         return matchesSearch && matchesMode;
       })
       .sort((left, right) => {
-        const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
-        const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
-
-        switch (activeMode) {
-          case "new":
-            return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
-          case "mcap":
-            return rightMetrics.marketCapUsd - leftMetrics.marketCapUsd;
-          case "holders":
-            return rightMetrics.holdersCount - leftMetrics.holdersCount;
-          case "volume":
-            return rightMetrics.volumeUsd - leftMetrics.volumeUsd;
-          case "graduated":
-          case "draft":
-          case "trending":
-          default:
-            return rightMetrics.trendScore - leftMetrics.trendScore;
+        if (activeMode === "new") {
+          return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
         }
+
+        if (activeMode === "trending") {
+          const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
+          const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
+          return rightMetrics.trendScore - leftMetrics.trendScore;
+        }
+
+        const leftValue = getSortValue(left, bnbUsd ?? 0, sortKey);
+        const rightValue = getSortValue(right, bnbUsd ?? 0, sortKey);
+        const delta = rightValue - leftValue;
+        return sortDirection === "desc" ? delta : -delta;
       });
-  }, [activeMode, bnbUsd, campaigns, search]);
+  }, [activeMode, bnbUsd, campaigns, search, sortDirection, sortKey]);
+
+  const handleSortClick = (nextKey: SortKey) => {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => (current === "desc" ? "asc" : "desc"));
+      return;
+    }
+    setSortKey(nextKey);
+    setSortDirection("desc");
+  };
 
   return (
     <div className="space-y-3 px-1 pb-10">
       <section className="rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,16,22,0.96),rgba(7,8,11,0.98))] p-3 md:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-3 md:gap-4">
-              {terminalModes.map((mode) => {
-                const active = activeMode === mode.key;
-                return (
-                  <button
-                    key={mode.key}
-                    type="button"
-                    onClick={() => setActiveMode(mode.key)}
-                    className={`text-sm font-semibold transition-colors md:text-lg ${active ? "text-white" : mode.type === "sort" ? "text-emerald-200/90 hover:text-white" : "text-white/55 hover:text-white"}`}
-                  >
-                    {mode.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.2em] text-white/45">
-              <span>{filteredCampaigns.length} visible</span>
-              <span>•</span>
-              <span>{campaigns.length} total</span>
-              <span>•</span>
-              <span>{activeMode === "mcap" || activeMode === "holders" || activeMode === "volume" ? `sorted by ${activeMode}` : `${activeMode} feed`}</span>
-            </div>
-          </div>
-
-          <label className="flex min-w-[240px] items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white/70 focus-within:border-accent/40">
+        <div className="flex flex-col gap-3">
+          <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white/70 focus-within:border-accent/40">
             <Search className="h-4 w-4 text-white/45" />
             <input
               value={search}
@@ -194,17 +201,43 @@ const WarRoom = () => {
               className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
             />
           </label>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {terminalModes.map((mode) => {
+              const active = activeMode === mode.key;
+              return (
+                <button
+                  key={mode.key}
+                  type="button"
+                  onClick={() => setActiveMode(mode.key)}
+                  className={`text-sm font-semibold transition-colors md:text-base ${active ? "text-white" : "text-white/55 hover:text-white"}`}
+                >
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
       <section className="overflow-hidden rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,23,29,0.96),rgba(14,15,19,0.98))]">
         <div className="hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-white/10 px-4 py-2.5 text-xs font-medium text-white/65 lg:grid">
-          <div>Pair info</div>
-          <div>Market Cap</div>
-          <div>Liquidity</div>
-          <div>Volume</div>
-          <div>Holders</div>
-          <div>ATH</div>
+          <div>Memecoin info</div>
+          {sortButtons.map((button) => {
+            const active = sortKey === button.key;
+            const directionLabel = active ? (sortDirection === "desc" ? "↓" : "↑") : "";
+            return (
+              <button
+                key={button.key}
+                type="button"
+                onClick={() => handleSortClick(button.key)}
+                className={`flex items-center gap-1 text-left transition-colors ${active ? "text-white" : "text-white/65 hover:text-white"}`}
+              >
+                <span>{button.label}</span>
+                <span className="text-[10px] text-white/45">{directionLabel}</span>
+              </button>
+            );
+          })}
           <div />
         </div>
         <div className="max-h-[calc(100vh-220px)] overflow-y-auto">
