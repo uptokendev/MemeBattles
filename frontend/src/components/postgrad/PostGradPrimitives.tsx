@@ -114,7 +114,15 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
   );
 }
 
-export function EventCard({ event }: { event: EventCardContract }) {
+export function EventCard({
+  event,
+  href,
+  ctaLabel,
+}: {
+  event: EventCardContract;
+  href?: string;
+  ctaLabel?: string;
+}) {
   const tone = event.status === "live" ? "success" : event.type === "tournament" ? "sponsored" : "default";
   return (
     <PostGradPanel title={event.title} eyebrow={event.type.replaceAll("_", " ")}>
@@ -125,6 +133,13 @@ export function EventCard({ event }: { event: EventCardContract }) {
           <span>{event.participantCount} tokens deployed</span>
           <span>Starts {formatWhen(event.startsAt)}</span>
         </div>
+        {href && ctaLabel ? (
+          <div className="flex justify-end">
+            <Button asChild size="sm" variant="outline">
+              <Link to={href}>{ctaLabel}</Link>
+            </Button>
+          </div>
+        ) : null}
       </div>
     </PostGradPanel>
   );
