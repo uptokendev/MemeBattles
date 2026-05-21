@@ -74,6 +74,11 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
               <TacticalTag label={`${left.score.toFixed(1)} pts`} tone="hot" />
             </div>
             <div className="mt-3 text-xs text-white/65">{left.uniqueTraders} traders · {formatCompactUsd(left.volumeUsd)} volume · {left.holdersDelta >= 0 ? "+" : ""}{left.holdersDelta} holders</div>
+            {!left.tokenId.startsWith("pending-") ? (
+              <Link to={`/arena/token/${left.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
+                Inspect mock token
+              </Link>
+            ) : null}
           </div>
           <div className="flex items-center justify-center text-sm font-semibold uppercase tracking-[0.24em] text-white/35">
             <Swords className="mr-2 h-4 w-4" />VS
@@ -87,6 +92,11 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
               <TacticalTag label={`${right.score.toFixed(1)} pts`} tone="sponsored" />
             </div>
             <div className="mt-3 text-xs text-white/65">{right.uniqueTraders} traders · {formatCompactUsd(right.volumeUsd)} volume · {right.holdersDelta >= 0 ? "+" : ""}{right.holdersDelta} holders</div>
+            {!right.tokenId.startsWith("pending-") ? (
+              <Link to={`/arena/token/${right.tokenId}`} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
+                Inspect mock token
+              </Link>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/60">
@@ -120,8 +130,8 @@ export function EventCard({ event }: { event: EventCardContract }) {
   );
 }
 
-export function TokenIntelRow({ token, metricLabel, metricValue }: { token: GraduatedToken; metricLabel: string; metricValue: string }) {
-  return (
+export function TokenIntelRow({ token, metricLabel, metricValue, href }: { token: GraduatedToken; metricLabel: string; metricValue: string; href?: string }) {
+  const body = (
     <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 p-3 md:flex-row md:items-center md:justify-between">
       <div>
         <div className="flex flex-wrap items-center gap-2">
@@ -141,6 +151,14 @@ export function TokenIntelRow({ token, metricLabel, metricValue }: { token: Grad
         <ChevronRight className="h-4 w-4 text-white/30" />
       </div>
     </div>
+  );
+
+  if (!href) return body;
+
+  return (
+    <Link to={href} className="block transition-transform hover:translate-y-[-1px]">
+      {body}
+    </Link>
   );
 }
 
