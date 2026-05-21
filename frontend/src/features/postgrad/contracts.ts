@@ -105,6 +105,8 @@ export const leagueMovementSchema = z.enum(["promoted", "safe", "relegated"]);
 export const leagueSeasonStateSchema = z.enum(["preseason", "live", "playoffs", "completed"]);
 export const quickTradeSideSchema = z.enum(["buy", "sell"]);
 export const quickTradeStatusSchema = z.enum(["queued", "filled", "rejected"]);
+export const weeklyRewardStatusSchema = z.enum(["locked", "claimable", "claimed"]);
+export const weeklyRewardTierSchema = z.enum(["watchlist_boost", "fee_rebate", "featured_slot_draw", "war_pool_credit"]);
 
 export const eventSchema = z.object({
   id: z.string(),
@@ -179,6 +181,28 @@ export const quickTradeResultSchema = quickTradeRequestSchema.extend({
   statusDetail: z.string(),
 });
 
+export const commanderWeeklyRewardSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  tier: weeklyRewardTierSchema,
+  unlockAtDays: z.number().int().positive(),
+  status: weeklyRewardStatusSchema,
+});
+
+export const commanderStreakStateSchema = z.object({
+  currentStreakDays: z.number().int().nonnegative(),
+  bestStreakDays: z.number().int().nonnegative(),
+  weekProgressDays: z.number().int().nonnegative(),
+  weeklyGoalDays: z.number().int().positive(),
+  rewardCycle: z.number().int().nonnegative(),
+  claimedRewardsCount: z.number().int().nonnegative(),
+  nextCheckInAt: z.string(),
+  activeReward: commanderWeeklyRewardSchema,
+  lastClaimedRewardLabel: z.string().optional(),
+  lastClaimedAt: z.string().optional(),
+});
+
 export const realtimeBattleUpdateSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("battle.state"),
@@ -244,6 +268,8 @@ export type LeagueMovement = z.infer<typeof leagueMovementSchema>;
 export type LeagueSeasonState = z.infer<typeof leagueSeasonStateSchema>;
 export type QuickTradeSide = z.infer<typeof quickTradeSideSchema>;
 export type QuickTradeStatus = z.infer<typeof quickTradeStatusSchema>;
+export type WeeklyRewardStatus = z.infer<typeof weeklyRewardStatusSchema>;
+export type WeeklyRewardTier = z.infer<typeof weeklyRewardTierSchema>;
 export type EventCardContract = z.infer<typeof eventSchema>;
 export type RankingEntry = z.infer<typeof rankingEntrySchema>;
 export type RankingPayload = z.infer<typeof rankingPayloadSchema>;
@@ -252,4 +278,6 @@ export type LeagueSeason = z.infer<typeof leagueSeasonSchema>;
 export type TradeRoomFilter = z.infer<typeof tradeRoomFilterSchema>;
 export type QuickTradeRequest = z.infer<typeof quickTradeRequestSchema>;
 export type QuickTradeResult = z.infer<typeof quickTradeResultSchema>;
+export type CommanderWeeklyReward = z.infer<typeof commanderWeeklyRewardSchema>;
+export type CommanderStreakState = z.infer<typeof commanderStreakStateSchema>;
 export type RealtimeBattleUpdate = z.infer<typeof realtimeBattleUpdateSchema>;
