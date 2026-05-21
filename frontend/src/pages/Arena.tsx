@@ -1,8 +1,12 @@
 import { BattleCard, EventCard, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
+import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { arenaRankings, featuredTokens, liveBattles, openForBattleQueue, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { arenaRankings, featuredTokens, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 
 const Arena = () => {
+  const { liveBattles, openForBattleQueue, resetMockBattleRuntime } = useMockBattleLists();
+
   return (
     <div className="space-y-6 px-1 pb-10">
       <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.22),transparent_28%),linear-gradient(180deg,rgba(13,15,20,0.92),rgba(6,7,10,0.98))] p-5 md:p-7">
@@ -16,6 +20,11 @@ const Arena = () => {
             <TacticalTag label="Feature-flagged" tone="success" />
             <TacticalTag label="Additive" tone="default" />
             <TacticalHint label="Hard gate" body="Arena stays isolated until battle, ranking, and indexing contracts are stable enough to replace mock data." />
+            {postGradFlags.mocks ? (
+              <Button variant="outline" size="sm" onClick={resetMockBattleRuntime}>
+                Reset mock battles
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
