@@ -77,6 +77,7 @@ export function resetMockBattleRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  pushMockActivity("battle", "Battle sandbox reset", "Battle lifecycle state returned to its baseline mock setup.");
 }
 
 export function transitionMockBattle(battleId: string, nextState: Battle["state"]) {
