@@ -5,7 +5,11 @@ function readFlag(value: string | undefined, fallback = false) {
   return TRUE_VALUES.has(value.trim().toLowerCase());
 }
 
-const postGradEnabled = readFlag(import.meta.env.VITE_ENABLE_POSTGRAD, false);
+const isLocalDev = import.meta.env.DEV === true;
+
+// Keep deployed/staged builds gated by env vars, but make the devpostgrad branch
+// immediately testable with `npm run dev` when no local .env override exists.
+const postGradEnabled = readFlag(import.meta.env.VITE_ENABLE_POSTGRAD, isLocalDev);
 
 export const postGradFlags = {
   enabled: postGradEnabled,
