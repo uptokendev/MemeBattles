@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
 import { CircleSlash, Rocket, ShieldAlert, Swords } from "lucide-react";
-import { BattleCard, MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { BattleCard, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
@@ -33,31 +32,23 @@ const ArenaBattles = () => {
     archivedBattles,
     getBattleForToken,
     createMockOpenForBattle,
-    resetMockBattleRuntime,
   } = useMockBattleLists();
 
   const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(isTokenProfile);
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Arena battles" /> : null}
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.94),rgba(6,7,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena battles</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Open creator coins for battle, then track the public queue.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page now owns the founder-side battle workflow. Pick one of your coins, check whether it is eligible, see why it is blocked when it is not, and launch it into the Arena when a slot is free.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page owns the founder-side battle workflow. Pick one of your coins, check whether it is eligible, see why it is blocked when it is not, and launch it into the Arena when a slot is free.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${creatorCoins.length} creator coins`} tone="sponsored" />
             <TacticalTag label={`${openForBattleQueue.length} in queue`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live`} tone="hot" />
-            {postGradFlags.mocks ? (
-              <Button variant="outline" size="sm" onClick={resetMockBattleRuntime}>
-                Reset mock battles
-              </Button>
-            ) : null}
           </div>
         </div>
       </section>
@@ -216,7 +207,7 @@ const ArenaBattles = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Settle a mock battle to build the recap lane.
+              Settled battles will appear here once battle resolution is available.
             </div>
           )}
         </div>
