@@ -9,6 +9,7 @@ import twitterIcon from "@/assets/social/twitter.png";
 import discordIcon from "@/assets/social/discord.png";
 import telegramIcon from "@/assets/social/telegram.png";
 import { SocialItem } from "@/components/ui/social-media";
+import { isPostGradNavEnabled } from "@/features/postgrad/config";
 
 export interface NavItem {
   icon: string | typeof Plus;
@@ -18,7 +19,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
-  { icon: Crosshair, label: "Arena", path: "/arena" },
+  ...(isPostGradNavEnabled() ? [{ icon: Crosshair, label: "Arena", path: "/arena" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: userIcon, label: "Command Center", path: "/command" },
   { icon: User, label: "Profile", path: "/profile" },
