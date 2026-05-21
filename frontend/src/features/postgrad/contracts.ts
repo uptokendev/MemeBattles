@@ -100,6 +100,9 @@ export const eventTypeSchema = z.enum([
 
 export const eventStatusSchema = z.enum(["scheduled", "deploying", "live", "completed"]);
 export const tournamentBracketStageSchema = z.enum(["registration", "quarterfinals", "semifinals", "finals", "completed"]);
+export const leagueDivisionSchema = z.enum(["bronze", "silver", "gold", "apex"]);
+export const leagueMovementSchema = z.enum(["promoted", "safe", "relegated"]);
+export const leagueSeasonStateSchema = z.enum(["preseason", "live", "playoffs", "completed"]);
 
 export const eventSchema = z.object({
   id: z.string(),
@@ -125,6 +128,29 @@ export const rankingPayloadSchema = z.object({
   key: z.enum(["trending", "volume", "battle_activity", "league_table"]),
   generatedAt: z.string(),
   entries: z.array(rankingEntrySchema),
+});
+
+export const leagueEntrySchema = z.object({
+  tokenId: z.string(),
+  tokenName: z.string(),
+  symbol: z.string(),
+  division: leagueDivisionSchema,
+  points: z.number().nonnegative(),
+  wins: z.number().int().nonnegative(),
+  losses: z.number().int().nonnegative(),
+  streak: z.number().int(),
+  movement: leagueMovementSchema,
+});
+
+export const leagueSeasonSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  state: leagueSeasonStateSchema,
+  week: z.number().int().positive(),
+  rewardPoolUsd: z.number().nonnegative(),
+  resetAt: z.string(),
+  divisions: z.array(leagueDivisionSchema),
+  entries: z.array(leagueEntrySchema),
 });
 
 export const tradeRoomFilterSchema = z.object({
@@ -195,8 +221,13 @@ export type Battle = z.infer<typeof battleSchema>;
 export type WarPool = z.infer<typeof warPoolSchema>;
 export type EventStatus = z.infer<typeof eventStatusSchema>;
 export type TournamentBracketStage = z.infer<typeof tournamentBracketStageSchema>;
+export type LeagueDivision = z.infer<typeof leagueDivisionSchema>;
+export type LeagueMovement = z.infer<typeof leagueMovementSchema>;
+export type LeagueSeasonState = z.infer<typeof leagueSeasonStateSchema>;
 export type EventCardContract = z.infer<typeof eventSchema>;
 export type RankingEntry = z.infer<typeof rankingEntrySchema>;
 export type RankingPayload = z.infer<typeof rankingPayloadSchema>;
+export type LeagueEntry = z.infer<typeof leagueEntrySchema>;
+export type LeagueSeason = z.infer<typeof leagueSeasonSchema>;
 export type TradeRoomFilter = z.infer<typeof tradeRoomFilterSchema>;
 export type RealtimeBattleUpdate = z.infer<typeof realtimeBattleUpdateSchema>;
