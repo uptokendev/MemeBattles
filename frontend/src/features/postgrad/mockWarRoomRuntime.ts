@@ -1,4 +1,5 @@
 import type { MockTokenProfile, TradeRoomFilter } from "@/features/postgrad/contracts";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { defaultTradeRoomFilters, getMockBattleForToken, getMockTokenById, mockTokenProfiles } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-war-room";
@@ -101,6 +102,7 @@ export function setMockWarRoomFilters(nextFilters: Partial<TradeRoomFilter>) {
 
 export function toggleMockWarRoomWatchlist(tokenId: string) {
   const runtime = readRuntimeState();
+  const token = getMockTokenById(tokenId);
   const watched = runtime.watchlistTokenIds.includes(tokenId);
   const watchlistTokenIds = watched
     ? runtime.watchlistTokenIds.filter((value) => value !== tokenId)
@@ -110,6 +112,7 @@ export function toggleMockWarRoomWatchlist(tokenId: string) {
     ...runtime,
     watchlistTokenIds,
   });
+  pushMockActivity("war_room", watched ? "Token removed from watchlist" : "Token added to watchlist", `${token?.symbol ?? tokenId} watchlist state changed.`);
 }
 
 export function resetMockWarRoomRuntime() {
