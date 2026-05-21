@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BattleCard, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
 import { postGradFlags } from "@/features/postgrad/config";
+import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { battleWarPool, getMockBattleById, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const BattleDetails = () => {
@@ -14,7 +15,7 @@ const BattleDetails = () => {
   const participantTokens = battle
     ? battle.participants
         .map((participant) => getMockTokenById(participant.tokenId))
-        .filter((token): token is NonNullable<typeof token> => Boolean(token))
+        .filter((token): token is MockTokenProfile => Boolean(token))
     : [];
 
   if (!battle) return null;
