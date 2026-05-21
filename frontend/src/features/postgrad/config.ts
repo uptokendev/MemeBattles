@@ -15,6 +15,7 @@ export const postGradFlags = {
   events: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_EVENTS, postGradEnabled),
   league: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_LEAGUE, postGradEnabled),
   tournament: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_TOURNAMENT, postGradEnabled),
+  mocks: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, postGradEnabled),
 } as const;
 
 export function isPostGradRouteEnabled() {
