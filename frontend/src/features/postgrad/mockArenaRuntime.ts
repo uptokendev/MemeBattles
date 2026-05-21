@@ -96,6 +96,7 @@ export function resetMockArenaRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  pushMockActivity("arena", "Arena sandbox reset", "Featured and sponsored placement state returned to baseline.");
 }
 
 export function setFeaturedPlacement(tokenId: string) {
