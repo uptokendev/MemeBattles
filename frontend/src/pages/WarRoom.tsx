@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { RankingsPanel, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
+import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings, defaultTradeRoomFilters, mockTokenProfiles } from "@/features/postgrad/mockRegistry";
 
 const WarRoom = () => {
@@ -50,7 +51,7 @@ const WarRoom = () => {
           />
           <div className="mt-4 space-y-3">
             {filtered.map((token) => (
-              <TokenIntelRow key={token.id} token={token} metricLabel="Intel" metricValue={token.tacticalTags.join(" · ") || "Stable"} href={`/arena/token/${token.id}`} />
+              <TokenIntelRow key={token.id} token={token} metricLabel="Intel" metricValue={token.tacticalTags.join(" · ") || "Stable"} href={postGradFlags.mocks ? `/arena/token/${token.id}` : undefined} />
             ))}
           </div>
         </div>
