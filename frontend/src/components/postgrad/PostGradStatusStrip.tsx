@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import { Activity, CalendarDays, Coins, Crosshair, Eye, RotateCcw, Swords, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PostGradActivityLog } from "@/components/postgrad/PostGradActivityLog";
 import { postGradFlags } from "@/features/postgrad/config";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
+import { useMockActivityLog } from "@/hooks/useMockActivityRuntime";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 import { useMockEvents } from "@/hooks/useMockEventRuntime";
@@ -48,6 +51,7 @@ function StatusTile({
 }
 
 export function PostGradStatusStrip() {
+  const { resetMockActivityRuntime } = useMockActivityLog();
   const { featuredTokens, sponsoredTokenIds, resetMockArenaRuntime } = useMockArenaState();
   const { liveBattles, openForBattleQueue, resetMockBattleRuntime } = useMockBattleLists();
   const { events, archivedEvents, resetMockEventRuntime } = useMockEvents();
@@ -68,70 +72,75 @@ export function PostGradStatusStrip() {
     resetMockWarPoolRuntime();
     resetMockEventRuntime();
     resetMockLeagueRuntime();
+    resetMockActivityRuntime();
+    pushMockActivity("system", "Sandbox reset", "All post-grad mock state was reset to baseline.");
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,17,23,0.78),rgba(7,8,12,0.88))] p-4 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)]">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Post-grad ops snapshot</div>
-          <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, and League.</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
-            <Activity className="h-3.5 w-3.5" /> Live mock runtime
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,17,23,0.78),rgba(7,8,12,0.88))] p-4 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)]">
+        <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Post-grad ops snapshot</div>
+            <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, and League.</div>
           </div>
-          <Button size="sm" variant="outline" onClick={resetAllSandboxState}>
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Reset all sandbox state
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
+              <Activity className="h-3.5 w-3.5" /> Live mock runtime
+            </div>
+            <Button size="sm" variant="outline" onClick={resetAllSandboxState}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset all sandbox state
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <StatusTile
+            to="/arena"
+            icon={Crosshair}
+            label="Arena"
+            value={`${featuredTokens.length} featured`}
+            detail={`${sponsoredTokenIds.length} sponsored placements`}
+          />
+          <StatusTile
+            to="/battle/battle-redline-vs-sdoge"
+            icon={Swords}
+            label="Battles"
+            value={`${liveBattles.length} live`}
+            detail={`${openForBattleQueue.length} open challenges`}
+          />
+          <StatusTile
+            to="/battle/battle-redline-vs-sdoge"
+            icon={Coins}
+            label="War Pools"
+            value={formatUsd(warPoolSummary.totalPotUsd)}
+            detail={`${warPoolSummary.openPools} open · ${warPoolSummary.lockedPools} locked · ${warPoolSummary.paidPools} paid`}
+          />
+          <StatusTile
+            to="/war-room"
+            icon={Eye}
+            label="War Room"
+            value={`${watchlistTokenIds.length} watched`}
+            detail="Persistent QA watchlist"
+          />
+          <StatusTile
+            to="/events"
+            icon={CalendarDays}
+            label="Events"
+            value={`${activeEvents} active`}
+            detail={`${completedEvents} completed or archived`}
+          />
+          <StatusTile
+            to="/league"
+            icon={Trophy}
+            label="League"
+            value={`Week ${season.week} · ${season.state}`}
+            detail={`${topLeagueToken?.symbol ?? "---"} leads · ${formatUsd(season.rewardPoolUsd)} pool · ${history.length} archive`}
+          />
         </div>
       </div>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <StatusTile
-          to="/arena"
-          icon={Crosshair}
-          label="Arena"
-          value={`${featuredTokens.length} featured`}
-          detail={`${sponsoredTokenIds.length} sponsored placements`}
-        />
-        <StatusTile
-          to="/battle/battle-redline-vs-sdoge"
-          icon={Swords}
-          label="Battles"
-          value={`${liveBattles.length} live`}
-          detail={`${openForBattleQueue.length} open challenges`}
-        />
-        <StatusTile
-          to="/battle/battle-redline-vs-sdoge"
-          icon={Coins}
-          label="War Pools"
-          value={formatUsd(warPoolSummary.totalPotUsd)}
-          detail={`${warPoolSummary.openPools} open · ${warPoolSummary.lockedPools} locked · ${warPoolSummary.paidPools} paid`}
-        />
-        <StatusTile
-          to="/war-room"
-          icon={Eye}
-          label="War Room"
-          value={`${watchlistTokenIds.length} watched`}
-          detail="Persistent QA watchlist"
-        />
-        <StatusTile
-          to="/events"
-          icon={CalendarDays}
-          label="Events"
-          value={`${activeEvents} active`}
-          detail={`${completedEvents} completed or archived`}
-        />
-        <StatusTile
-          to="/league"
-          icon={Trophy}
-          label="League"
-          value={`Week ${season.week} · ${season.state}`}
-          detail={`${topLeagueToken?.symbol ?? "---"} leads · ${formatUsd(season.rewardPoolUsd)} pool · ${history.length} archive`}
-        />
-      </div>
+      <PostGradActivityLog />
     </section>
   );
 }
