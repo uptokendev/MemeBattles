@@ -19,7 +19,7 @@ const stateTone = {
 } as const;
 
 const PostGradLeague = () => {
-  const { season, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions, resetMockLeagueRuntime } = useMockLeagueSeason();
+  const { season, history, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions, resetMockLeagueRuntime } = useMockLeagueSeason();
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -36,6 +36,7 @@ const PostGradLeague = () => {
             <TacticalTag label={season.label} tone="sponsored" />
             <TacticalTag label={`Week ${season.week}`} tone="default" />
             <TacticalTag label={season.state} tone={stateTone[season.state]} />
+            <TacticalTag label={`${history.length} archived`} tone="success" />
             <TacticalHint label="Reset hook" body="Season resets, reward distribution, and final archive behavior can now be tested here before the real scoring system takes over." />
             {postGradFlags.mocks ? (
               <Button variant="outline" size="sm" onClick={resetMockLeagueRuntime}>
@@ -109,6 +110,40 @@ const PostGradLeague = () => {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Season archive</div>
+            <div className="mt-1 text-xl font-semibold text-white">Completed mock seasons</div>
+          </div>
+          <TacticalTag label={`${history.length} stored`} tone="sponsored" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {history.length ? (
+            history.map((entry) => (
+              <div key={`${entry.seasonId}-${entry.completedAt}`} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-semibold text-white">{entry.label}</div>
+                      <TacticalTag label={`Winner ${entry.topTokenSymbol}`} tone="success" />
+                    </div>
+                    <div className="mt-2 text-xs text-white/55">
+                      Archived {new Date(entry.completedAt).toLocaleString()} · Week {entry.week} · Reward pool ${entry.rewardPoolUsd.toLocaleString()}
+                    </div>
+                    <div className="mt-2 text-sm text-white/70">Top finisher: {entry.topTokenName}</div>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              Cycle a season through completed and back to preseason to store it here.
+            </div>
+          )}
         </div>
       </section>
     </div>
