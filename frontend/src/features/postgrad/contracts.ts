@@ -103,6 +103,8 @@ export const tournamentBracketStageSchema = z.enum(["registration", "quarterfina
 export const leagueDivisionSchema = z.enum(["bronze", "silver", "gold", "apex"]);
 export const leagueMovementSchema = z.enum(["promoted", "safe", "relegated"]);
 export const leagueSeasonStateSchema = z.enum(["preseason", "live", "playoffs", "completed"]);
+export const quickTradeSideSchema = z.enum(["buy", "sell"]);
+export const quickTradeStatusSchema = z.enum(["queued", "filled", "rejected"]);
 
 export const eventSchema = z.object({
   id: z.string(),
@@ -159,6 +161,22 @@ export const tradeRoomFilterSchema = z.object({
   minimumLiquidityUsd: z.number().nonnegative().default(0),
   sort: z.enum(["heat", "volume", "holders", "watchers"]).default("heat"),
   postGradOnly: z.boolean().default(true),
+});
+
+export const quickTradeRequestSchema = z.object({
+  tokenId: z.string(),
+  side: quickTradeSideSchema,
+  amountUsd: z.number().positive(),
+  source: z.enum(["war_room", "token_profile"]).default("war_room"),
+});
+
+export const quickTradeResultSchema = quickTradeRequestSchema.extend({
+  id: z.string(),
+  status: quickTradeStatusSchema,
+  createdAt: z.string(),
+  executionPriceLabel: z.string(),
+  estimatedImpactBps: z.number().int().nonnegative(),
+  statusDetail: z.string(),
 });
 
 export const realtimeBattleUpdateSchema = z.discriminatedUnion("type", [
@@ -224,10 +242,14 @@ export type TournamentBracketStage = z.infer<typeof tournamentBracketStageSchema
 export type LeagueDivision = z.infer<typeof leagueDivisionSchema>;
 export type LeagueMovement = z.infer<typeof leagueMovementSchema>;
 export type LeagueSeasonState = z.infer<typeof leagueSeasonStateSchema>;
+export type QuickTradeSide = z.infer<typeof quickTradeSideSchema>;
+export type QuickTradeStatus = z.infer<typeof quickTradeStatusSchema>;
 export type EventCardContract = z.infer<typeof eventSchema>;
 export type RankingEntry = z.infer<typeof rankingEntrySchema>;
 export type RankingPayload = z.infer<typeof rankingPayloadSchema>;
 export type LeagueEntry = z.infer<typeof leagueEntrySchema>;
 export type LeagueSeason = z.infer<typeof leagueSeasonSchema>;
 export type TradeRoomFilter = z.infer<typeof tradeRoomFilterSchema>;
+export type QuickTradeRequest = z.infer<typeof quickTradeRequestSchema>;
+export type QuickTradeResult = z.infer<typeof quickTradeResultSchema>;
 export type RealtimeBattleUpdate = z.infer<typeof realtimeBattleUpdateSchema>;
