@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
+import { formatCompactUsd, getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 
 function shortenAddress(value?: string | null) {
   const input = String(value ?? "").trim();
@@ -20,66 +21,106 @@ function resolveExternalHref(raw?: string | null) {
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
 
+function formatAge(value?: number) {
+  const createdAt = Number(value ?? 0);
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return "new";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000) - createdAt);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
 export function WarRoomCampaignRow({ campaign }: { campaign: CampaignInfo }) {
   const [expanded, setExpanded] = useState(false);
 
   const tokenRoute = `/token/${campaign.campaign.toLowerCase()}`;
   const websiteHref = resolveExternalHref(campaign.website);
   const xHref = campaign.xAccount ? `https://x.com/${campaign.xAccount.replace(/^@/, "")}` : null;
+  const metrics = getWarRoomCampaignMetrics(campaign);
 
-  const createdLabel = useMemo(() => {
-    if (!campaign.createdAt) return "Recent listing";
-    try {
-      return new Date(Number(campaign.createdAt) * 1000).toLocaleDateString();
-    } catch {
-      return "Recent listing";
-    }
-  }, [campaign.createdAt]);
+  const createdLabel = useMemo(() => formatAge(campaign.createdAt), [campaign.createdAt]);
 
   return (
-    <div className="border-b border-white/8 py-3 last:border-b-0">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="border-b border-white/8 last:border-b-0">
+      <div className="grid grid-cols-1 gap-3 px-4 py-3 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(360px,1.55fr)_120px_120px_120px_110px_150px] lg:items-center lg:gap-4">
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="min-w-0 flex-1 rounded-2xl text-left transition-colors hover:bg-white/[0.03]"
+          className="min-w-0 rounded-2xl text-left transition-colors hover:bg-white/[0.03]"
         >
-          <div className="flex items-center gap-3 px-1">
+          <div className="flex items-center gap-3">
             <img
               src={campaign.logoURI || "/placeholder.svg"}
               alt={campaign.name}
               onError={(event) => {
                 (event.currentTarget as HTMLImageElement).src = "/placeholder.svg";
               }}
-              className="h-11 w-11 rounded-2xl border border-white/10 object-cover"
+              className="h-14 w-14 rounded-xl border border-white/10 object-cover"
             />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="truncate text-base font-semibold text-white">{campaign.name}</div>
-                <div className="text-xs uppercase tracking-[0.22em] text-white/45">{campaign.symbol}</div>
-                <TacticalTag label="Token" tone="default" />
+                <div className="truncate text-base font-semibold text-white">{campaign.symbol || campaign.name}</div>
+                <div className="truncate text-sm font-semibold text-white/45">{campaign.name}</div>
+                <TacticalTag label={metrics.status === "graduated" ? "Graduated" : "Draft"} tone={metrics.status === "graduated" ? "success" : "default"} />
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/55">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/55">
+                <span className="text-orange-300">{createdLabel}</span>
+                <span>→</span>
+                <span className="text-yellow-300">ATH {metrics.athLabel}</span>
                 <span>{shortenAddress(campaign.campaign)}</span>
                 <span>Creator {shortenAddress(campaign.creator)}</span>
-                <span>Listed {createdLabel}</span>
               </div>
             </div>
           </div>
         </button>
 
-        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-          <Button asChild size="sm" variant="outline">
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5 lg:contents">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 lg:hidden">Market Cap</div>
+            <div className="font-semibold text-white">{metrics.marketCapLabel}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 lg:hidden">Liquidity</div>
+            <div className="font-semibold text-white">{formatCompactUsd(Math.max(metrics.volumeUsd * 0.24, metrics.marketCapUsd * 0.12))}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 lg:hidden">Volume</div>
+            <div className="font-semibold text-white">{metrics.volumeLabel}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 lg:hidden">Holders</div>
+            <div className="font-semibold text-white">{metrics.holdersLabel}</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 lg:hidden">ATH</div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2 text-xs text-white/65">
+                <span>{metrics.athLabel}</span>
+                <span>{metrics.athProgressPct}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 lg:col-start-1 lg:col-end-7 lg:justify-end xl:col-auto xl:contents">
+          <Button asChild size="sm" variant="outline" className="xl:hidden">
             <Link to={tokenRoute}>Token details</Link>
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>
+          <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="xl:col-start-6 xl:justify-self-end">
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </div>
       </div>
 
       {expanded ? (
-        <div className="mt-4 grid gap-4 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-4 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="mx-4 mb-4 grid gap-4 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-4 xl:grid-cols-[1.35fr_0.65fr]">
           <div className="min-h-[360px] rounded-[20px] border border-white/10 bg-black/30 p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
