@@ -1,191 +1,242 @@
-import { BattleCard, EventCard, MockModeBanner, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow, WeeklyRewardPanel } from "@/components/postgrad/PostGradPrimitives";
-import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
+import { Link } from "react-router-dom";
+import { MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { arenaRankings, getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
-import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
+import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
+
+function formatUsd(value: number) {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function ArenaRailCard({
+  title,
+  symbol,
+  detail,
+  href,
+  badges,
+}: {
+  title: string;
+  symbol: string;
+  detail: string;
+  href?: string | null;
+  badges: Array<{ label: string; tone?: "default" | "hot" | "sponsored" | "success" }>;
+}) {
+  const content = (
+    <div className="min-w-[220px] rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition-colors hover:bg-white/[0.07]">
+      <div className="flex flex-wrap items-center gap-2">
+        {badges.map((badge) => (
+          <TacticalTag key={`${title}-${badge.label}`} label={badge.label} tone={badge.tone ?? "default"} />
+        ))}
+      </div>
+      <div className="mt-3 text-sm font-semibold text-white">{title}</div>
+      <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/45">{symbol}</div>
+      <div className="mt-3 text-xs text-white/60">{detail}</div>
+    </div>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link to={href} className="block shrink-0">
+      {content}
+    </Link>
+  );
+}
 
 const Arena = () => {
-  const { liveBattles, openForBattleQueue, archivedBattles, resetMockBattleRuntime } = useMockBattleLists();
-  const { featuredTokens, allTokens, sponsoredTokenIds, setFeaturedPlacement, rotateFeaturedPlacements, toggleSponsoredPlacement, resetMockArenaRuntime } = useMockArenaState();
-  const { streak, recordMockCommanderCheckIn, claimMockWeeklyReward, resetMockCommanderStreakRuntime } = useMockCommanderStreak();
+  const { liveBattles, openForBattleQueue } = useMockBattleLists();
+  const { featuredTokens, allTokens } = useMockArenaState();
+  const { season } = useMockLeagueSeason();
+
+  const sponsoredTokens = allTokens.filter((token) => token.sponsoredPlacement);
+  const featuredBySignal = [...featuredTokens].sort((left, right) => right.watchlistCount - left.watchlistCount);
+  const activeEvents = scheduledEvents.filter((event) => event.status === "live");
+  const upcomingEvents = scheduledEvents.filter((event) => event.status === "scheduled");
+  const leadLeagueEntry = season.entries[0];
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Arena sandbox" /> : null}
-      <PostGradStatusStrip />
+      {postGradFlags.mocks ? <MockModeBanner subject="Arena overview" /> : null}
 
-      <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.22),transparent_28%),linear-gradient(180deg,rgba(13,15,20,0.92),rgba(6,7,10,0.98))] p-5 md:p-7">
+      <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,15,20,0.94),rgba(7,8,11,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Post-grad foundation</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Arena scaffold is live behind flags.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This route establishes the additive discovery surface for graduated tokens, live battles, event deployment, and now mock placement controls without disturbing the current launchpad homepage.</p>
+            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena overview</div>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Competition discovery, simplified.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena is now focused on sponsored placements, featured tokens, live battles, open challenges, and current competition context. Deep token browsing belongs on the canonical token page.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label="Feature-flagged" tone="success" />
-            <TacticalTag label="Additive" tone="default" />
-            <TacticalTag label={`${streak.currentStreakDays}-day streak`} tone="success" />
-            <TacticalTag label={`${archivedBattles.length} settled recaps`} tone="sponsored" />
-            <TacticalHint label="Hard gate" body="Arena stays isolated until battle, ranking, and indexing contracts are stable enough to replace mock data." />
-            {postGradFlags.mocks ? (
-              <>
-                <Button variant="outline" size="sm" onClick={resetMockBattleRuntime}>
-                  Reset mock battles
-                </Button>
-                <Button variant="outline" size="sm" onClick={resetMockArenaRuntime}>
-                  Reset arena placements
-                </Button>
-              </>
-            ) : null}
+            <TacticalTag label={`${sponsoredTokens.length} sponsored`} tone="sponsored" />
+            <TacticalTag label={`${featuredBySignal.length} featured`} tone="success" />
+            <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
           </div>
         </div>
       </section>
 
-      <StreakPopup
-        streakDays={streak.currentStreakDays}
-        nextReward={streak.activeReward.status === "claimable" ? `${streak.activeReward.label} ready to claim` : streak.activeReward.label}
-      />
-
-      {postGradFlags.mocks ? (
-        <WeeklyRewardPanel
-          streak={streak}
-          onCheckIn={recordMockCommanderCheckIn}
-          onClaim={claimMockWeeklyReward}
-          onReset={resetMockCommanderStreakRuntime}
-        />
-      ) : null}
-
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured placement row</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Sponsored and highlighted graduates</h2>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${sponsoredTokenIds.length} sponsored`} tone="sponsored" />
-            <TacticalTag label="Horizontal lane ready" tone="sponsored" />
-            {postGradFlags.mocks ? (
-              <Button size="sm" variant="outline" onClick={rotateFeaturedPlacements}>
-                Rotate featured row
-              </Button>
-            ) : null}
-          </div>
+          <TacticalTag label="Compact rail" tone="sponsored" />
         </div>
-        <div className="grid gap-3 xl:grid-cols-3">
-          {featuredTokens.map((token) => (
-            <TokenIntelRow
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {sponsoredTokens.map((token) => (
+            <ArenaRailCard
               key={token.id}
-              token={{
-                ...token,
-                tacticalTags: [
-                  ...(token.sponsoredPlacement && !token.tacticalTags.includes("Sponsored") ? ["Sponsored"] : []),
-                  ...(token.featuredPlacement && !token.tacticalTags.includes("Featured") ? ["Featured"] : []),
-                  ...token.tacticalTags,
-                ],
-              }}
-              metricLabel="Battle readiness"
-              metricValue={token.battleEligible ? `Slot ${token.placementIndex != null ? token.placementIndex + 1 : "-"}` : "Locked"}
-              href={getMockTokenRouteById(token.id) ?? undefined}
+              title={token.name}
+              symbol={token.symbol}
+              detail={`MC ${formatUsd(token.marketCapUsd)} · Liquidity ${formatUsd(token.liquidityUsd)}`}
+              href={getMockTokenRouteById(token.id)}
+              badges={[
+                { label: "Sponsored", tone: "sponsored" },
+                { label: token.battleEligible ? "Battle eligible" : "Locked", tone: token.battleEligible ? "success" : "default" },
+              ]}
             />
           ))}
         </div>
       </section>
 
-      {postGradFlags.mocks ? (
-        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Placement controls</div>
-              <div className="mt-2 text-sm text-white/70">Promote tokens into the featured row or toggle sponsored placement to test Arena ordering before the real placement system exists.</div>
-            </div>
-            <TacticalHint label="QA-only" body="These controls only affect the sandbox state for post-grad frontend testing." />
-          </div>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {allTokens.map((token) => (
-              <div key={token.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">{token.name}</div>
-                    <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    {token.featuredPlacement ? <TacticalTag label={`Featured ${token.placementIndex != null ? token.placementIndex + 1 : ""}`.trim()} tone="hot" /> : null}
-                    {token.sponsoredPlacement ? <TacticalTag label="Sponsored" tone="sponsored" /> : null}
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-white/60">MC ${(token.marketCapUsd / 1000000).toFixed(2)}M · Watchlists {token.watchlistCount.toLocaleString()}</div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" variant={token.featuredPlacement ? "default" : "outline"} onClick={() => setFeaturedPlacement(token.id)}>
-                    {token.featuredPlacement ? "Move to top" : "Feature token"}
-                  </Button>
-                  <Button size="sm" variant={token.sponsoredPlacement ? "default" : "outline"} onClick={() => toggleSponsoredPlacement(token.id)}>
-                    {token.sponsoredPlacement ? "Unsponsor" : "Sponsor"}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="grid gap-6 xl:grid-cols-[1.35fr_1.35fr_1fr]">
-        <div className="space-y-4">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 1</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Live Battles</h2>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Featured by upvote signal</h2>
           </div>
-          {liveBattles.map((battle) => (
-            <BattleCard key={battle.id} battle={battle} ctaLabel="View live battle" />
-          ))}
+          <TacticalTag label="Ordered by signal" tone="success" />
         </div>
-
-        <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 2</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Open For Battle</h2>
-          </div>
-          {openForBattleQueue.map((battle) => (
-            <BattleCard key={battle.id} battle={battle} ctaLabel="Open challenge flow" />
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {featuredBySignal.map((token) => (
+            <ArenaRailCard
+              key={token.id}
+              title={token.name}
+              symbol={token.symbol}
+              detail={`${token.watchlistCount.toLocaleString()} signal votes · MC ${formatUsd(token.marketCapUsd)}`}
+              href={getMockTokenRouteById(token.id)}
+              badges={[
+                { label: `Rank ${token.placementIndex != null ? token.placementIndex + 1 : "-"}`, tone: "hot" },
+                { label: token.sentiment === "heating_up" ? "Heating up" : token.sentiment === "volatile" ? "Volatile" : "Stable", tone: token.sentiment === "heating_up" ? "hot" : token.sentiment === "volatile" ? "sponsored" : "success" },
+              ]}
+            />
           ))}
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 3</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Events and Leagues</h2>
-          </div>
-          <EventCard event={scheduledEvents[0]} />
-          <RankingsPanel payload={arenaRankings[0]} icon="flame" />
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle archive</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Settled battle recaps</h2>
-          </div>
-          <TacticalTag label={`${archivedBattles.length} archived`} tone="success" />
-        </div>
-        <div className="mt-4 space-y-4">
-          {archivedBattles.length ? (
-            archivedBattles.map((entry) => (
-              <div key={`${entry.battle.id}-${entry.archivedAt}`} className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-white/55">
-                  <span>Archived {new Date(entry.archivedAt).toLocaleString()}</span>
-                  <TacticalTag label={entry.battle.state.replaceAll("_", " ")} tone="default" />
-                </div>
-                <BattleCard battle={entry.battle} ctaLabel="Open battle recap" />
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Settle a mock battle to drop it into the archive lane.
+      <section className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 1</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Live battles</h2>
             </div>
-          )}
+            <Button asChild size="sm" variant="outline">
+              <Link to="/arena/battles">Open battles</Link>
+            </Button>
+          </div>
+          {liveBattles.map((battle) => (
+            <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
+                {battle.featured ? <TacticalTag label="Featured" tone="sponsored" /> : null}
+              </div>
+              <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName} vs {battle.participants[1].tokenName}</div>
+              <div className="mt-2 text-xs text-white/60">{battle.participants[0].symbol} {battle.participants[0].score.toFixed(1)} · {battle.participants[1].symbol} {battle.participants[1].score.toFixed(1)}</div>
+              <div className="mt-4 flex gap-2">
+                <Button asChild size="sm">
+                  <Link to={`/battle/${battle.id}`}>Open battle</Link>
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 2</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Open for battle</h2>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/arena/battles">Creator controls</Link>
+            </Button>
+          </div>
+          {openForBattleQueue.map((battle) => {
+            const tokenRoute = getMockTokenRouteById(battle.participants[0].tokenId);
+            return (
+              <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TacticalTag label="Open for battle" tone="success" />
+                  <TacticalTag label={battle.participants[0].symbol} tone="default" />
+                </div>
+                <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName}</div>
+                <div className="mt-2 text-xs text-white/60">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
+                <div className="mt-4 flex gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link to={`/battle/${battle.id}`}>View queue</Link>
+                  </Button>
+                  {tokenRoute ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link to={tokenRoute}>Open token</Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 3</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Events and leagues</h2>
+            </div>
+            <div className="flex gap-2">
+              <Button asChild size="sm" variant="outline">
+                <Link to="/arena/events">Events</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link to="/arena/leagues">Leagues</Link>
+              </Button>
+            </div>
+          </div>
+
+          {activeEvents[0] ? (
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <TacticalTag label="Active event" tone="success" />
+                <TacticalTag label={activeEvents[0].type.replaceAll("_", " ")} tone="sponsored" />
+              </div>
+              <div className="mt-3 text-sm font-semibold text-white">{activeEvents[0].title}</div>
+              <div className="mt-2 text-xs text-white/60">{activeEvents[0].participantCount} participants · Ends {new Date(activeEvents[0].endsAt).toLocaleDateString()}</div>
+            </div>
+          ) : null}
+
+          {upcomingEvents[0] ? (
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <TacticalTag label="Upcoming" tone="default" />
+                <TacticalTag label={upcomingEvents[0].type.replaceAll("_", " ")} tone="default" />
+              </div>
+              <div className="mt-3 text-sm font-semibold text-white">{upcomingEvents[0].title}</div>
+              <div className="mt-2 text-xs text-white/60">Starts {new Date(upcomingEvents[0].startsAt).toLocaleDateString()} · {upcomingEvents[0].participantCount} participants</div>
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "sponsored" : "default"} />
+              <TacticalTag label={`Week ${season.week}`} tone="default" />
+            </div>
+            <div className="mt-3 text-sm font-semibold text-white">{season.label}</div>
+            <div className="mt-2 text-xs text-white/60">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
+          </div>
         </div>
       </section>
     </div>
