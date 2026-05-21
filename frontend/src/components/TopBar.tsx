@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
-import { isPostGradNavEnabled } from "@/features/postgrad/config";
+import { isPostGradNavEnabled, postGradFlags } from "@/features/postgrad/config";
+import { ArenaDesktopNav } from "@/components/postgrad/ArenaDesktopNav";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
@@ -162,7 +163,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navLinks = useMemo<NavLinkItem[]>(
     () => [
       { label: "Launchpad", path: "/", priority: "primary" },
-      ...(isPostGradNavEnabled() ? [{ label: "Arena", path: "/arena", priority: "primary" as const }] : []),
+      ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ label: "War Room", path: "/war-room", priority: "primary" as const }] : []),
       { label: "Profile", path: "/profile?tab=balances", priority: "primary" },
       { label: "Docs", path: "https://docs.memewar.zone", priority: "primary" },
     ],
@@ -383,6 +384,7 @@ tickerInitialLoadedRef.current = true;
         </Link>
 
         <div className="hidden lg:flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+          {isPostGradNavEnabled() ? <ArenaDesktopNav /> : null}
           {navLinks.map((item) => {
             const external = isExternalHref(item.path);
             const className = cn(
