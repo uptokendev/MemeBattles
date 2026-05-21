@@ -1,14 +1,16 @@
-import { BattleCard, EventCard, MockModeBanner, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow } from "@/components/postgrad/PostGradPrimitives";
+import { BattleCard, EventCard, MockModeBanner, RankingsPanel, StreakPopup, TacticalHint, TacticalTag, TokenIntelRow, WeeklyRewardPanel } from "@/components/postgrad/PostGradPrimitives";
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
+import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
 
 const Arena = () => {
   const { liveBattles, openForBattleQueue, archivedBattles, resetMockBattleRuntime } = useMockBattleLists();
   const { featuredTokens, allTokens, sponsoredTokenIds, setFeaturedPlacement, rotateFeaturedPlacements, toggleSponsoredPlacement, resetMockArenaRuntime } = useMockArenaState();
+  const { streak, recordMockCommanderCheckIn, claimMockWeeklyReward, resetMockCommanderStreakRuntime } = useMockCommanderStreak();
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -25,6 +27,7 @@ const Arena = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label="Feature-flagged" tone="success" />
             <TacticalTag label="Additive" tone="default" />
+            <TacticalTag label={`${streak.currentStreakDays}-day streak`} tone="success" />
             <TacticalTag label={`${archivedBattles.length} settled recaps`} tone="sponsored" />
             <TacticalHint label="Hard gate" body="Arena stays isolated until battle, ranking, and indexing contracts are stable enough to replace mock data." />
             {postGradFlags.mocks ? (
@@ -41,7 +44,19 @@ const Arena = () => {
         </div>
       </section>
 
-      <StreakPopup streakDays={4} nextReward="War Room watchlist boost" />
+      <StreakPopup
+        streakDays={streak.currentStreakDays}
+        nextReward={streak.activeReward.status === "claimable" ? `${streak.activeReward.label} ready to claim` : streak.activeReward.label}
+      />
+
+      {postGradFlags.mocks ? (
+        <WeeklyRewardPanel
+          streak={streak}
+          onCheckIn={recordMockCommanderCheckIn}
+          onClaim={claimMockWeeklyReward}
+          onReset={resetMockCommanderStreakRuntime}
+        />
+      ) : null}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
