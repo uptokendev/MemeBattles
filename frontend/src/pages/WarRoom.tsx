@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { MockModeBanner, RankingsPanel, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { MockModeBanner, RankingsPanel, TacticalHint, TacticalTag, WeeklyRewardPanel } from "@/components/postgrad/PostGradPrimitives";
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { WarRoomTokenIntelRow } from "@/components/postgrad/WarRoomTokenIntelRow";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { arenaRankings } from "@/features/postgrad/mockRegistry";
+import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
 import { useMockWarRoomState } from "@/hooks/useMockWarRoomRuntime";
 
 const sortLabels = {
@@ -20,6 +21,7 @@ const liquidityOptions = [0, 100000, 250000, 400000] as const;
 const WarRoom = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { filters, tokens, watchlistTokenIds, setMockWarRoomFilters, toggleMockWarRoomWatchlist, resetMockWarRoomRuntime } = useMockWarRoomState();
+  const { streak, recordMockCommanderCheckIn, claimMockWeeklyReward, resetMockCommanderStreakRuntime } = useMockCommanderStreak();
 
   useEffect(() => {
     const search = searchParams.get("search");
@@ -74,12 +76,13 @@ const WarRoom = () => {
           <div>
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Trade room scaffold</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">War Room search, filters, and intel foundation.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The War Room now keeps its own mock runtime for filters, watchlists, expandable token intel, War Pool context, and quick-trade placeholders.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">The War Room now keeps its own mock runtime for filters, watchlists, expandable token intel, quick-trade routing, and weekly commander rewards.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${filtered.length} visible`} tone="success" />
             <TacticalTag label={`${watchlistTokenIds.length} watched`} tone="sponsored" />
-            <TacticalHint label="Next backend" body="The runtime mirrors the filter and watchlist contract closely, so we can replace it with indexed APIs later without changing the page behavior much." />
+            <TacticalTag label={`Week ${streak.weekProgressDays}/${streak.weeklyGoalDays}`} tone="success" />
+            <TacticalHint label="Next backend" body="The runtime mirrors the filter, watchlist, quick-trade, and streak contract shapes closely, so we can replace it with indexed APIs later without changing the page behavior much." />
             {postGradFlags.mocks ? (
               <Button variant="outline" size="sm" onClick={resetMockWarRoomRuntime}>
                 Reset War Room
@@ -156,13 +159,21 @@ const WarRoom = () => {
 
         <div className="space-y-4">
           <RankingsPanel payload={arenaRankings[1]} icon="trophy" />
+          {postGradFlags.mocks ? (
+            <WeeklyRewardPanel
+              streak={streak}
+              onCheckIn={recordMockCommanderCheckIn}
+              onClaim={claimMockWeeklyReward}
+              onReset={resetMockCommanderStreakRuntime}
+            />
+          ) : null}
           <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm text-white/70">
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle intel payload</div>
-            <div className="mt-2 font-semibold text-white">Prepared for quick trade integration</div>
+            <div className="mt-2 font-semibold text-white">Quick-trade and reward lane are live in mock mode</div>
             <div className="mt-3 space-y-2 text-white/65">
               <div>Rows now expand into token-specific intel without leaving the War Room.</div>
               <div>Related battle and War Pool context can be acted on inline.</div>
-              <div>The quick-trade panel is intentionally disabled until the real trade API lands.</div>
+              <div>Quick-trade tickets and weekly commander rewards now share the same sandbox activity trail.</div>
             </div>
           </div>
         </div>
