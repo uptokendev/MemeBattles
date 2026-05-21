@@ -119,4 +119,5 @@ export function resetMockWarRoomRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  pushMockActivity("war_room", "War Room sandbox reset", "Filters and watched tokens returned to baseline.");
 }
