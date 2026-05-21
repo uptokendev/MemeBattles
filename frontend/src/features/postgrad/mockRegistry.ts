@@ -449,6 +449,11 @@ export function getMockTokenById(tokenId?: string | null) {
   return mockTokenProfiles.find((token) => token.id === tokenId) ?? null;
 }
 
+export function getMockTokenRouteById(tokenId?: string | null) {
+  const token = getMockTokenById(tokenId);
+  return token ? `/token/${token.campaignAddress.toLowerCase()}` : null;
+}
+
 export function getMockBattleById(battleId?: string | null) {
   return [...liveBattles, ...openForBattleQueue].find((battle) => battle.id === battleId) ?? null;
 }
