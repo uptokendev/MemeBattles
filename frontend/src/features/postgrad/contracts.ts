@@ -14,6 +14,27 @@ export const graduatedTokenSchema = z.object({
   tacticalTags: z.array(z.string()).default([]),
 });
 
+export const mockTokenProfileSchema = graduatedTokenSchema.extend({
+  thesis: z.string(),
+  commanderNotes: z.array(z.string()).default([]),
+  socials: z.object({
+    website: z.string(),
+    x: z.string(),
+    telegram: z.string(),
+  }),
+  watchlistCount: z.number().int().nonnegative(),
+  sentiment: z.enum(["heating_up", "stable", "volatile"]),
+  battleStyle: z.enum(["momentum", "holder_grind", "whale_surge", "community_swarm"]),
+  mockTrades: z.array(
+    z.object({
+      timeLabel: z.string(),
+      side: z.enum(["buy", "sell"]),
+      sizeLabel: z.string(),
+      traderLabel: z.string(),
+    }),
+  ).default([]),
+});
+
 export const battleStateSchema = z.enum([
   "draft",
   "open_for_battle",
@@ -149,6 +170,7 @@ export const POST_GRAD_BATTLE_TRANSITIONS: Record<z.infer<typeof battleStateSche
 };
 
 export type GraduatedToken = z.infer<typeof graduatedTokenSchema>;
+export type MockTokenProfile = z.infer<typeof mockTokenProfileSchema>;
 export type BattleState = z.infer<typeof battleStateSchema>;
 export type BattleParticipant = z.infer<typeof battleParticipantSchema>;
 export type Battle = z.infer<typeof battleSchema>;
