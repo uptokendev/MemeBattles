@@ -4,6 +4,7 @@ import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { getMockBattleById, liveBattles, openForBattleQueue } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-battles";
+const ARCHIVE_STORAGE_KEY = "mwz:postgrad:mock-battle-archive";
 const UPDATE_EVENT = "mwz:postgrad-mock-battles-updated";
 
 type MockBattleRuntimeState = {
@@ -14,6 +15,11 @@ type MockBattleRuntimeState = {
 };
 
 type MockBattleRuntimeMap = Record<string, MockBattleRuntimeState>;
+
+type MockArchivedBattle = {
+  battle: Battle;
+  archivedAt: string;
+};
 
 function isBrowser() {
   return typeof window !== "undefined";
@@ -35,6 +41,35 @@ function writeRuntimeMap(next: MockBattleRuntimeMap) {
   if (!isBrowser()) return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+}
+
+function readArchive(): MockArchivedBattle[] {
+  if (!isBrowser()) return [];
+  try {
+    const raw = window.localStorage.getItem(ARCHIVE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeArchive(next: MockArchivedBattle[]) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(next));
+}
+
+function archiveBattle(battle: Battle) {
+  const nextArchive: MockArchivedBattle[] = [
+    {
+      battle,
+      archivedAt: new Date().toISOString(),
+    },
+    ...readArchive().filter((entry) => entry.battle.id !== battle.id),
+  ];
+
+  writeArchive(nextArchive);
 }
 
 function futureIso(minutesFromNow: number) {
@@ -66,6 +101,10 @@ export function getResolvedOpenForBattleQueue() {
   return openForBattleQueue.map(mergeBattle);
 }
 
+export function getResolvedArchivedBattles() {
+  return readArchive();
+}
+
 export function subscribeToMockBattleRuntime(listener: () => void) {
   if (!isBrowser()) return () => undefined;
   const handler = () => listener();
@@ -76,6 +115,7 @@ export function subscribeToMockBattleRuntime(listener: () => void) {
 export function resetMockBattleRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(ARCHIVE_STORAGE_KEY);
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
   pushMockActivity("battle", "Battle sandbox reset", "Battle lifecycle state returned to its baseline mock setup.");
 }
@@ -116,6 +156,19 @@ export function transitionMockBattle(battleId: string, nextState: Battle["state"
 
   nextMap[battleId] = nextEntry;
   writeRuntimeMap(nextMap);
+
+  const resolvedNextBattle: Battle = {
+    ...battle,
+    state: nextEntry.state,
+    startedAt: nextEntry.startedAt ?? battle.startedAt,
+    endsAt: nextEntry.endsAt ?? battle.endsAt,
+    settlementAt: nextEntry.settlementAt ?? battle.settlementAt,
+  };
+
+  if (nextState === "settled") {
+    archiveBattle(resolvedNextBattle);
+  }
+
   pushMockActivity("battle", "Battle state changed", `${battle.participants[0].symbol} vs ${battle.participants[1].symbol}: ${battle.state.replaceAll("_", " ")} → ${nextState.replaceAll("_", " ")}.`);
   return true;
 }
