@@ -59,6 +59,20 @@ export function TacticalTag({ label, tone = "default" }: { label: string; tone?:
   return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em]", toneClass)}>{label}</span>;
 }
 
+export function MockModeBanner({ subject = "Post-grad sandbox" }: { subject?: string }) {
+  return (
+    <div className="rounded-2xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-3 text-white shadow-[0_18px_45px_-30px_rgba(34,211,238,0.55)]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Mock mode active</div>
+          <div className="mt-1 text-sm text-cyan-50/90">{subject} is running on frontend-only state for QA. Changes here do not touch production battle, event, ranking, or placement systems.</div>
+        </div>
+        <TacticalTag label="QA sandbox" tone="sponsored" />
+      </div>
+    </div>
+  );
+}
+
 export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battle; ctaLabel?: string }) {
   const [left, right] = battle.participants;
   return (
