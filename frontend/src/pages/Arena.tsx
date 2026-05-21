@@ -2,7 +2,7 @@ import { BattleCard, EventCard, MockModeBanner, RankingsPanel, StreakPopup, Tact
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { arenaRankings, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { arenaRankings, getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 import { useMockCommanderStreak } from "@/hooks/useMockStreakRuntime";
@@ -88,7 +88,7 @@ const Arena = () => {
               }}
               metricLabel="Battle readiness"
               metricValue={token.battleEligible ? `Slot ${token.placementIndex != null ? token.placementIndex + 1 : "-"}` : "Locked"}
-              href={postGradFlags.mocks ? `/arena/token/${token.id}` : undefined}
+              href={getMockTokenRouteById(token.id) ?? undefined}
             />
           ))}
         </div>
