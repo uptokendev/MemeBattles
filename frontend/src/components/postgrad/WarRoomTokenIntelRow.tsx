@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeftRight, ChevronDown, ChevronUp, Coins, Gauge, Radar, ShieldCheck, Swords, Zap } from "lucide-react";
+import { ChevronDown, ChevronUp, Coins, Gauge, Radar, ShieldCheck, Swords, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import type { ResolvedMockTokenProfile } from "@/features/postgrad/mockWarRoomRuntime";
-import { getMockBattleById } from "@/features/postgrad/mockRegistry";
+import { getMockBattleById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockQuickTrades } from "@/hooks/useMockQuickTradeRuntime";
 import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
@@ -52,6 +52,7 @@ export function WarRoomTokenIntelRow({
   const battle = token.relatedBattleId ? getMockBattleById(token.relatedBattleId) : null;
   const { pool, supportWarPoolSide } = useMockWarPool(token.relatedBattleId);
   const { trades, submitMockQuickTrade, resetMockQuickTradeRuntime } = useMockQuickTrades(token.id);
+  const tokenRoute = getMockTokenRouteById(token.id);
 
   const tokenPoolUsd = useMemo(() => {
     return pool?.entries.filter((entry) => entry.sideTokenId === token.id).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
@@ -93,9 +94,11 @@ export function WarRoomTokenIntelRow({
               <Link to={`/battle/${token.relatedBattleId}`}>Open battle</Link>
             </Button>
           ) : null}
-          <Button asChild size="sm" variant="outline">
-            <Link to={`/arena/token/${token.id}`}>Open token</Link>
-          </Button>
+          {tokenRoute ? (
+            <Button asChild size="sm" variant="outline">
+              <Link to={tokenRoute}>Open token</Link>
+            </Button>
+          ) : null}
           <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
@@ -227,9 +230,11 @@ export function WarRoomTokenIntelRow({
                   )}
                 </div>
               </div>
-              <Link to={`/arena/token/${token.id}`} className="flex items-center justify-center gap-2 text-xs text-cyan-100/80 hover:text-cyan-50">
-                <ArrowLeftRight className="h-3.5 w-3.5" /> Open full token profile
-              </Link>
+              {tokenRoute ? (
+                <Link to={tokenRoute} className="flex items-center justify-center gap-2 text-xs text-cyan-100/80 hover:text-cyan-50">
+                  Open token details
+                </Link>
+              ) : null}
             </div>
           </div>
         </div>
