@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import type { ResolvedMockTokenProfile } from "@/features/postgrad/mockWarRoomRuntime";
 import { getMockBattleById } from "@/features/postgrad/mockRegistry";
+import { useMockQuickTrades } from "@/hooks/useMockQuickTradeRuntime";
 import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
 function formatUsd(value: number) {
@@ -32,6 +33,12 @@ const styleLabel = {
   community_swarm: "Community swarm",
 } as const;
 
+const quickTradeStatusTone = {
+  filled: "success",
+  queued: "sponsored",
+  rejected: "hot",
+} as const;
+
 export function WarRoomTokenIntelRow({
   token,
   onToggleWatch,
@@ -44,6 +51,7 @@ export function WarRoomTokenIntelRow({
   const [quickTradeSize, setQuickTradeSize] = useState(500);
   const battle = token.relatedBattleId ? getMockBattleById(token.relatedBattleId) : null;
   const { pool, supportWarPoolSide } = useMockWarPool(token.relatedBattleId);
+  const { trades, submitMockQuickTrade, resetMockQuickTradeRuntime } = useMockQuickTrades(token.id);
 
   const tokenPoolUsd = useMemo(() => {
     return pool?.entries.filter((entry) => entry.sideTokenId === token.id).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
@@ -52,6 +60,7 @@ export function WarRoomTokenIntelRow({
   const tokenPoolShare = pool && pool.totalPotUsd > 0 ? Math.round((tokenPoolUsd / pool.totalPotUsd) * 100) : 0;
   const opponent = battle?.participants.find((participant) => participant.tokenId !== token.id && !participant.tokenId.startsWith("pending-"));
   const selfParticipant = battle?.participants.find((participant) => participant.tokenId === token.id);
+  const latestTrade = trades[0] ?? null;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -68,6 +77,7 @@ export function WarRoomTokenIntelRow({
             <TacticalTag label={styleLabel[token.battleStyle]} tone="default" />
             {token.watched ? <TacticalTag label="Watched" tone="success" /> : null}
             {token.relatedBattleId ? <TacticalTag label="Battle linked" tone="hot" /> : null}
+            {latestTrade ? <TacticalTag label={`Trade ${latestTrade.status}`} tone={quickTradeStatusTone[latestTrade.status]} /> : null}
           </div>
           <div className="mt-2 text-xs text-white/55">
             MC {formatUsd(token.marketCapUsd)} · Liquidity {formatUsd(token.liquidityUsd)} · Holders {token.holders.toLocaleString()} · Watchlists {token.effectiveWatchlistCount.toLocaleString()}
@@ -151,8 +161,8 @@ export function WarRoomTokenIntelRow({
           </div>
 
           <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-cyan-100/75"><Zap className="h-4 w-4" />Quick trade placeholder</div>
-            <div className="mt-2 text-sm text-cyan-50/80">Frontend-only order ticket shell for later DEX/router wiring. No transaction is sent.</div>
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-cyan-100/75"><Zap className="h-4 w-4" />Quick trade sandbox</div>
+            <div className="mt-2 text-sm text-cyan-50/80">Frontend-only order ticket that simulates queue, fill, and rejection responses without sending a transaction.</div>
             <div className="mt-4 grid gap-3">
               <div className="flex rounded-xl border border-white/10 bg-black/20 p-1">
                 {(["buy", "sell"] as const).map((side) => (
@@ -176,9 +186,47 @@ export function WarRoomTokenIntelRow({
               <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
                 Mock intent: <span className="text-white">{quickTradeSide.toUpperCase()} {token.symbol} for {formatUsd(quickTradeSize)}</span>
               </div>
-              <Button disabled className="w-full justify-center">
-                Route disabled until trade API lands
+              <Button
+                className="w-full justify-center"
+                onClick={() => submitMockQuickTrade({
+                  tokenId: token.id,
+                  side: quickTradeSide,
+                  amountUsd: quickTradeSize,
+                  source: "war_room",
+                })}
+              >
+                Submit mock trade
               </Button>
+              {latestTrade ? (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/70">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TacticalTag label={latestTrade.status} tone={quickTradeStatusTone[latestTrade.status]} />
+                    <span className="text-white">{latestTrade.executionPriceLabel}</span>
+                  </div>
+                  <div className="mt-2 text-xs text-white/55">Impact {latestTrade.estimatedImpactBps} bps · {latestTrade.statusDetail}</div>
+                </div>
+              ) : null}
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-2 text-xs text-white/55">
+                  <span>Recent mock tickets</span>
+                  <Button size="sm" variant="ghost" onClick={resetMockQuickTradeRuntime}>Clear</Button>
+                </div>
+                <div className="mt-2 space-y-2">
+                  {trades.slice(0, 3).length ? (
+                    trades.slice(0, 3).map((trade) => (
+                      <div key={trade.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/65">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <TacticalTag label={trade.status} tone={quickTradeStatusTone[trade.status]} />
+                          <span>{trade.side.toUpperCase()} {formatUsd(trade.amountUsd)}</span>
+                        </div>
+                        <div className="mt-1 text-white/50">{trade.executionPriceLabel} · {trade.estimatedImpactBps} bps</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-white/45">No mock tickets yet.</div>
+                  )}
+                </div>
+              </div>
               <Link to={`/arena/token/${token.id}`} className="flex items-center justify-center gap-2 text-xs text-cyan-100/80 hover:text-cyan-50">
                 <ArrowLeftRight className="h-3.5 w-3.5" /> Open full token profile
               </Link>
