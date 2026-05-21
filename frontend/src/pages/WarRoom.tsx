@@ -223,6 +223,23 @@ const WarRoom = () => {
               );
             })}
           </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+            {sortButtons.map((button) => {
+              const active = sortKey === button.key;
+              const directionLabel = active ? (sortDirection === "desc" ? "↓" : "↑") : "";
+              return (
+                <button
+                  key={button.key}
+                  type="button"
+                  onClick={() => handleSortClick(button.key)}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${active ? "border-white/25 bg-white/10 text-white" : "border-white/10 bg-black/20 text-white/65 hover:text-white"}`}
+                >
+                  {button.label} {directionLabel}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
