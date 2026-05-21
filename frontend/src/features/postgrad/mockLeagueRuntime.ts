@@ -1,4 +1,5 @@
 import type { LeagueDivision, LeagueSeason, LeagueSeasonState } from "@/features/postgrad/contracts";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { mockLeagueSeason } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-league";
@@ -147,6 +148,7 @@ export function cycleMockLeagueState() {
     resetAt: nextState === "completed" ? futureIso(1) : season.resetAt,
     entries: season.entries,
   });
+  pushMockActivity("league", "League state cycled", `${season.label}: ${season.state} → ${nextState}.`);
 }
 
 export function advanceLeagueWeek() {
@@ -172,6 +174,7 @@ export function advanceLeagueWeek() {
     resetAt: futureIso(6),
     entries,
   });
+  pushMockActivity("league", "League week advanced", `${season.label} moved to week ${season.week + 1}. Reward pool +$5K.`);
 }
 
 export function rebalanceLeagueDivisions() {
@@ -207,4 +210,5 @@ export function rebalanceLeagueDivisions() {
     resetAt: season.state === "completed" ? futureIso(7) : season.resetAt,
     entries,
   });
+  pushMockActivity("league", "League divisions rebalanced", "Promotion and relegation movement was recalculated for QA.");
 }
