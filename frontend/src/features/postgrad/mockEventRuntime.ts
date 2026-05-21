@@ -3,6 +3,7 @@ import { POST_GRAD_EVENT_TRANSITIONS, TOURNAMENT_BRACKET_STAGES } from "@/featur
 import { scheduledEvents } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-events";
+const ARCHIVE_STORAGE_KEY = "mwz:postgrad:mock-event-archive";
 const UPDATE_EVENT = "mwz:postgrad-mock-events-updated";
 
 type MockEventRuntimeState = {
@@ -15,8 +16,22 @@ type MockEventRuntimeState = {
 
 type MockEventRuntimeMap = Record<string, MockEventRuntimeState>;
 
+type MockArchivedEvent = {
+  id: string;
+  title: string;
+  type: EventCardContract["type"];
+  completedAt: string;
+  participantCount: number;
+  summary: string;
+};
+
 function isBrowser() {
   return typeof window !== "undefined";
+}
+
+function dispatchRuntimeUpdate() {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
 }
 
 function readRuntimeMap(): MockEventRuntimeMap {
@@ -34,7 +49,40 @@ function readRuntimeMap(): MockEventRuntimeMap {
 function writeRuntimeMap(next: MockEventRuntimeMap) {
   if (!isBrowser()) return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  dispatchRuntimeUpdate();
+}
+
+function readArchive(): MockArchivedEvent[] {
+  if (!isBrowser()) return [];
+  try {
+    const raw = window.localStorage.getItem(ARCHIVE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeArchive(next: MockArchivedEvent[]) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(next));
+}
+
+function archiveEvent(event: EventCardContract) {
+  const nextArchive = [
+    {
+      id: event.id,
+      title: event.title,
+      type: event.type,
+      completedAt: new Date().toISOString(),
+      participantCount: event.participantCount,
+      summary: event.summary,
+    },
+    ...readArchive().filter((entry) => entry.id !== event.id),
+  ];
+
+  writeArchive(nextArchive);
 }
 
 function futureIso(minutesFromNow: number) {
@@ -76,6 +124,10 @@ export function getResolvedEventById(eventId?: string | null) {
   return base ? mergeEvent(base) : null;
 }
 
+export function getResolvedEventArchive() {
+  return readArchive();
+}
+
 export function subscribeToMockEventRuntime(listener: () => void) {
   if (!isBrowser()) return () => undefined;
   const handler = () => listener();
@@ -86,7 +138,8 @@ export function subscribeToMockEventRuntime(listener: () => void) {
 export function resetMockEventRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  window.localStorage.removeItem(ARCHIVE_STORAGE_KEY);
+  dispatchRuntimeUpdate();
 }
 
 export function transitionMockEvent(eventId: string, nextStatus: EventStatus) {
@@ -122,6 +175,7 @@ export function transitionMockEvent(eventId: string, nextStatus: EventStatus) {
     if (event.type === "tournament") {
       nextEntry.bracketStage = "completed";
     }
+    archiveEvent(event);
   }
 
   nextMap[eventId] = nextEntry;
@@ -146,6 +200,11 @@ export function advanceTournamentBracket(eventId: string) {
     participantCount: event.participantCount,
     bracketStage: nextStage,
   };
+
+  if (nextStage === "completed") {
+    archiveEvent(event);
+  }
+
   writeRuntimeMap(nextMap);
   return true;
 }
