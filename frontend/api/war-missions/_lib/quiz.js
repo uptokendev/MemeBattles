@@ -25,7 +25,14 @@ export async function getQuizTemplateBySlug(slug) {
 export async function getQuizQuestions(questTemplateId) {
   const { rows } = await pool.query(
     `
-      select id, prompt, answers, correct_answer_key, explanation, display_order, metadata
+      select
+        id,
+        coalesce(prompt, question) as prompt,
+        answers,
+        coalesce(correct_answer_key, correct_answer) as correct_answer_key,
+        explanation,
+        display_order,
+        metadata
       from public.wm_quiz_questions
       where quest_template_id = $1 and active = true
       order by display_order asc, created_at asc
