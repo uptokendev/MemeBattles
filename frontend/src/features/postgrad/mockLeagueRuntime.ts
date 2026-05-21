@@ -130,6 +130,7 @@ export function resetMockLeagueRuntime() {
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(HISTORY_STORAGE_KEY);
   dispatchRuntimeUpdate();
+  pushMockActivity("league", "League sandbox reset", "League standings, season progress, and archive returned to baseline.");
 }
 
 export function cycleMockLeagueState() {
