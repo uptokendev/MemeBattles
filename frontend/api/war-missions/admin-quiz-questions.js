@@ -59,9 +59,10 @@ async function listQuestions({ questSlug = null, includeInactive = false }) {
       select
         qq.id,
         qq.quest_template_id,
-        qq.prompt,
+        coalesce(qq.prompt, qq.question) as prompt,
         qq.answers,
-        qq.correct_answer_key,
+        coalesce(qq.correct_answer_key, qq.correct_answer) as correct_answer_key,
+        qq.correct_answer,
         qq.explanation,
         qq.active,
         qq.display_order,
@@ -133,8 +134,8 @@ async function createQuestion(body) {
   const { rows } = await pool.query(
     `
       insert into public.wm_quiz_questions
-        (quest_template_id, prompt, answers, correct_answer_key, explanation, active, display_order, metadata, updated_at)
-      values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8::jsonb, now())
+        (quest_template_id, prompt, question, answers, correct_answer_key, correct_answer, explanation, active, display_order, metadata, updated_at)
+      values ($1, $2, $2, $3::jsonb, $4, $4, $5, $6, $7, $8::jsonb, now())
       returning *
     `,
     [
@@ -161,7 +162,7 @@ async function updateQuestion(body) {
 
   const input = validateQuestionInput(body, { partial: true });
   const nextAnswers = input.answers || current.answers || [];
-  const nextCorrectKey = input.correctAnswerKey || current.correct_answer_key;
+  const nextCorrectKey = input.correctAnswerKey || current.correct_answer_key || current.correct_answer;
   if (!nextAnswers.some((answer) => answer.key === nextCorrectKey)) {
     throw new Error("correctAnswerKey must match one of the answer keys.");
   }
@@ -175,14 +176,17 @@ async function updateQuestion(body) {
   }
 
   const metadataPatch = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
+  const nextPrompt = input.prompt || current.prompt || current.question;
   const { rows } = await pool.query(
     `
       update public.wm_quiz_questions
       set
         quest_template_id = $2,
         prompt = $3,
+        question = $3,
         answers = $4::jsonb,
         correct_answer_key = $5,
+        correct_answer = $5,
         explanation = $6,
         active = $7,
         display_order = $8,
@@ -194,7 +198,7 @@ async function updateQuestion(body) {
     [
       id,
       questTemplateId,
-      input.prompt || current.prompt,
+      nextPrompt,
       JSON.stringify(nextAnswers),
       nextCorrectKey,
       body.explanation == null ? current.explanation : String(body.explanation || "").trim(),
@@ -226,9 +230,9 @@ function serializeRawQuestion(row) {
   return {
     id: row.id,
     questTemplateId: row.quest_template_id,
-    prompt: row.prompt,
+    prompt: row.prompt || row.question,
     answers: row.answers || [],
-    correctAnswerKey: row.correct_answer_key,
+    correctAnswerKey: row.correct_answer_key || row.correct_answer,
     explanation: row.explanation || "",
     active: Boolean(row.active),
     displayOrder: Number(row.display_order || 0),
