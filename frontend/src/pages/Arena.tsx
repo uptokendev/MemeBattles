@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
-import { MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
 import { getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
@@ -61,14 +60,12 @@ const Arena = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Arena overview" /> : null}
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,15,20,0.94),rgba(7,8,11,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena overview</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Competition discovery, simplified.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena is now focused on sponsored placements, featured tokens, live battles, open challenges, and current competition context. Deep token browsing belongs on the canonical token page.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena is focused on sponsored placements, featured memecoins, live battles, open challenges, and current competition context. Deep token browsing belongs on the canonical token page.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${sponsoredTokens.length} sponsored`} tone="sponsored" />
