@@ -126,12 +126,24 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
               <div className="rounded-xl border border-white/10 bg-black/20 p-3">
                 <div className="text-xs text-white/45">Current projected winner</div>
                 <div className="mt-1 font-semibold text-white">{settlementSummary.winnerLabel}</div>
+                <div className="mt-2 text-xs text-white/55">{settlementSummary.settlementStateLabel}</div>
+                <div className="mt-1 text-xs text-white/45">{settlementSummary.settlementStateBody}</div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">Winner side: <span className="text-white">{formatUsd(settlementSummary.winnerSideUsd)}</span></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">Other side: <span className="text-white">{formatUsd(settlementSummary.loserSideUsd)}</span></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3">Projected multiple: <span className="text-white">{settlementSummary.projectedPayoutMultiple.toFixed(2)}x</span></div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3">Winners paid: <span className="text-white">{formatUsd(settlementSummary.routingBreakdown.winnersUsd)}</span></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">Projected payout: <span className="text-white">{formatUsd(settlementSummary.projectedWinnerPayoutUsd)}</span></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">Projected net win: <span className="text-white">{formatUsd(settlementSummary.projectedNetProfitUsd)}</span></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3">Eligible winning entries: <span className="text-white">{settlementSummary.eligibleWinningEntries}</span></div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="text-xs text-white/45">Routing breakdown</div>
+                <div className="mt-2 space-y-2 text-xs text-white/60">
+                  <div>Winners: <span className="text-white">{formatUsd(settlementSummary.routingBreakdown.winnersUsd)}</span></div>
+                  <div>Protocol: <span className="text-white">{formatUsd(settlementSummary.routingBreakdown.protocolUsd)}</span></div>
+                  <div>Featured: <span className="text-white">{formatUsd(settlementSummary.routingBreakdown.featuredUsd)}</span></div>
+                </div>
               </div>
             </div>
           ) : null}
