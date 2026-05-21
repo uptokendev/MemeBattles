@@ -1,5 +1,6 @@
 import type { Battle } from "@/features/postgrad/contracts";
 import { POST_GRAD_BATTLE_TRANSITIONS } from "@/features/postgrad/contracts";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
 import { getMockBattleById, liveBattles, openForBattleQueue } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-battles";
@@ -114,5 +115,6 @@ export function transitionMockBattle(battleId: string, nextState: Battle["state"
 
   nextMap[battleId] = nextEntry;
   writeRuntimeMap(nextMap);
+  pushMockActivity("battle", "Battle state changed", `${battle.participants[0].symbol} vs ${battle.participants[1].symbol}: ${battle.state.replaceAll("_", " ")} → ${nextState.replaceAll("_", " ")}.`);
   return true;
 }
