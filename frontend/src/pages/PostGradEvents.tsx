@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { useMockEvents } from "@/hooks/useMockEventRuntime";
@@ -82,7 +82,7 @@ function EventSurfaceCard({
 }
 
 const PostGradEvents = () => {
-  const { events, archivedEvents, transitionMockEvent, advanceTournamentBracket, resetMockEventRuntime } = useMockEvents();
+  const { events, archivedEvents, transitionMockEvent, advanceTournamentBracket } = useMockEvents();
 
   const liveEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
@@ -90,24 +90,17 @@ const PostGradEvents = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Arena events" /> : null}
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(19,20,26,0.94),rgba(8,9,12,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena events</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Scheduled competition, tournament watch, and event history.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This route is now focused on what is live, what is coming up next, which tournaments need attention, and what already completed in the Arena cycle.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Track what is live, what is coming up next, which tournaments need attention, and what already completed in the Arena cycle.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${liveEvents.length} live`} tone="success" />
             <TacticalTag label={`${upcomingEvents.length} upcoming`} tone="default" />
             <TacticalTag label={`${archivedEvents.length} archived`} tone="sponsored" />
-            {postGradFlags.mocks ? (
-              <Button variant="outline" size="sm" onClick={resetMockEventRuntime}>
-                Reset events
-              </Button>
-            ) : null}
           </div>
         </div>
       </section>
@@ -241,7 +234,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Complete a mock event to drop it into the archive lane.
+              Completed events will appear here as the Arena cycle progresses.
             </div>
           )}
         </div>
