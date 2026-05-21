@@ -8,6 +8,7 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
+type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 type WarRoomMode = "trending" | "new" | "graduated" | "draft" | "mcap" | "holders" | "volume";
 
 const terminalModes: Array<{ key: WarRoomMode; label: string; type: "feed" | "sort" }> = [
@@ -33,15 +34,16 @@ function toUnixSeconds(value: unknown): number | undefined {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
 }
 
-function normalizeApiCampaign(item: any, index: number): CampaignInfo {
+function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").toLowerCase();
   const token = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").toLowerCase();
   const creator = String(item?.creatorAddress ?? item?.creator_address ?? item?.creator ?? "").toLowerCase();
   const status = String(item?.status ?? "").toLowerCase();
-  const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logoURI) || "/placeholder.svg";
+  const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri) || "/placeholder.svg";
 
   return {
     id: 100000 + index,
+    chainId: toNumber(item?.chainId ?? item?.chain_id),
     campaign,
     token,
     creator,
@@ -53,7 +55,7 @@ function normalizeApiCampaign(item: any, index: number): CampaignInfo {
     website: String(item?.website ?? item?.website_url ?? ""),
     extraLink: String(item?.extraLink ?? item?.extra_link ?? ""),
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
-    status: status === "graduated" || status === "ended" || status === "live" ? (status as CampaignInfo["status"]) : undefined,
+    status: status === "graduated" || status === "ended" || status === "live" ? status : undefined,
     isActive: typeof item?.isActive === "boolean" ? item.isActive : typeof item?.is_active === "boolean" ? item.is_active : undefined,
     isDexTrading: Boolean(item?.isDexTrading ?? item?.is_dex_trading ?? status === "graduated"),
     graduatedAt: toUnixSeconds(item?.graduatedAtChain ?? item?.graduated_at_chain),
@@ -70,7 +72,7 @@ function normalizeApiCampaign(item: any, index: number): CampaignInfo {
     votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
     dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
-  };
+  } as WarRoomCampaign;
 }
 
 function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null, search: string) {
@@ -79,7 +81,7 @@ function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null,
     limit: "250",
     cursor: "0",
     tab: mode === "new" ? "new" : mode === "graduated" ? "dex" : "trending",
-    status: mode === "graduated" ? "graduated" : mode === "draft" ? "live" : "all",
+    status: mode === "graduated" ? "graduated" : "all",
     sort: mode === "mcap" ? "mcap_desc" : mode === "holders" ? "holders_desc" : mode === "volume" ? "volume_desc" : mode === "new" ? "created_desc" : "default",
   });
   if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
@@ -90,7 +92,7 @@ function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null,
 const WarRoom = () => {
   const { activeChainId } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
-  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([]);
+  const [campaigns, setCampaigns] = useState<WarRoomCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
@@ -107,7 +109,7 @@ const WarRoom = () => {
         if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
         if (cancelled) return;
         const items = Array.isArray(json?.items) ? json.items : [];
-        setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: CampaignInfo) => campaign.campaign));
+        setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: WarRoomCampaign) => campaign.campaign));
       } catch (error) {
         console.error("[WarRoom] failed to load campaigns", error);
         if (!cancelled) setCampaigns([]);
