@@ -20,6 +20,11 @@ export type WarPoolSettlementSummary = {
   winnerSideUsd: number;
   loserSideUsd: number;
   projectedPayoutMultiple: number;
+  projectedWinnerPayoutUsd: number;
+  projectedNetProfitUsd: number;
+  eligibleWinningEntries: number;
+  settlementStateLabel: string;
+  settlementStateBody: string;
   routingBreakdown: WarPool["routingBreakdown"];
 };
 
@@ -123,6 +128,31 @@ function mergePool(base: WarPool): WarPool {
   };
 }
 
+function getSettlementCopy(state: WarPool["state"]) {
+  switch (state) {
+    case "open":
+      return {
+        label: "Support window open",
+        body: "New entries still change the projected winner payout and side share.",
+      };
+    case "locked":
+      return {
+        label: "Cutoff locked",
+        body: "Support is closed. The pool is ready to move into settlement.",
+      };
+    case "settling":
+      return {
+        label: "Settlement in progress",
+        body: "Winner routing is being finalized and payout eligibility is frozen.",
+      };
+    case "paid":
+      return {
+        label: "Payout complete",
+        body: "Winner-side payouts are marked as distributed in the sandbox.",
+      };
+  }
+}
+
 export function getResolvedWarPoolByBattleId(battleId?: string | null) {
   if (!battleId) return null;
   return mergePool(defaultPoolForBattle(battleId));
@@ -137,6 +167,10 @@ export function getWarPoolSettlementSummary(battleId?: string | null): WarPoolSe
   const winnerSideUsd = winner ? sumEntries(pool.entries, winner.tokenId) : 0;
   const loserSideUsd = Math.max(0, pool.totalPotUsd - winnerSideUsd);
   const projectedPayoutMultiple = winnerSideUsd > 0 ? pool.routingBreakdown.winnersUsd / winnerSideUsd : 0;
+  const eligibleWinningEntries = winner ? pool.entries.filter((entry) => entry.sideTokenId === winner.tokenId && entry.payoutEligible).length : 0;
+  const projectedWinnerPayoutUsd = pool.routingBreakdown.winnersUsd;
+  const projectedNetProfitUsd = Math.max(0, projectedWinnerPayoutUsd - winnerSideUsd);
+  const settlementCopy = getSettlementCopy(pool.state);
 
   return {
     winnerTokenId: winner?.tokenId ?? null,
@@ -145,6 +179,11 @@ export function getWarPoolSettlementSummary(battleId?: string | null): WarPoolSe
     winnerSideUsd,
     loserSideUsd,
     projectedPayoutMultiple,
+    projectedWinnerPayoutUsd,
+    projectedNetProfitUsd,
+    eligibleWinningEntries,
+    settlementStateLabel: settlementCopy.label,
+    settlementStateBody: settlementCopy.body,
     routingBreakdown: pool.routingBreakdown,
   };
 }
