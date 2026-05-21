@@ -1,5 +1,6 @@
 import type { Battle, WarPool } from "@/features/postgrad/contracts";
-import { getMockBattleById, battleWarPool } from "@/features/postgrad/mockRegistry";
+import { pushMockActivity } from "@/features/postgrad/mockActivityRuntime";
+import { getMockBattleById, getMockTokenById, battleWarPool } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-war-pools";
 const UPDATE_EVENT = "mwz:postgrad-mock-war-pools-updated";
@@ -55,6 +56,11 @@ function futureIso(minutesFromNow: number) {
 
 function getSupportedParticipants(battle: Battle | null) {
   return (battle?.participants ?? []).filter((participant) => !participant.tokenId.startsWith("pending-"));
+}
+
+function formatUsd(value: number) {
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
 }
 
 function calculateRouting(totalPotUsd: number): WarPool["routingBreakdown"] {
@@ -194,6 +200,8 @@ export function supportWarPoolSide(battleId: string, sideTokenId: string, amount
   };
 
   writeRuntimeMap(nextMap);
+  const token = getMockTokenById(sideTokenId);
+  pushMockActivity("war_pool", "War Pool support added", `${formatUsd(amountUsd)} added to ${token?.symbol ?? sideTokenId} in ${battleId}.`);
   return true;
 }
 
@@ -221,5 +229,6 @@ export function transitionMockWarPool(battleId: string, nextState: WarPool["stat
   };
 
   writeRuntimeMap(nextMap);
+  pushMockActivity("war_pool", "War Pool state changed", `${battleId}: ${pool.state} → ${nextState}.`);
   return true;
 }
