@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MockModeBanner, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
@@ -25,31 +25,24 @@ function formatUsd(value: number) {
 }
 
 const PostGradLeague = () => {
-  const { season, history, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions, resetMockLeagueRuntime } = useMockLeagueSeason();
+  const { season, history, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions } = useMockLeagueSeason();
   const leadEntry = season.entries[0];
   const promotedCount = season.entries.filter((entry) => entry.movement === "promoted").length;
   const relegatedCount = season.entries.filter((entry) => entry.movement === "relegated").length;
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Arena leagues" /> : null}
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.94),rgba(5,6,9,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena leagues</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Season standings, movement, and reward context.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This route is now focused on the current season table, who is moving up or down, and the reward pool sitting behind the competition cycle.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Track the current season table, who is moving up or down, and the reward pool sitting behind the competition cycle.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={season.label} tone="sponsored" />
             <TacticalTag label={`Week ${season.week}`} tone="default" />
             <TacticalTag label={season.state} tone={stateTone[season.state]} />
-            {postGradFlags.mocks ? (
-              <Button variant="outline" size="sm" onClick={resetMockLeagueRuntime}>
-                Reset league
-              </Button>
-            ) : null}
           </div>
         </div>
       </section>
@@ -81,7 +74,7 @@ const PostGradLeague = () => {
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock controls</div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Season controls</div>
               <div className="mt-2 text-sm text-white/70">Advance the season, rebalance divisions, or roll the state forward without leaving the Arena leagues route.</div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -163,7 +156,7 @@ const PostGradLeague = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Cycle a season through completed and back to preseason to store it here.
+              Completed seasons will appear here after season rollover.
             </div>
           )}
         </div>
