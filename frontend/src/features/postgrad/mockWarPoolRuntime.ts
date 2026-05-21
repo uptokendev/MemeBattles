@@ -172,6 +172,7 @@ export function resetMockWarPoolRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
   dispatchRuntimeUpdate();
+  pushMockActivity("war_pool", "War Pool sandbox reset", "War Pool entries and payout state returned to baseline.");
 }
 
 export function supportWarPoolSide(battleId: string, sideTokenId: string, amountUsd = 500) {
