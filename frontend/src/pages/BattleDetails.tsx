@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { BattleCard, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
+import { BattleCard, MockModeBanner, TacticalHint, TacticalTag, WarPoolModule } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
@@ -31,6 +31,8 @@ const BattleDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
+      {postGradFlags.mocks ? <MockModeBanner subject="Battle sandbox" /> : null}
+
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.94),rgba(6,7,10,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
