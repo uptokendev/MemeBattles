@@ -2,6 +2,7 @@ import type { LeagueDivision, LeagueSeason, LeagueSeasonState } from "@/features
 import { mockLeagueSeason } from "@/features/postgrad/mockRegistry";
 
 const STORAGE_KEY = "mwz:postgrad:mock-league";
+const HISTORY_STORAGE_KEY = "mwz:postgrad:mock-league-history";
 const UPDATE_EVENT = "mwz:postgrad-mock-league-updated";
 
 const LEAGUE_DIVISION_ORDER: LeagueDivision[] = ["bronze", "silver", "gold", "apex"];
@@ -15,8 +16,23 @@ type MockLeagueRuntimeState = {
   entries: LeagueSeason["entries"];
 };
 
+type MockLeagueHistoryEntry = {
+  seasonId: string;
+  label: string;
+  completedAt: string;
+  rewardPoolUsd: number;
+  week: number;
+  topTokenName: string;
+  topTokenSymbol: string;
+};
+
 function isBrowser() {
   return typeof window !== "undefined";
+}
+
+function dispatchRuntimeUpdate() {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
 }
 
 function readRuntimeState(): MockLeagueRuntimeState | null {
@@ -34,7 +50,24 @@ function readRuntimeState(): MockLeagueRuntimeState | null {
 function writeRuntimeState(next: MockLeagueRuntimeState) {
   if (!isBrowser()) return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  dispatchRuntimeUpdate();
+}
+
+function readHistory(): MockLeagueHistoryEntry[] {
+  if (!isBrowser()) return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeHistory(next: MockLeagueHistoryEntry[]) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
 }
 
 function futureIso(daysFromNow: number) {
@@ -47,6 +80,24 @@ function sortEntries(entries: LeagueSeason["entries"]) {
     if (divisionDelta !== 0) return divisionDelta;
     return right.points - left.points || right.wins - left.wins;
   });
+}
+
+function archiveSeason(season: LeagueSeason) {
+  const [winner] = sortEntries(season.entries);
+  const nextHistory = [
+    {
+      seasonId: season.id,
+      label: season.label,
+      completedAt: new Date().toISOString(),
+      rewardPoolUsd: season.rewardPoolUsd,
+      week: season.week,
+      topTokenName: winner?.tokenName ?? "Unknown",
+      topTokenSymbol: winner?.symbol ?? "---",
+    },
+    ...readHistory().filter((entry) => !(entry.seasonId === season.id && entry.label === season.label)),
+  ];
+
+  writeHistory(nextHistory);
 }
 
 export function getResolvedLeagueSeason(): LeagueSeason {
@@ -62,6 +113,10 @@ export function getResolvedLeagueSeason(): LeagueSeason {
   };
 }
 
+export function getResolvedLeagueHistory() {
+  return readHistory();
+}
+
 export function subscribeToMockLeagueRuntime(listener: () => void) {
   if (!isBrowser()) return () => undefined;
   const handler = () => listener();
@@ -72,13 +127,19 @@ export function subscribeToMockLeagueRuntime(listener: () => void) {
 export function resetMockLeagueRuntime() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new CustomEvent(UPDATE_EVENT));
+  window.localStorage.removeItem(HISTORY_STORAGE_KEY);
+  dispatchRuntimeUpdate();
 }
 
 export function cycleMockLeagueState() {
   const season = getResolvedLeagueSeason();
   const currentIndex = LEAGUE_SEASON_STATES.indexOf(season.state);
   const nextState = LEAGUE_SEASON_STATES[(currentIndex + 1) % LEAGUE_SEASON_STATES.length];
+
+  if (season.state === "completed" && nextState === "preseason") {
+    archiveSeason(season);
+  }
+
   writeRuntimeState({
     state: nextState,
     week: nextState === "preseason" ? 1 : season.week,
