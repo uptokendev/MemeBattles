@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { MockWarPoolPanel } from "@/components/postgrad/MockWarPoolPanel";
+import { WarPoolPanel } from "@/components/postgrad/WarPoolPanel";
 import { BattleCard, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
@@ -63,7 +63,7 @@ const BattleDetails = () => {
         </section>
       ) : null}
 
-      {postGradFlags.mocks ? <MockWarPoolPanel battle={battle} /> : null}
+      {postGradFlags.mocks ? <WarPoolPanel battle={battle} /> : null}
 
       {participantTokens.length && postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
