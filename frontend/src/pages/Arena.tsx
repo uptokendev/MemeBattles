@@ -3,9 +3,9 @@ import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
+import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
-import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
 
 function formatUsd(value: number) {
@@ -65,7 +65,7 @@ function RealCampaignRailCard({ item, badgeTone = "success" }: { item: ArenaCamp
 }
 
 const Arena = () => {
-  const { liveBattles, openForBattleQueue } = useMockBattleLists();
+  const { liveBattles, openForBattleQueue } = useArenaBattleFeed();
   const { featuredTokens, allTokens } = useMockArenaState();
   const { season } = useMockLeagueSeason();
   const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
