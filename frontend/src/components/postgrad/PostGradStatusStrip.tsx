@@ -67,7 +67,7 @@ export function PostGradStatusStrip() {
   const completedEvents = events.filter((event) => event.status === "completed").length + archivedEvents.length;
   const topLeagueToken = season.entries[0];
 
-  const resetAllSandboxState = () => {
+  const resetAllPreviewState = () => {
     resetMockBattleRuntime();
     resetMockArenaRuntime();
     resetMockWarRoomRuntime();
@@ -76,7 +76,7 @@ export function PostGradStatusStrip() {
     resetMockLeagueRuntime();
     resetMockCommanderStreakRuntime();
     resetMockActivityRuntime();
-    pushMockActivity("system", "Sandbox reset", "All post-grad mock state was reset to baseline.");
+    pushMockActivity("system", "Preview reset", "All preview state was reset to baseline.");
   };
 
   return (
@@ -84,19 +84,19 @@ export function PostGradStatusStrip() {
       <div className="rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,17,23,0.78),rgba(7,8,12,0.88))] p-4 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)]">
         <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Post-grad ops snapshot</div>
-            <div className="mt-1 text-sm text-white/65">Shared frontend sandbox state across Arena, War Room, Battles, War Pools, Events, League, and commander streak rewards.</div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Competition snapshot</div>
+            <div className="mt-1 text-sm text-white/65">Shared preview state across Arena, War Room, battles, war pools, events, leagues, and streak rewards.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
-              <Activity className="h-3.5 w-3.5" /> Live mock runtime
+              <Activity className="h-3.5 w-3.5" /> Preview mode
             </div>
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-emerald-100">
               Day {streak.currentStreakDays} streak
             </div>
-            <Button size="sm" variant="outline" onClick={resetAllSandboxState}>
+            <Button size="sm" variant="outline" onClick={resetAllPreviewState}>
               <RotateCcw className="mr-2 h-4 w-4" />
-              Reset all sandbox state
+              Reset preview state
             </Button>
           </div>
         </div>
@@ -131,14 +131,14 @@ export function PostGradStatusStrip() {
             detail={`Week ${streak.weekProgressDays}/${streak.weeklyGoalDays} · ${streak.activeReward.status === "claimable" ? "reward ready" : "reward locked"}`}
           />
           <StatusTile
-            to="/events"
+            to="/arena/events"
             icon={CalendarDays}
             label="Events"
             value={`${activeEvents} active`}
             detail={`${completedEvents} completed or archived`}
           />
           <StatusTile
-            to="/league"
+            to="/arena/leagues"
             icon={Trophy}
             label="League"
             value={`Week ${season.week} · ${season.state}`}
