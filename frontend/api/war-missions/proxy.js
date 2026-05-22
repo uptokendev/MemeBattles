@@ -51,11 +51,34 @@ function getRequestBody(req, hasBody) {
   return JSON.stringify(req.body);
 }
 
+async function maybeHandleLocalRoute(req, res, path) {
+  const routePath = path.split("?")[0];
+  if (routePath !== "/api/wm-daily-rollover") return false;
+
+  const { default: wmDailyRollover } = await import("./daily-rollover.js");
+  await wmDailyRollover(req, res);
+  return true;
+}
+
 export default async function warMissionsProxy(req, res) {
   const method = String(req.method || "GET").toUpperCase();
   const hasBody = !["GET", "HEAD"].includes(method);
   const upstreamBase = getUpstreamBase();
   const path = getProxyPath(req);
+
+  try {
+    if (await maybeHandleLocalRoute(req, res, path)) return;
+  } catch (error) {
+    console.error("[war-missions/proxy] local route failed", { path, error });
+    return res.status(500).json({
+      ok: false,
+      error: "War Missions local route failed.",
+      code: "WAR_MISSIONS_LOCAL_ROUTE_FAILED",
+      path,
+      detail: error?.message || String(error),
+    });
+  }
+
   const target = `${upstreamBase}${path}`;
 
   try {
