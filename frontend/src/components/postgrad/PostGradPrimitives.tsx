@@ -61,15 +61,15 @@ export function TacticalTag({ label, tone = "default" }: { label: string; tone?:
   return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em]", toneClass)}>{label}</span>;
 }
 
-export function MockModeBanner({ subject = "Post-grad sandbox" }: { subject?: string }) {
+export function MockModeBanner({ subject = "Post-grad preview" }: { subject?: string }) {
   return (
     <div className="rounded-2xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-3 text-white shadow-[0_18px_45px_-30px_rgba(34,211,238,0.55)]">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Mock mode active</div>
-          <div className="mt-1 text-sm text-cyan-50/90">{subject} is running on frontend-only state for QA. Changes here do not touch production battle, event, ranking, or placement systems.</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Preview mode</div>
+          <div className="mt-1 text-sm text-cyan-50/90">{subject} is using preview data in this branch. Changes here do not affect live battles, events, rankings, or placements.</div>
         </div>
-        <TacticalTag label="QA sandbox" tone="sponsored" />
+        <TacticalTag label="Preview data" tone="sponsored" />
       </div>
     </div>
   );
@@ -265,7 +265,7 @@ export function StreakPopup({ streakDays, nextReward }: { streakDays: number; ne
     <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.6)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-100/70">Daily streak scaffold</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-100/70">Daily streak</div>
           <div className="mt-1 text-lg font-semibold">{streakDays}-day commander streak</div>
           <div className="mt-1 text-sm text-emerald-50/80">Next weekly reward unlock: {nextReward}</div>
         </div>
@@ -338,7 +338,7 @@ export function WeeklyRewardPanel({
 
       <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="text-sm text-emerald-50/80">
-          <div>Next mock check-in target: {formatWhen(streak.nextCheckInAt)}</div>
+          <div>Next check-in target: {formatWhen(streak.nextCheckInAt)}</div>
           {streak.lastClaimedRewardLabel && streak.lastClaimedAt ? (
             <div className="mt-1 text-emerald-100/65">Last claimed: {streak.lastClaimedRewardLabel} on {formatWhen(streak.lastClaimedAt)}</div>
           ) : null}
@@ -346,7 +346,7 @@ export function WeeklyRewardPanel({
         <div className="flex flex-wrap gap-2">
           {onCheckIn ? (
             <Button size="sm" onClick={onCheckIn}>
-              Log mock day
+              Log day
             </Button>
           ) : null}
           {onClaim ? (
