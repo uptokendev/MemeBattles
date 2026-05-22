@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { getMockTokenRouteById, getMockTokenById, scheduledEvents } from "@/features/postgrad/mockRegistry";
-import { useMockBattleDetails } from "@/hooks/useMockBattleRuntime";
+import { useArenaBattleDetails } from "@/hooks/useArenaBattleFeed";
 
 const BattleDetails = () => {
   const { id } = useParams();
-  const { battle, transitionMockBattle } = useMockBattleDetails(id);
+  const { battle, transitionBattle } = useArenaBattleDetails(id);
 
   const participantTokens = battle
     ? battle.participants
@@ -51,10 +51,10 @@ const BattleDetails = () => {
       {postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle controls</div>
-          <div className="mt-2 text-sm text-white/65">Move this battle through the available challenge states for QA and demo flow testing.</div>
+          <div className="mt-2 text-sm text-white/65">Move this battle through the available challenge states while the backend battle adapter is being wired in.</div>
           <div className="mt-3 flex flex-wrap gap-3">
             {nextActions.map((action) => (
-              <Button key={action.state} size="sm" onClick={() => transitionMockBattle(battle.id, action.state)}>
+              <Button key={action.state} size="sm" onClick={() => transitionBattle(battle.id, action.state)}>
                 {action.label}
               </Button>
             ))}
