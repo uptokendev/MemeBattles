@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
+import { ArenaCampaignRailCard } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
@@ -15,7 +15,7 @@ function formatUsd(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
-function ArenaRailCard({
+function ArenaFallbackRailCard({
   title,
   symbol,
   detail,
@@ -47,21 +47,6 @@ function ArenaRailCard({
     <Link to={href} className="block shrink-0">
       {content}
     </Link>
-  );
-}
-
-function RealCampaignRailCard({ item, badgeTone = "success" }: { item: ArenaCampaignRailItem; badgeTone?: "default" | "hot" | "sponsored" | "success" }) {
-  return (
-    <ArenaRailCard
-      title={item.title}
-      symbol={item.symbol}
-      detail={item.detail}
-      href={item.href}
-      badges={[
-        { label: item.rankLabel, tone: badgeTone },
-        { label: item.statusLabel, tone: item.statusTone },
-      ]}
-    />
   );
 }
 
@@ -107,9 +92,9 @@ const Arena = () => {
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns
-            ? realSponsored.map((item) => <RealCampaignRailCard key={item.id} item={item} badgeTone="sponsored" />)
+            ? realSponsored.map((item) => <ArenaCampaignRailCard key={item.id} item={item} rankTone="sponsored" actions={[]} />)
             : sponsoredTokens.map((token) => (
-                <ArenaRailCard
+                <ArenaFallbackRailCard
                   key={token.id}
                   title={token.name}
                   symbol={token.symbol}
@@ -134,9 +119,9 @@ const Arena = () => {
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns
-            ? realFeatured.map((item) => <RealCampaignRailCard key={item.id} item={item} badgeTone="hot" />)
+            ? realFeatured.map((item) => <ArenaCampaignRailCard key={item.id} item={item} rankTone="hot" actions={[]} />)
             : featuredBySignal.map((token) => (
-                <ArenaRailCard
+                <ArenaFallbackRailCard
                   key={token.id}
                   title={token.name}
                   symbol={token.symbol}
