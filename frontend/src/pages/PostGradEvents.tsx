@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
-import { useMockEvents } from "@/hooks/useMockEventRuntime";
+import type { ArenaEventSummary } from "@/hooks/useArenaEventFeed";
+import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 
 const statusActions = {
   scheduled: { label: "Deploy event", status: "deploying" as const },
@@ -60,7 +61,7 @@ function EventSurfaceCard({
   onAdvance,
   onAdvanceBracket,
 }: {
-  event: ReturnType<typeof useMockEvents>["events"][number];
+  event: ArenaEventSummary;
   onAdvance: () => void;
   onAdvanceBracket?: () => void;
 }) {
@@ -106,7 +107,7 @@ function EventSurfaceCard({
 }
 
 const PostGradEvents = () => {
-  const { events, archivedEvents, transitionMockEvent, advanceTournamentBracket } = useMockEvents();
+  const { events, archivedEvents, transitionEvent, advanceTournamentBracket } = useArenaEventFeed();
   const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading } = useArenaCampaignFeed(10);
 
   const liveEvents = events.filter((event) => event.status === "live");
@@ -191,7 +192,7 @@ const PostGradEvents = () => {
               <EventSurfaceCard
                 key={event.id}
                 event={event}
-                onAdvance={() => transitionMockEvent(event.id, statusActions[event.status]!.status)}
+                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
                 onAdvanceBracket={event.type === "tournament" ? () => advanceTournamentBracket(event.id) : undefined}
               />
             ))
@@ -217,7 +218,7 @@ const PostGradEvents = () => {
               <EventSurfaceCard
                 key={event.id}
                 event={event}
-                onAdvance={() => transitionMockEvent(event.id, statusActions[event.status]!.status)}
+                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
                 onAdvanceBracket={event.type === "tournament" ? () => advanceTournamentBracket(event.id) : undefined}
               />
             ))
@@ -243,7 +244,7 @@ const PostGradEvents = () => {
               <EventSurfaceCard
                 key={event.id}
                 event={event}
-                onAdvance={() => transitionMockEvent(event.id, statusActions[event.status]!.status)}
+                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
                 onAdvanceBracket={() => advanceTournamentBracket(event.id)}
               />
             ))
