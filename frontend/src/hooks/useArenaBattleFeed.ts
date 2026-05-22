@@ -53,6 +53,18 @@ async function fetchBattleDetails(battleId: string, signal?: AbortSignal): Promi
   return isBattle(battle) ? battle : null;
 }
 
+async function openBattleViaApi(tokenId: string): Promise<boolean> {
+  const response = await apiFetch("/api/arena/battles/open", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tokenId }),
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 /**
  * Adapter boundary for the Arena battle surfaces.
  *
@@ -97,6 +109,16 @@ export function useArenaBattleFeed() {
     return (tokenId: string) => allBattles.find((battle) => battle.participants.some((participant) => participant.tokenId === tokenId)) ?? null;
   }, [apiPayload, archivedBattles, liveBattles, openForBattleQueue, runtime.getBattleForToken]);
 
+  const openCreatorCoinForBattle = async (tokenId: string) => {
+    try {
+      const opened = await openBattleViaApi(tokenId);
+      if (opened) return true;
+    } catch (error) {
+      console.warn("[useArenaBattleFeed] API open-for-battle unavailable", error);
+    }
+    return runtime.createMockOpenForBattle(tokenId);
+  };
+
   return {
     source: apiPayload ? "api" as ArenaBattleFeedSource : "qa-runtime" as ArenaBattleFeedSource,
     loading,
@@ -104,7 +126,7 @@ export function useArenaBattleFeed() {
     openForBattleQueue,
     archivedBattles,
     getBattleForToken,
-    openCreatorCoinForBattle: runtime.createMockOpenForBattle,
+    openCreatorCoinForBattle,
     tick: runtime.tick,
   };
 }
