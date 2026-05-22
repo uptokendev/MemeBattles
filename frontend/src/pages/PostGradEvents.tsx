@@ -2,6 +2,8 @@ import { Link } from "react-router-dom";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
+import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
+import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useMockEvents } from "@/hooks/useMockEventRuntime";
 
 const statusActions = {
@@ -29,6 +31,28 @@ const eventTypeLabels = {
 
 function formatWhen(value: string) {
   return new Date(value).toLocaleDateString();
+}
+
+function EventEntrantCard({ item }: { item: ArenaCampaignRailItem }) {
+  return (
+    <div className="min-w-[250px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <TacticalTag label={item.rankLabel} tone="hot" />
+        <TacticalTag label={item.statusLabel} tone={item.statusTone} />
+      </div>
+      <div className="mt-3 text-base font-semibold text-white">{item.title}</div>
+      <div className="mt-1 text-xs uppercase tracking-[0.24em] text-white/45">{item.symbol}</div>
+      <div className="mt-3 text-xs text-white/60">{item.detail}</div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild size="sm" variant="outline">
+          <Link to={item.href}>Token details</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/war-room?search=${encodeURIComponent(item.symbol || item.title)}`}>War Room</Link>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function EventSurfaceCard({
@@ -83,6 +107,7 @@ function EventSurfaceCard({
 
 const PostGradEvents = () => {
   const { events, archivedEvents, transitionMockEvent, advanceTournamentBracket } = useMockEvents();
+  const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading } = useArenaCampaignFeed(10);
 
   const liveEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
@@ -101,6 +126,7 @@ const PostGradEvents = () => {
             <TacticalTag label={`${liveEvents.length} live`} tone="success" />
             <TacticalTag label={`${upcomingEvents.length} upcoming`} tone="default" />
             <TacticalTag label={`${archivedEvents.length} archived`} tone="sponsored" />
+            <TacticalTag label={`${hasRealCampaigns ? eventEntrants.length : 0} entrants`} tone="hot" />
           </div>
         </div>
       </section>
@@ -120,6 +146,34 @@ const PostGradEvents = () => {
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Tournament watch</div>
           <div className="mt-2 text-lg font-semibold text-white">{tournaments[0]?.title ?? "No tournament scheduled"}</div>
           <div className="mt-1 text-sm text-white/60">{tournaments[0]?.bracketStage ? `Current stage: ${bracketLabels[tournaments[0].bracketStage]}` : "Bracket updates appear here when available."}</div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Event entrants</div>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Trending memecoins for event seeding</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">Real campaign feed items are shown here when available, so event planning can be tested against live market candidates while scheduled event controls remain available below.</p>
+          </div>
+          <TacticalTag label={hasRealCampaigns ? "Live feed" : eventEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+        </div>
+        <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
+          {hasRealCampaigns ? (
+            eventEntrants.map((item) => <EventEntrantCard key={item.id} item={item} />)
+          ) : eventEntrantsLoading ? (
+            [0, 1, 2].map((index) => (
+              <div key={index} className="min-w-[250px] rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="h-4 w-24 rounded-full bg-white/10" />
+                <div className="mt-4 h-5 w-32 rounded-full bg-white/10" />
+                <div className="mt-3 h-3 w-44 rounded-full bg-white/10" />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              Event entrant candidates will appear here when the live campaign feed is available.
+            </div>
+          )}
         </div>
       </section>
 
