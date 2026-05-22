@@ -72,6 +72,29 @@ async function fetchEventDetails(eventId: string, signal?: AbortSignal): Promise
   return isEventSummary(event) ? event : null;
 }
 
+async function transitionEventViaApi(eventId: string, status: EventStatus): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/events/${encodeURIComponent(eventId)}/transition`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
+async function advanceTournamentBracketViaApi(eventId: string): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/events/${encodeURIComponent(eventId)}/advance-bracket`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 /**
  * Adapter boundary for Arena event surfaces.
  *
@@ -83,6 +106,12 @@ export function useArenaEventFeed() {
   const runtime = useMockEvents();
   const [apiPayload, setApiPayload] = useState<ArenaEventFeedPayload | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshFeed = async () => {
+    const payload = await fetchEventFeed().catch(() => null);
+    if (payload) setApiPayload(payload);
+    return payload;
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -106,13 +135,39 @@ export function useArenaEventFeed() {
     };
   }, [runtime.events.length, runtime.archivedEvents.length]);
 
+  const transitionEvent = async (eventId: string, status: EventStatus) => {
+    try {
+      const transitioned = await transitionEventViaApi(eventId, status);
+      if (transitioned) {
+        await refreshFeed();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaEventFeed] API transition unavailable", error);
+    }
+    return runtime.transitionMockEvent(eventId, status);
+  };
+
+  const advanceTournamentBracket = async (eventId: string) => {
+    try {
+      const advanced = await advanceTournamentBracketViaApi(eventId);
+      if (advanced) {
+        await refreshFeed();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaEventFeed] API bracket advance unavailable", error);
+    }
+    return runtime.advanceTournamentBracket(eventId);
+  };
+
   return {
     source: apiPayload ? "api" as ArenaEventFeedSource : "qa-runtime" as ArenaEventFeedSource,
     loading,
     events: apiPayload?.events ?? runtime.events,
     archivedEvents: apiPayload?.archivedEvents ?? runtime.archivedEvents,
-    transitionEvent: (eventId: string, status: EventStatus) => runtime.transitionMockEvent(eventId, status),
-    advanceTournamentBracket: runtime.advanceTournamentBracket,
+    transitionEvent,
+    advanceTournamentBracket,
   };
 }
 
@@ -120,6 +175,12 @@ export function useArenaEventDetails(eventId?: string) {
   const runtime = useMockEventDetails(eventId);
   const [apiEvent, setApiEvent] = useState<ArenaEventSummary | null>(null);
   const [loading, setLoading] = useState(Boolean(eventId));
+
+  const refreshEvent = async (eventIdToRefresh: string) => {
+    const freshEvent = await fetchEventDetails(eventIdToRefresh).catch(() => null);
+    if (freshEvent) setApiEvent(freshEvent);
+    return freshEvent;
+  };
 
   useEffect(() => {
     if (!eventId) {
@@ -150,11 +211,37 @@ export function useArenaEventDetails(eventId?: string) {
     };
   }, [eventId]);
 
+  const transitionEvent = async (eventIdToUpdate: string, status: EventStatus) => {
+    try {
+      const transitioned = await transitionEventViaApi(eventIdToUpdate, status);
+      if (transitioned) {
+        await refreshEvent(eventIdToUpdate);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaEventDetails] API transition unavailable", error);
+    }
+    return runtime.transitionMockEvent(eventIdToUpdate, status);
+  };
+
+  const advanceTournamentBracket = async (eventIdToUpdate: string) => {
+    try {
+      const advanced = await advanceTournamentBracketViaApi(eventIdToUpdate);
+      if (advanced) {
+        await refreshEvent(eventIdToUpdate);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaEventDetails] API bracket advance unavailable", error);
+    }
+    return runtime.advanceTournamentBracket(eventIdToUpdate);
+  };
+
   return {
     source: apiEvent ? "api" as ArenaEventFeedSource : "qa-runtime" as ArenaEventFeedSource,
     loading,
     event: apiEvent ?? runtime.event,
-    transitionEvent: (eventIdToUpdate: string, status: EventStatus) => runtime.transitionMockEvent(eventIdToUpdate, status),
-    advanceTournamentBracket: runtime.advanceTournamentBracket,
+    transitionEvent,
+    advanceTournamentBracket,
   };
 }
