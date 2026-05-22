@@ -124,6 +124,30 @@ async function fetchWarPoolSummary(signal?: AbortSignal): Promise<ArenaWarPoolSu
   return normalizeWarPoolSummary((json as any).summary ?? json);
 }
 
+async function supportWarPoolViaApi(battleId: string, sideTokenId: string, amountUsd: number): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}/support`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sideTokenId, amountUsd }),
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
+async function transitionWarPoolViaApi(battleId: string, state: WarPoolState): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state }),
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 /**
  * Adapter boundary for War Pool surfaces.
  *
@@ -135,6 +159,12 @@ export function useArenaWarPool(battleId?: string | null) {
   const runtime = useMockWarPool(battleId);
   const [apiPayload, setApiPayload] = useState<ArenaWarPoolPayload | null>(null);
   const [loading, setLoading] = useState(Boolean(battleId));
+
+  const refreshPool = async (battleIdToRefresh: string) => {
+    const freshPayload = await fetchWarPool(battleIdToRefresh).catch(() => null);
+    if (freshPayload) setApiPayload(freshPayload);
+    return freshPayload;
+  };
 
   useEffect(() => {
     if (!battleId) {
@@ -165,13 +195,39 @@ export function useArenaWarPool(battleId?: string | null) {
     };
   }, [battleId, runtime.pool?.state, runtime.pool?.entries.length]);
 
+  const supportSide = async (battleIdToSupport: string, sideTokenId: string, amountUsd = 500) => {
+    try {
+      const supported = await supportWarPoolViaApi(battleIdToSupport, sideTokenId, amountUsd);
+      if (supported) {
+        await refreshPool(battleIdToSupport);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaWarPool] API support unavailable", error);
+    }
+    return runtime.supportWarPoolSide(battleIdToSupport, sideTokenId, amountUsd);
+  };
+
+  const transitionWarPool = async (battleIdToUpdate: string, state: WarPoolState) => {
+    try {
+      const transitioned = await transitionWarPoolViaApi(battleIdToUpdate, state);
+      if (transitioned) {
+        await refreshPool(battleIdToUpdate);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaWarPool] API transition unavailable", error);
+    }
+    return runtime.transitionMockWarPool(battleIdToUpdate, state);
+  };
+
   return {
     source: apiPayload ? "api" as ArenaWarPoolFeedSource : "qa-runtime" as ArenaWarPoolFeedSource,
     loading,
     pool: apiPayload?.pool ?? runtime.pool,
     settlementSummary: apiPayload?.settlementSummary ?? runtime.settlementSummary,
-    supportSide: runtime.supportWarPoolSide,
-    transitionWarPool: (battleIdToUpdate: string, state: WarPoolState) => runtime.transitionMockWarPool(battleIdToUpdate, state),
+    supportSide,
+    transitionWarPool,
     resetWarPoolRuntime: runtime.resetMockWarPoolRuntime,
   };
 }
