@@ -4,6 +4,8 @@ import { BattleCard, TacticalTag } from "@/components/postgrad/PostGradPrimitive
 import { Button } from "@/components/ui/button";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
+import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
+import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
 
 const CREATOR_COIN_IDS = ["circuit-wolf", "sleep-driver", "astro-frogs", "redline-rats"];
@@ -25,6 +27,28 @@ function isTokenProfile(token: MockTokenProfile | null): token is MockTokenProfi
   return Boolean(token);
 }
 
+function MarketBattleCandidateCard({ item }: { item: ArenaCampaignRailItem }) {
+  return (
+    <div className="min-w-[250px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <TacticalTag label={item.rankLabel} tone="hot" />
+        <TacticalTag label={item.statusLabel} tone={item.statusTone} />
+      </div>
+      <div className="mt-3 text-base font-semibold text-white">{item.title}</div>
+      <div className="mt-1 text-xs uppercase tracking-[0.24em] text-white/45">{item.symbol}</div>
+      <div className="mt-3 text-xs text-white/60">{item.detail}</div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild size="sm" variant="outline">
+          <Link to={item.href}>Token details</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/war-room?search=${encodeURIComponent(item.symbol || item.title)}`}>War Room</Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const ArenaBattles = () => {
   const {
     liveBattles,
@@ -33,6 +57,7 @@ const ArenaBattles = () => {
     getBattleForToken,
     createMockOpenForBattle,
   } = useMockBattleLists();
+  const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading } = useArenaCampaignFeed(8);
 
   const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(isTokenProfile);
 
@@ -49,7 +74,36 @@ const ArenaBattles = () => {
             <TacticalTag label={`${creatorCoins.length} creator coins`} tone="sponsored" />
             <TacticalTag label={`${openForBattleQueue.length} in queue`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live`} tone="hot" />
+            <TacticalTag label={`${hasRealCampaigns ? marketCandidates.length : 0} candidates`} tone="default" />
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-black/25 p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Market candidates</div>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Trending memecoins for battle discovery</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">Real campaign feed items are shown here when available. Creator controls below stay available for flow testing until battle eligibility is fully backed by the API.</p>
+          </div>
+          <TacticalTag label={hasRealCampaigns ? "Live feed" : marketCandidatesLoading ? "Loading" : "QA fallback"} tone="success" />
+        </div>
+        <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
+          {hasRealCampaigns ? (
+            marketCandidates.map((item) => <MarketBattleCandidateCard key={item.id} item={item} />)
+          ) : marketCandidatesLoading ? (
+            [0, 1, 2].map((index) => (
+              <div key={index} className="min-w-[250px] rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <div className="h-4 w-24 rounded-full bg-white/10" />
+                <div className="mt-4 h-5 w-32 rounded-full bg-white/10" />
+                <div className="mt-3 h-3 w-44 rounded-full bg-white/10" />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              Campaign candidates will appear here when the live feed is available.
+            </div>
+          )}
         </div>
       </section>
 
