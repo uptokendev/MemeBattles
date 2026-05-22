@@ -5,7 +5,7 @@ import { postGradFlags } from "@/features/postgrad/config";
 import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
-import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
+import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 
 const movementTone = {
   promoted: "success",
@@ -49,7 +49,7 @@ function LeagueEntrantCard({ item }: { item: ArenaCampaignRailItem }) {
 }
 
 const PostGradLeague = () => {
-  const { season, history, advanceLeagueWeek, cycleMockLeagueState, rebalanceLeagueDivisions } = useMockLeagueSeason();
+  const { season, history, advanceWeek, cycleSeasonState, rebalanceDivisions } = useArenaLeagueFeed();
   const { railItems: leagueEntrants, hasRealCampaigns, loading: leagueEntrantsLoading } = useArenaCampaignFeed(10);
   const leadEntry = season.entries[0];
   const promotedCount = season.entries.filter((entry) => entry.movement === "promoted").length;
@@ -132,9 +132,9 @@ const PostGradLeague = () => {
               <div className="mt-2 text-sm text-white/70">Move the season forward, rebalance divisions, or roll into the next state from this page.</div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={advanceLeagueWeek}>Advance week</Button>
-              <Button size="sm" variant="outline" onClick={rebalanceLeagueDivisions}>Rebalance divisions</Button>
-              <Button size="sm" variant="outline" onClick={cycleMockLeagueState}>Cycle season state</Button>
+              <Button size="sm" onClick={advanceWeek}>Advance week</Button>
+              <Button size="sm" variant="outline" onClick={rebalanceDivisions}>Rebalance divisions</Button>
+              <Button size="sm" variant="outline" onClick={cycleSeasonState}>Cycle season state</Button>
             </div>
           </div>
         </section>
