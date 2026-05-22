@@ -20,7 +20,6 @@ import BattleDetails from "./pages/BattleDetails";
 import PostGradEvents from "./pages/PostGradEvents";
 import PostGradLeague from "./pages/PostGradLeague";
 import TournamentDetails from "./pages/TournamentDetails";
-import LegacyArenaTokenRedirect from "./pages/LegacyArenaTokenRedirect";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
@@ -138,7 +137,6 @@ function AppShellLayout({
           {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
           {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
           {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
-          {postGradEnabled && postGradFlags.mocks ? <Route path="/arena/token/:tokenId" element={<LegacyArenaTokenRedirect />} /> : null}
           {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
           {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
