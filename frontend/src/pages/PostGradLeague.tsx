@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
+import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
-import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 
@@ -24,28 +24,6 @@ function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
-}
-
-function LeagueEntrantCard({ item }: { item: ArenaCampaignRailItem }) {
-  return (
-    <div className="min-w-[250px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <TacticalTag label={item.rankLabel} tone="hot" />
-        <TacticalTag label={item.statusLabel} tone={item.statusTone} />
-      </div>
-      <div className="mt-3 text-base font-semibold text-white">{item.title}</div>
-      <div className="mt-1 text-xs uppercase tracking-[0.24em] text-white/45">{item.symbol}</div>
-      <div className="mt-3 text-xs text-white/60">{item.detail}</div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button asChild size="sm" variant="outline">
-          <Link to={item.href}>Token details</Link>
-        </Button>
-        <Button asChild size="sm" variant="outline">
-          <Link to={`/war-room?search=${encodeURIComponent(item.symbol || item.title)}`}>War Room</Link>
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 const PostGradLeague = () => {
@@ -105,22 +83,17 @@ const PostGradLeague = () => {
           </div>
           <TacticalTag label={hasRealCampaigns ? "Campaign feed" : leagueEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
         </div>
-        <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
-          {hasRealCampaigns ? (
-            leagueEntrants.map((item) => <LeagueEntrantCard key={item.id} item={item} />)
-          ) : leagueEntrantsLoading ? (
-            [0, 1, 2].map((index) => (
-              <div key={index} className="min-w-[250px] rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="h-4 w-24 rounded-full bg-white/10" />
-                <div className="mt-4 h-5 w-32 rounded-full bg-white/10" />
-                <div className="mt-3 h-3 w-44 rounded-full bg-white/10" />
-              </div>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              League entrants will appear here when the live campaign feed is available.
-            </div>
-          )}
+        <div className="mt-5">
+          <ArenaCampaignRail
+            items={hasRealCampaigns ? leagueEntrants : []}
+            rankTone="hot"
+            loading={leagueEntrantsLoading}
+            emptyLabel="League entrants will appear here when the live campaign feed is available."
+            actionBuilder={(item) => [
+              { label: "Token details", href: item.href },
+              { label: "War Room", href: `/war-room?search=${encodeURIComponent(item.symbol || item.title)}` },
+            ]}
+          />
         </div>
       </section>
 
