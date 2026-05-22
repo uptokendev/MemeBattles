@@ -49,7 +49,7 @@ const WarRoom = () => {
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const { campaigns, loading } = useWarRoomCampaignFeed({
+  const { campaigns, loading, error } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(activeChainId || 97),
     bnbUsd,
@@ -147,6 +147,12 @@ const WarRoom = () => {
           </div>
         </div>
       </section>
+
+      {error ? (
+        <div className="rounded-2xl border border-orange-300/20 bg-orange-500/10 px-4 py-3 text-sm text-orange-100">
+          War Room feed is unavailable right now. {error}
+        </div>
+      ) : null}
 
       <section className="overflow-hidden rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,23,29,0.96),rgba(14,15,19,0.98))]">
         <div className="hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-white/10 px-4 py-2.5 text-xs font-medium text-white/65 lg:grid">
