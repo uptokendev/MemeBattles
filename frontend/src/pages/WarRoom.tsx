@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { apiFetch } from "@/lib/apiBase";
+import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "@/hooks/useWarRoomCampaignFeed";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo } from "@/lib/launchpadClient";
-import { resolveImageUri } from "@/lib/media";
 
-type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
-type WarRoomMode = "trending" | "new" | "graduated" | "draft";
 type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
 type SortDirection = "desc" | "asc";
 
@@ -27,74 +23,6 @@ const sortButtons: Array<{ key: SortKey; label: string }> = [
   { key: "holders", label: "Holders" },
   { key: "ath", label: "ATH" },
 ];
-
-function toNumber(value: unknown): number | undefined {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function toUnixSeconds(value: unknown): number | undefined {
-  if (value == null || value === "") return undefined;
-  const n = Number(value);
-  if (Number.isFinite(n) && n > 0) return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
-}
-
-function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
-  const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").toLowerCase();
-  const token = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").toLowerCase();
-  const creator = String(item?.creatorAddress ?? item?.creator_address ?? item?.creator ?? "").toLowerCase();
-  const status = String(item?.status ?? "").toLowerCase();
-  const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri) || "/placeholder.svg";
-
-  return {
-    id: 100000 + index,
-    chainId: toNumber(item?.chainId ?? item?.chain_id),
-    campaign,
-    token,
-    creator,
-    name: String(item?.name ?? "Unknown"),
-    symbol: String(item?.symbol ?? ""),
-    logoURI: logo,
-    metadataURI: undefined,
-    xAccount: String(item?.xAccount ?? item?.x_url ?? ""),
-    website: String(item?.website ?? item?.website_url ?? ""),
-    extraLink: String(item?.extraLink ?? item?.extra_link ?? ""),
-    createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
-    status: status === "graduated" || status === "ended" || status === "live" ? status : undefined,
-    isActive: typeof item?.isActive === "boolean" ? item.isActive : typeof item?.is_active === "boolean" ? item.is_active : undefined,
-    isDexTrading: Boolean(item?.isDexTrading ?? item?.is_dex_trading ?? status === "graduated"),
-    graduatedAt: toUnixSeconds(item?.graduatedAtChain ?? item?.graduated_at_chain),
-    holdersCount: toNumber(item?.holderCount ?? item?.holder_count),
-    holders: item?.holderCount != null || item?.holder_count != null ? String(item?.holderCount ?? item?.holder_count) : undefined,
-    volumeBnb: toNumber(item?.vol24hBnb ?? item?.vol_24h_bnb),
-    marketCapBnb: toNumber(item?.marketcapBnb ?? item?.marketcap_bnb),
-    athMarketCapBnb: toNumber(item?.athMarketcapBnb ?? item?.ath_marketcap_bnb),
-    raisedTotalBnb: toNumber(item?.raisedTotalBnb ?? item?.raised_total_bnb),
-    raised10mBnb: toNumber(item?.raised10mBnb ?? item?.raised_10m_bnb),
-    progressPct: toNumber(item?.progressPct ?? item?.progress_pct) ?? null,
-    etaSec: toNumber(item?.etaSec ?? item?.eta_sec) ?? null,
-    votes24h: toNumber(item?.votes24h ?? item?.votes_24h),
-    votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
-    dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
-    dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
-  } as WarRoomCampaign;
-}
-
-function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null, search: string) {
-  const params = new URLSearchParams({
-    chainId: String(chainId || 97),
-    limit: "250",
-    cursor: "0",
-    tab: mode === "new" ? "new" : mode === "graduated" ? "dex" : "trending",
-    status: mode === "graduated" ? "graduated" : "all",
-    sort: mode === "new" ? "created_desc" : "default",
-  });
-  if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
-  if (search.trim()) params.set("search", search.trim());
-  return params.toString();
-}
 
 function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKey) {
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
@@ -117,39 +45,16 @@ function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKe
 const WarRoom = () => {
   const { activeChainId } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
-  const [campaigns, setCampaigns] = useState<WarRoomCampaign[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        setLoading(true);
-        const query = queryForMode(activeMode, Number(activeChainId || 97), bnbUsd, search);
-        const response = await apiFetch(`/api/campaigns?${query}`, { cache: "no-store" as RequestCache });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
-        if (cancelled) return;
-        const items = Array.isArray(json?.items) ? json.items : [];
-        setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: WarRoomCampaign) => campaign.campaign));
-      } catch (error) {
-        console.error("[WarRoom] failed to load campaigns", error);
-        if (!cancelled) setCampaigns([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeChainId, activeMode, bnbUsd, search]);
+  const { campaigns, loading } = useWarRoomCampaignFeed({
+    activeMode,
+    activeChainId: Number(activeChainId || 97),
+    bnbUsd,
+    search,
+  });
 
   const filteredCampaigns = useMemo(() => {
     const query = search.trim().toLowerCase();
