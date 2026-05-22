@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
+import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
+import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
@@ -47,16 +49,34 @@ function ArenaRailCard({
   );
 }
 
+function RealCampaignRailCard({ item, badgeTone = "success" }: { item: ArenaCampaignRailItem; badgeTone?: "default" | "hot" | "sponsored" | "success" }) {
+  return (
+    <ArenaRailCard
+      title={item.title}
+      symbol={item.symbol}
+      detail={item.detail}
+      href={item.href}
+      badges={[
+        { label: item.rankLabel, tone: badgeTone },
+        { label: item.statusLabel, tone: item.statusTone },
+      ]}
+    />
+  );
+}
+
 const Arena = () => {
   const { liveBattles, openForBattleQueue } = useMockBattleLists();
   const { featuredTokens, allTokens } = useMockArenaState();
   const { season } = useMockLeagueSeason();
+  const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
 
   const sponsoredTokens = allTokens.filter((token) => token.sponsoredPlacement);
   const featuredBySignal = [...featuredTokens].sort((left, right) => right.watchlistCount - left.watchlistCount);
   const activeEvents = scheduledEvents.filter((event) => event.status === "live");
   const upcomingEvents = scheduledEvents.filter((event) => event.status === "scheduled");
   const leadLeagueEntry = season.entries[0];
+  const realSponsored = realCampaignRailItems.slice(0, 4);
+  const realFeatured = realCampaignRailItems.slice(4, 10);
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -68,8 +88,8 @@ const Arena = () => {
             <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena is focused on sponsored placements, featured memecoins, live battles, open challenges, and current competition context. Deep token browsing belongs on the canonical token page.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${sponsoredTokens.length} sponsored`} tone="sponsored" />
-            <TacticalTag label={`${featuredBySignal.length} featured`} tone="success" />
+            <TacticalTag label={`${hasRealCampaigns ? realSponsored.length : sponsoredTokens.length} sponsored`} tone="sponsored" />
+            <TacticalTag label={`${hasRealCampaigns ? realFeatured.length : featuredBySignal.length} featured`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
           </div>
         </div>
@@ -81,22 +101,24 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
           </div>
-          <TacticalTag label="Compact rail" tone="sponsored" />
+          <TacticalTag label={hasRealCampaigns ? "Live feed" : realCampaignsLoading ? "Loading" : "QA feed"} tone="sponsored" />
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {sponsoredTokens.map((token) => (
-            <ArenaRailCard
-              key={token.id}
-              title={token.name}
-              symbol={token.symbol}
-              detail={`MC ${formatUsd(token.marketCapUsd)} · Liquidity ${formatUsd(token.liquidityUsd)}`}
-              href={getMockTokenRouteById(token.id)}
-              badges={[
-                { label: "Sponsored", tone: "sponsored" },
-                { label: token.battleEligible ? "Battle eligible" : "Locked", tone: token.battleEligible ? "success" : "default" },
-              ]}
-            />
-          ))}
+          {hasRealCampaigns
+            ? realSponsored.map((item) => <RealCampaignRailCard key={item.id} item={item} badgeTone="sponsored" />)
+            : sponsoredTokens.map((token) => (
+                <ArenaRailCard
+                  key={token.id}
+                  title={token.name}
+                  symbol={token.symbol}
+                  detail={`MC ${formatUsd(token.marketCapUsd)} · Liquidity ${formatUsd(token.liquidityUsd)}`}
+                  href={getMockTokenRouteById(token.id)}
+                  badges={[
+                    { label: "Sponsored", tone: "sponsored" },
+                    { label: token.battleEligible ? "Battle eligible" : "Locked", tone: token.battleEligible ? "success" : "default" },
+                  ]}
+                />
+              ))}
         </div>
       </section>
 
@@ -106,22 +128,24 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Featured by upvote signal</h2>
           </div>
-          <TacticalTag label="Ordered by signal" tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Trending feed" : "Ordered by signal"} tone="success" />
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {featuredBySignal.map((token) => (
-            <ArenaRailCard
-              key={token.id}
-              title={token.name}
-              symbol={token.symbol}
-              detail={`${token.watchlistCount.toLocaleString()} signal votes · MC ${formatUsd(token.marketCapUsd)}`}
-              href={getMockTokenRouteById(token.id)}
-              badges={[
-                { label: `Rank ${token.placementIndex != null ? token.placementIndex + 1 : "-"}`, tone: "hot" },
-                { label: token.sentiment === "heating_up" ? "Heating up" : token.sentiment === "volatile" ? "Volatile" : "Stable", tone: token.sentiment === "heating_up" ? "hot" : token.sentiment === "volatile" ? "sponsored" : "success" },
-              ]}
-            />
-          ))}
+          {hasRealCampaigns
+            ? realFeatured.map((item) => <RealCampaignRailCard key={item.id} item={item} badgeTone="hot" />)
+            : featuredBySignal.map((token) => (
+                <ArenaRailCard
+                  key={token.id}
+                  title={token.name}
+                  symbol={token.symbol}
+                  detail={`${token.watchlistCount.toLocaleString()} signal votes · MC ${formatUsd(token.marketCapUsd)}`}
+                  href={getMockTokenRouteById(token.id)}
+                  badges={[
+                    { label: `Rank ${token.placementIndex != null ? token.placementIndex + 1 : "-"}`, tone: "hot" },
+                    { label: token.sentiment === "heating_up" ? "Heating up" : token.sentiment === "volatile" ? "Volatile" : "Stable", tone: token.sentiment === "heating_up" ? "hot" : token.sentiment === "volatile" ? "sponsored" : "success" },
+                  ]}
+                />
+              ))}
         </div>
       </section>
 
