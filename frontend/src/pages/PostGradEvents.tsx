@@ -135,7 +135,7 @@ const PostGradEvents = () => {
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Live now</div>
           <div className="mt-2 text-lg font-semibold text-white">{liveEvents[0]?.title ?? "No live event"}</div>
-          <div className="mt-1 text-sm text-white/60">{liveEvents[0] ? `${liveEvents[0].participantCount} participants in motion` : "The next deployment will appear here."}</div>
+          <div className="mt-1 text-sm text-white/60">{liveEvents[0] ? `${liveEvents[0].participantCount} participants in motion` : "The next event will appear here when it goes live."}</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Next up</div>
@@ -153,10 +153,10 @@ const PostGradEvents = () => {
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Event entrants</div>
-            <h2 className="mt-1 text-2xl font-semibold text-white">Trending memecoins for event seeding</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/65">Real campaign feed items are shown here when available, so event planning can be tested against live market candidates while scheduled event controls remain available below.</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Memecoins in the event picture</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so event planning can be viewed against the current market lineup.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Live feed" : eventEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : eventEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
         </div>
         <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns ? (
@@ -171,7 +171,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Event entrant candidates will appear here when the live campaign feed is available.
+              Event entrants will appear here when the live campaign feed is available.
             </div>
           )}
         </div>
@@ -197,7 +197,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              No event is live right now. Deploy a scheduled event to start the lane.
+              No event is live right now.
             </div>
           )}
         </div>
@@ -288,7 +288,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Completed events will appear here as the Arena cycle progresses.
+              Completed events will appear here as the schedule progresses.
             </div>
           )}
         </div>
