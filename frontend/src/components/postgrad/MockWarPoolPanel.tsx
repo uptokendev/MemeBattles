@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
-import { Coins, Lock, RefreshCcw, ShieldAlert, Trophy } from "lucide-react";
+import { Coins, Lock, ShieldAlert, Trophy } from "lucide-react";
 import type { Battle, WarPool } from "@/features/postgrad/contracts";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
 
 function formatUsd(value: number) {
@@ -34,11 +35,11 @@ const nextPoolActions: Record<WarPool["state"], { label: string; state: WarPool[
   open: [{ label: "Lock cutoff", state: "locked" }],
   locked: [{ label: "Start settlement", state: "settling" }],
   settling: [{ label: "Mark paid", state: "paid" }],
-  paid: [{ label: "Reopen QA pool", state: "open" }],
+  paid: [{ label: "Reopen pool", state: "open" }],
 };
 
 export function MockWarPoolPanel({ battle }: { battle: Battle }) {
-  const { pool, settlementSummary, supportWarPoolSide, transitionMockWarPool, resetMockWarPoolRuntime } = useMockWarPool(battle.id);
+  const { pool, settlementSummary, supportWarPoolSide, transitionMockWarPool } = useMockWarPool(battle.id);
 
   if (!pool) return null;
 
@@ -48,17 +49,13 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
     <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Interactive War Pool</div>
-          <div className="mt-1 text-xl font-semibold text-white">Spectator support and settlement sandbox</div>
-          <div className="mt-2 text-sm text-white/65">Support either side, lock cutoff, simulate settlement, and verify payout routing before real pool contracts are connected.</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">War Pool</div>
+          <div className="mt-1 text-xl font-semibold text-white">Spectator support and settlement routing</div>
+          <div className="mt-2 text-sm text-white/65">Support either side, lock cutoff, simulate settlement, and verify payout routing before the pool closes.</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <TacticalTag label={pool.state} tone={stateTone[pool.state]} />
           <TacticalTag label={`${pool.entries.length} entries`} tone="sponsored" />
-          <Button variant="outline" size="sm" onClick={resetMockWarPoolRuntime}>
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Reset pools
-          </Button>
         </div>
       </div>
 
@@ -86,6 +83,7 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
           {supportedParticipants.map((participant) => {
             const sideTotal = pool.entries.filter((entry) => entry.sideTokenId === participant.tokenId).reduce((total, entry) => total + entry.amountUsd, 0);
             const share = pool.totalPotUsd > 0 ? Math.round((sideTotal / pool.totalPotUsd) * 100) : 0;
+            const tokenRoute = getMockTokenRouteById(participant.tokenId);
             return (
               <div key={participant.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -109,9 +107,11 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
                         Support {formatUsd(amount)}
                       </Button>
                     ))}
-                    <Button asChild size="sm" variant="outline">
-                      <Link to={`/arena/token/${participant.tokenId}`}>Token</Link>
-                    </Button>
+                    {tokenRoute ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={tokenRoute}>Token</Link>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </div>
