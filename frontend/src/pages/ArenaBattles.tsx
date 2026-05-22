@@ -6,7 +6,7 @@ import type { MockTokenProfile } from "@/features/postgrad/contracts";
 import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
-import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
+import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 
 const CREATOR_COIN_IDS = ["circuit-wolf", "sleep-driver", "astro-frogs", "redline-rats"];
 
@@ -55,8 +55,8 @@ const ArenaBattles = () => {
     openForBattleQueue,
     archivedBattles,
     getBattleForToken,
-    createMockOpenForBattle,
-  } = useMockBattleLists();
+    openCreatorCoinForBattle,
+  } = useArenaBattleFeed();
   const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading } = useArenaCampaignFeed(8);
 
   const creatorCoins = CREATOR_COIN_IDS.map((tokenId) => getMockTokenById(tokenId)).filter(isTokenProfile);
@@ -197,7 +197,7 @@ const ArenaBattles = () => {
                       ) : null}
 
                       {isReady ? (
-                        <Button size="sm" onClick={() => createMockOpenForBattle(token.id)}>
+                        <Button size="sm" onClick={() => openCreatorCoinForBattle(token.id)}>
                           Open for battle
                         </Button>
                       ) : battle ? (
