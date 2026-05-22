@@ -58,8 +58,7 @@ export function ArenaCampaignRailCard({
   actions?: ArenaCampaignRailAction[];
 }) {
   const cardActions = actions ?? [{ label: "Token details", href: item.href }];
-
-  return (
+  const content = (
     <div className="min-w-[220px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4 transition-colors hover:bg-white/[0.07]">
       <div className="flex flex-wrap items-center gap-2">
         <TacticalTag label={item.rankLabel} tone={rankTone} />
@@ -78,6 +77,14 @@ export function ArenaCampaignRailCard({
         </div>
       ) : null}
     </div>
+  );
+
+  if (cardActions.length) return content;
+
+  return (
+    <Link to={item.href} className="block shrink-0">
+      {content}
+    </Link>
   );
 }
 
