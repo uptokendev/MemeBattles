@@ -84,8 +84,8 @@ const Arena = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena overview</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Competition discovery, simplified.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena is focused on sponsored placements, featured memecoins, live battles, open challenges, and current competition context. Deep token browsing belongs on the canonical token page.</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Sponsored memecoins, featured momentum, and live competition.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena keeps the current battle picture in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${hasRealCampaigns ? realSponsored.length : sponsoredTokens.length} sponsored`} tone="sponsored" />
@@ -101,7 +101,7 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Live feed" : realCampaignsLoading ? "Loading" : "QA feed"} tone="sponsored" />
+          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : "Arena feed"} tone="sponsored" />
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns
@@ -115,7 +115,7 @@ const Arena = () => {
                   href={getMockTokenRouteById(token.id)}
                   badges={[
                     { label: "Sponsored", tone: "sponsored" },
-                    { label: token.battleEligible ? "Battle eligible" : "Locked", tone: token.battleEligible ? "success" : "default" },
+                    { label: token.battleEligible ? "Battle ready" : "Locked", tone: token.battleEligible ? "success" : "default" },
                   ]}
                 />
               ))}
@@ -126,9 +126,9 @@ const Arena = () => {
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Featured by upvote signal</h2>
+            <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Trending feed" : "Ordered by signal"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Trending feed" : "Signal ranking"} tone="success" />
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns
@@ -203,7 +203,7 @@ const Arena = () => {
                   </Button>
                   {tokenRoute ? (
                     <Button asChild size="sm" variant="outline">
-                      <Link to={tokenRoute}>Open token</Link>
+                      <Link to={tokenRoute}>Token details</Link>
                     </Button>
                   ) : null}
                 </div>
