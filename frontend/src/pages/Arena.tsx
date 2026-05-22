@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
-import { getMockTokenRouteById, scheduledEvents } from "@/features/postgrad/mockRegistry";
+import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
+import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
+import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
-import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
 
 function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -66,14 +67,15 @@ function RealCampaignRailCard({ item, badgeTone = "success" }: { item: ArenaCamp
 
 const Arena = () => {
   const { liveBattles, openForBattleQueue } = useArenaBattleFeed();
+  const { events } = useArenaEventFeed();
+  const { season } = useArenaLeagueFeed();
   const { featuredTokens, allTokens } = useMockArenaState();
-  const { season } = useMockLeagueSeason();
   const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
 
   const sponsoredTokens = allTokens.filter((token) => token.sponsoredPlacement);
   const featuredBySignal = [...featuredTokens].sort((left, right) => right.watchlistCount - left.watchlistCount);
-  const activeEvents = scheduledEvents.filter((event) => event.status === "live");
-  const upcomingEvents = scheduledEvents.filter((event) => event.status === "scheduled");
+  const activeEvents = events.filter((event) => event.status === "live");
+  const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
   const realSponsored = realCampaignRailItems.slice(0, 4);
   const realFeatured = realCampaignRailItems.slice(4, 10);
