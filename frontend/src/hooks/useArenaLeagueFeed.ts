@@ -88,6 +88,17 @@ async function fetchLeagueFeed(signal?: AbortSignal): Promise<ArenaLeagueFeedPay
   };
 }
 
+async function mutateLeagueViaApi(action: "advance-week" | "rebalance-divisions" | "cycle-season-state"): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/league/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 /**
  * Adapter boundary for Arena league surfaces.
  *
@@ -99,6 +110,12 @@ export function useArenaLeagueFeed() {
   const runtime = useMockLeagueSeason();
   const [apiPayload, setApiPayload] = useState<ArenaLeagueFeedPayload | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshFeed = async () => {
+    const payload = await fetchLeagueFeed().catch(() => null);
+    if (payload) setApiPayload(payload);
+    return payload;
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,13 +139,52 @@ export function useArenaLeagueFeed() {
     };
   }, [runtime.season.id, runtime.season.week, runtime.history.length]);
 
+  const advanceWeek = async () => {
+    try {
+      const advanced = await mutateLeagueViaApi("advance-week");
+      if (advanced) {
+        await refreshFeed();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaLeagueFeed] API advance week unavailable", error);
+    }
+    return runtime.advanceLeagueWeek();
+  };
+
+  const rebalanceDivisions = async () => {
+    try {
+      const rebalanced = await mutateLeagueViaApi("rebalance-divisions");
+      if (rebalanced) {
+        await refreshFeed();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaLeagueFeed] API rebalance unavailable", error);
+    }
+    return runtime.rebalanceLeagueDivisions();
+  };
+
+  const cycleSeasonState = async () => {
+    try {
+      const cycled = await mutateLeagueViaApi("cycle-season-state");
+      if (cycled) {
+        await refreshFeed();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaLeagueFeed] API season cycle unavailable", error);
+    }
+    return runtime.cycleMockLeagueState();
+  };
+
   return {
     source: apiPayload ? "api" as ArenaLeagueFeedSource : "qa-runtime" as ArenaLeagueFeedSource,
     loading,
     season: apiPayload?.season ?? runtime.season,
     history: apiPayload?.history ?? runtime.history,
-    advanceWeek: runtime.advanceLeagueWeek,
-    cycleSeasonState: runtime.cycleMockLeagueState,
-    rebalanceDivisions: runtime.rebalanceLeagueDivisions,
+    advanceWeek,
+    cycleSeasonState,
+    rebalanceDivisions,
   };
 }
