@@ -67,8 +67,8 @@ const ArenaBattles = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena battles</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Open creator coins for battle, then track the public queue.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page owns the founder-side battle workflow. Pick one of your coins, check whether it is eligible, see why it is blocked when it is not, and launch it into the Arena when a slot is free.</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Open your memecoins for battle and track the public queue.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page is the creator-side battle surface. Review readiness, see why a coin is blocked when it is unavailable, and send eligible coins into the Arena when a slot is open.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${creatorCoins.length} creator coins`} tone="sponsored" />
@@ -83,10 +83,10 @@ const ArenaBattles = () => {
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Market candidates</div>
-            <h2 className="mt-1 text-2xl font-semibold text-white">Trending memecoins for battle discovery</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/65">Real campaign feed items are shown here when available. Creator controls below stay available for flow testing until battle eligibility is fully backed by the API.</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Battle-ready memecoins</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so current market momentum can be reviewed alongside the battle queue and your own coin controls.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Live feed" : marketCandidatesLoading ? "Loading" : "QA fallback"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : marketCandidatesLoading ? "Loading" : "Arena feed"} tone="success" />
         </div>
         <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns ? (
@@ -101,7 +101,7 @@ const ArenaBattles = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Campaign candidates will appear here when the live feed is available.
+              Battle candidates will appear here when the live campaign feed is available.
             </div>
           )}
         </div>
@@ -144,12 +144,12 @@ const ArenaBattles = () => {
             const statusTone = isReady ? "success" : isLocked ? "default" : isQueued ? "sponsored" : "hot";
 
             const reason = isReady
-              ? "This coin is eligible and not currently assigned to another battle slot."
+              ? "This coin is eligible and currently free to open a new challenge."
               : isLocked
-                ? "This coin is still under battle cooldown checks, so it cannot open a fresh challenge yet."
+                ? "This coin has not cleared the checks required to open a fresh challenge yet."
                 : isQueued
-                  ? "This coin already has an active challenge in the Arena queue and should wait for a rival or acceptance flow."
-                  : "This coin is already allocated to a live or recently settled battle and cannot open another one yet.";
+                  ? "This coin already has an active challenge in the queue and is waiting for a rival or acceptance."
+                  : "This coin is already assigned to a live or recently settled battle and cannot open another one yet.";
 
             return (
               <div key={token.id} className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-5">
@@ -261,7 +261,7 @@ const ArenaBattles = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Settled battles will appear here once battle resolution is available.
+              Settled battles will appear here once recent results are available.
             </div>
           )}
         </div>
