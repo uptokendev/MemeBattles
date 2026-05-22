@@ -61,8 +61,8 @@ const PostGradLeague = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena leagues</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Season standings, movement, and reward context.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Track the current season table, who is moving up or down, and the reward pool sitting behind the competition cycle.</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Season standings, movement, and reward pool context.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Track the current table, see who is moving up or down, and keep the season reward pool in view as the league cycle advances.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={season.label} tone="sponsored" />
@@ -100,10 +100,10 @@ const PostGradLeague = () => {
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">League entrants</div>
-            <h2 className="mt-1 text-2xl font-semibold text-white">Trending memecoins for season seeding</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/65">Real campaign feed items are shown here when available, so league seeding can be reviewed against current market candidates while standings remain testable below.</p>
+            <h2 className="mt-1 text-2xl font-semibold text-white">Memecoins in contention</h2>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so season seeding and standings can be viewed against the current market lineup.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Live feed" : leagueEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : leagueEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
         </div>
         <div className="mt-5 flex gap-3 overflow-x-auto pb-2">
           {hasRealCampaigns ? (
@@ -118,7 +118,7 @@ const PostGradLeague = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              League entrant candidates will appear here when the live campaign feed is available.
+              League entrants will appear here when the live campaign feed is available.
             </div>
           )}
         </div>
@@ -128,8 +128,8 @@ const PostGradLeague = () => {
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Season controls</div>
-              <div className="mt-2 text-sm text-white/70">Advance the season, rebalance divisions, or roll the state forward without leaving the Arena leagues route.</div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">League actions</div>
+              <div className="mt-2 text-sm text-white/70">Move the season forward, rebalance divisions, or roll into the next state from this page.</div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={advanceLeagueWeek}>Advance week</Button>
@@ -210,7 +210,7 @@ const PostGradLeague = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Completed seasons will appear here after season rollover.
+              Completed seasons will appear here after rollover.
             </div>
           )}
         </div>
