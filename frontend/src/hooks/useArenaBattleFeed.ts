@@ -65,6 +65,18 @@ async function openBattleViaApi(tokenId: string): Promise<boolean> {
   return json == null || json?.ok !== false;
 }
 
+async function transitionBattleViaApi(battleId: string, state: BattleTransitionState): Promise<boolean> {
+  const response = await apiFetch(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state }),
+  });
+
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 /**
  * Adapter boundary for the Arena battle surfaces.
  *
@@ -165,10 +177,24 @@ export function useArenaBattleDetails(battleId?: string) {
     };
   }, [battleId]);
 
+  const transitionBattle = async (battleIdToUpdate: string, state: BattleTransitionState) => {
+    try {
+      const updated = await transitionBattleViaApi(battleIdToUpdate, state);
+      if (updated) {
+        const freshBattle = await fetchBattleDetails(battleIdToUpdate).catch(() => null);
+        if (freshBattle) setApiBattle(freshBattle);
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaBattleDetails] API transition unavailable", error);
+    }
+    return runtime.transitionMockBattle(battleIdToUpdate, state);
+  };
+
   return {
     source: apiBattle ? "api" as ArenaBattleFeedSource : "qa-runtime" as ArenaBattleFeedSource,
     loading,
     battle: apiBattle ?? runtime.battle,
-    transitionBattle: (battleIdToUpdate: string, state: BattleTransitionState) => runtime.transitionMockBattle(battleIdToUpdate, state),
+    transitionBattle,
   };
 }
