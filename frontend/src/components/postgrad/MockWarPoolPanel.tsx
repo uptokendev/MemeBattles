@@ -4,7 +4,7 @@ import type { Battle, WarPool } from "@/features/postgrad/contracts";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
-import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
+import { useArenaWarPool } from "@/hooks/useArenaWarPoolFeed";
 
 function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -39,7 +39,7 @@ const nextPoolActions: Record<WarPool["state"], { label: string; state: WarPool[
 };
 
 export function MockWarPoolPanel({ battle }: { battle: Battle }) {
-  const { pool, settlementSummary, supportWarPoolSide, transitionMockWarPool } = useMockWarPool(battle.id);
+  const { pool, settlementSummary, supportSide, transitionWarPool } = useArenaWarPool(battle.id);
 
   if (!pool) return null;
 
@@ -102,7 +102,7 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
                         size="sm"
                         variant="outline"
                         disabled={pool.state !== "open"}
-                        onClick={() => supportWarPoolSide(battle.id, participant.tokenId, amount)}
+                        onClick={() => supportSide(battle.id, participant.tokenId, amount)}
                       >
                         Support {formatUsd(amount)}
                       </Button>
@@ -149,7 +149,7 @@ export function MockWarPoolPanel({ battle }: { battle: Battle }) {
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             {nextPoolActions[pool.state].map((action) => (
-              <Button key={action.state} size="sm" onClick={() => transitionMockWarPool(battle.id, action.state)}>
+              <Button key={action.state} size="sm" onClick={() => transitionWarPool(battle.id, action.state)}>
                 {action.label}
               </Button>
             ))}
