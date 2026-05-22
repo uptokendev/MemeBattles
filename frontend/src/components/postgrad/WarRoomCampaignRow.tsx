@@ -5,6 +5,7 @@ import type { CampaignInfo } from "@/lib/launchpadClient";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
+import { WarRoomBattleIntel } from "@/components/postgrad/WarRoomBattleIntel";
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 
@@ -156,6 +157,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
 
           <div className="order-1 space-y-2.5 md:space-y-3 xl:order-2">
             <WarRoomTradePanel campaign={campaign} />
+            <WarRoomBattleIntel campaign={campaign} bnbUsd={bnbUsd} />
 
             <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
               <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Links</div>
