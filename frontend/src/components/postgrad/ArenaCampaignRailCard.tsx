@@ -8,6 +8,46 @@ export type ArenaCampaignRailAction = {
   href: string;
 };
 
+export type ArenaFallbackRailBadge = {
+  label: string;
+  tone?: "default" | "hot" | "sponsored" | "success";
+};
+
+export function ArenaFallbackRailCard({
+  title,
+  symbol,
+  detail,
+  href,
+  badges,
+}: {
+  title: string;
+  symbol: string;
+  detail: string;
+  href?: string | null;
+  badges: ArenaFallbackRailBadge[];
+}) {
+  const content = (
+    <div className="min-w-[220px] rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition-colors hover:bg-white/[0.07]">
+      <div className="flex flex-wrap items-center gap-2">
+        {badges.map((badge) => (
+          <TacticalTag key={`${title}-${badge.label}`} label={badge.label} tone={badge.tone ?? "default"} />
+        ))}
+      </div>
+      <div className="mt-3 text-sm font-semibold text-white">{title}</div>
+      <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/45">{symbol}</div>
+      <div className="mt-3 text-xs text-white/60">{detail}</div>
+    </div>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link to={href} className="block shrink-0">
+      {content}
+    </Link>
+  );
+}
+
 export function ArenaCampaignRailCard({
   item,
   rankTone = "success",
