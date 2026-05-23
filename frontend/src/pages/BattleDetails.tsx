@@ -1,11 +1,38 @@
 import { Link, useParams } from "react-router-dom";
+import { RichBattleCard } from "@/components/postgrad/RichBattleCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarPoolPanel } from "@/components/postgrad/WarPoolPanel";
-import { BattleCard } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
+import { formatCompactCount, formatCompactUsd } from "@/features/postgrad/warRoomMetrics";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useArenaBattleDetails } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
+
+function getParticipantImage(participant: any) {
+  return participant?.imageUrl || participant?.image || participant?.logoURI || participant?.logoUrl || "/placeholder.svg";
+}
+
+function getParticipantRoute(participant: any) {
+  return getArenaTokenRoute(participant?.campaignAddress ?? participant?.tokenId ?? participant?.tokenAddress ?? null);
+}
+
+function getParticipantMarketCap(participant: any) {
+  const value = Number(participant?.marketCapUsd ?? participant?.marketCap ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function getParticipantAudience(participant: any) {
+  const holders = Number(participant?.holderCount ?? participant?.holders ?? 0);
+  if (Number.isFinite(holders) && holders > 0) {
+    return { label: "Holders", value: holders };
+  }
+
+  const traders = Number(participant?.traderCount ?? participant?.uniqueTraders ?? 0);
+  return {
+    label: "Traders",
+    value: Number.isFinite(traders) && traders > 0 ? traders : 0,
+  };
+}
 
 const BattleDetails = () => {
   const { id } = useParams();
@@ -39,10 +66,14 @@ const BattleDetails = () => {
       tokenId: participant.tokenId,
       tokenName: participant.tokenName,
       symbol: participant.symbol,
-      route: getArenaTokenRoute(participant.tokenId),
+      route: getParticipantRoute(participant as any),
       score: participant.score,
       volumeUsd: participant.volumeUsd,
       uniqueTraders: participant.uniqueTraders,
+      marketCapUsd: getParticipantMarketCap(participant as any),
+      audience: getParticipantAudience(participant as any),
+      imageUrl: getParticipantImage(participant as any),
+      isLeading: Boolean((participant as any)?.isLeading),
     }));
 
   const bridgeEvent = events.find((event) => event.status === "live") ?? events.find((event) => event.status === "scheduled" || event.status === "deploying") ?? null;
@@ -66,7 +97,7 @@ const BattleDetails = () => {
         </div>
       </section>
 
-      <BattleCard battle={battle} ctaLabel="Battle details" />
+      <RichBattleCard battle={battle} ctaLabel="Battle details" />
 
       <WarPoolPanel battle={battle} />
 
@@ -77,14 +108,31 @@ const BattleDetails = () => {
             {participantTokens.map((token) => {
               const content = (
                 <div className="rounded-xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{token.tokenName}</div>
-                      <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
+                  <div className="flex items-start gap-3">
+                    <img src={token.imageUrl} alt={token.tokenName} className="h-14 w-14 shrink-0 rounded-2xl border border-white/10 object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold text-white">{token.tokenName}</div>
+                        <div className="text-xs uppercase tracking-[0.22em] text-white/45">{token.symbol}</div>
+                        {token.isLeading ? <TacticalTag label="Leading" tone="success" /> : null}
+                        <TacticalTag label={`${token.score.toFixed(1)} pts`} tone="sponsored" />
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Market cap</div>
+                          <div className="mt-1 text-sm text-white">{formatCompactUsd(token.marketCapUsd)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">24h volume</div>
+                          <div className="mt-1 text-sm text-white">{formatCompactUsd(token.volumeUsd)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">{token.audience.label}</div>
+                          <div className="mt-1 text-sm text-white">{formatCompactCount(token.audience.value)}</div>
+                        </div>
+                      </div>
                     </div>
-                    <TacticalTag label={`${token.score.toFixed(1)} pts`} tone="sponsored" />
                   </div>
-                  <div className="mt-2 text-sm text-white/65">{token.uniqueTraders} traders · ${token.volumeUsd.toLocaleString()} tracked volume</div>
                 </div>
               );
 
