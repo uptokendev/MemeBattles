@@ -51,7 +51,7 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
         <div>
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">War Pool</div>
           <div className="mt-1 text-xl font-semibold text-white">Spectator support and settlement routing</div>
-          <div className="mt-2 text-sm text-white/65">Support either side, lock cutoff, simulate settlement, and verify payout routing before the pool closes.</div>
+          <div className="mt-2 text-sm text-white/65">Support either side, lock cutoff, advance settlement, and verify payout routing before the pool closes.</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <TacticalTag label={pool.state} tone={stateTone[pool.state]} />
