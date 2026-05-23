@@ -28,6 +28,7 @@ const ArenaBattles = () => {
     archivedBattles,
     getBattleForToken,
     openCreatorCoinForBattle,
+    source: battleSource,
   } = useArenaBattleFeed();
   const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading } = useArenaCampaignFeed(8);
   const { campaigns: creatorCampaigns, loading: creatorCampaignsLoading } = useArenaCampaignFeed(50);
@@ -213,9 +214,15 @@ const ArenaBattles = () => {
             </div>
             <TacticalTag label={`${liveBattles.length} active`} tone="hot" />
           </div>
-          {liveBattles.map((battle) => (
-            <BattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
-          ))}
+          {liveBattles.length ? (
+            liveBattles.map((battle) => (
+              <BattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {battleSource === "empty" ? "Live battle data is not available on this branch yet." : "No live battles are active right now."}
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -226,9 +233,15 @@ const ArenaBattles = () => {
             </div>
             <TacticalTag label={`${openForBattleQueue.length} awaiting rivals`} tone="success" />
           </div>
-          {openForBattleQueue.map((battle) => (
-            <BattleCard key={battle.id} battle={battle} ctaLabel="Open challenge" />
-          ))}
+          {openForBattleQueue.length ? (
+            openForBattleQueue.map((battle) => (
+              <BattleCard key={battle.id} battle={battle} ctaLabel="Open challenge" />
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {battleSource === "empty" ? "Open-for-battle queue data is not available on this branch yet." : "No memecoins are waiting in the battle queue right now."}
+            </div>
+          )}
         </div>
       </section>
 
@@ -247,7 +260,7 @@ const ArenaBattles = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Settled battles will appear here once recent results are available.
+              {battleSource === "empty" ? "Recent battle archive data is not available on this branch yet." : "Settled battles will appear here once recent results are available."}
             </div>
           )}
         </div>
