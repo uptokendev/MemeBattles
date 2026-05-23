@@ -2,18 +2,10 @@ import { Link } from "react-router-dom";
 import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
 import { getPostGradWarRoomSearchRoute } from "@/features/postgrad/identityRoutes";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import type { ArenaEventSummary } from "@/hooks/useArenaEventFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
-
-const statusActions = {
-  scheduled: { label: "Deploy event", status: "deploying" as const },
-  deploying: { label: "Go live", status: "live" as const },
-  live: { label: "Complete event", status: "completed" as const },
-  completed: null,
-};
 
 const bracketLabels = {
   registration: "Registration",
@@ -35,16 +27,7 @@ function formatWhen(value: string) {
   return new Date(value).toLocaleDateString();
 }
 
-function EventSurfaceCard({
-  event,
-  onAdvance,
-  onAdvanceBracket,
-}: {
-  event: ArenaEventSummary;
-  onAdvance: () => void;
-  onAdvanceBracket?: () => void;
-}) {
-  const nextStatusAction = statusActions[event.status];
+function EventSurfaceCard({ event }: { event: ArenaEventSummary }) {
   const bracketLabel = event.type === "tournament" && event.bracketStage ? bracketLabels[event.bracketStage] : null;
   const tone = event.status === "live" ? "success" : event.type === "tournament" ? "sponsored" : "default";
 
@@ -69,16 +52,6 @@ function EventSurfaceCard({
               <Link to={`/tournament/${event.id}`}>Open bracket</Link>
             </Button>
           ) : null}
-          {postGradFlags.mocks && nextStatusAction ? (
-            <Button size="sm" onClick={onAdvance}>
-              {nextStatusAction.label}
-            </Button>
-          ) : null}
-          {postGradFlags.mocks && event.type === "tournament" && event.status !== "completed" && onAdvanceBracket ? (
-            <Button size="sm" variant="outline" onClick={onAdvanceBracket}>
-              Advance bracket
-            </Button>
-          ) : null}
         </div>
       </div>
     </div>
@@ -86,7 +59,7 @@ function EventSurfaceCard({
 }
 
 const PostGradEvents = () => {
-  const { events, archivedEvents, transitionEvent, advanceTournamentBracket } = useArenaEventFeed();
+  const { events, archivedEvents } = useArenaEventFeed();
   const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading } = useArenaCampaignFeed(10);
 
   const liveEvents = events.filter((event) => event.status === "live");
@@ -162,14 +135,7 @@ const PostGradEvents = () => {
         </div>
         <div className="space-y-3">
           {liveEvents.length ? (
-            liveEvents.map((event) => (
-              <EventSurfaceCard
-                key={event.id}
-                event={event}
-                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
-                onAdvanceBracket={event.type === "tournament" ? () => advanceTournamentBracket(event.id) : undefined}
-              />
-            ))
+            liveEvents.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
               No event is live right now.
@@ -188,14 +154,7 @@ const PostGradEvents = () => {
         </div>
         <div className="space-y-3">
           {upcomingEvents.length ? (
-            upcomingEvents.map((event) => (
-              <EventSurfaceCard
-                key={event.id}
-                event={event}
-                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
-                onAdvanceBracket={event.type === "tournament" ? () => advanceTournamentBracket(event.id) : undefined}
-              />
-            ))
+            upcomingEvents.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
               No scheduled events are waiting in the queue.
@@ -214,14 +173,7 @@ const PostGradEvents = () => {
         </div>
         <div className="space-y-3">
           {tournaments.length ? (
-            tournaments.map((event) => (
-              <EventSurfaceCard
-                key={event.id}
-                event={event}
-                onAdvance={() => transitionEvent(event.id, statusActions[event.status]!.status)}
-                onAdvanceBracket={() => advanceTournamentBracket(event.id)}
-              />
-            ))
+            tournaments.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
               No tournament event is currently tracked.
@@ -263,7 +215,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Completed events will appear here as the schedule progresses.
+              Completed events will appear here after they wrap.
             </div>
           )}
         </div>
