@@ -9,6 +9,7 @@ import { WarRoomBattleIntel } from "@/components/postgrad/WarRoomBattleIntel";
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
+import { useWarRoomRowDetails } from "@/hooks/useWarRoomRowDetails";
 
 function shortenAddress(value?: string | null) {
   const input = String(value ?? "").trim();
@@ -47,6 +48,12 @@ function MobileMetric({ label, value }: { label: string; value: string }) {
 
 export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
   const [expanded, setExpanded] = useState(false);
+  const chainId = Number((campaign as any).chainId ?? 97);
+  const { details, loading: detailLoading, error: detailError, source: detailSource } = useWarRoomRowDetails({
+    campaignAddress: campaign.campaign,
+    chainId,
+    enabled: expanded,
+  });
 
   const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign);
   const websiteHref = resolveExternalHref(campaign.website);
@@ -54,6 +61,9 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
   const statusLabel = metrics.status === "graduated" ? "Graduated" : metrics.status === "bonding" ? "Bonding" : "Draft";
   const statusTone = metrics.status === "graduated" ? "success" : metrics.status === "bonding" ? "hot" : "default";
+  const battleIntel = details?.battleIntel;
+  const chartSourceLabel = details?.chart?.source === "dex" ? "DEX chart" : details?.chart?.source === "bonding_curve" ? "Bonding chart" : "Chart";
+  const tradeModeLabel = details?.tradeContext?.mode === "dex" ? "DEX trading" : details?.tradeContext?.mode === "bonding_curve" ? "Bonding trade" : "Trade";
 
   const createdLabel = useMemo(() => formatAge(campaign.createdAt), [campaign.createdAt]);
 
@@ -80,6 +90,8 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 <div className="truncate text-[11px] font-semibold text-white/45 lg:text-sm">{campaign.name}</div>
                 <TacticalTag label={statusLabel} tone={statusTone} />
                 {!metrics.hasRichStats ? <TacticalTag label="Syncing" tone="default" /> : null}
+                {expanded && detailLoading ? <TacticalTag label="Loading detail" tone="default" /> : null}
+                {expanded && detailSource === "api" ? <TacticalTag label="Detail API" tone="success" /> : null}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-white/55 lg:text-[11px]">
                 <span className="text-orange-300">{createdLabel}</span>
@@ -153,12 +165,33 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Chart</div>
                 <div className="mt-1 text-[13px] font-semibold text-white md:text-sm">Same market view as token details</div>
               </div>
-              <TacticalTag label={campaign.symbol} tone="sponsored" />
+              <div className="flex flex-wrap justify-end gap-2">
+                <TacticalTag label={chartSourceLabel} tone="sponsored" />
+                <TacticalTag label={campaign.symbol} tone="default" />
+              </div>
             </div>
             <CurvePriceChart campaignAddress={campaign.campaign} />
           </div>
 
           <div className="order-1 space-y-2.5 md:space-y-3 xl:order-2">
+            {detailError ? (
+              <div className="rounded-[16px] border border-orange-300/20 bg-orange-500/10 p-3 text-xs text-orange-100">
+                War Room row detail unavailable: {detailError}
+              </div>
+            ) : null}
+            {details ? (
+              <div className="rounded-[16px] border border-white/10 bg-white/[0.04] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TacticalTag label={tradeModeLabel} tone={details.tradeContext?.mode === "dex" ? "success" : "hot"} />
+                  <TacticalTag label={battleIntel?.eligible ? "Battle eligible" : "Battle unavailable"} tone={battleIntel?.eligible ? "success" : "default"} />
+                  {details.watchlist?.supported ? <TacticalTag label={details.watchlist.following ? "Watching" : "Watchlist ready"} tone="sponsored" /> : null}
+                </div>
+                {battleIntel?.summary ? <div className="mt-2 text-xs text-white/60">{battleIntel.summary}</div> : null}
+              </div>
+            ) : detailLoading ? (
+              <div className="rounded-[16px] border border-white/10 bg-white/[0.04] p-3 text-xs text-white/60">Loading War Room row detail…</div>
+            ) : null}
+
             <WarRoomTradePanel campaign={campaign} />
             <WarRoomBattleIntel campaign={campaign} bnbUsd={bnbUsd} />
 
