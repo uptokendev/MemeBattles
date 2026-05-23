@@ -20,20 +20,53 @@ function getBattleStateTone(state: string) {
   return "default" as const;
 }
 
+function getCreatorStateTone(state: string) {
+  if (state === "eligible") return "success" as const;
+  if (state === "unavailable") return "default" as const;
+  if (state === "open_for_battle" || state === "pending" || state === "accepted") return "sponsored" as const;
+  return "hot" as const;
+}
+
+function getCreatorStateLabel(state: string) {
+  if (state === "eligible") return "Ready to open";
+  if (state === "unavailable") return "Unavailable";
+  return state.replaceAll("_", " ");
+}
+
+function getCreatorReason(unavailableReason: string | null | undefined, fallback: string) {
+  if (unavailableReason === "campaign_not_live") {
+    return "This coin has not reached the live campaign state yet, so it cannot open a battle.";
+  }
+  if (unavailableReason === "campaign_inactive") {
+    return "This coin is no longer active in the current campaign feed, so it cannot enter the Arena right now.";
+  }
+  if (unavailableReason === "already_open_for_battle") {
+    return "This coin is already listed in the open queue and is waiting for a rival.";
+  }
+  if (unavailableReason === "battle_match_pending") {
+    return "This coin already has a queued match in progress and cannot open another one.";
+  }
+  if (unavailableReason === "already_in_battle") {
+    return "This coin is already attached to a live or recently completed battle and cannot open another one yet.";
+  }
+  return fallback;
+}
+
 const ArenaBattles = () => {
   const wallet = useWallet();
+  const connectedCreator = normalizeIdentity(wallet.account);
   const {
     liveBattles,
     openForBattleQueue,
     archivedBattles,
     getBattleForToken,
+    getCreatorCoinStatus,
     openCreatorCoinForBattle,
     source: battleSource,
-  } = useArenaBattleFeed();
+  } = useArenaBattleFeed(connectedCreator || undefined);
   const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading } = useArenaCampaignFeed(8);
   const { campaigns: creatorCampaigns, loading: creatorCampaignsLoading } = useArenaCampaignFeed(50);
 
-  const connectedCreator = normalizeIdentity(wallet.account);
   const creatorCoins = creatorCampaigns.filter((campaign) => normalizeIdentity(campaign.creator) === connectedCreator);
 
   return (
@@ -105,32 +138,26 @@ const ArenaBattles = () => {
             creatorCoins.map((campaign) => {
               const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign);
               const battle = getBattleForToken(campaign.campaign) ?? (campaign.token ? getBattleForToken(campaign.token) : null);
+              const creatorStatus = getCreatorCoinStatus(campaign.campaign) ?? (campaign.token ? getCreatorCoinStatus(campaign.token) : null);
               const metrics = getWarRoomCampaignMetrics(campaign, 0);
               const campaignStatus = getWarRoomCampaignStatus(campaign);
-              const isQueued = battle ? ["open_for_battle", "pending", "accepted"].includes(battle.state) : false;
-              const isLive = battle ? ["live", "completed", "settled"].includes(battle.state) : false;
-              const isLocked = campaignStatus === "draft";
-              const isReady = !battle && !isLocked;
-
-              const statusLabel = isReady
-                ? "Ready to open"
-                : isLocked
-                  ? "Locked"
-                  : isQueued
-                    ? "Already queued"
-                    : isLive
-                      ? "Already in battle"
-                      : battle?.state.replaceAll("_", " ") ?? "Unavailable";
-
-              const statusTone = isReady ? "success" : isLocked ? "default" : isQueued ? "sponsored" : "hot";
-
-              const reason = isReady
+              const fallbackState = battle
+                ? battle.state
+                : campaignStatus === "draft"
+                  ? "unavailable"
+                  : "eligible";
+              const creatorState = creatorStatus?.currentState ?? fallbackState;
+              const statusLabel = getCreatorStateLabel(creatorState);
+              const statusTone = getCreatorStateTone(creatorState);
+              const battleRouteId = creatorStatus?.battleId ?? battle?.id ?? null;
+              const fallbackReason = creatorState === "eligible"
                 ? "This coin is active on the live campaign feed and currently free to open a new challenge."
-                : isLocked
-                  ? "This coin is still in draft or pre-live state, so it cannot open a battle yet."
-                  : isQueued
+                : creatorState === "unavailable"
+                  ? "This coin is not currently available to open a battle from this branch."
+                  : creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted"
                     ? "This coin already has an active challenge in the queue and is waiting for a rival or acceptance."
                     : "This coin is already assigned to a live or recently settled battle and cannot open another one yet.";
+              const reason = getCreatorReason(creatorStatus?.unavailableReason, fallbackReason);
 
               return (
                 <div key={campaign.campaign} className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-5">
@@ -154,7 +181,7 @@ const ArenaBattles = () => {
                   <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-white">
-                        {isReady ? <Rocket className="h-4 w-4 text-emerald-300" /> : isLocked ? <ShieldAlert className="h-4 w-4 text-white/55" /> : <CircleSlash className="h-4 w-4 text-orange-200" />}
+                        {creatorState === "eligible" ? <Rocket className="h-4 w-4 text-emerald-300" /> : creatorState === "unavailable" ? <ShieldAlert className="h-4 w-4 text-white/55" /> : <CircleSlash className="h-4 w-4 text-orange-200" />}
                         Availability
                       </div>
                       <p className="mt-3 text-sm text-white/70">{reason}</p>
@@ -178,13 +205,13 @@ const ArenaBattles = () => {
                           </Button>
                         ) : null}
 
-                        {isReady ? (
+                        {creatorState === "eligible" ? (
                           <Button size="sm" onClick={() => openCreatorCoinForBattle(campaign.campaign)}>
                             Open for battle
                           </Button>
-                        ) : battle ? (
+                        ) : battleRouteId ? (
                           <Button asChild size="sm">
-                            <Link to={`/battle/${battle.id}`}>{isQueued ? "View queue" : "Open battle"}</Link>
+                            <Link to={`/battle/${battleRouteId}`}>{creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted" ? "View queue" : "Open battle"}</Link>
                           </Button>
                         ) : (
                           <Button size="sm" variant="outline" disabled>
