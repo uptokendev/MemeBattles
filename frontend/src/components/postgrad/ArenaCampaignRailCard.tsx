@@ -47,7 +47,7 @@ export function ArenaFallbackRailCard({
   badges: ArenaFallbackRailBadge[];
 }) {
   const content = (
-    <div className="min-w-[220px] rounded-xl border border-border bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-accent/50 hover:bg-card/60">
+    <div className="mwz-orange-frame-soft min-w-[220px] p-4">
       <div className="flex flex-wrap items-center gap-2">
         {badges.map((badge) => (
           <TacticalTag key={`${title}-${badge.label}`} label={badge.label} tone={badge.tone ?? "default"} />
@@ -88,9 +88,9 @@ function ArenaSponsorSpotCard() {
     <button
       type="button"
       onClick={emitSponsorSpotIntent}
-      className="min-w-[256px] rounded-2xl border border-dashed border-accent/50 bg-accent/10 p-5 text-left backdrop-blur-sm transition-colors hover:border-accent hover:bg-accent/15"
+      className="mwz-orange-frame min-w-[256px] p-5 text-left transition-colors"
     >
-      <div className="font-retro text-[10px] uppercase tracking-[0.24em] text-accent">Sponsor spot</div>
+      <div className="mwz-orange-frame-label text-[10px]">Sponsor spot</div>
       <div className="mt-3 font-retro text-lg text-foreground">Want this sponsor spot?</div>
       <div className="mt-2 text-sm text-muted-foreground">Click here.</div>
     </button>
@@ -111,8 +111,8 @@ export function ArenaCampaignRailCard({
 
   if (isSponsored) {
     return (
-      <div className="min-w-[256px] rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-accent/50 hover:bg-card/60">
-        <img src={item.imageUrl || "/placeholder.svg"} alt={item.title} className="h-32 w-full rounded-xl border border-border object-cover" />
+      <div className="mwz-orange-frame min-w-[256px] p-4">
+        <img src={item.imageUrl || "/placeholder.svg"} alt={item.title} className="h-32 w-full border border-accent/30 object-cover" />
         <div className="mt-4 font-retro text-sm text-foreground">{item.title}</div>
         {item.summary ? <div className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.summary}</div> : null}
         {sponsorWebsiteUrl ? (
@@ -142,7 +142,7 @@ export function ArenaCampaignRailCard({
   const cardActions = actions ?? defaultActions;
 
   const content = (
-    <div className="min-w-[256px] rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-accent/50 hover:bg-card/60">
+    <div className="mwz-orange-frame min-w-[256px] p-4">
       <div className="flex flex-wrap items-center gap-2">
         <TacticalTag label={item.rankLabel} tone={rankTone} />
         <TacticalTag label={item.statusLabel} tone={item.statusTone === "sponsored" ? "hot" : item.statusTone} />
@@ -150,7 +150,7 @@ export function ArenaCampaignRailCard({
 
       <div className="mt-4 flex items-start gap-3">
         {item.imageUrl ? (
-          <img src={item.imageUrl} alt={item.title} className="h-16 w-16 shrink-0 rounded-xl border border-border object-cover" />
+          <img src={item.imageUrl} alt={item.title} className="h-16 w-16 shrink-0 border border-accent/30 object-cover" />
         ) : null}
         <div className="min-w-0 flex-1">
           <div className="font-retro text-sm text-foreground">{item.title}</div>
@@ -217,14 +217,14 @@ export function ArenaCampaignRail({
     return (
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
         {[0, 1, 2].map((index) => (
-          <div key={index} className="min-w-[256px] rounded-2xl border border-border bg-card/30 p-4">
-            <div className="h-4 w-24 rounded-full bg-muted" />
+          <div key={index} className="mwz-orange-frame-soft min-w-[256px] p-4">
+            <div className="h-4 w-24 bg-muted" />
             <div className="mt-4 flex items-start gap-3">
-              <div className="h-16 w-16 rounded-xl bg-muted" />
+              <div className="h-16 w-16 bg-muted" />
               <div className="flex-1">
-                <div className="h-5 w-32 rounded-full bg-muted" />
-                <div className="mt-3 h-3 w-44 rounded-full bg-muted" />
-                <div className="mt-2 h-3 w-32 rounded-full bg-muted" />
+                <div className="h-5 w-32 bg-muted" />
+                <div className="mt-3 h-3 w-44 bg-muted" />
+                <div className="mt-2 h-3 w-32 bg-muted" />
               </div>
             </div>
           </div>
@@ -242,7 +242,7 @@ export function ArenaCampaignRail({
   }
 
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
+    <div className="mwz-orange-frame-soft p-5 text-sm text-muted-foreground">
       {emptyLabel}
     </div>
   );
