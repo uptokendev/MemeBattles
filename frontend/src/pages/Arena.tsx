@@ -6,7 +6,7 @@ import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
-import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
+import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 
 function formatUsd(value: number) {
@@ -64,7 +64,7 @@ const Arena = () => {
                   title={token.name}
                   symbol={token.symbol}
                   detail={`MC ${formatUsd(token.marketCapUsd)} · Liquidity ${formatUsd(token.liquidityUsd)}`}
-                  href={getMockTokenRouteById(token.id)}
+                  href={getArenaTokenRoute(token.id)}
                   badges={[
                     { label: "Sponsored", tone: "sponsored" },
                     { label: token.battleEligible ? "Battle ready" : "Locked", tone: token.battleEligible ? "success" : "default" },
@@ -91,7 +91,7 @@ const Arena = () => {
                   title={token.name}
                   symbol={token.symbol}
                   detail={`${token.watchlistCount.toLocaleString()} signal votes · MC ${formatUsd(token.marketCapUsd)}`}
-                  href={getMockTokenRouteById(token.id)}
+                  href={getArenaTokenRoute(token.id)}
                   badges={[
                     { label: `Rank ${token.placementIndex != null ? token.placementIndex + 1 : "-"}`, tone: "hot" },
                     { label: token.sentiment === "heating_up" ? "Heating up" : token.sentiment === "volatile" ? "Volatile" : "Stable", tone: token.sentiment === "heating_up" ? "hot" : token.sentiment === "volatile" ? "sponsored" : "success" },
@@ -140,7 +140,7 @@ const Arena = () => {
             </Button>
           </div>
           {openForBattleQueue.map((battle) => {
-            const tokenRoute = getMockTokenRouteById(battle.participants[0].tokenId);
+            const tokenRoute = getArenaTokenRoute(battle.participants[0].tokenId);
             return (
               <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
                 <div className="flex flex-wrap items-center gap-2">
