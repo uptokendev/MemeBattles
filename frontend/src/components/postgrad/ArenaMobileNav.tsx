@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, Crosshair } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { arenaSubNavItems } from "@/constants/navigation";
@@ -13,15 +13,19 @@ export function ArenaMobileNav({ onNavigate }: { onNavigate: () => void }) {
   const arenaActive = location.pathname === "/arena" || location.pathname.startsWith("/arena/");
   const [open, setOpen] = useState(arenaActive);
 
+  useEffect(() => {
+    setOpen(arenaActive);
+  }, [arenaActive]);
+
   if (!arenaSubNavItems.length) return null;
 
   return (
-    <div className="mb-2 rounded-2xl border border-sidebar-border/60 bg-white/[0.03] p-2">
+    <div className="mb-3 rounded-2xl border border-sidebar-border/60 bg-white/[0.03] p-2">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-success/78 transition-colors hover:bg-success/10 hover:text-success",
+          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] uppercase tracking-[0.18em] text-success/78 transition-colors hover:bg-success/10 hover:text-success",
           arenaActive && "bg-success/12 text-success",
         )}
         aria-expanded={open}
@@ -43,7 +47,7 @@ export function ArenaMobileNav({ onNavigate }: { onNavigate: () => void }) {
                 to={item.path}
                 onClick={onNavigate}
                 className={cn(
-                  "block rounded-xl px-3 py-2 text-xs uppercase tracking-[0.14em] text-success/70 transition-colors hover:bg-success/10 hover:text-success",
+                  "block rounded-xl px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-success/70 transition-colors hover:bg-success/10 hover:text-success",
                   active && "bg-success/12 text-success",
                 )}
               >
