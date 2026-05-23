@@ -58,6 +58,8 @@ const TournamentDetails = () => {
 
   const currentStage = tournament.bracketStage ?? "registration";
   const currentStageIndex = stageCards.findIndex((stage) => stage.key === currentStage);
+  const sourceLabel = source === "api" ? "Arena feed" : source === "qa-runtime" ? "Fallback feed" : "Feed unavailable";
+  const sourceTone = source === "api" ? "success" : source === "qa-runtime" ? "sponsored" : "default";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -72,7 +74,7 @@ const TournamentDetails = () => {
             <TacticalTag label={tournament.status} tone={tournament.status === "live" ? "success" : "sponsored"} />
             <TacticalTag label={currentStage.replaceAll("_", " ")} tone="hot" />
             <TacticalHint label="Bracket state" body="Use this page to read tournament progress, current stage, and archive readiness from the Arena event feed." />
-            <TacticalTag label={source === "api" ? "Arena feed" : "Preview data"} tone={source === "api" ? "success" : "sponsored"} />
+            <TacticalTag label={sourceLabel} tone={sourceTone} />
           </div>
         </div>
       </section>
