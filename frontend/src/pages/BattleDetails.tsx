@@ -5,12 +5,13 @@ import { BattleCard } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { postGradFlags } from "@/features/postgrad/config";
-import { scheduledEvents } from "@/features/postgrad/mockRegistry";
 import { useArenaBattleDetails } from "@/hooks/useArenaBattleFeed";
+import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 
 const BattleDetails = () => {
   const { id } = useParams();
   const { battle, transitionBattle, source } = useArenaBattleDetails(id);
+  const { events, source: eventSource } = useArenaEventFeed();
 
   if (!battle) {
     return (
@@ -55,6 +56,8 @@ const BattleDetails = () => {
       volumeUsd: participant.volumeUsd,
       uniqueTraders: participant.uniqueTraders,
     }));
+
+  const bridgeEvent = events.find((event) => event.status === "live") ?? events.find((event) => event.status === "scheduled" || event.status === "deploying") ?? null;
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -133,7 +136,13 @@ const BattleDetails = () => {
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Event bridge</div>
-          <div className="mt-2 text-sm text-white/70">Current battle can be promoted into {scheduledEvents[0].title} from the event layer.</div>
+          <div className="mt-2 text-sm text-white/70">
+            {bridgeEvent
+              ? `Current battle can be promoted into ${bridgeEvent.title} from the event layer.`
+              : eventSource === "empty"
+                ? "Event bridge data is not available on this branch yet."
+                : "Event-linked promotion will appear here when a connected Arena event is available."}
+          </div>
         </div>
       </section>
     </div>
