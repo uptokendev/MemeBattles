@@ -105,12 +105,10 @@ function archiveEvent(event) {
   const store = getEventStore();
   store.archive = [
     {
-      id: event.id,
-      title: event.title,
-      type: event.type,
+      ...event,
+      status: "completed",
+      bracketStage: event.type === "tournament" ? event.bracketStage || "completed" : undefined,
       completedAt: nowIso(),
-      participantCount: event.participantCount,
-      summary: event.summary,
     },
     ...store.archive.filter((entry) => entry.id !== event.id),
   ];
@@ -159,7 +157,7 @@ async function handleTransition(req, res, eventId) {
   if (nextStatus === "completed") {
     nextEntry.endsAt = nowIso();
     if (event.type === "tournament") nextEntry.bracketStage = "completed";
-    archiveEvent(event);
+    archiveEvent({ ...event, ...nextEntry });
   }
 
   getEventStore().overrides[eventId] = nextEntry;
@@ -187,7 +185,7 @@ async function handleAdvanceBracket(_req, res, eventId) {
     bracketStage: nextStage,
   };
 
-  if (nextStage === "completed") archiveEvent(event);
+  if (nextStage === "completed") archiveEvent({ ...event, ...getEventStore().overrides[eventId] });
   return json(res, 200, { ok: true, event: findEventById(eventId) });
 }
 
