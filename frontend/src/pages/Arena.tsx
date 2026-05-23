@@ -31,43 +31,43 @@ const Arena = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(13,15,20,0.94),rgba(7,8,11,0.98))] p-5 md:p-7">
+      <section className="rounded-2xl border border-border bg-card/40 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)] backdrop-blur-sm md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Arena overview</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Sponsored memecoins, featured momentum, and live competition.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena keeps the current battle picture in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
+            <div className="font-retro text-[10px] uppercase tracking-[0.32em] text-accent">Arena overview</div>
+            <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Sponsored memecoins, featured momentum, and live competition.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Arena keeps the current battle picture in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${sponsoredRailItems.length} sponsored`} tone="sponsored" />
+            <TacticalTag label={`${sponsoredRailItems.length} sponsored`} tone="hot" />
             <TacticalTag label={`${featuredRailItems.length} featured`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
           </div>
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-2xl border border-border bg-background/20 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
+            <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Sponsored</div>
+            <h2 className="mt-1 font-retro text-xl text-foreground">Sponsored placements</h2>
           </div>
-          <TacticalTag label={sponsoredFeedLabel} tone="sponsored" />
+          <TacticalTag label={sponsoredFeedLabel} tone="hot" />
         </div>
         <ArenaCampaignRail
           items={sponsoredRailItems}
-          rankTone="sponsored"
+          rankTone="hot"
           loading={sponsoredLoading}
           emptyVariant="sponsor"
           emptyLabel="Want this sponsor spot? Click here."
         />
       </section>
 
-      <section className="space-y-3">
+      <section className="space-y-3 rounded-2xl border border-border bg-background/20 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins by UpVotes</h2>
+            <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Featured</div>
+            <h2 className="mt-1 font-retro text-xl text-foreground">Featured memecoins by UpVotes</h2>
           </div>
           <TacticalTag label={featuredFeedLabel} tone="success" />
         </div>
@@ -83,10 +83,10 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 1</div>
-              <h2 className="mt-1 text-xl font-semibold text-white">Live battles</h2>
+              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 1</div>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Live battles</h2>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="font-retro">
               <Link to="/arena/battles">Open battles</Link>
             </Button>
           </div>
@@ -95,7 +95,7 @@ const Arena = () => {
               <RichBattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
               {battleSource === "empty" ? "Live battle data is not available on this branch yet." : "No live battles are active right now."}
             </div>
           )}
@@ -104,10 +104,10 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 2</div>
-              <h2 className="mt-1 text-xl font-semibold text-white">Open for battle</h2>
+              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 2</div>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Open for battle</h2>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="font-retro">
               <Link to="/arena/battles">Open queue</Link>
             </Button>
           </div>
@@ -115,19 +115,19 @@ const Arena = () => {
             openForBattleQueue.map((battle) => {
               const tokenRoute = getArenaTokenRoute((battle.participants[0] as any)?.campaignAddress ?? battle.participants[0].tokenId);
               return (
-                <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div key={battle.id} className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <TacticalTag label="Open for battle" tone="success" />
                     <TacticalTag label={battle.participants[0].symbol} tone="default" />
                   </div>
-                  <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName}</div>
-                  <div className="mt-2 text-xs text-white/60">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
+                  <div className="mt-3 font-retro text-sm text-foreground">{battle.participants[0].tokenName}</div>
+                  <div className="mt-2 text-xs text-muted-foreground">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
                   <div className="mt-4 flex gap-2">
-                    <Button asChild size="sm" variant="outline">
+                    <Button asChild size="sm" variant="outline" className="font-retro">
                       <Link to={`/battle/${battle.id}`}>View queue</Link>
                     </Button>
                     {tokenRoute ? (
-                      <Button asChild size="sm" variant="outline">
+                      <Button asChild size="sm" variant="outline" className="font-retro">
                         <Link to={tokenRoute}>Token details</Link>
                       </Button>
                     ) : null}
@@ -136,7 +136,7 @@ const Arena = () => {
               );
             })
           ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
               {battleSource === "empty" ? "Open-for-battle queue data is not available on this branch yet." : "No memecoins are waiting in the battle queue right now."}
             </div>
           )}
@@ -145,54 +145,54 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Lane 3</div>
-              <h2 className="mt-1 text-xl font-semibold text-white">Events and leagues</h2>
+              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 3</div>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Events and leagues</h2>
             </div>
             <div className="flex gap-2">
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="font-retro">
                 <Link to="/arena/events">Events</Link>
               </Button>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="font-retro">
                 <Link to="/arena/leagues">Leagues</Link>
               </Button>
             </div>
           </div>
 
           {activeEvents[0] ? (
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Active event" tone="success" />
-                <TacticalTag label={activeEvents[0].type.replaceAll("_", " ")} tone="sponsored" />
+                <TacticalTag label={activeEvents[0].type.replaceAll("_", " ")} tone="hot" />
               </div>
-              <div className="mt-3 text-sm font-semibold text-white">{activeEvents[0].title}</div>
-              <div className="mt-2 text-xs text-white/60">{activeEvents[0].participantCount} participants · Ends {new Date(activeEvents[0].endsAt).toLocaleDateString()}</div>
+              <div className="mt-3 font-retro text-sm text-foreground">{activeEvents[0].title}</div>
+              <div className="mt-2 text-xs text-muted-foreground">{activeEvents[0].participantCount} participants · Ends {new Date(activeEvents[0].endsAt).toLocaleDateString()}</div>
             </div>
           ) : null}
 
           {upcomingEvents[0] ? (
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Upcoming" tone="default" />
                 <TacticalTag label={upcomingEvents[0].type.replaceAll("_", " ")} tone="default" />
               </div>
-              <div className="mt-3 text-sm font-semibold text-white">{upcomingEvents[0].title}</div>
-              <div className="mt-2 text-xs text-white/60">Starts {new Date(upcomingEvents[0].startsAt).toLocaleDateString()} · {upcomingEvents[0].participantCount} participants</div>
+              <div className="mt-3 font-retro text-sm text-foreground">{upcomingEvents[0].title}</div>
+              <div className="mt-2 text-xs text-muted-foreground">Starts {new Date(upcomingEvents[0].startsAt).toLocaleDateString()} · {upcomingEvents[0].participantCount} participants</div>
             </div>
           ) : null}
 
           {season.entries.length ? (
-            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
               <div className="flex flex-wrap items-center gap-2">
-                <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "sponsored" : "default"} />
+                <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "hot" : "default"} />
                 <TacticalTag label={`Week ${season.week}`} tone="default" />
               </div>
-              <div className="mt-3 text-sm font-semibold text-white">{season.label}</div>
-              <div className="mt-2 text-xs text-white/60">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
+              <div className="mt-3 font-retro text-sm text-foreground">{season.label}</div>
+              <div className="mt-2 text-xs text-muted-foreground">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
             </div>
           ) : null}
 
           {!activeEvents[0] && !upcomingEvents[0] && !season.entries.length ? (
-            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
               {eventSource === "empty" && leagueSource === "empty"
                 ? "Events and league data are not available on this branch yet."
                 : "No active events or league standings are available right now."}
