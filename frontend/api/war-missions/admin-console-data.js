@@ -31,7 +31,7 @@ export default async function wmAdminConsoleData(req, res) {
   try {
     const limit = clampLimit(req.query?.limit, 50);
 
-    const [summaryRows, users, completions, socialAccounts, notifications, verificationLogs, prizePools, prizeWinners] = await Promise.all([
+    const [summaryRows, users, completions, socialAccounts, notifications, verificationLogs, recruiterApplications, prizePools, prizeWinners] = await Promise.all([
       safeQuery(
         `
           select
@@ -169,6 +169,39 @@ export default async function wmAdminConsoleData(req, res) {
       ),
       safeQuery(
         `
+          select
+            ra.id,
+            ra.user_id,
+            ra.wallet_address,
+            ra.x_username,
+            ra.telegram_username,
+            ra.discord_username,
+            ra.motivation,
+            ra.expected_recruits,
+            ra.status,
+            ra.reviewed_at,
+            ra.created_at,
+            u.display_name,
+            u.role,
+            rl.code as referral_code,
+            rl.url as referral_url,
+            (
+              select count(*)::int
+              from public.wm_referral_attributions attrib
+              where attrib.recruiter_user_id = ra.user_id and attrib.status = 'verified'
+            ) as verified_recruits
+          from public.wm_recruiter_applications ra
+          join public.wm_users u on u.id = ra.user_id
+          left join public.wm_referral_links rl on rl.recruiter_user_id = ra.user_id and rl.active = true
+          order by
+            case ra.status when 'submitted' then 0 when 'review' then 1 when 'accepted' then 2 when 'rejected' then 3 else 9 end,
+            ra.created_at desc
+          limit $1
+        `,
+        [limit],
+      ),
+      safeQuery(
+        `
           select id, period_type, reward_asset, reward_amount, status, metadata, created_at, updated_at
           from public.wm_prize_pools
           order by created_at desc
@@ -273,6 +306,24 @@ export default async function wmAdminConsoleData(req, res) {
         metadata: row.metadata || {},
         createdAt: row.created_at || null,
         walletAddress: row.wallet_address || null,
+      })),
+      recruiterApplications: recruiterApplications.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        walletAddress: row.wallet_address,
+        displayName: row.display_name || null,
+        role: row.role || "user",
+        xUsername: row.x_username || "",
+        telegramUsername: row.telegram_username || "",
+        discordUsername: row.discord_username || "",
+        motivation: row.motivation || "",
+        expectedRecruits: row.expected_recruits == null ? null : toNumber(row.expected_recruits),
+        status: row.status,
+        reviewedAt: row.reviewed_at || null,
+        createdAt: row.created_at || null,
+        referralCode: row.referral_code || null,
+        referralUrl: row.referral_url || null,
+        verifiedRecruits: toNumber(row.verified_recruits),
       })),
       prizePools,
       prizeWinners,
