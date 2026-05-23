@@ -13,6 +13,7 @@ import { ArenaMobileNav } from "@/components/postgrad/ArenaMobileNav";
 
 // Use public brand assets so we can swap without touching the build pipeline.
 const brandMark = "/assets/ticker.png";
+const primaryPaths = new Set(["/", "/war-room", "/create"]);
 
 interface SidebarProps {
   mobileMenuOpen: boolean;
@@ -20,46 +21,63 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => {
+  const primaryNavItems = navItems.filter((item) => primaryPaths.has(item.path));
+  const utilityNavItems = navItems.filter((item) => !primaryPaths.has(item.path));
+
   return (
     <>
       {/* Mobile/Tablet Overlay */}
       {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black/70 backdrop-blur-md z-40 lg:hidden"
+        <div
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-md lg:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar - Desktop: Fixed, Mobile/Tablet: Drawer */}
-      <aside className={`
-        fixed top-4 bottom-4 w-64 bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] backdrop-blur-xl border border-sidebar-border/70 rounded-3xl flex flex-col shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(255,153,0,0.08)] z-50 transition-transform duration-300 ease-in-out
-        ${mobileMenuOpen ? 'left-4' : '-left-72'}
+      <aside
+        className={`
+        fixed top-4 bottom-4 z-50 flex w-[calc(100vw-2rem)] max-w-72 flex-col rounded-3xl border border-sidebar-border/70 bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(255,153,0,0.08)] backdrop-blur-xl transition-transform duration-300 ease-in-out
+        ${mobileMenuOpen ? "left-4" : "-left-80"}
         lg:hidden
-      `}>
+      `}
+      >
         {/* Mobile Close Button */}
         <button
           onClick={() => setMobileMenuOpen(false)}
-          className="absolute top-4 right-4 lg:hidden p-2 hover:bg-muted rounded-lg transition-colors"
+          className="absolute right-4 top-4 rounded-lg p-2 transition-colors hover:bg-muted lg:hidden"
           aria-label="Close menu"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <div className="p-6 pl-4 flex items-center gap-3">
+        <div className="flex items-center gap-3 px-4 pb-4 pt-5">
           <Link to="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3">
             <img src={brandMark} alt="MemeWarzone" className="h-10 w-10" draggable={false} />
-            <span className="font-retro text-sm">MemeWarzone</span>
+            <div className="space-y-1">
+              <span className="block font-retro text-sm text-foreground">MemeWarzone</span>
+              <span className="block text-[10px] uppercase tracking-[0.18em] text-success/60">Launch Control</span>
+            </div>
           </Link>
         </div>
 
-        <nav className="flex-1 px-4 overflow-y-auto">
-          {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
-          <AnimatedNav options={navItems} onNavigate={() => setMobileMenuOpen(false)} />
+        <nav className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
+          <div className="space-y-2">
+            {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
+            {primaryNavItems.length ? <AnimatedNav options={primaryNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
+          </div>
+
+          {utilityNavItems.length ? (
+            <div className="space-y-2">
+              <div className="px-3 text-[10px] uppercase tracking-[0.22em] text-success/55">Account</div>
+              <AnimatedNav options={utilityNavItems} onNavigate={() => setMobileMenuOpen(false)} />
+            </div>
+          ) : null}
         </nav>
 
-        <div className="p-4 md:p-6 border-t border-sidebar-border/50 space-y-4">
-          <SocialTooltip items={socialLinks} />
-          <p className="text-xs text-muted-foreground mt-4 hidden md:block">© 2026 MemeWarzone. All rights reserved.</p>
+        <div className="space-y-3 border-t border-sidebar-border/50 px-4 py-4">
+          <SocialTooltip items={socialLinks} className="justify-start gap-2 [&_a]:!h-9 [&_a]:!w-9" />
+          <p className="hidden text-[11px] text-muted-foreground md:block">© 2026 MemeWarzone. All rights reserved.</p>
         </div>
       </aside>
     </>
