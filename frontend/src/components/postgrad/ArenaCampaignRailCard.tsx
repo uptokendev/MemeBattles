@@ -68,6 +68,16 @@ export function ArenaFallbackRailCard({
   );
 }
 
+function dedupeActions(actions: ArenaCampaignRailAction[]) {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key = `${action.label}:${action.href}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function ArenaCampaignRailCard({
   item,
   rankTone = "success",
@@ -77,16 +87,51 @@ export function ArenaCampaignRailCard({
   rankTone?: "default" | "hot" | "sponsored" | "success";
   actions?: ArenaCampaignRailAction[];
 }) {
-  const cardActions = actions ?? [{ label: isExternalHref(item.href) ? "Open sponsor" : "Token details", href: item.href }];
+  const defaultActions = dedupeActions(
+    [
+      item.websiteUrl && item.websiteUrl !== item.href
+        ? { label: item.websiteLabel || "Website", href: item.websiteUrl }
+        : null,
+      item.href
+        ? {
+            label: isExternalHref(item.href)
+              ? "Open sponsor"
+              : item.cardVariant === "sponsored"
+                ? "Open placement"
+                : "Token details",
+            href: item.href,
+          }
+        : null,
+    ].filter(Boolean) as ArenaCampaignRailAction[],
+  );
+  const cardActions = actions ?? defaultActions;
+
   const content = (
-    <div className="min-w-[220px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4 transition-colors hover:bg-white/[0.07]">
+    <div className="min-w-[256px] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.94),rgba(9,10,14,0.96))] p-4 transition-colors hover:bg-white/[0.07]">
       <div className="flex flex-wrap items-center gap-2">
         <TacticalTag label={item.rankLabel} tone={rankTone} />
         <TacticalTag label={item.statusLabel} tone={item.statusTone} />
       </div>
-      <div className="mt-3 text-sm font-semibold text-white">{item.title}</div>
-      <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/45">{item.symbol}</div>
-      <div className="mt-3 text-xs text-white/60">{item.detail}</div>
+
+      <div className="mt-4 flex items-start gap-3">
+        {item.imageUrl ? (
+          <img src={item.imageUrl} alt={item.title} className="h-16 w-16 shrink-0 rounded-2xl border border-white/10 object-cover" />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-white">{item.title}</div>
+          <div className="mt-1 text-xs uppercase tracking-[0.22em] text-white/45">{item.symbol}</div>
+          <div className="mt-3 text-xs text-white/60">{item.summary || item.detail}</div>
+        </div>
+      </div>
+
+      {item.summary && item.detail ? (
+        <div className="mt-3 text-[11px] uppercase tracking-[0.2em] text-white/40">{item.detail}</div>
+      ) : null}
+
+      {item.activeDatesLabel ? (
+        <div className="mt-3 text-xs text-cyan-100/75">Active {item.activeDatesLabel}</div>
+      ) : null}
+
       {cardActions.length ? (
         <div className="mt-4 flex flex-wrap gap-2">
           {cardActions.map((action) => (
@@ -135,10 +180,16 @@ export function ArenaCampaignRail({
     return (
       <div className="flex gap-3 overflow-x-auto pb-2">
         {[0, 1, 2].map((index) => (
-          <div key={index} className="min-w-[220px] rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div key={index} className="min-w-[256px] rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <div className="h-4 w-24 rounded-full bg-white/10" />
-            <div className="mt-4 h-5 w-32 rounded-full bg-white/10" />
-            <div className="mt-3 h-3 w-44 rounded-full bg-white/10" />
+            <div className="mt-4 flex items-start gap-3">
+              <div className="h-16 w-16 rounded-2xl bg-white/10" />
+              <div className="flex-1">
+                <div className="h-5 w-32 rounded-full bg-white/10" />
+                <div className="mt-3 h-3 w-44 rounded-full bg-white/10" />
+                <div className="mt-2 h-3 w-32 rounded-full bg-white/10" />
+              </div>
+            </div>
           </div>
         ))}
       </div>
