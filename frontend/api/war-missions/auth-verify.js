@@ -7,6 +7,7 @@ import {
   warLoginMessage,
 } from "./_lib/auth.js";
 import { awardQuestForUser, buildWarProfile, ensureUser, maybeVerifyReferralForUser } from "./_lib/profile.js";
+import { getActiveReferralLinkByCode, linkReferralToUser, readReferralCode } from "./_lib/referrals.js";
 
 export default async function wmAuthVerify(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
@@ -39,9 +40,19 @@ export default async function wmAuthVerify(req, res) {
     const user = await ensureUser(address);
     if (user.is_banned) return res.status(403).json({ error: "This wallet is excluded from War Missions." });
 
+    const referralCode = readReferralCode(req);
+    const referralLink = referralCode ? await getActiveReferralLinkByCode(referralCode).catch(() => null) : null;
+
     await Promise.all([
       pool.query(`update public.wm_wallet_auth_nonces set used_at = now() where id = $1`, [nonceRow.id]),
       awardQuestForUser(user.id, "take-the-oath", "wallet_signature", { address }),
+      referralLink
+        ? linkReferralToUser({
+            recruiterUserId: referralLink.recruiter_user_id,
+            referredUserId: user.id,
+            referralCode: referralLink.code,
+          }).catch(() => undefined)
+        : Promise.resolve(),
     ]);
     await maybeVerifyReferralForUser(user.id).catch(() => undefined);
 
