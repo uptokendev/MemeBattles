@@ -1,6 +1,5 @@
 import { Link, useParams } from "react-router-dom";
 import { EventCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
 import { useArenaEventDetails } from "@/hooks/useArenaEventFeed";
@@ -47,7 +46,6 @@ const TournamentDetails = () => {
   if (!tournament) {
     return (
       <div className="space-y-6 px-1 pb-10">
-        <PostGradStatusStrip />
         <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
           <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament scaffold</div>
           <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Tournament details unavailable.</h1>
@@ -72,8 +70,6 @@ const TournamentDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <PostGradStatusStrip />
-
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
