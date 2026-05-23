@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -49,7 +50,7 @@ const WarRoom = () => {
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const { campaigns, loading, error } = useWarRoomCampaignFeed({
+  const { campaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(activeChainId || 97),
     bnbUsd,
@@ -99,10 +100,24 @@ const WarRoom = () => {
     setSortDirection("desc");
   };
 
+  const sourceLabel = source === "api" ? "Campaign feed" : "Feed unavailable";
+  const sourceTone = source === "api" ? "success" : "default";
+
   return (
     <div className="space-y-3 px-1 pb-10">
       <section className="rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,16,22,0.96),rgba(7,8,11,0.98))] p-3 md:p-4">
         <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">War Room</div>
+              <div className="mt-1 text-sm text-white/65">Scan live memecoin rows, compare market signals, and jump into token details or battle context from one terminal-style surface.</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <TacticalTag label={terminalModes.find((mode) => mode.key === activeMode)?.label ?? "Trending"} tone="sponsored" />
+              <TacticalTag label={sourceLabel} tone={sourceTone} />
+            </div>
+          </div>
+
           <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white/70 focus-within:border-accent/40">
             <Search className="h-4 w-4 text-white/45" />
             <input
@@ -180,7 +195,13 @@ const WarRoom = () => {
           ) : filteredCampaigns.length ? (
             filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} bnbUsd={bnbUsd ?? 0} />)
           ) : (
-            <div className="py-10 text-center text-sm text-white/55">No coins match the current War Room filter.</div>
+            <div className="py-10 text-center text-sm text-white/55">
+              {source === "empty"
+                ? "War Room campaign data is not available on this branch yet."
+                : search.trim()
+                  ? "No coins match the current War Room filter."
+                  : "No War Room campaigns are available right now."}
+            </div>
           )}
         </div>
       </section>
