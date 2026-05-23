@@ -3,6 +3,7 @@ import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
+import { getPostGradWarRoomSearchRoute } from "@/features/postgrad/identityRoutes";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import type { ArenaEventSummary } from "@/hooks/useArenaEventFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
@@ -145,7 +146,7 @@ const PostGradEvents = () => {
             emptyLabel="Event entrants will appear here when the live campaign feed is available."
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
-              { label: "War Room", href: `/war-room?search=${encodeURIComponent(item.symbol || item.title)}` },
+              { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
             ]}
           />
         </div>
