@@ -19,7 +19,9 @@ export const postGradFlags = {
   events: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_EVENTS, postGradEnabled),
   league: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_LEAGUE, postGradEnabled),
   tournament: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_TOURNAMENT, postGradEnabled),
-  mocks: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, postGradEnabled),
+  // Mock-only UX should be explicit opt-in so the branch defaults to the real
+  // post-grad route structure, API adapters, and honest empty states.
+  mocks: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, false),
 } as const;
 
 export function isPostGradRouteEnabled() {
