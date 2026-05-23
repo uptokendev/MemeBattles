@@ -1,15 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { EventCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
 import { useArenaEventDetails } from "@/hooks/useArenaEventFeed";
-
-const statusActions = {
-  scheduled: { label: "Deploy tournament", status: "deploying" as const },
-  deploying: { label: "Go live", status: "live" as const },
-  live: { label: "Complete tournament", status: "completed" as const },
-  completed: null,
-};
 
 const stageCards = [
   {
@@ -41,7 +33,7 @@ const stageCards = [
 
 const TournamentDetails = () => {
   const { id } = useParams();
-  const { event: tournament, transitionEvent, advanceTournamentBracket, source } = useArenaEventDetails(id);
+  const { event: tournament, source } = useArenaEventDetails(id);
 
   if (!tournament) {
     return (
@@ -66,7 +58,6 @@ const TournamentDetails = () => {
 
   const currentStage = tournament.bracketStage ?? "registration";
   const currentStageIndex = stageCards.findIndex((stage) => stage.key === currentStage);
-  const nextStatusAction = statusActions[tournament.status];
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -80,31 +71,13 @@ const TournamentDetails = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={tournament.status} tone={tournament.status === "live" ? "success" : "sponsored"} />
             <TacticalTag label={currentStage.replaceAll("_", " ")} tone="hot" />
-            <TacticalHint label="Advancement" body="Move the tournament through deployment, live bracket rounds, and completion to validate the route and state presentation." />
+            <TacticalHint label="Bracket state" body="Use this page to read tournament progress, current stage, and archive readiness from the Arena event feed." />
             <TacticalTag label={source === "api" ? "Arena feed" : "Preview data"} tone={source === "api" ? "success" : "sponsored"} />
           </div>
         </div>
       </section>
 
       <EventCard event={tournament} />
-
-      {postGradFlags.mocks ? (
-        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Tournament controls</div>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {nextStatusAction ? (
-              <Button size="sm" onClick={() => transitionEvent(tournament.id, nextStatusAction.status)}>
-                {nextStatusAction.label}
-              </Button>
-            ) : null}
-            {tournament.status !== "completed" && currentStage !== "completed" ? (
-              <Button size="sm" variant="outline" onClick={() => advanceTournamentBracket(tournament.id)}>
-                Advance bracket stage
-              </Button>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-3">
         {stageCards.map((stage, index) => {
