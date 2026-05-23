@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
-import { RichBattleCard } from "@/components/postgrad/RichBattleCard";
+import { RichBattleCardOrange } from "@/components/postgrad/RichBattleCardOrange";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { useArenaSponsoredFeed } from "@/hooks/useArenaSponsoredFeed";
@@ -31,10 +31,10 @@ const Arena = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <section className="rounded-2xl border border-border bg-card/40 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)] backdrop-blur-sm md:p-7">
+      <section className="mwz-orange-frame p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="font-retro text-[10px] uppercase tracking-[0.32em] text-accent">Arena overview</div>
+            <div className="mwz-orange-frame-label text-[10px]">Arena overview</div>
             <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Sponsored memecoins, featured momentum, and live competition.</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Arena keeps the current battle picture in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
           </div>
@@ -46,10 +46,10 @@ const Arena = () => {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-2xl border border-border bg-background/20 p-4">
+      <section className="mwz-orange-frame-soft space-y-3 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Sponsored</div>
+            <div className="mwz-orange-frame-label text-[10px]">Sponsored</div>
             <h2 className="mt-1 font-retro text-xl text-foreground">Sponsored placements</h2>
           </div>
           <TacticalTag label={sponsoredFeedLabel} tone="hot" />
@@ -63,10 +63,10 @@ const Arena = () => {
         />
       </section>
 
-      <section className="space-y-3 rounded-2xl border border-border bg-background/20 p-4">
+      <section className="mwz-orange-frame-soft space-y-3 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Featured</div>
+            <div className="mwz-orange-frame-label text-[10px]">Featured</div>
             <h2 className="mt-1 font-retro text-xl text-foreground">Featured memecoins by UpVotes</h2>
           </div>
           <TacticalTag label={featuredFeedLabel} tone="success" />
@@ -83,7 +83,7 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 1</div>
+              <div className="mwz-orange-frame-label text-[10px]">Lane 1</div>
               <h2 className="mt-1 font-retro text-xl text-foreground">Live battles</h2>
             </div>
             <Button asChild size="sm" variant="outline" className="font-retro">
@@ -92,10 +92,10 @@ const Arena = () => {
           </div>
           {liveBattles.length ? (
             liveBattles.map((battle) => (
-              <RichBattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
+              <RichBattleCardOrange key={battle.id} battle={battle} ctaLabel="Open battle" />
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
+            <div className="mwz-orange-frame-soft p-5 text-sm text-muted-foreground">
               {battleSource === "empty" ? "Live battle data is not available on this branch yet." : "No live battles are active right now."}
             </div>
           )}
@@ -104,7 +104,7 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 2</div>
+              <div className="mwz-orange-frame-label text-[10px]">Lane 2</div>
               <h2 className="mt-1 font-retro text-xl text-foreground">Open for battle</h2>
             </div>
             <Button asChild size="sm" variant="outline" className="font-retro">
@@ -115,7 +115,7 @@ const Arena = () => {
             openForBattleQueue.map((battle) => {
               const tokenRoute = getArenaTokenRoute((battle.participants[0] as any)?.campaignAddress ?? battle.participants[0].tokenId);
               return (
-                <div key={battle.id} className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
+                <div key={battle.id} className="mwz-orange-frame-soft p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <TacticalTag label="Open for battle" tone="success" />
                     <TacticalTag label={battle.participants[0].symbol} tone="default" />
@@ -136,7 +136,7 @@ const Arena = () => {
               );
             })
           ) : (
-            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
+            <div className="mwz-orange-frame-soft p-5 text-sm text-muted-foreground">
               {battleSource === "empty" ? "Open-for-battle queue data is not available on this branch yet." : "No memecoins are waiting in the battle queue right now."}
             </div>
           )}
@@ -145,7 +145,7 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lane 3</div>
+              <div className="mwz-orange-frame-label text-[10px]">Lane 3</div>
               <h2 className="mt-1 font-retro text-xl text-foreground">Events and leagues</h2>
             </div>
             <div className="flex gap-2">
@@ -159,7 +159,7 @@ const Arena = () => {
           </div>
 
           {activeEvents[0] ? (
-            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
+            <div className="mwz-orange-frame-soft p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Active event" tone="success" />
                 <TacticalTag label={activeEvents[0].type.replaceAll("_", " ")} tone="hot" />
@@ -170,7 +170,7 @@ const Arena = () => {
           ) : null}
 
           {upcomingEvents[0] ? (
-            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
+            <div className="mwz-orange-frame-soft p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Upcoming" tone="default" />
                 <TacticalTag label={upcomingEvents[0].type.replaceAll("_", " ")} tone="default" />
@@ -181,7 +181,7 @@ const Arena = () => {
           ) : null}
 
           {season.entries.length ? (
-            <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
+            <div className="mwz-orange-frame-soft p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "hot" : "default"} />
                 <TacticalTag label={`Week ${season.week}`} tone="default" />
@@ -192,7 +192,7 @@ const Arena = () => {
           ) : null}
 
           {!activeEvents[0] && !upcomingEvents[0] && !season.entries.length ? (
-            <div className="rounded-2xl border border-dashed border-border bg-card/30 p-5 text-sm text-muted-foreground">
+            <div className="mwz-orange-frame-soft p-5 text-sm text-muted-foreground">
               {eventSource === "empty" && leagueSource === "empty"
                 ? "Events and league data are not available on this branch yet."
                 : "No active events or league standings are available right now."}
