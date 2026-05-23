@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { resolveImageUri } from "@/lib/media";
 
-export type ArenaFeaturedFeedSource = "api" | "empty";
+export type ArenaFeaturedFeedSource = "api" | "campaigns" | "empty";
 
 export type ArenaFeaturedRailItem = {
   id: string;
@@ -14,6 +15,8 @@ export type ArenaFeaturedRailItem = {
   statusLabel: string;
   statusTone: "default" | "hot" | "sponsored" | "success";
   rankLabel: string;
+  imageUrl?: string | null;
+  summary?: string | null;
 };
 
 type FeaturedCampaignRecord = {
@@ -23,6 +26,10 @@ type FeaturedCampaignRecord = {
   votes24h: number;
   votesAllTime: number;
   trendingScore: number;
+  imageUrl?: string | null;
+  marketCapBnb?: number;
+  holdersCount?: number;
+  source: "upvotes" | "campaigns";
 };
 
 function toNumber(value: unknown): number {
@@ -30,8 +37,13 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeFeaturedCampaign(item: any): FeaturedCampaignRecord | null {
-  const campaignAddress = String(item?.campaignAddress ?? item?.campaign_address ?? "").trim().toLowerCase();
+function toOptionalNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizeFeaturedCampaign(item: any, source: "upvotes" | "campaigns"): FeaturedCampaignRecord | null {
+  const campaignAddress = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").trim().toLowerCase();
   if (!campaignAddress) return null;
 
   return {
@@ -41,7 +53,42 @@ function normalizeFeaturedCampaign(item: any): FeaturedCampaignRecord | null {
     votes24h: toNumber(item?.votes24h ?? item?.votes_24h),
     votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
     trendingScore: toNumber(item?.trendingScore ?? item?.trending_score),
+    imageUrl: resolveImageUri(item?.imageUrl ?? item?.image_url ?? item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri),
+    marketCapBnb: toOptionalNumber(item?.marketCapBnb ?? item?.marketcapBnb ?? item?.marketcap_bnb),
+    holdersCount: toOptionalNumber(item?.holdersCount ?? item?.holderCount ?? item?.holder_count),
+    source,
   };
+}
+
+async function loadFeatured(activeChainId: number, limit: number) {
+  const params = new URLSearchParams({
+    chainId: String(activeChainId || 97),
+    sort: "24h",
+    limit: String(limit),
+  });
+  const response = await apiFetch(`/api/featured?${params.toString()}`, { cache: "no-store" as RequestCache });
+  const json = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
+
+  const items = Array.isArray(json?.items) ? json.items : [];
+  return items.map((item: any) => normalizeFeaturedCampaign(item, "upvotes")).filter(Boolean) as FeaturedCampaignRecord[];
+}
+
+async function loadCampaignFallback(activeChainId: number, limit: number) {
+  const params = new URLSearchParams({
+    chainId: String(activeChainId || 97),
+    limit: String(limit),
+    cursor: "0",
+    tab: "trending",
+    status: "all",
+    sort: "default",
+  });
+  const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache });
+  const json = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
+
+  const items = Array.isArray(json?.items) ? json.items : [];
+  return items.map((item: any) => normalizeFeaturedCampaign(item, "campaigns")).filter(Boolean) as FeaturedCampaignRecord[];
 }
 
 export function useArenaFeaturedFeed(limit = 6) {
@@ -56,21 +103,21 @@ export function useArenaFeaturedFeed(limit = 6) {
     const load = async () => {
       try {
         setLoading(true);
-        const params = new URLSearchParams({
-          chainId: String(activeChainId || 97),
-          sort: "24h",
-          limit: String(limit),
-        });
-        const response = await apiFetch(`/api/featured?${params.toString()}`, { cache: "no-store" as RequestCache });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
-        if (cancelled) return;
+        let nextItems = await loadFeatured(activeChainId, limit);
+        let nextSource: ArenaFeaturedFeedSource = nextItems.length ? "api" : "empty";
 
-        const nextItems = Array.isArray(json?.items)
-          ? json.items.map(normalizeFeaturedCampaign).filter(Boolean) as FeaturedCampaignRecord[]
-          : [];
+        if (!nextItems.length) {
+          try {
+            nextItems = await loadCampaignFallback(activeChainId, limit);
+            nextSource = nextItems.length ? "campaigns" : "empty";
+          } catch (fallbackError) {
+            console.warn("[useArenaFeaturedFeed] failed to load campaign fallback", fallbackError);
+          }
+        }
+
+        if (cancelled) return;
         setItems(nextItems);
-        setSource(nextItems.length ? "api" : "empty");
+        setSource(nextSource);
       } catch (error) {
         console.warn("[useArenaFeaturedFeed] failed to load featured feed", error);
         if (!cancelled) {
@@ -94,15 +141,26 @@ export function useArenaFeaturedFeed(limit = 6) {
         const href = getPostGradTokenDetailRoute(item.campaignAddress);
         if (!href) return null;
 
+        const isUpvoteSource = item.source === "upvotes";
+        const hasVotes = item.votes24h > 0 || item.votesAllTime > 0;
+        const fallbackBits = [
+          item.marketCapBnb != null ? `${item.marketCapBnb.toLocaleString(undefined, { maximumFractionDigits: 2 })} BNB MC` : null,
+          item.holdersCount != null ? `${item.holdersCount.toLocaleString()} holders` : null,
+        ].filter(Boolean);
+
         return {
           id: item.campaignAddress,
           title: item.name,
           symbol: item.symbol,
           href,
-          detail: `${item.votes24h.toLocaleString()} votes in 24h · ${item.votesAllTime.toLocaleString()} all-time`,
-          statusLabel: "UpVotes",
+          detail: hasVotes
+            ? `${item.votes24h.toLocaleString()} votes in 24h · ${item.votesAllTime.toLocaleString()} all-time`
+            : fallbackBits.join(" · ") || "Trending token",
+          statusLabel: isUpvoteSource ? "UpVotes" : "Trending",
           statusTone: "success",
           rankLabel: `Rank ${index + 1}`,
+          imageUrl: item.imageUrl,
+          summary: isUpvoteSource ? null : "Featured fallback until UpVote totals are indexed.",
         };
       })
       .filter(Boolean) as ArenaFeaturedRailItem[];
