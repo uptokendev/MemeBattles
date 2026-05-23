@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
-import { postGradFlags } from "@/features/postgrad/config";
+import { getPostGradWarRoomSearchRoute } from "@/features/postgrad/identityRoutes";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
@@ -27,7 +27,7 @@ function formatUsd(value: number) {
 }
 
 const PostGradLeague = () => {
-  const { season, history, advanceWeek, cycleSeasonState, rebalanceDivisions } = useArenaLeagueFeed();
+  const { season, history } = useArenaLeagueFeed();
   const { railItems: leagueEntrants, hasRealCampaigns, loading: leagueEntrantsLoading } = useArenaCampaignFeed(10);
   const leadEntry = season.entries[0];
   const promotedCount = season.entries.filter((entry) => entry.movement === "promoted").length;
@@ -91,27 +91,11 @@ const PostGradLeague = () => {
             emptyLabel="League entrants will appear here when the live campaign feed is available."
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
-              { label: "War Room", href: `/war-room?search=${encodeURIComponent(item.symbol || item.title)}` },
+              { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
             ]}
           />
         </div>
       </section>
-
-      {postGradFlags.mocks ? (
-        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">League actions</div>
-              <div className="mt-2 text-sm text-white/70">Move the season forward, rebalance divisions, or roll into the next state from this page.</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={advanceWeek}>Advance week</Button>
-              <Button size="sm" variant="outline" onClick={rebalanceDivisions}>Rebalance divisions</Button>
-              <Button size="sm" variant="outline" onClick={cycleSeasonState}>Cycle season state</Button>
-            </div>
-          </div>
-        </section>
-      ) : null}
 
       <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
         <div className="flex items-center justify-between gap-3">
@@ -145,7 +129,7 @@ const PostGradLeague = () => {
                       </Button>
                     ) : null}
                     <Button asChild size="sm" variant="outline">
-                      <Link to={`/war-room?search=${encodeURIComponent(entry.symbol)}`}>Open in War Room</Link>
+                      <Link to={getPostGradWarRoomSearchRoute(entry.symbol)}>Open in War Room</Link>
                     </Button>
                   </div>
                 </div>
