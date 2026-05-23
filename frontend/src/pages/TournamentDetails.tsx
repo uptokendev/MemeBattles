@@ -1,9 +1,9 @@
-import { useParams } from "react-router-dom";
-import { EventCard, MockModeBanner, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { Link, useParams } from "react-router-dom";
+import { EventCard, TacticalHint, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { PostGradStatusStrip } from "@/components/postgrad/PostGradStatusStrip";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { useMockEventDetails } from "@/hooks/useMockEventRuntime";
+import { useArenaEventDetails } from "@/hooks/useArenaEventFeed";
 
 const statusActions = {
   scheduled: { label: "Deploy tournament", status: "deploying" as const },
@@ -42,9 +42,29 @@ const stageCards = [
 
 const TournamentDetails = () => {
   const { id } = useParams();
-  const { event: tournament, transitionMockEvent, advanceTournamentBracket, resetMockEventRuntime } = useMockEventDetails(id);
+  const { event: tournament, transitionEvent, advanceTournamentBracket, source } = useArenaEventDetails(id);
 
-  if (!tournament) return null;
+  if (!tournament) {
+    return (
+      <div className="space-y-6 px-1 pb-10">
+        <PostGradStatusStrip />
+        <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
+          <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament scaffold</div>
+          <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Tournament details unavailable.</h1>
+          <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">
+            {source === "empty"
+              ? "Tournament detail data is not available on this branch yet."
+              : "This tournament could not be resolved from the current event feed."}
+          </p>
+          <div className="mt-4">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/arena/events">Back to events</Link>
+            </Button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   const currentStage = tournament.bracketStage ?? "registration";
   const currentStageIndex = stageCards.findIndex((stage) => stage.key === currentStage);
@@ -52,7 +72,6 @@ const TournamentDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      {postGradFlags.mocks ? <MockModeBanner subject="Tournament sandbox" /> : null}
       <PostGradStatusStrip />
 
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
@@ -60,17 +79,13 @@ const TournamentDetails = () => {
           <div>
             <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament scaffold</div>
             <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Bracket route, matchups, and advancement states.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page now carries an interactive mock bracket so the tournament flow can be walked through before the real event engine lands.</p>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page tracks tournament status, bracket phase, and archive-readiness through the Arena event adapter.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={tournament.status} tone={tournament.status === "live" ? "success" : "sponsored"} />
             <TacticalTag label={currentStage.replaceAll("_", " ")} tone="hot" />
             <TacticalHint label="Advancement" body="Move the tournament through deployment, live bracket rounds, and completion to validate the route and state presentation." />
-            {postGradFlags.mocks ? (
-              <Button variant="outline" size="sm" onClick={resetMockEventRuntime}>
-                Reset mock events
-              </Button>
-            ) : null}
+            <TacticalTag label={source === "api" ? "Arena feed" : "Preview data"} tone={source === "api" ? "success" : "sponsored"} />
           </div>
         </div>
       </section>
@@ -79,10 +94,10 @@ const TournamentDetails = () => {
 
       {postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Mock tournament controls</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Tournament controls</div>
           <div className="mt-3 flex flex-wrap gap-3">
             {nextStatusAction ? (
-              <Button size="sm" onClick={() => transitionMockEvent(tournament.id, nextStatusAction.status)}>
+              <Button size="sm" onClick={() => transitionEvent(tournament.id, nextStatusAction.status)}>
                 {nextStatusAction.label}
               </Button>
             ) : null}
