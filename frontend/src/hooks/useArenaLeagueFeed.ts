@@ -125,7 +125,7 @@ export function useArenaLeagueFeed() {
 
   const refreshFeed = async () => {
     const payload = await fetchLeagueFeed().catch(() => null);
-    if (payload) setApiPayload(payload);
+    setApiPayload(payload);
     return payload;
   };
 
