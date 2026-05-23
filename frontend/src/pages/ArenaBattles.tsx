@@ -13,12 +13,6 @@ function normalizeIdentity(value?: string | null) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function formatUsd(value: number) {
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-  if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
 function getBattleStateTone(state: string) {
   if (state === "live") return "hot" as const;
   if (state === "open_for_battle" || state === "accepted" || state === "pending") return "success" as const;
@@ -147,7 +141,7 @@ const ArenaBattles = () => {
                         <TacticalTag label={statusLabel} tone={statusTone} />
                       </div>
                       <div className="mt-2 text-sm text-white/65">
-                        MC {metrics.marketCapLabel !== "—" ? metrics.marketCapLabel : formatUsd(0)} · Liquidity {metrics.liquidityLabel !== "—" ? metrics.liquidityLabel : formatUsd(0)} · {metrics.holdersLabel} holders
+                        MC {metrics.marketCapLabel} · Liquidity {metrics.liquidityLabel} · {metrics.holdersLabel} holders
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
