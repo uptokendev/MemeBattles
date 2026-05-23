@@ -8,6 +8,12 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
+type SponsoredCampaignInfo = CampaignInfo & {
+  placementType?: "internal" | "external" | string;
+  placementLabel?: string;
+  targetUrl?: string | null;
+};
+
 function toNumber(value: unknown): number | undefined {
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
@@ -21,8 +27,13 @@ function toUnixSeconds(value: unknown): number | undefined {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
 }
 
-function normalizeCampaign(item: any, index: number): CampaignInfo | null {
-  const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").toLowerCase();
+function resolveSponsoredHref(item: SponsoredCampaignInfo) {
+  if (item.placementType === "external" && item.targetUrl) return item.targetUrl;
+  return getPostGradTokenDetailRoute(item.campaign);
+}
+
+function normalizeCampaign(item: any, index: number): SponsoredCampaignInfo | null {
+  const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? item?.targetUrl ?? `external-sponsored-${index}`).trim().toLowerCase();
   if (!campaign) return null;
 
   const token = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").toLowerCase();
@@ -40,7 +51,7 @@ function normalizeCampaign(item: any, index: number): CampaignInfo | null {
     logoURI: logo,
     metadataURI: undefined,
     xAccount: String(item?.xAccount ?? item?.x_url ?? ""),
-    website: String(item?.website ?? item?.website_url ?? ""),
+    website: String(item?.website ?? item?.website_url ?? item?.targetUrl ?? ""),
     extraLink: String(item?.extraLink ?? item?.extra_link ?? ""),
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
     status: status === "graduated" || status === "ended" || status === "live" ? (status as CampaignInfo["status"]) : "live",
@@ -60,13 +71,16 @@ function normalizeCampaign(item: any, index: number): CampaignInfo | null {
     votesAllTime: toNumber(item?.votesAllTime ?? item?.votes_all_time),
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
     dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
-  };
+    placementType: item?.placementType ?? item?.placement_type ?? "internal",
+    placementLabel: item?.placementLabel ?? item?.placement_label ?? "Sponsored",
+    targetUrl: item?.targetUrl ?? item?.target_url ?? null,
+  } as SponsoredCampaignInfo;
 }
 
 export function useArenaSponsoredFeed(limit = 4) {
   const { activeChainId } = useLaunchpad();
   const { price: bnbUsd } = useBnbUsdPrice(true);
-  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([]);
+  const [campaigns, setCampaigns] = useState<SponsoredCampaignInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<ArenaCampaignFeedSource>("empty");
 
@@ -86,7 +100,7 @@ export function useArenaSponsoredFeed(limit = 4) {
         if (cancelled) return;
 
         const items = Array.isArray(json?.items) ? json.items : [];
-        const nextCampaigns = items.map((item: any, index: number) => normalizeCampaign(item, index)).filter(Boolean) as CampaignInfo[];
+        const nextCampaigns = items.map((item: any, index: number) => normalizeCampaign(item, index)).filter(Boolean) as SponsoredCampaignInfo[];
         setCampaigns(nextCampaigns);
         setSource(nextCampaigns.length ? "api" : "empty");
       } catch (error) {
@@ -109,17 +123,18 @@ export function useArenaSponsoredFeed(limit = 4) {
   const railItems = useMemo<ArenaCampaignRailItem[]>(() => {
     return campaigns
       .map((campaign, index) => {
-        const href = getPostGradTokenDetailRoute(campaign.campaign);
+        const href = resolveSponsoredHref(campaign);
         if (!href) return null;
 
         const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd ?? 0);
+        const isExternal = campaign.placementType === "external";
         return {
           id: campaign.campaign,
           title: campaign.name,
           symbol: campaign.symbol,
           href,
-          detail: `MC ${metrics.marketCapLabel} · Vol ${metrics.volumeLabel}`,
-          statusLabel: "Sponsored",
+          detail: isExternal ? "External sponsored placement" : `MC ${metrics.marketCapLabel} · Vol ${metrics.volumeLabel}`,
+          statusLabel: campaign.placementLabel || (isExternal ? "Sponsored partner" : "Sponsored"),
           statusTone: "sponsored",
           rankLabel: `Slot ${index + 1}`,
         };
