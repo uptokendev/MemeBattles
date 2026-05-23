@@ -10,7 +10,9 @@ export type ArenaEventSummary = EventCardContract & {
   bracketStage?: TournamentBracketStage;
 };
 
-export type ArenaArchivedEvent = ReturnType<typeof useMockEvents>["archivedEvents"][number];
+export type ArenaArchivedEvent = ArenaEventSummary & {
+  completedAt: string;
+};
 
 type EventStatus = ArenaEventSummary["status"];
 
@@ -49,7 +51,15 @@ function normalizeEventList(value: unknown): ArenaEventSummary[] {
 
 function normalizeArchivedEventList(value: unknown): ArenaArchivedEvent[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry: any) => isEventSummary(entry) && typeof entry.completedAt === "string") as ArenaArchivedEvent[];
+  return value
+    .filter((entry: any) => isEventSummary(entry) && typeof entry.completedAt === "string")
+    .map((entry: any) => ({
+      ...entry,
+      participantCount: Number(entry.participantCount),
+      summary: String(entry.summary ?? ""),
+      bracketStage: BRACKET_STAGES.has(entry.bracketStage) ? entry.bracketStage : undefined,
+      completedAt: String(entry.completedAt),
+    }));
 }
 
 async function fetchEventFeed(signal?: AbortSignal): Promise<ArenaEventFeedPayload | null> {
@@ -58,7 +68,7 @@ async function fetchEventFeed(signal?: AbortSignal): Promise<ArenaEventFeedPaylo
   const json = await response.json().catch(() => null);
   if (!json || typeof json !== "object") return null;
 
-  const events = normalizeEventList((json as any).events ?? (json as any).items ?? (json as any).items?.events);
+  const events = normalizeEventList((json as any).events ?? (json as any).items?.events ?? (json as any).items);
   const archivedEvents = normalizeArchivedEventList((json as any).archivedEvents ?? (json as any).archive ?? (json as any).items?.archivedEvents);
 
   if (!events.length && !archivedEvents.length) return null;
@@ -110,7 +120,7 @@ export function useArenaEventFeed() {
 
   const refreshFeed = async () => {
     const payload = await fetchEventFeed().catch(() => null);
-    if (payload) setApiPayload(payload);
+    setApiPayload(payload);
     return payload;
   };
 
@@ -180,7 +190,7 @@ export function useArenaEventDetails(eventId?: string) {
 
   const refreshEvent = async (eventIdToRefresh: string) => {
     const freshEvent = await fetchEventDetails(eventIdToRefresh).catch(() => null);
-    if (freshEvent) setApiEvent(freshEvent);
+    setApiEvent(freshEvent);
     return freshEvent;
   };
 
