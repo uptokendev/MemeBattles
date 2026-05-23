@@ -82,7 +82,7 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
                 <img
                   src={option.icon}
                   alt={option.label}
-                  className={`h-4.5 w-4.5 transition-all duration-300 ${
+                  className={`h-[18px] w-[18px] transition-all duration-300 ${
                     matchesPath(option.path)
                       ? "[filter:brightness(0)_saturate(100%)_invert(50%)_sepia(88%)_saturate(1567%)_hue-rotate(355deg)_brightness(101%)_contrast(92%)]"
                       : "opacity-70"
