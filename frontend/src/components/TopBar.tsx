@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell, Menu, Search } from "lucide-react";
+import { Bell, Menu, Plus, Search } from "lucide-react";
 import { CommandPalette } from "@/components/search/CommandPalette";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -154,7 +154,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
-  "mwz-button !h-7 !min-h-0 !px-2 md:!px-3 !py-0 text-[10px] md:text-[11px] leading-none font-retro";
+    "mwz-button !h-7 !min-h-0 !gap-1 !px-2 sm:!px-2.5 md:!px-3 !py-0 text-[10px] md:text-[11px] leading-none font-retro";
 
   const openWalletModal = () => {
     setWalletModalOpen(true);
@@ -164,8 +164,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     () => [
       { label: "Launchpad", path: "/", priority: "primary" },
       ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ label: "War Room", path: "/war-room", priority: "primary" as const }] : []),
-      { label: "Profile", path: "/profile?tab=balances", priority: "primary" },
-      { label: "Docs", path: "https://docs.memewar.zone", priority: "primary" },
+      { label: "Profile", path: "/profile?tab=balances", priority: "secondary" },
+      { label: "Docs", path: "https://docs.memewar.zone", priority: "secondary" },
     ],
     []
   );
@@ -184,24 +184,24 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         setAllCampaigns(all);
         setTickerCampaigns(top);
 
-if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
-  setTickerMetricsByCampaign({});
-  tickerInitialLoadedRef.current = true;
-  return;
-}
+        if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
+          setTickerMetricsByCampaign({});
+          tickerInitialLoadedRef.current = true;
+          return;
+        }
 
-const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
+        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
 
-if (cancelled) return;
+        if (cancelled) return;
 
-const next: Record<string, CampaignMetrics | null> = {};
-top.forEach((c, idx) => {
-  const r = results[idx];
-  next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
-});
+        const next: Record<string, CampaignMetrics | null> = {};
+        top.forEach((c, idx) => {
+          const r = results[idx];
+          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
+        });
 
-setTickerMetricsByCampaign(next);
-tickerInitialLoadedRef.current = true;
+        setTickerMetricsByCampaign(next);
+        tickerInitialLoadedRef.current = true;
       } catch (err) {
         console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
@@ -368,28 +368,32 @@ tickerInitialLoadedRef.current = true;
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-40 bg-transparent">
-      <div className="mwz-hud-frame mx-2 md:mx-3 mt-2 flex items-center gap-1.5 px-2.5 md:px-4 !py-1 !min-h-[30px]">
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="lg:hidden mwz-button h-8 w-8 p-0" aria-label="Toggle menu">
-  <Menu className="h-4 w-4" />
-</button>
+    <div className="fixed left-0 right-0 top-0 z-40 bg-transparent">
+      <div className="mwz-hud-frame mx-2 mt-2 flex min-h-[30px] items-center gap-1 !py-1 px-2 md:mx-3 md:px-3">
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="mwz-button h-8 w-8 shrink-0 p-0 lg:hidden" aria-label="Toggle menu">
+          <Menu className="h-4 w-4" />
+        </button>
 
-        <Link to="/" className="mwz-brand-link hidden md:flex items-center mr-2 shrink-0">
+        <Link to="/" className="mr-1 flex shrink-0 items-center lg:hidden">
+          <img src={brandMark} alt="MemeWarzone" className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
+        </Link>
+
+        <Link to="/" className="mr-2 hidden shrink-0 items-center lg:flex">
           <img
             src={brandMark}
             alt="MemeWarzone"
-            className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] lg:h-9 2xl:h-10"
+            className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] xl:h-8 2xl:h-10"
             draggable={false}
           />
         </Link>
 
-        <div className="hidden lg:flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+        <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
           {isPostGradNavEnabled() ? <ArenaDesktopNav /> : null}
           {navLinks.map((item) => {
             const external = isExternalHref(item.path);
             const className = cn(
-              "mwz-nav-link px-2 md:px-3 !py-1 text-[11px] leading-none whitespace-nowrap 2xl:text-xs",
-              item.priority === "secondary" && "hidden 2xl:inline-flex",
+              "mwz-nav-link px-2 md:px-3 !py-1 text-[11px] leading-none whitespace-nowrap",
+              item.priority === "secondary" && "hidden xl:inline-flex",
               !external && isActive(item.path) && "mwz-nav-link-active",
             );
 
@@ -411,19 +415,19 @@ tickerInitialLoadedRef.current = true;
           })}
         </div>
 
-        <div className="hidden lg:flex items-center shrink-0">
+        <div className="hidden shrink-0 items-center xl:flex">
           <SocialTooltip
             items={socialLinks}
             className="gap-1.5 [&_a]:!h-8 [&_a]:!w-8 [&_img]:!h-4 [&_img]:!w-4"
           />
         </div>
 
-        <div className="min-w-0 flex-1 lg:flex-none lg:shrink-0 mx-1 lg:mx-2 xl:mx-3">
+        <div className="mx-1 min-w-0 flex-1 lg:mx-2 lg:w-[96px] lg:flex-none xl:w-[112px] 2xl:w-[128px]">
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
             aria-label="Open search"
-            className="mwz-button group flex h-7 w-full items-center justify-center gap-1.5 px-2 md:w-[145px] lg:w-[105px] 2xl:w-[120px]"
+            className="mwz-button group flex h-7 w-full items-center justify-center gap-1.5 px-2 sm:justify-start md:justify-center"
           >
             <Search className="h-3 w-3 shrink-0" />
             <span className="truncate text-[10px] uppercase tracking-[0.12em] text-success/70 leading-none">
@@ -432,8 +436,9 @@ tickerInitialLoadedRef.current = true;
           </button>
         </div>
 
-        <div className="relative flex items-center gap-2 shrink-0">
+        <div className="relative flex shrink-0 items-center gap-1 sm:gap-2">
           <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
+            <Plus className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">Create Coin</span>
             <span className="sm:hidden">Create</span>
           </Button>
@@ -461,7 +466,7 @@ tickerInitialLoadedRef.current = true;
               {notificationOpen && popoverAnchor && createPortal(
                 <div
                   data-topbar-popover
-                  className="w-80 max-w-[calc(100vw-2rem)] mwz-panel overflow-hidden p-2"
+                  className="mwz-panel w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-2"
                   style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
                 >
                   <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
@@ -525,7 +530,7 @@ tickerInitialLoadedRef.current = true;
             {disconnectOpen && popoverAnchor && createPortal(
               <div
                 data-topbar-popover
-                className="w-56 mwz-panel p-2"
+                className="mwz-panel w-56 p-2"
                 style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
               >
                 <div className="border border-success/15 bg-success/5 px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-foreground">
@@ -552,7 +557,7 @@ tickerInitialLoadedRef.current = true;
       </div>
 
       {tickerBaseLoop.length > 0 && (
-        <div className="mx-2 md:mx-3 mt-1 overflow-hidden">
+        <div className="mx-2 mt-1 overflow-hidden md:mx-3">
           <div className="mwz-ticker-mask relative overflow-hidden rounded-full border border-success/10 bg-black/45 px-1 py-1 shadow-[0_14px_38px_-24px_rgba(0,0,0,0.95)]">
             <div className="mwz-ticker-track flex min-w-max animate-[ticker-scroll_46s_linear_infinite] items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-success/78 will-change-transform hover:[animation-play-state:paused]">
               {[0, 1].map((dup) =>
