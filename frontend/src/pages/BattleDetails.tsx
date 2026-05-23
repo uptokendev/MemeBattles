@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { RichBattleCard } from "@/components/postgrad/RichBattleCard";
+import { RichBattleCardOrange } from "@/components/postgrad/RichBattleCardOrange";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarPoolPanel } from "@/components/postgrad/WarPoolPanel";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,8 @@ const BattleDetails = () => {
   if (!battle) {
     return (
       <div className="space-y-6 px-1 pb-10">
-        <section className="rounded-2xl border border-border bg-card/40 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)] backdrop-blur-sm md:p-7">
-          <div className="font-retro text-[10px] uppercase tracking-[0.32em] text-accent">Battle arena</div>
+        <section className="mwz-orange-frame p-5 md:p-7">
+          <div className="mwz-orange-frame-label text-[10px]">Battle arena</div>
           <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Battle details unavailable.</h1>
           <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
             {source === "empty"
@@ -82,10 +82,10 @@ const BattleDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <section className="rounded-2xl border border-border bg-card/40 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)] backdrop-blur-sm md:p-7">
+      <section className="mwz-orange-frame p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="font-retro text-[10px] uppercase tracking-[0.32em] text-accent">Battle arena</div>
+            <div className="mwz-orange-frame-label text-[10px]">Battle arena</div>
             <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Battle lifecycle and settlement.</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Track challenge state, live score context, War Pool support, and settlement routing from one focused battle page.</p>
           </div>
@@ -97,19 +97,19 @@ const BattleDetails = () => {
         </div>
       </section>
 
-      <RichBattleCard battle={battle} ctaLabel="Battle details" />
+      <RichBattleCardOrange battle={battle} ctaLabel="Battle details" />
 
       <WarPoolPanel battle={battle} />
 
       {participantTokens.length ? (
-        <section className="rounded-2xl border border-border bg-background/20 p-5">
-          <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Memecoin matchup</div>
+        <section className="mwz-orange-frame-soft p-5">
+          <div className="mwz-orange-frame-label text-[10px]">Memecoin matchup</div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {participantTokens.map((token) => {
               const content = (
-                <div className="rounded-xl border border-border bg-card/40 p-4 backdrop-blur-sm transition-colors hover:border-accent/50 hover:bg-card/60">
+                <div className="mwz-orange-frame-soft p-4 transition-colors">
                   <div className="flex items-start gap-3">
-                    <img src={token.imageUrl} alt={token.tokenName} className="h-14 w-14 shrink-0 rounded-xl border border-border object-cover" />
+                    <img src={token.imageUrl} alt={token.tokenName} className="h-14 w-14 shrink-0 border border-accent/30 object-cover" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="font-retro text-sm text-foreground">{token.tokenName}</div>
@@ -149,16 +149,16 @@ const BattleDetails = () => {
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
-          <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Lifecycle states</div>
+        <div className="mwz-orange-frame-soft p-4">
+          <div className="mwz-orange-frame-label text-[10px]">Lifecycle states</div>
           <div className="mt-2 text-sm text-muted-foreground">draft → open_for_battle → pending → accepted → live → completed → settled</div>
         </div>
-        <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
-          <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Settlement guard</div>
+        <div className="mwz-orange-frame-soft p-4">
+          <div className="mwz-orange-frame-label text-[10px]">Settlement guard</div>
           <div className="mt-2 text-sm text-muted-foreground">Pool cutoff, payout routing, and suspicious activity checks sit behind the settlement flow.</div>
         </div>
-        <div className="rounded-2xl border border-border bg-card/40 p-4 backdrop-blur-sm">
-          <div className="font-retro text-[10px] uppercase tracking-[0.28em] text-accent">Event bridge</div>
+        <div className="mwz-orange-frame-soft p-4">
+          <div className="mwz-orange-frame-label text-[10px]">Event bridge</div>
           <div className="mt-2 text-sm text-muted-foreground">
             {bridgeEvent
               ? `Current battle can be promoted into ${bridgeEvent.title} from the event layer.`
