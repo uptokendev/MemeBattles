@@ -28,10 +28,11 @@ function formatUsd(value: number) {
 
 const PostGradLeague = () => {
   const { season, history, source: leagueSource } = useArenaLeagueFeed();
-  const { railItems: leagueEntrants, hasRealCampaigns, loading: leagueEntrantsLoading } = useArenaCampaignFeed(10);
+  const { railItems: leagueEntrants, hasRealCampaigns, loading: leagueEntrantsLoading, source: campaignSource } = useArenaCampaignFeed(10);
   const leadEntry = season.entries[0];
   const promotedCount = season.entries.filter((entry) => entry.movement === "promoted").length;
   const relegatedCount = season.entries.filter((entry) => entry.movement === "relegated").length;
+  const entrantFeedLabel = hasRealCampaigns ? "Campaign feed" : leagueEntrantsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -81,14 +82,14 @@ const PostGradLeague = () => {
             <h2 className="mt-1 text-2xl font-semibold text-white">Memecoins in contention</h2>
             <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so season seeding and standings can be viewed against the current market lineup.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : leagueEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={entrantFeedLabel} tone="success" />
         </div>
         <div className="mt-5">
           <ArenaCampaignRail
             items={hasRealCampaigns ? leagueEntrants : []}
             rankTone="hot"
             loading={leagueEntrantsLoading}
-            emptyLabel="League entrants will appear here when the live campaign feed is available."
+            emptyLabel={campaignSource === "empty" ? "League entrant campaign data is not available on this branch yet." : "League entrants will appear here when the live campaign feed is available."}
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
               { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
