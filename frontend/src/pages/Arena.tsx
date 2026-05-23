@@ -15,9 +15,9 @@ function formatUsd(value: number) {
 }
 
 const Arena = () => {
-  const { liveBattles, openForBattleQueue } = useArenaBattleFeed();
-  const { events } = useArenaEventFeed();
-  const { season } = useArenaLeagueFeed();
+  const { liveBattles, openForBattleQueue, source: battleSource } = useArenaBattleFeed();
+  const { events, source: eventSource } = useArenaEventFeed();
+  const { season, source: leagueSource } = useArenaLeagueFeed();
   const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
 
   const activeEvents = events.filter((event) => event.status === "live");
@@ -86,21 +86,27 @@ const Arena = () => {
               <Link to="/arena/battles">Open battles</Link>
             </Button>
           </div>
-          {liveBattles.map((battle) => (
-            <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
-                {battle.featured ? <TacticalTag label="Featured" tone="sponsored" /> : null}
+          {liveBattles.length ? (
+            liveBattles.map((battle) => (
+              <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
+                  {battle.featured ? <TacticalTag label="Featured" tone="sponsored" /> : null}
+                </div>
+                <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName} vs {battle.participants[1].tokenName}</div>
+                <div className="mt-2 text-xs text-white/60">{battle.participants[0].symbol} {battle.participants[0].score.toFixed(1)} · {battle.participants[1].symbol} {battle.participants[1].score.toFixed(1)}</div>
+                <div className="mt-4 flex gap-2">
+                  <Button asChild size="sm">
+                    <Link to={`/battle/${battle.id}`}>Open battle</Link>
+                  </Button>
+                </div>
               </div>
-              <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName} vs {battle.participants[1].tokenName}</div>
-              <div className="mt-2 text-xs text-white/60">{battle.participants[0].symbol} {battle.participants[0].score.toFixed(1)} · {battle.participants[1].symbol} {battle.participants[1].score.toFixed(1)}</div>
-              <div className="mt-4 flex gap-2">
-                <Button asChild size="sm">
-                  <Link to={`/battle/${battle.id}`}>Open battle</Link>
-                </Button>
-              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {battleSource === "empty" ? "Live battle data is not available on this branch yet." : "No live battles are active right now."}
             </div>
-          ))}
+          )}
         </div>
 
         <div className="space-y-4">
@@ -113,29 +119,35 @@ const Arena = () => {
               <Link to="/arena/battles">Creator controls</Link>
             </Button>
           </div>
-          {openForBattleQueue.map((battle) => {
-            const tokenRoute = getArenaTokenRoute(battle.participants[0].tokenId);
-            return (
-              <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <TacticalTag label="Open for battle" tone="success" />
-                  <TacticalTag label={battle.participants[0].symbol} tone="default" />
-                </div>
-                <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName}</div>
-                <div className="mt-2 text-xs text-white/60">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
-                <div className="mt-4 flex gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link to={`/battle/${battle.id}`}>View queue</Link>
-                  </Button>
-                  {tokenRoute ? (
+          {openForBattleQueue.length ? (
+            openForBattleQueue.map((battle) => {
+              const tokenRoute = getArenaTokenRoute(battle.participants[0].tokenId);
+              return (
+                <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TacticalTag label="Open for battle" tone="success" />
+                    <TacticalTag label={battle.participants[0].symbol} tone="default" />
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName}</div>
+                  <div className="mt-2 text-xs text-white/60">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
+                  <div className="mt-4 flex gap-2">
                     <Button asChild size="sm" variant="outline">
-                      <Link to={tokenRoute}>Token details</Link>
+                      <Link to={`/battle/${battle.id}`}>View queue</Link>
                     </Button>
-                  ) : null}
+                    {tokenRoute ? (
+                      <Button asChild size="sm" variant="outline">
+                        <Link to={tokenRoute}>Token details</Link>
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {battleSource === "empty" ? "Open-for-battle queue data is not available on this branch yet." : "No memecoins are waiting in the battle queue right now."}
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -176,14 +188,24 @@ const Arena = () => {
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "sponsored" : "default"} />
-              <TacticalTag label={`Week ${season.week}`} tone="default" />
+          {season.entries.length ? (
+            <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "sponsored" : "default"} />
+                <TacticalTag label={`Week ${season.week}`} tone="default" />
+              </div>
+              <div className="mt-3 text-sm font-semibold text-white">{season.label}</div>
+              <div className="mt-2 text-xs text-white/60">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
             </div>
-            <div className="mt-3 text-sm font-semibold text-white">{season.label}</div>
-            <div className="mt-2 text-xs text-white/60">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
-          </div>
+          ) : null}
+
+          {!activeEvents[0] && !upcomingEvents[0] && !season.entries.length ? (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {eventSource === "empty" && leagueSource === "empty"
+                ? "Events and league data are not available on this branch yet."
+                : "No active events or league standings are available right now."}
+            </div>
+          ) : null}
         </div>
       </section>
     </div>
