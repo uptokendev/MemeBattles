@@ -30,6 +30,26 @@ function normalizeArchivedBattleList(value: unknown): ArchivedBattleEntry[] {
   return value.filter((entry) => isBattle((entry as any)?.battle) && typeof (entry as any)?.archivedAt === "string") as ArchivedBattleEntry[];
 }
 
+function normalizeIdentity(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isHexIdentity(value: string) {
+  return /^0x[a-f0-9]{40}$/i.test(value);
+}
+
+function battleMatchesIdentity(battle: Battle, identity: string) {
+  const normalized = normalizeIdentity(identity);
+  if (!normalized) return false;
+
+  return battle.participants.some((participant: any) => {
+    const participantIdentity = normalizeIdentity(participant?.tokenId);
+    const campaignIdentity = normalizeIdentity(participant?.campaignAddress ?? participant?.campaign_address ?? participant?.campaign);
+    const tokenIdentity = normalizeIdentity(participant?.tokenAddress ?? participant?.token_address ?? participant?.token);
+    return participantIdentity === normalized || campaignIdentity === normalized || tokenIdentity === normalized;
+  });
+}
+
 async function fetchBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPayload | null> {
   const response = await apiFetch("/api/arena/battles", { cache: "no-store", signal });
   if (!response.ok) return null;
@@ -118,7 +138,11 @@ export function useArenaBattleFeed() {
   const getBattleForToken = useMemo(() => {
     if (!apiPayload) return runtime.getBattleForToken;
     const allBattles = [...liveBattles, ...openForBattleQueue, ...archivedBattles.map((entry) => entry.battle)];
-    return (tokenId: string) => allBattles.find((battle) => battle.participants.some((participant) => participant.tokenId === tokenId)) ?? null;
+    return (tokenId: string) => {
+      const normalized = normalizeIdentity(tokenId);
+      if (!normalized) return null;
+      return allBattles.find((battle) => battleMatchesIdentity(battle, normalized)) ?? null;
+    };
   }, [apiPayload, archivedBattles, liveBattles, openForBattleQueue, runtime.getBattleForToken]);
 
   const openCreatorCoinForBattle = async (tokenId: string) => {
@@ -128,7 +152,13 @@ export function useArenaBattleFeed() {
     } catch (error) {
       console.warn("[useArenaBattleFeed] API open-for-battle unavailable", error);
     }
-    return runtime.createMockOpenForBattle(tokenId);
+
+    const normalized = normalizeIdentity(tokenId);
+    if (!isHexIdentity(normalized)) {
+      return runtime.createMockOpenForBattle(tokenId);
+    }
+
+    return false;
   };
 
   return {
