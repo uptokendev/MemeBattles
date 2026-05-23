@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { apiFetch } from "@/lib/apiBase";
@@ -130,7 +131,7 @@ export function useArenaCampaignFeed(limit = 12) {
         id: campaign.campaign,
         title: campaign.name,
         symbol: campaign.symbol,
-        href: `/token/${campaign.campaign.toLowerCase()}`,
+        href: getPostGradTokenDetailRoute(campaign.campaign) ?? `/token/${campaign.campaign.toLowerCase()}`,
         detail: `MC ${metrics.marketCapLabel} · Vol ${metrics.volumeLabel}`,
         statusLabel: status.label,
         statusTone: status.tone,
