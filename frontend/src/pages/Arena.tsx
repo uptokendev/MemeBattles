@@ -3,6 +3,7 @@ import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
+import { useArenaFeaturedFeed } from "@/hooks/useArenaFeaturedFeed";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
@@ -18,14 +19,15 @@ const Arena = () => {
   const { liveBattles, openForBattleQueue, source: battleSource } = useArenaBattleFeed();
   const { events, source: eventSource } = useArenaEventFeed();
   const { season, source: leagueSource } = useArenaLeagueFeed();
-  const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading, source: campaignSource } = useArenaCampaignFeed(12);
+  const { railItems: sponsoredRailItems, hasRealCampaigns, loading: realCampaignsLoading, source: campaignSource } = useArenaCampaignFeed(12);
+  const { railItems: featuredRailItems, hasFeaturedCampaigns, loading: featuredLoading, source: featuredSource } = useArenaFeaturedFeed(6);
 
   const activeEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
-  const realSponsored = realCampaignRailItems.slice(0, 4);
-  const realFeatured = realCampaignRailItems.slice(4, 10);
+  const realSponsored = sponsoredRailItems.slice(0, 4);
   const campaignFeedLabel = hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed";
+  const featuredFeedLabel = hasFeaturedCampaigns ? "UpVote feed" : featuredLoading ? "Loading" : featuredSource === "empty" ? "Feed unavailable" : "Awaiting feed";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -38,7 +40,7 @@ const Arena = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={`${realSponsored.length} sponsored`} tone="sponsored" />
-            <TacticalTag label={`${realFeatured.length} featured`} tone="success" />
+            <TacticalTag label={`${featuredRailItems.length} featured`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
           </div>
         </div>
@@ -64,15 +66,15 @@ const Arena = () => {
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins</h2>
+            <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins by UpVotes</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Trending feed" : realCampaignsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={featuredFeedLabel} tone="success" />
         </div>
         <ArenaCampaignRail
-          items={realFeatured}
+          items={featuredRailItems}
           rankTone="hot"
-          loading={realCampaignsLoading}
-          emptyLabel={campaignSource === "empty" ? "Featured campaign data is not available on this branch yet." : "Featured memecoins will appear here when the live campaign feed is available."}
+          loading={featuredLoading}
+          emptyLabel={featuredSource === "empty" ? "Featured UpVote data is not available on this branch yet." : "Featured memecoins will appear here when the UpVote feed is available."}
         />
       </section>
 
