@@ -1,5 +1,5 @@
 import { readWarAuth, unauthorized } from "./_lib/auth.js";
-import { buildWarProfile, getUserById } from "./_lib/profile.js";
+import { buildWarProfile, getUserById, syncRecruiterMilestoneQuestsForUser } from "./_lib/profile.js";
 import { getRecruiterStats } from "./_lib/referrals.js";
 
 export default async function wmReferralStats(req, res) {
@@ -12,6 +12,8 @@ export default async function wmReferralStats(req, res) {
     const user = await getUserById(auth.userId);
     if (!user || user.wallet_address !== auth.address) return unauthorized(res, "War Missions session is no longer valid.");
     if (user.is_banned) return res.status(403).json({ ok: false, error: "This wallet is excluded from War Missions." });
+
+    await syncRecruiterMilestoneQuestsForUser(user.id).catch(() => undefined);
 
     const [profile, recruiterStats] = await Promise.all([
       buildWarProfile(user),
