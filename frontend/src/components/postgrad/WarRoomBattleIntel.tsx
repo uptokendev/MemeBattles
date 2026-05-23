@@ -2,9 +2,9 @@ import { Link } from "react-router-dom";
 import { Activity, ShieldCheck, Swords, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
-import { mockTokenProfiles } from "@/features/postgrad/mockRegistry";
-import { useMockBattleLists } from "@/hooks/useMockBattleRuntime";
+import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 
 function formatScore(value: number) {
@@ -27,18 +27,15 @@ function resolveBattleStateLabel(state?: string) {
 }
 
 export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
-  const { getBattleForToken } = useMockBattleLists();
+  const { getBattleForToken, source } = useArenaBattleFeed();
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
-  const tokenRoute = `/token/${campaign.campaign.toLowerCase()}`;
-  const linkedToken = mockTokenProfiles.find(
-    (token) => token.campaignAddress.toLowerCase() === campaign.campaign.toLowerCase(),
-  );
-  const linkedBattle = linkedToken ? getBattleForToken(linkedToken.id) : null;
+  const tokenRoute = getArenaTokenRoute(campaign.campaign);
+  const linkedBattle = getBattleForToken(campaign.campaign) ?? (campaign.token ? getBattleForToken(campaign.token) : null);
   const signal = resolveSignalLevel(metrics.volumeUsd, metrics.holdersCount);
 
   const stateLabel = resolveBattleStateLabel(linkedBattle?.state);
   const isReadyCandidate = !linkedBattle && metrics.status !== "draft" && metrics.hasRichStats;
-  const statusLabel = stateLabel ?? (isReadyCandidate ? "Candidate" : metrics.status === "draft" ? "Draft" : "Review needed");
+  const statusLabel = stateLabel ?? (isReadyCandidate ? "Candidate" : metrics.status === "draft" ? "Draft" : source === "empty" ? "Feed unavailable" : "Review needed");
   const statusTone = linkedBattle?.state === "live" ? "hot" : linkedBattle ? "success" : isReadyCandidate ? "success" : "default";
   const poolLabel = linkedBattle?.state === "live" ? "Pool active" : linkedBattle ? "Pool pending" : "No active pool";
 
@@ -86,9 +83,11 @@ export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: Campaig
             <div className="mt-1 text-xs text-white/55">
               {linkedBattle
                 ? `${linkedBattle.participants[0].symbol} vs ${linkedBattle.participants[1].symbol} · ${poolLabel}`
-                : isReadyCandidate
-                  ? "This coin has enough live market context to review for battle seeding."
-                  : "This coin needs more market data before battle seeding is useful."}
+                : source === "empty"
+                  ? "Battle feed data is not available on this branch yet."
+                  : isReadyCandidate
+                    ? "This coin has enough live market context to review for battle seeding."
+                    : "This coin needs more market data before battle seeding is useful."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -101,9 +100,11 @@ export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: Campaig
                 <Link to="/arena/battles">Battle page</Link>
               </Button>
             )}
-            <Button asChild size="sm" variant="outline" className="h-8 text-[11px] md:text-sm">
-              <Link to={tokenRoute}>Token</Link>
-            </Button>
+            {tokenRoute ? (
+              <Button asChild size="sm" variant="outline" className="h-8 text-[11px] md:text-sm">
+                <Link to={tokenRoute}>Token</Link>
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
