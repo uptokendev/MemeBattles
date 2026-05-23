@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { WarPool } from "@/features/postgrad/contracts";
+import { postGradFlags } from "@/features/postgrad/config";
 import type { WarPoolSettlementSummary } from "@/features/postgrad/mockWarPoolRuntime";
 import { apiFetch } from "@/lib/apiBase";
 import { useMockWarPool, useMockWarPoolSummary } from "@/hooks/useMockWarPoolRuntime";
 
-export type ArenaWarPoolFeedSource = "qa-runtime" | "api";
+export type ArenaWarPoolFeedSource = "qa-runtime" | "api" | "empty";
 
 type WarPoolState = WarPool["state"];
 type WarPoolSummary = ReturnType<typeof useMockWarPoolSummary>["summary"];
@@ -151,12 +152,12 @@ async function transitionWarPoolViaApi(battleId: string, state: WarPoolState): P
 /**
  * Adapter boundary for War Pool surfaces.
  *
- * It attempts API-shaped War Pool endpoints first and falls back to the QA
- * runtime when unavailable, keeping support/cutoff/settlement UI stable while
- * the real endpoint is added.
+ * It attempts API-shaped War Pool endpoints first and only falls back to the QA
+ * runtime when mock mode is explicitly enabled.
  */
 export function useArenaWarPool(battleId?: string | null) {
   const runtime = useMockWarPool(battleId);
+  const allowMockFallback = postGradFlags.mocks;
   const [apiPayload, setApiPayload] = useState<ArenaWarPoolPayload | null>(null);
   const [loading, setLoading] = useState(Boolean(battleId));
 
@@ -205,7 +206,7 @@ export function useArenaWarPool(battleId?: string | null) {
     } catch (error) {
       console.warn("[useArenaWarPool] API support unavailable", error);
     }
-    return runtime.supportWarPoolSide(battleIdToSupport, sideTokenId, amountUsd);
+    return allowMockFallback ? runtime.supportWarPoolSide(battleIdToSupport, sideTokenId, amountUsd) : false;
   };
 
   const transitionWarPool = async (battleIdToUpdate: string, state: WarPoolState) => {
@@ -218,14 +219,14 @@ export function useArenaWarPool(battleId?: string | null) {
     } catch (error) {
       console.warn("[useArenaWarPool] API transition unavailable", error);
     }
-    return runtime.transitionMockWarPool(battleIdToUpdate, state);
+    return allowMockFallback ? runtime.transitionMockWarPool(battleIdToUpdate, state) : false;
   };
 
   return {
-    source: apiPayload ? "api" as ArenaWarPoolFeedSource : "qa-runtime" as ArenaWarPoolFeedSource,
+    source: apiPayload ? "api" as ArenaWarPoolFeedSource : allowMockFallback ? "qa-runtime" as ArenaWarPoolFeedSource : "empty" as ArenaWarPoolFeedSource,
     loading,
-    pool: apiPayload?.pool ?? runtime.pool,
-    settlementSummary: apiPayload?.settlementSummary ?? runtime.settlementSummary,
+    pool: apiPayload?.pool ?? (allowMockFallback ? runtime.pool : null),
+    settlementSummary: apiPayload?.settlementSummary ?? (allowMockFallback ? runtime.settlementSummary : null),
     supportSide,
     transitionWarPool,
     resetWarPoolRuntime: runtime.resetMockWarPoolRuntime,
@@ -234,6 +235,7 @@ export function useArenaWarPool(battleId?: string | null) {
 
 export function useArenaWarPoolSummary() {
   const runtime = useMockWarPoolSummary();
+  const allowMockFallback = postGradFlags.mocks;
   const [apiSummary, setApiSummary] = useState<ArenaWarPoolSummaryPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -260,9 +262,9 @@ export function useArenaWarPoolSummary() {
   }, [runtime.summary.totalPotUsd, runtime.summary.pools.length]);
 
   return {
-    source: apiSummary ? "api" as ArenaWarPoolFeedSource : "qa-runtime" as ArenaWarPoolFeedSource,
+    source: apiSummary ? "api" as ArenaWarPoolFeedSource : allowMockFallback ? "qa-runtime" as ArenaWarPoolFeedSource : "empty" as ArenaWarPoolFeedSource,
     loading,
-    summary: apiSummary ?? runtime.summary,
+    summary: apiSummary ?? (allowMockFallback ? runtime.summary : { pools: [], totalPotUsd: 0, openPools: 0, lockedPools: 0, paidPools: 0 }),
     resetWarPoolRuntime: runtime.resetMockWarPoolRuntime,
   };
 }
