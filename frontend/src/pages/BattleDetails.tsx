@@ -63,7 +63,7 @@ const BattleDetails = () => {
         </section>
       ) : null}
 
-      {postGradFlags.mocks ? <WarPoolPanel battle={battle} /> : null}
+      <WarPoolPanel battle={battle} />
 
       {participantTokens.length && postGradFlags.mocks ? (
         <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
