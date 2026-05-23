@@ -25,6 +25,7 @@ export interface ArenaSubNavItem {
 export const arenaSubNavItems: ArenaSubNavItem[] = isPostGradNavEnabled()
   ? [
       { label: "Overview", path: "/arena" },
+      ...(postGradFlags.warRoom ? [{ label: "War Room", path: "/war-room" }] : []),
       { label: "Battles", path: "/arena/battles" },
       { label: "Leagues", path: "/arena/leagues" },
       { label: "Events", path: "/arena/events" },
