@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useWallet } from "@/contexts/WalletContext";
 import { apiFetch } from "@/lib/apiBase";
 import type { WarRoomCampaign } from "@/hooks/useWarRoomCampaignFeed";
 
@@ -41,6 +42,7 @@ export function useWarRoomRowDetails({
   chainId?: number | null;
   enabled: boolean;
 }) {
+  const { account } = useWallet();
   const [details, setDetails] = useState<WarRoomRowDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +69,7 @@ export function useWarRoomRowDetails({
           campaignAddress: address,
           chainId: String(chainId || 97),
         });
+        if (account) params.set("userAddress", account);
         const response = await apiFetch(`/api/war-room?${params.toString()}`, { cache: "no-store" as RequestCache, signal: controller.signal });
         const json = await response.json().catch(() => null);
         if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
@@ -91,7 +94,7 @@ export function useWarRoomRowDetails({
       cancelled = true;
       controller.abort();
     };
-  }, [campaignAddress, chainId, enabled]);
+  }, [account, campaignAddress, chainId, enabled]);
 
   return { details, loading, error, source };
 }
