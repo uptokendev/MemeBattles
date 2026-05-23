@@ -1,5 +1,5 @@
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, json } from "../server/http.js";
+import { badMethod, getQuery, isAddress, json } from "../server/http.js";
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -28,7 +28,7 @@ function safeEmptyWarRoom(res, error) {
   });
 }
 
-function buildWarRoomDetail(row) {
+function buildWarRoomDetail(row, watchlist) {
   const campaignAddress = normalizeAddress(row?.campaignAddress);
   const tokenAddress = row?.tokenAddress ? normalizeAddress(row.tokenAddress) : null;
   const isGraduated = Boolean(row?.graduatedAtChain);
@@ -59,18 +59,52 @@ function buildWarRoomDetail(row) {
       canSell: Boolean(isActive || isGraduated),
       slippagePct: 5,
     },
-    watchlist: {
+    watchlist,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function getWatchlistState({ chainId, campaignAddress, userAddress }) {
+  const user = normalizeAddress(userAddress);
+  const campaign = normalizeAddress(campaignAddress);
+
+  if (!isAddress(user)) {
+    return {
+      supported: true,
+      following: false,
+      reason: "wallet_not_connected",
+    };
+  }
+
+  if (!isAddress(campaign)) {
+    return {
       supported: false,
       following: false,
-      reason: "watchlist_state_not_connected",
-    },
-    updatedAt: new Date().toISOString(),
+      reason: "invalid_campaign_address",
+    };
+  }
+
+  const { rows } = await pool.query(
+    `SELECT 1
+       FROM public.campaign_follows
+      WHERE chain_id = $1
+        AND user_address = $2
+        AND campaign_address = $3
+      LIMIT 1`,
+    [chainId, user, campaign],
+  );
+
+  return {
+    supported: true,
+    following: rows.length > 0,
+    reason: rows.length > 0 ? null : "not_following",
   };
 }
 
 async function loadWarRoomDetail(req, res, chainId) {
   const q = getQuery(req);
   const campaignAddress = normalizeAddress(req.params?.campaignAddress || req.params?.[0] || q.campaignAddress || q.campaign);
+  const userAddress = normalizeAddress(q.userAddress || q.user || q.wallet || "");
   if (!campaignAddress) return json(res, 400, { error: "Missing campaignAddress" });
 
   const { rows } = await pool.query(
@@ -125,7 +159,8 @@ async function loadWarRoomDetail(req, res, chainId) {
     });
   }
 
-  return json(res, 200, buildWarRoomDetail(rows[0]));
+  const watchlist = await getWatchlistState({ chainId, campaignAddress, userAddress });
+  return json(res, 200, buildWarRoomDetail(rows[0], watchlist));
 }
 
 export default async function handler(req, res) {
