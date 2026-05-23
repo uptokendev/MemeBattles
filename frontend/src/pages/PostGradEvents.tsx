@@ -59,7 +59,7 @@ function EventSurfaceCard({ event }: { event: ArenaEventSummary }) {
 }
 
 const PostGradEvents = () => {
-  const { events, archivedEvents } = useArenaEventFeed();
+  const { events, archivedEvents, source: eventSource } = useArenaEventFeed();
   const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading } = useArenaCampaignFeed(10);
 
   const liveEvents = events.filter((event) => event.status === "live");
@@ -88,17 +88,17 @@ const PostGradEvents = () => {
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Live now</div>
           <div className="mt-2 text-lg font-semibold text-white">{liveEvents[0]?.title ?? "No live event"}</div>
-          <div className="mt-1 text-sm text-white/60">{liveEvents[0] ? `${liveEvents[0].participantCount} participants in motion` : "The next event will appear here when it goes live."}</div>
+          <div className="mt-1 text-sm text-white/60">{liveEvents[0] ? `${liveEvents[0].participantCount} participants in motion` : eventSource === "empty" ? "Live event data is not available on this branch yet." : "The next event will appear here when it goes live."}</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Next up</div>
           <div className="mt-2 text-lg font-semibold text-white">{upcomingEvents[0]?.title ?? "No scheduled event"}</div>
-          <div className="mt-1 text-sm text-white/60">{upcomingEvents[0] ? `Starts ${formatWhen(upcomingEvents[0].startsAt)}` : "The schedule is clear right now."}</div>
+          <div className="mt-1 text-sm text-white/60">{upcomingEvents[0] ? `Starts ${formatWhen(upcomingEvents[0].startsAt)}` : eventSource === "empty" ? "Upcoming event data is not available on this branch yet." : "The schedule is clear right now."}</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Tournament watch</div>
           <div className="mt-2 text-lg font-semibold text-white">{tournaments[0]?.title ?? "No tournament scheduled"}</div>
-          <div className="mt-1 text-sm text-white/60">{tournaments[0]?.bracketStage ? `Current stage: ${bracketLabels[tournaments[0].bracketStage]}` : "Bracket updates appear here when available."}</div>
+          <div className="mt-1 text-sm text-white/60">{tournaments[0]?.bracketStage ? `Current stage: ${bracketLabels[tournaments[0].bracketStage]}` : eventSource === "empty" ? "Tournament event data is not available on this branch yet." : "Bracket updates appear here when available."}</div>
         </div>
       </section>
 
@@ -138,7 +138,7 @@ const PostGradEvents = () => {
             liveEvents.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              No event is live right now.
+              {eventSource === "empty" ? "Live event data is not available on this branch yet." : "No event is live right now."}
             </div>
           )}
         </div>
@@ -157,7 +157,7 @@ const PostGradEvents = () => {
             upcomingEvents.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              No scheduled events are waiting in the queue.
+              {eventSource === "empty" ? "Upcoming event data is not available on this branch yet." : "No scheduled events are waiting in the queue."}
             </div>
           )}
         </div>
@@ -176,7 +176,7 @@ const PostGradEvents = () => {
             tournaments.map((event) => <EventSurfaceCard key={event.id} event={event} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              No tournament event is currently tracked.
+              {eventSource === "empty" ? "Tournament event data is not available on this branch yet." : "No tournament event is currently tracked."}
             </div>
           )}
         </div>
@@ -215,7 +215,7 @@ const PostGradEvents = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Completed events will appear here after they wrap.
+              {eventSource === "empty" ? "Archived event data is not available on this branch yet." : "Completed events will appear here after they wrap."}
             </div>
           )}
         </div>
