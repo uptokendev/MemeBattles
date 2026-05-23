@@ -7,6 +7,7 @@ import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { CurvePriceChart } from "@/components/token/CurvePriceChart";
 import { WarRoomBattleIntel } from "@/components/postgrad/WarRoomBattleIntel";
 import { WarRoomTradePanel } from "@/components/postgrad/WarRoomTradePanel";
+import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 
 function shortenAddress(value?: string | null) {
@@ -47,7 +48,7 @@ function MobileMetric({ label, value }: { label: string; value: string }) {
 export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
   const [expanded, setExpanded] = useState(false);
 
-  const tokenRoute = `/token/${campaign.campaign.toLowerCase()}`;
+  const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign) ?? `/token/${campaign.campaign.toLowerCase()}`;
   const websiteHref = resolveExternalHref(campaign.website);
   const xHref = campaign.xAccount ? `https://x.com/${campaign.xAccount.replace(/^@/, "")}` : null;
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
