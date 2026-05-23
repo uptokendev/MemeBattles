@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { postGradFlags } from "@/features/postgrad/config";
 import { apiFetch } from "@/lib/apiBase";
 import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
 
-export type ArenaLeagueFeedSource = "qa-runtime" | "api";
+export type ArenaLeagueFeedSource = "qa-runtime" | "api" | "empty";
 
 export type ArenaLeagueSeason = ReturnType<typeof useMockLeagueSeason>["season"];
 export type ArenaLeagueHistoryEntry = ReturnType<typeof useMockLeagueSeason>["history"][number];
@@ -99,15 +100,26 @@ async function mutateLeagueViaApi(action: "advance-week" | "rebalance-divisions"
   return json == null || json?.ok !== false;
 }
 
+const EMPTY_SEASON: ArenaLeagueSeason = {
+  id: "arena-league-empty",
+  label: "Arena league",
+  state: "preseason",
+  week: 1,
+  rewardPoolUsd: 0,
+  resetAt: new Date(0).toISOString(),
+  divisions: ["bronze", "silver", "gold", "apex"],
+  entries: [],
+};
+
 /**
  * Adapter boundary for Arena league surfaces.
  *
- * It attempts the API-shaped league feed first and falls back to the QA runtime
- * when the backend is unavailable, keeping the page stable while real endpoints
- * are added.
+ * It attempts the API-shaped league feed first and only falls back to the QA
+ * runtime when mock mode is explicitly enabled.
  */
 export function useArenaLeagueFeed() {
   const runtime = useMockLeagueSeason();
+  const allowMockFallback = postGradFlags.mocks;
   const [apiPayload, setApiPayload] = useState<ArenaLeagueFeedPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -149,7 +161,7 @@ export function useArenaLeagueFeed() {
     } catch (error) {
       console.warn("[useArenaLeagueFeed] API advance week unavailable", error);
     }
-    return runtime.advanceLeagueWeek();
+    return allowMockFallback ? runtime.advanceLeagueWeek() : false;
   };
 
   const rebalanceDivisions = async () => {
@@ -162,7 +174,7 @@ export function useArenaLeagueFeed() {
     } catch (error) {
       console.warn("[useArenaLeagueFeed] API rebalance unavailable", error);
     }
-    return runtime.rebalanceLeagueDivisions();
+    return allowMockFallback ? runtime.rebalanceLeagueDivisions() : false;
   };
 
   const cycleSeasonState = async () => {
@@ -175,14 +187,14 @@ export function useArenaLeagueFeed() {
     } catch (error) {
       console.warn("[useArenaLeagueFeed] API season cycle unavailable", error);
     }
-    return runtime.cycleMockLeagueState();
+    return allowMockFallback ? runtime.cycleMockLeagueState() : false;
   };
 
   return {
-    source: apiPayload ? "api" as ArenaLeagueFeedSource : "qa-runtime" as ArenaLeagueFeedSource,
+    source: apiPayload ? "api" as ArenaLeagueFeedSource : allowMockFallback ? "qa-runtime" as ArenaLeagueFeedSource : "empty" as ArenaLeagueFeedSource,
     loading,
-    season: apiPayload?.season ?? runtime.season,
-    history: apiPayload?.history ?? runtime.history,
+    season: apiPayload?.season ?? (allowMockFallback ? runtime.season : EMPTY_SEASON),
+    history: apiPayload?.history ?? (allowMockFallback ? runtime.history : []),
     advanceWeek,
     cycleSeasonState,
     rebalanceDivisions,
