@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Battle } from "@/features/postgrad/contracts";
+import { postGradFlags } from "@/features/postgrad/config";
 import { apiFetch } from "@/lib/apiBase";
 import {
   useMockBattleDetails,
   useMockBattleLists,
 } from "@/hooks/useMockBattleRuntime";
 
-export type ArenaBattleFeedSource = "qa-runtime" | "api";
+export type ArenaBattleFeedSource = "qa-runtime" | "api" | "empty";
 
 type BattleTransitionState = Battle["state"];
 type ArchivedBattleEntry = ReturnType<typeof useMockBattleLists>["archivedBattles"][number];
@@ -100,12 +101,12 @@ async function transitionBattleViaApi(battleId: string, state: BattleTransitionS
 /**
  * Adapter boundary for the Arena battle surfaces.
  *
- * It now attempts the API-shaped battle feed first and falls back to the QA
- * runtime when the backend is unavailable, so pages can move to real endpoints
- * without another UI rewrite.
+ * It attempts the API-shaped battle feed first and only falls back to the QA
+ * runtime when mock mode is explicitly enabled.
  */
 export function useArenaBattleFeed() {
   const runtime = useMockBattleLists();
+  const allowMockFallback = postGradFlags.mocks;
   const [apiPayload, setApiPayload] = useState<ArenaBattleFeedPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -131,19 +132,19 @@ export function useArenaBattleFeed() {
     };
   }, [runtime.tick]);
 
-  const liveBattles = apiPayload?.liveBattles ?? runtime.liveBattles;
-  const openForBattleQueue = apiPayload?.openForBattleQueue ?? runtime.openForBattleQueue;
-  const archivedBattles = apiPayload?.archivedBattles ?? runtime.archivedBattles;
+  const liveBattles = apiPayload?.liveBattles ?? (allowMockFallback ? runtime.liveBattles : []);
+  const openForBattleQueue = apiPayload?.openForBattleQueue ?? (allowMockFallback ? runtime.openForBattleQueue : []);
+  const archivedBattles = apiPayload?.archivedBattles ?? (allowMockFallback ? runtime.archivedBattles : []);
 
   const getBattleForToken = useMemo(() => {
-    if (!apiPayload) return runtime.getBattleForToken;
+    if (!apiPayload && allowMockFallback) return runtime.getBattleForToken;
     const allBattles = [...liveBattles, ...openForBattleQueue, ...archivedBattles.map((entry) => entry.battle)];
     return (tokenId: string) => {
       const normalized = normalizeIdentity(tokenId);
       if (!normalized) return null;
       return allBattles.find((battle) => battleMatchesIdentity(battle, normalized)) ?? null;
     };
-  }, [apiPayload, archivedBattles, liveBattles, openForBattleQueue, runtime.getBattleForToken]);
+  }, [allowMockFallback, apiPayload, archivedBattles, liveBattles, openForBattleQueue, runtime.getBattleForToken]);
 
   const openCreatorCoinForBattle = async (tokenId: string) => {
     try {
@@ -154,7 +155,7 @@ export function useArenaBattleFeed() {
     }
 
     const normalized = normalizeIdentity(tokenId);
-    if (!isHexIdentity(normalized)) {
+    if (allowMockFallback && !isHexIdentity(normalized)) {
       return runtime.createMockOpenForBattle(tokenId);
     }
 
@@ -162,7 +163,7 @@ export function useArenaBattleFeed() {
   };
 
   return {
-    source: apiPayload ? "api" as ArenaBattleFeedSource : "qa-runtime" as ArenaBattleFeedSource,
+    source: apiPayload ? "api" as ArenaBattleFeedSource : allowMockFallback ? "qa-runtime" as ArenaBattleFeedSource : "empty" as ArenaBattleFeedSource,
     loading,
     liveBattles,
     openForBattleQueue,
@@ -175,6 +176,7 @@ export function useArenaBattleFeed() {
 
 export function useArenaBattleDetails(battleId?: string) {
   const runtime = useMockBattleDetails(battleId);
+  const allowMockFallback = postGradFlags.mocks;
   const [apiBattle, setApiBattle] = useState<Battle | null>(null);
   const [loading, setLoading] = useState(Boolean(battleId));
 
@@ -218,13 +220,13 @@ export function useArenaBattleDetails(battleId?: string) {
     } catch (error) {
       console.warn("[useArenaBattleDetails] API transition unavailable", error);
     }
-    return runtime.transitionMockBattle(battleIdToUpdate, state);
+    return allowMockFallback ? runtime.transitionMockBattle(battleIdToUpdate, state) : false;
   };
 
   return {
-    source: apiBattle ? "api" as ArenaBattleFeedSource : "qa-runtime" as ArenaBattleFeedSource,
+    source: apiBattle ? "api" as ArenaBattleFeedSource : allowMockFallback ? "qa-runtime" as ArenaBattleFeedSource : "empty" as ArenaBattleFeedSource,
     loading,
-    battle: apiBattle ?? runtime.battle,
+    battle: apiBattle ?? (allowMockFallback ? runtime.battle : null),
     transitionBattle,
   };
 }
