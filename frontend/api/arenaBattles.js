@@ -167,7 +167,7 @@ async function fetchCampaignByIdentity({ chainId, identity }) {
        c.graduated_at_chain,
        ts.marketcap_bnb,
        ts.vol_24h_bnb,
-       ts.holder_count,
+       0::numeric as holder_count,
        coalesce(va.votes_24h, 0) as votes_24h,
        0::numeric as progress_pct
      from public.campaigns c
@@ -202,7 +202,7 @@ async function fetchCreatorCampaigns({ chainId, creatorAddress, limit }) {
        c.graduated_at_chain,
        ts.marketcap_bnb,
        ts.vol_24h_bnb,
-       ts.holder_count,
+       0::numeric as holder_count,
        coalesce(va.votes_24h, 0) as votes_24h,
        0::numeric as progress_pct
      from public.campaigns c
@@ -245,6 +245,22 @@ function buildCreatorStatus(row) {
       battleId: battle.id,
       openForBattleState: battle.state === "open_for_battle" ? "open" : "matched",
       unavailableReason,
+    };
+  }
+
+  if (lifecycle === "graduated") {
+    return {
+      tokenId: normalizeAddress(row.campaign_address),
+      campaignAddress: normalizeAddress(row.campaign_address),
+      tokenAddress: normalizeAddress(row.token_address),
+      tokenName: String(row.name || row.symbol || "Unknown token"),
+      symbol: String(row.symbol || ""),
+      eligibility: false,
+      currentState: "unavailable",
+      battleState: null,
+      battleId: null,
+      openForBattleState: "not_open",
+      unavailableReason: "graduated_to_dex",
     };
   }
 
