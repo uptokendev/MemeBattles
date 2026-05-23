@@ -163,7 +163,7 @@ export function useArenaWarPool(battleId?: string | null) {
 
   const refreshPool = async (battleIdToRefresh: string) => {
     const freshPayload = await fetchWarPool(battleIdToRefresh).catch(() => null);
-    if (freshPayload) setApiPayload(freshPayload);
+    setApiPayload(freshPayload);
     return freshPayload;
   };
 
