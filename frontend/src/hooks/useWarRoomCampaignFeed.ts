@@ -61,16 +61,12 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   } as WarRoomCampaign;
 }
 
-function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null, search: string) {
+function queryForMode(mode: WarRoomMode, chainId: number, search: string) {
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     limit: "250",
-    cursor: "0",
-    tab: mode === "new" ? "new" : mode === "graduated" ? "dex" : "trending",
-    status: mode === "graduated" ? "graduated" : "all",
-    sort: mode === "new" ? "created_desc" : "default",
+    mode,
   });
-  if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
   if (search.trim()) params.set("search", search.trim());
   return params.toString();
 }
@@ -78,7 +74,7 @@ function queryForMode(mode: WarRoomMode, chainId: number, bnbUsd: number | null,
 export function useWarRoomCampaignFeed({
   activeMode,
   activeChainId,
-  bnbUsd,
+  bnbUsd: _bnbUsd,
   search,
 }: {
   activeMode: WarRoomMode;
@@ -99,8 +95,8 @@ export function useWarRoomCampaignFeed({
       try {
         setLoading(true);
         setError(null);
-        const query = queryForMode(activeMode, Number(activeChainId || 97), bnbUsd, search);
-        const response = await apiFetch(`/api/campaigns?${query}`, { cache: "no-store" as RequestCache, signal: controller.signal });
+        const query = queryForMode(activeMode, Number(activeChainId || 97), search);
+        const response = await apiFetch(`/api/war-room?${query}`, { cache: "no-store" as RequestCache, signal: controller.signal });
         const json = await response.json().catch(() => null);
         if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
         if (cancelled) return;
@@ -125,7 +121,7 @@ export function useWarRoomCampaignFeed({
       cancelled = true;
       controller.abort();
     };
-  }, [activeChainId, activeMode, bnbUsd, search]);
+  }, [activeChainId, activeMode, search]);
 
   return { campaigns, loading, error, source };
 }
