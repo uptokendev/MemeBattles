@@ -33,7 +33,6 @@ function buildWarRoomDetail(row) {
   const tokenAddress = row?.tokenAddress ? normalizeAddress(row.tokenAddress) : null;
   const isGraduated = Boolean(row?.graduatedAtChain);
   const isActive = Boolean(row?.isActive);
-  const status = isGraduated ? "graduated" : isActive ? "bonding" : "draft";
   const eligibleForBattle = isActive && !isGraduated;
 
   return {
@@ -70,7 +69,8 @@ function buildWarRoomDetail(row) {
 }
 
 async function loadWarRoomDetail(req, res, chainId) {
-  const campaignAddress = normalizeAddress(req.params?.campaignAddress || req.params?.[0]);
+  const q = getQuery(req);
+  const campaignAddress = normalizeAddress(req.params?.campaignAddress || req.params?.[0] || q.campaignAddress || q.campaign);
   if (!campaignAddress) return json(res, 400, { error: "Missing campaignAddress" });
 
   const { rows } = await pool.query(
@@ -134,7 +134,7 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = toInt(q.chainId, 97);
-    const detailAddress = req.params?.campaignAddress || req.params?.[0];
+    const detailAddress = req.params?.campaignAddress || req.params?.[0] || q.campaignAddress || q.campaign;
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
     if (detailAddress) return loadWarRoomDetail(req, res, chainId);
