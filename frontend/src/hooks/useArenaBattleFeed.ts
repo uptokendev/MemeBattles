@@ -8,6 +8,22 @@ import {
 } from "@/hooks/useMockBattleRuntime";
 
 export type ArenaBattleFeedSource = "qa-runtime" | "api" | "empty";
+export type CreatorBattleStatusState = "eligible" | Battle["state"] | "unavailable";
+export type CreatorOpenForBattleState = "not_open" | "open" | "matched";
+
+export type CreatorBattleStatus = {
+  tokenId: string;
+  campaignAddress: string;
+  tokenAddress?: string | null;
+  tokenName: string;
+  symbol: string;
+  eligibility: boolean;
+  currentState: CreatorBattleStatusState;
+  battleState?: Battle["state"] | null;
+  battleId?: string | null;
+  openForBattleState?: CreatorOpenForBattleState;
+  unavailableReason?: string | null;
+};
 
 type BattleTransitionState = Battle["state"];
 type ArchivedBattleEntry = ReturnType<typeof useMockBattleLists>["archivedBattles"][number];
@@ -17,6 +33,17 @@ type ArenaBattleFeedPayload = {
   openForBattleQueue?: Battle[];
   archivedBattles?: ArchivedBattleEntry[];
 };
+
+const CREATOR_BATTLE_STATES = new Set([
+  "eligible",
+  "open_for_battle",
+  "pending",
+  "accepted",
+  "live",
+  "completed",
+  "settled",
+  "unavailable",
+]);
 
 function isBattle(value: any): value is Battle {
   return Boolean(value?.id && value?.state && Array.isArray(value?.participants));
@@ -51,6 +78,28 @@ function battleMatchesIdentity(battle: Battle, identity: string) {
   });
 }
 
+function normalizeCreatorBattleStatuses(value: unknown): CreatorBattleStatus[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry: any) => Boolean(entry?.tokenId || entry?.campaignAddress))
+    .map((entry: any) => {
+      const currentState = CREATOR_BATTLE_STATES.has(String(entry?.currentState)) ? String(entry.currentState) : "unavailable";
+      return {
+        tokenId: String(entry?.tokenId ?? entry?.campaignAddress ?? "").toLowerCase(),
+        campaignAddress: String(entry?.campaignAddress ?? entry?.tokenId ?? "").toLowerCase(),
+        tokenAddress: entry?.tokenAddress ? String(entry.tokenAddress).toLowerCase() : null,
+        tokenName: String(entry?.tokenName ?? entry?.name ?? entry?.symbol ?? "Unknown token"),
+        symbol: String(entry?.symbol ?? ""),
+        eligibility: Boolean(entry?.eligibility),
+        currentState: currentState as CreatorBattleStatusState,
+        battleState: entry?.battleState ? String(entry.battleState) as Battle["state"] : null,
+        battleId: entry?.battleId ? String(entry.battleId) : null,
+        openForBattleState: entry?.openForBattleState === "open" || entry?.openForBattleState === "matched" ? entry.openForBattleState : "not_open",
+        unavailableReason: entry?.unavailableReason ? String(entry.unavailableReason) : null,
+      };
+    });
+}
+
 async function fetchBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPayload | null> {
   const response = await apiFetch("/api/arena/battles", { cache: "no-store", signal });
   if (!response.ok) return null;
@@ -64,6 +113,16 @@ async function fetchBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPay
   if (!liveBattles.length && !openForBattleQueue.length && !archivedBattles.length) return null;
 
   return { liveBattles, openForBattleQueue, archivedBattles };
+}
+
+async function fetchCreatorBattleStatuses(creatorAddress: string, signal?: AbortSignal): Promise<CreatorBattleStatus[] | null> {
+  const normalized = normalizeIdentity(creatorAddress);
+  if (!normalized) return null;
+  const response = await apiFetch(`/api/arena/battles/creator-status?creator=${encodeURIComponent(normalized)}`, { cache: "no-store", signal });
+  if (!response.ok) return null;
+  const json = await response.json().catch(() => null);
+  if (!json || typeof json !== "object") return [];
+  return normalizeCreatorBattleStatuses((json as any).items ?? (json as any).statuses ?? []);
 }
 
 async function fetchBattleDetails(battleId: string, signal?: AbortSignal): Promise<Battle | null> {
@@ -104,23 +163,45 @@ async function transitionBattleViaApi(battleId: string, state: BattleTransitionS
  * It attempts the API-shaped battle feed first and only falls back to the QA
  * runtime when mock mode is explicitly enabled.
  */
-export function useArenaBattleFeed() {
+export function useArenaBattleFeed(creatorAddress?: string | null) {
   const runtime = useMockBattleLists();
   const allowMockFallback = postGradFlags.mocks;
+  const normalizedCreatorAddress = normalizeIdentity(creatorAddress);
   const [apiPayload, setApiPayload] = useState<ArenaBattleFeedPayload | null>(null);
+  const [creatorStatuses, setCreatorStatuses] = useState<CreatorBattleStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshFeed = async () => {
+    const [battlePayload, creatorPayload] = await Promise.all([
+      fetchBattleFeed().catch(() => null),
+      normalizedCreatorAddress ? fetchCreatorBattleStatuses(normalizedCreatorAddress).catch(() => null) : Promise.resolve(null),
+    ]);
+
+    setApiPayload(battlePayload);
+    setCreatorStatuses(creatorPayload);
+    return { battlePayload, creatorPayload };
+  };
 
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
 
-    fetchBattleFeed(controller.signal)
-      .then((payload) => {
-        if (!cancelled) setApiPayload(payload);
-      })
-      .catch((error) => {
+    Promise.all([
+      fetchBattleFeed(controller.signal).catch((error) => {
         if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] API feed unavailable", error);
-        if (!cancelled) setApiPayload(null);
+        return null;
+      }),
+      normalizedCreatorAddress
+        ? fetchCreatorBattleStatuses(normalizedCreatorAddress, controller.signal).catch((error) => {
+            if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] creator status unavailable", error);
+            return null;
+          })
+        : Promise.resolve(null),
+    ])
+      .then(([battlePayload, creatorPayload]) => {
+        if (cancelled) return;
+        setApiPayload(battlePayload);
+        setCreatorStatuses(creatorPayload);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -130,7 +211,7 @@ export function useArenaBattleFeed() {
       cancelled = true;
       controller.abort();
     };
-  }, [runtime.tick]);
+  }, [normalizedCreatorAddress, runtime.tick]);
 
   const liveBattles = apiPayload?.liveBattles ?? (allowMockFallback ? runtime.liveBattles : []);
   const openForBattleQueue = apiPayload?.openForBattleQueue ?? (allowMockFallback ? runtime.openForBattleQueue : []);
@@ -146,10 +227,26 @@ export function useArenaBattleFeed() {
     };
   }, [allowMockFallback, apiPayload, archivedBattles, liveBattles, openForBattleQueue, runtime.getBattleForToken]);
 
+  const getCreatorCoinStatus = useMemo(() => {
+    const statuses = creatorStatuses ?? [];
+    return (tokenId: string) => {
+      const normalized = normalizeIdentity(tokenId);
+      if (!normalized) return null;
+      return (
+        statuses.find((status) => {
+          return [status.tokenId, status.campaignAddress, status.tokenAddress].some((value) => normalizeIdentity(value) === normalized);
+        }) ?? null
+      );
+    };
+  }, [creatorStatuses]);
+
   const openCreatorCoinForBattle = async (tokenId: string) => {
     try {
       const opened = await openBattleViaApi(tokenId);
-      if (opened) return true;
+      if (opened) {
+        await refreshFeed();
+        return true;
+      }
     } catch (error) {
       console.warn("[useArenaBattleFeed] API open-for-battle unavailable", error);
     }
@@ -162,14 +259,19 @@ export function useArenaBattleFeed() {
     return false;
   };
 
+  const hasApiData = Boolean(apiPayload) || creatorStatuses !== null;
+
   return {
-    source: apiPayload ? "api" as ArenaBattleFeedSource : allowMockFallback ? "qa-runtime" as ArenaBattleFeedSource : "empty" as ArenaBattleFeedSource,
+    source: hasApiData ? "api" as ArenaBattleFeedSource : allowMockFallback ? "qa-runtime" as ArenaBattleFeedSource : "empty" as ArenaBattleFeedSource,
     loading,
     liveBattles,
     openForBattleQueue,
     archivedBattles,
+    creatorStatuses: creatorStatuses ?? [],
     getBattleForToken,
+    getCreatorCoinStatus,
     openCreatorCoinForBattle,
+    refreshFeed,
     tick: runtime.tick,
   };
 }
