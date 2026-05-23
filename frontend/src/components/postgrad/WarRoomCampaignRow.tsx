@@ -48,7 +48,7 @@ function MobileMetric({ label, value }: { label: string; value: string }) {
 export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
   const [expanded, setExpanded] = useState(false);
 
-  const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign) ?? `/token/${campaign.campaign.toLowerCase()}`;
+  const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign);
   const websiteHref = resolveExternalHref(campaign.website);
   const xHref = campaign.xAccount ? `https://x.com/${campaign.xAccount.replace(/^@/, "")}` : null;
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
@@ -134,9 +134,11 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
         </div>
 
         <div className="flex items-center justify-between gap-2 lg:contents">
-          <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-[11px] lg:hidden">
-            <Link to={tokenRoute}>Token details</Link>
-          </Button>
+          {tokenRoute ? (
+            <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-[11px] lg:hidden">
+              <Link to={tokenRoute}>Token details</Link>
+            </Button>
+          ) : <div />}
           <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:col-start-7 lg:ml-0 lg:justify-self-end">
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
@@ -163,12 +165,14 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
             <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
               <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Links</div>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:mt-4">
-                <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm sm:col-span-2">
-                  <Link to={tokenRoute}>
-                    Open token details
-                    <ShoppingCart className="h-4 w-4" />
-                  </Link>
-                </Button>
+                {tokenRoute ? (
+                  <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm sm:col-span-2">
+                    <Link to={tokenRoute}>
+                      Open token details
+                      <ShoppingCart className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                ) : null}
                 {websiteHref ? (
                   <Button asChild size="sm" variant="outline" className="justify-between text-[11px] md:text-sm">
                     <a href={websiteHref} target="_blank" rel="noreferrer">
