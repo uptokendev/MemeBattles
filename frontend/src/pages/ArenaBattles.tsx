@@ -64,10 +64,11 @@ const ArenaBattles = () => {
     openCreatorCoinForBattle,
     source: battleSource,
   } = useArenaBattleFeed(connectedCreator || undefined);
-  const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading } = useArenaCampaignFeed(8);
-  const { campaigns: creatorCampaigns, loading: creatorCampaignsLoading } = useArenaCampaignFeed(50);
+  const { railItems: marketCandidates, hasRealCampaigns, loading: marketCandidatesLoading, source: marketCampaignSource } = useArenaCampaignFeed(8);
+  const { campaigns: creatorCampaigns, loading: creatorCampaignsLoading, source: creatorCampaignSource } = useArenaCampaignFeed(50);
 
   const creatorCoins = creatorCampaigns.filter((campaign) => normalizeIdentity(campaign.creator) === connectedCreator);
+  const marketFeedLabel = hasRealCampaigns ? "Campaign feed" : marketCandidatesLoading ? "Loading" : marketCampaignSource === "empty" ? "Feed unavailable" : "Arena feed";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -94,14 +95,14 @@ const ArenaBattles = () => {
             <h2 className="mt-1 text-2xl font-semibold text-white">Battle-ready memecoins</h2>
             <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so current market momentum can be reviewed alongside the battle queue and your own coin controls.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : marketCandidatesLoading ? "Loading" : "Arena feed"} tone="success" />
+          <TacticalTag label={marketFeedLabel} tone="success" />
         </div>
         <div className="mt-5">
           <ArenaCampaignRail
             items={hasRealCampaigns ? marketCandidates : []}
             rankTone="hot"
             loading={marketCandidatesLoading}
-            emptyLabel="Battle candidates will appear here when the live campaign feed is available."
+            emptyLabel={marketCampaignSource === "empty" ? "Battle candidate campaign data is not available on this branch yet." : "Battle candidates will appear here when the live campaign feed is available."}
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
               { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
@@ -153,7 +154,9 @@ const ArenaBattles = () => {
               const fallbackReason = creatorState === "eligible"
                 ? "This coin is active on the live campaign feed and currently free to open a new challenge."
                 : creatorState === "unavailable"
-                  ? "This coin is not currently available to open a battle from this branch."
+                  ? creatorCampaignSource === "empty"
+                    ? "Creator campaign data is not available on this branch yet, so battle readiness cannot be verified here."
+                    : "This coin is not currently available to open a battle from this branch."
                   : creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted"
                     ? "This coin already has an active challenge in the queue and is waiting for a rival or acceptance."
                     : "This coin is already assigned to a live or recently settled battle and cannot open another one yet.";
@@ -226,7 +229,9 @@ const ArenaBattles = () => {
             })
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60 xl:col-span-2">
-              No creator memecoins were found for the connected wallet on the current campaign feed.
+              {creatorCampaignSource === "empty"
+                ? "Creator campaign data is not available on this branch yet."
+                : "No creator memecoins were found for the connected wallet on the current campaign feed."}
             </div>
           )}
         </div>
