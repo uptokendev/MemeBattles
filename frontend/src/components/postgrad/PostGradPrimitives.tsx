@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { Battle, CommanderStreakState, EventCardContract, GraduatedToken, RankingPayload, WarPool } from "@/features/postgrad/contracts";
-import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
-import { useMockWarPool } from "@/hooks/useMockWarPoolRuntime";
+import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
+import { useArenaWarPool } from "@/hooks/useArenaWarPoolFeed";
 
 function formatCompactUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -77,13 +77,13 @@ export function MockModeBanner({ subject = "Post-grad preview" }: { subject?: st
 
 export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battle; ctaLabel?: string }) {
   const [left, right] = battle.participants;
-  const { pool } = useMockWarPool(battle.id);
+  const { pool } = useArenaWarPool(battle.id);
   const leftPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === left.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
   const rightPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === right.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
   const leftShare = pool && pool.totalPotUsd > 0 ? Math.round((leftPoolUsd / pool.totalPotUsd) * 100) : 0;
   const rightShare = pool && pool.totalPotUsd > 0 ? Math.round((rightPoolUsd / pool.totalPotUsd) * 100) : 0;
-  const leftTokenRoute = getMockTokenRouteById(left.tokenId);
-  const rightTokenRoute = getMockTokenRouteById(right.tokenId);
+  const leftTokenRoute = getArenaTokenRoute(left.tokenId);
+  const rightTokenRoute = getArenaTokenRoute(right.tokenId);
 
   return (
     <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={battle.state.replaceAll("_", " ")}>
