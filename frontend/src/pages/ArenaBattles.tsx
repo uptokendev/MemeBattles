@@ -4,15 +4,16 @@ import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { BattleCard, TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import type { MockTokenProfile } from "@/features/postgrad/contracts";
-import { getMockTokenById, getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
+import { getMockTokenById } from "@/features/postgrad/mockRegistry";
+import { getPostGradTokenDetailRoute, getPostGradWarRoomSearchRoute } from "@/features/postgrad/identityRoutes";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 
 const CREATOR_COIN_IDS = ["circuit-wolf", "sleep-driver", "astro-frogs", "redline-rats"];
 
 function formatUsd(value: number) {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
 }
 
@@ -74,7 +75,7 @@ const ArenaBattles = () => {
             emptyLabel="Battle candidates will appear here when the live campaign feed is available."
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
-              { label: "War Room", href: `/war-room?search=${encodeURIComponent(item.symbol || item.title)}` },
+              { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
             ]}
           />
         </div>
@@ -97,7 +98,7 @@ const ArenaBattles = () => {
 
         <div className="mt-5 grid gap-4 xl:grid-cols-2">
           {creatorCoins.map((token) => {
-            const tokenRoute = getMockTokenRouteById(token.id);
+            const tokenRoute = getPostGradTokenDetailRoute(token.id);
             const battle = getBattleForToken(token.id);
             const isQueued = battle ? ["open_for_battle", "pending", "accepted"].includes(battle.state) : false;
             const isLive = battle ? ["live", "completed", "settled"].includes(battle.state) : false;
