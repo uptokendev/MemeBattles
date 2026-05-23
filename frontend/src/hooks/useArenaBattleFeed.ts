@@ -316,7 +316,7 @@ export function useArenaBattleDetails(battleId?: string) {
       const updated = await transitionBattleViaApi(battleIdToUpdate, state);
       if (updated) {
         const freshBattle = await fetchBattleDetails(battleIdToUpdate).catch(() => null);
-        if (freshBattle) setApiBattle(freshBattle);
+        setApiBattle(freshBattle);
         return true;
       }
     } catch (error) {
