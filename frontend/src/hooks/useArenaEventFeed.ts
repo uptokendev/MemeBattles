@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { EventCardContract, TournamentBracketStage } from "@/features/postgrad/contracts";
+import { postGradFlags } from "@/features/postgrad/config";
 import { apiFetch } from "@/lib/apiBase";
 import { useMockEvents, useMockEventDetails } from "@/hooks/useMockEventRuntime";
 
-export type ArenaEventFeedSource = "qa-runtime" | "api";
+export type ArenaEventFeedSource = "qa-runtime" | "api" | "empty";
 
 export type ArenaEventSummary = EventCardContract & {
   bracketStage?: TournamentBracketStage;
@@ -98,12 +99,12 @@ async function advanceTournamentBracketViaApi(eventId: string): Promise<boolean>
 /**
  * Adapter boundary for Arena event surfaces.
  *
- * It attempts the API-shaped event feed first and falls back to the QA runtime
- * when the backend is unavailable, keeping the page stable while real endpoints
- * are added.
+ * It attempts the API-shaped event feed first and only falls back to the QA
+ * runtime when mock mode is explicitly enabled.
  */
 export function useArenaEventFeed() {
   const runtime = useMockEvents();
+  const allowMockFallback = postGradFlags.mocks;
   const [apiPayload, setApiPayload] = useState<ArenaEventFeedPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -145,7 +146,7 @@ export function useArenaEventFeed() {
     } catch (error) {
       console.warn("[useArenaEventFeed] API transition unavailable", error);
     }
-    return runtime.transitionMockEvent(eventId, status);
+    return allowMockFallback ? runtime.transitionMockEvent(eventId, status) : false;
   };
 
   const advanceTournamentBracket = async (eventId: string) => {
@@ -158,14 +159,14 @@ export function useArenaEventFeed() {
     } catch (error) {
       console.warn("[useArenaEventFeed] API bracket advance unavailable", error);
     }
-    return runtime.advanceTournamentBracket(eventId);
+    return allowMockFallback ? runtime.advanceTournamentBracket(eventId) : false;
   };
 
   return {
-    source: apiPayload ? "api" as ArenaEventFeedSource : "qa-runtime" as ArenaEventFeedSource,
+    source: apiPayload ? "api" as ArenaEventFeedSource : allowMockFallback ? "qa-runtime" as ArenaEventFeedSource : "empty" as ArenaEventFeedSource,
     loading,
-    events: apiPayload?.events ?? runtime.events,
-    archivedEvents: apiPayload?.archivedEvents ?? runtime.archivedEvents,
+    events: apiPayload?.events ?? (allowMockFallback ? runtime.events : []),
+    archivedEvents: apiPayload?.archivedEvents ?? (allowMockFallback ? runtime.archivedEvents : []),
     transitionEvent,
     advanceTournamentBracket,
   };
@@ -173,6 +174,7 @@ export function useArenaEventFeed() {
 
 export function useArenaEventDetails(eventId?: string) {
   const runtime = useMockEventDetails(eventId);
+  const allowMockFallback = postGradFlags.mocks;
   const [apiEvent, setApiEvent] = useState<ArenaEventSummary | null>(null);
   const [loading, setLoading] = useState(Boolean(eventId));
 
@@ -221,7 +223,7 @@ export function useArenaEventDetails(eventId?: string) {
     } catch (error) {
       console.warn("[useArenaEventDetails] API transition unavailable", error);
     }
-    return runtime.transitionMockEvent(eventIdToUpdate, status);
+    return allowMockFallback ? runtime.transitionMockEvent(eventIdToUpdate, status) : false;
   };
 
   const advanceTournamentBracket = async (eventIdToUpdate: string) => {
@@ -234,13 +236,13 @@ export function useArenaEventDetails(eventId?: string) {
     } catch (error) {
       console.warn("[useArenaEventDetails] API bracket advance unavailable", error);
     }
-    return runtime.advanceTournamentBracket(eventIdToUpdate);
+    return allowMockFallback ? runtime.advanceTournamentBracket(eventIdToUpdate) : false;
   };
 
   return {
-    source: apiEvent ? "api" as ArenaEventFeedSource : "qa-runtime" as ArenaEventFeedSource,
+    source: apiEvent ? "api" as ArenaEventFeedSource : allowMockFallback ? "qa-runtime" as ArenaEventFeedSource : "empty" as ArenaEventFeedSource,
     loading,
-    event: apiEvent ?? runtime.event,
+    event: apiEvent ?? (allowMockFallback ? runtime.event : null),
     transitionEvent,
     advanceTournamentBracket,
   };
