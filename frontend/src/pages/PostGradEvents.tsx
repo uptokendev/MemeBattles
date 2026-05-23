@@ -60,11 +60,12 @@ function EventSurfaceCard({ event }: { event: ArenaEventSummary }) {
 
 const PostGradEvents = () => {
   const { events, archivedEvents, source: eventSource } = useArenaEventFeed();
-  const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading } = useArenaCampaignFeed(10);
+  const { railItems: eventEntrants, hasRealCampaigns, loading: eventEntrantsLoading, source: campaignSource } = useArenaCampaignFeed(10);
 
   const liveEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const tournaments = events.filter((event) => event.type === "tournament");
+  const eventEntrantFeedLabel = hasRealCampaigns ? "Campaign feed" : eventEntrantsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -109,14 +110,14 @@ const PostGradEvents = () => {
             <h2 className="mt-1 text-2xl font-semibold text-white">Memecoins in the event picture</h2>
             <p className="mt-2 max-w-2xl text-sm text-white/65">When the live campaign feed is available it appears here, so event planning can be viewed against the current market lineup.</p>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : eventEntrantsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={eventEntrantFeedLabel} tone="success" />
         </div>
         <div className="mt-5">
           <ArenaCampaignRail
             items={hasRealCampaigns ? eventEntrants : []}
             rankTone="hot"
             loading={eventEntrantsLoading}
-            emptyLabel="Event entrants will appear here when the live campaign feed is available."
+            emptyLabel={campaignSource === "empty" ? "Event entrant campaign data is not available on this branch yet." : "Event entrants will appear here when the live campaign feed is available."}
             actionBuilder={(item) => [
               { label: "Token details", href: item.href },
               { label: "War Room", href: getPostGradWarRoomSearchRoute(item.symbol || item.title) },
