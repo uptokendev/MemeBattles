@@ -18,6 +18,12 @@ export type ArenaCampaignRailItem = {
   statusLabel: string;
   statusTone: "default" | "hot" | "sponsored" | "success";
   rankLabel: string;
+  imageUrl?: string | null;
+  summary?: string | null;
+  websiteUrl?: string | null;
+  websiteLabel?: string | null;
+  activeDatesLabel?: string | null;
+  cardVariant?: "default" | "sponsored";
 };
 
 function toNumber(value: unknown): number | undefined {
@@ -148,6 +154,11 @@ export function useArenaCampaignFeed(limit = 12) {
           statusLabel: status.label,
           statusTone: status.tone,
           rankLabel: `Rank ${index + 1}`,
+          imageUrl: campaign.logoURI || "/placeholder.svg",
+          summary: `Liquidity ${metrics.liquidityLabel} · ${metrics.holdersLabel} holders`,
+          websiteUrl: campaign.website || undefined,
+          websiteLabel: "Website",
+          cardVariant: "default",
         };
       })
       .filter(Boolean) as ArenaCampaignRailItem[];
