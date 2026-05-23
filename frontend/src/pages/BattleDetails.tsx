@@ -4,13 +4,12 @@ import { WarPoolPanel } from "@/components/postgrad/WarPoolPanel";
 import { BattleCard } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
-import { postGradFlags } from "@/features/postgrad/config";
 import { useArenaBattleDetails } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 
 const BattleDetails = () => {
   const { id } = useParams();
-  const { battle, transitionBattle, source } = useArenaBattleDetails(id);
+  const { battle, source } = useArenaBattleDetails(id);
   const { events, source: eventSource } = useArenaEventFeed();
 
   if (!battle) {
@@ -33,17 +32,6 @@ const BattleDetails = () => {
       </div>
     );
   }
-
-  const nextActions = {
-    draft: [{ label: "Queue battle", state: "open_for_battle" as const }],
-    open_for_battle: [{ label: "Accept challenge", state: "pending" as const }, { label: "Cancel queue", state: "cancelled" as const }],
-    pending: [{ label: "Lock matchup", state: "accepted" as const }, { label: "Decline", state: "cancelled" as const }],
-    accepted: [{ label: "Start live battle", state: "live" as const }],
-    live: [{ label: "Complete battle", state: "completed" as const }],
-    completed: [{ label: "Settle result", state: "settled" as const }],
-    settled: [],
-    cancelled: [],
-  }[battle.state];
 
   const participantTokens = battle.participants
     .filter((participant) => !participant.tokenId.startsWith("pending-"))
@@ -77,21 +65,6 @@ const BattleDetails = () => {
       </section>
 
       <BattleCard battle={battle} ctaLabel="Battle details" />
-
-      {postGradFlags.mocks ? (
-        <section className="rounded-2xl border border-white/10 bg-black/25 p-5">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Battle controls</div>
-          <div className="mt-2 text-sm text-white/65">Move this battle through the available challenge states while the backend battle adapter is being exercised.</div>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {nextActions.map((action) => (
-              <Button key={action.state} size="sm" onClick={() => transitionBattle(battle.id, action.state)}>
-                {action.label}
-              </Button>
-            ))}
-            {nextActions.length === 0 ? <div className="text-sm text-white/60">No further transitions are available for this battle state.</div> : null}
-          </div>
-        </section>
-      ) : null}
 
       <WarPoolPanel battle={battle} />
 
