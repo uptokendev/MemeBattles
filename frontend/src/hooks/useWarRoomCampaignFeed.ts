@@ -5,6 +5,7 @@ import { resolveImageUri } from "@/lib/media";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
+export type WarRoomCampaignFeedSource = "api" | "empty";
 
 function toNumber(value: unknown): number | undefined {
   const n = Number(value);
@@ -88,6 +89,7 @@ export function useWarRoomCampaignFeed({
   const [campaigns, setCampaigns] = useState<WarRoomCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState<WarRoomCampaignFeedSource>("empty");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -104,11 +106,13 @@ export function useWarRoomCampaignFeed({
         if (cancelled) return;
         const items = Array.isArray(json?.items) ? json.items : [];
         setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: WarRoomCampaign) => campaign.campaign));
+        setSource(items.length ? "api" : "empty");
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error("[useWarRoomCampaignFeed] failed to load campaigns", loadError);
         if (!cancelled) {
           setCampaigns([]);
+          setSource("empty");
           setError(loadError instanceof Error ? loadError.message : "Failed to load War Room campaigns");
         }
       } finally {
@@ -123,5 +127,5 @@ export function useWarRoomCampaignFeed({
     };
   }, [activeChainId, activeMode, bnbUsd, search]);
 
-  return { campaigns, loading, error };
+  return { campaigns, loading, error, source };
 }
