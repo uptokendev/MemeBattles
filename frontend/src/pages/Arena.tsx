@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArenaCampaignRailCard, ArenaFallbackRailCard } from "@/components/postgrad/ArenaCampaignRailCard";
+import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
@@ -7,7 +7,6 @@ import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
-import { useMockArenaState } from "@/hooks/useMockArenaRuntime";
 
 function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -19,11 +18,8 @@ const Arena = () => {
   const { liveBattles, openForBattleQueue } = useArenaBattleFeed();
   const { events } = useArenaEventFeed();
   const { season } = useArenaLeagueFeed();
-  const { featuredTokens, allTokens } = useMockArenaState();
   const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
 
-  const sponsoredTokens = allTokens.filter((token) => token.sponsoredPlacement);
-  const featuredBySignal = [...featuredTokens].sort((left, right) => right.watchlistCount - left.watchlistCount);
   const activeEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
@@ -40,8 +36,8 @@ const Arena = () => {
             <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">Arena keeps the current battle picture in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${hasRealCampaigns ? realSponsored.length : sponsoredTokens.length} sponsored`} tone="sponsored" />
-            <TacticalTag label={`${hasRealCampaigns ? realFeatured.length : featuredBySignal.length} featured`} tone="success" />
+            <TacticalTag label={`${realSponsored.length} sponsored`} tone="sponsored" />
+            <TacticalTag label={`${realFeatured.length} featured`} tone="success" />
             <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
           </div>
         </div>
@@ -53,25 +49,14 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : "Arena feed"} tone="sponsored" />
+          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : "Awaiting feed"} tone="sponsored" />
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {hasRealCampaigns
-            ? realSponsored.map((item) => <ArenaCampaignRailCard key={item.id} item={item} rankTone="sponsored" actions={[]} />)
-            : sponsoredTokens.map((token) => (
-                <ArenaFallbackRailCard
-                  key={token.id}
-                  title={token.name}
-                  symbol={token.symbol}
-                  detail={`MC ${formatUsd(token.marketCapUsd)} · Liquidity ${formatUsd(token.liquidityUsd)}`}
-                  href={getArenaTokenRoute(token.id)}
-                  badges={[
-                    { label: "Sponsored", tone: "sponsored" },
-                    { label: token.battleEligible ? "Battle ready" : "Locked", tone: token.battleEligible ? "success" : "default" },
-                  ]}
-                />
-              ))}
-        </div>
+        <ArenaCampaignRail
+          items={realSponsored}
+          rankTone="sponsored"
+          loading={realCampaignsLoading}
+          emptyLabel="Sponsored placements will appear here when the live campaign feed is available."
+        />
       </section>
 
       <section className="space-y-3">
@@ -80,25 +65,14 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Trending feed" : "Signal ranking"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Trending feed" : realCampaignsLoading ? "Loading" : "Awaiting feed"} tone="success" />
         </div>
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {hasRealCampaigns
-            ? realFeatured.map((item) => <ArenaCampaignRailCard key={item.id} item={item} rankTone="hot" actions={[]} />)
-            : featuredBySignal.map((token) => (
-                <ArenaFallbackRailCard
-                  key={token.id}
-                  title={token.name}
-                  symbol={token.symbol}
-                  detail={`${token.watchlistCount.toLocaleString()} signal votes · MC ${formatUsd(token.marketCapUsd)}`}
-                  href={getArenaTokenRoute(token.id)}
-                  badges={[
-                    { label: `Rank ${token.placementIndex != null ? token.placementIndex + 1 : "-"}`, tone: "hot" },
-                    { label: token.sentiment === "heating_up" ? "Heating up" : token.sentiment === "volatile" ? "Volatile" : "Stable", tone: token.sentiment === "heating_up" ? "hot" : token.sentiment === "volatile" ? "sponsored" : "success" },
-                  ]}
-                />
-              ))}
-        </div>
+        <ArenaCampaignRail
+          items={realFeatured}
+          rankTone="hot"
+          loading={realCampaignsLoading}
+          emptyLabel="Featured memecoins will appear here when the live campaign feed is available."
+        />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-3">
