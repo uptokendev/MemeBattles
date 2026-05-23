@@ -217,7 +217,7 @@ export async function linkReferralToUser({ recruiterUserId, referredUserId, refe
       select *
       from public.wm_referral_attributions
       where referred_user_id = $1
-      order by first_seen_at asc nulls last, created_at asc nulls last
+      order by first_seen_at asc nulls last
       limit 1
     `,
     [referredUserId],
@@ -240,7 +240,7 @@ export async function linkReferralToUser({ recruiterUserId, referredUserId, refe
         where id = $1
         returning *
       `,
-      [existing.id, recruiterUserId, normalizedCode || existing.referral_code, normalizedCode || existing.referral_code],
+      [existing.id, recruiterUserId, normalizedCode || existing.referral_code],
     );
     return { linked: true, reason: "updated", attribution: updatedRows[0] || existing };
   }
