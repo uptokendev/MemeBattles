@@ -7,6 +7,8 @@ import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
+export type ArenaCampaignFeedSource = "api" | "empty";
+
 export type ArenaCampaignRailItem = {
   id: string;
   title: string;
@@ -85,6 +87,7 @@ export function useArenaCampaignFeed(limit = 12) {
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [campaigns, setCampaigns] = useState<CampaignInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [source, setSource] = useState<ArenaCampaignFeedSource>("empty");
 
   useEffect(() => {
     let cancelled = false;
@@ -108,10 +111,15 @@ export function useArenaCampaignFeed(limit = 12) {
         if (cancelled) return;
 
         const items = Array.isArray(json?.items) ? json.items : [];
-        setCampaigns(items.map((item: any, index: number) => normalizeCampaign(item, index)).filter(Boolean) as CampaignInfo[]);
+        const nextCampaigns = items.map((item: any, index: number) => normalizeCampaign(item, index)).filter(Boolean) as CampaignInfo[];
+        setCampaigns(nextCampaigns);
+        setSource(nextCampaigns.length ? "api" : "empty");
       } catch (error) {
         console.warn("[useArenaCampaignFeed] failed to load campaign feed", error);
-        if (!cancelled) setCampaigns([]);
+        if (!cancelled) {
+          setCampaigns([]);
+          setSource("empty");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -147,6 +155,7 @@ export function useArenaCampaignFeed(limit = 12) {
 
   return {
     loading,
+    source,
     campaigns,
     railItems,
     hasRealCampaigns: railItems.length > 0,
