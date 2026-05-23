@@ -54,17 +54,12 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
     return `translateY(${index * 100}%)`
   }
 
-  const getGliderHeightClass = () => {
-    // Calculate the height class based on number of options (h-1/3, h-1/4, h-1/5)
-    return `h-1/${options.length}`
-  }
-
   const isPageInMenu = options.some((option) => matchesPath(option.path))
 
   return (
-    <div className="relative flex flex-col pl-3 w-full">
+    <div className="relative flex w-full flex-col pl-3">
       {options.map((option) => (
-        <div key={option.path} className="relative z-20 py-1 [-webkit-tap-highlight-color:transparent]">
+        <div key={option.path} className="relative z-20 py-0.5 [-webkit-tap-highlight-color:transparent]">
           <input
             id={makeId(option.label)}
             name="navigation"
@@ -72,42 +67,44 @@ export default function AnimatedNav({ options, onNavigate }: AnimatedNavProps) {
             value={option.path}
             checked={matchesPath(option.path)}
             onChange={(e) => handleChange(e.target.value)}
-            className="absolute w-full h-full m-0 opacity-0 cursor-pointer z-30 appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none ring-0 active:outline-none [-webkit-tap-highlight-color:transparent] accent-[hsl(var(--accent))]"
+            className="absolute z-30 m-0 h-full w-full cursor-pointer appearance-none opacity-0 ring-0 [-webkit-tap-highlight-color:transparent] focus:outline-none focus:ring-0 focus-visible:outline-none active:outline-none accent-[hsl(var(--accent))]"
           />
           <label
             htmlFor={makeId(option.label)}
-            className={`cursor-pointer flex items-center gap-3 text-base py-3 px-4 block transition-all duration-300 ease-in-out outline-none focus:outline-none focus-visible:outline-none [-webkit-tap-highlight-color:transparent] ${
+            className={`block cursor-pointer px-3.5 py-2.5 text-sm transition-all duration-300 ease-in-out outline-none [-webkit-tap-highlight-color:transparent] focus:outline-none focus-visible:outline-none ${
               matchesPath(option.path)
-                ? "text-accent font-medium"
+                ? "font-medium text-accent"
                 : "text-sidebar-foreground hover:text-accent"
             }`}
           >
-            {typeof option.icon === 'string' ? (
-              <img 
-                src={option.icon} 
-                alt={option.label} 
-                className={`w-5 h-5 transition-all duration-300 ${
-                  matchesPath(option.path)
-                    ? "[filter:brightness(0)_saturate(100%)_invert(50%)_sepia(88%)_saturate(1567%)_hue-rotate(355deg)_brightness(101%)_contrast(92%)]"
-                    : "opacity-70"
-                }`}
-              />
-            ) : (
-              <option.icon className="w-5 h-5" />
-            )}
-            <span>{option.label}</span>
+            <span className="flex items-center gap-2.5">
+              {typeof option.icon === "string" ? (
+                <img
+                  src={option.icon}
+                  alt={option.label}
+                  className={`h-4.5 w-4.5 transition-all duration-300 ${
+                    matchesPath(option.path)
+                      ? "[filter:brightness(0)_saturate(100%)_invert(50%)_sepia(88%)_saturate(1567%)_hue-rotate(355deg)_brightness(101%)_contrast(92%)]"
+                      : "opacity-70"
+                  }`}
+                />
+              ) : (
+                <option.icon className="h-[18px] w-[18px]" />
+              )}
+              <span>{option.label}</span>
+            </span>
           </label>
         </div>
       ))}
 
-      <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-border to-transparent pointer-events-none">
+      <div className="pointer-events-none absolute bottom-0 left-0 top-0 w-px bg-gradient-to-b from-transparent via-border to-transparent">
         <div
           className={`relative w-full bg-gradient-to-b from-transparent via-accent to-transparent transition-all duration-[650ms] ease-[cubic-bezier(0.68,-0.55,0.265,1.55)] ${
-            isPageInMenu ? 'opacity-100' : 'opacity-0'
+            isPageInMenu ? "opacity-100" : "opacity-0"
           }`}
-          style={{ 
+          style={{
             height: `${100 / options.length}%`,
-            transform: getGliderTransform()
+            transform: getGliderTransform(),
           }}
         />
       </div>
