@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
+import { RichBattleCard } from "@/components/postgrad/RichBattleCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { useArenaSponsoredFeed } from "@/hooks/useArenaSponsoredFeed";
@@ -90,19 +91,7 @@ const Arena = () => {
           </div>
           {liveBattles.length ? (
             liveBattles.map((battle) => (
-              <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
-                  {battle.featured ? <TacticalTag label="Featured" tone="sponsored" /> : null}
-                </div>
-                <div className="mt-3 text-sm font-semibold text-white">{battle.participants[0].tokenName} vs {battle.participants[1].tokenName}</div>
-                <div className="mt-2 text-xs text-white/60">{battle.participants[0].symbol} {battle.participants[0].score.toFixed(1)} · {battle.participants[1].symbol} {battle.participants[1].score.toFixed(1)}</div>
-                <div className="mt-4 flex gap-2">
-                  <Button asChild size="sm">
-                    <Link to={`/battle/${battle.id}`}>Open battle</Link>
-                  </Button>
-                </div>
-              </div>
+              <RichBattleCard key={battle.id} battle={battle} ctaLabel="Open battle" />
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
@@ -118,12 +107,12 @@ const Arena = () => {
               <h2 className="mt-1 text-xl font-semibold text-white">Open for battle</h2>
             </div>
             <Button asChild size="sm" variant="outline">
-              <Link to="/arena/battles">Creator controls</Link>
+              <Link to="/arena/battles">Open queue</Link>
             </Button>
           </div>
           {openForBattleQueue.length ? (
             openForBattleQueue.map((battle) => {
-              const tokenRoute = getArenaTokenRoute(battle.participants[0].tokenId);
+              const tokenRoute = getArenaTokenRoute((battle.participants[0] as any)?.campaignAddress ?? battle.participants[0].tokenId);
               return (
                 <div key={battle.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <div className="flex flex-wrap items-center gap-2">
