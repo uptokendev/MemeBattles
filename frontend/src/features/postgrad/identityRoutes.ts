@@ -1,5 +1,3 @@
-import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
-
 function normalizeIdentity(value?: string | null) {
   return String(value ?? "").trim();
 }
@@ -14,7 +12,7 @@ function isUsableIdentity(value?: string | null) {
 export function getPostGradTokenDetailRoute(identity?: string | null) {
   const value = normalizeIdentity(identity);
   if (!isUsableIdentity(value)) return null;
-  return getMockTokenRouteById(value) ?? `/token/${encodeURIComponent(value)}`;
+  return `/token/${encodeURIComponent(value)}`;
 }
 
 export function getPostGradWarRoomSearchRoute(label?: string | null) {
