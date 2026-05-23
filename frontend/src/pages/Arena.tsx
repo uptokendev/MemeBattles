@@ -18,13 +18,14 @@ const Arena = () => {
   const { liveBattles, openForBattleQueue, source: battleSource } = useArenaBattleFeed();
   const { events, source: eventSource } = useArenaEventFeed();
   const { season, source: leagueSource } = useArenaLeagueFeed();
-  const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading } = useArenaCampaignFeed(12);
+  const { railItems: realCampaignRailItems, hasRealCampaigns, loading: realCampaignsLoading, source: campaignSource } = useArenaCampaignFeed(12);
 
   const activeEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
   const realSponsored = realCampaignRailItems.slice(0, 4);
   const realFeatured = realCampaignRailItems.slice(4, 10);
+  const campaignFeedLabel = hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -49,13 +50,13 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Sponsored</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Sponsored placements</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Campaign feed" : realCampaignsLoading ? "Loading" : "Awaiting feed"} tone="sponsored" />
+          <TacticalTag label={campaignFeedLabel} tone="sponsored" />
         </div>
         <ArenaCampaignRail
           items={realSponsored}
           rankTone="sponsored"
           loading={realCampaignsLoading}
-          emptyLabel="Sponsored placements will appear here when the live campaign feed is available."
+          emptyLabel={campaignSource === "empty" ? "Sponsored placement data is not available on this branch yet." : "Sponsored placements will appear here when the live campaign feed is available."}
         />
       </section>
 
@@ -65,13 +66,13 @@ const Arena = () => {
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Featured</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Featured memecoins</h2>
           </div>
-          <TacticalTag label={hasRealCampaigns ? "Trending feed" : realCampaignsLoading ? "Loading" : "Awaiting feed"} tone="success" />
+          <TacticalTag label={hasRealCampaigns ? "Trending feed" : realCampaignsLoading ? "Loading" : campaignSource === "empty" ? "Feed unavailable" : "Awaiting feed"} tone="success" />
         </div>
         <ArenaCampaignRail
           items={realFeatured}
           rankTone="hot"
           loading={realCampaignsLoading}
-          emptyLabel="Featured memecoins will appear here when the live campaign feed is available."
+          emptyLabel={campaignSource === "empty" ? "Featured campaign data is not available on this branch yet." : "Featured memecoins will appear here when the live campaign feed is available."}
         />
       </section>
 
