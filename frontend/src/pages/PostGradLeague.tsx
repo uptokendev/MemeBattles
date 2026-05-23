@@ -27,7 +27,7 @@ function formatUsd(value: number) {
 }
 
 const PostGradLeague = () => {
-  const { season, history } = useArenaLeagueFeed();
+  const { season, history, source: leagueSource } = useArenaLeagueFeed();
   const { railItems: leagueEntrants, hasRealCampaigns, loading: leagueEntrantsLoading } = useArenaCampaignFeed(10);
   const leadEntry = season.entries[0];
   const promotedCount = season.entries.filter((entry) => entry.movement === "promoted").length;
@@ -55,7 +55,7 @@ const PostGradLeague = () => {
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Season leader</div>
           <div className="mt-2 text-lg font-semibold text-white">{leadEntry?.tokenName ?? "TBD"}</div>
-          <div className="mt-1 text-sm text-white/60">{leadEntry ? `${leadEntry.points} pts · ${leadEntry.symbol}` : "Awaiting standings"}</div>
+          <div className="mt-1 text-sm text-white/60">{leadEntry ? `${leadEntry.points} pts · ${leadEntry.symbol}` : leagueSource === "empty" ? "League standings are not available on this branch yet." : "Awaiting standings"}</div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Reward pool</div>
@@ -106,36 +106,42 @@ const PostGradLeague = () => {
           <TacticalTag label={`${season.entries.length} entries`} tone="success" />
         </div>
         <div className="mt-4 space-y-3">
-          {season.entries.map((entry, index) => {
-            const tokenRoute = getArenaTokenRoute(entry.tokenId);
-            return (
-              <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold text-white">#{index + 1} {entry.tokenName}</div>
-                      <div className="text-xs uppercase tracking-[0.22em] text-white/45">{entry.symbol}</div>
-                      <TacticalTag label={entry.division} tone="sponsored" />
-                      <TacticalTag label={entry.movement} tone={movementTone[entry.movement]} />
+          {season.entries.length ? (
+            season.entries.map((entry, index) => {
+              const tokenRoute = getArenaTokenRoute(entry.tokenId);
+              return (
+                <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold text-white">#{index + 1} {entry.tokenName}</div>
+                        <div className="text-xs uppercase tracking-[0.22em] text-white/45">{entry.symbol}</div>
+                        <TacticalTag label={entry.division} tone="sponsored" />
+                        <TacticalTag label={entry.movement} tone={movementTone[entry.movement]} />
+                      </div>
+                      <div className="mt-2 text-xs text-white/55">
+                        {entry.points} pts · {entry.wins}W / {entry.losses}L · Streak {entry.streak > 0 ? `+${entry.streak}` : entry.streak}
+                      </div>
                     </div>
-                    <div className="mt-2 text-xs text-white/55">
-                      {entry.points} pts · {entry.wins}W / {entry.losses}L · Streak {entry.streak > 0 ? `+${entry.streak}` : entry.streak}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {tokenRoute ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tokenRoute ? (
+                        <Button asChild size="sm" variant="outline">
+                          <Link to={tokenRoute}>Token details</Link>
+                        </Button>
+                      ) : null}
                       <Button asChild size="sm" variant="outline">
-                        <Link to={tokenRoute}>Token details</Link>
+                        <Link to={getPostGradWarRoomSearchRoute(entry.symbol)}>Open in War Room</Link>
                       </Button>
-                    ) : null}
-                    <Button asChild size="sm" variant="outline">
-                      <Link to={getPostGradWarRoomSearchRoute(entry.symbol)}>Open in War Room</Link>
-                    </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
+              {leagueSource === "empty" ? "League standings data is not available on this branch yet." : "League standings will appear here once the season feed is available."}
+            </div>
+          )}
         </div>
       </section>
 
@@ -167,7 +173,7 @@ const PostGradLeague = () => {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-5 text-sm text-white/60">
-              Completed seasons will appear here after rollover.
+              {leagueSource === "empty" ? "League archive data is not available on this branch yet." : "Completed seasons will appear here after rollover."}
             </div>
           )}
         </div>
