@@ -3,7 +3,7 @@ import { ArenaCampaignRail } from "@/components/postgrad/ArenaCampaignRailCard";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { postGradFlags } from "@/features/postgrad/config";
-import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
+import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useArenaCampaignFeed } from "@/hooks/useArenaCampaignFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 
@@ -123,7 +123,7 @@ const PostGradLeague = () => {
         </div>
         <div className="mt-4 space-y-3">
           {season.entries.map((entry, index) => {
-            const tokenRoute = getMockTokenRouteById(entry.tokenId);
+            const tokenRoute = getArenaTokenRoute(entry.tokenId);
             return (
               <div key={entry.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
