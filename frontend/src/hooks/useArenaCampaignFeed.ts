@@ -124,20 +124,25 @@ export function useArenaCampaignFeed(limit = 12) {
   }, [activeChainId, bnbUsd, limit]);
 
   const railItems = useMemo<ArenaCampaignRailItem[]>(() => {
-    return campaigns.map((campaign, index) => {
-      const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd ?? 0);
-      const status = resolveStatus(campaign);
-      return {
-        id: campaign.campaign,
-        title: campaign.name,
-        symbol: campaign.symbol,
-        href: getPostGradTokenDetailRoute(campaign.campaign) ?? `/token/${campaign.campaign.toLowerCase()}`,
-        detail: `MC ${metrics.marketCapLabel} · Vol ${metrics.volumeLabel}`,
-        statusLabel: status.label,
-        statusTone: status.tone,
-        rankLabel: `Rank ${index + 1}`,
-      };
-    });
+    return campaigns
+      .map((campaign, index) => {
+        const href = getPostGradTokenDetailRoute(campaign.campaign);
+        if (!href) return null;
+
+        const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd ?? 0);
+        const status = resolveStatus(campaign);
+        return {
+          id: campaign.campaign,
+          title: campaign.name,
+          symbol: campaign.symbol,
+          href,
+          detail: `MC ${metrics.marketCapLabel} · Vol ${metrics.volumeLabel}`,
+          statusLabel: status.label,
+          statusTone: status.tone,
+          rankLabel: `Rank ${index + 1}`,
+        };
+      })
+      .filter(Boolean) as ArenaCampaignRailItem[];
   }, [bnbUsd, campaigns]);
 
   return {
