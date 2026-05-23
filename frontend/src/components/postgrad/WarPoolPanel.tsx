@@ -3,7 +3,7 @@ import { Coins, Lock, ShieldAlert, Trophy } from "lucide-react";
 import type { Battle, WarPool } from "@/features/postgrad/contracts";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import { getMockTokenRouteById } from "@/features/postgrad/mockRegistry";
+import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useArenaWarPool } from "@/hooks/useArenaWarPoolFeed";
 
 function formatUsd(value: number) {
@@ -83,7 +83,7 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
           {supportedParticipants.map((participant) => {
             const sideTotal = pool.entries.filter((entry) => entry.sideTokenId === participant.tokenId).reduce((total, entry) => total + entry.amountUsd, 0);
             const share = pool.totalPotUsd > 0 ? Math.round((sideTotal / pool.totalPotUsd) * 100) : 0;
-            const tokenRoute = getMockTokenRouteById(participant.tokenId);
+            const tokenRoute = getArenaTokenRoute(participant.tokenId);
             return (
               <div key={participant.tokenId} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
