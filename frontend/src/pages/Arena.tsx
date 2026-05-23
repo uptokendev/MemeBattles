@@ -20,14 +20,14 @@ const Arena = () => {
   const { liveBattles, openForBattleQueue, source: battleSource } = useArenaBattleFeed();
   const { events, source: eventSource } = useArenaEventFeed();
   const { season, source: leagueSource } = useArenaLeagueFeed();
-  const { railItems: sponsoredRailItems, hasSponsoredCampaigns, loading: sponsoredLoading, source: sponsoredSource } = useArenaSponsoredFeed(4);
+  const { railItems: sponsoredRailItems, hasSponsoredCampaigns, loading: sponsoredLoading } = useArenaSponsoredFeed(4);
   const { railItems: featuredRailItems, hasFeaturedCampaigns, loading: featuredLoading, source: featuredSource } = useArenaFeaturedFeed(6);
 
   const activeEvents = events.filter((event) => event.status === "live");
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
-  const sponsoredFeedLabel = hasSponsoredCampaigns ? "Sponsored feed" : sponsoredLoading ? "Loading" : sponsoredSource === "empty" ? "Feed unavailable" : "Awaiting feed";
-  const featuredFeedLabel = hasFeaturedCampaigns ? "UpVote feed" : featuredLoading ? "Loading" : featuredSource === "empty" ? "Feed unavailable" : "Awaiting feed";
+  const sponsoredFeedLabel = hasSponsoredCampaigns ? "Sponsored" : sponsoredLoading ? "Loading" : "Open spot";
+  const featuredFeedLabel = hasFeaturedCampaigns ? (featuredSource === "campaigns" ? "Trending feed" : "UpVote feed") : featuredLoading ? "Loading" : "No featured tokens";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -58,7 +58,8 @@ const Arena = () => {
           items={sponsoredRailItems}
           rankTone="sponsored"
           loading={sponsoredLoading}
-          emptyLabel={sponsoredSource === "empty" ? "Sponsored placement data is not available on this branch yet." : "Sponsored placements will appear here when the sponsored feed is available."}
+          emptyVariant="sponsor"
+          emptyLabel="Want this sponsor spot? Click here."
         />
       </section>
 
@@ -74,7 +75,7 @@ const Arena = () => {
           items={featuredRailItems}
           rankTone="hot"
           loading={featuredLoading}
-          emptyLabel={featuredSource === "empty" ? "Featured UpVote data is not available on this branch yet." : "Featured memecoins will appear here when the UpVote feed is available."}
+          emptyLabel="Featured memecoins will appear here when tokens or UpVote totals are available."
         />
       </section>
 
