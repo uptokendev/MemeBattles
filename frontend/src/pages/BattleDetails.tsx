@@ -46,6 +46,8 @@ const BattleDetails = () => {
     }));
 
   const bridgeEvent = events.find((event) => event.status === "live") ?? events.find((event) => event.status === "scheduled" || event.status === "deploying") ?? null;
+  const sourceLabel = source === "api" ? "Arena feed" : source === "qa-runtime" ? "Fallback feed" : "Feed unavailable";
+  const sourceTone = source === "api" ? "success" : source === "qa-runtime" ? "sponsored" : "default";
 
   return (
     <div className="space-y-6 px-1 pb-10">
@@ -59,7 +61,7 @@ const BattleDetails = () => {
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
             <TacticalTag label={battle.featured ? "Featured battle" : "Arena battle"} tone={battle.featured ? "sponsored" : "default"} />
-            <TacticalTag label={source === "api" ? "Arena feed" : "Preview data"} tone={source === "api" ? "success" : "sponsored"} />
+            <TacticalTag label={sourceLabel} tone={sourceTone} />
           </div>
         </div>
       </section>
