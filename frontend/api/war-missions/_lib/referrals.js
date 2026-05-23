@@ -5,6 +5,17 @@ export const WAR_MISSIONS_REFERRAL_COOKIE = "mwz_wm_referral";
 const REFERRAL_COOKIE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_WAR_MISSIONS_PUBLIC_BASE_URL = "https://quests.memewar.zone";
 
+const KNOWN_RECRUITER_MILESTONES = [
+  { match: "assemble-a-fireteam", titleMatch: "assemble a fireteam", target: 2, metric: "verifiedRecruits" },
+  { match: "form-a-full-squad", titleMatch: "form a full squad", target: 4, metric: "verifiedRecruits" },
+  { match: "expand-the-vanguard", titleMatch: "expand the vanguard", target: 6, metric: "verifiedRecruits" },
+  { match: "build-the-platoon", titleMatch: "build the platoon", target: 8, metric: "verifiedRecruits" },
+  { match: "deploy-a-strike-force", titleMatch: "deploy a strike force", target: 10, metric: "verifiedRecruits" },
+  { match: "lead-a-battalion", titleMatch: "lead a battalion", target: 20, metric: "verifiedRecruits" },
+  { match: "mobilize-a-brigade", titleMatch: "mobilize a brigade", target: 30, metric: "verifiedRecruits" },
+  { match: "activate-the-warband", titleMatch: "activate the warband", target: 5, metric: "startHereRecruits" },
+];
+
 function parseCookies(raw) {
   return String(raw || "")
     .split(";")
@@ -41,6 +52,18 @@ function warMissionsCookieDomain() {
   return String(process.env.WAR_MISSIONS_COOKIE_DOMAIN || "").trim() || undefined;
 }
 
+function numberFromMetadata(metadata, keys) {
+  for (const key of keys) {
+    const value = metadata?.[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return Math.trunc(value);
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+      const parsed = Number(value);
+      if (parsed > 0) return Math.trunc(parsed);
+    }
+  }
+  return null;
+}
+
 export function normalizeReferralCode(value) {
   return String(value || "")
     .trim()
@@ -66,6 +89,58 @@ function buildReferralUrl(code) {
 
 function suffixValue() {
   return Math.random().toString(36).slice(2, 6);
+}
+
+function inferRecruiterMilestoneTemplate(template) {
+  const metadata = template?.metadata || {};
+  const slug = normalizeReferralCode(template?.slug || "");
+  const title = String(template?.title || "").trim().toLowerCase();
+  const verificationType = String(template?.verification_type || "").trim().toLowerCase();
+
+  const explicitMetric = String(
+    metadata.progress_metric || metadata.recruiter_metric || metadata.requirement_metric || metadata.metric || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  let metric = null;
+  if (explicitMetric) {
+    metric = /start|onboard|warband|activity/.test(explicitMetric) ? "startHereRecruits" : "verifiedRecruits";
+  } else if (/start_here|onboarding|warband|activity/.test(verificationType)) {
+    metric = "startHereRecruits";
+  } else if (/referral|recruit/.test(verificationType)) {
+    metric = "verifiedRecruits";
+  }
+
+  const metadataTarget = numberFromMetadata(metadata, [
+    "required_verified_recruits",
+    "required_recruits",
+    "required_count",
+    "recruit_count",
+    "verified_recruits",
+    "target_recruits",
+    "min_referrals",
+    "threshold",
+  ]);
+
+  if (metadataTarget) {
+    return {
+      slug: template.slug,
+      title: template.title,
+      target: metadataTarget,
+      metric: metric || "verifiedRecruits",
+    };
+  }
+
+  const known = KNOWN_RECRUITER_MILESTONES.find((item) => slug === item.match || title.includes(item.titleMatch));
+  if (!known) return null;
+
+  return {
+    slug: template.slug,
+    title: template.title,
+    target: known.target,
+    metric: known.metric,
+  };
 }
 
 export function createReferralCookie(req, code) {
@@ -187,6 +262,40 @@ export async function getRecruiterQuestTemplateByVerificationType(verificationTy
     [verificationType],
   );
   return rows[0] || null;
+}
+
+export async function getRecruiterMilestoneQuestTargets() {
+  const { rows } = await pool.query(
+    `
+      select slug, title, verification_type, metadata
+      from public.wm_quest_templates
+      where active = true
+      order by created_at asc
+    `,
+  );
+
+  return rows
+    .map((row) => inferRecruiterMilestoneTemplate(row))
+    .filter(Boolean)
+    .sort((left, right) => left.target - right.target);
+}
+
+export async function getRecruiterProgressCounts(recruiterUserId) {
+  const { rows } = await pool.query(
+    `
+      select
+        count(*) filter (where status = 'verified')::int as verified_total
+      from public.wm_referral_attributions
+      where recruiter_user_id = $1
+    `,
+    [recruiterUserId],
+  );
+
+  const verifiedTotal = Number(rows[0]?.verified_total || 0);
+  return {
+    verifiedRecruits: verifiedTotal,
+    startHereRecruits: verifiedTotal,
+  };
 }
 
 export async function createRecruiterAdminNotification(input) {
