@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { buildWarProfile, getUserById } from "./_lib/profile.js";
@@ -12,6 +13,10 @@ function isDiscordConfigured() {
   return Boolean(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_REDIRECT_URI);
 }
 
+function makeChallengeToken() {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
 function baseSocialConfig() {
   return {
     xOAuthConfigured: isXOAuthConfigured(),
@@ -23,14 +28,28 @@ function baseSocialConfig() {
   };
 }
 
-function socialConfigForUser(req, accounts = []) {
+async function createDiscordReconnectUrl(req, userId) {
+  const token = makeChallengeToken();
+  await pool.query(
+    `
+      insert into public.wm_social_link_challenges
+        (user_id, provider, token, expires_at)
+      values ($1, 'discord', $2, now() + interval '10 minutes')
+    `,
+    [userId, token],
+  );
+
+  const proto = String(req.headers?.["x-forwarded-proto"] || "https");
+  const host = String(req.headers?.host || "quests.memewar.zone");
+  return `${proto}://${host}/api/wm-discord-oauth-start?linkToken=${encodeURIComponent(token)}`;
+}
+
+async function socialConfigForUser(req, userId, accounts = []) {
   const config = baseSocialConfig();
   const hasDiscordAccount = accounts.some((account) => account.provider === "discord");
 
   if (config.discordConfigured && hasDiscordAccount) {
-    const proto = String(req.headers?.["x-forwarded-proto"] || "https");
-    const host = String(req.headers?.host || "quests.memewar.zone");
-    config.discordInviteUrl = `${proto}://${host}/api/wm-discord-oauth-start`;
+    config.discordInviteUrl = await createDiscordReconnectUrl(req, userId);
   }
 
   return config;
@@ -87,7 +106,7 @@ export default async function wmSocialStatus(req, res) {
     return res.status(200).json({
       ok: true,
       authenticated: true,
-      ...socialConfigForUser(req, accounts),
+      ...(await socialConfigForUser(req, user.id, accounts)),
       profile,
       accounts,
       communityChecks: [
