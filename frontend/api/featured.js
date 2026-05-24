@@ -18,6 +18,91 @@ function safeEmptyFeatured(res, error) {
   });
 }
 
+async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
+  const orderByExpr = sortCol === "last_activity_at" ? "ca.last_activity_at" : `va.${sortCol}`;
+  const { rows } = await pool.query(
+    `SELECT
+       va.chain_id AS "chainId",
+       va.campaign_address AS "campaignAddress",
+       c.token_address AS "tokenAddress",
+       c.creator_address AS "creatorAddress",
+       c.name AS "name",
+       c.symbol AS "symbol",
+       c.logo_uri AS "logoUri",
+       c.created_at_chain AS "createdAtChain",
+       c.graduated_at_chain AS "graduatedAtChain",
+       ts.marketcap_bnb AS "marketcapBnb",
+       COALESCE(va.votes_1h, 0) AS "votes1h",
+       COALESCE(va.votes_24h, 0) AS "votes24h",
+       COALESCE(va.votes_7d, 0) AS "votes7d",
+       COALESCE(va.votes_all_time, 0) AS "votesAllTime",
+       COALESCE(va.trending_score, 0) AS "trendingScore",
+       va.last_vote_at AS "lastVoteAt",
+       ca.last_activity_at AS "lastActivityAt",
+       'upvote'::text AS "featuredSource"
+     FROM vote_aggregates va
+     INNER JOIN campaigns c
+       ON c.chain_id = va.chain_id
+      AND c.campaign_address = va.campaign_address
+     LEFT JOIN token_stats ts
+       ON ts.chain_id = c.chain_id
+      AND ts.campaign_address = c.campaign_address
+     LEFT JOIN campaign_activity ca
+       ON ca.chain_id = c.chain_id
+      AND ca.campaign_address = c.campaign_address
+     WHERE va.chain_id = $1
+       AND c.campaign_address IS NOT NULL
+       AND c.graduated_at_chain IS NULL
+       AND COALESCE(c.is_active, true) = true
+     ORDER BY ${orderByExpr} DESC NULLS LAST,
+       COALESCE(va.votes_24h, 0) DESC,
+       COALESCE(va.votes_all_time, 0) DESC,
+       c.created_at_chain DESC NULLS LAST
+     LIMIT $2`,
+    [chainId, limit],
+  );
+  return rows;
+}
+
+async function readFeaturedFromCampaigns({ chainId, limit }) {
+  const { rows } = await pool.query(
+    `SELECT
+       c.chain_id AS "chainId",
+       c.campaign_address AS "campaignAddress",
+       c.token_address AS "tokenAddress",
+       c.creator_address AS "creatorAddress",
+       c.name AS "name",
+       c.symbol AS "symbol",
+       c.logo_uri AS "logoUri",
+       c.created_at_chain AS "createdAtChain",
+       c.graduated_at_chain AS "graduatedAtChain",
+       ts.marketcap_bnb AS "marketcapBnb",
+       0::int AS "votes1h",
+       0::int AS "votes24h",
+       0::int AS "votes7d",
+       0::int AS "votesAllTime",
+       0::numeric AS "trendingScore",
+       null::timestamptz AS "lastVoteAt",
+       c.created_at_chain AS "lastActivityAt",
+       'campaign_fallback'::text AS "featuredSource"
+     FROM campaigns c
+     LEFT JOIN token_stats ts
+       ON ts.chain_id = c.chain_id
+      AND ts.campaign_address = c.campaign_address
+     WHERE c.chain_id = $1
+       AND c.campaign_address IS NOT NULL
+       AND c.graduated_at_chain IS NULL
+       AND COALESCE(c.is_active, true) = true
+     ORDER BY
+       COALESCE(ts.marketcap_bnb, 0) DESC,
+       c.created_at_chain DESC NULLS LAST,
+       c.campaign_address ASC
+     LIMIT $2`,
+    [chainId, limit],
+  );
+  return rows;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
@@ -26,51 +111,35 @@ export default async function handler(req, res) {
     const chainId = Number(q.chainId ?? 97);
     const sortKeyRaw = String(q.sort ?? "activity").toLowerCase();
     const sortCol = SORT_MAP[sortKeyRaw] ?? SORT_MAP.activity;
-    const orderByExpr = sortCol === "last_activity_at" ? "ca.last_activity_at" : `va.${sortCol}`;
     const limit = Math.max(1, Math.min(50, Number(q.limit ?? 10)));
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
 
-    // IMPORTANT: Featured list is a *paid* placement via UPvote.
-    // We only surface campaigns that still exist in our campaigns table and are still in bonding
-    // (not graduated), to prevent old-factory / old-campaign addresses from showing up.
-    const { rows } = await pool.query(
-      `SELECT
-         va.chain_id AS "chainId",
-         va.campaign_address AS "campaignAddress",
-         c.token_address AS "tokenAddress",
-         c.creator_address AS "creatorAddress",
-         c.name AS "name",
-         c.symbol AS "symbol",
-         c.logo_uri AS "logoUri",
-         c.created_at_chain AS "createdAtChain",
-         c.graduated_at_chain AS "graduatedAtChain",
-         ts.marketcap_bnb AS "marketcapBnb",
-         va.votes_1h AS "votes1h",
-         va.votes_24h AS "votes24h",
-         va.votes_7d AS "votes7d",
-         va.votes_all_time AS "votesAllTime",
-         va.trending_score AS "trendingScore",
-         va.last_vote_at AS "lastVoteAt",
-         ca.last_activity_at AS "lastActivityAt"
-       FROM vote_aggregates va
-       INNER JOIN campaigns c
-         ON c.chain_id = va.chain_id
-        AND c.campaign_address = va.campaign_address
-       LEFT JOIN token_stats ts
-         ON ts.chain_id = c.chain_id
-        AND ts.campaign_address = c.campaign_address
-       LEFT JOIN campaign_activity ca
-         ON ca.chain_id = c.chain_id
-        AND ca.campaign_address = c.campaign_address
-       WHERE va.chain_id = $1
-         AND (c.graduated_at_chain IS NULL)
-       ORDER BY ${orderByExpr} DESC NULLS LAST
-       LIMIT $2`,
-      [chainId, limit]
-    );
+    let items = [];
+    let warning = null;
 
-    return json(res, 200, { items: rows, updatedAt: new Date().toISOString() });
+    try {
+      items = await readFeaturedFromVotes({ chainId, sortCol, limit });
+    } catch (error) {
+      warning = "Featured UPvote aggregates are unavailable; using live campaign fallback.";
+      console.warn("[api/featured] vote aggregate query unavailable; using campaign fallback", error);
+    }
+
+    if (!items.length) {
+      try {
+        items = await readFeaturedFromCampaigns({ chainId, limit });
+        if (!warning) warning = "Featured UPvote data is empty; using live campaign fallback.";
+      } catch (error) {
+        if (warning) console.warn("[api/featured] campaign fallback query failed", error);
+        else return safeEmptyFeatured(res, error);
+      }
+    }
+
+    return json(res, 200, {
+      items,
+      updatedAt: new Date().toISOString(),
+      ...(warning ? { warning } : {}),
+    });
   } catch (e) {
     return safeEmptyFeatured(res, e);
   }
