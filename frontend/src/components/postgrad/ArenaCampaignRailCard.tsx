@@ -35,7 +35,7 @@ function RailLink({ href, children, className }: { href: string; children: React
 }
 
 function RailFrame({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("mwz-hud-frame mwz-card min-w-[440px] px-4 py-3", className)}>{children}</div>;
+  return <div className={cn("mwz-orange-frame min-w-[440px] px-4 py-3", className)}>{children}</div>;
 }
 
 export function ArenaFallbackRailCard({
