@@ -42,8 +42,8 @@ const BattleDetails = () => {
   if (!battle) {
     return (
       <div className="space-y-6 px-1 pb-10">
-        <section className="mwz-orange-frame p-5 md:p-7">
-          <div className="mwz-orange-frame-label text-[10px]">Battle arena</div>
+        <section className="mwz-hud-frame p-5 md:p-7">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Battle arena</div>
           <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Battle details unavailable.</h1>
           <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
             {source === "empty"
@@ -82,10 +82,10 @@ const BattleDetails = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <section className="mwz-orange-frame p-5 md:p-7">
+      <section className="mwz-hud-frame p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="mwz-orange-frame-label text-[10px]">Battle arena</div>
+            <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Battle arena</div>
             <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Battle lifecycle and settlement.</h1>
             <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">Track challenge state, live score context, War Pool support, and settlement routing from one focused battle page.</p>
           </div>
@@ -102,12 +102,12 @@ const BattleDetails = () => {
       <WarPoolPanel battle={battle} />
 
       {participantTokens.length ? (
-        <section className="mwz-orange-frame-soft p-5">
-          <div className="mwz-orange-frame-label text-[10px]">Memecoin matchup</div>
+        <section className="mwz-hud-frame p-5">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Memecoin matchup</div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {participantTokens.map((token) => {
               const content = (
-                <div className="mwz-orange-frame-soft p-4 transition-colors">
+                <div className="mwz-hud-frame p-4 transition-colors">
                   <div className="flex items-start gap-3">
                     <img src={token.imageUrl} alt={token.tokenName} className="h-14 w-14 shrink-0 border border-accent/30 object-cover" />
                     <div className="min-w-0 flex-1">
@@ -149,16 +149,16 @@ const BattleDetails = () => {
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="mwz-orange-frame-soft p-4">
-          <div className="mwz-orange-frame-label text-[10px]">Lifecycle states</div>
+        <div className="mwz-hud-frame p-4">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Lifecycle states</div>
           <div className="mt-2 text-sm text-muted-foreground">draft → open_for_battle → pending → accepted → live → completed → settled</div>
         </div>
-        <div className="mwz-orange-frame-soft p-4">
-          <div className="mwz-orange-frame-label text-[10px]">Settlement guard</div>
+        <div className="mwz-hud-frame p-4">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Settlement guard</div>
           <div className="mt-2 text-sm text-muted-foreground">Pool cutoff, payout routing, and suspicious activity checks sit behind the settlement flow.</div>
         </div>
-        <div className="mwz-orange-frame-soft p-4">
-          <div className="mwz-orange-frame-label text-[10px]">Event bridge</div>
+        <div className="mwz-hud-frame p-4">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Event bridge</div>
           <div className="mt-2 text-sm text-muted-foreground">
             {bridgeEvent
               ? `Current battle can be promoted into ${bridgeEvent.title} from the event layer.`
