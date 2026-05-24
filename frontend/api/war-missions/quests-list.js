@@ -1,7 +1,7 @@
 import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { ensureCurrentQuestInstances } from "./_lib/periods.js";
-import { buildWarProfile, getUserById } from "./_lib/profile.js";
+import { buildWarProfile, getUserById, syncDailyWarpathQuestForUser } from "./_lib/profile.js";
 import { verifyCommunityJoinQuestsForUser } from "./_lib/community-membership.js";
 import { verifyXFollowQuestForUser } from "./_lib/x-follow.js";
 
@@ -45,6 +45,10 @@ export default async function wmQuestsList(req, res) {
           console.warn("[war-missions/quests-list] x auto-check skipped", error?.message || error);
         }),
       ]);
+
+      await syncDailyWarpathQuestForUser(user.id).catch((error) => {
+        console.warn("[war-missions/quests-list] daily warpath auto-sync skipped", error?.message || error);
+      });
     }
 
     const [categoriesResult, templatesResult, profile] = await Promise.all([
