@@ -23,6 +23,7 @@ import TournamentDetails from "./pages/TournamentDetails";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
 import PublicPromotion from "./pages/PublicPromotion";
+import SponsorshipApplication from "./pages/SponsorshipApplication";
 import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
@@ -139,6 +140,7 @@ function AppShellLayout({
           {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
           {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
+          <Route path="/sponsorships/apply" element={<SponsorshipApplication />} />
           {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
           {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<Navigate to="/arena/leagues" replace />} /> : null}
           {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
