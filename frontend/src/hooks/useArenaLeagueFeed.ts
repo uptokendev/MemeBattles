@@ -198,5 +198,6 @@ export function useArenaLeagueFeed() {
     advanceWeek,
     cycleSeasonState,
     rebalanceDivisions,
+    refreshFeed,
   };
 }
