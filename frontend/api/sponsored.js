@@ -167,7 +167,7 @@ export default async function handler(req, res) {
            null::text AS "startsAt",
            null::text AS "endsAt",
            null::text AS "bio",
-           c.website AS "websiteUrl"
+           null::text AS "websiteUrl"
          FROM campaigns c
          LEFT JOIN token_stats ts
            ON ts.chain_id = c.chain_id
