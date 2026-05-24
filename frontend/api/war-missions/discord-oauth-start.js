@@ -82,7 +82,7 @@ export default async function wmDiscordOAuthStart(req, res) {
     const url = new URL("https://discord.com/oauth2/authorize");
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", clientId);
-    url.searchParams.set("scope", "identify");
+    url.searchParams.set("scope", "identify guilds");
     url.searchParams.set("state", token);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("prompt", "consent");
