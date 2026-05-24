@@ -52,6 +52,7 @@ import wmAuthNonce from "./war-missions/auth-nonce.js";
 import wmAuthVerify from "./war-missions/auth-verify.js";
 import wmBadgesList from "./war-missions/badges-list.js";
 import wmCommunityMembershipSweep from "./war-missions/community-membership-sweep.js";
+import wmDailyRollover from "./war-missions/daily-rollover.js";
 import wmDiscordMemberCheck from "./war-missions/discord-member-check.js";
 import wmDiscordOAuthCallback from "./war-missions/discord-oauth-callback.js";
 import wmDiscordOAuthStart from "./war-missions/discord-oauth-start.js";
@@ -75,7 +76,6 @@ import wmTelegramWebhook from "./war-missions/telegram-webhook.js";
 import wmXFollowCheck from "./war-missions/x-follow-check.js";
 import wmXOAuthCallback from "./war-missions/x-oauth-callback.js";
 import wmXOAuthStart from "./war-missions/x-oauth-start.js";
-import warMissionsProxy from "./war-missions/proxy.js";
 import { contentAiGenerateVariants } from "./content-ai.js";
 import {
   contentPlannerCalendar,
@@ -345,7 +345,7 @@ router.all("/wm-admin-user-action", wrap(wmAdminUserAction));
 router.all("/wm-admin-quest-upsert", wrap(wmAdminQuestUpsert));
 router.all("/wm-admin-leaderboard-snapshot", wrap(wmAdminLeaderboardSnapshot));
 router.all("/wm-admin-prizes", wrap(wmAdminPrizes));
-router.all("/wm-daily-rollover", wrap(warMissionsProxy));
+router.all("/wm-daily-rollover", wrap(wmDailyRollover));
 router.all("/internal/rewards/publications", wrap(internalRewardPublications));
 router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
 router.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
