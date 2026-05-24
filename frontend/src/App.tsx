@@ -8,12 +8,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
+import PromotionSetup from "./pages/PromotionSetup";
+import PublicPromotion from "./pages/PublicPromotion";
 import ProfilePage from "./pages/ProfilePage";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
@@ -50,12 +52,6 @@ import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
-import ArenaOverview from "@/pages/arena/ArenaOverview";
-import ArenaBattles from "@/pages/arena/ArenaBattles";
-import ArenaLeagues from "@/pages/arena/ArenaLeagues";
-import ArenaEvents from "@/pages/arena/ArenaEvents";
-import WarRoom from "@/pages/arena/WarRoom";
-import LeagueDetail from "@/pages/LeagueDetail";
 
 const queryClient = new QueryClient();
 
@@ -148,14 +144,6 @@ const App = () => {
                     <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
                     <Route path="/prepare/:slug" element={<Prepare />} />
                     <Route path="/live" element={<Live />} />
-                    <Route path="/arena" element={<ArenaOverview />} />
-                    <Route path="/arena/battles" element={<ArenaBattles />} />
-                    <Route path="/arena/leagues" element={<ArenaLeagues />} />
-                    <Route path="/arena/events" element={<ArenaEvents />} />
-                    <Route path="/arena/token/:tokenId" element={<Navigate to="/arena" replace />} />
-                    <Route path="/war-room" element={<WarRoom />} />
-                    <Route path="/battle-leagues" element={<ArenaLeagues />} />
-                    <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                     <Route path="/profile" element={<ProfilePage />} />
                     <Route path="/command" element={<LegacyCommandCenterRedirect section="overview" />} />
                     <Route path="/command/overview" element={<LegacyCommandCenterRedirect section="overview" />} />
