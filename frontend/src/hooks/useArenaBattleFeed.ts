@@ -115,10 +115,12 @@ async function fetchBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPay
   return { liveBattles, openForBattleQueue, archivedBattles };
 }
 
-async function fetchCreatorBattleStatuses(creatorAddress: string, signal?: AbortSignal): Promise<CreatorBattleStatus[] | null> {
+async function fetchCreatorBattleStatuses(creatorAddress: string, chainId?: number | null, signal?: AbortSignal): Promise<CreatorBattleStatus[] | null> {
   const normalized = normalizeIdentity(creatorAddress);
   if (!normalized) return null;
-  const response = await apiFetch(`/api/arena/battles/creator-status?creator=${encodeURIComponent(normalized)}`, { cache: "no-store", signal });
+  const params = new URLSearchParams({ creator: normalized });
+  if (chainId) params.set("chainId", String(chainId));
+  const response = await apiFetch(`/api/arena/battles/creator-status?${params.toString()}`, { cache: "no-store", signal });
   if (!response.ok) return null;
   const json = await response.json().catch(() => null);
   if (!json || typeof json !== "object") return [];
@@ -133,11 +135,11 @@ async function fetchBattleDetails(battleId: string, signal?: AbortSignal): Promi
   return isBattle(battle) ? battle : null;
 }
 
-async function openBattleViaApi(tokenId: string): Promise<boolean> {
+async function openBattleViaApi(tokenId: string, chainId?: number | null): Promise<boolean> {
   const response = await apiFetch("/api/arena/battles/open", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tokenId }),
+    body: JSON.stringify({ tokenId, chainId: chainId || undefined }),
   });
 
   if (!response.ok) return false;
@@ -163,10 +165,11 @@ async function transitionBattleViaApi(battleId: string, state: BattleTransitionS
  * It attempts the API-shaped battle feed first and only falls back to the QA
  * runtime when mock mode is explicitly enabled.
  */
-export function useArenaBattleFeed(creatorAddress?: string | null) {
+export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: number | null) {
   const runtime = useMockBattleLists();
   const allowMockFallback = postGradFlags.mocks;
   const normalizedCreatorAddress = normalizeIdentity(creatorAddress);
+  const normalizedChainId = Number(chainId) || 97;
   const [apiPayload, setApiPayload] = useState<ArenaBattleFeedPayload | null>(null);
   const [creatorStatuses, setCreatorStatuses] = useState<CreatorBattleStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,7 +177,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null) {
   const refreshFeed = async () => {
     const [battlePayload, creatorPayload] = await Promise.all([
       fetchBattleFeed().catch(() => null),
-      normalizedCreatorAddress ? fetchCreatorBattleStatuses(normalizedCreatorAddress).catch(() => null) : Promise.resolve(null),
+      normalizedCreatorAddress ? fetchCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId).catch(() => null) : Promise.resolve(null),
     ]);
 
     setApiPayload(battlePayload);
@@ -192,7 +195,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null) {
         return null;
       }),
       normalizedCreatorAddress
-        ? fetchCreatorBattleStatuses(normalizedCreatorAddress, controller.signal).catch((error) => {
+        ? fetchCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId, controller.signal).catch((error) => {
             if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] creator status unavailable", error);
             return null;
           })
@@ -211,7 +214,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null) {
       cancelled = true;
       controller.abort();
     };
-  }, [normalizedCreatorAddress, runtime.tick]);
+  }, [normalizedCreatorAddress, normalizedChainId, runtime.tick]);
 
   const liveBattles = apiPayload?.liveBattles ?? (allowMockFallback ? runtime.liveBattles : []);
   const openForBattleQueue = apiPayload?.openForBattleQueue ?? (allowMockFallback ? runtime.openForBattleQueue : []);
@@ -242,7 +245,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null) {
 
   const openCreatorCoinForBattle = async (tokenId: string) => {
     try {
-      const opened = await openBattleViaApi(tokenId);
+      const opened = await openBattleViaApi(tokenId, normalizedChainId);
       if (opened) {
         await refreshFeed();
         return true;
