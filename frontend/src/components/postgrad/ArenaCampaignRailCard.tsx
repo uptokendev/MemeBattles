@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
+import { Globe2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
+import { cn } from "@/lib/utils";
 
 export type ArenaCampaignRailAction = {
   label: string;
@@ -33,6 +35,19 @@ function RailLink({ href, children, className }: { href: string; children: React
   );
 }
 
+function RailFrame({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "min-w-[440px] border border-accent/45 bg-[linear-gradient(180deg,rgba(16,16,12,0.95),rgba(7,8,7,0.98))] px-4 py-3",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function ArenaFallbackRailCard({
   title,
   symbol,
@@ -47,16 +62,16 @@ export function ArenaFallbackRailCard({
   badges: ArenaFallbackRailBadge[];
 }) {
   const content = (
-    <div className="mwz-orange-frame-soft min-w-[220px] p-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <RailFrame>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         {badges.map((badge) => (
           <TacticalTag key={`${title}-${badge.label}`} label={badge.label} tone={badge.tone ?? "default"} />
         ))}
       </div>
-      <div className="mt-3 font-retro text-sm text-foreground">{title}</div>
-      <div className="mt-1 font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">{symbol}</div>
-      <div className="mt-3 text-xs text-muted-foreground">{detail}</div>
-    </div>
+      <div className="font-retro text-lg uppercase tracking-[0.03em] text-foreground">{title}</div>
+      <div className="mt-1 font-retro text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{symbol}</div>
+      <div className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{detail}</div>
+    </RailFrame>
   );
 
   if (!href) return content;
@@ -85,16 +100,19 @@ function emitSponsorSpotIntent() {
 
 function ArenaSponsorSpotCard() {
   return (
-    <button
-      type="button"
-      onClick={emitSponsorSpotIntent}
-      className="mwz-orange-frame min-w-[256px] p-5 text-left transition-colors"
-    >
-      <div className="mwz-orange-frame-label text-[10px]">Sponsor spot</div>
-      <div className="mt-3 font-retro text-lg text-foreground">Want this sponsor spot?</div>
-      <div className="mt-2 text-sm text-muted-foreground">Click here.</div>
+    <button type="button" onClick={emitSponsorSpotIntent} className="block shrink-0 text-left">
+      <RailFrame>
+        <div className="mwz-orange-frame-label text-[10px]">Sponsor spot</div>
+        <div className="mt-4 font-retro text-2xl uppercase tracking-[0.03em] text-foreground">Want this sponsor spot?</div>
+        <div className="mt-3 text-sm text-muted-foreground">Click here.</div>
+      </RailFrame>
     </button>
   );
+}
+
+function getActionTone(label: string) {
+  if (/website/i.test(label)) return "border-emerald-500/35 text-emerald-100 hover:bg-emerald-500/10";
+  return "border-white/12 text-white hover:bg-white/8";
 }
 
 export function ArenaCampaignRailCard({
@@ -111,18 +129,44 @@ export function ArenaCampaignRailCard({
 
   if (isSponsored) {
     return (
-      <div className="mwz-orange-frame min-w-[256px] p-4">
-        <img src={item.imageUrl || "/placeholder.svg"} alt={item.title} className="h-32 w-full border border-accent/30 object-cover" />
-        <div className="mt-4 font-retro text-sm text-foreground">{item.title}</div>
-        {item.summary ? <div className="mt-2 text-xs leading-relaxed text-muted-foreground">{item.summary}</div> : null}
-        {sponsorWebsiteUrl ? (
-          <div className="mt-4">
-            <Button asChild size="sm" className="mwz-button mwz-button-orange font-retro">
-              <RailLink href={sponsorWebsiteUrl}>Website</RailLink>
-            </Button>
+      <RailFrame className="shrink-0">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <TacticalTag label={item.rankLabel} tone="hot" />
+              <TacticalTag label={item.statusLabel} tone="sponsored" />
+              {item.activeDatesLabel ? <TacticalTag label={item.activeDatesLabel} tone="default" /> : null}
+            </div>
+            <div className="flex items-start gap-4">
+              <img src={item.imageUrl || "/placeholder.svg"} alt={item.title} className="h-20 w-20 shrink-0 border border-accent/30 object-cover" />
+              <div className="min-w-0 flex-1">
+                <div className="font-retro text-lg uppercase tracking-[0.03em] text-foreground">{item.title}</div>
+                <div className="mt-1 font-retro text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{item.symbol}</div>
+                {item.summary ? <div className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{item.summary}</div> : null}
+              </div>
+            </div>
           </div>
-        ) : null}
-      </div>
+          {sponsorWebsiteUrl ? (
+            <div className="flex shrink-0 flex-col gap-2 pt-1">
+              <RailLink
+                href={sponsorWebsiteUrl}
+                className="inline-flex min-w-[144px] items-center justify-center border border-emerald-500/35 bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-100 transition-colors hover:bg-emerald-500/10"
+              >
+                <Globe2 className="mr-2 h-3.5 w-3.5" />
+                Website
+              </RailLink>
+              {!isExternalHref(item.href) ? (
+                <RailLink
+                  href={item.href}
+                  className="inline-flex min-w-[144px] items-center justify-center border border-white/12 bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/8"
+                >
+                  Open placement
+                </RailLink>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </RailFrame>
     );
   }
 
@@ -142,41 +186,48 @@ export function ArenaCampaignRailCard({
   const cardActions = actions ?? defaultActions;
 
   const content = (
-    <div className="mwz-orange-frame min-w-[256px] p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <TacticalTag label={item.rankLabel} tone={rankTone} />
-        <TacticalTag label={item.statusLabel} tone={item.statusTone === "sponsored" ? "hot" : item.statusTone} />
-      </div>
-
-      <div className="mt-4 flex items-start gap-3">
-        {item.imageUrl ? (
-          <img src={item.imageUrl} alt={item.title} className="h-16 w-16 shrink-0 border border-accent/30 object-cover" />
-        ) : null}
+    <RailFrame className="shrink-0">
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="font-retro text-sm text-foreground">{item.title}</div>
-          <div className="mt-1 font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">{item.symbol}</div>
-          <div className="mt-3 text-xs text-muted-foreground">{item.summary || item.detail}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TacticalTag label={item.rankLabel} tone={rankTone} />
+            <TacticalTag label={item.statusLabel} tone={item.statusTone === "sponsored" ? "hot" : item.statusTone} />
+          </div>
+
+          <div className="mt-3 flex items-start gap-4">
+            {item.imageUrl ? (
+              <img src={item.imageUrl} alt={item.title} className="h-20 w-20 shrink-0 border border-accent/30 object-cover" />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="font-retro text-lg uppercase tracking-[0.03em] text-foreground">{item.title}</div>
+              <div className="mt-1 font-retro text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{item.symbol}</div>
+              <div className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{item.summary || item.detail}</div>
+              {item.summary && item.detail ? (
+                <div className="mt-2 font-retro text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.detail}</div>
+              ) : null}
+            </div>
+          </div>
         </div>
+
+        {cardActions.length ? (
+          <div className="flex shrink-0 flex-col gap-2 pt-1">
+            {cardActions.map((action) => (
+              <RailLink
+                key={`${item.id}-${action.href}-${action.label}`}
+                href={action.href}
+                className={cn(
+                  "inline-flex min-w-[144px] items-center justify-center border bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors",
+                  getActionTone(action.label),
+                )}
+              >
+                {/website/i.test(action.label) ? <Globe2 className="mr-2 h-3.5 w-3.5" /> : null}
+                {action.label}
+              </RailLink>
+            ))}
+          </div>
+        ) : null}
       </div>
-
-      {item.summary && item.detail ? (
-        <div className="mt-3 font-retro text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.detail}</div>
-      ) : null}
-
-      {item.activeDatesLabel ? (
-        <div className="mt-3 text-xs text-accent/80">Active {item.activeDatesLabel}</div>
-      ) : null}
-
-      {cardActions.length ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {cardActions.map((action) => (
-            <Button key={`${item.id}-${action.href}-${action.label}`} asChild size="sm" variant="outline" className="font-retro">
-              <RailLink href={action.href}>{action.label}</RailLink>
-            </Button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    </RailFrame>
   );
 
   if (cardActions.length || !item.href) return content;
@@ -216,18 +267,18 @@ export function ArenaCampaignRail({
   if (loading) {
     return (
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
-        {[0, 1, 2].map((index) => (
-          <div key={index} className="mwz-orange-frame-soft min-w-[256px] p-4">
+        {[0, 1].map((index) => (
+          <RailFrame key={index} className="shrink-0">
             <div className="h-4 w-24 bg-muted" />
-            <div className="mt-4 flex items-start gap-3">
-              <div className="h-16 w-16 bg-muted" />
+            <div className="mt-4 flex items-start gap-4">
+              <div className="h-20 w-20 bg-muted" />
               <div className="flex-1">
-                <div className="h-5 w-32 bg-muted" />
-                <div className="mt-3 h-3 w-44 bg-muted" />
-                <div className="mt-2 h-3 w-32 bg-muted" />
+                <div className="h-5 w-40 bg-muted" />
+                <div className="mt-3 h-3 w-full max-w-[280px] bg-muted" />
+                <div className="mt-2 h-3 w-full max-w-[220px] bg-muted" />
               </div>
             </div>
-          </div>
+          </RailFrame>
         ))}
       </div>
     );
@@ -242,8 +293,8 @@ export function ArenaCampaignRail({
   }
 
   return (
-    <div className="mwz-orange-frame-soft p-5 text-sm text-muted-foreground">
+    <RailFrame className="w-full min-w-0 p-5 text-sm text-muted-foreground">
       {emptyLabel}
-    </div>
+    </RailFrame>
   );
 }
