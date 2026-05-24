@@ -57,7 +57,7 @@ async function upsertCompletion({ userId, instanceId, existing, status, verifica
 }
 
 export default async function wmQuizSubmit(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed." });
 
   const auth = readWarAuth(req);
   if (!auth) return unauthorized(res);
@@ -67,7 +67,7 @@ export default async function wmQuizSubmit(req, res) {
     if (!user || user.wallet_address !== auth.address) {
       return unauthorized(res, "War Missions session is no longer valid.");
     }
-    if (user.is_banned) return res.status(403).json({ error: "This wallet is excluded from War Missions." });
+    if (user.is_banned) return res.status(403).json({ ok: false, error: "This wallet is excluded from War Missions." });
 
     const body = req.body || {};
     const questSlug = String(body.questSlug || "").trim();
@@ -75,22 +75,29 @@ export default async function wmQuizSubmit(req, res) {
     const questionIds = Array.isArray(body.questionIds)
       ? body.questionIds.map((value) => String(value || "").trim()).filter(Boolean)
       : [];
-    if (!questSlug) return res.status(400).json({ error: "questSlug is required." });
+    if (!questSlug) return res.status(400).json({ ok: false, error: "questSlug is required." });
 
     const template = await getQuizTemplateBySlug(questSlug);
-    if (!template) return res.status(404).json({ error: "Quiz quest was not found." });
+    if (!template) return res.status(404).json({ ok: false, error: "Quiz quest was not found." });
 
     const latestAttempt = await getLatestQuizAttempt(user.id, template.id);
     if (latestAttempt?.cooldown_until && new Date(latestAttempt.cooldown_until).getTime() > Date.now()) {
-      return res.status(429).json({ error: "Quiz retry cooldown is still active.", cooldownUntil: latestAttempt.cooldown_until });
+      return res.status(429).json({
+        ok: false,
+        error: "Quiz retry cooldown is still active.",
+        code: "quiz_cooldown_active",
+        questSlug,
+        passed: false,
+        cooldownUntil: latestAttempt.cooldown_until,
+      });
     }
 
     const questions = await getQuizQuestions(template.id);
-    if (questions.length === 0) return res.status(409).json({ error: "Quiz questions are not configured yet." });
+    if (questions.length === 0) return res.status(409).json({ ok: false, error: "Quiz questions are not configured yet." });
 
     const evaluation = scoreQuizSubmission(questions, submittedAnswers, questionIds);
     if (evaluation.totalQuestions === 0) {
-      return res.status(400).json({ error: "questionIds are required to score this quiz attempt." });
+      return res.status(400).json({ ok: false, error: "questionIds are required to score this quiz attempt." });
     }
     const neededToPass = passingScore(template, evaluation.totalQuestions);
     const passed = evaluation.score >= neededToPass;
@@ -152,6 +159,7 @@ export default async function wmQuizSubmit(req, res) {
       totalQuestions: evaluation.totalQuestions,
       passingScore: neededToPass,
       cooldownUntil,
+      cooldownActive: Boolean(cooldownUntil),
       attemptId: attempt?.id || null,
       completionId: completion?.id || null,
       awardResult,
@@ -159,6 +167,6 @@ export default async function wmQuizSubmit(req, res) {
     });
   } catch (error) {
     console.error("[war-missions/quiz-submit] failed", error);
-    return res.status(500).json({ error: error?.message || "Unexpected server error." });
+    return res.status(500).json({ ok: false, error: error?.message || "Unexpected server error." });
   }
 }
