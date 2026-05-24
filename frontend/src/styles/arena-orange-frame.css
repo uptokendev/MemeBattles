@@ -18,26 +18,25 @@
 }
 
 .mwz-orange-frame {
-  border: 1px solid rgba(255, 153, 0, 0.42) !important;
-  background: linear-gradient(180deg, rgba(24, 25, 25, 0.96), rgba(13, 14, 14, 0.98));
+  border: 1px solid rgba(255, 153, 0, 0.44) !important;
+  background: rgba(24, 25, 25, 0.96);
   box-shadow:
     inset 0 0 0 1px rgba(255, 153, 0, 0.05),
-    0 0 24px rgba(255, 153, 0, 0.08),
-    0 22px 45px -32px rgba(0, 0, 0, 0.95);
+    0 18px 40px -34px rgba(0, 0, 0, 0.95);
 }
 
 .mwz-orange-frame-soft {
-  border: 1px solid rgba(255, 153, 0, 0.30) !important;
-  background: linear-gradient(180deg, rgba(22, 23, 23, 0.92), rgba(11, 12, 12, 0.96));
+  border: 1px solid rgba(255, 153, 0, 0.32) !important;
+  background: rgba(22, 23, 23, 0.94);
   box-shadow:
     inset 0 0 0 1px rgba(255, 153, 0, 0.035),
-    0 16px 34px -28px rgba(0, 0, 0, 0.95);
+    0 14px 28px -26px rgba(0, 0, 0, 0.95);
 }
 
 .mwz-orange-inner-frame {
-  border: 1px solid rgba(255, 153, 0, 0.24) !important;
-  background: linear-gradient(180deg, rgba(28, 29, 29, 0.88), rgba(16, 17, 17, 0.92));
-  box-shadow: inset 0 0 0 1px rgba(255, 153, 0, 0.035);
+  border: 1px solid rgba(255, 153, 0, 0.26) !important;
+  background: rgba(42, 43, 43, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(255, 153, 0, 0.03);
   --mwz-orange-cut: 12px;
 }
 
@@ -51,17 +50,17 @@
   pointer-events: none;
   clip-path: inherit;
   background:
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 22px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 1px 22px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 22px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 1px 22px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 22px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 1px 22px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 22px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 1px 22px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 1px 20px no-repeat,
     linear-gradient(var(--mwz-orange, #ff9900), var(--mwz-orange, #ff9900)) left 20px top / calc(100% - 40px) 1px no-repeat,
     linear-gradient(var(--mwz-orange, #ff9900), var(--mwz-orange, #ff9900)) left 20px bottom / calc(100% - 40px) 1px no-repeat;
-  opacity: 0.95;
+  opacity: 0.96;
 }
 
 .mwz-orange-frame::after,
@@ -83,9 +82,7 @@
     0 calc(var(--mwz-orange-cut) - 8px)
   );
   border: 1px solid rgba(255, 255, 255, 0.04);
-  background:
-    linear-gradient(180deg, rgba(31, 32, 32, 0.80), rgba(16, 17, 17, 0.84)),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0, rgba(255, 255, 255, 0.012) 1px, transparent 1px, transparent 4px);
+  background: rgba(56, 58, 58, 0.56);
   opacity: 1;
 }
 
@@ -98,11 +95,10 @@
 
 .mwz-orange-frame:hover,
 .mwz-orange-frame-soft:hover {
-  border-color: rgba(255, 153, 0, 0.66) !important;
+  border-color: rgba(255, 153, 0, 0.62) !important;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 153, 0, 0.10),
-    0 0 26px rgba(255, 153, 0, 0.14),
-    0 20px 44px -32px rgba(0, 0, 0, 0.95);
+    inset 0 0 0 1px rgba(255, 153, 0, 0.08),
+    0 16px 34px -30px rgba(0, 0, 0, 0.95);
 }
 
 .mwz-orange-frame-label {
@@ -110,12 +106,9 @@
   font-family: Pixeboy, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  text-shadow: 0 0 10px rgba(255, 153, 0, 0.22);
+  text-shadow: 0 0 10px rgba(255, 153, 0, 0.18);
 }
 
 .mwz-orange-grid {
-  background-image:
-    linear-gradient(rgba(255, 153, 0, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 153, 0, 0.045) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-image: none;
 }
