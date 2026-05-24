@@ -4,6 +4,11 @@
 --   frontend/api/sponsorship-applications.js
 --   frontend/api/sponsored.js
 --   web-dashboard sponsorship admin screens
+--
+-- Important: the public MemeBattles site writes through the Node API/DATABASE_URL,
+-- while web-dashboard reads/writes through the Supabase JS anon client. That means
+-- the dashboard env VITE_SUPABASE_URL must point to the same Supabase project as
+-- the MemeBattles DATABASE_URL, and anon/authenticated need table grants below.
 
 BEGIN;
 
@@ -192,8 +197,18 @@ FROM public.sponsored_placements sp
 LEFT JOIN public.sponsorship_applications sa
   ON sa.id = sp.application_id;
 
+-- Supabase REST/JS client access for web-dashboard.
+-- The dashboard currently uses VITE_SUPABASE_ANON_KEY directly, so it needs these grants.
+-- If you later move the dashboard behind a server/service-role API, these grants can be tightened.
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.sponsorship_applications TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.sponsored_placements TO anon, authenticated;
+GRANT SELECT ON TABLE public.sponsored_placement_feed TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.set_updated_at() TO anon, authenticated;
+
 -- Keep RLS disabled by default because the Node API server/admin dashboard should use
--- server-side database credentials. Enable RLS later only after adding app-specific policies.
+-- server-side database credentials or explicit grants. Enable RLS later only after adding
+-- app-specific auth policies.
 ALTER TABLE public.sponsorship_applications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sponsored_placements DISABLE ROW LEVEL SECURITY;
 
