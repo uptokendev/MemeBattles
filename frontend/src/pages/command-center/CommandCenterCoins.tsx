@@ -40,11 +40,17 @@ function getCreatorStateLabel(state: string) {
 }
 
 function getCreatorReason(unavailableReason: string | null | undefined, fallback: string) {
+  if (unavailableReason === "campaign_not_found") {
+    return "This coin could not be resolved in the campaign feed yet.";
+  }
   if (unavailableReason === "campaign_not_live") {
     return "This coin has not reached the live campaign state yet, so it cannot open a battle.";
   }
   if (unavailableReason === "campaign_inactive") {
     return "This coin is no longer active in the campaign feed, so it cannot enter the Arena right now.";
+  }
+  if (unavailableReason === "graduated_to_dex") {
+    return "This coin already graduated to DEX, so it is not eligible for this Arena queue.";
   }
   if (unavailableReason === "already_open_for_battle") {
     return "This coin is already listed in the open queue and is waiting for a rival.";
@@ -83,12 +89,14 @@ export default function CommandCenterCoins() {
   const [drafts, setDrafts] = useState<CampaignDraft[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
+  const [battleBusyToken, setBattleBusyToken] = useState<string | null>(null);
+  const [battleNotice, setBattleNotice] = useState<string | null>(null);
   const {
     getBattleForToken,
     getCreatorCoinStatus,
     openCreatorCoinForBattle,
     source: battleSource,
-  } = useArenaBattleFeed(walletAddress || undefined);
+  } = useArenaBattleFeed(walletAddress || undefined, chainId);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,6 +148,19 @@ export default function CommandCenterCoins() {
       }>;
   }, [created]);
 
+  const handleOpenForBattle = async (campaignAddress: string, name: string) => {
+    setBattleBusyToken(campaignAddress);
+    setBattleNotice(null);
+    try {
+      const opened = await openCreatorCoinForBattle(campaignAddress);
+      setBattleNotice(opened ? `${name} is now open for battle.` : `Could not open ${name} for battle. Refresh and check eligibility.`);
+    } catch (error: any) {
+      setBattleNotice(error?.message || `Could not open ${name} for battle.`);
+    } finally {
+      setBattleBusyToken(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <CommandCenterPageHeader
@@ -148,21 +169,21 @@ export default function CommandCenterCoins() {
       />
 
       <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-border/50 bg-card/25 p-4">
+        <div className="mwz-hud-frame p-4">
           <div className="mb-3 flex items-center gap-2 text-muted-foreground">
             <Coins className="h-4 w-4 text-accent" />
             <span className="font-retro text-[10px] uppercase tracking-[0.16em]">Launched coins</span>
           </div>
           <div className="font-retro text-2xl text-foreground">{created.length.toLocaleString()}</div>
         </div>
-        <div className="rounded-2xl border border-border/50 bg-card/25 p-4">
+        <div className="mwz-hud-frame p-4">
           <div className="mb-3 flex items-center gap-2 text-muted-foreground">
             <FileText className="h-4 w-4 text-accent" />
             <span className="font-retro text-[10px] uppercase tracking-[0.16em]">Prepare drafts</span>
           </div>
           <div className="font-retro text-2xl text-foreground">{loadingDrafts ? "..." : drafts.length.toLocaleString()}</div>
         </div>
-        <Link to="/create" className="rounded-2xl border border-border/50 bg-card/25 p-4 transition hover:border-accent/50 hover:bg-card/45">
+        <Link to="/create" className="mwz-hud-frame p-4 transition hover:border-accent/50 hover:bg-card/45">
           <div className="mb-3 flex items-center gap-2 text-muted-foreground">
             <Rocket className="h-4 w-4 text-accent" />
             <span className="font-retro text-[10px] uppercase tracking-[0.16em]">Create</span>
@@ -172,6 +193,7 @@ export default function CommandCenterCoins() {
       </div>
 
       <CommandCenterCard title="Battle controls" description="Private battle opt-in and live battle state for coins owned by this wallet.">
+        {battleNotice ? <div className="mb-3 mwz-hud-frame p-3 text-sm text-muted-foreground">{battleNotice}</div> : null}
         {createdCoins.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {createdCoins.map((coin) => {
@@ -187,6 +209,7 @@ export default function CommandCenterCoins() {
               const statusLabel = getCreatorStateLabel(creatorState);
               const statusTone = getCreatorStateTone(creatorState);
               const battleRouteId = creatorStatus?.battleId ?? battle?.id ?? null;
+              const isOpening = battleBusyToken === coin.campaignAddress;
               const fallbackReason = creatorState === "eligible"
                 ? "This coin is free to open a new challenge from Command Center."
                 : creatorState === "unavailable"
@@ -199,9 +222,9 @@ export default function CommandCenterCoins() {
               const reason = getCreatorReason(creatorStatus?.unavailableReason, fallbackReason);
 
               return (
-                <div key={coin.campaignAddress} className="rounded-2xl border border-border/50 bg-background/25 p-4">
+                <div key={coin.campaignAddress} className="mwz-hud-frame p-4">
                   <div className="flex items-start gap-3">
-                    <img src={coin.image} alt={coin.name} className="h-14 w-14 shrink-0 rounded-2xl object-cover" />
+                    <img src={coin.image} alt={coin.name} className="h-14 w-14 shrink-0 border border-accent/30 object-cover" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="truncate font-retro text-base text-foreground">{coin.name}</div>
@@ -213,7 +236,7 @@ export default function CommandCenterCoins() {
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
-                    <div className="rounded-2xl border border-border/50 bg-card/20 p-4">
+                    <div className="mwz-hud-frame p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         {creatorState === "eligible" ? <Rocket className="h-4 w-4 text-emerald-300" /> : creatorState === "unavailable" ? <ShieldAlert className="h-4 w-4 text-muted-foreground" /> : <CircleSlash className="h-4 w-4 text-orange-200" />}
                         Availability
@@ -227,7 +250,7 @@ export default function CommandCenterCoins() {
                       ) : null}
                     </div>
 
-                    <div className="rounded-2xl border border-border/50 bg-card/20 p-4">
+                    <div className="mwz-hud-frame p-4">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Swords className="h-4 w-4 text-accent" />
                         Actions
@@ -240,8 +263,8 @@ export default function CommandCenterCoins() {
                         ) : null}
 
                         {creatorState === "eligible" ? (
-                          <Button size="sm" onClick={() => openCreatorCoinForBattle(coin.campaignAddress)}>
-                            Open for battle
+                          <Button size="sm" disabled={isOpening} onClick={() => void handleOpenForBattle(coin.campaignAddress, coin.name)}>
+                            {isOpening ? "Opening..." : "Open for battle"}
                           </Button>
                         ) : battleRouteId ? (
                           <Button asChild size="sm">
@@ -260,7 +283,7 @@ export default function CommandCenterCoins() {
             })}
           </div>
         ) : (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
             No launched coins yet.
           </div>
         )}
@@ -278,9 +301,9 @@ export default function CommandCenterCoins() {
               const href = campaignAddress ? `/token/${campaignAddress}` : "/command/coins";
 
               return (
-                <Link key={`${campaignAddress}-${name}`} to={href} className="rounded-2xl border border-border/50 bg-background/25 p-4 transition hover:border-accent/50 hover:bg-card/35">
+                <Link key={`${campaignAddress}-${name}`} to={href} className="mwz-hud-frame p-4 transition hover:border-accent/50 hover:bg-card/35">
                   <div className="flex items-center gap-3">
-                    <img src={image} alt={name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                    <img src={image} alt={name} className="h-12 w-12 shrink-0 border border-accent/30 object-cover" />
                     <div className="min-w-0">
                       <div className="truncate font-retro text-sm text-foreground">{name}</div>
                       <div className="text-xs text-muted-foreground">${ticker}</div>
@@ -301,7 +324,7 @@ export default function CommandCenterCoins() {
             })}
           </div>
         ) : (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
             No launched coins yet.
           </div>
         )}
@@ -309,19 +332,19 @@ export default function CommandCenterCoins() {
 
       <CommandCenterCard title="Prepare drafts" description="Drafts owned by this wallet.">
         {loadingDrafts ? (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">Loading drafts...</div>
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">Loading drafts...</div>
         ) : draftsError ? (
-          <div className="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{draftsError}</div>
+          <div className="mwz-hud-frame border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{draftsError}</div>
         ) : drafts.length > 0 ? (
-          <div className="grid gap-0 overflow-hidden rounded-2xl border border-border/50 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {drafts.map((draft) => (
               <Link
                 key={draft.id}
                 to={draftHref(draft)}
-                className="rounded-none border-0 border-b border-r border-border/50 bg-background/25 p-4 transition hover:bg-card/35"
+                className="mwz-hud-frame p-4 transition hover:bg-card/35"
               >
                 <div className="flex items-center gap-3">
-                  <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
+                  <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 border border-accent/30 object-cover" />
                   <div className="min-w-0">
                     <div className="truncate font-retro text-sm text-foreground">{draft.name}</div>
                     <div className="text-xs text-muted-foreground">${draft.ticker}</div>
@@ -349,7 +372,7 @@ export default function CommandCenterCoins() {
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
             No Prepare drafts yet.
           </div>
         )}
