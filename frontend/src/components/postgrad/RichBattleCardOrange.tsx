@@ -103,7 +103,7 @@ function BattleParticipantPanel({
   const scoreBasis = String((battle as any)?.scoreBasis ?? "score").replaceAll("_", " ");
 
   const panel = (
-    <div className={cn("mwz-orange-inner-frame p-4 transition-colors", isLeading ? "border-accent/60" : "", side === "right" && !isLeading ? "mwz-orange-grid" : null)}>
+    <div className={cn("mwz-hud-frame p-4 transition-colors", isLeading ? "border-accent/60" : "") }>
       <div className="flex items-start gap-3">
         <img src={imageUrl} alt={participant.tokenName} className="h-16 w-16 shrink-0 border border-accent/30 object-cover" />
         <div className="min-w-0 flex-1">
@@ -120,15 +120,15 @@ function BattleParticipantPanel({
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="mwz-orange-inner-frame px-3 py-2">
+        <div className="mwz-hud-frame px-3 py-2">
           <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Market cap</div>
           <div className="mt-1 font-retro text-sm text-foreground">{formatCompactUsd(marketCapUsd)}</div>
         </div>
-        <div className="mwz-orange-inner-frame px-3 py-2">
+        <div className="mwz-hud-frame px-3 py-2">
           <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">24h volume</div>
           <div className="mt-1 font-retro text-sm text-foreground">{formatCompactUsd(volumeUsd)}</div>
         </div>
-        <div className="mwz-orange-inner-frame px-3 py-2">
+        <div className="mwz-hud-frame px-3 py-2">
           <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{audience.label}</div>
           <div className="mt-1 font-retro text-sm text-foreground">{formatCompactCount(audience.value)}</div>
         </div>
@@ -165,7 +165,7 @@ export function RichBattleCardOrange({ battle, ctaLabel = "Open battle" }: { bat
   const rightShare = pool && pool.totalPotUsd > 0 ? Math.round((rightPoolUsd / pool.totalPotUsd) * 100) : 0;
 
   return (
-    <section className="mwz-orange-frame p-4">
+    <section className="mwz-hud-frame p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -194,7 +194,7 @@ export function RichBattleCardOrange({ battle, ctaLabel = "Open battle" }: { bat
         <BattleParticipantPanel participant={right} battle={battle} isLeading={leaderState.right} tied={leaderState.tied} side="right" poolUsd={rightPoolUsd} poolShare={rightShare} />
       </div>
 
-      <div className="mwz-orange-inner-frame mt-4 flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mwz-hud-frame mt-4 flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           {pool ? (
             <>
