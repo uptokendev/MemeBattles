@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Activity, CalendarDays, Database, Flame, RefreshCw, ShieldAlert, Trophy } from "lucide-react";
 
@@ -20,6 +20,26 @@ type Notice = {
 
 type EventStatus = ArenaEventSummary["status"];
 type BattleState = Battle["state"];
+
+type ArenaOpsHealthCheck = {
+  key: string;
+  label: string;
+  table: string;
+  ok: boolean;
+  count: number;
+  error?: string;
+};
+
+type ArenaOpsHealth = {
+  ok: boolean;
+  databaseOk: boolean;
+  databaseError?: string | null;
+  checks: ArenaOpsHealthCheck[];
+  missingTables: string[];
+  importedTables: string[];
+  durationMs: number;
+  updatedAt: string;
+};
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -77,9 +97,19 @@ async function transitionBattleViaApi(battleId: string, state: BattleState) {
   return json == null || json?.ok !== false;
 }
 
+async function fetchArenaOpsHealth(): Promise<ArenaOpsHealth | null> {
+  const response = await apiFetch("/api/arena/ops/health", { cache: "no-store" });
+  if (!response.ok) return null;
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== "object") return null;
+  return payload as ArenaOpsHealth;
+}
+
 export default function CommandCenterArenaOps() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [health, setHealth] = useState<ArenaOpsHealth | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const battles = useArenaBattleFeed();
   const events = useArenaEventFeed();
   const league = useArenaLeagueFeed();
@@ -91,6 +121,18 @@ export default function CommandCenterArenaOps() {
   const liveEvents = events.events.filter((event) => event.status === "live");
   const scheduledEvents = events.events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const allBattles = [...battles.openForBattleQueue, ...battles.liveBattles];
+
+  const refreshHealth = async () => {
+    setHealthLoading(true);
+    const nextHealth = await fetchArenaOpsHealth().catch(() => null);
+    setHealth(nextHealth);
+    setHealthLoading(false);
+    return Boolean(nextHealth);
+  };
+
+  useEffect(() => {
+    void refreshHealth();
+  }, []);
 
   const runAction = async (label: string, action: () => Promise<boolean>) => {
     setBusyAction(label);
@@ -111,6 +153,7 @@ export default function CommandCenterArenaOps() {
       events.refreshFeed(),
       league.refreshFeed(),
       warPools.refreshSummary(),
+      refreshHealth(),
     ]);
     return true;
   };
@@ -118,7 +161,7 @@ export default function CommandCenterArenaOps() {
   const transitionBattle = async (battleId: string, state: BattleState) => {
     const ok = await transitionBattleViaApi(battleId, state);
     if (ok) {
-      await Promise.all([battles.refreshFeed(), warPools.refreshSummary()]);
+      await Promise.all([battles.refreshFeed(), warPools.refreshSummary(), refreshHealth()]);
     }
     return ok;
   };
@@ -185,6 +228,42 @@ export default function CommandCenterArenaOps() {
           <div className="mt-2 text-xs text-muted-foreground">{league.season.label} · {league.season.state}</div>
         </div>
       </div>
+
+      <CommandCenterCard title="Import health" description="Confirms the Arena and sponsorship tables are available in the active database.">
+        {health ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <TacticalTag label={health.ok ? "all imports online" : "missing imports"} tone={health.ok ? "success" : "hot"} />
+                <span className="text-xs text-muted-foreground">DB {health.databaseOk ? "connected" : "offline"} · checked {formatDateTime(health.updatedAt)} · {health.durationMs}ms</span>
+              </div>
+              <Button size="sm" variant="outline" disabled={healthLoading} onClick={() => void runAction("Refresh import health", refreshHealth)}>
+                {healthLoading ? "Checking..." : "Refresh health"}
+              </Button>
+            </div>
+            {health.databaseError ? <div className="mwz-hud-frame p-3 text-xs text-rose-100">{health.databaseError}</div> : null}
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {health.checks.map((check) => (
+                <div key={check.key} className="mwz-hud-frame p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-foreground">{check.label}</div>
+                      <div className="mt-1 truncate text-[11px] text-muted-foreground">{check.table}</div>
+                    </div>
+                    <TacticalTag label={check.ok ? "ok" : "missing"} tone={check.ok ? "success" : "hot"} />
+                  </div>
+                  <div className="mt-3 font-retro text-xl text-foreground">{check.count.toLocaleString()}</div>
+                  {check.error ? <div className="mt-2 line-clamp-2 text-[11px] text-rose-100">{check.error}</div> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
+            {healthLoading ? "Checking Arena imports..." : "Arena import health is not available yet."}
+          </div>
+        )}
+      </CommandCenterCard>
 
       <CommandCenterCard title="Battle controls" description="Advance active battle records from queue to live, completed, and settled states.">
         {allBattles.length > 0 ? (
