@@ -34,6 +34,7 @@ import rewards from "./rewards.js";
 import shareCard from "./shareCard.js";
 import prepareShareCard from "./prepare-share-card.js";
 import sponsored from "./sponsored.js";
+import sponsorshipApplications from "./sponsorship-applications.js";
 import status from "./status.js";
 import tokenMetadata from "./token-metadata.js";
 import upload from "./upload.js";
@@ -248,6 +249,7 @@ router.all("/profileCabinet", wrap(profileCabinet));
 router.all("/shareCard", wrap(shareCard));
 router.all("/prepare-share-card", wrap(prepareShareCard));
 router.all("/sponsored", wrap(sponsored));
+router.all("/sponsorship-applications", wrap(sponsorshipApplications));
 router.all("/status", wrap(status));
 router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
 router.all("/token-metadata", wrap(tokenMetadata));
@@ -358,8 +360,10 @@ app.use((req, res) => res.status(404).json({ error: `Unknown route: ${req.path}`
 app.use((err, _req, res, _next) => {
   console.error("[api/server] unhandled", err);
   if (res.headersSent) return;
-  res.status(500).json({ error: "Server error" });
+  res.status(500).json({ error: "Internal server error", detail: String(err?.message || err) });
 });
 
 const port = Number(process.env.PORT || process.env.API_PORT || 3001);
-app.listen(port, "0.0.0.0", () => console.log(`[api/server] listening on 0.0.0.0:${port}`));
+app.listen(port, () => {
+  console.log(`[api/server] listening on :${port}`);
+});
