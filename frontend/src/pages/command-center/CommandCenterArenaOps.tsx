@@ -7,7 +7,7 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
-import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
+import { useArenaEventFeed, type ArenaEventSummary } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 import { useArenaWarPoolSummary } from "@/hooks/useArenaWarPoolFeed";
 
@@ -15,6 +15,8 @@ type Notice = {
   tone: "success" | "error";
   message: string;
 };
+
+type EventStatus = ArenaEventSummary["status"];
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -31,6 +33,13 @@ function sourceLabel(source: string) {
   if (source === "api") return "Database API";
   if (source === "qa-runtime") return "QA Runtime";
   return "Empty";
+}
+
+function getNextEventStatus(status: EventStatus): EventStatus | null {
+  if (status === "scheduled") return "deploying";
+  if (status === "deploying") return "live";
+  if (status === "live") return "completed";
+  return null;
 }
 
 export default function CommandCenterArenaOps() {
@@ -139,7 +148,7 @@ export default function CommandCenterArenaOps() {
         {events.events.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {events.events.map((event) => {
-              const nextStatus = event.status === "scheduled" ? "deploying" : event.status === "deploying" ? "live" : event.status === "live" ? "completed" : null;
+              const nextStatus = getNextEventStatus(event.status);
               const canAdvanceBracket = event.type === "tournament" && event.bracketStage !== "completed";
               return (
                 <div key={event.id} className="mwz-hud-frame p-4">
