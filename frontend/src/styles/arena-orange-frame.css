@@ -50,16 +50,16 @@
   pointer-events: none;
   clip-path: inherit;
   background:
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) left bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep, #8f4f00), var(--mwz-orange-deep, #8f4f00)) right bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange, #ff9900), var(--mwz-orange, #ff9900)) left 20px top / calc(100% - 40px) 1px no-repeat,
-    linear-gradient(var(--mwz-orange, #ff9900), var(--mwz-orange, #ff9900)) left 20px bottom / calc(100% - 40px) 1px no-repeat;
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px top / calc(100% - 40px) 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px bottom / calc(100% - 40px) 1px no-repeat;
   opacity: 0.96;
 }
 
@@ -80,9 +80,7 @@
     calc(var(--mwz-orange-cut) - 8px) 100%,
     0 calc(100% - (var(--mwz-orange-cut) - 8px)),
     0 calc(var(--mwz-orange-cut) - 8px)
-  );
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  background: rgba(56, 58, 58, 0.56);
+  ); 
   opacity: 1;
 }
 

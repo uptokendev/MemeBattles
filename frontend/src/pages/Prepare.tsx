@@ -255,7 +255,6 @@ function WarzoneHudPreview({
             <img
   src={imageUrl}
   alt={`${ticker} campaign image`}
-  className="h-full w-full object-contain p-1 md:p-1.5"
   draggable={false}
 />
 
