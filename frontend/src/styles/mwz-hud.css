@@ -122,17 +122,14 @@ img.rounded-full,
     0 var(--mwz-cut-corner)
   );
   border: 1px solid rgba(255, 153, 0, 0.34);
-  background:
-    linear-gradient(180deg, rgba(18, 19, 19, 0.95), rgba(10, 11, 11, 0.98)),
-    linear-gradient(180deg, rgba(255, 153, 0, 0.03), rgba(255, 153, 0, 0));
+  background: rgba(24, 25, 25, 0.96);
   box-shadow:
     inset 0 0 0 1px rgba(255, 153, 0, 0.06),
-    0 0 16px rgba(255, 153, 0, 0.08),
-    0 22px 45px -32px rgba(0, 0, 0, 0.95);
+    0 18px 40px -34px rgba(0, 0, 0, 0.95);
 }
 
 .mwz-hud-frame {
-  overflow: visible;
+  overflow: hidden;
 }
 
 .mwz-hud-frame::before,
@@ -144,17 +141,17 @@ img.rounded-full,
   pointer-events: none;
   clip-path: inherit;
   background:
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 18px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 1px 18px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 18px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 1px 18px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 18px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 1px 18px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 18px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 1px 18px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 22px top / calc(100% - 44px) 1px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 22px bottom / calc(100% - 44px) 1px no-repeat;
-  opacity: 0.95;
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 20px 1px no-repeat,
+    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 1px 20px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px top / calc(100% - 40px) 1px no-repeat,
+    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px bottom / calc(100% - 40px) 1px no-repeat;
+  opacity: 0.96;
 }
 
 .mwz-hud-frame::after,
@@ -162,22 +159,20 @@ img.rounded-full,
 .mwz-card::after {
   content: "";
   position: absolute;
-  inset: 7px;
+  inset: 8px;
   pointer-events: none;
   clip-path: polygon(
-    calc(var(--mwz-cut-corner) - 7px) 0,
-    calc(100% - (var(--mwz-cut-corner) - 7px)) 0,
-    100% calc(var(--mwz-cut-corner) - 7px),
-    100% calc(100% - (var(--mwz-cut-corner) - 7px)),
-    calc(100% - (var(--mwz-cut-corner) - 7px)) 100%,
-    calc(var(--mwz-cut-corner) - 7px) 100%,
-    0 calc(100% - (var(--mwz-cut-corner) - 7px)),
-    0 calc(var(--mwz-cut-corner) - 7px)
+    calc(var(--mwz-cut-corner) - 8px) 0,
+    calc(100% - (var(--mwz-cut-corner) - 8px)) 0,
+    100% calc(var(--mwz-cut-corner) - 8px),
+    100% calc(100% - (var(--mwz-cut-corner) - 8px)),
+    calc(100% - (var(--mwz-cut-corner) - 8px)) 100%,
+    calc(var(--mwz-cut-corner) - 8px) 100%,
+    0 calc(100% - (var(--mwz-cut-corner) - 8px)),
+    0 calc(var(--mwz-cut-corner) - 8px)
   );
   border: 1px solid rgba(255, 255, 255, 0.035);
-  background:
-    linear-gradient(180deg, rgba(22, 24, 24, 0.82), rgba(12, 13, 13, 0.86)),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0, rgba(255, 255, 255, 0.012) 1px, transparent 1px, transparent 4px);
+  background: rgba(56, 58, 58, 0.54);
   z-index: 0;
 }
 
@@ -196,8 +191,7 @@ img.rounded-full,
   border-color: rgba(255, 153, 0, 0.62);
   box-shadow:
     inset 0 0 0 1px rgba(255, 153, 0, 0.1),
-    0 0 20px rgba(255, 153, 0, 0.14),
-    0 0 14px rgba(255, 153, 0, 0.08);
+    0 16px 34px -30px rgba(0, 0, 0, 0.95);
   transform: translateY(-1px);
 }
 
@@ -256,92 +250,4 @@ img.rounded-full,
   text-transform: uppercase;
   letter-spacing: 0.13em;
   text-shadow: 0 0 10px rgba(57, 255, 79, 0.24);
-}
-
-.mwz-muted {
-  color: rgba(57, 255, 79, 0.58);
-}
-
-.mwz-orange {
-  color: var(--mwz-orange);
-}
-
-.mwz-chip {
-  border: 1px solid rgba(57, 255, 79, 0.38) !important;
-  background: rgba(1, 14, 3, 0.76) !important;
-  color: var(--mwz-green) !important;
-  border-radius: 0 !important;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.mwz-chip-active {
-  border-color: rgba(255, 153, 0, 0.9) !important;
-  color: var(--mwz-orange) !important;
-  background: rgba(255, 153, 0, 0.06) !important;
-}
-
-.mwz-stat-grid {
-  background-image:
-    linear-gradient(rgba(57, 255, 79, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(57, 255, 79, 0.08) 1px, transparent 1px);
-  background-size: 24px 24px;
-}
-
-.mwz-progress-strip {
-  height: 10px;
-  border: 1px solid rgba(57, 255, 79, 0.36);
-  background:
-    repeating-linear-gradient(90deg, transparent 0 8px, rgba(57, 255, 79, 0.18) 8px 9px),
-    linear-gradient(90deg, rgba(255, 153, 0, 0.78), rgba(57, 255, 79, 0.86));
-  box-shadow: 0 0 13px rgba(57, 255, 79, 0.22);
-}
-
-.mwz-radar {
-  position: relative;
-  width: 128px;
-  height: 128px;
-  border: 1px solid rgba(57, 255, 79, 0.42);
-  border-radius: 9999px !important;
-  background:
-    radial-gradient(circle, transparent 0 17%, rgba(57, 255, 79, 0.08) 18% 19%, transparent 20% 39%, rgba(57, 255, 79, 0.08) 40% 41%, transparent 42% 62%, rgba(57, 255, 79, 0.08) 63% 64%, transparent 65%),
-    conic-gradient(from 0deg, rgba(57, 255, 79, 0.32), transparent 18%, transparent 100%);
-  box-shadow: 0 0 24px rgba(57, 255, 79, 0.12), inset 0 0 18px rgba(57, 255, 79, 0.06);
-}
-
-.mwz-radar::before,
-.mwz-radar::after {
-  content: "";
-  position: absolute;
-  inset: 50% 8px auto 8px;
-  height: 1px;
-  background: rgba(57, 255, 79, 0.62);
-}
-
-.mwz-radar::after {
-  transform: rotate(90deg);
-}
-
-.mwz-radar-sweep {
-  position: absolute;
-  inset: 50% 50% auto auto;
-  width: 52%;
-  height: 1px;
-  transform-origin: right center;
-  background: linear-gradient(90deg, transparent, var(--mwz-green));
-  animation: mwz-radar-spin 4s linear infinite;
-}
-
-.mwz-scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(57, 255, 79, 0.86), transparent);
-  box-shadow: 0 0 18px rgba(57, 255, 79, 0.34);
-}
-
-@keyframes mwz-radar-spin {
-  to { transform: rotate(360deg); }
 }
