@@ -95,8 +95,10 @@ function createPlaceholderParticipant() {
 }
 
 function createBattleFromCampaign(row) {
+  const participant = createBattleParticipant(row);
   return {
     id: `arena-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+    chainId: Number(row.chain_id) || 97,
     state: "open_for_battle",
     format: "duel",
     startedAt: nowIso(),
@@ -104,16 +106,12 @@ function createBattleFromCampaign(row) {
     settlementAt: plusHoursIso(14),
     featured: false,
     arenaLane: "open_for_battle",
-    participants: [createBattleParticipant(row), createPlaceholderParticipant()],
+    participants: [participant, createPlaceholderParticipant()],
   };
 }
 
 function sortBattlesNewestFirst(left, right) {
   return Date.parse(right.startedAt || right.endsAt || 0) - Date.parse(left.startedAt || left.endsAt || 0);
-}
-
-function findBattleById(battleId) {
-  return getBattleStore().battles.find((battle) => battle.id === battleId) || null;
 }
 
 function battleMatchesIdentity(battle, identity) {
@@ -126,18 +124,189 @@ function battleMatchesIdentity(battle, identity) {
     : false;
 }
 
-function findActiveBattleForCampaign(row) {
+function mapBattleRow(row) {
+  if (!row) return null;
+  const participants = Array.isArray(row.participants) ? row.participants : [];
+  return {
+    id: String(row.id),
+    chainId: Number(row.chain_id ?? row.chainId ?? 97),
+    state: String(row.state || "open_for_battle"),
+    format: String(row.format || "duel"),
+    startedAt: row.started_at || row.startedAt || row.created_at || row.createdAt || nowIso(),
+    endsAt: row.ends_at || row.endsAt || null,
+    settlementAt: row.settlement_at || row.settlementAt || null,
+    featured: Boolean(row.featured),
+    arenaLane: row.arena_lane || row.arenaLane || (PUBLIC_QUEUE_STATES.has(String(row.state)) ? "open_for_battle" : "live_battles"),
+    scoreBasis: row.score_basis || row.scoreBasis || "market_cap",
+    leaderSide: row.leader_side || row.leaderSide || null,
+    updatedAt: row.updated_at || row.updatedAt || row.created_at || row.createdAt || nowIso(),
+    participants,
+  };
+}
+
+async function listDbBattles() {
+  const result = await pool.query(
+    `select
+       id,
+       chain_id,
+       state,
+       format,
+       participants,
+       started_at,
+       ends_at,
+       settlement_at,
+       featured,
+       arena_lane,
+       score_basis,
+       leader_side,
+       created_at,
+       updated_at
+     from public.arena_battles
+     where state in ('open_for_battle', 'pending', 'accepted', 'live', 'completed', 'settled')
+     order by coalesce(updated_at, created_at) desc
+     limit 200`,
+  );
+  return result.rows.map(mapBattleRow).filter(Boolean);
+}
+
+async function findDbBattleById(battleId) {
+  const result = await pool.query(
+    `select
+       id,
+       chain_id,
+       state,
+       format,
+       participants,
+       started_at,
+       ends_at,
+       settlement_at,
+       featured,
+       arena_lane,
+       score_basis,
+       leader_side,
+       created_at,
+       updated_at
+     from public.arena_battles
+     where id = $1
+     limit 1`,
+    [battleId],
+  );
+  return mapBattleRow(result.rows?.[0]);
+}
+
+async function findActiveDbBattleForCampaign(row) {
   const campaignAddress = normalizeAddress(row?.campaign_address);
   const tokenAddress = normalizeAddress(row?.token_address);
-  return (
-    getBattleStore().battles.find((battle) => {
-      if (!ACTIVE_BATTLE_STATES.has(String(battle?.state || ""))) return false;
-      return battleMatchesIdentity(battle, campaignAddress) || (tokenAddress ? battleMatchesIdentity(battle, tokenAddress) : false);
-    }) || null
+  if (!campaignAddress && !tokenAddress) return null;
+
+  const result = await pool.query(
+    `select
+       id,
+       chain_id,
+       state,
+       format,
+       participants,
+       started_at,
+       ends_at,
+       settlement_at,
+       featured,
+       arena_lane,
+       score_basis,
+       leader_side,
+       created_at,
+       updated_at
+     from public.arena_battles
+     where state in ('open_for_battle', 'pending', 'accepted', 'live', 'completed')
+       and (
+         lower(coalesce(primary_campaign_address, '')) = $1
+         or lower(coalesce(primary_token_address, '')) = $2
+         or participants::text ilike $3
+         or participants::text ilike $4
+       )
+     order by coalesce(updated_at, created_at) desc
+     limit 1`,
+    [campaignAddress, tokenAddress, `%${campaignAddress}%`, tokenAddress ? `%${tokenAddress}%` : "__never_match__"],
+  );
+  return mapBattleRow(result.rows?.[0]);
+}
+
+async function insertDbBattle(battle, campaign) {
+  await pool.query(
+    `insert into public.arena_battles (
+       id,
+       chain_id,
+       state,
+       format,
+       primary_campaign_address,
+       primary_token_address,
+       creator_address,
+       participants,
+       started_at,
+       ends_at,
+       settlement_at,
+       featured,
+       arena_lane,
+       score_basis,
+       leader_side
+     ) values (
+       $1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15
+     )`,
+    [
+      battle.id,
+      Number(campaign?.chain_id) || battle.chainId || 97,
+      battle.state,
+      battle.format,
+      normalizeAddress(campaign?.campaign_address),
+      normalizeAddress(campaign?.token_address) || null,
+      normalizeAddress(campaign?.creator_address) || null,
+      JSON.stringify(battle.participants),
+      battle.startedAt || nowIso(),
+      battle.endsAt || null,
+      battle.settlementAt || null,
+      Boolean(battle.featured),
+      battle.arenaLane || "open_for_battle",
+      battle.scoreBasis || "market_cap",
+      battle.leaderSide || null,
+    ],
   );
 }
 
-function listBattleFeed() {
+async function transitionDbBattle(battle, nextState) {
+  const nextLane = nextState === "live" ? "live_battles" : PUBLIC_QUEUE_STATES.has(nextState) ? "open_for_battle" : "live_battles";
+  const startedAt = nextState === "live" && !battle.startedAt ? nowIso() : battle.startedAt;
+  const endsAt = nextState === "completed" ? nowIso() : battle.endsAt;
+  const settlementAt = nextState === "settled" ? nowIso() : battle.settlementAt;
+
+  const result = await pool.query(
+    `update public.arena_battles
+       set state = $2,
+           arena_lane = $3,
+           started_at = $4,
+           ends_at = $5,
+           settlement_at = $6,
+           updated_at = now()
+     where id = $1
+     returning
+       id,
+       chain_id,
+       state,
+       format,
+       participants,
+       started_at,
+       ends_at,
+       settlement_at,
+       featured,
+       arena_lane,
+       score_basis,
+       leader_side,
+       created_at,
+       updated_at`,
+    [battle.id, nextState, nextLane, startedAt, endsAt, settlementAt],
+  );
+  return mapBattleRow(result.rows?.[0]);
+}
+
+function listMemoryBattleFeed() {
   const battles = [...getBattleStore().battles].sort(sortBattlesNewestFirst);
   return {
     liveBattles: battles.filter((battle) => PUBLIC_LIVE_STATES.has(battle.state)),
@@ -150,6 +319,54 @@ function listBattleFeed() {
         archivedAt: battle.settlementAt || battle.endsAt || battle.startedAt || nowIso(),
       })),
   };
+}
+
+async function listBattleFeed() {
+  try {
+    const battles = (await listDbBattles()).sort(sortBattlesNewestFirst);
+    return {
+      liveBattles: battles.filter((battle) => PUBLIC_LIVE_STATES.has(battle.state)),
+      openForBattleQueue: battles.filter((battle) => PUBLIC_QUEUE_STATES.has(battle.state)),
+      archivedBattles: battles
+        .filter((battle) => ARCHIVE_STATES.has(battle.state))
+        .slice(0, 12)
+        .map((battle) => ({
+          battle,
+          archivedAt: battle.settlementAt || battle.endsAt || battle.startedAt || nowIso(),
+        })),
+    };
+  } catch (error) {
+    console.warn("[api/arenaBattles] DB battle feed unavailable, using memory store", error);
+    return listMemoryBattleFeed();
+  }
+}
+
+async function findBattleById(battleId) {
+  try {
+    const dbBattle = await findDbBattleById(battleId);
+    if (dbBattle) return dbBattle;
+  } catch (error) {
+    console.warn("[api/arenaBattles] DB battle detail unavailable, using memory store", error);
+  }
+  return getBattleStore().battles.find((battle) => battle.id === battleId) || null;
+}
+
+async function findActiveBattleForCampaign(row) {
+  try {
+    const dbBattle = await findActiveDbBattleForCampaign(row);
+    if (dbBattle) return dbBattle;
+  } catch (error) {
+    console.warn("[api/arenaBattles] DB active battle lookup unavailable, using memory store", error);
+  }
+
+  const campaignAddress = normalizeAddress(row?.campaign_address);
+  const tokenAddress = normalizeAddress(row?.token_address);
+  return (
+    getBattleStore().battles.find((battle) => {
+      if (!ACTIVE_BATTLE_STATES.has(String(battle?.state || ""))) return false;
+      return battleMatchesIdentity(battle, campaignAddress) || (tokenAddress ? battleMatchesIdentity(battle, tokenAddress) : false);
+    }) || null
+  );
 }
 
 async function fetchCampaignByIdentity({ chainId, identity }) {
@@ -220,8 +437,8 @@ async function fetchCreatorCampaigns({ chainId, creatorAddress, limit }) {
   return result.rows || [];
 }
 
-function buildCreatorStatus(row) {
-  const battle = findActiveBattleForCampaign(row);
+async function buildCreatorStatus(row) {
+  const battle = await findActiveBattleForCampaign(row);
   const lifecycle = getCampaignLifecycle(row);
 
   if (battle) {
@@ -296,7 +513,7 @@ function buildCreatorStatus(row) {
 }
 
 async function handleList(_req, res) {
-  return json(res, 200, listBattleFeed());
+  return json(res, 200, await listBattleFeed());
 }
 
 async function handleCreatorStatus(req, res) {
@@ -311,8 +528,9 @@ async function handleCreatorStatus(req, res) {
 
   try {
     const rows = await fetchCreatorCampaigns({ chainId, creatorAddress, limit });
+    const items = await Promise.all(rows.map((row) => buildCreatorStatus(row)));
     return json(res, 200, {
-      items: rows.map((row) => buildCreatorStatus(row)),
+      items,
       updatedAt: nowIso(),
     });
   } catch (error) {
@@ -332,7 +550,7 @@ async function handleOpen(req, res) {
     const campaign = await fetchCampaignByIdentity({ chainId, identity });
     if (!campaign) return json(res, 404, { ok: false, error: "Campaign not found", reason: "campaign_not_found" });
 
-    const creatorStatus = buildCreatorStatus(campaign);
+    const creatorStatus = await buildCreatorStatus(campaign);
     if (!creatorStatus.eligibility) {
       return json(res, 409, {
         ok: false,
@@ -342,8 +560,14 @@ async function handleOpen(req, res) {
     }
 
     const battle = createBattleFromCampaign(campaign);
-    getBattleStore().battles.unshift(battle);
-    return json(res, 200, { ok: true, battle, creatorStatus: buildCreatorStatus(campaign) });
+    try {
+      await insertDbBattle(battle, campaign);
+    } catch (error) {
+      console.warn("[api/arenaBattles] DB battle insert unavailable, using memory store", error);
+      getBattleStore().battles.unshift(battle);
+    }
+
+    return json(res, 200, { ok: true, battle, creatorStatus: await buildCreatorStatus(campaign) });
   } catch (error) {
     console.error("[api/arenaBattles] open failed", error);
     return json(res, 500, { ok: false, error: "Unable to open battle" });
@@ -351,13 +575,13 @@ async function handleOpen(req, res) {
 }
 
 async function handleDetail(_req, res, battleId) {
-  const battle = findBattleById(battleId);
+  const battle = await findBattleById(battleId);
   if (!battle) return json(res, 404, { error: "Battle not found" });
   return json(res, 200, { battle });
 }
 
 async function handleTransition(req, res, battleId) {
-  const battle = findBattleById(battleId);
+  const battle = await findBattleById(battleId);
   if (!battle) return json(res, 404, { ok: false, error: "Battle not found" });
   const body = await readJson(req);
   const nextState = String(body?.state || "");
@@ -369,8 +593,15 @@ async function handleTransition(req, res, battleId) {
     return json(res, 409, { ok: false, error: "Invalid battle transition", currentState: battle.state });
   }
 
+  try {
+    const updated = await transitionDbBattle(battle, nextState);
+    if (updated) return json(res, 200, { ok: true, battle: updated });
+  } catch (error) {
+    console.warn("[api/arenaBattles] DB battle transition unavailable, using memory store", error);
+  }
+
   battle.state = nextState;
-  battle.arenaLane = nextState === "live" ? "live_battles" : nextState === "open_for_battle" || nextState === "pending" || nextState === "accepted" ? "open_for_battle" : "live_battles";
+  battle.arenaLane = nextState === "live" ? "live_battles" : PUBLIC_QUEUE_STATES.has(nextState) ? "open_for_battle" : "live_battles";
   if (nextState === "live" && !battle.startedAt) battle.startedAt = nowIso();
   if (nextState === "completed") battle.endsAt = nowIso();
   if (nextState === "settled") battle.settlementAt = nowIso();
