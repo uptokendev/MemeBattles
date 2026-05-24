@@ -38,7 +38,7 @@ function PostGradPanel({
   className?: string;
 }) {
   return (
-    <section className={cn("mwz-hud-frame mwz-card p-4", className)}>
+    <section className={cn("mwz-hud-frame p-4", className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           {eyebrow ? <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">{eyebrow}</div> : null}
