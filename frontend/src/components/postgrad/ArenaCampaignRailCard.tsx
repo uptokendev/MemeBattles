@@ -83,20 +83,15 @@ function dedupeActions(actions: ArenaCampaignRailAction[]) {
   });
 }
 
-function emitSponsorSpotIntent() {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("memebattles:sponsorSpotIntent"));
-}
-
 function ArenaSponsorSpotCard() {
   return (
-    <button type="button" onClick={emitSponsorSpotIntent} className="block shrink-0 text-left">
+    <RailLink href="/sponsorships/apply" className="block shrink-0 text-left">
       <RailFrame>
         <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Sponsor spot</div>
         <div className="mt-4 font-retro text-2xl uppercase tracking-[0.03em] text-foreground">Want this sponsor spot?</div>
-        <div className="mt-3 text-sm text-muted-foreground">Click here.</div>
+        <div className="mt-3 text-sm text-muted-foreground">Apply here.</div>
       </RailFrame>
-    </button>
+    </RailLink>
   );
 }
 
