@@ -12,7 +12,7 @@ function isDiscordConfigured() {
   return Boolean(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_REDIRECT_URI);
 }
 
-function socialConfig() {
+function baseSocialConfig() {
   return {
     xOAuthConfigured: isXOAuthConfigured(),
     telegramConfigured: isTelegramConfigured(),
@@ -23,13 +23,26 @@ function socialConfig() {
   };
 }
 
+function socialConfigForUser(req, accounts = []) {
+  const config = baseSocialConfig();
+  const hasDiscordAccount = accounts.some((account) => account.provider === "discord");
+
+  if (config.discordConfigured && hasDiscordAccount) {
+    const proto = String(req.headers?.["x-forwarded-proto"] || "https");
+    const host = String(req.headers?.host || "quests.memewar.zone");
+    config.discordInviteUrl = `${proto}://${host}/api/wm-discord-oauth-start`;
+  }
+
+  return config;
+}
+
 export default async function wmSocialStatus(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed." });
 
   const unauthenticated = {
     ok: true,
     authenticated: false,
-    ...socialConfig(),
+    ...baseSocialConfig(),
     profile: null,
     accounts: [],
     communityChecks: [],
@@ -63,18 +76,20 @@ export default async function wmSocialStatus(req, res) {
       buildWarProfile(user),
     ]);
 
+    const accounts = accountsResult.rows.map((account) => ({
+      provider: account.provider,
+      providerUserId: account.provider_user_id,
+      username: account.username || account.provider_user_id,
+      lastVerifiedAt: account.last_verified_at || null,
+      createdAt: null,
+    }));
+
     return res.status(200).json({
       ok: true,
       authenticated: true,
-      ...socialConfig(),
+      ...socialConfigForUser(req, accounts),
       profile,
-      accounts: accountsResult.rows.map((account) => ({
-        provider: account.provider,
-        providerUserId: account.provider_user_id,
-        username: account.username || account.provider_user_id,
-        lastVerifiedAt: account.last_verified_at || null,
-        createdAt: null,
-      })),
+      accounts,
       communityChecks: [
         ...communityChecks,
         {
