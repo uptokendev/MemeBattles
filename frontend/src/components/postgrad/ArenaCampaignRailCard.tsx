@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { Globe2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { cn } from "@/lib/utils";
@@ -36,16 +35,7 @@ function RailLink({ href, children, className }: { href: string; children: React
 }
 
 function RailFrame({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        "min-w-[440px] border border-accent/45 bg-[linear-gradient(180deg,rgba(16,16,12,0.95),rgba(7,8,7,0.98))] px-4 py-3",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
+  return <div className={cn("mwz-hud-frame mwz-card min-w-[440px] px-4 py-3", className)}>{children}</div>;
 }
 
 export function ArenaFallbackRailCard({
@@ -115,6 +105,21 @@ function getActionTone(label: string) {
   return "border-white/12 text-white hover:bg-white/8";
 }
 
+function RailAction({ action }: { action: ArenaCampaignRailAction }) {
+  return (
+    <RailLink
+      href={action.href}
+      className={cn(
+        "inline-flex min-w-[144px] items-center justify-center border bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors",
+        getActionTone(action.label),
+      )}
+    >
+      {/website/i.test(action.label) ? <Globe2 className="mr-2 h-3.5 w-3.5" /> : null}
+      {action.label}
+    </RailLink>
+  );
+}
+
 export function ArenaCampaignRailCard({
   item,
   rankTone = "success",
@@ -148,21 +153,8 @@ export function ArenaCampaignRailCard({
           </div>
           {sponsorWebsiteUrl ? (
             <div className="flex shrink-0 flex-col gap-2 pt-1">
-              <RailLink
-                href={sponsorWebsiteUrl}
-                className="inline-flex min-w-[144px] items-center justify-center border border-emerald-500/35 bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-100 transition-colors hover:bg-emerald-500/10"
-              >
-                <Globe2 className="mr-2 h-3.5 w-3.5" />
-                Website
-              </RailLink>
-              {!isExternalHref(item.href) ? (
-                <RailLink
-                  href={item.href}
-                  className="inline-flex min-w-[144px] items-center justify-center border border-white/12 bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/8"
-                >
-                  Open placement
-                </RailLink>
-              ) : null}
+              <RailAction action={{ label: "Website", href: sponsorWebsiteUrl }} />
+              {!isExternalHref(item.href) ? <RailAction action={{ label: "Open placement", href: item.href }} /> : null}
             </div>
           ) : null}
         </div>
@@ -212,17 +204,7 @@ export function ArenaCampaignRailCard({
         {cardActions.length ? (
           <div className="flex shrink-0 flex-col gap-2 pt-1">
             {cardActions.map((action) => (
-              <RailLink
-                key={`${item.id}-${action.href}-${action.label}`}
-                href={action.href}
-                className={cn(
-                  "inline-flex min-w-[144px] items-center justify-center border bg-black/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors",
-                  getActionTone(action.label),
-                )}
-              >
-                {/website/i.test(action.label) ? <Globe2 className="mr-2 h-3.5 w-3.5" /> : null}
-                {action.label}
-              </RailLink>
+              <RailAction key={`${item.id}-${action.href}-${action.label}`} action={action} />
             ))}
           </div>
         ) : null}
@@ -292,9 +274,5 @@ export function ArenaCampaignRail({
     );
   }
 
-  return (
-    <RailFrame className="w-full min-w-0 p-5 text-sm text-muted-foreground">
-      {emptyLabel}
-    </RailFrame>
-  );
+  return <RailFrame className="w-full min-w-0 p-5 text-sm text-muted-foreground">{emptyLabel}</RailFrame>;
 }
