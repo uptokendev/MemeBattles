@@ -35,7 +35,7 @@ function RailLink({ href, children, className }: { href: string; children: React
 }
 
 function RailFrame({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("mwz-orange-frame min-w-[440px] px-4 py-3", className)}>{children}</div>;
+  return <div className={cn("mwz-hud-frame min-w-[440px] px-4 py-3", className)}>{children}</div>;
 }
 
 export function ArenaFallbackRailCard({
@@ -92,7 +92,7 @@ function ArenaSponsorSpotCard() {
   return (
     <button type="button" onClick={emitSponsorSpotIntent} className="block shrink-0 text-left">
       <RailFrame>
-        <div className="mwz-orange-frame-label text-[10px]">Sponsor spot</div>
+        <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Sponsor spot</div>
         <div className="mt-4 font-retro text-2xl uppercase tracking-[0.03em] text-foreground">Want this sponsor spot?</div>
         <div className="mt-3 text-sm text-muted-foreground">Click here.</div>
       </RailFrame>
