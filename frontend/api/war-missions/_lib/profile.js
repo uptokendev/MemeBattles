@@ -133,6 +133,32 @@ async function getCompletedQuestSlugs(userId) {
   return rows.map((row) => row.slug).filter(Boolean);
 }
 
+export async function syncDailyWarpathQuestForUser(userId) {
+  const requiredQuestSlugs = [
+    "drop-frontline-propaganda",
+    "provide-covering-fire",
+    "relay-the-battleplan",
+    "maintain-radio-discipline",
+  ];
+  const completedQuestSlugs = new Set(await getCompletedQuestSlugs(userId));
+
+  if (!requiredQuestSlugs.every((slug) => completedQuestSlugs.has(slug))) {
+    return { eligible: false, awarded: false, reason: "requirements_incomplete" };
+  }
+
+  const result = await awardQuestForUser(userId, "complete-daily-warpath", "daily_warpath_auto_complete", {
+    source: "quests_list_auto_sync",
+    requiredQuestSlugs,
+  });
+
+  return {
+    eligible: true,
+    awarded: result.awarded,
+    reason: result.reason,
+    completionId: result.completionId,
+  };
+}
+
 function emptyBadgeSummary() {
   const types = ["identity", "mission", "xp", "streak", "recruiter", "manual"];
   return {
