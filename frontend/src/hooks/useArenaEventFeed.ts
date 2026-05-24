@@ -179,6 +179,7 @@ export function useArenaEventFeed() {
     archivedEvents: apiPayload?.archivedEvents ?? (allowMockFallback ? runtime.archivedEvents : []),
     transitionEvent,
     advanceTournamentBracket,
+    refreshFeed,
   };
 }
 
@@ -255,5 +256,6 @@ export function useArenaEventDetails(eventId?: string) {
     event: apiEvent ?? (allowMockFallback ? runtime.event : null),
     transitionEvent,
     advanceTournamentBracket,
+    refreshEvent,
   };
 }
