@@ -38,11 +38,11 @@ function PostGradPanel({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-white/10 bg-black/30 p-4 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.85)] backdrop-blur-sm", className)}>
+    <section className={cn("mwz-hud-frame mwz-card p-4", className)}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           {eyebrow ? <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">{eyebrow}</div> : null}
-          <h2 className="mt-1 text-lg font-semibold text-white">{title}</h2>
+          <h2 className="mt-1 font-retro text-lg uppercase tracking-[0.04em] text-foreground">{title}</h2>
         </div>
       </div>
       {children}
@@ -63,7 +63,7 @@ export function TacticalTag({ label, tone = "default" }: { label: string; tone?:
 
 export function MockModeBanner({ subject = "Post-grad preview" }: { subject?: string }) {
   return (
-    <div className="rounded-2xl border border-cyan-400/25 bg-cyan-500/10 px-4 py-3 text-white shadow-[0_18px_45px_-30px_rgba(34,211,238,0.55)]">
+    <div className="mwz-hud-frame px-4 py-3 text-white shadow-[0_18px_45px_-30px_rgba(34,211,238,0.55)]">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Preview mode</div>
@@ -89,7 +89,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
     <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={battle.state.replaceAll("_", " ")}>
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
-          <div className="rounded-xl border border-orange-400/15 bg-orange-500/5 p-3">
+          <div className="mwz-hud-frame p-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-white">{left.tokenName}</div>
@@ -108,7 +108,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
           <div className="flex items-center justify-center text-sm font-semibold uppercase tracking-[0.24em] text-white/35">
             <Swords className="mr-2 h-4 w-4" />VS
           </div>
-          <div className="rounded-xl border border-cyan-400/15 bg-cyan-500/5 p-3">
+          <div className="mwz-hud-frame p-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-white">{right.tokenName}</div>
@@ -126,7 +126,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
           </div>
         </div>
         {pool ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+          <div className="mwz-hud-frame flex flex-wrap items-center gap-2 px-3 py-2 text-xs text-white/60">
             <Coins className="h-4 w-4 text-accent" />
             <span>War Pool {formatCompactUsd(pool.totalPotUsd)}</span>
             <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "sponsored" : "default"} />
@@ -181,7 +181,7 @@ export function EventCard({
 
 export function TokenIntelRow({ token, metricLabel, metricValue, href }: { token: GraduatedToken; metricLabel: string; metricValue: string; href?: string }) {
   const body = (
-    <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/5 p-3 md:flex-row md:items-center md:justify-between">
+    <div className="mwz-hud-frame flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-white">{token.name}</div>
@@ -215,15 +215,15 @@ export function WarPoolModule({ pool }: { pool: WarPool }) {
   return (
     <PostGradPanel title="War Pool" eyebrow={pool.state}>
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Total pot</div>
           <div className="mt-1 text-2xl font-semibold text-white">{formatCompactUsd(pool.totalPotUsd)}</div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Cutoff</div>
           <div className="mt-1 text-sm font-semibold text-white">{formatWhen(pool.cutoffAt)}</div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Routing</div>
           <div className="mt-1 text-sm text-white/70">Winners {formatCompactUsd(pool.routingBreakdown.winnersUsd)} · Protocol {formatCompactUsd(pool.routingBreakdown.protocolUsd)}</div>
         </div>
@@ -238,9 +238,9 @@ export function RankingsPanel({ payload, icon = "flame" }: { payload: RankingPay
     <PostGradPanel title={payload.key.replaceAll("_", " ")} eyebrow="Rankings">
       <div className="space-y-3">
         {payload.entries.map((entry) => (
-          <div key={`${payload.key}-${entry.rank}-${entry.tokenId}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+          <div key={`${payload.key}-${entry.rank}-${entry.tokenId}`} className="mwz-hud-frame flex items-center justify-between gap-3 px-3 py-2">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/30 text-xs font-semibold text-white">{entry.rank}</div>
+              <div className="flex h-8 w-8 items-center justify-center border border-white/10 bg-black/30 text-xs font-semibold text-white">{entry.rank}</div>
               <div>
                 <div className="text-sm font-semibold text-white">{entry.label}</div>
                 <div className="text-xs text-white/55">{entry.metricLabel}</div>
@@ -262,7 +262,7 @@ export function RankingsPanel({ payload, icon = "flame" }: { payload: RankingPay
 
 export function StreakPopup({ streakDays, nextReward }: { streakDays: number; nextReward: string }) {
   return (
-    <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.6)]">
+    <div className="mwz-hud-frame p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.6)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-100/70">Daily streak</div>
@@ -291,7 +291,7 @@ export function WeeklyRewardPanel({
   const rewardReady = streak.activeReward.status === "claimable";
 
   return (
-    <div className={cn("rounded-2xl border border-emerald-400/20 bg-[linear-gradient(180deg,rgba(14,40,30,0.78),rgba(5,14,11,0.92))] p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.55)]", className)}>
+    <div className={cn("mwz-hud-frame p-4 text-white shadow-[0_20px_50px_-30px_rgba(16,185,129,0.55)]", className)}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-100/70">Weekly commander rewards</div>
@@ -305,15 +305,15 @@ export function WeeklyRewardPanel({
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Current streak</div>
           <div className="mt-1 text-2xl font-semibold text-white">{streak.currentStreakDays}</div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Best streak</div>
           <div className="mt-1 text-2xl font-semibold text-white">{streak.bestStreakDays}</div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+        <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Rewards claimed</div>
           <div className="mt-1 text-2xl font-semibold text-white">{streak.claimedRewardsCount}</div>
         </div>
@@ -326,7 +326,7 @@ export function WeeklyRewardPanel({
             <div
               key={`streak-day-${index + 1}`}
               className={cn(
-                "flex min-w-[72px] flex-1 items-center justify-center rounded-xl border px-3 py-2 text-xs uppercase tracking-[0.18em]",
+                "flex min-w-[72px] flex-1 items-center justify-center border px-3 py-2 text-xs uppercase tracking-[0.18em]",
                 unlocked ? "border-emerald-300/35 bg-emerald-400/15 text-emerald-50" : "border-white/10 bg-white/5 text-white/45",
               )}
             >
