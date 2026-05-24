@@ -7,7 +7,7 @@ import { useMockWarPool, useMockWarPoolSummary } from "@/hooks/useMockWarPoolRun
 
 export type ArenaWarPoolFeedSource = "qa-runtime" | "api" | "empty";
 
-type WarPoolState = WarPool["state"];
+export type ArenaWarPoolState = WarPool["state"];
 type WarPoolSummary = ReturnType<typeof useMockWarPoolSummary>["summary"];
 
 type ArenaWarPoolPayload = {
@@ -16,6 +16,14 @@ type ArenaWarPoolPayload = {
 };
 
 type ArenaWarPoolSummaryPayload = WarPoolSummary;
+
+const EMPTY_WAR_POOL_SUMMARY: WarPoolSummary = {
+  pools: [],
+  totalPotUsd: 0,
+  openPools: 0,
+  lockedPools: 0,
+  paidPools: 0,
+};
 
 const WAR_POOL_STATES = new Set(["open", "locked", "settling", "paid"]);
 
@@ -94,7 +102,6 @@ function normalizeSettlementSummary(value: any): WarPoolSettlementSummary | null
 function normalizeWarPoolSummary(value: any): WarPoolSummary | null {
   if (!value || typeof value !== "object") return null;
   const pools = Array.isArray(value.pools) ? value.pools.map(normalizeWarPool).filter(Boolean) as WarPool[] : [];
-  if (!pools.length) return null;
   return {
     pools,
     totalPotUsd: Number.isFinite(Number(value.totalPotUsd)) ? Number(value.totalPotUsd) : pools.reduce((total, pool) => total + pool.totalPotUsd, 0),
@@ -137,7 +144,7 @@ async function supportWarPoolViaApi(battleId: string, sideTokenId: string, amoun
   return json == null || json?.ok !== false;
 }
 
-async function transitionWarPoolViaApi(battleId: string, state: WarPoolState): Promise<boolean> {
+async function transitionWarPoolViaApi(battleId: string, state: ArenaWarPoolState): Promise<boolean> {
   const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -209,7 +216,7 @@ export function useArenaWarPool(battleId?: string | null) {
     return allowMockFallback ? runtime.supportWarPoolSide(battleIdToSupport, sideTokenId, amountUsd) : false;
   };
 
-  const transitionWarPool = async (battleIdToUpdate: string, state: WarPoolState) => {
+  const transitionWarPool = async (battleIdToUpdate: string, state: ArenaWarPoolState) => {
     try {
       const transitioned = await transitionWarPoolViaApi(battleIdToUpdate, state);
       if (transitioned) {
@@ -229,6 +236,7 @@ export function useArenaWarPool(battleId?: string | null) {
     settlementSummary: apiPayload?.settlementSummary ?? (allowMockFallback ? runtime.settlementSummary : null),
     supportSide,
     transitionWarPool,
+    refreshPool,
     resetWarPoolRuntime: runtime.resetMockWarPoolRuntime,
   };
 }
@@ -238,6 +246,12 @@ export function useArenaWarPoolSummary() {
   const allowMockFallback = postGradFlags.mocks;
   const [apiSummary, setApiSummary] = useState<ArenaWarPoolSummaryPayload | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshSummary = async () => {
+    const summary = await fetchWarPoolSummary().catch(() => null);
+    setApiSummary(summary);
+    return summary;
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -261,10 +275,27 @@ export function useArenaWarPoolSummary() {
     };
   }, [runtime.summary.totalPotUsd, runtime.summary.pools.length]);
 
+  const transitionWarPool = async (battleId: string, state: ArenaWarPoolState) => {
+    try {
+      const transitioned = await transitionWarPoolViaApi(battleId, state);
+      if (transitioned) {
+        await refreshSummary();
+        return true;
+      }
+    } catch (error) {
+      console.warn("[useArenaWarPoolSummary] API transition unavailable", error);
+    }
+    return false;
+  };
+
+  const hasApiData = apiSummary !== null;
+
   return {
-    source: apiSummary ? "api" as ArenaWarPoolFeedSource : allowMockFallback ? "qa-runtime" as ArenaWarPoolFeedSource : "empty" as ArenaWarPoolFeedSource,
+    source: hasApiData ? "api" as ArenaWarPoolFeedSource : allowMockFallback ? "qa-runtime" as ArenaWarPoolFeedSource : "empty" as ArenaWarPoolFeedSource,
     loading,
-    summary: apiSummary ?? (allowMockFallback ? runtime.summary : { pools: [], totalPotUsd: 0, openPools: 0, lockedPools: 0, paidPools: 0 }),
+    summary: apiSummary ?? (allowMockFallback ? runtime.summary : EMPTY_WAR_POOL_SUMMARY),
+    refreshSummary,
+    transitionWarPool,
     resetWarPoolRuntime: runtime.resetMockWarPoolRuntime,
   };
 }
