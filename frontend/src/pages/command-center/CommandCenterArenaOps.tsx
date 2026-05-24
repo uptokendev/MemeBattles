@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, CalendarDays, Database, Flame, ShieldAlert, Trophy } from "lucide-react";
+import { Activity, CalendarDays, Database, Flame, RefreshCw, ShieldAlert, Trophy } from "lucide-react";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
+import type { Battle } from "@/features/postgrad/contracts";
+import { apiFetch } from "@/lib/apiBase";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed, type ArenaEventSummary } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
-import { useArenaWarPoolSummary } from "@/hooks/useArenaWarPoolFeed";
+import { useArenaWarPoolSummary, type ArenaWarPoolState } from "@/hooks/useArenaWarPoolFeed";
 
 type Notice = {
   tone: "success" | "error";
@@ -17,6 +19,7 @@ type Notice = {
 };
 
 type EventStatus = ArenaEventSummary["status"];
+type BattleState = Battle["state"];
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -42,6 +45,38 @@ function getNextEventStatus(status: EventStatus): EventStatus | null {
   return null;
 }
 
+function getNextWarPoolState(state: ArenaWarPoolState): ArenaWarPoolState | null {
+  if (state === "open") return "locked";
+  if (state === "locked") return "settling";
+  if (state === "settling") return "paid";
+  return null;
+}
+
+function getBattlePrimaryAction(state: BattleState): BattleState | null {
+  if (state === "open_for_battle") return "pending";
+  if (state === "pending") return "accepted";
+  if (state === "accepted") return "live";
+  if (state === "live") return "completed";
+  if (state === "completed") return "settled";
+  return null;
+}
+
+function battleLabel(battle: Battle) {
+  const [left, right] = battle.participants;
+  return `${left?.symbol || left?.tokenName || "Left"} vs ${right?.symbol || right?.tokenName || "Right"}`;
+}
+
+async function transitionBattleViaApi(battleId: string, state: BattleState) {
+  const response = await apiFetch(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state }),
+  });
+  if (!response.ok) return false;
+  const json = await response.json().catch(() => null);
+  return json == null || json?.ok !== false;
+}
+
 export default function CommandCenterArenaOps() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -55,6 +90,7 @@ export default function CommandCenterArenaOps() {
   const archivedBattleCount = battles.archivedBattles.length;
   const liveEvents = events.events.filter((event) => event.status === "live");
   const scheduledEvents = events.events.filter((event) => event.status === "scheduled" || event.status === "deploying");
+  const allBattles = [...battles.openForBattleQueue, ...battles.liveBattles];
 
   const runAction = async (label: string, action: () => Promise<boolean>) => {
     setBusyAction(label);
@@ -69,12 +105,42 @@ export default function CommandCenterArenaOps() {
     }
   };
 
+  const refreshAll = async () => {
+    await Promise.all([
+      battles.refreshFeed(),
+      events.refreshFeed(),
+      league.refreshFeed(),
+      warPools.refreshSummary(),
+    ]);
+    return true;
+  };
+
+  const transitionBattle = async (battleId: string, state: BattleState) => {
+    const ok = await transitionBattleViaApi(battleId, state);
+    if (ok) {
+      await Promise.all([battles.refreshFeed(), warPools.refreshSummary()]);
+    }
+    return ok;
+  };
+
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        title="Arena Ops"
-        description="Private operational controls for the Arena runtime: battles, War Pools, events, and league state."
-      />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <CommandCenterPageHeader
+          title="Arena Ops"
+          description="Private operational controls for the Arena runtime: battles, War Pools, events, and league state."
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busyAction === "Refresh ops data"}
+          onClick={() => void runAction("Refresh ops data", refreshAll)}
+          className="w-fit"
+        >
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Refresh ops data
+        </Button>
+      </div>
 
       {notice ? (
         <div className={`mwz-hud-frame p-3 text-sm ${notice.tone === "error" ? "text-rose-100" : "text-muted-foreground"}`}>
@@ -120,28 +186,43 @@ export default function CommandCenterArenaOps() {
         </div>
       </div>
 
-      <CommandCenterCard title="Battle queues" description="Database-backed queue and live battle overview.">
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="mwz-hud-frame p-4">
-            <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Open queue</div>
-            <div className="mt-2 font-retro text-3xl text-foreground">{queuedBattleCount}</div>
-            <Button asChild size="sm" variant="outline" className="mt-4">
-              <Link to="/arena">Open Arena</Link>
-            </Button>
+      <CommandCenterCard title="Battle controls" description="Advance active battle records from queue to live, completed, and settled states.">
+        {allBattles.length > 0 ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {allBattles.slice(0, 8).map((battle) => {
+              const nextState = getBattlePrimaryAction(battle.state);
+              const cancelable = battle.state === "open_for_battle" || battle.state === "pending" || battle.state === "accepted";
+              return (
+                <div key={battle.id} className="mwz-hud-frame p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-retro text-base text-foreground">{battleLabel(battle)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{battle.id}</div>
+                    </div>
+                    <TacticalTag label={battle.state.replaceAll("_", " ")} tone={battle.state === "live" ? "hot" : battle.state === "settled" ? "success" : "sponsored"} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link to={`/battle/${battle.id}`}>Open battle</Link>
+                    </Button>
+                    {nextState ? (
+                      <Button size="sm" disabled={busyAction === `Battle ${nextState}`} onClick={() => void runAction(`Battle ${nextState}`, () => transitionBattle(battle.id, nextState))}>
+                        Move to {nextState.replaceAll("_", " ")}
+                      </Button>
+                    ) : null}
+                    {cancelable ? (
+                      <Button size="sm" variant="outline" disabled={busyAction === "Cancel battle"} onClick={() => void runAction("Cancel battle", () => transitionBattle(battle.id, "cancelled"))}>
+                        Cancel
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <div className="mwz-hud-frame p-4">
-            <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Live battles</div>
-            <div className="mt-2 font-retro text-3xl text-foreground">{liveBattleCount}</div>
-            <Button asChild size="sm" variant="outline" className="mt-4">
-              <Link to="/arena/battles">Battle board</Link>
-            </Button>
-          </div>
-          <div className="mwz-hud-frame p-4">
-            <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Archived</div>
-            <div className="mt-2 font-retro text-3xl text-foreground">{archivedBattleCount}</div>
-            <p className="mt-4 text-xs text-muted-foreground">Settled/completed battle snapshots returned by the API.</p>
-          </div>
-        </div>
+        ) : (
+          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">No active battle records returned by the API.</div>
+        )}
       </CommandCenterCard>
 
       <CommandCenterCard title="Event controls" description="Move Arena events through scheduled, deploying, live, and completed states.">
@@ -225,22 +306,35 @@ export default function CommandCenterArenaOps() {
         </div>
       </CommandCenterCard>
 
-      <CommandCenterCard title="War Pool monitor" description="Durable War Pool summary from the Arena War Pool API.">
+      <CommandCenterCard title="War Pool controls" description="Monitor and advance durable War Pool settlement state.">
         {warPools.summary.pools.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {warPools.summary.pools.map((pool) => (
-              <div key={pool.battleId} className="mwz-hud-frame p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate font-retro text-sm text-foreground">{pool.battleId}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Cutoff {formatDateTime(pool.cutoffAt)}</div>
+            {warPools.summary.pools.map((pool) => {
+              const nextState = getNextWarPoolState(pool.state);
+              return (
+                <div key={pool.battleId} className="mwz-hud-frame p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate font-retro text-sm text-foreground">{pool.battleId}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Cutoff {formatDateTime(pool.cutoffAt)}</div>
+                    </div>
+                    <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "paid" ? "default" : "sponsored"} />
                   </div>
-                  <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "paid" ? "default" : "sponsored"} />
+                  <div className="mt-4 font-retro text-xl text-foreground">{formatUsd(pool.totalPotUsd)}</div>
+                  <div className="mt-2 text-xs text-muted-foreground">{pool.entries.length} support entries</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link to={`/battle/${pool.battleId}`}>Battle detail</Link>
+                    </Button>
+                    {nextState ? (
+                      <Button size="sm" disabled={busyAction === `War Pool ${nextState}`} onClick={() => void runAction(`War Pool ${nextState}`, () => warPools.transitionWarPool(pool.battleId, nextState))}>
+                        Move to {nextState}
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-4 font-retro text-xl text-foreground">{formatUsd(pool.totalPotUsd)}</div>
-                <div className="mt-2 text-xs text-muted-foreground">{pool.entries.length} support entries</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
