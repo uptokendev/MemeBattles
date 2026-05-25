@@ -46,6 +46,17 @@ export const battleStateSchema = z.enum([
   "cancelled",
 ]);
 
+export const POST_GRAD_BATTLE_TRANSITIONS = {
+  draft: ["open_for_battle"],
+  open_for_battle: ["pending", "accepted", "live", "cancelled"],
+  pending: ["accepted", "live", "cancelled"],
+  accepted: ["live", "cancelled"],
+  live: ["completed"],
+  completed: ["settled"],
+  settled: [],
+  cancelled: [],
+} as const satisfies Record<z.infer<typeof battleStateSchema>, readonly z.infer<typeof battleStateSchema>[]>;
+
 export const battleParticipantSchema = z.object({
   tokenId: z.string(),
   campaignAddress: z.string().optional(),
