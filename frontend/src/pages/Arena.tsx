@@ -35,21 +35,6 @@ const Arena = () => {
 
   return (
     <div className="space-y-6 px-1 pb-10">
-      <section className="mwz-orange-frame p-5 md:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mwz-orange-frame-label text-[10px]">Overview</div>
-            <h1 className="mt-2 font-retro text-3xl tracking-tight text-foreground md:text-5xl">Discover featured coins, sponsored spots, and live battles.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">See what’s happening right now in one place: sponsored placements, featured memecoins, live battles, open challenges, and the latest event and league context.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <TacticalTag label={`${sponsoredRailItems.length} sponsored`} tone="hot" />
-            <TacticalTag label={`${featuredRailItems.length} featured`} tone="success" />
-            <TacticalTag label={`${liveBattles.length} live battles`} tone="hot" />
-          </div>
-        </div>
-      </section>
-
       <section className="mwz-hud-frame space-y-3 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
