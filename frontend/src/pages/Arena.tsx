@@ -16,6 +16,10 @@ function formatUsd(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
+function formatLabel(value: string) {
+  return value.replace(/_/g, " ");
+}
+
 const Arena = () => {
   const { liveBattles, openForBattleQueue, source: battleSource } = useArenaBattleFeed();
   const { events, source: eventSource } = useArenaEventFeed();
@@ -162,7 +166,7 @@ const Arena = () => {
             <div className="mwz-hud-frame p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Active event" tone="success" />
-                <TacticalTag label={activeEvents[0].type.replaceAll("_", " ")} tone="hot" />
+                <TacticalTag label={formatLabel(activeEvents[0].type)} tone="hot" />
               </div>
               <div className="mt-3 font-retro text-sm text-foreground">{activeEvents[0].title}</div>
               <div className="mt-2 text-xs text-muted-foreground">{activeEvents[0].participantCount} participants · Ends {new Date(activeEvents[0].endsAt).toLocaleDateString()}</div>
@@ -173,7 +177,7 @@ const Arena = () => {
             <div className="mwz-hud-frame p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <TacticalTag label="Upcoming" tone="default" />
-                <TacticalTag label={upcomingEvents[0].type.replaceAll("_", " ")} tone="default" />
+                <TacticalTag label={formatLabel(upcomingEvents[0].type)} tone="default" />
               </div>
               <div className="mt-3 font-retro text-sm text-foreground">{upcomingEvents[0].title}</div>
               <div className="mt-2 text-xs text-muted-foreground">Starts {new Date(upcomingEvents[0].startsAt).toLocaleDateString()} · {upcomingEvents[0].participantCount} participants</div>
