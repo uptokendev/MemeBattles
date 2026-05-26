@@ -298,6 +298,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return out.slice(0, target);
   }, [tickerItems]);
 
+  const isLaunchpadRoute = location.pathname === "/";
+  const showTickerBand = isLaunchpadRoute && tickerBaseLoop.length > 0;
   const isActive = (path: string) => navPathMatches(location.pathname, location.search, path);
 
   useEffect(() => {
@@ -388,7 +390,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </Link>
 
         <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
-          {isPostGradNavEnabled() ? <ArenaDesktopNav /> : null}
           {navLinks.map((item) => {
             const external = isExternalHref(item.path);
             const className = cn(
@@ -397,7 +398,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
               !external && isActive(item.path) && "mwz-nav-link-active",
             );
 
-            return external ? (
+            const renderedItem = external ? (
               <a
                 key={item.path}
                 href={item.path}
@@ -412,6 +413,17 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
                 {item.label}
               </Link>
             );
+
+            if (item.path === "/") {
+              return (
+                <div key="launchpad-nav-group" className="contents">
+                  {renderedItem}
+                  {isPostGradNavEnabled() ? <ArenaDesktopNav /> : null}
+                </div>
+              );
+            }
+
+            return renderedItem;
           })}
         </div>
 
@@ -556,7 +568,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
         </div>
       </div>
 
-      {tickerBaseLoop.length > 0 && (
+      {showTickerBand && (
         <div className="mx-2 mt-1 overflow-hidden md:mx-3">
           <div className="mwz-ticker-mask relative overflow-hidden rounded-full border border-success/10 bg-black/45 px-1 py-1 shadow-[0_14px_38px_-24px_rgba(0,0,0,0.95)]">
             <div className="mwz-ticker-track flex min-w-max animate-[ticker-scroll_46s_linear_infinite] items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-success/78 will-change-transform hover:[animation-play-state:paused]">
