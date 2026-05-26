@@ -21,7 +21,8 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => {
-  const primaryNavItems = navItems.filter((item) => primaryPaths.has(item.path));
+  const launchpadNavItems = navItems.filter((item) => item.path === "/");
+  const remainingPrimaryNavItems = navItems.filter((item) => primaryPaths.has(item.path) && item.path !== "/");
   const utilityNavItems = navItems.filter((item) => !primaryPaths.has(item.path));
 
   return (
@@ -63,8 +64,9 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
           <div className="space-y-2">
+            {launchpadNavItems.length ? <AnimatedNav options={launchpadNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
             {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
-            {primaryNavItems.length ? <AnimatedNav options={primaryNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
+            {remainingPrimaryNavItems.length ? <AnimatedNav options={remainingPrimaryNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
           </div>
 
           {utilityNavItems.length ? (
