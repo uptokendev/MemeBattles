@@ -1,4 +1,4 @@
-import { apiFetch, apiUrl } from "@/lib/apiBase";
+import { apiFetch, apiJson, apiUrl } from "@/lib/apiBase";
 
 export type UserProfile = {
   chainId: number;
@@ -7,6 +7,7 @@ export type UserProfile = {
   bio: string | null;
   avatarUrl: string | null;
   updatedAt?: string | null;
+  createdAt?: string | null;
   rank?: string | null;
   previousRank?: string | null;
   rankPoints?: number | null;
@@ -74,6 +75,7 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
     avatarUrl: (p.avatarUrl ?? null) as string | null,
     bio: (p.bio ?? null) as string | null,
     updatedAt: (p.updatedAt ?? null) as string | null,
+    createdAt: (p.createdAt ?? null) as string | null,
     rank: (p.rank ?? null) as string | null,
     previousRank: (p.previousRank ?? null) as string | null,
     rankPoints: p.rankPoints == null ? null : Number(p.rankPoints),
@@ -122,4 +124,24 @@ export async function saveUserProfile(input: SaveProfileInput): Promise<void> {
     const j = await readJson(res);
     throw new Error(j?.error || `Failed to save profile (${res.status})`);
   }
+}
+
+/**
+ * Thin wrapper for the public portfolio metrics endpoint (Phase 6).
+ * Always uses apiJson (central apiBase layer) for consistency with AGENTS.md.
+ * Supports optional forceRefresh for owner "Refresh" action.
+ */
+export async function fetchPublicPortfolioMetrics(
+  chainId: number,
+  address: string,
+  { forceRefresh = false }: { forceRefresh?: boolean } = {}
+): Promise<any> {
+  const addr = normalizeAddress(address);
+  const params = new URLSearchParams({
+    chainId: String(chainId),
+    address: addr,
+  });
+  if (forceRefresh) params.set("forceRefresh", "1");
+
+  return apiJson(`/api/profile/portfolio?${params.toString()}`);
 }

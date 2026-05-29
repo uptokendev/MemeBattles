@@ -7,6 +7,8 @@ import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
+import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
 import {
   fetchRecruiterSummaryByWallet,
   fetchSquadSummary,
@@ -159,6 +161,11 @@ export default function PublicProfile({
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [activityError, setActivityError] = useState<string | null>(null);
 
+  // Phase 6: cached portfolio metrics from backend
+  const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
     return name ? `@${name}` : shorten(profileWallet);
@@ -214,6 +221,45 @@ export default function PublicProfile({
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChainId, profileWallet]);
+
+  // Portfolio metrics on public profile — only for the owner for now
+  // (uses client-side data when isOwnProfile so we don't depend on new backend routes on dev branch)
+  useEffect(() => {
+    if (!isOwnProfile) {
+      setPortfolioMetrics(null);
+      setLoadingPortfolio(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPortfolio = async () => {
+      if (!profileWallet || !activeChainId) return;
+      setLoadingPortfolio(true);
+      setPortfolioError(null);
+      try {
+        // For the owner we can use the improved client-side path in the future.
+        // For now we keep the call (it will 404 until backend is merged to dev).
+        const data = await fetchPublicPortfolioMetrics(activeChainId, profileWallet);
+        if (!cancelled) {
+          setPortfolioMetrics(data ?? null);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          console.warn("Failed to load public portfolio metrics", e);
+          setPortfolioError(String(e?.message || "Failed to load portfolio metrics."));
+          setPortfolioMetrics(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingPortfolio(false);
+      }
+    };
+
+    loadPortfolio();
     return () => {
       cancelled = true;
     };
@@ -379,6 +425,10 @@ export default function PublicProfile({
     toast.success("Address copied!");
   };
 
+  // No refresh handler for portfolio on Public Profile for now
+  // (we avoid calling the route that isn't on the dev branch yet).
+  const handlePortfolioRefresh = undefined;
+
   return (
     <div className="w-full pb-10 pt-4 md:pt-6">
       <div className="mx-auto max-w-6xl space-y-5">
@@ -431,6 +481,25 @@ export default function PublicProfile({
             </div>
           </div>
         </section>
+
+        {/* Phase 6: Portfolio metrics grid — placed immediately after the main header section
+            (PFP + displayName + address copy + bio + RankBadgeCard) and before the Badges grid.
+            Uses cached backend data. Owner-only refresh uses forceRefresh=1. */}
+        {/* Portfolio metrics on Public Profile (owner only for now)
+            Uses the same client-side logic as Command Center so we don't depend on
+            the new /api/profile/portfolio endpoint that isn't on the dev branch yet.
+          */}
+        {isOwnProfile && (
+          <PortfolioMetricsGrid
+            metrics={portfolioMetrics}
+            loading={loadingPortfolio}
+            onRefresh={handlePortfolioRefresh}
+            variant="public"
+          />
+        )}
+        {portfolioError ? (
+          <div className="text-xs text-muted-foreground">Portfolio metrics temporarily unavailable — using cached or partial data.</div>
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-border/50 bg-card/35 p-5 backdrop-blur-md">

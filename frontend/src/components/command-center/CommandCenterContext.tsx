@@ -11,6 +11,7 @@ import { useProfileRank } from "@/hooks/profile/useProfileRank";
 import { useLeagueCabinet } from "@/hooks/profile/useLeagueCabinet";
 import { fetchWalletAttributionState, type WalletAttributionPublicState } from "@/lib/recruiterApi";
 import { fetchOwnerCampaignDrafts } from "@/lib/draftApi";
+import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
 
 function shortenWallet(addr?: string | null) {
   if (!addr) return "";
@@ -47,6 +48,9 @@ type CommandCenterData = {
   nativeBalance: string;
   tokenBalances: ReturnType<typeof useProfileBalances>["tokenBalances"];
   loadingBalances: boolean;
+  // Additive Phase 2 portfolio metrics (derived client-side for owner freshness).
+  portfolioMetrics: ReturnType<typeof useProfileBalances>["portfolioMetrics"];
+  loadingPortfolioMetrics: boolean;
   liveRank: ReturnType<typeof useProfileRank>["liveRank"];
   leagueCabinet: ReturnType<typeof useLeagueCabinet>["leagueCabinet"];
   loadingLeagueCabinet: boolean;
@@ -160,12 +164,19 @@ export function CommandCenterDataProvider({
     };
   }, [walletAddress, chainId]);
 
-  const { nativeBalance, tokenBalances, loadingBalances } = useProfileBalances({
+  const {
+    nativeBalance,
+    tokenBalances,
+    loadingBalances,
+    portfolioMetrics,
+    loadingPortfolioMetrics,
+  } = useProfileBalances({
     viewedAddress: walletAddress,
     account,
     wallet,
     fetchCampaigns,
     fetchCampaignSummary,
+    profileCreatedAt: profile?.createdAt,
   });
 
   const { liveRank } = useProfileRank({
@@ -216,6 +227,8 @@ export function CommandCenterDataProvider({
     nativeBalance,
     tokenBalances,
     loadingBalances,
+    portfolioMetrics,
+    loadingPortfolioMetrics,
     liveRank,
     leagueCabinet,
     loadingLeagueCabinet,
@@ -248,6 +261,8 @@ export function CommandCenterDataProvider({
     nativeBalance,
     tokenBalances,
     loadingBalances,
+    portfolioMetrics,
+    loadingPortfolioMetrics,
     liveRank,
     leagueCabinet,
     loadingLeagueCabinet,
@@ -263,3 +278,6 @@ export function useCommandCenterData() {
   }
   return ctx;
 }
+
+// Re-export the pure PortfolioMetrics type for Command Center consumers (per Phase 2 plan).
+export type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
