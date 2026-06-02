@@ -4,13 +4,13 @@
  */
 
 import { X } from "lucide-react";
-import { Link } from "react-router-dom";
 import AnimatedNav from "./ui/animated-nav";
 import { SocialTooltip } from "./ui/social-media";
 import { navItems, socialLinks } from "@/constants/navigation";
 
 // Use public brand assets so we can swap without touching the build pipeline.
 const brandMark = "/assets/ticker.png";
+const publicSiteUrl = "https://memewar.zone";
 
 interface SidebarProps {
   mobileMenuOpen: boolean;
@@ -44,10 +44,10 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
         </button>
 
         <div className="p-6 pl-4 flex items-center gap-3">
-          <Link to="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3">
+          <a href={publicSiteUrl} onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3">
             <img src={brandMark} alt="MemeWarzone" className="h-10 w-10" draggable={false} />
             <span className="font-retro text-sm">MemeWarzone</span>
-          </Link>
+          </a>
         </div>
 
         <nav className="flex-1 px-4 overflow-y-auto">
