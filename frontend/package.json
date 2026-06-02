@@ -13,6 +13,7 @@
     "api:dev": "node --watch --import ./api/load-local-env.mjs api/server.mjs",
     "check:home-data": "node scripts/check-home-data.mjs",
     "check:api-migration": "node scripts/check-api-migration-readiness.mjs",
+    "check:postgrad-api-preservation": "node scripts/check-postgrad-api-preservation.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
