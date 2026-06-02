@@ -109,10 +109,23 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     mapping(address => uint256) public pendingRefunds;
 
     // Phase 2 (contractaudits5 Medium / phased-build-da26e79f): per-battleId pending league-cut amount for attribution-preserving retry.
-    // Populated in the seasonal/ league failure leg of claim() (in addition to the aggregate pendingFeeWithdrawals).
-    // retryBattleCut uses this to re-deliver via receiveBattleCut(bytes32,bytes32) metadata ABI
-    // so the cut lands in the correct prize pool on MajorLeagueTreasury instead of unallocatedBalance.
-    mapping(bytes32 => uint256) public pendingFailedBattleCut;
+    // Populated ONLY in the per-ID record in the seasonal/league failure leg of claim() (structured cuts are
+    // intentionally NOT recorded in the generic pendingFeeWithdrawals[seasonal] to prevent double-payment
+    // via generic retryPendingFee + metadata retry, and to avoid erasing unrelated fees).
+    // retryBattleCut uses this to re-deliver via receiveBattleCut metadata ABI.
+    // Phase 2 (contractaudits5 Medium / phased-build-da26e79f) + contractsaudits7: per-battleId pending league-cut
+    // (amount + the seasonalTreasuryReceiver at time of failure). Structured cuts are NOT recorded in generic
+    // pendingFeeWithdrawals[seasonal] (prevents double-pay via generic retry + metadata, and erasure of unrelated).
+    // retry uses the historical receiver even if global seasonalTreasuryReceiver later changes.
+    struct PendingBattleCut {
+        uint256 amount;
+        address receiver;
+    }
+    mapping(bytes32 => PendingBattleCut) public pendingFailedBattleCut;
+
+    // contractsaudits6: pending winner payout amount (credited if the signed payoutAddress rejects the push in claim()).
+    // Allows pull via claimWinnerPayout so a resolved battle does not permanently lock if the payout rejects ETH.
+    mapping(bytes32 => uint256) public pendingWinnerPayouts;
 
     // === Simple Timelock for Critical Admin Changes ===
     uint256 public constant TIMELOCK_DELAY = 2 days;
@@ -180,6 +193,10 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
         uint256 amountToWinner,
         uint256 feeAmount
     );
+    // contractsaudits6: emitted when the signed payoutAddress rejects the winner amount push in claim();
+    // the amount is credited to pendingWinnerPayouts[battleId] for later pull via claimWinnerPayout (prevents permanent lock).
+    event WinnerPayoutFailed(bytes32 indexed battleId, address indexed to, uint256 amount);
+    event WinnerPayoutClaimed(bytes32 indexed battleId, address indexed to, uint256 amount);
     event Refunded(bytes32 indexed battleId, address indexed to, uint256 amount);
     event FeeTransferFailed(address indexed receiver, uint256 amount, bytes32 indexed battleId);
 
@@ -554,12 +571,17 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
      * and challengerDeposit are zeroed. This ensures post-settlement views report 0 and storage
      * invariants hold (closes uncleared storage for the claim path).
      *
-     * Phase 2 (contractaudits5 / phased-build-da26e79f Medium): the seasonal fee failure leg now also populates
-     * `pendingFailedBattleCut[battleId]` (in addition to aggregate pendingFeeWithdrawals) so that the
-     * specialized `retryBattleCut(battleId, poolId)` can later re-deliver via the exact `receiveBattleCut(bytes32,bytes32)`
-     * metadata call, preserving pool attribution on MajorLeagueTreasury.
+     * Phase 2 (contractaudits5 / phased-build-da26e79f Medium): the seasonal fee failure leg populates ONLY
+     * `pendingFailedBattleCut[battleId]` (structured league cuts are NOT recorded in the generic aggregate
+     * pendingFeeWithdrawals[seasonalTreasuryReceiver], per contractsaudits7 to prevent double-payment and
+     * erasure of unrelated pending fees). The specialized `retryBattleCut` re-delivers the exact metadata.
      *
      * No admin can touch these funds except through this claim path.
+     *
+     * contractsaudits6: the winner payout (to the signed payoutAddress or fallback winner) is attempted first.
+     * If the payout rejects ETH, the amount is credited to pendingWinnerPayouts[battleId] (non-reverting) and
+     * WinnerPayoutFailed is emitted. The winner or payout address can later pull it via claimWinnerPayout(battleId)
+     * so the resolved battle does not permanently lock funds.
      */
     function claim(bytes32 battleId) external nonReentrant {
         Battle storage battle = battles[battleId];
@@ -587,12 +609,21 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
         battle.creatorDeposit = 0;
         battle.challengerDeposit = 0;
 
-        // Pay winner first (never block user funds on fee receiver behavior)
+        // Pay winner first (never block user funds on fee receiver behavior).
+        // contractsaudits6: if the signed payoutAddress rejects, credit to pendingWinnerPayouts[battleId] instead of reverting
+        // the whole claim (prevents the resolved battle from permanently locking funds that belong to winner + loser + fees).
+        // The winner (or the payout address) can later pull via claimWinnerPayout(battleId).
         address payout = battle.winnerPayoutAddress != address(0) ? battle.winnerPayoutAddress : battle.winner;
         (bool winnerSuccess, ) = payout.call{value: winnerAmount}("");
-        require(winnerSuccess, "Winner payout failed");
+        if (!winnerSuccess) {
+            pendingWinnerPayouts[battleId] = winnerAmount;
+            emit WinnerPayoutFailed(battleId, payout, winnerAmount);
+        }
 
         // Attempt fee transfers — do not revert if they fail. Credit to pending for later withdrawal.
+        // For structured league cuts (seasonal), we record ONLY in per-ID pendingFailedBattleCut (not the generic
+        // pendingFeeWithdrawals) to prevent double-payment via generic retryPendingFee + metadata retryBattleCut,
+        // and to preserve pool attribution (contractsaudits6 fix).
         if (protocolFee > 0 && protocolFeeReceiver != address(0)) {
             (bool pSuccess, ) = protocolFeeReceiver.call{value: protocolFee}("");
             if (!pSuccess) {
@@ -606,12 +637,14 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
                 abi.encodeWithSignature("receiveBattleCut(bytes32,bytes32)", battleId, battle.seasonalPoolId)
             );
             if (!sSuccess) {
-                pendingFeeWithdrawals[seasonalTreasuryReceiver] += seasonalFee;
-                // Phase 2 (contractaudits5): also record per-ID for attribution-preserving retry path.
-                // This amount can later be retried via retryBattleCut(battleId, battle.seasonalPoolId) which
-                // re-sends the metadata call so MajorLeagueTreasury credits the specific prize pool
-                // (instead of plain ETH landing in unallocatedBalance via receive()).
-                pendingFailedBattleCut[battleId] += seasonalFee;
+                // Phase 2 (contractaudits5) + contractsaudits6/7: record ONLY in per-ID structured pending (with
+                // the receiver at failure time) for attribution-preserving retry. Do NOT add to generic so
+                // retryPendingFee(seasonal) cannot consume structured cuts (prevents double-pay and erasure of
+                // unrelated fees). The stored receiver ensures retry goes to historical one even if global changes.
+                pendingFailedBattleCut[battleId] = PendingBattleCut({
+                    amount: seasonalFee,
+                    receiver: seasonalTreasuryReceiver
+                });
                 emit FeeTransferFailed(seasonalTreasuryReceiver, seasonalFee, battleId);
             }
         }
@@ -729,6 +762,41 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
             revert("Refund claim failed");
         }
         emit RefundClaimed(msg.sender, amount);
+    }
+
+    /**
+     * @notice Pull-based claim for winner payout that was credited to pendingWinnerPayouts because the
+     * signed payoutAddress rejected the direct transfer in claim().
+     *
+     * contractsaudits6: prevents a resolved battle from permanently locking winner + loser stakes + fees
+     * when the resolver-provided payout address happens to reject ETH at claim time. The winner or the
+     * payout address can pull later (e.g. after the payout contract is upgraded or a new payoutAddress is
+     * signed in a future flow).
+     */
+    function claimWinnerPayout(bytes32 battleId) external nonReentrant {
+        uint256 amount = pendingWinnerPayouts[battleId];
+        if (amount == 0) revert("No pending winner payout");
+
+        Battle storage battle = battles[battleId];
+        if (!battle.settled) revert("Battle not settled");
+
+        address to = battle.winnerPayoutAddress != address(0) ? battle.winnerPayoutAddress : battle.winner;
+
+        pendingWinnerPayouts[battleId] = 0;
+
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) {
+            // contractsaudits7: if the signed payout permanently rejects, fallback to the original winner
+            // (the game winner) so funds are not permanently stuck. This is safe because the funds belong
+            // to the winner; the signed payout was only a resolver-chosen safe delivery address.
+            to = battle.winner;
+            (success, ) = to.call{value: amount}("");
+            if (!success) {
+                pendingWinnerPayouts[battleId] = amount;
+                revert("Winner payout pull failed (even to original winner)");
+            }
+        }
+        emit WinnerPayoutClaimed(battleId, to, amount);
     }
 
     // ==================== VIEW HELPERS ====================
@@ -961,33 +1029,44 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
      * Pattern (identical to retryPendingFee and the ec52d84a Phase 1 precedent):
      * 1. Snapshot amount from the per-ID pendingFailedBattleCut mapping.
      * 2. Zero the per-ID entry first (CEI).
-     * 3. Optionally decrement the aggregate pendingFeeWithdrawals[seasonal] for consistency.
-     * 4. Perform the metadata .call to seasonalTreasuryReceiver.
-     * 5. On failure: restore the per-ID amount and revert FeeRetryFailed (aggregate already adjusted safely).
-     * 6. On success: emit the dedicated BattleCutRetriedWithMetadata event.
+     * 3. Perform the metadata .call to seasonalTreasuryReceiver.
+     * 4. On failure: restore the per-ID amount and revert FeeRetryFailed.
+     * 5. On success: emit the dedicated BattleCutRetriedWithMetadata event.
+     *
+     * contractsaudits7: removed aggregate decrement step. Structured league cuts are intentionally
+     * not recorded in the generic pendingFeeWithdrawals[seasonalTreasuryReceiver] (see claim failure leg),
+     * so decrementing it would silently erase unrelated pending fees from other sources.
      *
      * The original battleId + poolId are carried through, preserving full attribution for indexers
      * and league accounting. This directly addresses the Medium "Failed league-cut retries lose pool attribution"
      * finding in contractaudits5.md.
      */
     function retryBattleCut(bytes32 battleId, bytes32 poolId) external nonReentrant {
-        uint256 amount = pendingFailedBattleCut[battleId];
+        PendingBattleCut memory cut = pendingFailedBattleCut[battleId];
+        uint256 amount = cut.amount;
         require(amount > 0, "Nothing to retry");
 
-        pendingFailedBattleCut[battleId] = 0;
+        pendingFailedBattleCut[battleId] = PendingBattleCut({amount: 0, receiver: address(0)});
 
-        // Keep aggregate consistent when the failed cut had also been credited to pendingFeeWithdrawals.
-        if (pendingFeeWithdrawals[seasonalTreasuryReceiver] >= amount) {
-            pendingFeeWithdrawals[seasonalTreasuryReceiver] -= amount;
-        }
+        // contractsaudits6: bind to the original stored poolId from the battle (the passed poolId is accepted
+        // for signature/ABI compatibility but ignored). This prevents caller from choosing arbitrary pool
+        // for the retry credit on Major.
+        bytes32 poolIdToUse = battles[battleId].seasonalPoolId;
 
-        (bool success, ) = seasonalTreasuryReceiver.call{value: amount}(
-            abi.encodeWithSignature("receiveBattleCut(bytes32,bytes32)", battleId, poolId)
+        // contractsaudits7: use the historical receiver stored at failure time (not current global).
+        address receiverToUse = cut.receiver != address(0) ? cut.receiver : seasonalTreasuryReceiver;
+
+        // contractsaudits7: removed aggregate decrement. Structured cuts are no longer recorded in
+        // pendingFeeWithdrawals[seasonal], so decrementing it would erase unrelated pending fees
+        // (e.g. from redirects or other credits). The per-ID record is the canonical one.
+
+        (bool success, ) = receiverToUse.call{value: amount}(
+            abi.encodeWithSignature("receiveBattleCut(bytes32,bytes32)", battleId, poolIdToUse)
         );
         if (!success) {
-            pendingFailedBattleCut[battleId] = amount; // recredit on failure
+            pendingFailedBattleCut[battleId] = cut; // recredit on failure
             revert FeeRetryFailed();
         }
-        emit BattleCutRetriedWithMetadata(battleId, poolId, amount);
+        emit BattleCutRetriedWithMetadata(battleId, poolIdToUse, amount);
     }
 }

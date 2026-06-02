@@ -83,17 +83,26 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     }
 
     PendingAuthorizer public pendingSponsorshipAuthorizer;
-    address public sponsorshipAuthorizer; // Set at construction (defaults to 0) or via timelocked propose/execute/cancel (Phase 2, contractaudits5 / phased-build-da26e79f)
+    address public sponsorshipAuthorizer; // Set at construction or via timelocked propose/execute/cancel (Phase 2, contractaudits5 / phased-build-da26e79f)
+    // contractsaudits7: once set to non-zero at deploy or via execute, cannot be set back to 0 (prevents disabling signatures).
+    bool public signaturesEnforced;
 
     // Accounting for fees that failed to transfer (non-blocking path).
     // Phase 1: see retryPendingFee (anyone) + timelocked pendingFeeRedirect (owner, fee-only) below.
     mapping(address => uint256) public pendingFeeWithdrawals;
 
-    // Phase 2 (contractaudits5 Medium): per-sponsorshipId pending league-cut amount for attribution-preserving retry.
-    // Populated in the seasonal/ league failure leg of payForSponsorship (in addition to the aggregate pendingFeeWithdrawals).
-    // retrySponsorshipCut uses this to re-deliver via receiveSponsorshipCut(bytes32,bytes32) metadata ABI
-    // so the cut lands in the correct prize pool on MajorLeagueTreasury instead of unallocatedBalance.
-    mapping(bytes32 => uint256) public pendingFailedSponsorshipCut;
+    // Phase 2 (contractaudits5 Medium) + contractsaudits7: per-sponsorshipId pending league-cut (amount + the
+    // seasonalTreasuryReceiver at failure time). Structured cuts NOT in generic pending (prevents double-pay
+    // and erasure of unrelated). retry uses historical receiver if global changes.
+    struct PendingSponsorshipCut {
+        uint256 amount;
+        address receiver;
+    }
+    mapping(bytes32 => PendingSponsorshipCut) public pendingFailedSponsorshipCut;
+
+    // contractsaudits6: store the original poolId at payment time so that retrySponsorshipCut is bound to it
+    // (prevents caller from supplying arbitrary poolId for the metadata credit on Major).
+    mapping(bytes32 => bytes32) public sponsorshipPoolId;
 
     // Phase 4: expanded with payer, poolId, and cumulativePaid for full observability (per contractaudits4 Medium finding).
     // sponsorshipId is enforced unique at payment time.
@@ -170,9 +179,14 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
 
     constructor(
         address _protocolFeeReceiver,
-        address _seasonalTreasuryReceiver
+        address _seasonalTreasuryReceiver,
+        address _sponsorshipAuthorizer
     ) Ownable(msg.sender) {
         _setReceivers(_protocolFeeReceiver, _seasonalTreasuryReceiver);
+        // Phase 2 / contractaudits6: authorizer set at deployment to require EIP-712 signatures by default.
+        // Pass non-zero to enforce signatures (recommended for public use). Pass address(0) to allow unsigned (unsafe for public use - see NatSpec and USER_INTERACTION_GUIDE).
+        sponsorshipAuthorizer = _sponsorshipAuthorizer;
+        signaturesEnforced = (_sponsorshipAuthorizer != address(0));
     }
 
     // setReceivers removed after deployment. All post-deployment receiver changes must use the timelock propose/execute path.
@@ -257,8 +271,9 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
      * - Domain: name="SponsorshipPayments", version="1", chainId, verifyingContract=this.
      * - Off-chain: use ethers.signTypedData (or equivalent) with the exact typehash and domain.
      *   Personal sign / toEthSignedMessageHash will fail (exactly as with BattleTreasury.resolveWinner).
-     * - When authorizer is address(0) (default at deployment / transition), unsigned calls are still accepted
-     *   for backward compatibility. Once the timelocked authorizer is set, signatures become mandatory.
+     * - constructor(_sponsorshipAuthorizer) sets it at deploy (pass non-zero to require sigs by default for public use).
+     * - contractsaudits7: once signaturesEnforced (authorizer was non-zero), executeSponsorshipAuthorizer cannot set it back to 0.
+     * - Passing 0 at deploy allows unsigned (unsafe for public; see USER_INTERACTION_GUIDE and TRUST_MODEL).
      * - This binds the globally-unique sponsorshipId to the intended payer/recipient/amount/pool/deadline,
      *   closing the Medium/High frontrun/DoS vector (any attacker could previously pre-pay a predictable ID).
      *
@@ -305,6 +320,10 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
         if (sponsorshipPaid[sponsorshipId]) revert SponsorshipAlreadyPaid();
         sponsorshipPaid[sponsorshipId] = true;
 
+        // contractsaudits6: store original poolId so retrySponsorshipCut is bound to it (caller-supplied poolId
+        // in the retry function is accepted for compat but the stored value is used for the metadata call).
+        sponsorshipPoolId[sponsorshipId] = poolId;
+
         uint256 recipientAmount = (amount * RECIPIENT_BPS) / TOTAL_BPS;
         uint256 protocolAmount  = (amount * PROTOCOL_BPS)  / TOTAL_BPS;
         uint256 leagueAmount    = (amount * LEAGUE_BPS)    / TOTAL_BPS;
@@ -320,8 +339,10 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
         (bool rSuccess, ) = recipient.call{value: recipientAmount}("");
         require(rSuccess, "Recipient transfer failed");
 
-        // Attempt fee transfers — do not revert if they fail. Credit to pending for later withdrawal.
-        // Phase 1: retryPendingFee + timelocked fee redirect now provide recovery for contract receivers.
+        // Attempt fee transfers — do not revert if they fail.
+        // Phase 1/contractsaudits6: for structured league cuts, credit ONLY to per-ID pendingFailedSponsorshipCut
+        // (never to generic pendingFeeWithdrawals[seasonal]) so that generic retry cannot double-pay or erase
+        // unrelated fees. See contractsaudits7. Protocol cuts still use the generic pending.
         if (protocolAmount > 0 && protocolFeeReceiver != address(0)) {
             (bool pSuccess, ) = protocolFeeReceiver.call{value: protocolAmount}("");
             if (!pSuccess) {
@@ -335,13 +356,13 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
                 abi.encodeWithSignature("receiveSponsorshipCut(bytes32,bytes32)", sponsorshipId, poolId)
             );
             if (!lSuccess) {
-                // Phase 1: record for retry/redirect
-                pendingFeeWithdrawals[seasonalTreasuryReceiver] += leagueAmount;
-                // Phase 2 (contractaudits5): also record per-ID for attribution-preserving retry path.
-                // This amount can later be retried via retrySponsorshipCut(sponsorshipId, poolId) which
-                // re-sends the metadata call so MajorLeagueTreasury credits the specific prize pool
-                // (instead of plain ETH landing in unallocatedBalance via receive()).
-                pendingFailedSponsorshipCut[sponsorshipId] += leagueAmount;
+                // Phase 1/contractsaudits6/7: structured league cuts recorded ONLY in per-ID (with receiver at failure).
+                // NOT in generic (prevents double-pay and erasure of unrelated fees). The stored receiver ensures
+                // retry goes to historical one even if global seasonalTreasuryReceiver changes via timelock.
+                pendingFailedSponsorshipCut[sponsorshipId] = PendingSponsorshipCut({
+                    amount: leagueAmount,
+                    receiver: seasonalTreasuryReceiver
+                });
                 emit FeeTransferFailed(seasonalTreasuryReceiver, leagueAmount, sponsorshipId);
             }
         }
@@ -438,7 +459,13 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
         PendingAuthorizer memory change = pendingSponsorshipAuthorizer;
         require(change.exists, "No pending change");
         require(block.timestamp >= change.executeAfter, "Timelock not expired");
+        if (signaturesEnforced && change.newValue == address(0)) {
+            revert("cannot disable signatures once enforced (contractsaudits7)");
+        }
         sponsorshipAuthorizer = change.newValue;
+        if (change.newValue != address(0)) {
+            signaturesEnforced = true;
+        }
         delete pendingSponsorshipAuthorizer;
         emit SponsorshipAuthorizerExecuted(change.newValue);
     }
@@ -598,34 +625,52 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
      * Pattern (identical to retryPendingFee and the ec52d84a Phase 1 precedent):
      * 1. Snapshot amount from the per-ID pendingFailedSponsorshipCut mapping.
      * 2. Zero the per-ID entry first (CEI).
-     * 3. Optionally decrement the aggregate pendingFeeWithdrawals[seasonal] for consistency.
-     * 4. Perform the metadata .call to seasonalTreasuryReceiver.
-     * 5. On failure: restore the per-ID amount and revert FeeRetryFailed (aggregate already adjusted safely).
-     * 6. On success: emit the dedicated SponsorshipCutRetriedWithMetadata event.
+     * 3. Perform the metadata .call to seasonalTreasuryReceiver.
+     * 4. On failure: restore the per-ID amount and revert FeeRetryFailed.
+     * 5. On success: emit the dedicated SponsorshipCutRetriedWithMetadata event.
+     *
+     * contractsaudits7: removed aggregate decrement step. Structured league cuts are intentionally
+     * not recorded in the generic pendingFeeWithdrawals[seasonalTreasuryReceiver] (see payForSponsorship failure leg),
+     * so decrementing it would silently erase unrelated pending fees from other sources.
      *
      * The original sponsorshipId + poolId are carried through, preserving full attribution for indexers
      * and league accounting. This directly addresses the Medium "Failed league-cut retries lose pool attribution"
      * finding in contractaudits5.md.
+     *
+     * contractsaudits6: poolId param is accepted for compatibility but the canonical value is taken from
+     * sponsorshipPoolId[sponsorshipId] (set at payForSponsorship time). This binds the retry to the original
+     * pool chosen by the payer.
+     *
+     * contractsaudits7: the receiver for the metadata call is the one stored with the cut at failure time
+     * (not current global seasonalTreasuryReceiver) in case the receiver is later changed via timelock.
      */
     function retrySponsorshipCut(bytes32 sponsorshipId, bytes32 poolId) external nonReentrant {
-        uint256 amount = pendingFailedSponsorshipCut[sponsorshipId];
+        PendingSponsorshipCut memory cut = pendingFailedSponsorshipCut[sponsorshipId];
+        uint256 amount = cut.amount;
         require(amount > 0, "Nothing to retry");
 
-        pendingFailedSponsorshipCut[sponsorshipId] = 0;
+        pendingFailedSponsorshipCut[sponsorshipId] = PendingSponsorshipCut({amount: 0, receiver: address(0)});
 
-        // Keep aggregate consistent when the failed cut had also been credited to pendingFeeWithdrawals.
-        if (pendingFeeWithdrawals[seasonalTreasuryReceiver] >= amount) {
-            pendingFeeWithdrawals[seasonalTreasuryReceiver] -= amount;
-        }
+        // contractsaudits6: bind to the original stored poolId from payment time (the passed poolId is accepted
+        // for signature/ABI compatibility but ignored). This prevents caller from choosing arbitrary pool
+        // for the metadata credit on Major.
+        bytes32 poolIdToUse = sponsorshipPoolId[sponsorshipId];
 
-        (bool success, ) = seasonalTreasuryReceiver.call{value: amount}(
-            abi.encodeWithSignature("receiveSponsorshipCut(bytes32,bytes32)", sponsorshipId, poolId)
+        // contractsaudits7: use the historical receiver stored at failure time (not current global).
+        address receiverToUse = cut.receiver != address(0) ? cut.receiver : seasonalTreasuryReceiver;
+
+        // contractsaudits7: removed aggregate decrement step. Structured league cuts are intentionally
+        // not recorded in the generic pendingFeeWithdrawals[seasonalTreasuryReceiver] (see payForSponsorship failure leg),
+        // so decrementing it would silently erase unrelated pending fees from other sources.
+
+        (bool success, ) = receiverToUse.call{value: amount}(
+            abi.encodeWithSignature("receiveSponsorshipCut(bytes32,bytes32)", sponsorshipId, poolIdToUse)
         );
         if (!success) {
-            pendingFailedSponsorshipCut[sponsorshipId] = amount; // recredit on failure
+            pendingFailedSponsorshipCut[sponsorshipId] = cut; // recredit on failure
             revert FeeRetryFailed();
         }
-        emit SponsorshipCutRetriedWithMetadata(sponsorshipId, poolId, amount);
+        emit SponsorshipCutRetriedWithMetadata(sponsorshipId, poolIdToUse, amount);
     }
 
     // ==================== EIP-712 HELPERS (Phase 2 / contractaudits5) ====================

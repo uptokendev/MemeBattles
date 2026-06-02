@@ -260,6 +260,10 @@ contract MajorLeagueTreasury is ReentrancyGuard, Ownable {
         require(change.exists, "No pending change");
         require(block.timestamp >= change.executeAfter, "Timelock not expired");
 
+        // contractsaudits6: re-check the distributor is still enabled at execution time (propose checked at proposal time,
+        // but after the timelock a disable could have happened). Prevents stale limits on removed distributors.
+        if (!distributors[change.distributor]) revert InvalidDistributorLimitUpdate();
+
         // Atomically update both limits for the distributor (mirrors the binding done in executeDistributorChange).
         distributorDailyLimit[change.distributor] = change.dailyLimit;
         distributorMaxPerTx[change.distributor] = change.maxPerTx;

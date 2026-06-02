@@ -28,7 +28,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       await expect(
@@ -67,7 +67,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
       // Point both receivers at the reverting mock so fees credit to pending
-      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress());
+      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.01");
@@ -109,7 +109,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await accepting.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress());
+      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.05");
@@ -274,7 +274,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const btAddr = await battle.getAddress();
@@ -451,7 +451,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   describe("Phase 5 final timelocked setters (min sponsorship + global max allocation)", function () {
     it("SponsorshipPayments minimum now only changeable via propose/execute/cancel (no immediate path)", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const newMin = ethers.parseEther("0.25");
@@ -510,7 +510,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   describe("Gate completeness: all scenarios exercised without regression on happy paths", function () {
     it("happy-path sponsorship split + claimPendingFees still works (post all phases)", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       // Use 0 min for this path
@@ -597,7 +597,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   describe("contractaudits5 Phase 2: Sponsorship EIP-712 authorization (happy + failure paths)", function () {
     it("unsigned works when authorizer=0; when set, valid EIP-712 succeeds, bad/expired/wrong-payer/wrong-sig reverts with custom errors; duplicate ID still hits SponsorshipAlreadyPaid first", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.01");
@@ -700,7 +700,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
       // seasonal points at reverting so league cut (15%) fails → pending + per-ID credited
-      const spons = await Spons.deploy(await protocol.getAddress(), await reverting.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       // Set min=0 for simplicity
@@ -716,24 +716,26 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
         spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, 0, "0x", { value: amt })
       ).to.emit(spons, "FeeTransferFailed");
 
-      // Both aggregate pending and per-ID should be credited (Phase 2 Medium finding closed)
+      // contractsaudits6: with the dual-recording fix, structured league cuts are recorded ONLY in per-ID (not generic aggregate)
+      // so generic retryPendingFee(seasonal) cannot consume them (prevents double-pay and bare-ETH degradation).
       const pendingAgg = await spons.pendingFeeWithdrawals(await reverting.getAddress());
-      const pendingPerId = await spons.pendingFailedSponsorshipCut(sponsorshipId);
-      expect(pendingAgg).to.be.gt(0n);
-      expect(pendingPerId).to.eq(pendingAgg); // 15% of 1 ETH
+      const pendingPerId = (await spons.pendingFailedSponsorshipCut(sponsorshipId)).amount;
+      // Aggregate for seasonal should not have been credited for this structured league cut (or only pre-fix legacy).
+      // Per-ID is credited.
+      expect(pendingPerId).to.be.gt(0n);
 
-      // Exercise plain retryPendingFee (will revert on reverting seasonal, restoring state — pattern proven in first describe)
+      // Plain retryPendingFee on seasonal now has amount=0 for the structured league cut (no generic credit), so "Nothing to retry".
       await expect(
         spons.connect(bob).retryPendingFee(await reverting.getAddress())
-      ).to.be.revertedWithCustomError(spons, "FeeRetryFailed");
+      ).to.be.revertedWith("Nothing to retry");
 
-      // Exercise the specialized attribution-preserving retry (reverts on the reverting seasonal, but per-ID recredit logic is exercised)
+      // The specialized retry exercises the per-ID recredit logic (reverts on reverting receiver but restores per-ID).
       await expect(
         spons.connect(bob).retrySponsorshipCut(sponsorshipId, poolId)
       ).to.be.revertedWithCustomError(spons, "FeeRetryFailed");
 
-      // After fail, the per-ID is restored (standard CEI + recredit)
-      const perIdAfter = await spons.pendingFailedSponsorshipCut(sponsorshipId);
+      // After the specialized fail, the per-ID is restored (CEI + recredit).
+      const perIdAfter = (await spons.pendingFailedSponsorshipCut(sponsorshipId)).amount;
       expect(perIdAfter).to.be.gt(0n);
 
       // The retrySponsorshipCut function + pendingFailedSponsorshipCut mapping exist and follow the documented pattern.
@@ -907,7 +909,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress());
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
       await spons.waitForDeployment();
 
       const btAddr = await battle.getAddress();
@@ -1053,14 +1055,16 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
 
     await expect(battle.connect(alice).claim(battleId)).to.emit(battle, "FeeTransferFailed");
 
+    // contractsaudits6: structured league (seasonal) not credited to generic pendingFeeWithdrawals anymore (only per-ID)
     const pendingAgg = await battle.pendingFeeWithdrawals(await reverting.getAddress());
-    const pendingPerId = await battle.pendingFailedBattleCut(battleId);
-    expect(pendingAgg).to.be.gt(0n);
-    expect(pendingPerId).to.eq(pendingAgg);
+    const pendingPerId = (await battle.pendingFailedBattleCut(battleId)).amount;
+    expect(pendingPerId).to.be.gt(0n);
 
-    await expect(battle.connect(bob).retryPendingFee(await reverting.getAddress())).to.be.revertedWithCustomError(battle, "FeeRetryFailed");
+    // Plain on seasonal: amount=0 for structured -> "Nothing to retry"
+    await expect(battle.connect(bob).retryPendingFee(await reverting.getAddress())).to.be.revertedWith("Nothing to retry");
+    // Specialized exercises the per-ID path (reverts on rev, restores perId)
     await expect(battle.connect(bob).retryBattleCut(battleId, poolId)).to.be.revertedWithCustomError(battle, "FeeRetryFailed");
-    const perIdAfter = await battle.pendingFailedBattleCut(battleId);
+    const perIdAfter = (await battle.pendingFailedBattleCut(battleId)).amount;
     expect(perIdAfter).to.be.gt(0n);
   });
 });
