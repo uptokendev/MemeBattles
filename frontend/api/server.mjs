@@ -43,14 +43,24 @@ import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
 import warRoom from "./warRoom.js";
 import wmAdminAuth from "./war-missions/admin-auth.js";
+import wmAdminBadgeAward from "./war-missions/admin-badge-award.js";
 import wmAdminConsoleData from "./war-missions/admin-console-data.js";
+import wmAdminLeaderboardSnapshot from "./war-missions/admin-leaderboard-snapshot.js";
+import wmAdminNotificationsList from "./war-missions/admin-notifications-list.js";
+import wmAdminPrizes from "./war-missions/admin-prizes.js";
+import wmAdminQuestUpsert from "./war-missions/admin-quest-upsert.js";
+import wmAdminQuizQuestions from "./war-missions/admin-quiz-questions.js";
+import wmAdminQuizTemplates from "./war-missions/admin-quiz-templates.js";
+import wmAdminRecruiterReview from "./war-missions/admin-recruiter-review.js";
 import wmAdminReviewCompletion from "./war-missions/admin-review-completion.js";
 import wmAdminSocialChecksList from "./war-missions/admin-social-checks-list.js";
 import wmAdminSocialRecheck from "./war-missions/admin-social-recheck.js";
+import wmAdminUserAction from "./war-missions/admin-user-action.js";
 import wmAuthNonce from "./war-missions/auth-nonce.js";
 import wmAuthVerify from "./war-missions/auth-verify.js";
 import wmBadgesList from "./war-missions/badges-list.js";
 import wmCommunityMembershipSweep from "./war-missions/community-membership-sweep.js";
+import wmDailyRollover from "./war-missions/daily-rollover.js";
 import wmDiscordMemberCheck from "./war-missions/discord-member-check.js";
 import wmDiscordOAuthCallback from "./war-missions/discord-oauth-callback.js";
 import wmDiscordOAuthStart from "./war-missions/discord-oauth-start.js";
@@ -59,12 +69,21 @@ import wmPrizesPublic from "./war-missions/prizes-public.js";
 import wmProfile from "./war-missions/profile.js";
 import wmQuestsList from "./war-missions/quests-list.js";
 import wmQuestsSubmit from "./war-missions/quests-submit.js";
+import wmQuizLoad from "./war-missions/quiz-load.js";
+import wmQuizSubmit from "./war-missions/quiz-submit.js";
+import wmRecruiterApply from "./war-missions/recruiter-apply.js";
+import wmRecruiterStatus from "./war-missions/recruiter-status.js";
+import wmRecruiterStatusCheck from "./war-missions/recruiter-status-check.js";
+import wmReferralStats from "./war-missions/referral-stats.js";
+import wmReferralTrack from "./war-missions/referral-track.js";
 import wmSocialLink from "./war-missions/social-link.js";
 import wmSocialStatus from "./war-missions/social-status.js";
 import wmTelegramLinkStart from "./war-missions/telegram-link-start.js";
 import wmTelegramMemberCheck from "./war-missions/telegram-member-check.js";
 import wmTelegramWebhook from "./war-missions/telegram-webhook.js";
-import warMissionsProxy from "./war-missions/proxy.js";
+import wmXFollowCheck from "./war-missions/x-follow-check.js";
+import wmXOAuthCallback from "./war-missions/x-oauth-callback.js";
+import wmXOAuthStart from "./war-missions/x-oauth-start.js";
 import { contentAiGenerateVariants } from "./content-ai.js";
 import {
   contentPlannerCalendar,
@@ -205,29 +224,52 @@ function wrap(fn) {
   };
 }
 
+function isFeatureEnabled(name) {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function gate(fn, flagName) {
+  return async (req, res) => {
+    if (!isFeatureEnabled(flagName)) {
+      return res.status(503).json({ ok: false, error: "Feature unavailable", featureFlag: flagName });
+    }
+    return fn(req, res);
+  };
+}
+
 const router = express.Router();
+
+const postgradArenaOps = gate(arenaOps, "POSTGRAD_ARENA_OPS_ENABLED");
+const postgradBattles = gate(arenaBattles, "POSTGRAD_BATTLES_ENABLED");
+const postgradEvents = gate(arenaEvents, "POSTGRAD_EVENTS_ENABLED");
+const postgradLeague = gate(arenaLeague, "POSTGRAD_LEAGUE_ENABLED");
+const postgradWarPools = gate(arenaWarPools, "POSTGRAD_WAR_POOLS_ENABLED");
+const postgradSponsored = gate(sponsored, "POSTGRAD_SPONSORSHIPS_ENABLED");
+const postgradSponsorshipApplications = gate(sponsorshipApplications, "POSTGRAD_SPONSORSHIPS_ENABLED");
+const postgradWarRoom = gate(warRoom, "POSTGRAD_WAR_ROOM_ENABLED");
 
 router.all("/activity/trades", wrap(activityTrades));
 router.all("/ably/token", wrap(ablyToken));
 router.all("/auth/nonce", wrap(authNonce));
-router.all("/arena/ops/health", wrap(arenaOps));
-router.all("/arena/battles/open", wrap(arenaBattles));
-router.all("/arena/battles/creator-status", wrap(arenaBattles));
-router.all("/arena/battles/:battleId/transition", wrap(arenaBattles));
-router.all("/arena/battles/:battleId", wrap(arenaBattles));
-router.all("/arena/battles", wrap(arenaBattles));
-router.all("/arena/events/:eventId/advance-bracket", wrap(arenaEvents));
-router.all("/arena/events/:eventId/transition", wrap(arenaEvents));
-router.all("/arena/events/:eventId", wrap(arenaEvents));
-router.all("/arena/events", wrap(arenaEvents));
-router.all("/arena/league/advance-week", wrap(arenaLeague));
-router.all("/arena/league/rebalance-divisions", wrap(arenaLeague));
-router.all("/arena/league/cycle-season-state", wrap(arenaLeague));
-router.all("/arena/league", wrap(arenaLeague));
-router.all("/arena/war-pools/:battleId/support", wrap(arenaWarPools));
-router.all("/arena/war-pools/:battleId/transition", wrap(arenaWarPools));
-router.all("/arena/war-pools/:battleId", wrap(arenaWarPools));
-router.all("/arena/war-pools", wrap(arenaWarPools));
+router.all("/arena/ops/health", wrap(postgradArenaOps));
+router.all("/arena/battles/open", wrap(postgradBattles));
+router.all("/arena/battles/creator-status", wrap(postgradBattles));
+router.all("/arena/battles/:battleId/transition", wrap(postgradBattles));
+router.all("/arena/battles/:battleId", wrap(postgradBattles));
+router.all("/arena/battles", wrap(postgradBattles));
+router.all("/arena/events/:eventId/advance-bracket", wrap(postgradEvents));
+router.all("/arena/events/:eventId/transition", wrap(postgradEvents));
+router.all("/arena/events/:eventId", wrap(postgradEvents));
+router.all("/arena/events", wrap(postgradEvents));
+router.all("/arena/league/advance-week", wrap(postgradLeague));
+router.all("/arena/league/rebalance-divisions", wrap(postgradLeague));
+router.all("/arena/league/cycle-season-state", wrap(postgradLeague));
+router.all("/arena/league", wrap(postgradLeague));
+router.all("/arena/war-pools/:battleId/support", wrap(postgradWarPools));
+router.all("/arena/war-pools/:battleId/transition", wrap(postgradWarPools));
+router.all("/arena/war-pools/:battleId", wrap(postgradWarPools));
+router.all("/arena/war-pools", wrap(postgradWarPools));
 router.all("/campaigns/upsert", wrap(campaignsUpsert));
 router.all("/campaigns", wrap(campaigns));
 router.all("/comments", wrap(comments));
@@ -250,15 +292,15 @@ router.all("/profile", wrap(profile));
 router.all("/profileCabinet", wrap(profileCabinet));
 router.all("/shareCard", wrap(shareCard));
 router.all("/prepare-share-card", wrap(prepareShareCard));
-router.all("/sponsored", wrap(sponsored));
-router.all("/sponsorship-applications", wrap(sponsorshipApplications));
+router.all("/sponsored", wrap(postgradSponsored));
+router.all("/sponsorship-applications", wrap(postgradSponsorshipApplications));
 router.all("/status", wrap(status));
 router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
 router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
-router.all("/war-room", wrap(warRoom));
+router.all("/war-room", wrap(postgradWarRoom));
 router.all("/content-ai/generate-variants", wrap(contentAiGenerateVariants));
 router.all("/posts", wrap(contentPlannerPosts));
 router.all("/posts/:id/variants", wrap(contentPlannerPostVariants));
@@ -328,26 +370,34 @@ router.all("/wm-discord-member-check", wrap(wmDiscordMemberCheck));
 router.all("/wm-community-membership-sweep", wrap(wmCommunityMembershipSweep));
 router.all("/wm-admin-auth", wrap(wmAdminAuth));
 router.all("/wm-admin-console-data", wrap(wmAdminConsoleData));
+router.all("/wm-admin-quiz-templates", wrap(wmAdminQuizTemplates));
+router.all("/wm-admin-quiz-questions", wrap(wmAdminQuizQuestions));
+router.all("/wm-admin-recruiter-review", wrap(wmAdminRecruiterReview));
 router.all("/wm-admin-social-checks-list", wrap(wmAdminSocialChecksList));
 router.all("/wm-admin-review-completion", wrap(wmAdminReviewCompletion));
 router.all("/wm-admin-social-recheck", wrap(wmAdminSocialRecheck));
-router.all("/wm-x-oauth-start", wrap(warMissionsProxy));
-router.all("/wm-x-oauth-callback", wrap(warMissionsProxy));
-router.all("/social-x-callback", wrap(warMissionsProxy));
-router.all("/wm-quiz-get", wrap(warMissionsProxy));
-router.all("/wm-quiz-submit", wrap(warMissionsProxy));
-router.all("/wm-referral-track", wrap(warMissionsProxy));
+router.all("/wm-recruiter-apply", wrap(wmRecruiterApply));
+router.all("/wm-recruiter-status", wrap(wmRecruiterStatus));
+router.all("/wm-recruiter-status-check", wrap(wmRecruiterStatusCheck));
+router.all("/wm-referral-track", wrap(wmReferralTrack));
+router.all("/wm-referral-stats", wrap(wmReferralStats));
+router.all("/wm-x-oauth-start", wrap(wmXOAuthStart));
+router.all("/wm-x-oauth-callback", wrap(wmXOAuthCallback));
+router.all("/social-x-callback", wrap(wmXOAuthCallback));
+router.all("/wm-x-follow-check", wrap(wmXFollowCheck));
+router.all("/wm-quiz-get", wrap(wmQuizLoad));
+router.all("/wm-quiz-load", wrap(wmQuizLoad));
+router.all("/wm-quiz-submit", wrap(wmQuizSubmit));
 router.all("/wm-leaderboard-current", wrap(wmLeaderboardCurrent));
 router.all("/wm-prizes-public", wrap(wmPrizesPublic));
 router.all("/wm-badges-list", wrap(wmBadgesList));
-router.all("/wm-admin-badge-award", wrap(warMissionsProxy));
-router.all("/wm-admin-notifications-list", wrap(warMissionsProxy));
-router.all("/wm-admin-recruiter-review", wrap(warMissionsProxy));
-router.all("/wm-admin-user-action", wrap(warMissionsProxy));
-router.all("/wm-admin-quest-upsert", wrap(warMissionsProxy));
-router.all("/wm-admin-leaderboard-snapshot", wrap(warMissionsProxy));
-router.all("/wm-admin-prizes", wrap(warMissionsProxy));
-router.all("/wm-daily-rollover", wrap(warMissionsProxy));
+router.all("/wm-admin-badge-award", wrap(wmAdminBadgeAward));
+router.all("/wm-admin-notifications-list", wrap(wmAdminNotificationsList));
+router.all("/wm-admin-user-action", wrap(wmAdminUserAction));
+router.all("/wm-admin-quest-upsert", wrap(wmAdminQuestUpsert));
+router.all("/wm-admin-leaderboard-snapshot", wrap(wmAdminLeaderboardSnapshot));
+router.all("/wm-admin-prizes", wrap(wmAdminPrizes));
+router.all("/wm-daily-rollover", wrap(wmDailyRollover));
 router.all("/internal/rewards/publications", wrap(internalRewardPublications));
 router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
 router.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
@@ -362,10 +412,8 @@ app.use((req, res) => res.status(404).json({ error: `Unknown route: ${req.path}`
 app.use((err, _req, res, _next) => {
   console.error("[api/server] unhandled", err);
   if (res.headersSent) return;
-  res.status(500).json({ error: "Internal server error", detail: String(err?.message || err) });
+  res.status(500).json({ error: "Server error" });
 });
 
 const port = Number(process.env.PORT || process.env.API_PORT || 3001);
-app.listen(port, () => {
-  console.log(`[api/server] listening on :${port}`);
-});
+app.listen(port, "0.0.0.0", () => console.log(`[api/server] listening on 0.0.0.0:${port}`));
