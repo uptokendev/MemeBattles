@@ -17,7 +17,8 @@ type CommandCenterSection =
   | "settings"
   | "followers"
   | "following"
-  | "coins";
+  | "coins"
+  | "arena-ops";
 
 type LegacyCommandCenterRedirectProps = {
   section: CommandCenterSection;
