@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { FileText, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
+import { FileText, Gift, Home, Menu, Settings, Shield, Swords, Trophy, Users, X } from "lucide-react";
 
 const menuItems = [
   { label: "Overview", path: "", icon: Home, end: true },
   { label: "Drafts", path: "coins", icon: FileText },
+  { label: "Arena Ops", path: "arena-ops", icon: Swords },
   { label: "Recruiter", path: "recruiter", icon: Shield },
   { label: "Squad", path: "squad", icon: Users },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
@@ -20,7 +21,7 @@ export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <aside className="rounded-3xl border border-border/50 bg-card/35 p-3 shadow-2xl backdrop-blur-md lg:sticky lg:top-4 lg:h-fit">
+    <aside className="mwz-hud-frame p-3 lg:sticky lg:top-4 lg:h-fit">
       <button
         type="button"
         onClick={() => setMobileOpen((open) => !open)}
