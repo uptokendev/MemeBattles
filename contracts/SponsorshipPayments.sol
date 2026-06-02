@@ -25,6 +25,8 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * Phase 2 (contractaudits5 / phased-build-da26e79f): EIP-712 authorization for payForSponsorship
  * when sponsorshipAuthorizer is set (closes frontrunning/DoS on globally-unique sponsorshipId).
  * Also added attribution-preserving retrySponsorshipCut for failed league cuts.
+ * contractaudits8: ctor requires non-zero authorizer (unsigned mode removed entirely); timelocked
+ * structured-cut redirect (propose/execute/cancel) added for historical receiver recovery.
  */
 contract SponsorshipPayments is ReentrancyGuard, Ownable {
     using ECDSA for bytes32;
@@ -73,8 +75,8 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
 
     // Phase 2 (contractaudits5 Medium/High): timelocked sponsorshipAuthorizer for EIP-712 binding
     // of payForSponsorship calls. When non-zero, signatures are required (closes globally-unique
-    // sponsorshipId frontrun/DoS vector). address(0) explicitly allowed to disable requirement
-    // (unsigned transition / backward-compat mode). Uses exact Pending* + propose/execute/cancel
+    // sponsorshipId frontrun/DoS vector). contractaudits8: ctor requires non-zero; address(0) rejected
+    // at execute (no unsigned mode remains; signaturesEnforced permanent). Uses exact Pending* + propose/execute/cancel
     // pattern from the Phase 5 minimumSponsorshipAmount implementation in this file.
     struct PendingAuthorizer {
         address newValue;
@@ -83,8 +85,8 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     }
 
     PendingAuthorizer public pendingSponsorshipAuthorizer;
-    address public sponsorshipAuthorizer; // Set at construction or via timelocked propose/execute/cancel (Phase 2, contractaudits5 / phased-build-da26e79f)
-    // contractsaudits7: once set to non-zero at deploy or via execute, cannot be set back to 0 (prevents disabling signatures).
+    address public sponsorshipAuthorizer; // Set at construction (non-zero required per contractaudits8) or via timelocked propose/execute/cancel (Phase 2, contractaudits5 / phased-build-da26e79f)
+    // contractsaudits7 + contractaudits8: signaturesEnforced is true at ctor (authorizer non-zero) and cannot be disabled (execute rejects 0).
     bool public signaturesEnforced;
 
     // Accounting for fees that failed to transfer (non-blocking path).
@@ -99,6 +101,18 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
         address receiver;
     }
     mapping(bytes32 => PendingSponsorshipCut) public pendingFailedSponsorshipCut;
+
+    // contractaudits8: timelocked redirect for a specific pendingFailedSponsorshipCut entry.
+    // Allows owner to point a stuck structured cut (after historical receiver migration or misconfig)
+    // to a new receiver while preserving the sponsorshipId key + poolId metadata (for retrySponsorshipCut).
+    // Uses exact 2-day Pending* + propose/execute/cancel + onlyOwner pattern (append-only, no new trust).
+    struct PendingSponsorshipCutRedirect {
+        bytes32 sponsorshipId;
+        address newReceiver;
+        uint256 executeAfter;
+        bool exists;
+    }
+    PendingSponsorshipCutRedirect public pendingSponsorshipCutRedirect;
 
     // contractsaudits6: store the original poolId at payment time so that retrySponsorshipCut is bound to it
     // (prevents caller from supplying arbitrary poolId for the metadata credit on Major).
@@ -161,6 +175,12 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     // indexers can attribute the cut to the correct prize pool after recovery.
     event SponsorshipCutRetriedWithMetadata(bytes32 indexed sponsorshipId, bytes32 indexed poolId, uint256 amount);
 
+    // contractaudits8: events for the timelocked structured sponsorship cut redirect (edge recovery for
+    // historical receiver migration). Mirrors the style and safety of fee redirect + other timelocks.
+    event SponsorshipCutRedirectProposed(bytes32 indexed sponsorshipId, address indexed newReceiver, uint256 executeAfter);
+    event SponsorshipCutRedirectExecuted(bytes32 indexed sponsorshipId, address indexed newReceiver);
+    event PendingSponsorshipCutRedirectCancelled();
+
     // EIP-712 typehash for sponsorship authorization (Phase 2 / contractaudits5).
     // 6-field struct binds the exact payment intent (prevents frontrun on sponsorshipId alone).
     bytes32 public constant SPONSORSHIP_AUTH_TYPEHASH = keccak256(
@@ -177,16 +197,21 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     error InvalidSponsorshipAuthorization();
     error SponsorshipAuthorizationExpired();
 
+    // contractaudits8: for the new timelocked structured-cut redirect recovery (historical receiver migration).
+    error NoPendingCutRedirect();
+
     constructor(
         address _protocolFeeReceiver,
         address _seasonalTreasuryReceiver,
         address _sponsorshipAuthorizer
     ) Ownable(msg.sender) {
         _setReceivers(_protocolFeeReceiver, _seasonalTreasuryReceiver);
-        // Phase 2 / contractaudits6: authorizer set at deployment to require EIP-712 signatures by default.
-        // Pass non-zero to enforce signatures (recommended for public use). Pass address(0) to allow unsigned (unsafe for public use - see NatSpec and USER_INTERACTION_GUIDE).
+        // contractaudits8: unsigned mode removed for production. Ctor now requires non-zero authorizer so
+        // signatures are always enforced (closes the Low/Operational remaining finding). No path to deploy
+        // allowing unsigned payForSponsorship (prevents predictable-ID frontrun even at init).
+        require(_sponsorshipAuthorizer != address(0), "Authorizer required");
         sponsorshipAuthorizer = _sponsorshipAuthorizer;
-        signaturesEnforced = (_sponsorshipAuthorizer != address(0));
+        signaturesEnforced = true;
     }
 
     // setReceivers removed after deployment. All post-deployment receiver changes must use the timelock propose/execute path.
@@ -263,17 +288,19 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     /**
      * @notice Pay for a sponsorship.
      *
+     * contractaudits8: unsigned mode eliminated entirely. Ctor requires non-zero sponsorshipAuthorizer and
+     * verification is unconditional. EIP-712 signature + deadline always required. This solves the remaining
+     * Low/Operational "unsigned sponsorship mode if deployed with zero authorizer" finding.
+     *
      * Phase 2 update (contractaudits5 / phased-build-da26e79f):
      * - Signature changed to include `deadline` and `signature` (EIP-712).
-     * - When `sponsorshipAuthorizer != address(0)`, the caller MUST supply a valid EIP-712 signature
-     *   from that authorizer over the SponsorshipAuthorization struct.
+     * - The caller MUST supply a valid EIP-712 signature from the sponsorshipAuthorizer over the SponsorshipAuthorization struct.
      * - The struct is: SponsorshipAuthorization(sponsorshipId, payer=msg.sender, recipient, poolId, amount=msg.value, deadline)
      * - Domain: name="SponsorshipPayments", version="1", chainId, verifyingContract=this.
      * - Off-chain: use ethers.signTypedData (or equivalent) with the exact typehash and domain.
      *   Personal sign / toEthSignedMessageHash will fail (exactly as with BattleTreasury.resolveWinner).
-     * - constructor(_sponsorshipAuthorizer) sets it at deploy (pass non-zero to require sigs by default for public use).
-     * - contractsaudits7: once signaturesEnforced (authorizer was non-zero), executeSponsorshipAuthorizer cannot set it back to 0.
-     * - Passing 0 at deploy allows unsigned (unsafe for public; see USER_INTERACTION_GUIDE and TRUST_MODEL).
+     * - constructor now requires non-zero _sponsorshipAuthorizer (signatures always enforced for production; no unsigned path remains).
+     * - contractsaudits7 + contractaudits8: executeSponsorshipAuthorizer cannot set authorizer to 0 once enforced (always true post-ctor).
      * - This binds the globally-unique sponsorshipId to the intended payer/recipient/amount/pool/deadline,
      *   closing the Medium/High frontrun/DoS vector (any attacker could previously pre-pay a predictable ID).
      *
@@ -282,8 +309,8 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
      *        the same sponsorshipId revert with SponsorshipAlreadyPaid (or InvalidAmount per plan example).
      * @param recipient The address that should receive the 70% (the sponsored party)
      * @param poolId Optional target pool in MajorLeagueTreasury for the 15% league cut. Pass bytes32(0) to send to unallocated.
-     * @param deadline EIP-712 signature deadline (unix timestamp). Ignored when sponsorshipAuthorizer == address(0).
-     * @param signature EIP-712 signature over the SponsorshipAuthorization struct (or empty when authorizer==0).
+     * @param deadline EIP-712 signature deadline (unix timestamp). Always required.
+     * @param signature EIP-712 signature over the SponsorshipAuthorization struct (always required).
      *
      * minimumSponsorshipAmount is enforced if >0. It is now controlled exclusively via the timelocked
      * proposeMinimumSponsorshipAmount / executeMinimumSponsorshipAmount / cancelPendingMinimumSponsorshipAmount
@@ -301,20 +328,18 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
         if (minimumSponsorshipAmount > 0 && amount < minimumSponsorshipAmount) revert InvalidAmount();
         if (recipient == address(0)) revert ZeroAddress();
 
-        // Phase 2 (contractaudits5): conditional EIP-712 verification gate when authorizer is set.
+        // contractaudits8: EIP-712 verification is now unconditional (authorizer never 0 post-ctor).
         // Placed after basic checks and before the uniqueness guard (so signature failures are cheap and
         // do not interfere with the first-payer-wins semantics of SponsorshipAlreadyPaid).
-        if (sponsorshipAuthorizer != address(0)) {
-            _verifySponsorshipAuthorization(
-                sponsorshipId,
-                msg.sender,
-                recipient,
-                poolId,
-                amount,
-                deadline,
-                signature
-            );
-        }
+        _verifySponsorshipAuthorization(
+            sponsorshipId,
+            msg.sender,
+            recipient,
+            poolId,
+            amount,
+            deadline,
+            signature
+        );
 
         // Phase 4: enforce sponsorshipId uniqueness (first payment wins). Revert before any state changes or transfers.
         if (sponsorshipPaid[sponsorshipId]) revert SponsorshipAlreadyPaid();
@@ -436,12 +461,13 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
     // ==================== PHASE 2: SPONSORSHIP AUTHORIZER TIMELOCK (contractaudits5) ====================
     // Exact copy of the Phase 5 PendingMinimum + propose/execute/cancel pattern (including event style,
     // 2-day TIMELOCK_DELAY, onlyOwner, require strings, delete, and emit ordering).
-    // address(0) is a valid value (disables the EIP-712 requirement for transition / unsigned mode).
+    // contractaudits8: address(0) is rejected at execute (signaturesEnforced is permanent; no unsigned mode).
 
     /**
      * @notice Owner proposes a new sponsorshipAuthorizer (EIP-712 signer) with 2-day timelock.
      * @param newAuthorizer The address that will be required to produce SponsorshipAuthorization signatures
-     *        when set (non-zero). Pass address(0) to disable the signature requirement (unsigned mode).
+     *        when set (non-zero). contractaudits8: passing address(0) is rejected at execute time (signaturesEnforced
+     *        is permanent after ctor; unsigned mode does not exist).
      */
     function proposeSponsorshipAuthorizer(address newAuthorizer) external onlyOwner {
         pendingSponsorshipAuthorizer = PendingAuthorizer({
@@ -454,6 +480,7 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
 
     /**
      * @notice Owner executes a previously proposed sponsorshipAuthorizer change after the timelock.
+     * contractaudits8: newValue==address(0) is rejected when signaturesEnforced (always after ctor).
      */
     function executeSponsorshipAuthorizer() external onlyOwner {
         PendingAuthorizer memory change = pendingSponsorshipAuthorizer;
@@ -643,6 +670,12 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
      *
      * contractsaudits7: the receiver for the metadata call is the one stored with the cut at failure time
      * (not current global seasonalTreasuryReceiver) in case the receiver is later changed via timelock.
+     *
+     * contractaudits8: if the historical receiver itself later becomes unusable, owner can use the
+     * proposeSponsorshipCutRedirect / executeSponsorshipCutRedirect / cancelPendingSponsorshipCutRedirect
+     * (2-day timelock) to update *only* the .receiver on this per-ID record (amount + sponsorshipId + pool
+     * binding unchanged). This provides the recommended recovery for the "historical receiver retry can
+     * leave cuts stuck" Low finding without touching generic fees or other entries.
      */
     function retrySponsorshipCut(bytes32 sponsorshipId, bytes32 poolId) external nonReentrant {
         PendingSponsorshipCut memory cut = pendingFailedSponsorshipCut[sponsorshipId];
@@ -671,6 +704,59 @@ contract SponsorshipPayments is ReentrancyGuard, Ownable {
             revert FeeRetryFailed();
         }
         emit SponsorshipCutRetriedWithMetadata(sponsorshipId, poolIdToUse, amount);
+    }
+
+    // ==================== contractaudits8: TIMELOCKED STRUCTURED CUT REDIRECT (edge recovery) ====================
+    // Addresses the Low "Historical receiver retry can leave cuts stuck after receiver migration".
+    // When the receiver recorded in pendingFailedSponsorshipCut at failure time is no longer viable
+    // (e.g. contract migration, permanent reject), owner can timelock a receiver change on that
+    // *specific* per-ID entry. The sponsorshipId key, amount, and poolId binding are preserved so that
+    // a later retrySponsorshipCut(sponsorshipId, ...) will deliver to the new receiver with correct metadata.
+    // Follows identical 2-day timelock + onlyOwner + cancel + rich Proposed/Executed events pattern as
+    // fee redirect and authorizer/minimum timelocks. Append-only. No effect on generic pendingFeeWithdrawals.
+    // Execute re-checks the per-ID cut still has remaining amount (defensive, in case raced with a retry).
+
+    /**
+     * @notice Owner proposes a 2-day timelocked redirect of the receiver for a specific pending
+     * failed sponsorship league cut (per-ID structured entry only). Preserves sponsorshipId + pool
+     * for attribution on eventual retrySponsorshipCut.
+     */
+    function proposeSponsorshipCutRedirect(bytes32 sponsorshipId, address newReceiver) external onlyOwner {
+        require(newReceiver != address(0), "Invalid address");
+        // Note: we allow propose even if no current pending (execute will enforce); keeps pattern simple.
+        pendingSponsorshipCutRedirect = PendingSponsorshipCutRedirect({
+            sponsorshipId: sponsorshipId,
+            newReceiver: newReceiver,
+            executeAfter: block.timestamp + TIMELOCK_DELAY,
+            exists: true
+        });
+        emit SponsorshipCutRedirectProposed(sponsorshipId, newReceiver, pendingSponsorshipCutRedirect.executeAfter);
+    }
+
+    /**
+     * @notice Owner executes a previously proposed structured cut redirect after timelock.
+     * Updates only the .receiver on the pendingFailedSponsorshipCut entry (amount and key unchanged).
+     */
+    function executeSponsorshipCutRedirect() external onlyOwner {
+        PendingSponsorshipCutRedirect memory change = pendingSponsorshipCutRedirect;
+        require(change.exists, "No pending change");
+        require(block.timestamp >= change.executeAfter, "Timelock not expired");
+        // Defensive: the per-ID cut must still hold a positive amount (protects against stale redirect
+        // after a successful retry or another redirect that zeroed it).
+        if (pendingFailedSponsorshipCut[change.sponsorshipId].amount == 0) {
+            revert NoPendingCutRedirect();
+        }
+        pendingFailedSponsorshipCut[change.sponsorshipId].receiver = change.newReceiver;
+        emit SponsorshipCutRedirectExecuted(change.sponsorshipId, change.newReceiver);
+        delete pendingSponsorshipCutRedirect;
+    }
+
+    /**
+     * @notice Owner cancels a pending structured sponsorship cut redirect (before or after expiry).
+     */
+    function cancelPendingSponsorshipCutRedirect() external onlyOwner {
+        delete pendingSponsorshipCutRedirect;
+        emit PendingSponsorshipCutRedirectCancelled();
     }
 
     // ==================== EIP-712 HELPERS (Phase 2 / contractaudits5) ====================

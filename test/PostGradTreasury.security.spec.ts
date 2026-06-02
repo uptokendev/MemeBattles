@@ -7,6 +7,45 @@ async function increaseTime(seconds: number) {
   await ethers.provider.send("evm_mine", []);
 }
 
+// contractaudits8: helper to produce valid EIP-712 SponsorshipAuthorization signatures for tests.
+// All SponsorshipPayments deploys now use non-zero authorizer (resolver) since unsigned mode is removed.
+async function signSponsorship(
+  sponsAddr: string,
+  sponsorshipId: string,
+  payer: any,
+  recipient: any,
+  poolId: string,
+  amount: bigint,
+  deadline: number,
+  signer: any
+): Promise<string> {
+  const domain = {
+    name: "SponsorshipPayments",
+    version: "1",
+    chainId: (await ethers.provider.getNetwork()).chainId,
+    verifyingContract: sponsAddr,
+  };
+  const types = {
+    SponsorshipAuthorization: [
+      { name: "sponsorshipId", type: "bytes32" },
+      { name: "payer", type: "address" },
+      { name: "recipient", type: "address" },
+      { name: "poolId", type: "bytes32" },
+      { name: "amount", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  };
+  const value = {
+    sponsorshipId,
+    payer: await payer.getAddress(),
+    recipient: await recipient.getAddress(),
+    poolId,
+    amount,
+    deadline,
+  };
+  return await signer.signTypedData(domain, types, value);
+}
+
 describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / phased-build-da26e79f Phase 4)", function () {
   // Reusable signers
   let owner: any, alice: any, bob: any, resolver: any, protocol: any, seasonal: any;
@@ -28,7 +67,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       await expect(
@@ -67,7 +106,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
       // Point both receivers at the reverting mock so fees credit to pending
-      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.01");
@@ -75,14 +114,17 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await increaseTime(2 * 24 * 60 * 60 + 10);
       await spons.connect(owner).executeMinimumSponsorshipAmount();
 
-      // Pay triggers fee legs that will fail → pending credited (unsigned ok because authorizer defaults to 0)
+      // Pay triggers fee legs that will fail → pending credited (contractaudits8: signed, resolver is authorizer)
+      const latestFee = await ethers.provider.getBlock("latest");
+      const dlFee = (latestFee!.timestamp) + 3600;
+      const sigFee = await signSponsorship(await spons.getAddress(), ethers.id("gate-fee-revert-1"), alice, alice, ethers.ZeroHash, min, dlFee, resolver);
       await expect(
         spons.connect(alice).payForSponsorship(
           ethers.id("gate-fee-revert-1"),
           await alice.getAddress(),
           ethers.ZeroHash,
-          0,
-          "0x",
+          dlFee,
+          sigFee,
           { value: min }
         )
       ).to.emit(spons, "FeeTransferFailed");
@@ -109,7 +151,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await accepting.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await reverting.getAddress(), await reverting.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.05");
@@ -117,12 +159,16 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await increaseTime(2 * 24 * 60 * 60 + 10);
       await spons.connect(owner).executeMinimumSponsorshipAmount();
 
+      // contractaudits8: signed pay (resolver authorizer)
+      const latestRedir = await ethers.provider.getBlock("latest");
+      const dlRedir = (latestRedir!.timestamp) + 3600;
+      const sigRedir = await signSponsorship(await spons.getAddress(), ethers.id("gate-redirect-1"), alice, alice, ethers.ZeroHash, min, dlRedir, resolver);
       await spons.connect(alice).payForSponsorship(
         ethers.id("gate-redirect-1"),
         await alice.getAddress(),
         ethers.ZeroHash,
-        0,
-        "0x",
+        dlRedir,
+        sigRedir,
         { value: min }
       );
 
@@ -274,7 +320,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       const btAddr = await battle.getAddress();
@@ -451,7 +497,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   describe("Phase 5 final timelocked setters (min sponsorship + global max allocation)", function () {
     it("SponsorshipPayments minimum now only changeable via propose/execute/cancel (no immediate path)", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       const newMin = ethers.parseEther("0.25");
@@ -510,7 +556,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   describe("Gate completeness: all scenarios exercised without regression on happy paths", function () {
     it("happy-path sponsorship split + claimPendingFees still works (post all phases)", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       // Use 0 min for this path
@@ -519,12 +565,16 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await spons.connect(owner).executeMinimumSponsorshipAmount();
 
       const amt = ethers.parseEther("1");
+      // contractaudits8: signed (resolver authorizer from ctor)
+      const latestHappy = await ethers.provider.getBlock("latest");
+      const dlHappy = (latestHappy!.timestamp) + 3600;
+      const sigHappy = await signSponsorship(await spons.getAddress(), ethers.id("gate-happy-spons"), alice, bob, ethers.id("pool-happy"), amt, dlHappy, resolver);
       const tx = await spons.connect(alice).payForSponsorship(
         ethers.id("gate-happy-spons"),
         await bob.getAddress(),
         ethers.id("pool-happy"),
-        0,
-        "0x",
+        dlHappy,
+        sigHappy,
         { value: amt }
       );
       await tx.wait();
@@ -595,9 +645,10 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
   });
 
   describe("contractaudits5 Phase 2: Sponsorship EIP-712 authorization (happy + failure paths)", function () {
-    it("unsigned works when authorizer=0; when set, valid EIP-712 succeeds, bad/expired/wrong-payer/wrong-sig reverts with custom errors; duplicate ID still hits SponsorshipAlreadyPaid first", async function () {
+    it("ctor requires non-zero authorizer (unsigned removed per contractaudits8); valid EIP-712 succeeds, bad/expired/wrong-payer/wrong-sig reverts with custom errors; duplicate ID still hits SponsorshipAlreadyPaid first", async function () {
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      // contractaudits8: always deploy with non-zero; signatures enforced from ctor (no unsigned path)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress());
       await spons.waitForDeployment();
 
       const min = ethers.parseEther("0.01");
@@ -609,33 +660,11 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       const poolId = ethers.id("pool-eip");
       const amount = min;
 
-      // 1. Authorizer defaults to 0 → unsigned call succeeds (backward compat)
-      await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, 0, "0x", { value: amount })
-      ).to.emit(spons, "SponsorshipPaid");
-
-      // 2. Set authorizer via its own timelocked path (Phase 2)
-      const newAuthorizer = await resolver.getAddress();
-      await spons.connect(owner).proposeSponsorshipAuthorizer(newAuthorizer);
-      await increaseTime(2 * 24 * 60 * 60 + 10);
-      await spons.connect(owner).executeSponsorshipAuthorizer();
-      expect(await spons.sponsorshipAuthorizer()).to.eq(newAuthorizer);
-
       // Compute all deadlines from *on-chain* clock (EVM time is far ahead of JS Date due to many increaseTime calls in suite)
       const latest = await ethers.provider.getBlock("latest");
       const chainNow = latest!.timestamp;
 
-      // 3. Now unsigned (with future on-chain deadline + a *valid-format 65-byte ECDSA sig from a random wallet* so length/v checks pass in OZ and we reliably hit our custom InvalidSponsorshipAuthorization)
-      const sponsorshipId2 = ethers.id("gate-spons-eip-2");
-      const futureDeadline = chainNow + 36000;
-      const badSigWallet = ethers.Wallet.createRandom();
-      // signMessage produces a properly formatted 65-byte ECDSA sig (over a different digest); recover will yield wrong address → our custom error
-      const dummyValidFormatSig = await badSigWallet.signMessage("gate dummy for ECDSA length");
-      await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId2, await bob.getAddress(), poolId, futureDeadline, dummyValidFormatSig, { value: amount })
-      ).to.be.revertedWithCustomError(spons, "InvalidSponsorshipAuthorization");
-
-      // 4. Valid EIP-712 from the authorizer succeeds
+      // 1. Valid EIP-712 from the (ctor-set) authorizer succeeds
       const deadline = chainNow + 3600;
       const domain = {
         name: "SponsorshipPayments",
@@ -654,7 +683,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
         ],
       };
       const value = {
-        sponsorshipId: sponsorshipId2,
+        sponsorshipId,
         payer: await alice.getAddress(),
         recipient: await bob.getAddress(),
         poolId,
@@ -663,32 +692,38 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       };
       const validSig = await resolver.signTypedData(domain, types, value);
       await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId2, await bob.getAddress(), poolId, deadline, validSig, { value: amount })
+        spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, deadline, validSig, { value: amount })
       ).to.emit(spons, "SponsorshipPaid");
 
-      // 5. Bad signer (alice signs instead of resolver) → InvalidSponsorshipAuthorization (fresh future on-chain deadline)
-      const sponsorshipId3 = ethers.id("gate-spons-eip-3");
+      // 2. Bad signer (alice signs instead of resolver) → InvalidSponsorshipAuthorization (fresh future on-chain deadline)
+      const sponsorshipId2 = ethers.id("gate-spons-eip-2");
       const badDeadline = chainNow + 36000;
-      const badValue = { ...value, sponsorshipId: sponsorshipId3, deadline: badDeadline };
+      const badValue = { ...value, sponsorshipId: sponsorshipId2, deadline: badDeadline };
       const badSig = await alice.signTypedData(domain, types, badValue);
       await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId3, await bob.getAddress(), poolId, badDeadline, badSig, { value: amount })
+        spons.connect(alice).payForSponsorship(sponsorshipId2, await bob.getAddress(), poolId, badDeadline, badSig, { value: amount })
       ).to.be.revertedWithCustomError(spons, "InvalidSponsorshipAuthorization");
 
-      // 6. Expired deadline → SponsorshipAuthorizationExpired (clear past relative to chainNow)
-      const sponsorshipId4 = ethers.id("gate-spons-eip-4");
+      // 3. Expired deadline → SponsorshipAuthorizationExpired (clear past relative to chainNow)
+      const sponsorshipId3 = ethers.id("gate-spons-eip-3");
       const expiredDeadline = chainNow - 3600;
-      const expiredValue = { ...value, sponsorshipId: sponsorshipId4, deadline: expiredDeadline };
+      const expiredValue = { ...value, sponsorshipId: sponsorshipId3, deadline: expiredDeadline };
       const expiredSig = await resolver.signTypedData(domain, types, expiredValue);
       await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId4, await bob.getAddress(), poolId, expiredDeadline, expiredSig, { value: amount })
+        spons.connect(alice).payForSponsorship(sponsorshipId3, await bob.getAddress(), poolId, expiredDeadline, expiredSig, { value: amount })
       ).to.be.revertedWithCustomError(spons, "SponsorshipAuthorizationExpired");
 
-      // 7. Duplicate ID (even with valid sig) hits SponsorshipAlreadyPaid first (prevents DoS abuse)
-      const sponsorshipIdDup = sponsorshipId2; // already paid
+      // 4. Duplicate ID (even with valid sig) hits SponsorshipAlreadyPaid first (prevents DoS abuse)
       await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipIdDup, await bob.getAddress(), poolId, deadline, validSig, { value: amount })
+        spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, deadline, validSig, { value: amount })
       ).to.be.revertedWithCustomError(spons, "SponsorshipAlreadyPaid");
+
+      // 5. Also test the no-disable protection still works (propose 0 is allowed, execute reverts)
+      await spons.connect(owner).proposeSponsorshipAuthorizer(ethers.ZeroAddress);
+      await increaseTime(2 * 24 * 60 * 60 + 10);
+      await expect(
+        spons.connect(owner).executeSponsorshipAuthorizer()
+      ).to.be.revertedWith("cannot disable signatures once enforced (contractsaudits7)");
     });
   });
 
@@ -700,7 +735,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
       // seasonal points at reverting so league cut (15%) fails → pending + per-ID credited
-      const spons = await Spons.deploy(await protocol.getAddress(), await reverting.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await reverting.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       // Set min=0 for simplicity
@@ -712,8 +747,12 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       const poolId = ethers.id("pool-attrib-1");
       const amt = ethers.parseEther("1.0");
 
+      // contractaudits8: must supply valid EIP-712 sig (resolver is authorizer from ctor)
+      const latestForCut = await ethers.provider.getBlock("latest");
+      const dl = (latestForCut!.timestamp) + 3600;
+      const cutSig = await signSponsorship(await spons.getAddress(), sponsorshipId, alice, bob, poolId, amt, dl, resolver);
       await expect(
-        spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, 0, "0x", { value: amt })
+        spons.connect(alice).payForSponsorship(sponsorshipId, await bob.getAddress(), poolId, dl, cutSig, { value: amt })
       ).to.emit(spons, "FeeTransferFailed");
 
       // contractsaudits6: with the dual-recording fix, structured league cuts are recorded ONLY in per-ID (not generic aggregate)
@@ -909,7 +948,7 @@ describe("PostGradTreasury Security Gate (contractaudits4 + contractaudits5 / ph
       await battle.waitForDeployment();
 
       const Spons = await ethers.getContractFactory("SponsorshipPayments");
-      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), ethers.ZeroAddress); // authorizer=0 for unsigned compat in this test context; real deploys should pass non-zero to require signatures by default (contractsaudits6 fix)
+      const spons = await Spons.deploy(await protocol.getAddress(), await seasonal.getAddress(), await resolver.getAddress()); // contractaudits8: non-zero authorizer required (unsigned mode removed)
       await spons.waitForDeployment();
 
       const btAddr = await battle.getAddress();

@@ -90,6 +90,7 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     //
     // Phase 2 (contractaudits5 Medium / phased-build-da26e79f): attribution-preserving retry for
     // failed seasonal league cuts via pendingFailedBattleCut + retryBattleCut (symmetric to SponsorshipPayments).
+    // contractaudits8: replaceWinnerPayout (resolver EIP-712) + timelocked battle cut redirect recovery added.
 
     // IMPORTANT SEPARATION:
     // MajorLeagueTreasury is completely independent from the existing
@@ -122,6 +123,17 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
         address receiver;
     }
     mapping(bytes32 => PendingBattleCut) public pendingFailedBattleCut;
+
+    // contractaudits8: timelocked redirect for a specific pendingFailedBattleCut entry (symmetric to Sponsorship).
+    // Solves "historical receiver retry can leave cuts stuck after receiver migration" Low finding.
+    // Owner can retarget the receiver for one battleId's structured cut; battleId key + amount + seasonalPoolId preserved.
+    struct PendingBattleCutRedirect {
+        bytes32 battleId;
+        address newReceiver;
+        uint256 executeAfter;
+        bool exists;
+    }
+    PendingBattleCutRedirect public pendingBattleCutRedirect;
 
     // contractsaudits6: pending winner payout amount (credited if the signed payoutAddress rejects the push in claim()).
     // Allows pull via claimWinnerPayout so a resolved battle does not permanently lock if the payout rejects ETH.
@@ -197,6 +209,9 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     // the amount is credited to pendingWinnerPayouts[battleId] for later pull via claimWinnerPayout (prevents permanent lock).
     event WinnerPayoutFailed(bytes32 indexed battleId, address indexed to, uint256 amount);
     event WinnerPayoutClaimed(bytes32 indexed battleId, address indexed to, uint256 amount);
+    // contractaudits8: emitted when resolver uses signed replace for a pending winner payout on settled battle
+    // (recovery when both the original payout addr and the winner addr reject ETH).
+    event WinnerPayoutAddressReplaced(bytes32 indexed battleId, address indexed newPayoutAddress);
     event Refunded(bytes32 indexed battleId, address indexed to, uint256 amount);
     event FeeTransferFailed(address indexed receiver, uint256 amount, bytes32 indexed battleId);
 
@@ -237,6 +252,11 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     // Carries the original battleId + poolId so indexers can attribute the recovered cut to the correct prize pool.
     event BattleCutRetriedWithMetadata(bytes32 indexed battleId, bytes32 poolId, uint256 amount);
 
+    // contractaudits8: events for timelocked structured battle cut redirect (recovery for stuck historical receiver).
+    event BattleCutRedirectProposed(bytes32 indexed battleId, address indexed newReceiver, uint256 executeAfter);
+    event BattleCutRedirectExecuted(bytes32 indexed battleId, address indexed newReceiver);
+    event PendingBattleCutRedirectCancelled();
+
     // Errors
     error InvalidAmount();
     error BattleAlreadyExists();
@@ -251,6 +271,9 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     error InvalidSignature();
     error FeeRetryFailed();
     error NoPendingRefund();
+
+    // contractaudits8: for timelocked structured-cut redirect recovery paths.
+    error NoPendingCutRedirect();
 
     constructor(
         address _protocolFeeReceiver,
@@ -493,6 +516,14 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     // EIP-712 domain separator for secure off-chain winner signatures
     bytes32 public constant RESOLVE_WINNER_TYPEHASH = keccak256(
         "ResolveWinner(bytes32 battleId,address creator,address challenger,address winner,uint256 stakeAmount,uint256 depositDeadline,uint256 resolutionDeadline,bytes32 seasonalPoolId,address payoutAddress)"
+    );
+
+    // contractaudits8: EIP-712 typehash for post-settlement signed payout address replacement on a battle
+    // that has a pending winner payout (when both original signed payout and winner rejected at claim time).
+    // Allows resolver to provide an updated delivery address for the already-credited pendingWinnerPayouts[battleId].
+    // Direct EIP-712 (same as resolveWinner), no personal_sign. Binds battleId + newPayout + deadline.
+    bytes32 public constant REPLACE_WINNER_PAYOUT_TYPEHASH = keccak256(
+        "ReplaceWinnerPayout(bytes32 battleId,address newPayoutAddress,uint256 deadline)"
     );
 
     function _domainSeparatorV4() internal view returns (bytes32) {
@@ -772,6 +803,10 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
      * when the resolver-provided payout address happens to reject ETH at claim time. The winner or the
      * payout address can pull later (e.g. after the payout contract is upgraded or a new payoutAddress is
      * signed in a future flow).
+     *
+     * contractaudits8: if *both* the signed payout and the original winner reject on pull, the amount
+     * stays pending. Resolver can then call replaceWinnerPayout (EIP-712 signed, deadline) to set a
+     * fresh payoutAddress on the battle; next claimWinnerPayout will try it (fallback to winner inside).
      */
     function claimWinnerPayout(bytes32 battleId) external nonReentrant {
         uint256 amount = pendingWinnerPayouts[battleId];
@@ -797,6 +832,52 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
             }
         }
         emit WinnerPayoutClaimed(battleId, to, amount);
+    }
+
+    /**
+     * @notice Resolver-signed replacement of the payout address for an already-settled battle that has
+     * a non-zero pendingWinnerPayouts[battleId] (i.e. the prior claim attempt(s) to the signed payout
+     * and/or the winner fallback both rejected).
+     *
+     * contractaudits8: this is the recovery flow for the Low "Battle winner payout can still be stuck if
+     * both payout and winner reject ETH". The resolver (same trusted party as for resolveWinner) can
+     * provide a new delivery address after the fact via direct EIP-712 (deadline protected, no personal sign).
+     * On success, the battle's winnerPayoutAddress is updated; a subsequent claimWinnerPayout will attempt
+     * the new address (with the existing winner fallback inside claim still as ultimate safety).
+     *
+     * Must be called with a signature over ReplaceWinnerPayout(battleId, newPayoutAddress, deadline)
+     * using the same EIP-712 domain as resolveWinner.
+     */
+    function replaceWinnerPayout(
+        bytes32 battleId,
+        address newPayoutAddress,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        Battle storage battle = battles[battleId];
+        if (!battle.settled) revert InvalidAmount();
+        if (pendingWinnerPayouts[battleId] == 0) revert("No pending winner payout");
+        if (block.timestamp > deadline) revert("Payout replacement expired");
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                REPLACE_WINNER_PAYOUT_TYPEHASH,
+                battleId,
+                newPayoutAddress,
+                deadline
+            )
+        );
+
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", _domainSeparatorV4(), structHash)
+        );
+
+        if (digest.recover(signature) != resolver) {
+            revert InvalidSignature();
+        }
+
+        battle.winnerPayoutAddress = newPayoutAddress;
+        emit WinnerPayoutAddressReplaced(battleId, newPayoutAddress);
     }
 
     // ==================== VIEW HELPERS ====================
@@ -1020,6 +1101,7 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
     // and the symmetric retrySponsorshipCut in SponsorshipPayments.sol (Battle side added in
     // Phase 4 Fix Round 1 of phased-build-da26e79f to complete the Medium finding remediation).
     // The metadata call ensures the cut is attributed to the original poolId on MajorLeagueTreasury.
+    // contractaudits8: redirect recovery for historical receiver added (see proposeBattleCutRedirect etc).
 
     /**
      * @notice Anyone may retry a previously failed league cut for a specific battle, delivering
@@ -1060,6 +1142,9 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
         // pendingFeeWithdrawals[seasonal], so decrementing it would erase unrelated pending fees
         // (e.g. from redirects or other credits). The per-ID record is the canonical one.
 
+        // contractaudits8: the redirect timelock (propose/execute/cancelPendingBattleCutRedirect) can
+        // update the receiver on this pending entry if the historical one is stuck (see functions below).
+
         (bool success, ) = receiverToUse.call{value: amount}(
             abi.encodeWithSignature("receiveBattleCut(bytes32,bytes32)", battleId, poolIdToUse)
         );
@@ -1068,5 +1153,51 @@ contract BattleTreasury is ReentrancyGuard, Ownable {
             revert FeeRetryFailed();
         }
         emit BattleCutRetriedWithMetadata(battleId, poolIdToUse, amount);
+    }
+
+    // ==================== contractaudits8: TIMELOCKED STRUCTURED CUT REDIRECT (edge recovery) ====================
+    // Symmetric to the SponsorshipPayments implementation added for the same contractaudits8 Low finding.
+    // Provides owner-only 2-day timelocked path to update the .receiver on a specific pendingFailedBattleCut
+    // (amount + battleId key + poolId from the battle struct are untouched). Later retryBattleCut will use
+    // the redirected receiver for the metadata .call to Major. All patterns reused exactly (timelock, onlyOwner,
+    // cancel, CEI on execute, defensive amount check, rich events). No aggregate or generic fee impact.
+
+    /**
+     * @notice Owner proposes a 2-day timelocked redirect of the receiver for a specific pending
+     * failed battle league cut (per-ID). Preserves battleId + pool metadata for retryBattleCut.
+     */
+    function proposeBattleCutRedirect(bytes32 battleId, address newReceiver) external onlyOwner {
+        require(newReceiver != address(0), "Invalid address");
+        pendingBattleCutRedirect = PendingBattleCutRedirect({
+            battleId: battleId,
+            newReceiver: newReceiver,
+            executeAfter: block.timestamp + TIMELOCK_DELAY,
+            exists: true
+        });
+        emit BattleCutRedirectProposed(battleId, newReceiver, pendingBattleCutRedirect.executeAfter);
+    }
+
+    /**
+     * @notice Owner executes a previously proposed battle cut redirect after the timelock.
+     * Updates .receiver on the pendingFailedBattleCut (amount/key/pool unchanged).
+     */
+    function executeBattleCutRedirect() external onlyOwner {
+        PendingBattleCutRedirect memory change = pendingBattleCutRedirect;
+        require(change.exists, "No pending change");
+        require(block.timestamp >= change.executeAfter, "Timelock not expired");
+        if (pendingFailedBattleCut[change.battleId].amount == 0) {
+            revert NoPendingCutRedirect();
+        }
+        pendingFailedBattleCut[change.battleId].receiver = change.newReceiver;
+        emit BattleCutRedirectExecuted(change.battleId, change.newReceiver);
+        delete pendingBattleCutRedirect;
+    }
+
+    /**
+     * @notice Owner cancels a pending structured battle cut redirect.
+     */
+    function cancelPendingBattleCutRedirect() external onlyOwner {
+        delete pendingBattleCutRedirect;
+        emit PendingBattleCutRedirectCancelled();
     }
 }

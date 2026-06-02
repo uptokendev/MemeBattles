@@ -351,6 +351,7 @@ contract MajorLeagueTreasury is ReentrancyGuard, Ownable {
      * Credits directly to the target poolId so it is immediately allocatable (fixes the critical stuck fee path).
      * Internal bytes32(0) sentinel for unallocated is preserved inside the trusted caller path.
      * Phase 2 (contractaudits5 / phased-build-da26e79f): Attribution-preserving retry paths are now available on the source contracts via BattleTreasury.retryBattleCut(battleId, poolId)... (per-ID pendingFailedBattleCut + metadata delivery).
+ * contractaudits8: claimRewardTo added for alternate payout (Low recovery); receive cuts remain always-on for trusted sources (no new pause per this pass).
      */
     function receiveBattleCut(bytes32 battleId, bytes32 poolId) external payable onlyBattleTreasury {
         require(msg.value > 0, "No value sent");
@@ -405,10 +406,36 @@ contract MajorLeagueTreasury is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Winner claims their allocated league reward.
+     * @notice Winner claims their allocated league reward (to msg.sender).
      * Optional: apply small platform fee on league rewards if desired.
+     *
+     * contractaudits8: for the Low "League reward claim has no alternate payout address" finding,
+     * use claimRewardTo(poolId, payoutAddress) when the reward owner's address cannot receive ETH
+     * (e.g. a contract wallet or future upgrade). The logical reward owner (msg.sender at call time)
+     * must be the one with the pendingRewards entry; they may specify any payoutAddress for the net.
+     * Uses CEI + recredit-on-failure for the payout leg (nonReentrant already on entry).
      */
     function claimReward(bytes32 poolId) external nonReentrant {
+        _claimRewardTo(poolId, msg.sender);
+    }
+
+    /**
+     * @notice Winner claims their allocated league reward to a specified payout address.
+     * Restricted to the reward owner (the address that has pendingRewards[poolId][msg.sender] > 0).
+     * Allows recovery when the original recipient cannot receive (addresses the contractaudits8 Low).
+     * If the payout to the alternate fails, the pending reward is re-credited to the original owner
+     * (no loss of allocation). Fees are still attempted (credit to pending on fail, as before).
+     *
+     * @param poolId The prize pool the reward was allocated from.
+     * @param payoutAddress Destination for the net reward (after optional protocol/seasonal fees).
+     */
+    function claimRewardTo(bytes32 poolId, address payoutAddress) external nonReentrant {
+        if (payoutAddress == address(0)) revert ZeroAddress();
+        _claimRewardTo(poolId, payoutAddress);
+    }
+
+    // Internal shared implementation (nonReentrant is on the public wrappers).
+    function _claimRewardTo(bytes32 poolId, address payoutAddress) internal {
         // Claims on already-allocated rewards are allowed even when paused (emergency control only affects new allocations)
         uint256 amount = pendingRewards[poolId][msg.sender];
         if (amount == 0) revert InsufficientFunds();
@@ -420,9 +447,14 @@ contract MajorLeagueTreasury is ReentrancyGuard, Ownable {
 
         pendingRewards[poolId][msg.sender] = 0;
 
-        // Pay the user first
-        (bool success, ) = msg.sender.call{value: netAmount}("");
-        require(success, "Reward payout failed");
+        // Pay to the (possibly alternate) payoutAddress. Use recredit pattern for robustness:
+        // if the chosen payout rejects, restore the allocation to the original claimant (msg.sender here
+        // is the reward owner) so funds are not lost. This is the edge recovery for stuck reward claims.
+        (bool success, ) = payoutAddress.call{value: netAmount}("");
+        if (!success) {
+            pendingRewards[poolId][msg.sender] = amount; // recredit on failure (preserves for owner)
+            revert("Reward payout failed");
+        }
 
         // Attempt fee transfers without blocking the user. Credit failed amounts for later withdrawal.
         if (protocolFee > 0) {
@@ -440,6 +472,8 @@ contract MajorLeagueTreasury is ReentrancyGuard, Ownable {
             }
         }
 
+        // Emit with the logical reward owner (msg.sender) for attribution continuity with prior events;
+        // the actual ETH went to payoutAddress (documented in NatSpec + USER_INTERACTION_GUIDE).
         emit RewardClaimed(poolId, msg.sender, netAmount);
         if (protocolFee + seasonalFee > 0) {
             emit FeesDistributed(protocolFee, seasonalFee);

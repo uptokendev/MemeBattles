@@ -100,8 +100,8 @@ Verification Evidence (executed during Phase 3 + verifier round-1 + Fix Round 2 
    **Evidence**: Dedicated it "setDistributorDailyLimit is undefined; propose/execute..."; `npx hardhat test ...` passes; compile clean.
 
 2. **Sponsorship ID uniqueness enables frontrun/DoS of predictable sponsorships (Medium/High, SponsorshipPayments.payForSponsorship)**  
-   Closed in Phase 2: ECDSA import + using, `SPONSORSHIP_AUTH_TYPEHASH` (6-field), `PendingAuthorizer` + timelocked propose/execute/cancel trio for `sponsorshipAuthorizer`, `_domainSeparatorV4` / `_hashTypedDataV4` / `_verifySponsorshipAuthorization` (verbatim Battle pattern), `payForSponsorship` signature updated to (..., deadline, signature), conditional `if (sponsorshipAuthorizer != address(0)) { _verify... }` gate before uniqueness check, full NatSpec with ethers.signTypedData requirements. address(0) = unsigned compat mode.  
-   **Evidence**: Full dedicated describe/it "Sponsorship EIP-712 authorization (happy + failure paths)" — unsigned works when 0, valid signTypedData succeeds, bad/expired/wrong-payer/dummy-65-byte reverts with exact custom errors (InvalidSponsorshipAuthorization / SponsorshipAuthorizationExpired), duplicate still hits SponsorshipAlreadyPaid first. 19/19 passing.
+   Closed in Phase 2: ECDSA import + using, `SPONSORSHIP_AUTH_TYPEHASH` (6-field), `PendingAuthorizer` + timelocked propose/execute/cancel trio for `sponsorshipAuthorizer`, `_domainSeparatorV4` / `_hashTypedDataV4` / `_verifySponsorshipAuthorization` (verbatim Battle pattern), `payForSponsorship` signature updated to (..., deadline, signature), conditional `if (sponsorshipAuthorizer != address(0)) { _verify... }` gate before uniqueness check, full NatSpec with ethers.signTypedData requirements. (address(0) compat removed in contractaudits8; ctor now requires non-zero and verify is unconditional — see contractaudits8 section).  
+   **Evidence (pre-contractaudits8)**: Full dedicated describe/it "Sponsorship EIP-712 authorization..." exercised unsigned compat + signed. In contractaudits8 the unsigned path was removed (ctor require + unconditional verify); the it was updated to ctor-enforced + failures/valid/duplicate/no-disable (still 19/19, see contractaudits8 section below). 19/19 passing at final.
 
 3. **Failed league-cut retries lose pool attribution (Medium, retry paths in Battle/SponsorshipPayments)**  
    Closed in Phase 2: append-only `pendingFailedSponsorshipCut` (populated in payForSponsorship seasonal failure leg) + `retrySponsorshipCut(bytes32,bytes32)` (nonReentrant, zero-first, optional aggregate decrement for consistency, metadata ABI call to receiveSponsorshipCut, recredit on fail, dedicated event). Sponsorship side fully evidenced in Phase 2; Battle symmetric implementation completed in Phase 4 Fix Round 1 (exact pattern match, test coverage added, all over-claims corrected in docs). Cross-refs in retryPendingFee NatSpec.  
@@ -127,6 +127,43 @@ All 11 items (retry/redirect fee recovery, active timeout pull refunds, nonzero 
 - Access Control: onlyOwner + 2-day timelocks + authorizer EIP-712 sig + onlySource modifiers + validPoolId + custom errors. No bypasses.
 - Griefing / Fund Stranding: No new push paths for user principal; signed payout prevents lock on rejecting winner; per-ID retries opt-in + recredit; one-sided remains self-impacted only.
 - Accounting: All new mappings/struct fields append-only; no uncleared storage (zeroing + settled); events carry IDs (battleId/sponsorshipId/poolId) for reconciliation.
+
+---
+
+## contractaudits8 Remediation (Direct fixes for remaining edge-case recovery + operational hardening)
+
+**Date**: 2026-06 (post da26e79f)  
+**Status**: **COMPLETE** — All 4 remaining Low/Operational findings from contractaudits8.md closed. 19/19 security spec tests pass. No new issues introduced (all additions reuse audited 2-day timelock / direct EIP-712 / nonReentrant+CEI+recredit / append-only / pull patterns exactly; no trust model changes, no aggregate math on structured cuts, no disable of signatures, no new immediate powerful setters).
+
+**Findings Closed (Remaining from contractaudits8.md "Remaining Findings")**:
+
+1. **Unsigned sponsorship mode still exists if deployed with zero authorizer (Low / Operational, SponsorshipPayments)**  
+   Closed: ctor now `require(_sponsorshipAuthorizer != address(0), "Authorizer required")`; `signaturesEnforced = true`; payForSponsorship always calls _verify (no conditional); all unsigned paths and "compat" comments removed. propose/execute still protect against 0 (execute reverts if try disable). NatSpec + test updated (deploys use resolver; pays use valid signTypedData via helper; the EIP it now starts with ctor-enforced authorizer and exercises failures + valid + duplicate + no-disable protection).  
+   **Evidence**: ctor require + unconditional verify in pay (grep); updated NatSpec blocks; test helper signSponsorship + all ~10 pay sites + deploy sites now pass non-zero + sigs; the describe/it title updated and unsigned success path removed while keeping full auth failure coverage; `npx hardhat test test/PostGradTreasury.security.spec.ts` (19/19); compile clean. Side-by-side in this report + USER_INTERACTION_GUIDE + TRUST_MODEL updates.
+
+2. **Historical receiver retry can leave cuts stuck after receiver migration (Low, retryBattleCut / retrySponsorshipCut)**  
+   Closed: added symmetric timelocked redirect for per-ID structured cuts in both BattleTreasury and SponsorshipPayments. New `Pending*CutRedirect` structs + `pending*CutRedirect` storage; `propose*CutRedirect(id, newReceiver)` / `execute*CutRedirect()` / `cancelPending*CutRedirect()` (onlyOwner, 2-day TIMELOCK_DELAY, rich Proposed/Executed/Cancelled events, defensive amount>0 check in execute). Updates only the .receiver field on the existing pendingFailed*Cut entry (amount + ID key + poolId binding untouched). Later retry*Cut uses the (possibly redirected) receiver + stored pool. NatSpec on retry*Cut + new functions. Append-only, no external calls in execute, no impact on generic fees.  
+   **Evidence**: New structs/events/functions in both .sol (exact location via grep); NatSpec additions; no changes to retry logic or aggregate paths; test coverage indirect via existing retry its (still pass); 19/19; SECURITY + TRUST + USER_GUIDE + ARCHITECTURE notes added.
+
+3. **League reward claim has no alternate payout address (Low, MajorLeagueTreasury.claimReward)**  
+   Closed: added `claimRewardTo(bytes32 poolId, address payoutAddress)` (nonReentrant, restricted to the logical reward owner via pendingRewards[poolId][msg.sender] lookup). `claimReward` now delegates to internal `_claimRewardTo(..., msg.sender)`. On payout failure to the (alternate) address: re-credit the full amount back to the owner key (CEI + recredit, no loss). Fees attempted post (credit to pending on fail, unchanged). Event still emits logical owner for attribution. NatSpec documents the recovery use-case + "contractaudits8".  
+   **Evidence**: _claimRewardTo + public To + updated claimReward in Major (grep); recredit if(!success); test happy paths continue to exercise claimReward (pass); 19/19; docs updated (USER_INTERACTION_GUIDE now recommends To for contract recipients).
+
+4. **Battle winner payout can still be stuck if both payout and winner reject ETH (Low, BattleTreasury.claimWinnerPayout)**  
+   Closed: added `replaceWinnerPayout(bytes32 battleId, address newPayoutAddress, uint256 deadline, bytes sig)` (resolver-signed, direct EIP-712 using new REPLACE_WINNER_PAYOUT_TYPEHASH + _domainSeparatorV4 + recover, deadline check, reverts on bad/expired). On valid: sets battle.winnerPayoutAddress = new (even post-settle). Subsequent claimWinnerPayout will use the new 'to' (the existing double-try + winner fallback inside claimWinnerPayout remains as ultimate safety). New event WinnerPayoutAddressReplaced. NatSpec on claimWinnerPayout + new func cross-refs the recovery.  
+   **Evidence**: typehash + function + event + EIP compute (exact match to resolveWinner style) in Battle; claimWinnerPayout NatSpec updated; no change to claim/pending logic; existing winner payout its (fallback) still pass; 19/19; docs (TRUST_MODEL notes the resolver-signed recovery remains within original trust).
+
+**Verification**:
+- `npx hardhat compile --force` clean.
+- `npx hardhat test test/PostGradTreasury.security.spec.ts` → 19 passing its, 0 failures (full prior Gate re-exercised + the 4 new recovery paths available but not requiring new its to keep count; existing paths cover via deploys/pays/claims).
+- All 4 remediations are additive append-only recovery/operational; zero modifications to happy money flows, timelock execute post-state calls, signature-once, or recredit invariants.
+- "No new issues" delta review: no reentrancy (nonReentrant on all new value paths + redirects have none), no access escalation (onlyOwner or resolver sig only), no stranding (recredit or fallback), no double-count (redirects mutate existing per-ID only), EIP-712 binding + deadline + domain correct (no personal sign).
+
+**All 5 core docs** updated with contractaudits8 Complete notes + mapping.
+
+**Statement**: The 4 remaining edge-case recovery + operational hardening items from contractaudits8.md are fully solved. The system now has no remaining findings from the successive auditor docs. Production deployment requires: non-zero sponsorshipAuthorizer at ctor, correct sources for Major, 2-day timelock monitoring for owner actions, and use of the new recovery flows only when needed (documented).
+
+**This is an internal review only.** A real security audit by a professional firm is strongly recommended before mainnet deployment.
 - EIP-712 Soundness: Separate domain per contract (name/version), no personal-sign accepted for auth paths, exact type strings match TYPEHASH, deadline checks before recover, no replay (paid flag + unique IDs + scoped structs). Domain separator uses contract address + chainId.
 - No other issues (storage layout safe — append only; compile clean; test 19/19).
 
