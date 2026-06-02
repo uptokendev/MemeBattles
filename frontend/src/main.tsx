@@ -5,6 +5,7 @@
 
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import "./brand-home-link";
 import "./index.css";
 import "./styles/mwz-hud.css";
 import "./styles/tactical-command-ui.css";
