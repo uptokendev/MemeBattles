@@ -9,10 +9,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
+import LandingPage from "./pages/LandingPage";
 import Arena from "./pages/Arena";
 import ArenaBattles from "./pages/ArenaBattles";
 import WarRoom from "./pages/WarRoom";
@@ -64,6 +66,35 @@ import CommandCenterArenaOps from "@/pages/command-center/CommandCenterArenaOps"
 import { isPostGradRouteEnabled, postGradFlags } from "@/features/postgrad/config";
 
 const queryClient = new QueryClient();
+const mainDomainHosts = new Set(["memewar.zone", "www.memewar.zone"]);
+const appDomainOrigin = "https://app.memewar.zone";
+
+function isMainDomainHost() {
+  return typeof window !== "undefined" && mainDomainHosts.has(window.location.hostname.toLowerCase());
+}
+
+function DomainGate({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const onMainDomain = isMainDomainHost();
+  const isLandingPath = location.pathname === "/landing";
+
+  useEffect(() => {
+    if (!onMainDomain) return;
+    if (location.pathname === "/" || isLandingPath) return;
+
+    window.location.replace(`${appDomainOrigin}${location.pathname}${location.search}${location.hash}`);
+  }, [isLandingPath, location.hash, location.pathname, location.search, onMainDomain]);
+
+  if (isLandingPath || (onMainDomain && location.pathname === "/")) {
+    return <LandingPage />;
+  }
+
+  if (onMainDomain) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
 
 function InternalLinkInterceptor() {
   const navigate = useNavigate();
@@ -225,7 +256,9 @@ const App = () => {
           >
             <BrowserRouter>
               <InternalLinkInterceptor />
-              <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+              <DomainGate>
+                <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+              </DomainGate>
             </BrowserRouter>
           </div>
         </TooltipProvider>
