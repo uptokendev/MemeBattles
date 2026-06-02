@@ -224,29 +224,52 @@ function wrap(fn) {
   };
 }
 
+function isFeatureEnabled(name) {
+  const raw = String(process.env[name] || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function gate(fn, flagName) {
+  return async (req, res) => {
+    if (!isFeatureEnabled(flagName)) {
+      return res.status(503).json({ ok: false, error: "Feature unavailable", featureFlag: flagName });
+    }
+    return fn(req, res);
+  };
+}
+
 const router = express.Router();
+
+const postgradArenaOps = gate(arenaOps, "POSTGRAD_ARENA_OPS_ENABLED");
+const postgradBattles = gate(arenaBattles, "POSTGRAD_BATTLES_ENABLED");
+const postgradEvents = gate(arenaEvents, "POSTGRAD_EVENTS_ENABLED");
+const postgradLeague = gate(arenaLeague, "POSTGRAD_LEAGUE_ENABLED");
+const postgradWarPools = gate(arenaWarPools, "POSTGRAD_WAR_POOLS_ENABLED");
+const postgradSponsored = gate(sponsored, "POSTGRAD_SPONSORSHIPS_ENABLED");
+const postgradSponsorshipApplications = gate(sponsorshipApplications, "POSTGRAD_SPONSORSHIPS_ENABLED");
+const postgradWarRoom = gate(warRoom, "POSTGRAD_WAR_ROOM_ENABLED");
 
 router.all("/activity/trades", wrap(activityTrades));
 router.all("/ably/token", wrap(ablyToken));
 router.all("/auth/nonce", wrap(authNonce));
-router.all("/arena/ops/health", wrap(arenaOps));
-router.all("/arena/battles/open", wrap(arenaBattles));
-router.all("/arena/battles/creator-status", wrap(arenaBattles));
-router.all("/arena/battles/:battleId/transition", wrap(arenaBattles));
-router.all("/arena/battles/:battleId", wrap(arenaBattles));
-router.all("/arena/battles", wrap(arenaBattles));
-router.all("/arena/events/:eventId/advance-bracket", wrap(arenaEvents));
-router.all("/arena/events/:eventId/transition", wrap(arenaEvents));
-router.all("/arena/events/:eventId", wrap(arenaEvents));
-router.all("/arena/events", wrap(arenaEvents));
-router.all("/arena/league/advance-week", wrap(arenaLeague));
-router.all("/arena/league/rebalance-divisions", wrap(arenaLeague));
-router.all("/arena/league/cycle-season-state", wrap(arenaLeague));
-router.all("/arena/league", wrap(arenaLeague));
-router.all("/arena/war-pools/:battleId/support", wrap(arenaWarPools));
-router.all("/arena/war-pools/:battleId/transition", wrap(arenaWarPools));
-router.all("/arena/war-pools/:battleId", wrap(arenaWarPools));
-router.all("/arena/war-pools", wrap(arenaWarPools));
+router.all("/arena/ops/health", wrap(postgradArenaOps));
+router.all("/arena/battles/open", wrap(postgradBattles));
+router.all("/arena/battles/creator-status", wrap(postgradBattles));
+router.all("/arena/battles/:battleId/transition", wrap(postgradBattles));
+router.all("/arena/battles/:battleId", wrap(postgradBattles));
+router.all("/arena/battles", wrap(postgradBattles));
+router.all("/arena/events/:eventId/advance-bracket", wrap(postgradEvents));
+router.all("/arena/events/:eventId/transition", wrap(postgradEvents));
+router.all("/arena/events/:eventId", wrap(postgradEvents));
+router.all("/arena/events", wrap(postgradEvents));
+router.all("/arena/league/advance-week", wrap(postgradLeague));
+router.all("/arena/league/rebalance-divisions", wrap(postgradLeague));
+router.all("/arena/league/cycle-season-state", wrap(postgradLeague));
+router.all("/arena/league", wrap(postgradLeague));
+router.all("/arena/war-pools/:battleId/support", wrap(postgradWarPools));
+router.all("/arena/war-pools/:battleId/transition", wrap(postgradWarPools));
+router.all("/arena/war-pools/:battleId", wrap(postgradWarPools));
+router.all("/arena/war-pools", wrap(postgradWarPools));
 router.all("/campaigns/upsert", wrap(campaignsUpsert));
 router.all("/campaigns", wrap(campaigns));
 router.all("/comments", wrap(comments));
@@ -269,15 +292,15 @@ router.all("/profile", wrap(profile));
 router.all("/profileCabinet", wrap(profileCabinet));
 router.all("/shareCard", wrap(shareCard));
 router.all("/prepare-share-card", wrap(prepareShareCard));
-router.all("/sponsored", wrap(sponsored));
-router.all("/sponsorship-applications", wrap(sponsorshipApplications));
+router.all("/sponsored", wrap(postgradSponsored));
+router.all("/sponsorship-applications", wrap(postgradSponsorshipApplications));
 router.all("/status", wrap(status));
 router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
 router.all("/token-metadata", wrap(tokenMetadata));
 router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
-router.all("/war-room", wrap(warRoom));
+router.all("/war-room", wrap(postgradWarRoom));
 router.all("/content-ai/generate-variants", wrap(contentAiGenerateVariants));
 router.all("/posts", wrap(contentPlannerPosts));
 router.all("/posts/:id/variants", wrap(contentPlannerPostVariants));
