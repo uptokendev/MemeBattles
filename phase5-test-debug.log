@@ -1,0 +1,27 @@
+﻿
+
+  PostGradTreasury Security Gate (contractaudits4 + phased-build-ec52d84a Phase 5)
+    Active battle timeout pull refunds (one 'rejecting' participant simulation + zeroing)
+      1) refund() on Active + past resolution succeeds (pull credits), claimRefund works for good side, deposits zeroed
+
+
+  0 passing (583ms)
+  1 failing
+
+  1) PostGradTreasury Security Gate (contractaudits4 + phased-build-ec52d84a Phase 5)
+       Active battle timeout pull refunds (one 'rejecting' participant simulation + zeroing)
+         refund() on Active + past resolution succeeds (pull credits), claimRefund works for good side, deposits zeroed:
+     Error: VM Exception while processing transaction: reverted with custom error 'InvalidAmount()'
+    at BattleTreasury.refund (contracts/BattleTreasury.sol:675)
+    at BattleTreasury.nonReentrant (@openzeppelin/contracts/utils/ReentrancyGuard.sol:60)
+    at BattleTreasury.refund (contracts/BattleTreasury.sol:607)
+    at EdrProviderWrapper.request (node_modules\hardhat\src\internal\hardhat-network\provider\provider.ts:455:41)
+    at async HardhatEthersSigner.sendTransaction (node_modules\@nomicfoundation\hardhat-ethers\src\signers.ts:185:18)
+    at async send (node_modules\ethers\src.ts\contract\contract.ts:313:20)
+    at async Proxy.refund (node_modules\ethers\src.ts\contract\contract.ts:352:16)
+    at async waitForPendingTransaction (node_modules\@nomicfoundation\hardhat-chai-matchers\src\internal\emit.ts:28:17)
+    at async Context.<anonymous> (test\PostGradTreasury.security.spec.ts:190:7)
+  
+
+
+

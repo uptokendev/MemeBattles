@@ -1,0 +1,25 @@
+﻿
+
+  PostGradTreasury Security Gate (contractaudits4 + phased-build-ec52d84a Phase 5)
+    Direct ETH behavior on the three contracts
+      Ô£ö BattleTreasury and SponsorshipPayments reject direct ETH transfers (49ms)
+      Ô£ö MajorLeagueTreasury accepts direct ETH as unallocated (documented behavior)
+    Fee recovery (reverting + accepting receivers via retry + redirect)
+      Ô£ö reverting fee receiver credits pendingFeeWithdrawals; retry reverts + restores (recredit pattern)
+      Ô£ö timelocked fee redirect + retry to accepting receiver succeeds (full Phase 1 pattern)
+    Active battle timeout pull refunds (one 'rejecting' participant simulation + zeroing)
+      Ô£ö refund() on Active + past resolution succeeds (pull credits), claimRefund works for good side, deposits zeroed
+    Distributor daily / tx limits + bytes32(0) reservation + restricted cut receivers
+      Ô£ö bytes32(0) rejected on public fund/allocate paths; valid inside restricted receive*Cut (47ms)
+      Ô£ö distributor daily limit blocks over-allocation and resets after day change
+    EIP-712 round-trip for resolver still works (post Phase 4 schema)
+      Ô£ö full resolveWinner with correct signTypedData succeeds; bad signature reverts
+    Phase 5 final timelocked setters (min sponsorship + global max allocation)
+      Ô£ö SponsorshipPayments minimum now only changeable via propose/execute/cancel (no immediate path)
+      Ô£ö MajorLeagueTreasury global maxAllocationPerTx now timelocked (per-distributor limits unaffected)
+    Gate completeness: all scenarios exercised without regression on happy paths
+      Ô£ö happy-path sponsorship split + claimPendingFees still works (post all phases)
+
+
+  11 passing (872ms)
+

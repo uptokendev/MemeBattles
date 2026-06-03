@@ -86,6 +86,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Strings__factory>;
     getContractFactory(
+      name: "BattleTreasury",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.BattleTreasury__factory>;
+    getContractFactory(
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.CommunityRewardsVault__factory>;
@@ -117,6 +121,10 @@ declare module "hardhat/types/runtime" {
       name: "LpTimelock",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.LpTimelock__factory>;
+    getContractFactory(
+      name: "MajorLeagueTreasury",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MajorLeagueTreasury__factory>;
     getContractFactory(
       name: "AcceptingReceiver",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -161,6 +169,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RecruiterRewardsVault__factory>;
+    getContractFactory(
+      name: "SponsorshipPayments",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.SponsorshipPayments__factory>;
     getContractFactory(
       name: "FactoryCaller",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -289,6 +301,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.Strings>;
     getContractAt(
+      name: "BattleTreasury",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.BattleTreasury>;
+    getContractAt(
       name: "CommunityRewardsVault",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -328,6 +345,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.LpTimelock>;
+    getContractAt(
+      name: "MajorLeagueTreasury",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MajorLeagueTreasury>;
     getContractAt(
       name: "AcceptingReceiver",
       address: string | ethers.Addressable,
@@ -383,6 +405,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.RecruiterRewardsVault>;
+    getContractAt(
+      name: "SponsorshipPayments",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.SponsorshipPayments>;
     getContractAt(
       name: "FactoryCaller",
       address: string | ethers.Addressable,
@@ -502,6 +529,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Strings>;
     deployContract(
+      name: "BattleTreasury",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.BattleTreasury>;
+    deployContract(
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
@@ -533,6 +564,10 @@ declare module "hardhat/types/runtime" {
       name: "LpTimelock",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.LpTimelock>;
+    deployContract(
+      name: "MajorLeagueTreasury",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MajorLeagueTreasury>;
     deployContract(
       name: "AcceptingReceiver",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -577,6 +612,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "SponsorshipPayments",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SponsorshipPayments>;
     deployContract(
       name: "FactoryCaller",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -705,6 +744,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Strings>;
     deployContract(
+      name: "BattleTreasury",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.BattleTreasury>;
+    deployContract(
       name: "CommunityRewardsVault",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -744,6 +788,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.LpTimelock>;
+    deployContract(
+      name: "MajorLeagueTreasury",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MajorLeagueTreasury>;
     deployContract(
       name: "AcceptingReceiver",
       args: any[],
@@ -799,6 +848,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "SponsorshipPayments",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.SponsorshipPayments>;
     deployContract(
       name: "FactoryCaller",
       args: any[],

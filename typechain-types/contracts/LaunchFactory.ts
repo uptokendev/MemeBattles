@@ -118,6 +118,7 @@ export declare namespace LaunchFactory {
     name: string;
     symbol: string;
     logoURI: string;
+    metadataURI: string;
     xAccount: string;
     website: string;
     extraLink: string;
@@ -131,6 +132,7 @@ export declare namespace LaunchFactory {
     name: string,
     symbol: string,
     logoURI: string,
+    metadataURI: string,
     xAccount: string,
     website: string,
     extraLink: string,
@@ -142,6 +144,7 @@ export declare namespace LaunchFactory {
     name: string;
     symbol: string;
     logoURI: string;
+    metadataURI: string;
     xAccount: string;
     website: string;
     extraLink: string;
@@ -447,7 +450,9 @@ export namespace CampaignCreatedEvent {
     token: AddressLike,
     creator: AddressLike,
     name: string,
-    symbol: string
+    symbol: string,
+    logoURI: string,
+    metadataURI: string
   ];
   export type OutputTuple = [
     id: bigint,
@@ -455,7 +460,9 @@ export namespace CampaignCreatedEvent {
     token: string,
     creator: string,
     name: string,
-    symbol: string
+    symbol: string,
+    logoURI: string,
+    metadataURI: string
   ];
   export interface OutputObject {
     id: bigint;
@@ -464,6 +471,8 @@ export namespace CampaignCreatedEvent {
     creator: string;
     name: string;
     symbol: string;
+    logoURI: string;
+    metadataURI: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -980,7 +989,7 @@ export interface LaunchFactory extends BaseContract {
   >;
 
   filters: {
-    "CampaignCreated(uint256,address,address,address,string,string)": TypedContractEvent<
+    "CampaignCreated(uint256,address,address,address,string,string,string,string)": TypedContractEvent<
       CampaignCreatedEvent.InputTuple,
       CampaignCreatedEvent.OutputTuple,
       CampaignCreatedEvent.OutputObject
