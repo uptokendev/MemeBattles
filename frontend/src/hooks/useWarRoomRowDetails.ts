@@ -82,7 +82,7 @@ export function useWarRoomRowDetails({
         if (!cancelled) {
           setDetails(null);
           setSource("empty");
-          setError(loadError instanceof Error ? loadError.message : "Failed to load War Room row details");
+          setError(loadError instanceof Error ? loadError.message : "Failed to load market row details");
         }
       } finally {
         if (!cancelled) setLoading(false);

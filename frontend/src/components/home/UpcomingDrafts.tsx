@@ -51,8 +51,8 @@ function formatCreatedAt(value?: string | null) {
 function heatClass(label?: string) {
   if (label === "On Fire") return "border-orange-400/70 text-orange-300";
   if (label === "Hot") return "border-orange-400/60 text-orange-400";
-  if (label === "Warming") return "border-success/55 text-success";
-  return "border-success/30 text-success/65";
+  if (label === "Warming") return "border-orange-400/50 text-orange-300";
+  return "border-orange-400/40 text-orange-300";  // Cold - now orange for visibility on black bg
 }
 
 export function UpcomingDrafts({ className }: { className?: string }) {
@@ -138,7 +138,7 @@ export function UpcomingDrafts({ className }: { className?: string }) {
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-[260px] animate-pulse border border-success/20 bg-black/45"
+              className="h-[260px] animate-pulse border border-success/20 bg-black/40"
             />
           ))}
         </div>
@@ -155,7 +155,7 @@ export function UpcomingDrafts({ className }: { className?: string }) {
 
     if (items.length === 0) {
       return (
-        <div className="border border-success/20 bg-black/45 p-5 text-sm text-success/65">
+        <div className="border border-success/20 bg-black/40 p-5 text-sm text-success/65">
           No public Prepare Mode drafts yet. When creators publish their promotion pages, they
           will appear here before trading goes live.
         </div>
@@ -173,10 +173,10 @@ export function UpcomingDrafts({ className }: { className?: string }) {
           return (
             <article
               key={draft.id}
-              className="mwz-card group flex min-h-[280px] flex-col overflow-hidden border-success/30 bg-black/70"
+              className="mwz-hud-frame group flex min-h-[280px] flex-col border-success/30"
             >
               <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
-                <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black">
+                <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black/40">
                   <div className="absolute inset-0 z-10 mwz-stat-grid opacity-25 pointer-events-none" />
 
                   <img
@@ -187,16 +187,16 @@ export function UpcomingDrafts({ className }: { className?: string }) {
                     loading="lazy"
                   />
 
-                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_42%,rgba(0,0,0,0.72))]" />
+                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
 
-                  <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
+                  <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
                     <ShieldCheck className="h-3 w-3" />
                     Prepare Mode
                   </div>
 
                   <div
                     className={cn(
-                      "absolute right-2 top-2 z-30 inline-flex items-center gap-1 border bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
+                      "absolute right-2 top-2 z-30 inline-flex items-center gap-1 border bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
                       heatClass(heat)
                     )}
                   >
@@ -248,7 +248,7 @@ export function UpcomingDrafts({ className }: { className?: string }) {
                 </p>
 
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="border border-success/20 bg-black/45 p-2">
+                  <div className="border border-success/20 bg-black/40 p-2">
                     <div className="flex items-center gap-1 text-success/50">
                       <Star className="h-3 w-3" />
                       Watchlist
@@ -256,7 +256,7 @@ export function UpcomingDrafts({ className }: { className?: string }) {
                     <div className="mt-1 text-sm text-success">{follows}</div>
                   </div>
 
-                  <div className="border border-success/20 bg-black/45 p-2">
+                  <div className="border border-success/20 bg-black/40 p-2">
                     <div className="flex items-center gap-1 text-success/50">
                       <Radio className="h-3 w-3" />
                       Popularity

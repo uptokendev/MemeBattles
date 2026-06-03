@@ -33,9 +33,9 @@ export const arenaSubNavItems: ArenaSubNavItem[] = isPostGradNavEnabled()
 
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
-  ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Eye, label: "War Room", path: "/war-room" }] : []),
+  ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
-  { icon: userIcon, label: "Command Center", path: "/command" },
+  { icon: userIcon, label: "Creator tools", path: "/command" },
   { icon: User, label: "Profile", path: "/profile" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone" },
 ];

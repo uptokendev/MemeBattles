@@ -109,7 +109,7 @@ export function useWarRoomCampaignFeed({
         if (!cancelled) {
           setCampaigns([]);
           setSource("empty");
-          setError(loadError instanceof Error ? loadError.message : "Failed to load War Room campaigns");
+          setError(loadError instanceof Error ? loadError.message : "Failed to load market campaigns");
         }
       } finally {
         if (!cancelled) setLoading(false);

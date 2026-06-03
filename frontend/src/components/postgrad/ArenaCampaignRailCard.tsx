@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Globe2 } from "lucide-react";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { PostGradCoinCard } from "@/components/postgrad/PostGradCoinCard";
 import type { ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
 import { cn } from "@/lib/utils";
 
@@ -88,7 +89,7 @@ function ArenaSponsorSpotCard() {
     <RailLink href="/sponsorships/apply" className="block shrink-0 text-left">
       <RailFrame>
         <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Sponsor spot</div>
-        <div className="mt-4 font-retro text-2xl uppercase tracking-[0.03em] text-foreground">Want this sponsor spot?</div>
+        <div className="mt-4 font-retro text-2xl uppercase tracking-[0.03em] text-foreground">Want to feature your project here?</div>
         <div className="mt-3 text-sm text-muted-foreground">Apply here.</div>
       </RailFrame>
     </RailLink>
@@ -172,48 +173,37 @@ export function ArenaCampaignRailCard({
   );
   const cardActions = actions ?? defaultActions;
 
-  const content = (
-    <RailFrame className="shrink-0">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <TacticalTag label={item.rankLabel} tone={rankTone} />
-            <TacticalTag label={item.statusLabel} tone={item.statusTone === "sponsored" ? "hot" : item.statusTone} />
-          </div>
-
-          <div className="mt-3 flex items-start gap-4">
-            {item.imageUrl ? (
-              <img src={item.imageUrl} alt={item.title} className="h-20 w-20 shrink-0 border border-accent/30 object-cover" />
-            ) : null}
-            <div className="min-w-0 flex-1">
-              <div className="font-retro text-lg uppercase tracking-[0.03em] text-foreground">{item.title}</div>
-              <div className="mt-1 font-retro text-[11px] uppercase tracking-[0.22em] text-muted-foreground">{item.symbol}</div>
-              <div className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{item.summary || item.detail}</div>
-              {item.summary && item.detail ? (
-                <div className="mt-2 font-retro text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.detail}</div>
-              ) : null}
-            </div>
-          </div>
+  // Direct use of PostGradCoinCard (no extra RailFrame wrapper)
+  // When actions are provided, do NOT pass href to PostGradCoinCard.
+  // This prevents nested <a> tags (RailAction links inside the card's own Link).
+  // The actions themselves provide the navigation.
+  const coinCard = (
+    <PostGradCoinCard
+      imageUrl={item.imageUrl}
+      rank={item.rankLabel}
+      name={item.title}
+      symbol={item.symbol}
+      metrics={
+        <div className="text-sm text-muted-foreground">
+          {item.summary || item.detail}
         </div>
-
-        {cardActions.length ? (
-          <div className="flex shrink-0 flex-col gap-2 pt-1">
+      }
+      actions={
+        cardActions.length > 0 ? (
+          <div className="flex flex-col gap-1.5" onClick={(e) => e.stopPropagation()}>
             {cardActions.map((action) => (
               <RailAction key={`${item.id}-${action.href}-${action.label}`} action={action} />
             ))}
           </div>
-        ) : null}
-      </div>
-    </RailFrame>
+        ) : null
+      }
+      href={cardActions.length > 0 ? undefined : item.href}
+      borderTone="success"
+      className="w-[420px] flex-shrink-0"
+    />
   );
 
-  if (cardActions.length || !item.href) return content;
-
-  return (
-    <RailLink href={item.href} className="block shrink-0">
-      {content}
-    </RailLink>
-  );
+  return coinCard;
 }
 
 export function ArenaCampaignRail({
@@ -223,6 +213,7 @@ export function ArenaCampaignRail({
   emptyVariant = "default",
   loading = false,
   actionBuilder,
+  scrollRef,
 }: {
   items: ArenaCampaignRailItem[];
   rankTone?: "default" | "hot" | "sponsored" | "success";
@@ -230,10 +221,15 @@ export function ArenaCampaignRail({
   emptyVariant?: "default" | "sponsor";
   loading?: boolean;
   actionBuilder?: (item: ArenaCampaignRailItem) => ArenaCampaignRailAction[];
+  scrollRef?: React.RefObject<HTMLDivElement>;
 }) {
+  const baseClass = scrollRef 
+    ? "flex gap-3 pb-2 snap-x snap-mandatory scroll-smooth" 
+    : "flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted";
+
   if (items.length) {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
+      <div ref={scrollRef} className={baseClass} style={scrollRef ? { scrollbarWidth: "none" } as React.CSSProperties : undefined}>
         {items.map((item) => (
           <ArenaCampaignRailCard key={item.id} item={item} rankTone={rankTone === "sponsored" ? "hot" : rankTone} actions={actionBuilder?.(item)} />
         ))}
@@ -243,7 +239,7 @@ export function ArenaCampaignRail({
 
   if (loading) {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-accent/50 scrollbar-track-muted">
+      <div ref={scrollRef} className={baseClass} style={scrollRef ? { scrollbarWidth: "none" } as React.CSSProperties : undefined}>
         {[0, 1].map((index) => (
           <RailFrame key={index} className="shrink-0">
             <div className="h-4 w-24 bg-muted" />
@@ -263,7 +259,7 @@ export function ArenaCampaignRail({
 
   if (emptyVariant === "sponsor") {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div ref={scrollRef} className={baseClass} style={scrollRef ? { scrollbarWidth: "none" } as React.CSSProperties : undefined}>
         <ArenaSponsorSpotCard />
       </div>
     );

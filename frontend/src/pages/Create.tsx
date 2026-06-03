@@ -14,6 +14,7 @@ import { getActiveChainId } from "@/lib/chainConfig";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ContentContainer } from "@/components/layout/ContentContainer";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
@@ -286,7 +287,7 @@ const Create = () => {
   const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
+    <ContentContainer className="flex min-h-[calc(100dvh-9rem)] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
       <div className="mb-3 flex flex-col gap-3 md:mb-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="font-retro text-xs uppercase tracking-[0.22em] text-accent">Create Coin</p>
@@ -437,7 +438,7 @@ const Create = () => {
           </div>
         </section>
       </form>
-    </div>
+    </ContentContainer>
   );
 };
 

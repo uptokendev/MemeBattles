@@ -52,10 +52,10 @@ function formatCreatedAt(value?: string | null) {
 }
 
 function heatClass(label?: string) {
-  if (label === "On Fire") return "border-accent/70 text-accent";
-  if (label === "Hot") return "border-accent/60 text-accent/85";
-  if (label === "Warming") return "border-success/55 text-success";
-  return "border-success/30 text-success/65";
+  if (label === "On Fire") return "border-orange-400/70 text-orange-300";
+  if (label === "Hot") return "border-orange-400/60 text-orange-400";
+  if (label === "Warming") return "border-orange-400/50 text-orange-300";
+  return "border-orange-400/40 text-orange-300";  // Cold - now orange for visibility on black bg
 }
 
 function matchesSearch(item: DraftCampaignVM, search?: string) {
@@ -209,12 +209,12 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
               <article
                 key={draft.id}
                 className={cn(
-                  "mwz-card group relative flex min-h-[322px] flex-col overflow-hidden rounded-none border-success/30 bg-black/70",
+                  "mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30",
                   cardClass,
                 )}
               >
                 <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
-                  <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black">
+                  <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black/40">
                     <div className="absolute inset-0 z-10 mwz-stat-grid opacity-25 pointer-events-none" />
 
                     <img
@@ -225,16 +225,16 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                       loading="lazy"
                     />
 
-                    <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_42%,rgba(0,0,0,0.72))]" />
+                    <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
 
-                    <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
+                    <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
                       <ShieldCheck className="h-3 w-3" />
                       Prepare Mode
                     </div>
 
                     <div
                       className={cn(
-                        "absolute right-2 top-2 z-30 inline-flex items-center gap-1 border bg-black/80 px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
+                        "absolute right-2 top-2 z-30 inline-flex items-center gap-1 border bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
                         heatClass(heat)
                       )}
                     >
@@ -286,7 +286,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                   </p>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="border border-success/20 bg-black/45 p-2">
+                    <div className="border border-success/20 bg-black/40 p-2">
                       <div className="flex items-center gap-1 text-success/50">
                         <Star className="h-3 w-3" />
                         Watchlist
@@ -294,7 +294,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                       <div className="mt-1 text-sm text-success">{follows}</div>
                     </div>
 
-                    <div className="border border-success/20 bg-black/45 p-2">
+                    <div className="border border-success/20 bg-black/40 p-2">
                       <div className="flex items-center gap-1 text-success/50">
                         <Radio className="h-3 w-3" />
                         Popularity

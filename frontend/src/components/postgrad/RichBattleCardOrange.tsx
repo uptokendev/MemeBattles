@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import { Coins, Crown, Swords, TrendingUp, Users } from "lucide-react";
 
-import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { TacticalTag, poolStateLabels } from "@/components/postgrad/PostGradPrimitives";
+import { BattlefieldMetricsComparison } from "@/components/postgrad/BattlefieldMetricsComparison";
+import { PostGradCoinCard } from "@/components/postgrad/PostGradCoinCard";
 import { Button } from "@/components/ui/button";
 import type { Battle } from "@/features/postgrad/contracts";
 import { formatCompactCount, formatCompactUsd } from "@/features/postgrad/warRoomMetrics";
@@ -21,7 +23,18 @@ function formatWhen(value?: string) {
   });
 }
 
+const AWAITING_RIVAL_IMAGE = "/images/awaiting-rival.png";
+
 function getParticipantImage(participant: any) {
+  const isAwaiting = 
+    participant?.tokenId?.startsWith("pending-") ||
+    participant?.tokenName === "Awaiting Rival" ||
+    participant?.symbol === "TBD";
+
+  if (isAwaiting) {
+    return AWAITING_RIVAL_IMAGE;
+  }
+
   return participant?.imageUrl || participant?.image || participant?.logoURI || participant?.logoUrl || "/placeholder.svg";
 }
 
@@ -99,56 +112,40 @@ function BattleParticipantPanel({
   const audience = getParticipantAudience(participant);
   const tokenRoute = getParticipantRoute(participant);
   const stateTone = getParticipantTone(isLeading, tied);
-  const stateLabel = tied ? "Tied" : isLeading ? "Leading" : "Chasing";
-  const scoreBasis = String((battle as any)?.scoreBasis ?? "score").replaceAll("_", " ");
-
-  const panel = (
-    <div className={cn("mwz-hud-frame p-4 transition-colors", isLeading ? "border-accent/60" : "") }>
-      <div className="flex items-start gap-3">
-        <img src={imageUrl} alt={participant.tokenName} className="h-16 w-16 shrink-0 border border-accent/30 object-cover" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="truncate font-retro text-base text-foreground">{participant.tokenName}</div>
-            <div className="font-retro text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{participant.symbol}</div>
-            <TacticalTag label={stateLabel} tone={stateTone} />
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <TacticalTag label={`${participant.score.toFixed(1)} ${scoreBasis}`} tone="hot" />
-            {poolUsd > 0 ? <TacticalTag label={`War Pool ${poolShare}%`} tone="default" /> : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="mwz-hud-frame px-3 py-2">
-          <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Market cap</div>
-          <div className="mt-1 font-retro text-sm text-foreground">{formatCompactUsd(marketCapUsd)}</div>
-        </div>
-        <div className="mwz-hud-frame px-3 py-2">
-          <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">24h volume</div>
-          <div className="mt-1 font-retro text-sm text-foreground">{formatCompactUsd(volumeUsd)}</div>
-        </div>
-        <div className="mwz-hud-frame px-3 py-2">
-          <div className="font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{audience.label}</div>
-          <div className="mt-1 font-retro text-sm text-foreground">{formatCompactCount(audience.value)}</div>
-        </div>
-      </div>
-
-      {poolUsd > 0 ? (
-        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Coins className="h-3.5 w-3.5 text-accent" />
-          <span>{formatCompactUsd(poolUsd)} routed to this side</span>
-        </div>
-      ) : null}
-    </div>
-  );
-
-  if (!tokenRoute) return panel;
+  const stateLabel = tied ? "Tied" : isLeading ? "In the lead" : "Chasing";
+  const scoreBasis = String((battle as any)?.scoreBasis ?? "score").replace(/_/g, " ");
 
   return (
-    <Link to={tokenRoute} className="block transition-transform hover:translate-y-[-1px]">
-      {panel}
-    </Link>
+    <PostGradCoinCard
+      imageUrl={imageUrl}
+      name={participant.tokenName}
+      symbol={participant.symbol}
+      rank={isLeading ? "LEAD" : tied ? "TIED" : undefined}
+      borderTone={isLeading ? "accent" : "default"}
+      metrics={
+        <div className="grid grid-cols-3 gap-x-3 text-[10px]">
+          <div>
+            <div className="font-retro uppercase tracking-[0.14em] text-white/50">MCap</div>
+            <div className="font-retro text-white">{formatCompactUsd(marketCapUsd)}</div>
+          </div>
+          <div>
+            <div className="font-retro uppercase tracking-[0.14em] text-white/50">Vol</div>
+            <div className="font-retro text-white">{formatCompactUsd(volumeUsd)}</div>
+          </div>
+          <div>
+            <div className="font-retro uppercase tracking-[0.14em] text-white/50">{audience.label}</div>
+            <div className="font-retro text-white">{formatCompactCount(audience.value)}</div>
+          </div>
+        </div>
+      }
+      actions={
+        <>
+          <TacticalTag label={`${participant.score.toFixed(1)} ${scoreBasis}`} tone="hot" />
+          {poolUsd > 0 ? <TacticalTag label={`Support ${poolShare}%`} tone="default" /> : null}
+        </>
+      }
+      href={tokenRoute}
+    />
   );
 }
 
@@ -157,7 +154,7 @@ export function RichBattleCardOrange({ battle, ctaLabel = "Open battle" }: { bat
   const { pool } = useArenaWarPool(battle.id);
   const leaderState = getBattleLeaderState(battle);
   const updatedAt = String((battle as any)?.updatedAt ?? battle.startedAt ?? battle.endsAt ?? "");
-  const scoreBasis = String((battle as any)?.scoreBasis ?? "score").replaceAll("_", " ");
+  const scoreBasis = String((battle as any)?.scoreBasis ?? "score").replace(/_/g, " ");
 
   const leftPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === left.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
   const rightPoolUsd = pool?.entries.filter((entry) => entry.sideTokenId === right.tokenId).reduce((total, entry) => total + entry.amountUsd, 0) ?? 0;
@@ -169,9 +166,9 @@ export function RichBattleCardOrange({ battle, ctaLabel = "Open battle" }: { bat
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <TacticalTag label={battle.state.replaceAll("_", " ")} tone="hot" />
-            <TacticalTag label={battle.format.replaceAll("_", " ")} tone="default" />
-            <TacticalTag label={leaderState.tied ? "Tied" : `${leaderState.left ? left.symbol : right.symbol} leading`} tone={leaderState.tied ? "default" : "hot"} />
+            <TacticalTag label={String((battle as any)?.state ?? "").replace(/_/g, " ")} tone="hot" />
+            <TacticalTag label={String((battle as any)?.format ?? "").replace(/_/g, " ")} tone="default" />
+            <TacticalTag label={leaderState.tied ? "Tied" : `${leaderState.left ? left.symbol : right.symbol} in the lead`} tone={leaderState.tied ? "default" : "hot"} />
             {battle.featured ? <TacticalTag label="Featured" tone="hot" /> : null}
           </div>
           <h3 className="mt-3 font-retro text-xl text-foreground">{left.tokenName} vs {right.tokenName}</h3>
@@ -194,16 +191,21 @@ export function RichBattleCardOrange({ battle, ctaLabel = "Open battle" }: { bat
         <BattleParticipantPanel participant={right} battle={battle} isLeading={leaderState.right} tied={leaderState.tied} side="right" poolUsd={rightPoolUsd} poolShare={rightShare} />
       </div>
 
+      {/* Core metrics comparison - consistent with Command Center rival finder */}
+      <div className="mt-4">
+        <BattlefieldMetricsComparison left={left} right={right} />
+      </div>
+
       <div className="mwz-hud-frame mt-4 flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-2">
           {pool ? (
             <>
-              <TacticalTag label={`War Pool ${formatCompactUsd(pool.totalPotUsd)}`} tone="default" />
-              <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "hot" : "default"} />
-              <span>Cutoff {formatWhen(pool.cutoffAt)}</span>
+              <TacticalTag label={`Support pool ${formatCompactUsd(pool.totalPotUsd)}`} tone="default" />
+              <TacticalTag label={poolStateLabels[pool.state]} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "hot" : "default"} />
+              <span>Support closes {formatWhen(pool.cutoffAt)}</span>
             </>
           ) : (
-            <span>War Pool data will appear when this battle has live pool routing.</span>
+            <span>Support pool data will appear when this battle has live supporter activity.</span>
           )}
         </div>
         <div className="text-muted-foreground/70">Battle ID {battle.id}</div>

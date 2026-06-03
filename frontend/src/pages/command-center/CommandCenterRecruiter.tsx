@@ -27,7 +27,7 @@ const benefits = [
   "Public recruiter profile and leaderboard visibility",
   "Track the creators and traders who join through your link",
   "Weekly recruiter rewards",
-  "Claimable recruiter rewards through Command Center",
+  "Claimable recruiter rewards through your creator dashboard",
   "Grow your squad as more creators and traders join",
 ];
 
@@ -36,7 +36,7 @@ const programSteps = [
   "Choose your recruiter code",
   "Share your recruiter link",
   "Grow creators, traders, and squads",
-  "Track rewards inside Command Center",
+  "Track rewards inside your creator dashboard",
 ];
 
 function shortAddress(value?: string | null) {

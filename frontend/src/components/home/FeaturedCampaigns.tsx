@@ -148,7 +148,7 @@ async function hydrateFeaturedMetadata(items: FeaturedItemApi[], chainId: number
   return hydrated;
 }
 
-export function FeaturedCampaigns({ className }: { className?: string }) {
+export function FeaturedCampaigns({ className, bare = false }: { className?: string; bare?: boolean }) {
   const wallet = useWallet();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -379,30 +379,34 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
     el.scrollBy({ left: dir === "left" ? -amount : amount, behavior: "smooth" });
   };
 
-  return (
-    <div className={cn("mwz-hud-frame w-full px-3 py-3", className)}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="inline-flex items-center gap-2 mwz-section-title text-sm md:text-base">
-            <ThumbsUp className="h-4 w-4" />
-            Featured Campaigns
-          </div>
-          <div className="hidden md:block text-xs uppercase tracking-[0.16em] mwz-muted">
-            Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"})
-          </div>
+  const header = (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="inline-flex items-center gap-2 mwz-section-title text-sm md:text-base">
+          <ThumbsUp className="h-4 w-4" />
+          Featured Campaigns
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "24h" && "mwz-chip-active")} onClick={() => setVoteMode("24h")}>24H</Button>
-          <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "all" && "mwz-chip-active")} onClick={() => setVoteMode("all")}>All-Time</Button>
-          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("left")}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("right")}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+        <div className="hidden md:block text-xs uppercase tracking-[0.16em] mwz-muted">
+          Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"})
         </div>
       </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "24h" && "mwz-chip-active")} onClick={() => setVoteMode("24h")}>24H</Button>
+        <Button type="button" variant="ghost" size="sm" className={cn("mwz-chip !h-7 !min-h-0 !min-w-0 !px-1.5 !text-[9px] leading-none", voteMode === "all" && "mwz-chip-active")} onClick={() => setVoteMode("all")}>All-Time</Button>
+        <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("left")}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="sm" className="mwz-button hidden md:inline-flex !h-7 !w-6 !min-h-0 !min-w-0 !p-0" onClick={() => scrollByCards("right")}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={cn(bare ? "" : "mwz-hud-frame w-full px-3 py-3", className)}>
+      {header}
 
       <div className="relative">
         <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth" style={{ scrollbarWidth: "none" } as React.CSSProperties}>
@@ -416,7 +420,7 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
             <>
               {err && <div className="mwz-card min-w-[320px] max-w-[420px] p-4 text-xs text-orange-200">Background refresh failed. Showing last loaded featured campaigns.</div>}
               {cards.map((c) => (
-                <div key={c.addr} data-addr={c.addr} className="mwz-card snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none" role="button" tabIndex={0} onClick={() => navigate(`/token/${c.addr}`)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`); }}>
+                <div key={c.addr} data-addr={c.addr} className="mwz-hud-frame snap-start grid min-h-[204px] min-w-[350px] max-w-[460px] w-[calc(100vw-2.5rem)] sm:w-[420px] md:w-[460px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[164px_minmax(0,1fr)] md:grid-cols-[176px_minmax(0,1fr)] overflow-hidden rounded-none border border-success/30" role="button" tabIndex={0} onClick={() => navigate(`/token/${c.addr}`)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}`); }}>
                   <div className="relative h-full min-h-[204px] bg-black border-r border-success/25">
                     <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
                     <img src={c.image} alt={c.name} className="h-full w-full object-cover" draggable={false} onError={(e) => { const img = e.currentTarget; if (!img.dataset.fallback) { img.dataset.fallback = "1"; img.src = "/placeholder.svg"; } }} />

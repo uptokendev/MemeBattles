@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
+import { ContentContainer } from "@/components/layout/ContentContainer";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "@/hooks/useWarRoomCampaignFeed";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { resolveImageUri } from "@/lib/media";
 
 type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
 type SortDirection = "desc" | "asc";
@@ -13,8 +15,8 @@ type SortDirection = "desc" | "asc";
 const terminalModes: Array<{ key: WarRoomMode; label: string }> = [
   { key: "trending", label: "Trending" },
   { key: "new", label: "New" },
-  { key: "graduated", label: "Graduated" },
-  { key: "draft", label: "Draft" },
+  { key: "graduated", label: "Post-launch" },
+  { key: "draft", label: "Not live yet" },
 ];
 
 const sortButtons: Array<{ key: SortKey; label: string }> = [
@@ -22,7 +24,7 @@ const sortButtons: Array<{ key: SortKey; label: string }> = [
   { key: "liquidity", label: "Liquidity" },
   { key: "volume", label: "Volume" },
   { key: "holders", label: "Holders" },
-  { key: "ath", label: "ATH" },
+  { key: "ath", label: "All-time high" },
 ];
 
 function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKey) {
@@ -50,12 +52,58 @@ const WarRoom = () => {
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const { campaigns, loading, error, source } = useWarRoomCampaignFeed({
+
+  const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
     activeChainId: Number(activeChainId || 97),
     bnbUsd,
     search,
   });
+
+  // Logo hydration for War Room campaigns (same issue as Command Center - IPFS logos often fail to load locally)
+  // CRITICAL: This block MUST come AFTER the useWarRoomCampaignFeed hook (rawCampaigns declaration)
+  // to avoid "Cannot access 'rawCampaigns' before initialization" TDZ error.
+  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
+  const { fetchCampaignLogoURI } = useLaunchpad();
+
+  useEffect(() => {
+    let cancelled = false;
+    const missing = (rawCampaigns || [])
+      .map((c) => c.campaign?.toLowerCase())
+      .filter((addr): addr is string => !!addr && !logoCache[addr]);
+
+    if (!missing.length) return;
+
+    (async () => {
+      try {
+        const pairs = await Promise.all(
+          missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr).catch(() => null)] as const)
+        );
+        if (cancelled) return;
+        setLogoCache((prev) => {
+          const next = { ...prev };
+          for (const [addr, uri] of pairs) {
+            if (uri) next[addr] = uri;
+          }
+          return next;
+        });
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [rawCampaigns, logoCache, fetchCampaignLogoURI]);
+
+  // Hydrate logos for War Room campaigns
+  const campaigns = useMemo(() => {
+    return (rawCampaigns || []).map((c) => {
+      const key = c.campaign?.toLowerCase();
+      const hydratedLogo = key && logoCache[key] ? logoCache[key] : c.logoURI;
+      return {
+        ...c,
+        logoURI: resolveImageUri(hydratedLogo) || c.logoURI || "/placeholder.svg",
+      };
+    });
+  }, [rawCampaigns, logoCache]);
 
   const filteredCampaigns = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -100,17 +148,17 @@ const WarRoom = () => {
     setSortDirection("desc");
   };
 
-  const sourceLabel = source === "api" ? "Campaign feed" : "Feed unavailable";
+  const sourceLabel = source === "api" ? "Live trade data" : "Data unavailable";
   const sourceTone = source === "api" ? "success" : "default";
 
   return (
-    <div className="space-y-3 px-1 pb-10">
+    <ContentContainer className="space-y-3 px-1 pb-10">
       <section className="rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,16,22,0.96),rgba(7,8,11,0.98))] p-3 md:p-4">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">War Room</div>
-              <div className="mt-1 text-sm text-white/65">Scan live memecoin rows, compare market signals, and jump into token details or battle context from one terminal-style surface.</div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Trade War Room</div>
+              <div className="mt-1 text-sm text-white/65">Scan live memecoin rows, compare trade signals, and jump into token details or battle context from one trade view.</div>
             </div>
             <div className="flex flex-wrap gap-2">
               <TacticalTag label={terminalModes.find((mode) => mode.key === activeMode)?.label ?? "Trending"} tone="sponsored" />
@@ -165,13 +213,13 @@ const WarRoom = () => {
 
       {error ? (
         <div className="rounded-2xl border border-orange-300/20 bg-orange-500/10 px-4 py-3 text-sm text-orange-100">
-          War Room feed is unavailable right now. {error}
+          Trade data is unavailable right now. {error}
         </div>
       ) : null}
 
-      <section className="overflow-hidden rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,23,29,0.96),rgba(14,15,19,0.98))]">
+      <section className="rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(22,23,29,0.96),rgba(14,15,19,0.98))]">
         <div className="hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-white/10 px-4 py-2.5 text-xs font-medium text-white/65 lg:grid">
-          <div>Memecoin info</div>
+          <div>Coin info</div>
           {sortButtons.map((button) => {
             const active = sortKey === button.key;
             const directionLabel = active ? (sortDirection === "desc" ? "↓" : "↑") : "";
@@ -189,23 +237,23 @@ const WarRoom = () => {
           })}
           <div />
         </div>
-        <div className="max-h-[calc(100vh-220px)] overflow-y-auto">
+        <div>
           {loading ? (
-            <div className="py-10 text-center text-sm text-white/55">Loading War Room coins…</div>
+            <div className="py-10 text-center text-sm text-white/55">Loading coins...</div>
           ) : filteredCampaigns.length ? (
             filteredCampaigns.map((campaign) => <WarRoomCampaignRow key={campaign.campaign} campaign={campaign} bnbUsd={bnbUsd ?? 0} />)
           ) : (
             <div className="py-10 text-center text-sm text-white/55">
               {source === "empty"
-                ? "War Room campaign data is not available on this branch yet."
+                ? "Coin data isn’t available right now."
                 : search.trim()
-                  ? "No coins match the current War Room filter."
-                  : "No War Room campaigns are available right now."}
+                  ? "No coins match your filters."
+                  : "No coins are available right now."}
             </div>
           )}
         </div>
       </section>
-    </div>
+    </ContentContainer>
   );
 };
 

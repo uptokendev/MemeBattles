@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Coins, Lock, ShieldAlert, Trophy } from "lucide-react";
 import type { Battle, WarPool } from "@/features/postgrad/contracts";
 import { Button } from "@/components/ui/button";
-import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { TacticalTag, poolStateLabels } from "@/components/postgrad/PostGradPrimitives";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
 import { useArenaWarPool } from "@/hooks/useArenaWarPoolFeed";
 
@@ -32,10 +32,10 @@ const stateTone: Record<WarPool["state"], "default" | "hot" | "sponsored" | "suc
 };
 
 const nextPoolActions: Record<WarPool["state"], { label: string; state: WarPool["state"] }[]> = {
-  open: [{ label: "Lock cutoff", state: "locked" }],
-  locked: [{ label: "Start settlement", state: "settling" }],
-  settling: [{ label: "Mark paid", state: "paid" }],
-  paid: [{ label: "Reopen pool", state: "open" }],
+  open: [{ label: "Close support", state: "locked" }],
+  locked: [{ label: "Start payout", state: "settling" }],
+  settling: [{ label: "Mark payouts complete", state: "paid" }],
+  paid: [{ label: "Reopen support", state: "open" }],
 };
 
 export function WarPoolPanel({ battle }: { battle: Battle }) {
@@ -49,13 +49,13 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
     <section className="mwz-hud-frame p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">War Pool</div>
-          <div className="mt-1 font-retro text-xl text-foreground">Spectator support and settlement routing</div>
-          <div className="mt-2 text-sm text-muted-foreground">Support either side, lock cutoff, advance settlement, and verify payout routing before the pool closes.</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Support pool</div>
+          <div className="mt-1 font-retro text-xl text-foreground">Community support and prize split</div>
+          <div className="mt-2 text-sm text-muted-foreground">Support a side and see how the prize pool is shaping up.</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <TacticalTag label={pool.state} tone={stateTone[pool.state]} />
-          <TacticalTag label={`${pool.entries.length} entries`} tone="sponsored" />
+          <TacticalTag label={poolStateLabels[pool.state]} tone={stateTone[pool.state]} />
+          <TacticalTag label={`${pool.entries.length} supporters`} tone="sponsored" />
         </div>
       </div>
 
@@ -65,15 +65,15 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
           <div className="mt-1 font-retro text-2xl text-foreground">{formatUsd(pool.totalPotUsd)}</div>
         </div>
         <div className="mwz-hud-frame p-3">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><Lock className="h-3.5 w-3.5" />Cutoff</div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><Lock className="h-3.5 w-3.5" />Support closes</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{formatWhen(pool.cutoffAt)}</div>
         </div>
         <div className="mwz-hud-frame p-3">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><Trophy className="h-3.5 w-3.5" />Winner route</div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><Trophy className="h-3.5 w-3.5" />Winner payout</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(pool.routingBreakdown.winnersUsd)}</div>
         </div>
         <div className="mwz-hud-frame p-3">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><ShieldAlert className="h-3.5 w-3.5" />Fees</div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-muted-foreground"><ShieldAlert className="h-3.5 w-3.5" />Platform fee</div>
           <div className="mt-1 text-sm font-semibold text-foreground">{formatUsd(pool.routingBreakdown.protocolUsd + pool.routingBreakdown.featuredUsd)}</div>
         </div>
       </div>
@@ -91,9 +91,9 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-semibold text-foreground">{participant.tokenName}</div>
                       <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{participant.symbol}</div>
-                      <TacticalTag label={`${share}% pool`} tone={share >= 50 ? "hot" : "default"} />
+                      <TacticalTag label={`${share}% of support`} tone={share >= 50 ? "hot" : "default"} />
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground/80">{formatUsd(sideTotal)} supported · Score {participant.score.toFixed(1)} · {participant.uniqueTraders} traders</div>
+                    <div className="mt-2 text-xs text-muted-foreground/80">{formatUsd(sideTotal)} supported · Score: {participant.score.toFixed(1)} · {participant.uniqueTraders} traders</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[250, 500, 1000].map((amount) => (
@@ -105,7 +105,7 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
                         disabled={pool.state !== "open"}
                         onClick={() => supportSide(battle.id, participant.tokenId, amount)}
                       >
-                        Support {formatUsd(amount)}
+                        Back with {formatUsd(amount)}
                       </Button>
                     ))}
                     {tokenRoute ? (
@@ -121,29 +121,29 @@ export function WarPoolPanel({ battle }: { battle: Battle }) {
         </div>
 
         <div className="mwz-hud-frame p-4">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Settlement preview</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Payout preview</div>
           {settlementSummary ? (
             <div className="mt-3 space-y-3 text-sm text-muted-foreground">
               <div className="mwz-hud-frame p-3">
-                <div className="text-xs text-muted-foreground/80">Current projected winner</div>
+                <div className="text-xs text-muted-foreground/80">Current front-runner</div>
                 <div className="mt-1 font-semibold text-foreground">{settlementSummary.winnerLabel}</div>
                 <div className="mt-2 text-xs text-muted-foreground/80">{settlementSummary.settlementStateLabel}</div>
                 <div className="mt-1 text-xs text-muted-foreground">{settlementSummary.settlementStateBody}</div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="mwz-hud-frame p-3">Winner side: <span className="text-foreground">{formatUsd(settlementSummary.winnerSideUsd)}</span></div>
-                <div className="mwz-hud-frame p-3">Other side: <span className="text-foreground">{formatUsd(settlementSummary.loserSideUsd)}</span></div>
-                <div className="mwz-hud-frame p-3">Projected multiple: <span className="text-foreground">{settlementSummary.projectedPayoutMultiple.toFixed(2)}x</span></div>
-                <div className="mwz-hud-frame p-3">Projected payout: <span className="text-foreground">{formatUsd(settlementSummary.projectedWinnerPayoutUsd)}</span></div>
-                <div className="mwz-hud-frame p-3">Projected net win: <span className="text-foreground">{formatUsd(settlementSummary.projectedNetProfitUsd)}</span></div>
-                <div className="mwz-hud-frame p-3">Eligible winning entries: <span className="text-foreground">{settlementSummary.eligibleWinningEntries}</span></div>
+                <div className="mwz-hud-frame p-3">Winning side: <span className="text-foreground">{formatUsd(settlementSummary.winnerSideUsd)}</span></div>
+                <div className="mwz-hud-frame p-3">Opposing side: <span className="text-foreground">{formatUsd(settlementSummary.loserSideUsd)}</span></div>
+                <div className="mwz-hud-frame p-3">Estimated return: <span className="text-foreground">{settlementSummary.projectedPayoutMultiple.toFixed(2)}x</span></div>
+                <div className="mwz-hud-frame p-3">Estimated payout: <span className="text-foreground">{formatUsd(settlementSummary.projectedWinnerPayoutUsd)}</span></div>
+                <div className="mwz-hud-frame p-3">Estimated profit: <span className="text-foreground">{formatUsd(settlementSummary.projectedNetProfitUsd)}</span></div>
+                <div className="mwz-hud-frame p-3">Eligible winning supports: <span className="text-foreground">{settlementSummary.eligibleWinningEntries}</span></div>
               </div>
               <div className="mwz-hud-frame p-3">
-                <div className="text-xs text-muted-foreground/80">Routing breakdown</div>
+                <div className="text-xs text-muted-foreground/80">Prize breakdown</div>
                 <div className="mt-2 space-y-2 text-xs text-muted-foreground">
                   <div>Winners: <span className="text-foreground">{formatUsd(settlementSummary.routingBreakdown.winnersUsd)}</span></div>
-                  <div>Protocol: <span className="text-foreground">{formatUsd(settlementSummary.routingBreakdown.protocolUsd)}</span></div>
-                  <div>Featured: <span className="text-foreground">{formatUsd(settlementSummary.routingBreakdown.featuredUsd)}</span></div>
+                  <div>Platform: <span className="text-foreground">{formatUsd(settlementSummary.routingBreakdown.protocolUsd)}</span></div>
+                  <div>Promotions: <span className="text-foreground">{formatUsd(settlementSummary.routingBreakdown.featuredUsd)}</span></div>
                 </div>
               </div>
             </div>

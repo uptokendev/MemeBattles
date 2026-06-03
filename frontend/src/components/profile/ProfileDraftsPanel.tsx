@@ -219,7 +219,7 @@ export function ProfileDraftsPanel({
           {Array.from({ length: 3 }).map((_, index) => (
             <div
               key={index}
-              className="h-[322px] w-full animate-pulse border border-success/20 bg-black/45"
+              className="h-[322px] w-full animate-pulse border border-success/20 bg-black/40"
             />
           ))}
         </div>
@@ -240,25 +240,25 @@ export function ProfileDraftsPanel({
             return (
               <article
                 key={draft.id}
-                className="mwz-card group relative flex w-full max-w-none flex-col overflow-hidden rounded-none border-success/35 bg-black/70 sm:max-w-[clamp(172px,19vw,220px)]"
+                className="mwz-hud-frame group relative flex w-full max-w-none flex-col rounded-none border-success/35 sm:max-w-[clamp(172px,19vw,220px)]"
               >
-                <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black">
+                <div className="relative aspect-square w-full overflow-hidden border-b border-success/25 bg-black/40">
                   <div className="absolute inset-0 mwz-stat-grid z-10 pointer-events-none opacity-30" />
                   <img
                     src={logo}
                     alt={draft.name}
-                    className="h-full w-full bg-black object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    className="h-full w-full bg-black/40 object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                     draggable={false}
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.05),transparent_45%,rgba(0,0,0,0.62))]" />
+                  <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_45%,rgba(56,58,58,0.62))]" />
 
-                  <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success shadow-[0_0_12px_rgba(57,255,79,0.14)]">
+                  <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400 shadow-[0_0_12px_rgba(57,255,79,0.14)]">
                     <ShieldCheck className="h-3 w-3" />
                     Prepare
                   </div>
 
-                  <div className={`absolute right-2 top-2 z-30 border bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${statusClass(draft.status)}`}>
+                  <div className={`absolute right-2 top-2 z-30 border bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${statusClass(draft.status)}`}>
                     {statusLabel(draft.status)}
                   </div>
                 </div>

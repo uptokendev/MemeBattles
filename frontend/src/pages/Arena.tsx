@@ -9,6 +9,7 @@ import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
 import { getArenaTokenRoute } from "@/features/postgrad/tokenRoutes";
+import { ContentContainer } from "@/components/layout/ContentContainer";
 
 function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -18,6 +19,16 @@ function formatUsd(value: number) {
 
 function formatLabel(value: string) {
   return value.replace(/_/g, " ");
+}
+
+// Supporting label helper for raw season.state (per Phase 1 copy table: provide friendly labels instead of raw state values)
+function formatSeasonState(state: string): string {
+  const s = (state || "").toLowerCase().replace(/_/g, " ");
+  if (s === "live") return "Live now";
+  if (s === "playoffs") return "Finals week";
+  if (s.includes("coming") || s === "scheduled" || s === "deploying") return "Coming soon";
+  if (s === "finished" || s === "ended" || s === "complete" || s === "settled") return "Finished";
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Live now";
 }
 
 const Arena = () => {
@@ -31,48 +42,52 @@ const Arena = () => {
   const upcomingEvents = events.filter((event) => event.status === "scheduled" || event.status === "deploying");
   const leadLeagueEntry = season.entries[0];
   const sponsoredFeedLabel = hasSponsoredCampaigns ? "Sponsored" : sponsoredLoading ? "Loading" : "Open spot";
-  const featuredFeedLabel = hasFeaturedCampaigns ? (featuredSource === "campaigns" ? "Trending feed" : "UpVote feed") : featuredLoading ? "Loading" : "No featured tokens";
+  const featuredFeedLabel = hasFeaturedCampaigns ? (featuredSource === "campaigns" ? "Trending now" : "Community picks") : featuredLoading ? "Loading" : "No featured coins yet";
 
   return (
-    <div className="space-y-6 px-1 pb-10">
-      <section className="mwz-hud-frame space-y-3 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Sponsored</div>
-            <h2 className="mt-1 font-retro text-xl text-foreground">Sponsored spots</h2>
+    <>
+      {/* Sponsored spots stay full width on Arena main page - pulled up tight like the ticker on homepage */}
+      <div className="mt-14 space-y-4 pl-1 pr-8 pb-10">
+        <section className="mwz-hud-frame space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Sponsored</div>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Sponsored spots</h2>
+            </div>
+            <TacticalTag label={sponsoredFeedLabel} tone="hot" />
           </div>
-          <TacticalTag label={sponsoredFeedLabel} tone="hot" />
-        </div>
-        <ArenaCampaignRail
-          items={sponsoredRailItems}
-          rankTone="hot"
-          loading={sponsoredLoading}
-          emptyVariant="sponsor"
-          emptyLabel="Want this sponsor spot? Click here."
-        />
-      </section>
+          <ArenaCampaignRail
+            items={sponsoredRailItems}
+            rankTone="hot"
+            loading={sponsoredLoading}
+            emptyVariant="sponsor"
+            emptyLabel="Want to feature your project here?"
+          />
+        </section>
+      </div>
 
-      <section className="mwz-hud-frame space-y-3 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Featured</div>
-            <h2 className="mt-1 font-retro text-xl text-foreground">Featured memecoins by UpVotes</h2>
+      {/* Everything else on Arena uses the standard constrained width - pull Featured up tight */}
+      <ContentContainer className="-mt-6 space-y-6 px-1 pb-10">
+        <section className="mwz-hud-frame space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Featured</div>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Featured coins</h2>
+            </div>
+            <TacticalTag label={featuredFeedLabel} tone="success" />
           </div>
-          <TacticalTag label={featuredFeedLabel} tone="success" />
-        </div>
-        <ArenaCampaignRail
-          items={featuredRailItems}
-          rankTone="hot"
-          loading={featuredLoading}
-          emptyLabel="Featured memecoins will appear here when tokens or UpVote totals are available."
-        />
-      </section>
+          <ArenaCampaignRail
+            items={featuredRailItems}
+            rankTone="hot"
+            loading={featuredLoading}
+            emptyLabel="Featured memecoins will appear here when tokens or UpVote totals are available."
+          />
+        </section>
 
-      <section className="grid gap-6 xl:grid-cols-3">
+        <section className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Lane 1</div>
               <h2 className="mt-1 font-retro text-xl text-foreground">Live battles</h2>
             </div>
             <Button asChild size="sm" variant="outline" className="font-retro">
@@ -85,7 +100,7 @@ const Arena = () => {
             ))
           ) : (
             <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
-              {battleSource === "empty" ? "Live battle data is not available on this branch yet." : "No live battles are active right now."}
+              {battleSource === "empty" ? "Live battle data is not available right now." : "No live battles are active right now."}
             </div>
           )}
         </div>
@@ -93,11 +108,10 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Lane 2</div>
-              <h2 className="mt-1 font-retro text-xl text-foreground">Open for battle</h2>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Looking for a match</h2>
             </div>
             <Button asChild size="sm" variant="outline" className="font-retro">
-              <Link to="/arena/battles">Open queue</Link>
+              <Link to="/arena/battles">View waiting matches</Link>
             </Button>
           </div>
           {openForBattleQueue.length ? (
@@ -106,14 +120,14 @@ const Arena = () => {
               return (
                 <div key={battle.id} className="mwz-hud-frame p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <TacticalTag label="Open for battle" tone="success" />
+                    <TacticalTag label="Looking for a match" tone="success" />
                     <TacticalTag label={battle.participants[0].symbol} tone="default" />
                   </div>
                   <div className="mt-3 font-retro text-sm text-foreground">{battle.participants[0].tokenName}</div>
-                  <div className="mt-2 text-xs text-muted-foreground">Waiting for an opponent · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
+                  <div className="mt-2 text-xs text-muted-foreground">Waiting for a challenger · Volume {formatUsd(battle.participants[0].volumeUsd)} · Traders {battle.participants[0].uniqueTraders}</div>
                   <div className="mt-4 flex gap-2">
                     <Button asChild size="sm" variant="outline" className="font-retro">
-                      <Link to={`/battle/${battle.id}`}>View queue</Link>
+                      <Link to={`/battle/${battle.id}`}>View match</Link>
                     </Button>
                     {tokenRoute ? (
                       <Button asChild size="sm" variant="outline" className="font-retro">
@@ -126,7 +140,7 @@ const Arena = () => {
             })
           ) : (
             <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
-              {battleSource === "empty" ? "Open-for-battle queue data is not available on this branch yet." : "No memecoins are waiting in the battle queue right now."}
+              {battleSource === "empty" ? "Open-for-battle queue data is not available right now." : "No memecoins are waiting in the battle queue right now."}
             </div>
           )}
         </div>
@@ -134,8 +148,7 @@ const Arena = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.22em] text-accent/80">Lane 3</div>
-              <h2 className="mt-1 font-retro text-xl text-foreground">Events and leagues</h2>
+              <h2 className="mt-1 font-retro text-xl text-foreground">Events and rankings</h2>
             </div>
             <div className="flex gap-2">
               <Button asChild size="sm" variant="outline" className="font-retro">
@@ -150,7 +163,7 @@ const Arena = () => {
           {activeEvents[0] ? (
             <div className="mwz-hud-frame p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <TacticalTag label="Active event" tone="success" />
+                <TacticalTag label="Live event" tone="success" />
                 <TacticalTag label={formatLabel(activeEvents[0].type)} tone="hot" />
               </div>
               <div className="mt-3 font-retro text-sm text-foreground">{activeEvents[0].title}</div>
@@ -172,24 +185,25 @@ const Arena = () => {
           {season.entries.length ? (
             <div className="mwz-hud-frame p-4">
               <div className="flex flex-wrap items-center gap-2">
-                <TacticalTag label={season.state} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "hot" : "default"} />
+                <TacticalTag label={formatSeasonState(season.state)} tone={season.state === "live" ? "success" : season.state === "playoffs" ? "hot" : "default"} />
                 <TacticalTag label={`Week ${season.week}`} tone="default" />
               </div>
               <div className="mt-3 font-retro text-sm text-foreground">{season.label}</div>
-              <div className="mt-2 text-xs text-muted-foreground">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Reward pool {formatUsd(season.rewardPoolUsd)}</div>
+              <div className="mt-2 text-xs text-muted-foreground">Leader {leadLeagueEntry?.tokenName ?? "TBD"} · Prize pool {formatUsd(season.rewardPoolUsd)}</div>
             </div>
           ) : null}
 
           {!activeEvents[0] && !upcomingEvents[0] && !season.entries.length ? (
             <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
               {eventSource === "empty" && leagueSource === "empty"
-                ? "Events and league data are not available on this branch yet."
+                ? "Events and league data are not available right now."
                 : "No active events or league standings are available right now."}
             </div>
           ) : null}
         </div>
       </section>
-    </div>
+      </ContentContainer>
+    </>
   );
 };
 

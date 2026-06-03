@@ -13,7 +13,7 @@ const squadRules = [
   "Squad rewards are based on your contribution",
   "Your contribution appears after squad activity is recorded",
   "Squad standings stay public",
-  "Personal reward details stay inside Command Center",
+  "Personal reward details stay inside your creator dashboard",
 ];
 
 export default function CommandCenterSquad() {
@@ -66,7 +66,7 @@ export default function CommandCenterSquad() {
                 <div>
                   <div className="font-retro text-sm text-foreground">Leaderboard visibility</div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Public squad standings stay on the squad leaderboard, while wallet-specific reward state remains inside Command Center.
+                    Public squad standings stay on the squad leaderboard, while wallet-specific reward state remains inside your creator dashboard.
                   </p>
                 </div>
               </div>

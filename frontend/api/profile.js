@@ -73,7 +73,8 @@ export default async function handler(req, res) {
                 display_name AS "displayName",
                 avatar_url AS "avatarUrl",
                 bio,
-                updated_at AS "updatedAt"
+                updated_at AS "updatedAt",
+                created_at AS "createdAt"
            FROM user_profiles
           WHERE chain_id = $1 AND address = $2
           LIMIT 1`,
@@ -84,7 +85,7 @@ export default async function handler(req, res) {
       const rankState = await loadRankState(chainId, address);
 
       return json(res, 200, {
-        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address, displayName: null, avatarUrl: null, bio: null, updatedAt: null, ...rankState } : null,
+        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address, displayName: null, avatarUrl: null, bio: null, updatedAt: null, createdAt: null, ...rankState } : null,
       });
     } catch (e) {
       // Common deployment footguns: missing table/columns after a new migration.

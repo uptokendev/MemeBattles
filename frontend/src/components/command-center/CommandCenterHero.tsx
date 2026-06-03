@@ -48,7 +48,7 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
           <div className="min-w-0">
             <div className="mb-1 flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.2em] text-accent">
               <img src="/assets/ticker.png" alt="MemeWarzone" className="h-4 w-4 rounded-sm object-contain" />
-              <span>Command Center</span>
+              <span>Creator tools</span>
             </div>
             <h1 className="truncate font-retro text-xl text-foreground md:text-2xl">
               {displayName || short || "Connected wallet"}

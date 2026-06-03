@@ -106,7 +106,7 @@ export function useArenaSponsoredFeed(limit = 4) {
       statusLabel: "Sponsored",
       statusTone: "sponsored",
       rankLabel: placement.placementLabel,
-      imageUrl: placement.imageUrl,
+      imageUrl: resolveImageUri(placement.imageUrl),
       summary: placement.bio,
       websiteUrl: placement.websiteUrl,
       websiteLabel: "Website",

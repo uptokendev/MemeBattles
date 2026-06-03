@@ -87,3 +87,20 @@
     linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px bottom / calc(100% - 40px) 1px no-repeat !important;
   opacity: 0.94 !important;
 }
+
+/* Optional modifier if you prefer a named class over arbitrary variant */
+.mwz-card.no-inner-border,
+.mwz-launchpad-page .mwz-card.no-inner-border {
+  /* Force solid gray background all the way to the edges of the outer border image.
+     This shows through the transparent parts of the launchpad frame (border-image).
+     We keep the outer border image / clip-path / ::before frame intact. */
+  background: #383a3a !important;
+  background-color: #383a3a !important;
+}
+
+/* Ensure no dark inner layer leaks black on the sides */
+.mwz-card.no-inner-border::after,
+.mwz-launchpad-page .mwz-card.no-inner-border::after {
+  border-color: transparent !important;
+  background: transparent !important;
+}

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 
 type HeaderBandProps = {
   className?: string;
+  showTicker?: boolean;
 };
 
 // Launch reference timestamp. Override via VITE_LAUNCH_TS (ISO string, e.g.
@@ -51,7 +52,7 @@ function useSystemUptime(): string {
   return uptime;
 }
 
-export function HeaderBand({ className }: HeaderBandProps) {
+export function HeaderBand({ className, showTicker = true }: HeaderBandProps) {
   const uptime = useSystemUptime();
   return (
     <>
@@ -93,7 +94,7 @@ export function HeaderBand({ className }: HeaderBandProps) {
         <div className="mwz-tactical-hero__vignette" aria-hidden="true" />
       </section>
 
-      <CampaignTickerBar />
+      {showTicker !== false && <CampaignTickerBar className="-mt-12 !pt-0" />}
     </>
   );
 }

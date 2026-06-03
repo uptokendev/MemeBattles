@@ -85,7 +85,7 @@ export function PostGradStatusStrip() {
         <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Competition snapshot</div>
-            <div className="mt-1 text-sm text-white/65">Shared preview state across Arena, War Room, battles, war pools, events, leagues, and streak rewards.</div>
+            <div className="mt-1 text-sm text-white/65">Shared preview state across Arena, Trade War Room, battles, war pools, events, leagues, and streak rewards.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-cyan-100">
@@ -126,7 +126,7 @@ export function PostGradStatusStrip() {
           <StatusTile
             to="/war-room"
             icon={Eye}
-            label="War Room"
+            label="Trade War Room"
             value={`${watchlistTokenIds.length} watched`}
             detail={`Week ${streak.weekProgressDays}/${streak.weeklyGoalDays} · ${streak.activeReward.status === "claimable" ? "reward ready" : "reward locked"}`}
           />

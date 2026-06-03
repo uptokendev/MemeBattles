@@ -46,6 +46,7 @@ import Status from "./pages/Status";
 import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { LeftBattleSidebar } from "@/components/LeftBattleSidebar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
 import { Footer } from "@/components/layout/Footer";
@@ -157,13 +158,51 @@ function AppShellLayout({
 }) {
   const postGradEnabled = isPostGradRouteEnabled();
 
+  // Collapsible left battle sidebar (desktop). Persisted so users keep their preference.
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("mwz:left-sidebar-collapsed") === "true";
+  });
+
+  const toggleLeftSidebar = () => {
+    const next = !leftSidebarCollapsed;
+    setLeftSidebarCollapsed(next);
+    try {
+      localStorage.setItem("mwz:left-sidebar-collapsed", String(next));
+    } catch {}
+  };
+
+  // Dynamic sidebar widths (matches the new LeftBattleSidebar)
+  const sidebarExpanded = 224; // ~14rem / w-56
+  const sidebarCollapsed = 64;  // w-16
+  const currentSidebarWidth = leftSidebarCollapsed ? sidebarCollapsed : sidebarExpanded;
+
   return (
     <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
+      {/* New collapsible left battle sidebar (desktop only) */}
+      <div className="hidden lg:block">
+        <LeftBattleSidebar
+          collapsed={leftSidebarCollapsed}
+          onToggleCollapse={toggleLeftSidebar}
+        />
+      </div>
+
+      {/* Mobile drawer (existing behavior) */}
       <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-      <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+
+      <TopBar
+        mobileMenuOpen={mobileMenuOpen}
+        setMobileMenuOpen={setMobileMenuOpen}
+        leftSidebarWidth={currentSidebarWidth}
+      />
+
       <RankPromotionListener />
       <LiveStreamOverlay />
-      <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
+
+      <main
+        className="flex-1 overflow-auto scroll-pt-2 md:scroll-pt-3 pt-2 md:pt-3 pb-4 md:pb-6 lg:pb-8"
+        style={{ paddingLeft: `calc(${currentSidebarWidth}px + 0.75rem)` }}
+      >
         <Routes>
           <Route path="/" element={<Showcase />} />
           {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}

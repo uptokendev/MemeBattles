@@ -17,7 +17,7 @@ const scopeIcon: Record<MockActivityScope, typeof Activity> = {
 const scopeLabel: Record<MockActivityScope, string> = {
   arena: "Arena",
   battle: "Battle",
-  war_room: "War Room",
+  war_room: "Trade War Room",
   war_pool: "War Pool",
   events: "Events",
   league: "League",

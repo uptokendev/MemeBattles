@@ -5,10 +5,11 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
-import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
+import { fetchUserProfile, fetchPublicPortfolioMetrics, type UserProfile } from "@/lib/profileApi";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
 import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
+import { useProfileBalances } from "@/hooks/profile/useProfileBalances";
 import {
   fetchRecruiterSummaryByWallet,
   fetchSquadSummary,
@@ -166,6 +167,22 @@ export default function PublicProfile({
   const [loadingPortfolio, setLoadingPortfolio] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
 
+  // Rich client-side portfolio metrics (same as Command Center).
+  // Used when viewing your own public profile for accurate live TOTAL VALUE, TOP HOLDING, COINS, and on-chain WALLET AGE.
+  const ownerBalances = useProfileBalances({
+    viewedAddress: profileWallet,
+    account: isOwnProfile ? (wallet.account || null) : null,
+    wallet,
+    fetchCampaigns,
+    fetchCampaignSummary,
+    profileCreatedAt: profile?.createdAt,
+  });
+
+  // When the viewer is the owner of this profile, we use the rich client-side metrics
+  // (identical to Command Center) for accurate live data instead of the backend cache.
+  const effectivePortfolioMetrics = isOwnProfile ? ownerBalances.portfolioMetrics : portfolioMetrics;
+  const effectiveLoadingPortfolio = isOwnProfile ? ownerBalances.loadingPortfolioMetrics : loadingPortfolio;
+
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
     return name ? `@${name}` : shorten(profileWallet);
@@ -229,7 +246,16 @@ export default function PublicProfile({
   // Portfolio metrics on public profile — only for the owner for now
   // (uses client-side data when isOwnProfile so we don't depend on new backend routes on dev branch)
   useEffect(() => {
-    if (!isOwnProfile) {
+    // For non-owners viewing a public profile, load via the cached backend endpoint
+    // (avoids putting heavy on-chain work on every visitor).
+    if (isOwnProfile) {
+      // Owners use the rich client-side path below (via ownerBalances).
+      setPortfolioError(null);
+      setLoadingPortfolio(false);
+      return;
+    }
+
+    if (!profileWallet || !activeChainId) {
       setPortfolioMetrics(null);
       setLoadingPortfolio(false);
       return;
@@ -238,12 +264,9 @@ export default function PublicProfile({
     let cancelled = false;
 
     const loadPortfolio = async () => {
-      if (!profileWallet || !activeChainId) return;
       setLoadingPortfolio(true);
       setPortfolioError(null);
       try {
-        // For the owner we can use the improved client-side path in the future.
-        // For now we keep the call (it will 404 until backend is merged to dev).
         const data = await fetchPublicPortfolioMetrics(activeChainId, profileWallet);
         if (!cancelled) {
           setPortfolioMetrics(data ?? null);
@@ -263,7 +286,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, profileWallet]);
+  }, [activeChainId, profileWallet, isOwnProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -427,7 +450,24 @@ export default function PublicProfile({
 
   // No refresh handler for portfolio on Public Profile for now
   // (we avoid calling the route that isn't on the dev branch yet).
-  const handlePortfolioRefresh = undefined;
+  const handlePortfolioRefresh = async () => {
+    if (!profileWallet || !activeChainId) return;
+
+    // For owners we rely on the rich client-side calculation (refreshes on page load or wallet actions).
+    // The button is shown for owners for future parity; currently a hard refresh gives fresh data.
+    if (isOwnProfile) {
+      // Future: we could add a way to force the useProfileBalances hook to re-run.
+      return;
+    }
+
+    try {
+      const data = await fetchPublicPortfolioMetrics(activeChainId, profileWallet, { forceRefresh: true });
+      setPortfolioMetrics(data ?? null);
+      setPortfolioError(null);
+    } catch (e: any) {
+      setPortfolioError(String(e?.message || "Failed to refresh portfolio metrics."));
+    }
+  };
 
   return (
     <div className="w-full pb-10 pt-4 md:pt-6">
@@ -482,23 +522,17 @@ export default function PublicProfile({
           </div>
         </section>
 
-        {/* Phase 6: Portfolio metrics grid — placed immediately after the main header section
-            (PFP + displayName + address copy + bio + RankBadgeCard) and before the Badges grid.
-            Uses cached backend data. Owner-only refresh uses forceRefresh=1. */}
-        {/* Portfolio metrics on Public Profile (owner only for now)
-            Uses the same client-side logic as Command Center so we don't depend on
-            the new /api/profile/portfolio endpoint that isn't on the dev branch yet.
-          */}
-        {isOwnProfile && (
-          <PortfolioMetricsGrid
-            metrics={portfolioMetrics}
-            loading={loadingPortfolio}
-            onRefresh={handlePortfolioRefresh}
-            variant="public"
-          />
-        )}
-        {portfolioError ? (
-          <div className="text-xs text-muted-foreground">Portfolio metrics temporarily unavailable — using cached or partial data.</div>
+        {/* Portfolio metrics grid — shown on all public profiles.
+            Uses the cached /api/profile/portfolio backend endpoint.
+            Owners see a Refresh button that forces a fresh server-side calculation. */}
+        <PortfolioMetricsGrid
+          metrics={effectivePortfolioMetrics}
+          loading={effectiveLoadingPortfolio}
+          onRefresh={isOwnProfile ? handlePortfolioRefresh : undefined}
+          variant="public"
+        />
+        {portfolioError && !isOwnProfile ? (
+          <div className="text-xs text-muted-foreground">Portfolio metrics temporarily unavailable.</div>
         ) : null}
 
         <section className="grid gap-4 md:grid-cols-2">

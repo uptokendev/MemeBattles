@@ -53,7 +53,7 @@ function ConnectRequired({ onConnect }: { onConnect: () => void }) {
         </div>
         <h1 className="font-retro text-2xl text-foreground md:text-4xl">Connect wallet</h1>
         <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground md:text-base">
-          The Command Center is private. Connect the owner wallet to open dashboard tools.
+          The creator dashboard is private. Connect the owner wallet to open your tools.
         </p>
         <Button onClick={onConnect} className="mt-6 font-retro">
           Connect wallet

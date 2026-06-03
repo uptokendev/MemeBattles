@@ -1294,3 +1294,9 @@ h2.mwz-section-title,
     transform: none !important;
   }
 }
+   .fixed.top-0 .search-button {
+  min-height: 45px !important;   /* ← change this value */
+  height: 45px !important;
+  margin-top: -5px; 
+  margin-left: -2px;
+}

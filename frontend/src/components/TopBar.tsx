@@ -17,8 +17,7 @@ import { ArenaDesktopNav } from "@/components/postgrad/ArenaDesktopNav";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
-import { ethers } from "ethers";
+import type { CampaignInfo } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import {
   getDraftNotifications,
@@ -34,26 +33,15 @@ import {
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
+  leftSidebarWidth?: number; // from new collapsible left battle sidebar
 }
 
-type TickerItem = {
-  key: string;
-  symbol: string;
-  logoURI?: string;
-  subtitle: string;
-  hot: boolean;
-  route: string;
-};
 type NavLinkItem = {
   label: string;
   path: string;
   priority: "primary" | "secondary";
 };
 const brandMark = "/assets/navbar-logo.png";
-
-const ENABLE_TOPBAR_ONCHAIN_METRICS = ["1", "true", "yes", "on"].includes(
-  String(import.meta.env.VITE_ENABLE_TOPBAR_ONCHAIN_METRICS || "").trim().toLowerCase(),
-);
 
 function isExternalHref(target: string): boolean {
   return /^https?:\/\//i.test(target);
@@ -75,7 +63,7 @@ function navPathMatches(currentPathname: string, currentSearch: string, target: 
   }
 }
 
-export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
+export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0 }: TopBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const wallet = useWallet();
@@ -110,12 +98,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
   const [allCampaigns, setAllCampaigns] = useState<CampaignInfo[]>([]);
 
-  const { fetchCampaigns, fetchCampaignMetrics } = useLaunchpad();
-
-  const [tickerCampaigns, setTickerCampaigns] = useState<CampaignInfo[]>([]);
-  const [tickerMetricsByCampaign, setTickerMetricsByCampaign] = useState<Record<string, CampaignMetrics | null>>({});
-  const [tickerLoading, setTickerLoading] = useState(true);
-  const tickerInitialLoadedRef = useRef(false);
+  const { fetchCampaigns } = useLaunchpad();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -154,7 +137,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
-    "mwz-button !h-7 !min-h-0 !gap-1 !px-2 sm:!px-2.5 md:!px-3 !py-0 text-[10px] md:text-[11px] leading-none font-retro";
+    "mwz-button !h-[12px] !min-h-0 !gap-0.5 !px-1.5 sm:!px-2 !py-0 text-[10px] leading-none font-retro";
 
   const openWalletModal = () => {
     setWalletModalOpen(true);
@@ -163,7 +146,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navLinks = useMemo<NavLinkItem[]>(
     () => [
       { label: "Launchpad", path: "/", priority: "primary" },
-      ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ label: "War Room", path: "/war-room", priority: "primary" as const }] : []),
+      ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ label: "Trade War Room", path: "/war-room", priority: "primary" as const }] : []),
       { label: "Profile", path: "/profile?tab=balances", priority: "secondary" },
       { label: "Docs", path: "https://docs.memewar.zone", priority: "secondary" },
     ],
@@ -175,43 +158,12 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
 
     const load = async () => {
       try {
-        if (!tickerInitialLoadedRef.current) setTickerLoading(true);
         const campaigns = await fetchCampaigns();
-        const all = campaigns ?? [];
-        const top = all.slice(0, 12);
-
-        if (cancelled) return;
-        setAllCampaigns(all);
-        setTickerCampaigns(top);
-
-        if (!ENABLE_TOPBAR_ONCHAIN_METRICS) {
-          setTickerMetricsByCampaign({});
-          tickerInitialLoadedRef.current = true;
-          return;
-        }
-
-        const results = await Promise.allSettled(top.map((c) => fetchCampaignMetrics(c.campaign)));
-
-        if (cancelled) return;
-
-        const next: Record<string, CampaignMetrics | null> = {};
-        top.forEach((c, idx) => {
-          const r = results[idx];
-          next[c.campaign.toLowerCase()] = r.status === "fulfilled" ? r.value : null;
-        });
-
-        setTickerMetricsByCampaign(next);
-        tickerInitialLoadedRef.current = true;
-      } catch (err) {
-        console.error("[TopBar ticker] Failed to load campaigns", err);
         if (!cancelled) {
-          if (!tickerInitialLoadedRef.current) {
-            setTickerCampaigns([]);
-            setTickerMetricsByCampaign({});
-          }
+          setAllCampaigns(campaigns ?? []);
         }
-      } finally {
-        if (!cancelled) setTickerLoading(false);
+      } catch (err) {
+        console.error("[TopBar] Failed to load campaigns", err);
       }
     };
 
@@ -219,87 +171,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return () => {
       cancelled = true;
     };
-  }, [fetchCampaigns, fetchCampaignMetrics]);
+  }, [fetchCampaigns]);
 
-  const tickerItems: TickerItem[] = useMemo(() => {
-    const formatCompactUsd = (n: number) => {
-      if (!Number.isFinite(n)) return "—";
-      const abs = Math.abs(n);
-      const sign = n < 0 ? "-" : "";
-      const v = Math.abs(n);
-      if (abs >= 1_000_000_000) return `${sign}$${(v / 1_000_000_000).toFixed(2)}B`;
-      if (abs >= 1_000_000) return `${sign}$${(v / 1_000_000).toFixed(2)}M`;
-      if (abs >= 1_000) return `${sign}$${(v / 1_000).toFixed(1)}K`;
-      return `${sign}$${v.toFixed(2)}`;
-    };
-
-    const formatCompactBnb = (bnb: number) => {
-      if (!Number.isFinite(bnb)) return "—";
-      const abs = Math.abs(bnb);
-      const pretty = abs >= 1 ? bnb.toFixed(2) : abs >= 0.01 ? bnb.toFixed(4) : abs >= 0.0001 ? bnb.toFixed(6) : bnb.toFixed(8);
-      return `${pretty} BNB`;
-    };
-
-    const formatMarketCap = (m: CampaignMetrics | null | undefined) => {
-      if (!m) return "MC —";
-      try {
-        const circulating: bigint = (m as any)?.sold ?? 0n;
-        const priceWeiPerToken: bigint = (m as any)?.currentPrice ?? 0n;
-        if (circulating <= 0n || priceWeiPerToken <= 0n) return "MC —";
-
-        const mcWei = (priceWeiPerToken * circulating) / 10n ** 18n;
-        const mcBnb = Number(ethers.formatEther(mcWei));
-        if (!Number.isFinite(mcBnb) || mcBnb <= 0) return "MC —";
-
-        if (Number.isFinite(bnbUsd ?? NaN) && (bnbUsd ?? 0) > 0) {
-          const mcUsd = mcBnb * (bnbUsd as number);
-          return `MC ${formatCompactUsd(mcUsd)}`;
-        }
-
-        return `MC ${formatCompactBnb(mcBnb)}`;
-      } catch {
-        return "MC —";
-      }
-    };
-
-    return (tickerCampaigns ?? [])
-      .filter((c) => c && typeof c.symbol === "string" && c.symbol.length > 0)
-      .map((c) => {
-        const metrics = tickerMetricsByCampaign[c.campaign.toLowerCase()] ?? null;
-        const sold = (() => {
-          try {
-            const v = (metrics as any)?.sold;
-            if (typeof v === "bigint") return v;
-            if (typeof v === "number") return BigInt(v);
-            if (typeof v === "string") return BigInt(v);
-            return 0n;
-          } catch {
-            return 0n;
-          }
-        })();
-
-        return {
-          key: c.campaign,
-          symbol: c.symbol,
-          logoURI: (c as any).logoURI,
-          subtitle: formatMarketCap(metrics),
-          hot: sold > 0n,
-          route: `/token/${c.campaign.toLowerCase()}`,
-        };
-      });
-  }, [tickerCampaigns, tickerMetricsByCampaign, bnbUsd]);
-
-  const tickerBaseLoop: TickerItem[] = useMemo(() => {
-    if (!tickerItems || tickerItems.length === 0) return [];
-    const MIN_ITEMS = 18;
-    const target = Math.max(MIN_ITEMS, tickerItems.length);
-    const out: TickerItem[] = [];
-    while (out.length < target) out.push(...tickerItems);
-    return out.slice(0, target);
-  }, [tickerItems]);
-
-  const isLaunchpadRoute = location.pathname === "/";
-  const showTickerBand = isLaunchpadRoute && tickerBaseLoop.length > 0;
   const isActive = (path: string) => navPathMatches(location.pathname, location.search, path);
 
   useEffect(() => {
@@ -369,226 +242,178 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     setDraftNotifications(getDraftNotifications());
   };
 
+  const leftOffset = leftSidebarWidth;
+
   return (
-    <div className="fixed left-0 right-0 top-0 z-40 bg-transparent">
-      <div className="mwz-hud-frame mx-2 mt-2 flex min-h-[30px] items-center gap-1 !py-1 px-2 md:mx-3 md:px-3">
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="mwz-button h-8 w-8 shrink-0 p-0 lg:hidden" aria-label="Toggle menu">
+    <div
+      className="fixed top-0 z-40 bg-transparent transition-[left]"
+      style={{ left: leftOffset, right: 0 }}
+    >
+      {/* Minimal top action bar - no borders, no menu items, no logo (logo lives in left sidebar) */}
+      <div className="mx-2 mt-3 flex min-h-[30px] items-center gap-1.5 px-2 md:mx-3 md:px-3">
+        {/* Mobile menu trigger only */}
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="mwz-button h-8 w-8 shrink-0 p-0 lg:hidden"
+          aria-label="Toggle menu"
+        >
           <Menu className="h-4 w-4" />
         </button>
 
+        {/* Small logo only on mobile (desktop logo is in the left sidebar) */}
         <Link to="/" className="mr-1 flex shrink-0 items-center lg:hidden">
-          <img src={brandMark} alt="MemeWarzone" className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)]" draggable={false} />
-        </Link>
-
-        <Link to="/" className="mr-2 hidden shrink-0 items-center lg:flex">
           <img
             src={brandMark}
             alt="MemeWarzone"
-            className="h-7 w-auto object-contain drop-shadow-[0_0_14px_rgba(57,255,79,0.32)] xl:h-8 2xl:h-10"
+            className="h-7 w-auto object-contain"
             draggable={false}
           />
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-hidden lg:flex">
-          {navLinks.map((item) => {
-            const external = isExternalHref(item.path);
-            const className = cn(
-              "mwz-nav-link px-2 md:px-3 !py-1 text-[11px] leading-none whitespace-nowrap",
-              item.priority === "secondary" && "hidden xl:inline-flex",
-              !external && isActive(item.path) && "mwz-nav-link-active",
-            );
+        {/* Right cluster: Socials → Search → Create → Bell → Wallet (pushed right) */}
+        <div className="ml-auto flex items-center gap-1.5">
+          {/* Social icons first */}
+          <div className="hidden items-center xl:flex">
+            <SocialTooltip
+              items={socialLinks}
+              className="gap-1 [&_a]:!h-5 [&_a]:!w-5 [&_img]:!h-3.5 [&_img]:!w-3.5"
+            />
+          </div>
 
-            const renderedItem = external ? (
-              <a
-                key={item.path}
-                href={item.path}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={className}
-              >
-                {item.label}
-              </a>
-            ) : (
-              <Link key={item.path} to={item.path} className={className}>
-                {item.label}
-              </Link>
-            );
+          {/* Compact Search (after socials) - height reduced, text larger */}
+          <div className="w-[92px] lg:w-[110px] xl:w-28">
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Open search"
+              className="mwz-button search-button group flex h-[10px] w-full items-center justify-center gap-1 px-2 text-[11px] leading-none"
+            >
+              <Search className="h-2 w-2 shrink-0" />
+              <span className="truncate text-[11px] uppercase tracking-[0.12em] text-success/70">Search</span>
+            </button>
+          </div>
 
-            if (item.path === "/") {
-              return (
-                <div key="launchpad-nav-group" className="contents">
-                  {renderedItem}
-                  {isPostGradNavEnabled() ? <ArenaDesktopNav /> : null}
-                </div>
-              );
-            }
+          {/* Orange action buttons - shorter height + pushed down + moved left */}
+          <div className="relative -ml-1 flex shrink-0 items-center gap-1 self-end mb-2">
+            <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
+              <Plus className="h-2.5 w-2.5 shrink-0" />
+              <span className="hidden sm:inline">Create Coin</span>
+              <span className="sm:hidden">Create</span>
+            </Button>
 
-            return renderedItem;
-          })}
-        </div>
+            {wallet.isConnected && (
+              <div className="relative" data-topbar-popover>
+                <Button
+                  ref={bellRef}
+                  type="button"
+                  onClick={() => {
+                    setDisconnectOpen(false);
+                    setNotificationOpen((prev) => !prev);
+                  }}
+                  className={cn(topbarButtonClass, "relative w-12 justify-center px-1.5")}
+                  aria-label="Notifications"
+                >
+                  <Bell className="h-2.5 w-2.5" />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -right-0.5 top-0 grid h-4 min-w-4 place-items-center border border-accent bg-background px-0.5 text-[9px] text-accent">
+                      {unreadNotifications}
+                    </span>
+                  )}
+                </Button>
 
-        <div className="hidden shrink-0 items-center xl:flex">
-          <SocialTooltip
-            items={socialLinks}
-            className="gap-1.5 [&_a]:!h-8 [&_a]:!w-8 [&_img]:!h-4 [&_img]:!w-4"
-          />
-        </div>
+                {notificationOpen && popoverAnchor && createPortal(
+                  <div
+                    data-topbar-popover
+                    className="mwz-panel w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-2"
+                    style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
+                  >
+                    <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
+                      <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
+                      <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+                        Mark read
+                      </button>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto py-1">
+                      {draftNotifications.slice(0, 5).map((notification) => (
+                        <button
+                          key={notification.id}
+                          type="button"
+                          onClick={() => openNotificationTarget(notification)}
+                          className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate font-retro text-xs text-foreground">{notification.title}</span>
+                            {!notification.read && <span className="h-2 w-2 shrink-0 bg-accent" />}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{notification.body}</p>
+                        </button>
+                      ))}
+                      {draftNotifications.length === 0 && (
+                        <div className="px-2 py-4 text-xs text-muted-foreground">No notifications yet.</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificationOpen(false);
+                        navigate("/profile?tab=notifications");
+                      }}
+                      className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                    >
+                      View all
+                    </button>
+                  </div>,
+                  document.body,
+                )}
+              </div>
+            )}
 
-        <div className="mx-1 min-w-0 flex-1 lg:mx-2 lg:w-[96px] lg:flex-none xl:w-[112px] 2xl:w-[128px]">
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            aria-label="Open search"
-            className="mwz-button group flex h-7 w-full items-center justify-center gap-1.5 px-2 sm:justify-start md:justify-center"
-          >
-            <Search className="h-3 w-3 shrink-0" />
-            <span className="truncate text-[10px] uppercase tracking-[0.12em] text-success/70 leading-none">
-              Search
-            </span>
-          </button>
-        </div>
-
-        <div className="relative flex shrink-0 items-center gap-1 sm:gap-2">
-          <Button onClick={() => { setMobileMenuOpen(false); navigate("/create"); }} className={topbarButtonClass}>
-            <Plus className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden sm:inline">Create Coin</span>
-            <span className="sm:hidden">Create</span>
-          </Button>
-
-          {wallet.isConnected && (
             <div className="relative" data-topbar-popover>
               <Button
-                ref={bellRef}
-                type="button"
+                ref={walletRef}
+                className={topbarButtonClass}
                 onClick={() => {
-                  setDisconnectOpen(false);
-                  setNotificationOpen((prev) => !prev);
+                  if (!wallet.isConnected) {
+                    openWalletModal();
+                    return;
+                  }
+                  setNotificationOpen(false);
+                  setDisconnectOpen((prev) => !prev);
                 }}
-                className={cn(topbarButtonClass, "relative px-2.5 md:px-3")}
-                aria-label="Notifications"
               >
-                <Bell className="h-3.5 w-3.5" />
-                {unreadNotifications > 0 && (
-                  <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center border border-accent bg-background px-1 text-[9px] text-accent">
-                    {unreadNotifications}
-                  </span>
-                )}
+                <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
+                <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
               </Button>
 
-              {notificationOpen && popoverAnchor && createPortal(
+              {disconnectOpen && popoverAnchor && createPortal(
                 <div
                   data-topbar-popover
-                  className="mwz-panel w-80 max-w-[calc(100vw-2rem)] overflow-hidden p-2"
+                  className="mwz-panel w-56 p-2"
                   style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
                 >
-                  <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
-                    <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
-                    <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
-                      Mark read
-                    </button>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto py-1">
-                    {draftNotifications.slice(0, 5).map((notification) => (
-                      <button
-                        key={notification.id}
-                        type="button"
-                        onClick={() => openNotificationTarget(notification)}
-                        className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-retro text-xs text-foreground">{notification.title}</span>
-                          {!notification.read && <span className="h-2 w-2 shrink-0 bg-accent" />}
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{notification.body}</p>
-                      </button>
-                    ))}
-                    {draftNotifications.length === 0 && (
-                      <div className="px-2 py-4 text-xs text-muted-foreground">No notifications yet.</div>
-                    )}
+                  <div className="border border-success/15 bg-success/5 px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-foreground">
+                    {shortAddress}
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setNotificationOpen(false);
-                      navigate("/profile?tab=notifications");
+                    onClick={async () => {
+                      try {
+                        await wallet.disconnect();
+                      } finally {
+                        setDisconnectOpen(false);
+                      }
                     }}
-                    className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                    className="mt-2 w-full border border-border/70 px-3 py-2 text-left font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
                   >
-                    View all
+                    Disconnect wallet
                   </button>
                 </div>,
                 document.body,
               )}
             </div>
-          )}
-
-          <div className="relative" data-topbar-popover>
-            <Button
-              ref={walletRef}
-              className={topbarButtonClass}
-              onClick={() => {
-                if (!wallet.isConnected) {
-                  openWalletModal();
-                  return;
-                }
-                setNotificationOpen(false);
-                setDisconnectOpen((prev) => !prev);
-              }}
-            >
-              <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
-              <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
-            </Button>
-
-            {disconnectOpen && popoverAnchor && createPortal(
-              <div
-                data-topbar-popover
-                className="mwz-panel w-56 p-2"
-                style={{ position: "fixed", top: popoverAnchor.top, right: popoverAnchor.right, zIndex: 80 }}
-              >
-                <div className="border border-success/15 bg-success/5 px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-foreground">
-                  {shortAddress}
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await wallet.disconnect();
-                    } finally {
-                      setDisconnectOpen(false);
-                    }
-                  }}
-                  className="mt-2 w-full border border-border/70 px-3 py-2 text-left font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
-                >
-                  Disconnect wallet
-                </button>
-              </div>,
-              document.body,
-            )}
           </div>
         </div>
       </div>
-
-      {showTickerBand && (
-        <div className="mx-2 mt-1 overflow-hidden md:mx-3">
-          <div className="mwz-ticker-mask relative overflow-hidden rounded-full border border-success/10 bg-black/45 px-1 py-1 shadow-[0_14px_38px_-24px_rgba(0,0,0,0.95)]">
-            <div className="mwz-ticker-track flex min-w-max animate-[ticker-scroll_46s_linear_infinite] items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-success/78 will-change-transform hover:[animation-play-state:paused]">
-              {[0, 1].map((dup) =>
-                tickerBaseLoop.map((item, idx) => (
-                  <Link
-                    key={`${dup}-${item.key}-${idx}`}
-                    to={item.route}
-                    className="mwz-ticker-chip inline-flex h-7 items-center gap-2 whitespace-nowrap rounded-full border border-success/10 bg-black/35 px-3 text-[10px] leading-none transition-colors hover:bg-success/10"
-                  >
-                    {item.logoURI ? <img src={item.logoURI} alt={item.symbol} className="h-4 w-4 rounded-full object-cover" /> : null}
-                    <span className={cn("font-retro", item.hot ? "text-success" : "text-success/70")}>{item.symbol}</span>
-                    <span className="text-success/48">{item.subtitle}</span>
-                  </Link>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} campaigns={allCampaigns} />
       <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />

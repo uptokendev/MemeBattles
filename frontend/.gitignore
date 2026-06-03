@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# =============================================================================
+# Agent Setup - NEVER COMMIT (local only)
+# =============================================================================
+# All agent-related configuration, skills, personas, and documentation feeds
+# must remain private and never be pushed to the remote repository.
+
+# Root agent rules document
+AGENTS.md
+
+# Entire .grok directory (contains custom skills, personas, architect feed, etc.)
+.grok/

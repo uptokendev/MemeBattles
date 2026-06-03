@@ -1,12 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CircleSlash, Coins, FileText, Rocket, ShieldAlert, Swords } from "lucide-react";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import { resolveImageUri } from "@/lib/media";
 
+import { BattlefieldMatrixScanner } from "@/components/command-center/BattlefieldMatrixScanner";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { PostGradCoinCard } from "@/components/postgrad/PostGradCoinCard";
+import { CommandCenterCoinRow } from "@/components/postgrad/CommandCenterCoinRow";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { fetchOwnerCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
@@ -91,12 +105,81 @@ export default function CommandCenterCoins() {
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [battleBusyToken, setBattleBusyToken] = useState<string | null>(null);
   const [battleNotice, setBattleNotice] = useState<string | null>(null);
+
+  // Battle pot funding dialog state
+  const [potDialogOpen, setPotDialogOpen] = useState(false);
+  const [potDialogToken, setPotDialogToken] = useState<{ id: string; name: string } | null>(null);
+  const [potAmountBnb, setPotAmountBnb] = useState("0.1");
+  const [potSubmitting, setPotSubmitting] = useState(false);
   const {
     getBattleForToken,
     getCreatorCoinStatus,
     openCreatorCoinForBattle,
+    openForBattleQueue,
     source: battleSource,
   } = useArenaBattleFeed(walletAddress || undefined, chainId);
+
+  const navigate = useNavigate();
+  const { fetchCampaignLogoURI } = useLaunchpad();
+
+  // Logo hydration state must come before anything that uses it
+  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
+
+  // createdCoins must be declared early because unifiedItems, filteredItems,
+  // and the logo hydration effect all reference it (TDZ fix)
+  const createdCoins = useMemo(() => {
+    return created
+      .map((coin: any) => {
+        const campaignAddress = getCreatedCoinIdentity(coin);
+        if (!campaignAddress) return null;
+        return {
+          raw: coin,
+          campaignAddress,
+          name: getCreatedCoinName(coin),
+          ticker: getCreatedCoinTicker(coin),
+          image: resolveImageUri(logoCache[campaignAddress?.toLowerCase?.()] || getCreatedCoinImage(coin)) || '/placeholder.svg',
+          marketCap: getCreatedCoinMarketCap(coin),
+          status: String(coin?.status || coin?.campaign?.status || "live").toLowerCase(),
+        };
+      })
+      .filter(Boolean) as Array<{
+        raw: any;
+        campaignAddress: string;
+        name: string;
+        ticker: string;
+        image: string;
+        marketCap: string;
+        status: string;
+      }>;
+  }, [created, logoCache]);  // include logoCache since it's used inside
+
+  // Logo hydration effect — placed after createdCoins declaration to avoid TDZ
+  useEffect(() => {
+    let cancelled = false;
+    const missing = (createdCoins || [])
+      .map((c) => c.campaignAddress?.toLowerCase())
+      .filter((addr): addr is string => !!addr && !logoCache[addr]);
+
+    if (!missing.length) return;
+
+    (async () => {
+      try {
+        const pairs = await Promise.all(
+          missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr).catch(() => null)] as const)
+        );
+        if (cancelled) return;
+        setLogoCache((prev) => {
+          const next = { ...prev };
+          for (const [addr, uri] of pairs) {
+            if (uri) next[addr] = uri;
+          }
+          return next;
+        });
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [createdCoins, logoCache, fetchCampaignLogoURI]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,43 +205,152 @@ export default function CommandCenterCoins() {
     };
   }, [walletAddress, chainId]);
 
-  const createdCoins = useMemo(() => {
-    return created
-      .map((coin: any) => {
-        const campaignAddress = getCreatedCoinIdentity(coin);
-        if (!campaignAddress) return null;
-        return {
-          raw: coin,
-          campaignAddress,
-          name: getCreatedCoinName(coin),
-          ticker: getCreatedCoinTicker(coin),
-          image: getCreatedCoinImage(coin),
-          marketCap: getCreatedCoinMarketCap(coin),
-          status: String(coin?.status || coin?.campaign?.status || "live").toLowerCase(),
-        };
-      })
-      .filter(Boolean) as Array<{
-        raw: any;
-        campaignAddress: string;
-        name: string;
-        ticker: string;
-        image: string;
-        marketCap: string;
-        status: string;
-      }>;
-  }, [created]);
+  // New unified filter state for the combined Launched Coins + Drafts section
+  const [activeFilter, setActiveFilter] = useState<'all' | 'drafts' | 'coins' | 'open_for_battle' | 'in_battle'>('all');
+
+  // Build a unified list of items (drafts + launched coins with battle status)
+  const unifiedItems = useMemo(() => {
+    const items: any[] = [];
+
+    // Add drafts
+    drafts.forEach((draft) => {
+      items.push({
+        id: draft.id,
+        type: 'draft',
+        name: draft.name,
+        ticker: draft.ticker,
+        image: resolveImageUri(draft.logoUrl) || '/placeholder.svg',
+        status: draft.status.replace(/_/g, ' '),
+        visibility: draft.visibility,
+        updatedAt: formatDate(draft.updatedAt),
+        category: draft.category || '—',
+        href: draftHref(draft),
+      });
+    });
+
+    // Add launched coins with battle context (reusing existing createdCoins logic)
+    createdCoins.forEach((coin) => {
+      const battle = getBattleForToken(coin.campaignAddress);
+      const creatorStatus = getCreatorCoinStatus(coin.campaignAddress);
+      const fallbackState = battle
+        ? battle.state
+        : coin.status === "draft"
+          ? "unavailable"
+          : "eligible";
+      const creatorState = creatorStatus?.currentState ?? fallbackState;
+      const statusLabel = getCreatorStateLabel(creatorState);
+      const statusTone = getCreatorStateTone(creatorState);
+      const battleRouteId = creatorStatus?.battleId ?? battle?.id ?? null;
+      const isOpening = battleBusyToken === coin.campaignAddress;
+
+      let battleInfo = '';
+      if (creatorState === 'open_for_battle') battleInfo = 'Open for Battle';
+      else if (['pending', 'accepted', 'live'].includes(creatorState)) battleInfo = 'In Battle';
+
+      const tokenRoute = getPostGradTokenDetailRoute(coin.campaignAddress);
+
+      // Pre-build actions for the coin card
+      let actions: React.ReactNode = null;
+      if (tokenRoute) {
+        actions = (
+          <>
+            <Button asChild size="sm" variant="outline">
+              <Link to={tokenRoute}>Details</Link>
+            </Button>
+            {creatorState === "eligible" ? (
+              <Button size="sm" disabled={isOpening} onClick={() => void handleOpenForBattle(coin.campaignAddress, coin.name)}>
+                {isOpening ? "Opening..." : "Open for battle"}
+              </Button>
+            ) : battleRouteId ? (
+              <Button asChild size="sm">
+                <Link to={`/battle/${battleRouteId}`}>
+                  {creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted" ? "View" : "Battle"}
+                </Link>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" disabled>
+                Unavailable
+              </Button>
+            )}
+          </>
+        );
+      }
+
+      items.push({
+        id: coin.campaignAddress,
+        type: 'coin',
+        name: coin.name,
+        ticker: coin.ticker,
+        image: resolveImageUri(logoCache[coin.campaignAddress?.toLowerCase?.()] || coin.image) || '/placeholder.svg',
+        marketCap: coin.marketCap,
+        statusLabel,
+        statusTone,
+        battleInfo,
+        battleRouteId,
+        tokenRoute,
+        creatorState,
+        isOpening,
+        actions,
+      });
+    });
+
+    return items;
+  }, [drafts, createdCoins, getBattleForToken, getCreatorCoinStatus, battleBusyToken]);
+
+  // Filtered list based on active filter
+  const filteredItems = useMemo(() => {
+    if (activeFilter === 'all') return unifiedItems;
+
+    return unifiedItems.filter((item) => {
+      if (activeFilter === 'drafts') return item.type === 'draft';
+      if (activeFilter === 'coins') return item.type === 'coin' && !item.battleInfo;
+      if (activeFilter === 'open_for_battle') return item.type === 'coin' && item.creatorState === 'open_for_battle';
+      if (activeFilter === 'in_battle') return item.type === 'coin' && ['pending', 'accepted', 'live'].includes(item.creatorState);
+      return true;
+    });
+  }, [unifiedItems, activeFilter]);
 
   const handleOpenForBattle = async (campaignAddress: string, name: string) => {
-    setBattleBusyToken(campaignAddress);
+    // Open the pot funding dialog instead of immediate action
+    setPotDialogToken({ id: campaignAddress, name });
+    setPotAmountBnb("0.1");
+    setPotDialogOpen(true);
     setBattleNotice(null);
+  };
+
+  const confirmOpenForBattleWithPot = async () => {
+    if (!potDialogToken) return;
+
+    const amount = parseFloat(potAmountBnb);
+    if (!amount || amount < 0.1) {
+      setBattleNotice("Minimum battle pot is 0.1 BNB.");
+      return;
+    }
+
+    setPotSubmitting(true);
+    setBattleBusyToken(potDialogToken.id);
+
     try {
-      const opened = await openCreatorCoinForBattle(campaignAddress);
-      setBattleNotice(opened ? `${name} is now open for battle.` : `Could not open ${name} for battle. Refresh and check eligibility.`);
+      const opened = await openCreatorCoinForBattle(potDialogToken.id, amount);
+      if (opened) {
+        setBattleNotice(`${potDialogToken.name} is now open for battle with a ${amount} BNB pot.`);
+        setPotDialogOpen(false);
+        setPotDialogToken(null);
+      } else {
+        setBattleNotice(`Could not open ${potDialogToken.name} for battle.`);
+      }
     } catch (error: any) {
-      setBattleNotice(error?.message || `Could not open ${name} for battle.`);
+      setBattleNotice(error?.message || `Could not open ${potDialogToken.name} for battle.`);
     } finally {
+      setPotSubmitting(false);
       setBattleBusyToken(null);
     }
+  };
+
+  const handleChallengeRival = (battleId: string, rivalName: string, rivalSymbol: string) => {
+    setBattleNotice(`Challenging ${rivalName} (${rivalSymbol}) — opening battle intel...`);
+    // Navigate to the public battle viewer (user can join as challenger from there)
+    navigate(`/battle/${battleId}`);
   };
 
   return (
@@ -192,191 +384,158 @@ export default function CommandCenterCoins() {
         </Link>
       </div>
 
-      <CommandCenterCard title="Battle controls" description="Private battle opt-in and live battle state for coins owned by this wallet.">
+      <CommandCenterCard 
+        title="Launched Coins & Drafts" 
+        description="All your launched coins and prepare drafts. Filter by status to quickly find drafts, battle-eligible coins, or ones involved in challenges."
+      >
         {battleNotice ? <div className="mb-3 mwz-hud-frame p-3 text-sm text-muted-foreground">{battleNotice}</div> : null}
-        {createdCoins.length > 0 ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {createdCoins.map((coin) => {
-              const tokenRoute = getPostGradTokenDetailRoute(coin.campaignAddress);
-              const battle = getBattleForToken(coin.campaignAddress);
-              const creatorStatus = getCreatorCoinStatus(coin.campaignAddress);
-              const fallbackState = battle
-                ? battle.state
-                : coin.status === "draft"
-                  ? "unavailable"
-                  : "eligible";
-              const creatorState = creatorStatus?.currentState ?? fallbackState;
-              const statusLabel = getCreatorStateLabel(creatorState);
-              const statusTone = getCreatorStateTone(creatorState);
-              const battleRouteId = creatorStatus?.battleId ?? battle?.id ?? null;
-              const isOpening = battleBusyToken === coin.campaignAddress;
-              const fallbackReason = creatorState === "eligible"
-                ? "This coin is free to open a new challenge from Command Center."
-                : creatorState === "unavailable"
-                  ? battleSource === "empty"
-                    ? "Battle status is not available on this branch yet, so readiness cannot be verified here."
-                    : "This coin is not available to open a battle right now."
-                  : creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted"
-                    ? "This coin already has an active challenge in the queue and is waiting for a rival or acceptance."
-                    : "This coin is already assigned to a live or recently settled battle and cannot open another one yet.";
-              const reason = getCreatorReason(creatorStatus?.unavailableReason, fallbackReason);
 
-              return (
-                <div key={coin.campaignAddress} className="mwz-hud-frame p-4">
-                  <div className="flex items-start gap-3">
-                    <img src={coin.image} alt={coin.name} className="h-14 w-14 shrink-0 border border-accent/30 object-cover" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate font-retro text-base text-foreground">{coin.name}</div>
-                        <div className="text-xs text-muted-foreground">${coin.ticker}</div>
-                        <TacticalTag label={statusLabel} tone={statusTone} />
-                      </div>
-                      <div className="mt-2 text-sm text-muted-foreground">Market cap {coin.marketCap}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-[1.1fr_0.9fr]">
-                    <div className="mwz-hud-frame p-4">
-                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        {creatorState === "eligible" ? <Rocket className="h-4 w-4 text-emerald-300" /> : creatorState === "unavailable" ? <ShieldAlert className="h-4 w-4 text-muted-foreground" /> : <CircleSlash className="h-4 w-4 text-orange-200" />}
-                        Availability
-                      </div>
-                      <p className="mt-3 text-sm text-muted-foreground">{reason}</p>
-                      {battle ? (
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <TacticalTag label={battle.state.replaceAll("_", " ")} tone={creatorState === "live" ? "hot" : creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted" ? "sponsored" : "default"} />
-                          <span>{battle.participants[0].symbol} vs {battle.participants[1].symbol}</span>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="mwz-hud-frame p-4">
-                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <Swords className="h-4 w-4 text-accent" />
-                        Actions
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {tokenRoute ? (
-                          <Button asChild size="sm" variant="outline">
-                            <Link to={tokenRoute}>Token details</Link>
-                          </Button>
-                        ) : null}
-
-                        {creatorState === "eligible" ? (
-                          <Button size="sm" disabled={isOpening} onClick={() => void handleOpenForBattle(coin.campaignAddress, coin.name)}>
-                            {isOpening ? "Opening..." : "Open for battle"}
-                          </Button>
-                        ) : battleRouteId ? (
-                          <Button asChild size="sm">
-                            <Link to={`/battle/${battleRouteId}`}>{creatorState === "open_for_battle" || creatorState === "pending" || creatorState === "accepted" ? "View queue" : "Open battle"}</Link>
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="outline" disabled>
-                            Unavailable
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
-            No launched coins yet.
-          </div>
-        )}
-      </CommandCenterCard>
-
-      <CommandCenterCard title="Launched coins" description="Campaigns created by this wallet.">
-        {created.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {created.map((coin: any) => {
-              const campaignAddress = String(coin?.campaignAddress || coin?.campaign?.campaign || coin?.campaign || "");
-              const name = String(coin?.name || coin?.campaign?.name || "Unnamed coin");
-              const ticker = String(coin?.ticker || coin?.symbol || coin?.campaign?.symbol || "???");
-              const image = String(coin?.image || coin?.logoURI || coin?.campaign?.logoURI || "/placeholder.svg");
-              const marketCap = String(coin?.marketCap || coin?.stats?.marketCap || "—");
-              const href = campaignAddress ? `/token/${campaignAddress}` : "/command/coins";
-
-              return (
-                <Link key={`${campaignAddress}-${name}`} to={href} className="mwz-hud-frame p-4 transition hover:border-accent/50 hover:bg-card/35">
-                  <div className="flex items-center gap-3">
-                    <img src={image} alt={name} className="h-12 w-12 shrink-0 border border-accent/30 object-cover" />
-                    <div className="min-w-0">
-                      <div className="truncate font-retro text-sm text-foreground">{name}</div>
-                      <div className="text-xs text-muted-foreground">${ticker}</div>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <div className="text-muted-foreground">Market cap</div>
-                      <div className="text-foreground">{marketCap}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Status</div>
-                      <div className="capitalize text-foreground">{String(coin?.status || "live")}</div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
-            No launched coins yet.
-          </div>
-        )}
-      </CommandCenterCard>
-
-      <CommandCenterCard title="Prepare drafts" description="Drafts owned by this wallet.">
-        {loadingDrafts ? (
-          <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">Loading drafts...</div>
-        ) : draftsError ? (
-          <div className="mwz-hud-frame border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{draftsError}</div>
-        ) : drafts.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {drafts.map((draft) => (
-              <Link
-                key={draft.id}
-                to={draftHref(draft)}
-                className="mwz-hud-frame p-4 transition hover:bg-card/35"
+        {/* Filter controls */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(['all', 'drafts', 'coins', 'open_for_battle', 'in_battle'] as const).map((filter) => {
+            const label = filter === 'all' ? 'All' 
+              : filter === 'drafts' ? 'Drafts' 
+              : filter === 'coins' ? 'Launched Coins' 
+              : filter === 'open_for_battle' ? 'Open for Battle' 
+              : 'In Battles / Challenged';
+            const isActive = activeFilter === filter;
+            return (
+              <button
+                key={filter}
+                onClick={() => setActiveFilter(filter)}
+                className={`px-3 py-1 text-xs font-retro uppercase tracking-wider rounded border transition ${
+                  isActive 
+                    ? 'bg-accent text-black border-accent' 
+                    : 'border-border/50 text-muted-foreground hover:bg-card/40 hover:text-foreground'
+                }`}
               >
-                <div className="flex items-center gap-3">
-                  <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 border border-accent/30 object-cover" />
-                  <div className="min-w-0">
-                    <div className="truncate font-retro text-sm text-foreground">{draft.name}</div>
-                    <div className="text-xs text-muted-foreground">${draft.ticker}</div>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <div className="text-muted-foreground">Status</div>
-                    <div className="capitalize text-foreground">{draft.status.replace(/_/g, " ")}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Visibility</div>
-                    <div className="capitalize text-foreground">{draft.visibility}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Updated</div>
-                    <div className="text-foreground">{formatDate(draft.updatedAt)}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Category</div>
-                    <div className="capitalize text-foreground">{draft.category || "—"}</div>
-                  </div>
-                </div>
-              </Link>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Metric header row - matching War Room style */}
+        <div className="hidden lg:grid grid-cols-[minmax(280px,1.4fr)_100px_100px_100px_28px] gap-3 border-b border-white/10 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-white/50">
+          <div>Coin info</div>
+          <div>Market Cap</div>
+          <div>Liquidity</div>
+          <div>Volume / Holders</div>
+          <div />
+        </div>
+
+        {filteredItems.length > 0 ? (
+          <div className="border-t border-white/8">
+            {filteredItems.map((item) => (
+              <CommandCenterCoinRow
+                key={item.id}
+                item={item}
+                onOpenForBattle={handleOpenForBattle}
+                battleBusyToken={battleBusyToken}
+              />
             ))}
           </div>
         ) : (
           <div className="mwz-hud-frame p-4 text-sm text-muted-foreground">
-            No Prepare drafts yet.
+            Nothing matches the current filter.
           </div>
         )}
       </CommandCenterCard>
+
+      {/* Find a Rival — challenger discovery hub per PostGrad direction.
+          Curated similar open-for-battle coins + the full "AUTODETECT BATTLEFIELD TARGET"
+          matrix scanner (pre-fetched data, real + flair metrics, instant client-side scoring). */}
+      <CommandCenterCard
+        title="Find a Rival"
+        description="Open-for-battle memecoins ranked by battlefield similarity (Market Cap / Holders / Volume). Autoselect runs an instant matrix analysis on cached queue data."
+      >
+        <BattlefieldMatrixScanner
+          openForBattleQueue={openForBattleQueue}
+          userCoins={createdCoins.map((c) => ({
+            campaignAddress: c.campaignAddress,
+            name: c.name,
+            ticker: c.ticker,
+            marketCap: c.marketCap,
+          }))}
+          onChallenge={handleChallengeRival}
+        />
+      </CommandCenterCard>
+
+      {/* Old separate "Launched coins" and "Prepare drafts" sections have been merged 
+          into the unified "Launched Coins & Drafts" card above with filtering. */}
+
+      {/* Battle Pot Funding Dialog */}
+      <Dialog open={potDialogOpen} onOpenChange={setPotDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="font-retro">Open for Battle — Fund the Pot</DialogTitle>
+            <DialogDescription>
+              Creators put BNB into the battle pot. The winner of the battle claims the pot.
+              You set the amount. Minimum 0.1 BNB.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+                Battle Pot (BNB)
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.1"
+                  value={potAmountBnb}
+                  onChange={(e) => setPotAmountBnb(e.target.value)}
+                  className="font-retro text-lg"
+                  disabled={potSubmitting}
+                />
+                <div className="flex items-center px-3 text-sm font-retro text-muted-foreground border border-border rounded">
+                  BNB
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-1.5">
+                Minimum: 0.1 BNB. You decide the exact amount.
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              {[0.1, 0.25, 0.5, 1].map((val) => (
+                <Button
+                  key={val}
+                  variant="outline"
+                  size="sm"
+                  className="font-retro text-xs"
+                  onClick={() => setPotAmountBnb(val.toString())}
+                  disabled={potSubmitting}
+                >
+                  {val} BNB
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setPotDialogOpen(false);
+                setPotDialogToken(null);
+              }}
+              disabled={potSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmOpenForBattleWithPot}
+              disabled={potSubmitting || parseFloat(potAmountBnb) < 0.1}
+              className="mwz-button mwz-button-orange font-retro"
+            >
+              {potSubmitting ? "Processing..." : "Confirm & Open for Battle"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

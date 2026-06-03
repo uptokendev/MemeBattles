@@ -22,8 +22,8 @@ function resolveSignalLevel(volumeUsd: number, holders: number) {
 
 function resolveBattleStateLabel(state?: string) {
   if (!state) return null;
-  if (state === "open_for_battle") return "Open for battle";
-  return state.replaceAll("_", " ");
+  if (state === "open_for_battle") return "Looking for a match";
+  return String(state ?? "").replace(/_/g, " ");
 }
 
 export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
@@ -35,7 +35,7 @@ export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: Campaig
 
   const stateLabel = resolveBattleStateLabel(linkedBattle?.state);
   const isReadyCandidate = !linkedBattle && metrics.status !== "draft" && metrics.hasRichStats;
-  const statusLabel = stateLabel ?? (isReadyCandidate ? "Candidate" : metrics.status === "draft" ? "Draft" : source === "empty" ? "Feed unavailable" : "Review needed");
+  const statusLabel = stateLabel ?? (isReadyCandidate ? "Candidate" : metrics.status === "draft" ? "Not live yet" : source === "empty" ? "Data unavailable" : "Review needed");
   const statusTone = linkedBattle?.state === "live" ? "hot" : linkedBattle ? "success" : isReadyCandidate ? "success" : "default";
   const poolLabel = linkedBattle?.state === "live" ? "Pool active" : linkedBattle ? "Pool pending" : "No active pool";
 
@@ -78,13 +78,13 @@ export function WarRoomBattleIntel({ campaign, bnbUsd = 0 }: { campaign: Campaig
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
               <Swords className="h-4 w-4 text-accent" />
-              {linkedBattle ? "Current matchup" : "Battle lane"}
+              {linkedBattle ? "Matchup" : "Lane"}
             </div>
             <div className="mt-1 text-xs text-white/55">
               {linkedBattle
                 ? `${linkedBattle.participants[0].symbol} vs ${linkedBattle.participants[1].symbol} · ${poolLabel}`
                 : source === "empty"
-                  ? "Battle feed data is not available on this branch yet."
+                  ? "Battle data is not available right now."
                   : isReadyCandidate
                     ? "This coin has enough live market context to review for battle seeding."
                     : "This coin needs more market data before battle seeding is useful."}

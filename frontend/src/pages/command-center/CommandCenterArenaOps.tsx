@@ -304,7 +304,7 @@ export default function CommandCenterArenaOps() {
         )}
       </CommandCenterCard>
 
-      <CommandCenterCard title="Event controls" description="Move Arena events through scheduled, deploying, live, and completed states.">
+      <CommandCenterCard title="Event controls" description="Move events through scheduled, deploying, live, and completed states.">
         {events.events.length > 0 ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {events.events.map((event) => {

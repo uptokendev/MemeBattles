@@ -1,5 +1,8 @@
 import type { CampaignInfo } from "@/lib/launchpadClient";
 
+// NOTE: Status values ("graduated", "draft") are internal data keys only.
+// User-facing labels are mapped in components (Post-launch / Not live yet per Phase 3 Market rename).
+// No UI strings are generated here; see WarRoom*.tsx and WarRoom.tsx for label text.
 export type WarRoomCampaignStatus = "graduated" | "bonding" | "draft";
 
 export type WarRoomCampaignMetrics = {

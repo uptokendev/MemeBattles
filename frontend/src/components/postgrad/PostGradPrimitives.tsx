@@ -26,6 +26,13 @@ function formatWhen(value?: string) {
   });
 }
 
+export const poolStateLabels: Record<WarPool["state"], string> = {
+  open: "Open",
+  locked: "Closed",
+  settling: "Paying out",
+  paid: "Paid out",
+};
+
 function PostGradPanel({
   title,
   eyebrow,
@@ -66,10 +73,10 @@ export function MockModeBanner({ subject = "Post-grad preview" }: { subject?: st
     <div className="mwz-hud-frame px-4 py-3 text-white shadow-[0_18px_45px_-30px_rgba(34,211,238,0.55)]">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Preview mode</div>
-          <div className="mt-1 text-sm text-cyan-50/90">{subject} is using preview data in this branch. Changes here do not affect live battles, events, rankings, or placements.</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-cyan-100/75">Demo mode</div>
+          <div className="mt-1 text-sm text-cyan-50/90">{subject} is using demo data in this branch. Changes here do not affect live battles, events, rankings, or placements.</div>
         </div>
-        <TacticalTag label="Preview data" tone="sponsored" />
+        <TacticalTag label="Demo data" tone="sponsored" />
       </div>
     </div>
   );
@@ -86,7 +93,7 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
   const rightTokenRoute = getArenaTokenRoute(right.tokenId);
 
   return (
-    <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={battle.state.replaceAll("_", " ")}>
+    <PostGradPanel title={`${left.tokenName} vs ${right.tokenName}`} eyebrow={String(battle?.state ?? "").replace(/_/g, " ")}>
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
           <div className="mwz-hud-frame p-3">
@@ -95,10 +102,10 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
                 <div className="text-sm font-semibold text-white">{left.tokenName}</div>
                 <div className="text-xs text-white/55">{left.symbol}</div>
               </div>
-              <TacticalTag label={`${left.score.toFixed(1)} pts`} tone="hot" />
+              <TacticalTag label={`Score: ${left.score.toFixed(1)}`} tone="hot" />
             </div>
             <div className="mt-3 text-xs text-white/65">{left.uniqueTraders} traders · {formatCompactUsd(left.volumeUsd)} volume · {left.holdersDelta >= 0 ? "+" : ""}{left.holdersDelta} holders</div>
-            {pool ? <div className="mt-2 text-xs text-orange-100/75">War Pool {formatCompactUsd(leftPoolUsd)} · {leftShare}%</div> : null}
+            {pool ? <div className="mt-2 text-xs text-orange-100/75">Support pool {formatCompactUsd(leftPoolUsd)} · {leftShare}%</div> : null}
             {leftTokenRoute ? (
               <Link to={leftTokenRoute} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
                 Open token details
@@ -114,10 +121,10 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
                 <div className="text-sm font-semibold text-white">{right.tokenName}</div>
                 <div className="text-xs text-white/55">{right.symbol}</div>
               </div>
-              <TacticalTag label={`${right.score.toFixed(1)} pts`} tone="sponsored" />
+              <TacticalTag label={`Score: ${right.score.toFixed(1)}`} tone="sponsored" />
             </div>
             <div className="mt-3 text-xs text-white/65">{right.uniqueTraders} traders · {formatCompactUsd(right.volumeUsd)} volume · {right.holdersDelta >= 0 ? "+" : ""}{right.holdersDelta} holders</div>
-            {pool ? <div className="mt-2 text-xs text-cyan-100/75">War Pool {formatCompactUsd(rightPoolUsd)} · {rightShare}%</div> : null}
+            {pool ? <div className="mt-2 text-xs text-cyan-100/75">Support pool {formatCompactUsd(rightPoolUsd)} · {rightShare}%</div> : null}
             {rightTokenRoute ? (
               <Link to={rightTokenRoute} className="mt-3 inline-flex text-xs text-accent transition-colors hover:text-accent/80">
                 Open token details
@@ -128,15 +135,15 @@ export function BattleCard({ battle, ctaLabel = "Open battle" }: { battle: Battl
         {pool ? (
           <div className="mwz-hud-frame flex flex-wrap items-center gap-2 px-3 py-2 text-xs text-white/60">
             <Coins className="h-4 w-4 text-accent" />
-            <span>War Pool {formatCompactUsd(pool.totalPotUsd)}</span>
-            <TacticalTag label={pool.state} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "sponsored" : "default"} />
-            <span>Cutoff {formatWhen(pool.cutoffAt)}</span>
+            <span>Support pool {formatCompactUsd(pool.totalPotUsd)}</span>
+            <TacticalTag label={poolStateLabels[pool.state]} tone={pool.state === "open" ? "success" : pool.state === "locked" ? "hot" : pool.state === "settling" ? "sponsored" : "default"} />
+            <span>Support closes {formatWhen(pool.cutoffAt)}</span>
           </div>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-white/60">
           <div className="flex flex-wrap items-center gap-2">
             {battle.featured ? <TacticalTag label="Featured" tone="hot" /> : null}
-            <TacticalTag label={battle.format.replaceAll("_", " ")} />
+            <TacticalTag label={String(battle?.format ?? "").replace(/_/g, " ")} />
             <span>Ends {formatWhen(battle.endsAt)}</span>
           </div>
           <Button asChild size="sm">
@@ -159,7 +166,7 @@ export function EventCard({
 }) {
   const tone = event.status === "live" ? "success" : event.type === "tournament" ? "sponsored" : "default";
   return (
-    <PostGradPanel title={event.title} eyebrow={event.type.replaceAll("_", " ")}>
+    <PostGradPanel title={event.title} eyebrow={String(event?.type ?? "").replace(/_/g, " ")}>
       <div className="space-y-4">
         <p className="text-sm text-white/70">{event.summary}</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-white/60">
@@ -213,19 +220,19 @@ export function TokenIntelRow({ token, metricLabel, metricValue, href }: { token
 
 export function WarPoolModule({ pool }: { pool: WarPool }) {
   return (
-    <PostGradPanel title="War Pool" eyebrow={pool.state}>
+    <PostGradPanel title="Support pool" eyebrow={poolStateLabels[pool.state]}>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="mwz-hud-frame p-3">
           <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Total pot</div>
           <div className="mt-1 text-2xl font-semibold text-white">{formatCompactUsd(pool.totalPotUsd)}</div>
         </div>
         <div className="mwz-hud-frame p-3">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Cutoff</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Support closes</div>
           <div className="mt-1 text-sm font-semibold text-white">{formatWhen(pool.cutoffAt)}</div>
         </div>
         <div className="mwz-hud-frame p-3">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Routing</div>
-          <div className="mt-1 text-sm text-white/70">Winners {formatCompactUsd(pool.routingBreakdown.winnersUsd)} · Protocol {formatCompactUsd(pool.routingBreakdown.protocolUsd)}</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Payout flow</div>
+          <div className="mt-1 text-sm text-white/70">Winners {formatCompactUsd(pool.routingBreakdown.winnersUsd)} · Platform {formatCompactUsd(pool.routingBreakdown.protocolUsd)}</div>
         </div>
       </div>
     </PostGradPanel>
@@ -235,7 +242,7 @@ export function WarPoolModule({ pool }: { pool: WarPool }) {
 export function RankingsPanel({ payload, icon = "flame" }: { payload: RankingPayload; icon?: "flame" | "crown" | "trophy" }) {
   const Icon = icon === "crown" ? Crown : icon === "trophy" ? Trophy : Flame;
   return (
-    <PostGradPanel title={payload.key.replaceAll("_", " ")} eyebrow="Rankings">
+    <PostGradPanel title={String(payload?.key ?? "").replace(/_/g, " ")} eyebrow="Rankings">
       <div className="space-y-3">
         {payload.entries.map((entry) => (
           <div key={`${payload.key}-${entry.rank}-${entry.tokenId}`} className="mwz-hud-frame flex items-center justify-between gap-3 px-3 py-2">

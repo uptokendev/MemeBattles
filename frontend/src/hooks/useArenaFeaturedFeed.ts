@@ -159,7 +159,7 @@ export function useArenaFeaturedFeed(limit = 6) {
           statusLabel: isUpvoteSource ? "UpVotes" : "Trending",
           statusTone: "success",
           rankLabel: `Rank ${index + 1}`,
-          imageUrl: item.imageUrl,
+          imageUrl: resolveImageUri(item.imageUrl),
           summary: isUpvoteSource ? null : "Featured fallback until UpVote totals are indexed.",
         };
       })

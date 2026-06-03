@@ -135,11 +135,20 @@ async function fetchBattleDetails(battleId: string, signal?: AbortSignal): Promi
   return isBattle(battle) ? battle : null;
 }
 
-async function openBattleViaApi(tokenId: string, chainId?: number | null): Promise<boolean> {
+async function openBattleViaApi(
+  tokenId: string, 
+  chainId?: number | null,
+  initialPotBnb?: number
+): Promise<boolean> {
+  const payload: any = { tokenId, chainId: chainId || undefined };
+  if (typeof initialPotBnb === 'number' && initialPotBnb > 0) {
+    payload.initialPotBnb = initialPotBnb;
+  }
+
   const response = await apiFetch("/api/arena/battles/open", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tokenId, chainId: chainId || undefined }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) return false;
@@ -243,9 +252,9 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
     };
   }, [creatorStatuses]);
 
-  const openCreatorCoinForBattle = async (tokenId: string) => {
+  const openCreatorCoinForBattle = async (tokenId: string, initialPotBnb?: number) => {
     try {
-      const opened = await openBattleViaApi(tokenId, normalizedChainId);
+      const opened = await openBattleViaApi(tokenId, normalizedChainId, initialPotBnb);
       if (opened) {
         await refreshFeed();
         return true;

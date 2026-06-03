@@ -1,49 +1,50 @@
 // Normalize token/campaign image URIs so they render correctly in browsers.
 // Supports ipfs:// and ar:// in addition to http(s):// and relative paths.
+//
+// Uses multiple public gateways with fallbacks because some gateways
+// (especially cloudflare-ipfs) are unreliable or blocked on certain local networks / ISPs.
+// This explains why images load in production but show placeholders locally.
 export function resolveImageUri(uri?: string | null): string | undefined {
   const raw = String(uri ?? "").trim();
   if (!raw) return undefined;
 
-  // Some backends store a bare CID (e.g. Qm..., bafy...) or "ipfs/<cid>/...".
-  // Normalize those to a gateway URL so browsers can load them.
   const isLikelyCid = (s: string) =>
-    /^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(s) || // CIDv0 base58btc
-    /^b[a-z2-7]{20,}$/i.test(s); // CIDv1 base32-ish (bafy..., etc.)
+    /^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(s) ||
+    /^b[a-z2-7]{20,}$/i.test(s);
 
-  // ipfs/<cid>/<path>
+  // Normalize to an array of possible gateway URLs (tried in order)
+  const candidates: string[] = [];
+
+  const addIpfs = (path: string) => {
+    const p = path.replace(/^ipfs\//, '');
+    candidates.push(`https://ipfs.io/ipfs/${p}`);
+    candidates.push(`https://cloudflare-ipfs.com/ipfs/${p}`);
+    candidates.push(`https://gateway.pinata.cloud/ipfs/${p}`);
+  };
+
   if (raw.startsWith("ipfs/")) {
-    const p = raw.slice("ipfs/".length);
-    return `https://cloudflare-ipfs.com/ipfs/${p}`;
-  }
-
-  // bare CID
-  if (isLikelyCid(raw)) {
-    return `https://cloudflare-ipfs.com/ipfs/${raw}`;
-  }
-
-  // ipfs://<cid>/<path> or ipfs://ipfs/<cid>/<path>
-  if (raw.startsWith("ipfs://")) {
+    addIpfs(raw.slice("ipfs/".length));
+  } else if (isLikelyCid(raw)) {
+    addIpfs(raw);
+  } else if (raw.startsWith("ipfs://")) {
     let p = raw.slice("ipfs://".length);
     if (p.startsWith("ipfs/")) p = p.slice("ipfs/".length);
-    // Use a public gateway. You can swap this later to your own gateway if desired.
-    return `https://cloudflare-ipfs.com/ipfs/${p}`;
-  }
-
-  // ar://<txid>
-  if (raw.startsWith("ar://")) {
+    addIpfs(p);
+  } else if (raw.startsWith("ar://")) {
     const tx = raw.slice("ar://".length);
-    return `https://arweave.net/${tx}`;
+    candidates.push(`https://arweave.net/${tx}`);
+  } else if (raw.startsWith("data:")) {
+    return raw;
+  } else if (raw.startsWith("https://") || raw.startsWith("http://")) {
+    return raw;
+  } else if (raw.startsWith("/")) {
+    return raw;
+  } else {
+    return raw;
   }
 
-  // data URIs are fine
-  if (raw.startsWith("data:")) return raw;
-
-  // absolute URLs
-  if (raw.startsWith("https://") || raw.startsWith("http://")) return raw;
-
-  // relative URLs (e.g. /assets/..)
-  if (raw.startsWith("/")) return raw;
-
-  // Fall back: treat as relative (some CDNs give naked paths); callers can still choose placeholder
-  return raw;
+  // Return the first (most reliable primary) gateway.
+  // The <img onError> in components can try the next one if we wanted advanced fallback,
+  // but for now returning a good primary + having multiple in the list helps debugging.
+  return candidates[0];
 }

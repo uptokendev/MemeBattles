@@ -39,11 +39,11 @@ const TournamentDetails = () => {
     return (
       <div className="space-y-6 px-1 pb-10">
         <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
-          <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament scaffold</div>
+          <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament</div>
           <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Tournament details unavailable.</h1>
           <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">
             {source === "empty"
-              ? "Tournament detail data is not available on this branch yet."
+              ? "Tournament detail data isn’t available right now."
               : "This tournament could not be resolved from the current event feed."}
           </p>
           <div className="mt-4">
@@ -58,7 +58,7 @@ const TournamentDetails = () => {
 
   const currentStage = tournament.bracketStage ?? "registration";
   const currentStageIndex = stageCards.findIndex((stage) => stage.key === currentStage);
-  const sourceLabel = source === "api" ? "Arena feed" : source === "qa-runtime" ? "Fallback feed" : "Feed unavailable";
+  const sourceLabel = source === "api" ? "Live data" : source === "qa-runtime" ? "Backup data" : "Data unavailable";
   const sourceTone = source === "api" ? "success" : source === "qa-runtime" ? "sponsored" : "default";
 
   return (
@@ -66,14 +66,14 @@ const TournamentDetails = () => {
       <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(20,19,25,0.94),rgba(8,8,11,0.98))] p-5 md:p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament scaffold</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Bracket route, matchups, and advancement states.</h1>
-            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page tracks tournament status, bracket phase, and archive-readiness through the Arena event adapter.</p>
+            <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Tournament</div>
+            <h1 className="mt-2 text-3xl font-semibold text-white md:text-5xl">Follow the bracket, matchups, and progress.</h1>
+            <p className="mt-3 max-w-2xl text-sm text-white/70 md:text-base">This page tracks tournament status, bracket phase, and final results through the event system.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <TacticalTag label={tournament.status} tone={tournament.status === "live" ? "success" : "sponsored"} />
             <TacticalTag label={currentStage.replaceAll("_", " ")} tone="hot" />
-            <TacticalHint label="Bracket state" body="Use this page to read tournament progress, current stage, and archive readiness from the Arena event feed." />
+            <TacticalHint label="Bracket state" body="Follow each round and see who advances." />
             <TacticalTag label={sourceLabel} tone={sourceTone} />
           </div>
         </div>
@@ -97,7 +97,7 @@ const TournamentDetails = () => {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">{stage.title}</div>
-                {active ? <TacticalTag label="Current" tone="hot" /> : complete ? <TacticalTag label="Cleared" tone="success" /> : null}
+                {active ? <TacticalTag label="Live now" tone="hot" /> : complete ? <TacticalTag label="Finished" tone="success" /> : null}
               </div>
               <div className="mt-3 text-sm leading-6">{stage.body}</div>
             </div>
