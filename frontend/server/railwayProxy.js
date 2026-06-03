@@ -5,39 +5,50 @@ const EXACT_RAILWAY_PATHS = new Set([]);
 const RAILWAY_PATH_PREFIXES = [
   "/api/ably",
   "/api/activity",
+  "/api/airdrops",
+  "/api/attribution",
   "/api/auth",
+  "/api/calendar",
   "/api/campaigns",
-  "/api/comments",
   "/api/chat",
+  "/api/comments",
+  "/api/content-ai",
+  "/api/content-campaigns",
+  "/api/content-tags",
   "/api/diagnostics",
   "/api/drafts",
   "/api/epochPools",
   "/api/featured",
   "/api/follows",
+  "/api/internal",
   "/api/league",
   "/api/leaguePayouts",
   "/api/leagueRoot",
+  "/api/posts",
   "/api/prepare",
   "/api/prepare-notifications",
   "/api/profile",
   "/api/profileCabinet",
-  "/api/rewards",
-  "/api/airdrops",
-  "/api/squads",
-  "/api/recruiters",
   "/api/recruiter-auth",
   "/api/recruiter-logout",
   "/api/recruiter-portal",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
+  "/api/recruiters",
+  "/api/rewards",
   "/api/routing",
+  "/api/schedules",
   "/api/shareCard",
+  "/api/social-x-callback",
+  "/api/squads",
   "/api/status",
   "/api/token/",
   "/api/token-metadata",
   "/api/upload",
-  "/api/votes",
+  "/api/variants",
   "/api/vote_counts",
+  "/api/votes",
+  "/api/wm-",
   "/internal/",
 ];
 
@@ -98,7 +109,7 @@ function shouldProxyToRailway(path) {
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
-    if (prefix.endsWith("/")) return pathname.startsWith(prefix);
+    if (prefix.endsWith("/") || prefix.endsWith("-")) return pathname.startsWith(prefix);
     return pathname === prefix || pathname.startsWith(`${prefix}/`);
   });
 }
@@ -110,6 +121,7 @@ function copyRequestHeaders(req, hasBody) {
     "content-type",
     "x-diagnostics-token",
     "x-rank-events-token",
+    "x-war-missions-internal-token",
   ];
 
   for (const name of passthrough) {
