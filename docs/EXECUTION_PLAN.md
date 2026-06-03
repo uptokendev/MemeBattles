@@ -137,6 +137,17 @@ Definition of Done → Depends on.**
 | DEV-34 | Load & verify post-grad DB imports on merged DB |
 | DEV-35 | Post-merge smoke test: launch flow + dev-side features |
 | DEV-36 | Open PR: staging → main |
+| DEV-37 | Provision Railway staging environment (API gateway + indexer) |
+| ↳ DEV-38 | Railway staging service: API gateway |
+| ↳ DEV-39 | Railway staging service: realtime-indexer |
+| ↳ DEV-40 | Configure staging env vars & secrets (Railway) |
+| DEV-41 | Netlify staging frontend → proxy /api to staging Railway |
+
+**Staging deploy topology:** Railway hosts the API gateway (`frontend/railway.json`,
+entry `frontend/api/server.mjs`) + realtime-indexer (`realtime-indexer/Dockerfile`);
+Netlify hosts the frontend and proxies `/api/*` to the Railway gateway; Supabase is
+the DB. Stand up the staging deploy early (`DEV-34 → DEV-37 → DEV-41`) so the merged
+build is testable end-to-end. Keep all staging secrets isolated from production.
 
 ---
 
