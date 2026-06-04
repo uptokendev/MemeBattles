@@ -81,16 +81,17 @@ export function useArenaFeaturedFeed(limit = 6) {
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
+    const chainId = Number(activeChainId || 97);
 
     const load = async () => {
       try {
         setLoading(true);
-        let nextItems = await loadFeatured(activeChainId, limit, controller.signal);
+        let nextItems = await loadFeatured(chainId, limit, controller.signal);
         let nextSource: ArenaFeaturedFeedSource = nextItems.length ? "api" : "empty";
 
         if (!nextItems.length) {
           try {
-            nextItems = await loadCampaignFallback(activeChainId, limit, controller.signal);
+            nextItems = await loadCampaignFallback(chainId, limit, controller.signal);
             nextSource = nextItems.length ? "campaigns" : "empty";
           } catch (fallbackError) {
             if (!controller.signal.aborted) console.warn("[useArenaFeaturedFeed] failed to load campaign fallback", fallbackError);
