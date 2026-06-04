@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { postGradFlags } from "@/features/postgrad/config";
-import { apiFetch } from "@/lib/apiBase";
+import { fetchPostGradLeagueFeed, mutatePostGradLeague, type PostGradLeagueAction } from "@/features/postgrad/apiClient";
 import { useMockLeagueSeason } from "@/hooks/useMockLeagueRuntime";
 
 export type ArenaLeagueFeedSource = "qa-runtime" | "api" | "empty";
@@ -74,30 +74,21 @@ function normalizeHistory(value: unknown): ArenaLeagueHistoryEntry[] {
     }));
 }
 
-async function fetchLeagueFeed(signal?: AbortSignal): Promise<ArenaLeagueFeedPayload | null> {
-  const response = await apiFetch("/api/arena/league", { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return null;
+async function loadLeagueFeed(signal?: AbortSignal): Promise<ArenaLeagueFeedPayload | null> {
+  const json = await fetchPostGradLeagueFeed(signal);
+  if (!json) return null;
 
-  const season = normalizeSeason((json as any).season ?? (json as any).currentSeason ?? (json as any).items?.season);
+  const season = normalizeSeason(json.season ?? json.currentSeason ?? json.items?.season);
   if (!season) return null;
 
   return {
     season,
-    history: normalizeHistory((json as any).history ?? (json as any).archive ?? (json as any).items?.history),
+    history: normalizeHistory(json.history ?? json.archive ?? json.items?.history),
   };
 }
 
-async function mutateLeagueViaApi(action: "advance-week" | "rebalance-divisions" | "cycle-season-state"): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/league/${action}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
+async function mutateLeague(action: PostGradLeagueAction): Promise<boolean> {
+  return mutatePostGradLeague(action);
 }
 
 const EMPTY_SEASON: ArenaLeagueSeason = {
@@ -124,7 +115,7 @@ export function useArenaLeagueFeed() {
   const [loading, setLoading] = useState(true);
 
   const refreshFeed = async () => {
-    const payload = await fetchLeagueFeed().catch(() => null);
+    const payload = await loadLeagueFeed().catch(() => null);
     setApiPayload(payload);
     return payload;
   };
@@ -133,7 +124,7 @@ export function useArenaLeagueFeed() {
     const controller = new AbortController();
     let cancelled = false;
 
-    fetchLeagueFeed(controller.signal)
+    loadLeagueFeed(controller.signal)
       .then((payload) => {
         if (!cancelled) setApiPayload(payload);
       })
@@ -153,7 +144,7 @@ export function useArenaLeagueFeed() {
 
   const advanceWeek = async () => {
     try {
-      const advanced = await mutateLeagueViaApi("advance-week");
+      const advanced = await mutateLeague("advance-week");
       if (advanced) {
         await refreshFeed();
         return true;
@@ -166,7 +157,7 @@ export function useArenaLeagueFeed() {
 
   const rebalanceDivisions = async () => {
     try {
-      const rebalanced = await mutateLeagueViaApi("rebalance-divisions");
+      const rebalanced = await mutateLeague("rebalance-divisions");
       if (rebalanced) {
         await refreshFeed();
         return true;
@@ -179,7 +170,7 @@ export function useArenaLeagueFeed() {
 
   const cycleSeasonState = async () => {
     try {
-      const cycled = await mutateLeagueViaApi("cycle-season-state");
+      const cycled = await mutateLeague("cycle-season-state");
       if (cycled) {
         await refreshFeed();
         return true;
