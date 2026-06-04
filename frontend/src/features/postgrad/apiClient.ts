@@ -13,6 +13,12 @@ export type PostGradCampaignFeedParams = {
   signal?: AbortSignal;
 };
 
+export type PostGradFeaturedFeedParams = {
+  chainId?: number | string | null;
+  limit?: number;
+  signal?: AbortSignal;
+};
+
 export type PostGradWarRoomCampaignFeedParams = {
   chainId?: number | string | null;
   limit?: number;
@@ -138,6 +144,16 @@ export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, sign
   });
 
   return fetchJson(`/api/sponsored?${params.toString()}`, { cache: "no-store", signal });
+}
+
+export async function fetchPostGradFeaturedFeed({ chainId = 97, limit = 6, signal }: PostGradFeaturedFeedParams) {
+  const params = new URLSearchParams({
+    chainId: String(chainId || 97),
+    sort: "24h",
+    limit: String(limit),
+  });
+
+  return fetchJson(`/api/featured?${params.toString()}`, { cache: "no-store", signal });
 }
 
 export async function fetchPostGradCampaignFeed({ chainId = 97, limit = 12, bnbUsd, signal }: PostGradCampaignFeedParams) {
