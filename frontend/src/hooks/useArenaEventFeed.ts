@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import type { EventCardContract, TournamentBracketStage } from "@/features/postgrad/contracts";
 import { postGradFlags } from "@/features/postgrad/config";
-import { apiFetch } from "@/lib/apiBase";
+import {
+  advancePostGradTournamentBracket,
+  fetchPostGradEventDetails,
+  fetchPostGradEventFeed,
+  transitionPostGradEvent,
+} from "@/features/postgrad/apiClient";
 import { useMockEvents, useMockEventDetails } from "@/hooks/useMockEventRuntime";
 
 export type ArenaEventFeedSource = "qa-runtime" | "api" | "empty";
@@ -62,48 +67,21 @@ function normalizeArchivedEventList(value: unknown): ArenaArchivedEvent[] {
     }));
 }
 
-async function fetchEventFeed(signal?: AbortSignal): Promise<ArenaEventFeedPayload | null> {
-  const response = await apiFetch("/api/arena/events", { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return null;
+async function loadEventFeed(signal?: AbortSignal): Promise<ArenaEventFeedPayload | null> {
+  const json = await fetchPostGradEventFeed(signal);
+  if (!json) return null;
 
-  const events = normalizeEventList((json as any).events ?? (json as any).items?.events ?? (json as any).items);
-  const archivedEvents = normalizeArchivedEventList((json as any).archivedEvents ?? (json as any).archive ?? (json as any).items?.archivedEvents);
+  const events = normalizeEventList(json.events ?? json.items?.events ?? json.items);
+  const archivedEvents = normalizeArchivedEventList(json.archivedEvents ?? json.archive ?? json.items?.archivedEvents);
 
   if (!events.length && !archivedEvents.length) return null;
   return { events, archivedEvents };
 }
 
-async function fetchEventDetails(eventId: string, signal?: AbortSignal): Promise<ArenaEventSummary | null> {
-  const response = await apiFetch(`/api/arena/events/${encodeURIComponent(eventId)}`, { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  const event = (json as any)?.event ?? json;
+async function loadEventDetails(eventId: string, signal?: AbortSignal): Promise<ArenaEventSummary | null> {
+  const json = await fetchPostGradEventDetails(eventId, signal);
+  const event = json?.event ?? json;
   return isEventSummary(event) ? event : null;
-}
-
-async function transitionEventViaApi(eventId: string, status: EventStatus): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/events/${encodeURIComponent(eventId)}/transition`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
-}
-
-async function advanceTournamentBracketViaApi(eventId: string): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/events/${encodeURIComponent(eventId)}/advance-bracket`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
 }
 
 /**
@@ -119,7 +97,7 @@ export function useArenaEventFeed() {
   const [loading, setLoading] = useState(true);
 
   const refreshFeed = async () => {
-    const payload = await fetchEventFeed().catch(() => null);
+    const payload = await loadEventFeed().catch(() => null);
     setApiPayload(payload);
     return payload;
   };
@@ -128,7 +106,7 @@ export function useArenaEventFeed() {
     const controller = new AbortController();
     let cancelled = false;
 
-    fetchEventFeed(controller.signal)
+    loadEventFeed(controller.signal)
       .then((payload) => {
         if (!cancelled) setApiPayload(payload);
       })
@@ -148,7 +126,7 @@ export function useArenaEventFeed() {
 
   const transitionEvent = async (eventId: string, status: EventStatus) => {
     try {
-      const transitioned = await transitionEventViaApi(eventId, status);
+      const transitioned = await transitionPostGradEvent(eventId, status);
       if (transitioned) {
         await refreshFeed();
         return true;
@@ -161,7 +139,7 @@ export function useArenaEventFeed() {
 
   const advanceTournamentBracket = async (eventId: string) => {
     try {
-      const advanced = await advanceTournamentBracketViaApi(eventId);
+      const advanced = await advancePostGradTournamentBracket(eventId);
       if (advanced) {
         await refreshFeed();
         return true;
@@ -190,7 +168,7 @@ export function useArenaEventDetails(eventId?: string) {
   const [loading, setLoading] = useState(Boolean(eventId));
 
   const refreshEvent = async (eventIdToRefresh: string) => {
-    const freshEvent = await fetchEventDetails(eventIdToRefresh).catch(() => null);
+    const freshEvent = await loadEventDetails(eventIdToRefresh).catch(() => null);
     setApiEvent(freshEvent);
     return freshEvent;
   };
@@ -206,7 +184,7 @@ export function useArenaEventDetails(eventId?: string) {
     let cancelled = false;
     setLoading(true);
 
-    fetchEventDetails(eventId, controller.signal)
+    loadEventDetails(eventId, controller.signal)
       .then((event) => {
         if (!cancelled) setApiEvent(event);
       })
@@ -226,7 +204,7 @@ export function useArenaEventDetails(eventId?: string) {
 
   const transitionEvent = async (eventIdToUpdate: string, status: EventStatus) => {
     try {
-      const transitioned = await transitionEventViaApi(eventIdToUpdate, status);
+      const transitioned = await transitionPostGradEvent(eventIdToUpdate, status);
       if (transitioned) {
         await refreshEvent(eventIdToUpdate);
         return true;
@@ -239,7 +217,7 @@ export function useArenaEventDetails(eventId?: string) {
 
   const advanceTournamentBracket = async (eventIdToUpdate: string) => {
     try {
-      const advanced = await advanceTournamentBracketViaApi(eventIdToUpdate);
+      const advanced = await advancePostGradTournamentBracket(eventIdToUpdate);
       if (advanced) {
         await refreshEvent(eventIdToUpdate);
         return true;
