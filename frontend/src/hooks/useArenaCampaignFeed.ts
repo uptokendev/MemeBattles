@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchPostGradCampaignFeed } from "@/features/postgrad/apiClient";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
@@ -96,24 +96,18 @@ export function useArenaCampaignFeed(limit = 12) {
   const [source, setSource] = useState<ArenaCampaignFeedSource>("empty");
 
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
 
     const load = async () => {
       try {
         setLoading(true);
-        const params = new URLSearchParams({
-          chainId: String(activeChainId || 97),
-          limit: String(limit),
-          cursor: "0",
-          tab: "trending",
-          status: "all",
-          sort: "default",
+        const json = await fetchPostGradCampaignFeed({
+          chainId: activeChainId || 97,
+          limit,
+          bnbUsd,
+          signal: controller.signal,
         });
-        if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
-
-        const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
         if (cancelled) return;
 
         const items = Array.isArray(json?.items) ? json.items : [];
@@ -121,6 +115,7 @@ export function useArenaCampaignFeed(limit = 12) {
         setCampaigns(nextCampaigns);
         setSource(nextCampaigns.length ? "api" : "empty");
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.warn("[useArenaCampaignFeed] failed to load campaign feed", error);
         if (!cancelled) {
           setCampaigns([]);
@@ -134,6 +129,7 @@ export function useArenaCampaignFeed(limit = 12) {
     load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [activeChainId, bnbUsd, limit]);
 
