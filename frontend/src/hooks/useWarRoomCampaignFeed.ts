@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/apiBase";
+import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -61,16 +61,6 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   } as WarRoomCampaign;
 }
 
-function queryForMode(mode: WarRoomMode, chainId: number, search: string) {
-  const params = new URLSearchParams({
-    chainId: String(chainId || 97),
-    limit: "250",
-    mode,
-  });
-  if (search.trim()) params.set("search", search.trim());
-  return params.toString();
-}
-
 export function useWarRoomCampaignFeed({
   activeMode,
   activeChainId,
@@ -95,10 +85,12 @@ export function useWarRoomCampaignFeed({
       try {
         setLoading(true);
         setError(null);
-        const query = queryForMode(activeMode, Number(activeChainId || 97), search);
-        const response = await apiFetch(`/api/war-room?${query}`, { cache: "no-store" as RequestCache, signal: controller.signal });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
+        const json = await fetchPostGradWarRoomCampaignFeed({
+          chainId: Number(activeChainId || 97),
+          mode: activeMode,
+          search,
+          signal: controller.signal,
+        });
         if (cancelled) return;
         const items = Array.isArray(json?.items) ? json.items : [];
         setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: WarRoomCampaign) => campaign.campaign));
