@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchPostGradCampaignFeed, fetchPostGradFeaturedFeed } from "@/features/postgrad/apiClient";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
-import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -60,33 +60,14 @@ function normalizeFeaturedCampaign(item: any, source: "upvotes" | "campaigns"): 
   };
 }
 
-async function loadFeatured(activeChainId: number, limit: number) {
-  const params = new URLSearchParams({
-    chainId: String(activeChainId || 97),
-    sort: "24h",
-    limit: String(limit),
-  });
-  const response = await apiFetch(`/api/featured?${params.toString()}`, { cache: "no-store" as RequestCache });
-  const json = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
-
+async function loadFeatured(activeChainId: number, limit: number, signal?: AbortSignal) {
+  const json = await fetchPostGradFeaturedFeed({ chainId: activeChainId, limit, signal });
   const items = Array.isArray(json?.items) ? json.items : [];
   return items.map((item: any) => normalizeFeaturedCampaign(item, "upvotes")).filter(Boolean) as FeaturedCampaignRecord[];
 }
 
-async function loadCampaignFallback(activeChainId: number, limit: number) {
-  const params = new URLSearchParams({
-    chainId: String(activeChainId || 97),
-    limit: String(limit),
-    cursor: "0",
-    tab: "trending",
-    status: "all",
-    sort: "default",
-  });
-  const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache });
-  const json = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
-
+async function loadCampaignFallback(activeChainId: number, limit: number, signal?: AbortSignal) {
+  const json = await fetchPostGradCampaignFeed({ chainId: activeChainId, limit, signal });
   const items = Array.isArray(json?.items) ? json.items : [];
   return items.map((item: any) => normalizeFeaturedCampaign(item, "campaigns")).filter(Boolean) as FeaturedCampaignRecord[];
 }
@@ -98,20 +79,21 @@ export function useArenaFeaturedFeed(limit = 6) {
   const [source, setSource] = useState<ArenaFeaturedFeedSource>("empty");
 
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
 
     const load = async () => {
       try {
         setLoading(true);
-        let nextItems = await loadFeatured(activeChainId, limit);
+        let nextItems = await loadFeatured(activeChainId, limit, controller.signal);
         let nextSource: ArenaFeaturedFeedSource = nextItems.length ? "api" : "empty";
 
         if (!nextItems.length) {
           try {
-            nextItems = await loadCampaignFallback(activeChainId, limit);
+            nextItems = await loadCampaignFallback(activeChainId, limit, controller.signal);
             nextSource = nextItems.length ? "campaigns" : "empty";
           } catch (fallbackError) {
-            console.warn("[useArenaFeaturedFeed] failed to load campaign fallback", fallbackError);
+            if (!controller.signal.aborted) console.warn("[useArenaFeaturedFeed] failed to load campaign fallback", fallbackError);
           }
         }
 
@@ -119,6 +101,7 @@ export function useArenaFeaturedFeed(limit = 6) {
         setItems(nextItems);
         setSource(nextSource);
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.warn("[useArenaFeaturedFeed] failed to load featured feed", error);
         if (!cancelled) {
           setItems([]);
@@ -132,6 +115,7 @@ export function useArenaFeaturedFeed(limit = 6) {
     load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [activeChainId, limit]);
 
