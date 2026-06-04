@@ -7,7 +7,7 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
 import type { Battle } from "@/features/postgrad/contracts";
-import { apiFetch } from "@/lib/apiBase";
+import { fetchPostGradArenaOpsHealth, transitionPostGradBattle } from "@/features/postgrad/apiClient";
 import { useArenaBattleFeed } from "@/hooks/useArenaBattleFeed";
 import { useArenaEventFeed, type ArenaEventSummary } from "@/hooks/useArenaEventFeed";
 import { useArenaLeagueFeed } from "@/hooks/useArenaLeagueFeed";
@@ -87,20 +87,11 @@ function battleLabel(battle: Battle) {
 }
 
 async function transitionBattleViaApi(battleId: string, state: BattleState) {
-  const response = await apiFetch(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
+  return transitionPostGradBattle(battleId, state);
 }
 
 async function fetchArenaOpsHealth(): Promise<ArenaOpsHealth | null> {
-  const response = await apiFetch("/api/arena/ops/health", { cache: "no-store" });
-  if (!response.ok) return null;
-  const payload = await response.json().catch(() => null);
+  const payload = await fetchPostGradArenaOpsHealth();
   if (!payload || typeof payload !== "object") return null;
   return payload as ArenaOpsHealth;
 }
