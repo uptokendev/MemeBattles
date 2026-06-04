@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Battle } from "@/features/postgrad/contracts";
 import { postGradFlags } from "@/features/postgrad/config";
-import { apiFetch } from "@/lib/apiBase";
+import {
+  fetchPostGradBattleDetails,
+  fetchPostGradBattleFeed,
+  fetchPostGradCreatorBattleStatuses,
+  openPostGradBattle,
+  transitionPostGradBattle,
+} from "@/features/postgrad/apiClient";
 import {
   useMockBattleDetails,
   useMockBattleLists,
@@ -100,72 +106,31 @@ function normalizeCreatorBattleStatuses(value: unknown): CreatorBattleStatus[] {
     });
 }
 
-async function fetchBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPayload | null> {
-  const response = await apiFetch("/api/arena/battles", { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return null;
+async function loadBattleFeed(signal?: AbortSignal): Promise<ArenaBattleFeedPayload | null> {
+  const json = await fetchPostGradBattleFeed(signal);
+  if (!json) return null;
 
-  const liveBattles = normalizeBattleList((json as any).liveBattles ?? (json as any).live ?? (json as any).items?.liveBattles);
-  const openForBattleQueue = normalizeBattleList((json as any).openForBattleQueue ?? (json as any).openForBattle ?? (json as any).items?.openForBattleQueue);
-  const archivedBattles = normalizeArchivedBattleList((json as any).archivedBattles ?? (json as any).recentSettled ?? (json as any).items?.archivedBattles);
+  const liveBattles = normalizeBattleList(json.liveBattles ?? json.live ?? json.items?.liveBattles);
+  const openForBattleQueue = normalizeBattleList(json.openForBattleQueue ?? json.openForBattle ?? json.items?.openForBattleQueue);
+  const archivedBattles = normalizeArchivedBattleList(json.archivedBattles ?? json.recentSettled ?? json.items?.archivedBattles);
 
   if (!liveBattles.length && !openForBattleQueue.length && !archivedBattles.length) return null;
 
   return { liveBattles, openForBattleQueue, archivedBattles };
 }
 
-async function fetchCreatorBattleStatuses(creatorAddress: string, chainId?: number | null, signal?: AbortSignal): Promise<CreatorBattleStatus[] | null> {
+async function loadCreatorBattleStatuses(creatorAddress: string, chainId?: number | null, signal?: AbortSignal): Promise<CreatorBattleStatus[] | null> {
   const normalized = normalizeIdentity(creatorAddress);
   if (!normalized) return null;
-  const params = new URLSearchParams({ creator: normalized });
-  if (chainId) params.set("chainId", String(chainId));
-  const response = await apiFetch(`/api/arena/battles/creator-status?${params.toString()}`, { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return [];
-  return normalizeCreatorBattleStatuses((json as any).items ?? (json as any).statuses ?? []);
+  const json = await fetchPostGradCreatorBattleStatuses(normalized, chainId, signal);
+  if (!json) return [];
+  return normalizeCreatorBattleStatuses(json.items ?? json.statuses ?? []);
 }
 
-async function fetchBattleDetails(battleId: string, signal?: AbortSignal): Promise<Battle | null> {
-  const response = await apiFetch(`/api/arena/battles/${encodeURIComponent(battleId)}`, { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  const battle = (json as any)?.battle ?? json;
+async function loadBattleDetails(battleId: string, signal?: AbortSignal): Promise<Battle | null> {
+  const json = await fetchPostGradBattleDetails(battleId, signal);
+  const battle = json?.battle ?? json;
   return isBattle(battle) ? battle : null;
-}
-
-async function openBattleViaApi(
-  tokenId: string, 
-  chainId?: number | null,
-  initialPotBnb?: number
-): Promise<boolean> {
-  const payload: any = { tokenId, chainId: chainId || undefined };
-  if (typeof initialPotBnb === 'number' && initialPotBnb > 0) {
-    payload.initialPotBnb = initialPotBnb;
-  }
-
-  const response = await apiFetch("/api/arena/battles/open", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
-}
-
-async function transitionBattleViaApi(battleId: string, state: BattleTransitionState): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
 }
 
 /**
@@ -185,8 +150,8 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
 
   const refreshFeed = async () => {
     const [battlePayload, creatorPayload] = await Promise.all([
-      fetchBattleFeed().catch(() => null),
-      normalizedCreatorAddress ? fetchCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId).catch(() => null) : Promise.resolve(null),
+      loadBattleFeed().catch(() => null),
+      normalizedCreatorAddress ? loadCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId).catch(() => null) : Promise.resolve(null),
     ]);
 
     setApiPayload(battlePayload);
@@ -199,12 +164,12 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
     let cancelled = false;
 
     Promise.all([
-      fetchBattleFeed(controller.signal).catch((error) => {
+      loadBattleFeed(controller.signal).catch((error) => {
         if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] API feed unavailable", error);
         return null;
       }),
       normalizedCreatorAddress
-        ? fetchCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId, controller.signal).catch((error) => {
+        ? loadCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId, controller.signal).catch((error) => {
             if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] creator status unavailable", error);
             return null;
           })
@@ -254,7 +219,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
 
   const openCreatorCoinForBattle = async (tokenId: string, initialPotBnb?: number) => {
     try {
-      const opened = await openBattleViaApi(tokenId, normalizedChainId, initialPotBnb);
+      const opened = await openPostGradBattle({ tokenId, chainId: normalizedChainId, initialPotBnb });
       if (opened) {
         await refreshFeed();
         return true;
@@ -305,7 +270,7 @@ export function useArenaBattleDetails(battleId?: string) {
     let cancelled = false;
     setLoading(true);
 
-    fetchBattleDetails(battleId, controller.signal)
+    loadBattleDetails(battleId, controller.signal)
       .then((battle) => {
         if (!cancelled) setApiBattle(battle);
       })
@@ -325,9 +290,9 @@ export function useArenaBattleDetails(battleId?: string) {
 
   const transitionBattle = async (battleIdToUpdate: string, state: BattleTransitionState) => {
     try {
-      const updated = await transitionBattleViaApi(battleIdToUpdate, state);
+      const updated = await transitionPostGradBattle(battleIdToUpdate, state);
       if (updated) {
-        const freshBattle = await fetchBattleDetails(battleIdToUpdate).catch(() => null);
+        const freshBattle = await loadBattleDetails(battleIdToUpdate).catch(() => null);
         setApiBattle(freshBattle);
         return true;
       }
