@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchPostGradSponsoredFeed } from "@/features/postgrad/apiClient";
 import type { ArenaCampaignFeedSource, ArenaCampaignRailItem } from "@/hooks/useArenaCampaignFeed";
-import { apiFetch } from "@/lib/apiBase";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -61,18 +61,17 @@ export function useArenaSponsoredFeed(limit = 4) {
   const [source, setSource] = useState<ArenaCampaignFeedSource>("empty");
 
   useEffect(() => {
+    const controller = new AbortController();
     let cancelled = false;
 
     const load = async () => {
       try {
         setLoading(true);
-        const params = new URLSearchParams({
-          chainId: String(activeChainId || 97),
-          limit: String(limit),
+        const json = await fetchPostGradSponsoredFeed({
+          chainId: activeChainId || 97,
+          limit,
+          signal: controller.signal,
         });
-        const response = await apiFetch(`/api/sponsored?${params.toString()}`, { cache: "no-store" as RequestCache });
-        const json = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(String(json?.error || `HTTP ${response.status}`));
         if (cancelled) return;
 
         const items = Array.isArray(json?.items) ? json.items : [];
@@ -80,6 +79,7 @@ export function useArenaSponsoredFeed(limit = 4) {
         setPlacements(nextPlacements);
         setSource(nextPlacements.length ? "api" : "empty");
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.warn("[useArenaSponsoredFeed] failed to load sponsored feed", error);
         if (!cancelled) {
           setPlacements([]);
@@ -93,6 +93,7 @@ export function useArenaSponsoredFeed(limit = 4) {
     load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [activeChainId, limit]);
 
