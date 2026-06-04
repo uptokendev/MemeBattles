@@ -1,9 +1,10 @@
 import { apiFetch } from "@/lib/apiBase";
-import type { Battle } from "@/features/postgrad/contracts";
+import type { Battle, EventStatus, WarPool } from "@/features/postgrad/contracts";
 
 type JsonObject = Record<string, any>;
 
 export type PostGradWarRoomMode = "trending" | "new" | "graduated" | "draft";
+export type PostGradLeagueAction = "advance-week" | "rebalance-divisions" | "cycle-season-state";
 
 export type PostGradCampaignFeedParams = {
   chainId?: number | string | null;
@@ -17,6 +18,12 @@ export type PostGradWarRoomCampaignFeedParams = {
   limit?: number;
   mode: PostGradWarRoomMode;
   search?: string;
+  signal?: AbortSignal;
+};
+
+export type PostGradSponsoredFeedParams = {
+  chainId?: number | string | null;
+  limit?: number;
   signal?: AbortSignal;
 };
 
@@ -37,7 +44,7 @@ async function fetchJson(path: string, init?: RequestInit): Promise<JsonObject |
   return json && typeof json === "object" ? json : null;
 }
 
-async function mutateJson(path: string, body: JsonObject): Promise<boolean> {
+async function mutateJson(path: string, body: JsonObject = {}): Promise<boolean> {
   const response = await apiFetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -78,6 +85,59 @@ export async function openPostGradBattle(input: OpenPostGradBattleInput) {
 
 export async function transitionPostGradBattle(battleId: string, state: Battle["state"]) {
   return mutateJson(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, { state });
+}
+
+export async function fetchPostGradEventFeed(signal?: AbortSignal) {
+  return fetchJson("/api/arena/events", { cache: "no-store", signal });
+}
+
+export async function fetchPostGradEventDetails(eventId: string, signal?: AbortSignal) {
+  return fetchJson(`/api/arena/events/${encodeURIComponent(eventId)}`, { cache: "no-store", signal });
+}
+
+export async function transitionPostGradEvent(eventId: string, status: EventStatus) {
+  return mutateJson(`/api/arena/events/${encodeURIComponent(eventId)}/transition`, { status });
+}
+
+export async function advancePostGradTournamentBracket(eventId: string) {
+  return mutateJson(`/api/arena/events/${encodeURIComponent(eventId)}/advance-bracket`);
+}
+
+export async function fetchPostGradLeagueFeed(signal?: AbortSignal) {
+  return fetchJson("/api/arena/league", { cache: "no-store", signal });
+}
+
+export async function mutatePostGradLeague(action: PostGradLeagueAction) {
+  return mutateJson(`/api/arena/league/${action}`);
+}
+
+export async function fetchPostGradWarPool(battleId: string, signal?: AbortSignal) {
+  return fetchJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}`, { cache: "no-store", signal });
+}
+
+export async function fetchPostGradWarPoolSummary(signal?: AbortSignal) {
+  return fetchJson("/api/arena/war-pools", { cache: "no-store", signal });
+}
+
+export async function supportPostGradWarPool(battleId: string, sideTokenId: string, amountUsd: number) {
+  return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/support`, { sideTokenId, amountUsd });
+}
+
+export async function transitionPostGradWarPool(battleId: string, state: WarPool["state"]) {
+  return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, { state });
+}
+
+export async function fetchPostGradArenaOpsHealth(signal?: AbortSignal) {
+  return fetchJson("/api/arena/ops/health", { cache: "no-store", signal });
+}
+
+export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, signal }: PostGradSponsoredFeedParams) {
+  const params = new URLSearchParams({
+    chainId: String(chainId || 97),
+    limit: String(limit),
+  });
+
+  return fetchJson(`/api/sponsored?${params.toString()}`, { cache: "no-store", signal });
 }
 
 export async function fetchPostGradCampaignFeed({ chainId = 97, limit = 12, bnbUsd, signal }: PostGradCampaignFeedParams) {
