@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import type { WarPool } from "@/features/postgrad/contracts";
 import { postGradFlags } from "@/features/postgrad/config";
 import type { WarPoolSettlementSummary } from "@/features/postgrad/mockWarPoolRuntime";
-import { apiFetch } from "@/lib/apiBase";
+import {
+  fetchPostGradWarPool,
+  fetchPostGradWarPoolSummary,
+  supportPostGradWarPool,
+  transitionPostGradWarPool,
+} from "@/features/postgrad/apiClient";
 import { useMockWarPool, useMockWarPoolSummary } from "@/hooks/useMockWarPoolRuntime";
 
 export type ArenaWarPoolFeedSource = "qa-runtime" | "api" | "empty";
@@ -111,49 +116,21 @@ function normalizeWarPoolSummary(value: any): WarPoolSummary | null {
   };
 }
 
-async function fetchWarPool(battleId: string, signal?: AbortSignal): Promise<ArenaWarPoolPayload | null> {
-  const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}`, { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return null;
-  const pool = normalizeWarPool((json as any).pool ?? json);
+async function loadWarPool(battleId: string, signal?: AbortSignal): Promise<ArenaWarPoolPayload | null> {
+  const json = await fetchPostGradWarPool(battleId, signal);
+  if (!json) return null;
+  const pool = normalizeWarPool(json.pool ?? json);
   if (!pool) return null;
   return {
     pool,
-    settlementSummary: normalizeSettlementSummary((json as any).settlementSummary),
+    settlementSummary: normalizeSettlementSummary(json.settlementSummary),
   };
 }
 
-async function fetchWarPoolSummary(signal?: AbortSignal): Promise<ArenaWarPoolSummaryPayload | null> {
-  const response = await apiFetch("/api/arena/war-pools", { cache: "no-store", signal });
-  if (!response.ok) return null;
-  const json = await response.json().catch(() => null);
-  if (!json || typeof json !== "object") return null;
-  return normalizeWarPoolSummary((json as any).summary ?? json);
-}
-
-async function supportWarPoolViaApi(battleId: string, sideTokenId: string, amountUsd: number): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}/support`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sideTokenId, amountUsd }),
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
-}
-
-async function transitionWarPoolViaApi(battleId: string, state: ArenaWarPoolState): Promise<boolean> {
-  const response = await apiFetch(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
-
-  if (!response.ok) return false;
-  const json = await response.json().catch(() => null);
-  return json == null || json?.ok !== false;
+async function loadWarPoolSummary(signal?: AbortSignal): Promise<ArenaWarPoolSummaryPayload | null> {
+  const json = await fetchPostGradWarPoolSummary(signal);
+  if (!json) return null;
+  return normalizeWarPoolSummary(json.summary ?? json);
 }
 
 /**
@@ -169,7 +146,7 @@ export function useArenaWarPool(battleId?: string | null) {
   const [loading, setLoading] = useState(Boolean(battleId));
 
   const refreshPool = async (battleIdToRefresh: string) => {
-    const freshPayload = await fetchWarPool(battleIdToRefresh).catch(() => null);
+    const freshPayload = await loadWarPool(battleIdToRefresh).catch(() => null);
     setApiPayload(freshPayload);
     return freshPayload;
   };
@@ -185,7 +162,7 @@ export function useArenaWarPool(battleId?: string | null) {
     let cancelled = false;
     setLoading(true);
 
-    fetchWarPool(battleId, controller.signal)
+    loadWarPool(battleId, controller.signal)
       .then((payload) => {
         if (!cancelled) setApiPayload(payload);
       })
@@ -205,7 +182,7 @@ export function useArenaWarPool(battleId?: string | null) {
 
   const supportSide = async (battleIdToSupport: string, sideTokenId: string, amountUsd = 500) => {
     try {
-      const supported = await supportWarPoolViaApi(battleIdToSupport, sideTokenId, amountUsd);
+      const supported = await supportPostGradWarPool(battleIdToSupport, sideTokenId, amountUsd);
       if (supported) {
         await refreshPool(battleIdToSupport);
         return true;
@@ -218,7 +195,7 @@ export function useArenaWarPool(battleId?: string | null) {
 
   const transitionWarPool = async (battleIdToUpdate: string, state: ArenaWarPoolState) => {
     try {
-      const transitioned = await transitionWarPoolViaApi(battleIdToUpdate, state);
+      const transitioned = await transitionPostGradWarPool(battleIdToUpdate, state);
       if (transitioned) {
         await refreshPool(battleIdToUpdate);
         return true;
@@ -248,7 +225,7 @@ export function useArenaWarPoolSummary() {
   const [loading, setLoading] = useState(true);
 
   const refreshSummary = async () => {
-    const summary = await fetchWarPoolSummary().catch(() => null);
+    const summary = await loadWarPoolSummary().catch(() => null);
     setApiSummary(summary);
     return summary;
   };
@@ -257,7 +234,7 @@ export function useArenaWarPoolSummary() {
     const controller = new AbortController();
     let cancelled = false;
 
-    fetchWarPoolSummary(controller.signal)
+    loadWarPoolSummary(controller.signal)
       .then((summary) => {
         if (!cancelled) setApiSummary(summary);
       })
@@ -277,7 +254,7 @@ export function useArenaWarPoolSummary() {
 
   const transitionWarPool = async (battleId: string, state: ArenaWarPoolState) => {
     try {
-      const transitioned = await transitionWarPoolViaApi(battleId, state);
+      const transitioned = await transitionPostGradWarPool(battleId, state);
       if (transitioned) {
         await refreshSummary();
         return true;
