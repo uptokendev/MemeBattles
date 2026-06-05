@@ -71,10 +71,17 @@ const backendFlags = [
   "POSTGRAD_SPONSORSHIPS_ENABLED",
   "POSTGRAD_WAR_ROOM_ENABLED",
 ];
-for (const flag of backendFlags) {
-  assertIncludes(server, flag, "backend readiness gates", failures);
-  assertIncludes(envExample, `${flag}=false`, "env example backend flags", failures);
+
+const gatewayMode =
+  server.includes("devpostgrad API gateway") &&
+  server.includes("createRailwayProxyMiddleware") &&
+  server.includes("devpostgrad does not host the live API");
+
+if (!gatewayMode) {
+  for (const flag of backendFlags) assertIncludes(server, flag, "backend readiness gates", failures);
 }
+
+for (const flag of backendFlags) assertIncludes(envExample, `${flag}=false`, "env example backend flags", failures);
 
 const frontendFlags = [
   "VITE_ENABLE_POSTGRAD=false",
@@ -94,4 +101,5 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Postgrad routing readiness check passed.");
+const mode = gatewayMode ? "devpostgrad gateway" : "local API server";
+console.log(`Postgrad routing readiness check passed in ${mode} mode.`);
