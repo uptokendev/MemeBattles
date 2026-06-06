@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
 import { resolveImageUri } from "@/lib/media";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
 import {
@@ -33,7 +34,12 @@ import {
   type DraftComment,
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
-
+import {
+  addSolanaDraftComment,
+  armSolanaDraftNotifications,
+  followSolanaDraft,
+  getCurrentSolanaAddress,
+} from "@/lib/solanaDraftApi";
 
 const DEMO_SLUG = "memewarzone-mwz-demo";
 
@@ -43,11 +49,16 @@ function shortWallet(value: string) {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
 
+function sameWallet(left: string | null | undefined, right: string | null | undefined, isSolana: boolean) {
+  if (!left || !right) return false;
+  return isSolana ? left === right : left.toLowerCase() === right.toLowerCase();
+}
+
 function statusLabel(status: string) {
   return status.replace(/_/g, " ").toUpperCase();
 }
 
-function fixedMissionPhases() {
+function fixedMissionPhases(isSolanaDraft = false) {
   return [
     [
       "Recon",
@@ -55,7 +66,9 @@ function fixedMissionPhases() {
     ],
     [
       "Deploy",
-      "Creator pushes the draft live into the bonding curve. Trading opens only after deployment is confirmed.",
+      isSolanaDraft
+        ? "Solana drafts stay in Prepare Mode while chain launch mechanics are being wired in. Trading opens later when Solana deployment is enabled."
+        : "Creator pushes the draft live into the bonding curve. Trading opens only after deployment is confirmed.",
     ],
     [
       "Graduate",
@@ -154,10 +167,7 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version
   const params = new URLSearchParams({
     name: draft.name,
     ticker: draft.ticker,
-    chain:
-      Number(draft.chainId) === 101 || Number(draft.chainId) === 102
-        ? "SOLANA"
-        : "BNB CHAIN",
+    chain: getDraftChainLabel(draft.chainId).toUpperCase(),
     status,
     recruits: String(recruits),
     heat: `${popularity.popularityPercentage}%`,
@@ -226,7 +236,7 @@ function RadarCard({ percentage, heatLabel }: { percentage: number; heatLabel: s
   );
 }
 
-function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) { 
+function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) {
   return (
     <div className="mb-5 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-2xl text-white">
       {src ? (
@@ -237,6 +247,7 @@ function TokenLogo({ src, ticker }: { src?: string | null; ticker: string }) {
     </div>
   );
 }
+
 function WarzoneHudPreview({
   imageUrl,
   ticker,
@@ -253,11 +264,11 @@ function WarzoneHudPreview({
         <div className="absolute left-[20.4%] right-[19.4%] top-[12.1%] bottom-[12.2%] z-0 flex translate-x-[-2px] translate-y-[1px] flex-col overflow-hidden bg-black">
           <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
             <img
-  src={imageUrl}
-  alt={`${ticker} campaign image`}
-  className="h-full w-full object-contain p-1 md:p-1.5"
-  draggable={false}
-/>
+              src={imageUrl}
+              alt={`${ticker} campaign image`}
+              className="h-full w-full object-contain p-1 md:p-1.5"
+              draggable={false}
+            />
 
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,transparent_0%,rgba(0,0,0,0.12)_45%,rgba(0,0,0,0.70)_100%)]" />
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,122,26,0.08),transparent_45%,rgba(0,0,0,0.60))]" />
@@ -287,6 +298,7 @@ function WarzoneHudPreview({
     </div>
   );
 }
+
 function ShareModal({
   bundle,
   onClose,
@@ -377,10 +389,18 @@ function ShareModal({
 
 function TransmissionList({
   draftId,
+  chainId,
   isCreator,
+  isSolanaDraft,
+  solanaAccount,
+  onSolanaAccount,
 }: {
   draftId: string;
+  chainId: number;
   isCreator: boolean;
+  isSolanaDraft: boolean;
+  solanaAccount: string;
+  onSolanaAccount: (walletAddress: string) => void;
 }) {
   const wallet = useWallet();
   const [items, setItems] = useState<DraftComment[]>([]);
@@ -408,7 +428,7 @@ function TransmissionList({
   const send = async (reply = false) => {
     const text = reply ? replyBody.trim() : body.trim();
 
-    if (!wallet.account) {
+    if (!isSolanaDraft && !wallet.account) {
       toast.error("Connect wallet to send a transmission.");
       return;
     }
@@ -427,8 +447,16 @@ function TransmissionList({
         reply && replyingTo
           ? `↳ Creator reply to ${replyingTo.displayName || shortWallet(replyingTo.walletAddress)}: `
           : "";
+      const message = `${prefix}${text}`;
+      let comment: DraftComment;
 
-      const comment = await addDraftComment(draftId, wallet.account, `${prefix}${text}`);
+      if (isSolanaDraft) {
+        const result = await addSolanaDraftComment(draftId, chainId, message, null, solanaAccount);
+        comment = result.comment;
+        onSolanaAccount(result.walletAddress);
+      } else {
+        comment = await addDraftComment(draftId, wallet.account, message);
+      }
 
       setItems((prev) => [comment, ...prev]);
       setBody("");
@@ -566,10 +594,16 @@ function TransmissionList({
             Send transmission
           </Button>
 
-          {!wallet.account && (
+          {isSolanaDraft ? (
             <p className="mt-3 text-xs text-muted-foreground">
-              Wallet connection required for bunker actions.
+              Phantom signature required for Solana bunker actions.
             </p>
+          ) : (
+            !wallet.account && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Wallet connection required for bunker actions.
+              </p>
+            )
           )}
         </div>
       </div>
@@ -589,13 +623,20 @@ export default function Prepare() {
   const [followingDraft, setFollowingDraft] = useState(false);
   const [hasArmed, setHasArmed] = useState(false);
   const [hasFollowed, setHasFollowed] = useState(false);
+  const [solanaAccount, setSolanaAccount] = useState("");
+
+  useEffect(() => {
+    setSolanaAccount(getCurrentSolanaAddress());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     setLoading(true);
 
-    void fetchPrepareDraft(slug, wallet.account)
+    const viewer = wallet.account || solanaAccount || getCurrentSolanaAddress();
+
+    void fetchPrepareDraft(slug, viewer)
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
@@ -615,23 +656,28 @@ export default function Prepare() {
     return () => {
       cancelled = true;
     };
-  }, [slug, wallet.account]);
+  }, [slug, wallet.account, solanaAccount]);
 
   const draft = bundle?.draft;
   const promo = bundle?.promotion;
   const pop = bundle?.popularity;
+  const isSolanaDraft = Boolean(draft && isSolanaDraftChainId(draft.chainId));
+  const viewerWallet = isSolanaDraft ? solanaAccount : wallet.account;
 
-  const refreshPrepareBundle = async () => {
-    const data = await fetchPrepareDraft(slug, wallet.account);
+  const refreshPrepareBundle = async (viewerOverride?: string | null) => {
+    const viewer = viewerOverride ?? viewerWallet;
+    const data = await fetchPrepareDraft(slug, viewer);
     setBundle(data);
     setFollowCount(data.popularity.follows);
+    setHasArmed(Boolean(data.viewer?.isArmed));
+    setHasFollowed(Boolean(data.viewer?.isFollowing));
     return data;
   };
 
   const handleArmNotification = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!isSolanaDraft && !wallet.account) {
       toast.error("Connect wallet to arm notifications.");
       return;
     }
@@ -639,8 +685,14 @@ export default function Prepare() {
     setArmingNotification(true);
 
     try {
-      await armDraftNotifications(draft.id, wallet.account);
-      await refreshPrepareBundle().catch(() => null);
+      if (isSolanaDraft) {
+        const result = await armSolanaDraftNotifications(draft.id, draft.chainId, solanaAccount);
+        setSolanaAccount(result.walletAddress);
+        await refreshPrepareBundle(result.walletAddress).catch(() => null);
+      } else {
+        await armDraftNotifications(draft.id, wallet.account);
+        await refreshPrepareBundle().catch(() => null);
+      }
       window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
       setHasArmed(true);
       toast.success("Notifications armed for this draft.");
@@ -654,7 +706,7 @@ export default function Prepare() {
   const handleFollow = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!isSolanaDraft && !wallet.account) {
       toast.error("Connect wallet to follow this draft.");
       return;
     }
@@ -662,9 +714,16 @@ export default function Prepare() {
     setFollowingDraft(true);
 
     try {
-      const result = await followDraft(draft.id, wallet.account);
-      setFollowCount(result.followCount);
-      await refreshPrepareBundle().catch(() => null);
+      if (isSolanaDraft) {
+        const result = await followSolanaDraft(draft.id, solanaAccount);
+        setSolanaAccount(result.walletAddress);
+        setFollowCount(result.followCount);
+        await refreshPrepareBundle(result.walletAddress).catch(() => null);
+      } else {
+        const result = await followDraft(draft.id, wallet.account);
+        setFollowCount(result.followCount);
+        await refreshPrepareBundle().catch(() => null);
+      }
       window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
       setHasFollowed(true);
       toast.success("Draft followed.");
@@ -694,14 +753,11 @@ export default function Prepare() {
     );
   }
 
-const ticker = `$${draft.ticker}`;
-const heroImageUrl = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
-const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
-  const isCreator = Boolean(
-    wallet.account &&
-      draft.creatorWallet &&
-      wallet.account.toLowerCase() === draft.creatorWallet.toLowerCase(),
-  );
+  const ticker = `$${draft.ticker}`;
+  const heroImageUrl = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
+  const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
+  const chainLabel = getDraftChainLabel(draft.chainId);
+  const isCreator = sameWallet(viewerWallet, draft.creatorWallet, isSolanaDraft);
 
   const links = [
     ["X / Twitter", normalizeExternalUrl(promo.xUrl || draft.xUrl, "x"), "Frontline updates", "X"],
@@ -734,7 +790,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
 
           <div className="absolute right-4 top-6 hidden items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-orange-200 md:flex">
             <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
-            UNARMED · DRAFT MODE
+            UNARMED · {chainLabel.toUpperCase()} DRAFT
           </div>
 
           {isCreator && (
@@ -748,18 +804,17 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
             </div>
           )}
 
-<div className="mwz-chip mwz-chip-active relative z-20 mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-4">
-  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
-  Incoming transmission · Prepare Mode
-</div>
+          <div className="mwz-chip mwz-chip-active relative z-20 mt-3 inline-flex items-center gap-2 px-4 py-2 text-xs md:mt-4">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-300" />
+            Incoming transmission · Prepare Mode · {chainLabel}
+          </div>
 
-<div className="relative z-10 mt-4">
-  <WarzoneHudPreview imageUrl={heroImageUrl} ticker={ticker} name={draft.name} />
-</div>
+          <div className="relative z-10 mt-4">
+            <WarzoneHudPreview imageUrl={heroImageUrl} ticker={ticker} name={draft.name} />
+          </div>
 
           <p className="relative z-20 mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-2xl">
             {heroTagline}{" "}
-
           </p>
 
           <div className="relative z-20 mt-6 flex flex-wrap justify-center gap-3">
@@ -912,7 +967,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
-            {fixedMissionPhases().map(([title, body], index) => (
+            {fixedMissionPhases(isSolanaDraft).map(([title, body], index) => (
               <div
                 key={title}
                 className={`mwz-card p-5 ${
@@ -947,7 +1002,14 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </div>
         </section>
 
-        <TransmissionList draftId={draft.id} isCreator={isCreator} />
+        <TransmissionList
+          draftId={draft.id}
+          chainId={draft.chainId}
+          isCreator={isCreator}
+          isSolanaDraft={isSolanaDraft}
+          solanaAccount={solanaAccount}
+          onSolanaAccount={setSolanaAccount}
+        />
 
         <section className="mx-auto max-w-7xl px-4 py-10 pb-20 md:px-8 md:py-14 md:pb-24">
           <div className="mwz-card border-orange-400/50 bg-[radial-gradient(ellipse_at_top,rgba(255,153,0,0.18),rgba(2,17,4,0.92)_70%)] p-8 text-center md:p-12">
