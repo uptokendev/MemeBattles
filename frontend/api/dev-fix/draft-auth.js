@@ -159,9 +159,15 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  // Current migration scope: after the creator wallet is connected, draft owner
-  // actions do not require extra wallet signatures. Only create_draft still signs.
-  if (action !== "create_draft" && CONNECTED_WALLET_ALLOWED_ACTIONS.has(action)) {
+  const hasSignedProof = Boolean(
+    String(auth?.nonce || "").trim() && String(auth?.signature || "").trim(),
+  );
+
+  // Current migration scope: preserve the existing connected-wallet fallback for
+  // non-create owner actions, but do not skip verification when the caller sends
+  // a nonce/signature. Solana owner helpers now send signed Phantom proofs for
+  // private reads, promotion saves/publishes, and archive actions.
+  if (action !== "create_draft" && CONNECTED_WALLET_ALLOWED_ACTIONS.has(action) && !hasSignedProof) {
     return {
       walletAddress: wallet,
       chainId: expectedChainId,
