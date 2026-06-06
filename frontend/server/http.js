@@ -80,6 +80,10 @@ export function isSolanaPublicKey(v) {
   return [...value].every((char) => BASE58_ALPHABET.includes(char));
 }
 
-export function isAddress(v) {
+export function isWalletAddress(v) {
   return isEvmAddress(v) || isSolanaPublicKey(v);
+}
+
+export function isAddress(v) {
+  return isEvmAddress(v);
 }
