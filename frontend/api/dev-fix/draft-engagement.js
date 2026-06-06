@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isEvmAddress, isSolanaPublicKey, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { insertPrepareNotification, notifyDraftOwner } from "./prepare-notify.js";
 
@@ -9,8 +9,16 @@ function methodAllowed(req, res, allowed) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  if (isEvmAddress(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return "";
+}
+
+function sameWallet(a, b) {
+  const left = normalizeAddress(a);
+  const right = normalizeAddress(b);
+  return Boolean(left && right && left === right);
 }
 
 function shortAddress(address) {
@@ -55,7 +63,7 @@ function mapCommentRow(row) {
   return {
     id: String(row.id),
     draftId: String(row.draft_id),
-    walletAddress: String(row.wallet_address),
+    walletAddress: normalizeAddress(row.wallet_address) || String(row.wallet_address),
     displayName,
     body: row.body,
     parentCommentId: row.parent_comment_id ? String(row.parent_comment_id) : null,
@@ -69,7 +77,7 @@ function mapDraftRow(row) {
   return {
     id: String(row.id),
     chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    creatorWallet: normalizeAddress(row.creator_wallet ?? row.creatorWallet ?? ""),
     name: String(row.name || ""),
     ticker: String(row.ticker || ""),
     description: row.description || null,
@@ -190,7 +198,7 @@ export async function signedDraftFollow(req, res) {
     )
     .catch(() => {});
 
-  if (followInsert.rows.length && wallet !== draft.creatorWallet) {
+  if (followInsert.rows.length && !sameWallet(wallet, draft.creatorWallet)) {
     await notifyDraftOwner(pool, draft, {
       eventType: "follow",
       title: "New draft follower",
@@ -341,7 +349,7 @@ export async function signedDraftComments(req, res) {
   });
   if (!authOk) return;
 
-  if (parentCommentId && wallet !== draft.creatorWallet) {
+  if (parentCommentId && !sameWallet(wallet, draft.creatorWallet)) {
     return json(res, 403, { error: "Only the creator can reply to transmissions." });
   }
 
@@ -357,7 +365,7 @@ export async function signedDraftComments(req, res) {
     )
     .catch(() => {});
 
-  if (wallet !== draft.creatorWallet) {
+  if (!sameWallet(wallet, draft.creatorWallet)) {
     await notifyDraftOwner(pool, draft, {
       eventType: "comment",
       title: "New bunker comment",
