@@ -1,4 +1,4 @@
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, isEvmAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
 
@@ -12,7 +12,7 @@ function methodAllowed(req, res, allowed) {
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  return isEvmAddress(raw) ? raw : "";
 }
 
 function isDraftPushLiveEnabled() {
