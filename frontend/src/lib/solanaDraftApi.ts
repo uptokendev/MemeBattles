@@ -1,11 +1,18 @@
 import { apiFetch, apiUrl } from "@/lib/apiBase";
 import { isSolanaDraftChainId } from "@/lib/draftChains";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
-import type { PrepareDraftBundle } from "@/lib/draftApi";
-import { connectSolanaWallet, getSolanaProvider } from "@/lib/solanaWallet";
+import type { DraftComment, PrepareDraftBundle } from "@/lib/draftApi";
+import { connectSolanaWallet, getSolanaProvider, signSolanaDraftAction } from "@/lib/solanaWallet";
 
 function solanaWalletAddress() {
   return getSolanaProvider()?.publicKey?.toString?.() || "";
+}
+
+async function ensureSolanaWallet(walletAddress?: string | null) {
+  const connected = solanaWalletAddress();
+  if (walletAddress && connected === walletAddress) return walletAddress;
+  if (connected) return connected;
+  return connectSolanaWallet();
 }
 
 function buildSolanaConnectedAuth(input: {
@@ -32,6 +39,14 @@ async function parseJson(res: Response) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
   return json as any;
+}
+
+export function getCurrentSolanaAddress() {
+  return solanaWalletAddress();
+}
+
+export async function connectCurrentSolanaAddress() {
+  return ensureSolanaWallet();
 }
 
 export function isSolanaDraftOwner(bundle: PrepareDraftBundle | null, walletAddress: string) {
@@ -89,4 +104,66 @@ export async function archiveSolanaCampaignDraft(draftId: string, chainId: numbe
     body: JSON.stringify({ auth }),
   });
   return parseJson(res) as Promise<PrepareDraftBundle>;
+}
+
+export async function followSolanaDraft(
+  draftId: string,
+  walletAddress?: string | null,
+): Promise<{ following: boolean; followCount: number; walletAddress: string }> {
+  const wallet = await ensureSolanaWallet(walletAddress);
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/follow`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ walletAddress: wallet }),
+  });
+  const json = await parseJson(res);
+  return {
+    following: Boolean(json.following),
+    followCount: Number(json.followCount || 0),
+    walletAddress: wallet,
+  };
+}
+
+export async function armSolanaDraftNotifications(
+  draftId: string,
+  chainId: number,
+  walletAddress?: string | null,
+): Promise<{ armed: boolean; walletAddress: string }> {
+  const wallet = await ensureSolanaWallet(walletAddress);
+  const auth = await signSolanaDraftAction({
+    action: "arm_draft_notifications",
+    walletAddress: wallet,
+    chainId,
+    draftId,
+  });
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/notifications`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth }),
+  });
+  const json = await parseJson(res);
+  return { armed: Boolean(json.armed), walletAddress: wallet };
+}
+
+export async function addSolanaDraftComment(
+  draftId: string,
+  chainId: number,
+  body: string,
+  parentCommentId?: string | null,
+  walletAddress?: string | null,
+): Promise<{ comment: DraftComment; walletAddress: string }> {
+  const wallet = await ensureSolanaWallet(walletAddress);
+  const auth = await signSolanaDraftAction({
+    action: "comment_draft",
+    walletAddress: wallet,
+    chainId,
+    draftId,
+  });
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ auth, body, parentCommentId: parentCommentId || null }),
+  });
+  const json = await parseJson(res);
+  return { comment: json.comment as DraftComment, walletAddress: wallet };
 }
