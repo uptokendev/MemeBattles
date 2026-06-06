@@ -4,10 +4,22 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import PublicProfile from "./PublicProfile";
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function isEvmAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value);
+}
+
+function isSolanaPublicKey(value: string) {
+  if (value.length < 32 || value.length > 44) return false;
+  return [...value].every((char) => BASE58_ALPHABET.includes(char));
+}
+
 function normalizeWallet(value?: string | null): string | null {
   const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  if (isEvmAddress(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return null;
 }
 
 function sameWallet(a?: string | null, b?: string | null): boolean {
@@ -53,7 +65,7 @@ function InvalidPublicProfile({ identifier }: { identifier: string }) {
       <div className="w-full rounded-3xl border border-border/50 bg-card/40 p-6 text-center shadow-2xl backdrop-blur-md md:p-10">
         <h1 className="font-retro text-2xl text-foreground md:text-4xl">Profile not found</h1>
         <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground md:text-base">
-          We could not resolve <span className="font-mono text-foreground">{identifier}</span> as a public profile yet. Wallet addresses are supported now; handles, usernames, and recruiter codes can be added next.
+          We could not resolve <span className="font-mono text-foreground">{identifier}</span> as a public profile yet. EVM and Solana wallet addresses are supported now; handles, usernames, and recruiter codes can be added next.
         </p>
       </div>
     </div>

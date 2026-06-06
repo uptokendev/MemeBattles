@@ -7,6 +7,7 @@ import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { getDraftChainLabel, isSolanaDraftChainId, SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
 import {
   fetchRecruiterSummaryByWallet,
   fetchSquadSummary,
@@ -34,16 +35,42 @@ type PublicCoin = {
   timeAgo?: string | null;
 };
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function isSolanaPublicKey(value: string) {
+  if (value.length < 32 || value.length > 44) return false;
+  return [...value].every((char) => BASE58_ALPHABET.includes(char));
+}
+
+function normalizeWallet(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return raw;
+}
+
+function sameWallet(left?: string | null, right?: string | null) {
+  const a = normalizeWallet(left);
+  const b = normalizeWallet(right);
+  return Boolean(a && b && a === b);
+}
+
+function profileInitials(wallet: string) {
+  const value = normalizeWallet(wallet);
+  if (value.startsWith("0x") && value.length >= 4) return value.slice(2, 4).toUpperCase();
+  return value.slice(0, 2).toUpperCase() || "MW";
+}
+
 function shorten(addr?: string | null) {
   if (!addr) return "";
   if (addr.length <= 10) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-function getExplorerBase(chainId?: number): string {
-  if (chainId === 97) return "https://testnet.bscscan.com";
-  if (chainId === 56) return "https://bscscan.com";
-  return "https://bscscan.com";
+function getExplorerUrl(walletAddress: string, chainId?: number): string {
+  if (isSolanaPublicKey(walletAddress)) return `https://solscan.io/account/${walletAddress}`;
+  if (chainId === 97) return `https://testnet.bscscan.com/address/${walletAddress}`;
+  return `https://bscscan.com/address/${walletAddress}`;
 }
 
 function formatTimeAgo(createdAt?: number | string | null): string {
@@ -143,6 +170,9 @@ export default function PublicProfile({
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const anyWallet: any = wallet as any;
   const activeChainId = getActiveChainId(anyWallet?.chainId ?? null);
+  const normalizedProfileWallet = useMemo(() => normalizeWallet(profileWallet), [profileWallet]);
+  const isSolanaProfile = useMemo(() => isSolanaPublicKey(normalizedProfileWallet), [normalizedProfileWallet]);
+  const profileChainId = isSolanaProfile ? SOLANA_MAINNET_CHAIN_ID : activeChainId;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -161,10 +191,10 @@ export default function PublicProfile({
 
   const displayName = useMemo(() => {
     const name = (profile?.displayName ?? "").trim();
-    return name ? `@${name}` : shorten(profileWallet);
-  }, [profile?.displayName, profileWallet]);
+    return name ? `@${name}` : shorten(normalizedProfileWallet);
+  }, [profile?.displayName, normalizedProfileWallet]);
 
-  const explorerUrl = useMemo(() => `${getExplorerBase(activeChainId)}/address/${profileWallet}`, [activeChainId, profileWallet]);
+  const explorerUrl = useMemo(() => getExplorerUrl(normalizedProfileWallet, activeChainId), [activeChainId, normalizedProfileWallet]);
   const rank = useMemo(() => safeRank(profile), [profile]);
 
   const profileCompleteness = useMemo(() => {
@@ -179,15 +209,16 @@ export default function PublicProfile({
   const reputationSignals = useMemo(
     () => [
       { label: "Rank", value: rank, detail: "Current public progression" },
-      { label: "Created", value: formatCompactNumber(createdCoins.length), detail: "Public launched coins" },
+      { label: "Created", value: formatCompactNumber(createdCoins.length), detail: isSolanaProfile ? "EVM launches only for now" : "Public launched coins" },
       { label: "Drafts", value: formatCompactNumber(visibleDrafts.length), detail: "Public Prepare drafts" },
-      { label: "Trades", value: formatCompactNumber(publicTrades.length), detail: "Recent public activity" },
+      { label: "Trades", value: formatCompactNumber(publicTrades.length), detail: isSolanaProfile ? "Solana trade feed pending" : "Recent public activity" },
     ],
-    [rank, createdCoins.length, visibleDrafts.length, publicTrades.length]
+    [rank, createdCoins.length, isSolanaProfile, visibleDrafts.length, publicTrades.length]
   );
 
   const publicTrustTags = useMemo(() => {
     const tags: string[] = [];
+    if (isSolanaProfile) tags.push("Solana profile");
     if (recruiter?.code) tags.push("Recruiter verified");
     if (recruiter?.isOg) tags.push("OG recruiter");
     if (squad?.recruiterCode || walletAttribution?.recruiterCode) tags.push("Squad-linked");
@@ -195,7 +226,7 @@ export default function PublicProfile({
     if (publicTrades.length > 0) tags.push("Trader activity");
     if (visibleDrafts.length > 0) tags.push("Public drafts");
     return tags;
-  }, [createdCoins.length, publicTrades.length, recruiter?.code, recruiter?.isOg, squad?.recruiterCode, visibleDrafts.length, walletAttribution?.recruiterCode]);
+  }, [createdCoins.length, isSolanaProfile, publicTrades.length, recruiter?.code, recruiter?.isOg, squad?.recruiterCode, visibleDrafts.length, walletAttribution?.recruiterCode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +234,7 @@ export default function PublicProfile({
     const load = async () => {
       setLoadingProfile(true);
       try {
-        const p = await fetchUserProfile(activeChainId, profileWallet);
+        const p = await fetchUserProfile(profileChainId, normalizedProfileWallet);
         if (!cancelled) setProfile(p);
       } catch (e) {
         console.warn("Failed to load public profile", e);
@@ -217,7 +248,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, profileWallet]);
+  }, [normalizedProfileWallet, profileChainId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,10 +256,15 @@ export default function PublicProfile({
     const loadCoins = async () => {
       setLoadingCoins(true);
       try {
+        if (isSolanaProfile) {
+          if (!cancelled) setCreatedCoins([]);
+          return;
+        }
+
         const campaigns = (await fetchCampaigns()) ?? [];
         const mine = campaigns.filter((campaign: any) => {
-          const creator = String(campaign?.creator ?? campaign?.creatorAddress ?? "").toLowerCase();
-          return creator === profileWallet.toLowerCase();
+          const creator = normalizeWallet(campaign?.creator ?? campaign?.creatorAddress ?? "");
+          return sameWallet(creator, normalizedProfileWallet);
         });
 
         const settled = await Promise.allSettled(mine.map((campaign) => fetchCampaignSummary(campaign)));
@@ -251,7 +287,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [fetchCampaigns, fetchCampaignSummary, profileWallet]);
+  }, [fetchCampaigns, fetchCampaignSummary, isSolanaProfile, normalizedProfileWallet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,12 +296,13 @@ export default function PublicProfile({
       setLoadingDrafts(true);
       setDraftsError(null);
       try {
-        const drafts = await fetchPublicCampaignDrafts({ chainId: activeChainId, limit: 100 });
+        const drafts = await fetchPublicCampaignDrafts({ chainId: isSolanaProfile ? undefined : activeChainId, limit: 100 });
         if (cancelled) return;
 
         setVisibleDrafts(
           drafts
-            .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === profileWallet.toLowerCase())
+            .filter((draft) => sameWallet(draft.creatorWallet, normalizedProfileWallet))
+            .filter((draft) => !isSolanaProfile || isSolanaDraftChainId(draft.chainId))
             .filter(isDraftVisibleOnPublicProfile)
         );
       } catch (e: any) {
@@ -283,7 +320,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, profileWallet]);
+  }, [activeChainId, isSolanaProfile, normalizedProfileWallet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,8 +329,8 @@ export default function PublicProfile({
       setLoadingBadges(true);
       try {
         const [recruiterResult, attributionResult] = await Promise.allSettled([
-          fetchRecruiterSummaryByWallet(profileWallet),
-          fetchWalletAttributionState(profileWallet),
+          fetchRecruiterSummaryByWallet(normalizedProfileWallet),
+          fetchWalletAttributionState(normalizedProfileWallet),
         ]);
 
         if (cancelled) return;
@@ -332,7 +369,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [profileWallet]);
+  }, [normalizedProfileWallet]);
 
   useEffect(() => {
     let cancelled = false;
@@ -342,9 +379,14 @@ export default function PublicProfile({
       setLoadingActivity(true);
       setActivityError(null);
       try {
+        if (isSolanaProfile) {
+          if (!cancelled) setPublicTrades([]);
+          return;
+        }
+
         const qs = new URLSearchParams({
           chainId: String(activeChainId),
-          address: profileWallet.toLowerCase(),
+          address: normalizedProfileWallet,
           limit: "12",
         });
         const res = await fetch(buildRealtimeApiUrl(`/api/activity/trades?${qs.toString()}`), {
@@ -372,10 +414,10 @@ export default function PublicProfile({
       cancelled = true;
       ac.abort();
     };
-  }, [activeChainId, profileWallet]);
+  }, [activeChainId, isSolanaProfile, normalizedProfileWallet]);
 
   const copyAddress = () => {
-    navigator.clipboard.writeText(profileWallet);
+    navigator.clipboard.writeText(normalizedProfileWallet);
     toast.success("Address copied!");
   };
 
@@ -390,21 +432,21 @@ export default function PublicProfile({
                   <img src={profile.avatarUrl} alt={displayName} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center font-retro text-3xl text-accent">
-                    {profileWallet.slice(2, 4).toUpperCase()}
+                    {profileInitials(normalizedProfileWallet)}
                   </div>
                 )}
               </div>
 
               <div className="min-w-0">
                 <div className="mb-2 inline-flex rounded-full border border-accent/30 bg-accent/10 px-3 py-1 font-retro text-[10px] uppercase tracking-[0.18em] text-accent">
-                  Public Profile
+                  {isSolanaProfile ? "Solana Profile" : "Public Profile"}
                 </div>
                 <h1 className="truncate font-retro text-2xl text-foreground md:text-4xl">
                   {loadingProfile ? "Loading profile..." : displayName}
                 </h1>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono">{profileWallet}</span>
+                  <span className="font-mono">{normalizedProfileWallet}</span>
                   <button onClick={copyAddress} className="rounded p-1 hover:bg-muted" title="Copy address">
                     <Copy className="h-4 w-4" />
                   </button>
@@ -560,7 +602,9 @@ export default function PublicProfile({
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-retro text-lg text-foreground">Created Coins</h2>
-              <p className="text-xs text-muted-foreground">Public coins created by this wallet.</p>
+              <p className="text-xs text-muted-foreground">
+                {isSolanaProfile ? "Solana launched coins will appear when Solana deployment is enabled." : "Public coins created by this wallet."}
+              </p>
             </div>
             <div className="text-xs text-muted-foreground">{createdCoins.length} visible</div>
           </div>
@@ -604,7 +648,9 @@ export default function PublicProfile({
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">No public created coins yet.</div>
+            <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
+              {isSolanaProfile ? "No Solana launched coins yet. Public Prepare drafts are shown below." : "No public created coins yet."}
+            </div>
           )}
         </section>
 
@@ -638,8 +684,8 @@ export default function PublicProfile({
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <div className="text-muted-foreground">Visibility</div>
-                      <div className="capitalize text-foreground">{draft.visibility}</div>
+                      <div className="text-muted-foreground">Chain</div>
+                      <div className="text-foreground">{getDraftChainLabel(draft.chainId)}</div>
                     </div>
                     <div>
                       <div className="text-muted-foreground">Status</div>
@@ -668,7 +714,9 @@ export default function PublicProfile({
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-retro text-lg text-foreground">Public Activity</h2>
-              <p className="text-xs text-muted-foreground">Recent public trade activity for this wallet.</p>
+              <p className="text-xs text-muted-foreground">
+                {isSolanaProfile ? "Solana trading activity will appear when the Solana feed is enabled." : "Recent public trade activity for this wallet."}
+              </p>
             </div>
             <div className="text-xs text-muted-foreground">{publicTrades.length} recent</div>
           </div>
@@ -707,7 +755,9 @@ export default function PublicProfile({
             </div>
           ) : (
             <div className="rounded-xl border border-border/40 bg-background/30 p-4 text-sm text-muted-foreground">
-              No public trade activity yet. Private notifications, balances, and claims stay inside the Command Center.
+              {isSolanaProfile
+                ? "No Solana trade activity yet. Draft-stage Prepare activity remains visible above."
+                : "No public trade activity yet. Private notifications, balances, and claims stay inside the Command Center."}
             </div>
           )}
         </section>
