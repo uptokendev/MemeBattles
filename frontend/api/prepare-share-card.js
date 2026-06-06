@@ -38,6 +38,10 @@ function safeNumberText(value, fallback = "0") {
   return raw || fallback;
 }
 
+function isSolanaChainLabel(value) {
+  return /\bSOLANA\b/i.test(String(value || ""));
+}
+
 function setNoStoreHeaders(res) {
   res.setHeader("cache-control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("pragma", "no-cache");
@@ -208,7 +212,9 @@ function svgCard(data, logoDataUrl = "", brandLogoDataUrl = "") {
   const name = String(data.name || "CAMPAIGN NAME").trim().toUpperCase();
   const ticker = String(data.ticker || "MWZ").replace(/^\$+/, "").trim().toUpperCase().slice(0, 12);
   const chain = String(data.chain || "BNB CHAIN").trim().toUpperCase();
-  const status = String(data.status || "DRAFT").trim().toUpperCase();
+  const status = isSolanaChainLabel(chain)
+    ? "DRAFT-ONLY"
+    : String(data.status || "DRAFT").trim().toUpperCase();
   const recruits = safeNumberText(data.recruits, "0");
   const heat = safeNumberText(data.heat, "0%");
   const creator = String(data.creator || "@MEMEWARZONE").trim().toUpperCase();
