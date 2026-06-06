@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
+import { Archive, Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,13 @@ import {
 } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { getActiveChainId } from "@/lib/chainConfig";
+import { getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
+import {
+  archiveSolanaCampaignDraft,
+  fetchCampaignDraftWithSolanaOwner,
+  saveSolanaDraftPromotion,
+} from "@/lib/solanaDraftApi";
+import { connectSolanaWallet, getSolanaProvider } from "@/lib/solanaWallet";
 import { normalizeSocialUrl } from "@/lib/socialLinks";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -53,6 +60,10 @@ function getCachedLogo(draftId: string) {
   }
 }
 
+function currentSolanaAccount() {
+  return getSolanaProvider()?.publicKey?.toString?.() || "";
+}
+
 function TokenImage({ src, ticker }: { src?: string | null; ticker: string }) {
   return (
     <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-orange-400/50 bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-xl text-white shadow-[0_0_28px_rgba(57,255,122,0.22)] lg:h-24 lg:w-24">
@@ -82,6 +93,7 @@ export default function DraftPromotionSetup() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [cachedLogoUrl, setCachedLogoUrl] = useState("");
+  const [solanaAccount, setSolanaAccount] = useState("");
 
   const [missionStatement, setMissionStatement] = useState("");
   const [launchStrategy, setLaunchStrategy] = useState("");
@@ -95,11 +107,27 @@ export default function DraftPromotionSetup() {
 
   useEffect(() => {
     setCachedLogoUrl(getCachedLogo(draftId));
+    const publicKey = currentSolanaAccount();
+    if (publicKey) setSolanaAccount(publicKey);
   }, [draftId]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+
+    const applyBundle = (data: PrepareDraftBundle) => {
+      setBundle(data);
+      if (isSolanaDraftChainId(data.draft.chainId)) setSolanaAccount(data.draft.creatorWallet);
+      setMissionStatement(data.promotion.missionStatement || "");
+      setLaunchStrategy(data.promotion.launchStrategy || "");
+      setTelegramUrl(data.promotion.telegramUrl || "");
+      setDiscordUrl(data.promotion.discordUrl || "");
+      setXUrl(data.promotion.xUrl || data.draft.xUrl || "");
+      setWebsiteUrl(data.promotion.websiteUrl || data.draft.websiteUrl || "");
+      setDocsText(joinLines(data.promotion.docs));
+      setCreatorNote(data.promotion.creatorNote || "");
+      setVisibility(data.draft.visibility || "private");
+    };
 
     const loadDraft = async () => {
       try {
@@ -109,6 +137,12 @@ export default function DraftPromotionSetup() {
         });
 
         if (first) return first;
+
+        try {
+          return await fetchCampaignDraftWithSolanaOwner(draftId);
+        } catch (solanaErr: any) {
+          if (!String(solanaErr?.message || "").toLowerCase().includes("private draft")) throw solanaErr;
+        }
 
         if (!wallet.account || !wallet.signer) {
           throw new Error("Connect the draft owner wallet to open this private draft.");
@@ -134,16 +168,7 @@ export default function DraftPromotionSetup() {
     void loadDraft()
       .then((data) => {
         if (cancelled) return;
-        setBundle(data);
-        setMissionStatement(data.promotion.missionStatement || "");
-        setLaunchStrategy(data.promotion.launchStrategy || "");
-        setTelegramUrl(data.promotion.telegramUrl || "");
-        setDiscordUrl(data.promotion.discordUrl || "");
-        setXUrl(data.promotion.xUrl || data.draft.xUrl || "");
-        setWebsiteUrl(data.promotion.websiteUrl || data.draft.websiteUrl || "");
-        setDocsText(joinLines(data.promotion.docs));
-        setCreatorNote(data.promotion.creatorNote || "");
-        setVisibility(data.draft.visibility || "private");
+        applyBundle(data);
       })
       .catch((err) => toast.error(err?.message || "Draft not found"))
       .finally(() => {
@@ -158,6 +183,7 @@ export default function DraftPromotionSetup() {
   const draft = bundle?.draft;
   const pop = bundle?.popularity;
   const logoUrl = draft?.logoUrl || cachedLogoUrl;
+  const isSolanaDraft = Boolean(draft && isSolanaDraftChainId(draft.chainId));
 
   const readiness = useMemo(() => {
     const checks = [
@@ -170,6 +196,14 @@ export default function DraftPromotionSetup() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [logoUrl, missionStatement, launchStrategy, xUrl, telegramUrl, discordUrl, websiteUrl, visibility]);
 
+  const ensureSolanaOwner = async () => {
+    if (!draft) throw new Error("Draft not loaded.");
+    const account = currentSolanaAccount() || solanaAccount || await connectSolanaWallet();
+    setSolanaAccount(account);
+    if (account !== draft.creatorWallet) throw new Error("Only the draft owner Phantom wallet can edit this promotion page.");
+    return account;
+  };
+
   const save = async (options?: { publish?: boolean; preview?: boolean }) => {
     const publish = Boolean(options?.publish);
     const preview = Boolean(options?.preview);
@@ -177,48 +211,46 @@ export default function DraftPromotionSetup() {
 
     if (!draft) return null;
 
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet before saving.");
-      return null;
-    }
-
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
-      toast.error("Only the draft owner wallet can edit this promotion page.");
-      return null;
-    }
-
     const normalizedX = normalizeSocialUrl(xUrl, "x");
     const normalizedTelegram = normalizeSocialUrl(telegramUrl, "telegram");
     const normalizedDiscord = normalizeSocialUrl(discordUrl, "discord");
     const normalizedWebsite = normalizeSocialUrl(websiteUrl, "website");
     const normalizedDocs = splitLines(docsText).map((item) => normalizeSocialUrl(item, "other"));
+    const payload = {
+      missionStatement,
+      roadmap: [],
+      launchStrategy,
+      telegramUrl: normalizedTelegram,
+      discordUrl: normalizedDiscord,
+      xUrl: normalizedX,
+      websiteUrl: normalizedWebsite,
+      docs: normalizedDocs,
+      creatorNote,
+      bannerUrl: "",
+      shareMessage: `Incoming transmission: ${draft?.name || "this draft"} is preparing for war on MemeWarzone.`,
+      visibility: publish ? "public" : nextVisibility,
+      publish,
+    };
 
     setSaving(true);
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: publish ? "publish_promotion" : "save_promotion",
-        draftId,
-      });
+      const updated = isSolanaDraft
+        ? await saveSolanaDraftPromotion(draftId, draft.chainId, await ensureSolanaOwner(), payload)
+        : await (async () => {
+            if (!wallet.account || !wallet.signer) throw new Error("Connect the draft owner wallet before saving.");
+            if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+              throw new Error("Only the draft owner wallet can edit this promotion page.");
+            }
+            const auth = await signDraftAction({
+              signer: wallet.signer,
+              walletAddress: wallet.account,
+              chainId: draft.chainId,
+              action: publish ? "publish_promotion" : "save_promotion",
+              draftId,
+            });
+            return saveDraftPromotion(draftId, { auth, ...payload });
+          })();
 
-      const updated = await saveDraftPromotion(draftId, {
-        auth,
-        missionStatement,
-        roadmap: [],
-        launchStrategy,
-        telegramUrl: normalizedTelegram,
-        discordUrl: normalizedDiscord,
-        xUrl: normalizedX,
-        websiteUrl: normalizedWebsite,
-        docs: normalizedDocs,
-        creatorNote,
-        bannerUrl: "",
-        shareMessage: `Incoming transmission: ${draft?.name || "this draft"} is preparing for war on MemeWarzone.`,
-        visibility: publish ? "public" : nextVisibility,
-        publish,
-      });
       setBundle(updated);
       setVisibility(updated.draft.visibility);
       setXUrl(updated.promotion.xUrl || "");
@@ -247,16 +279,6 @@ export default function DraftPromotionSetup() {
   const archiveCurrentDraft = async () => {
     if (!draft) return;
 
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet before archiving.");
-      return;
-    }
-
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
-      toast.error("Only the draft owner wallet can archive this draft.");
-      return;
-    }
-
     if (draft.status === "deployed") {
       toast.error("Deployed drafts cannot be archived.");
       return;
@@ -267,14 +289,22 @@ export default function DraftPromotionSetup() {
 
     setSaving(true);
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: "archive_draft",
-        draftId,
-      });
-      await archiveCampaignDraft(draftId, auth);
+      if (isSolanaDraft) {
+        await archiveSolanaCampaignDraft(draftId, draft.chainId, await ensureSolanaOwner());
+      } else {
+        if (!wallet.account || !wallet.signer) throw new Error("Connect the draft owner wallet before archiving.");
+        if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+          throw new Error("Only the draft owner wallet can archive this draft.");
+        }
+        const auth = await signDraftAction({
+          signer: wallet.signer,
+          walletAddress: wallet.account,
+          chainId: draft.chainId,
+          action: "archive_draft",
+          draftId,
+        });
+        await archiveCampaignDraft(draftId, auth);
+      }
       toast.success("Draft archived.");
       navigate("/profile?tab=drafts");
     } catch (err: any) {
@@ -299,7 +329,7 @@ export default function DraftPromotionSetup() {
     );
   }
 
-  const canPushLive = canPushLiveStatus(draft.status);
+  const canPushLive = canPushLiveStatus(draft.status) && !isSolanaDraft;
   const textareaClass = "resize-none border-border/70 bg-background/50 font-retro text-sm leading-5";
   const inputClass = "h-9 border-border/70 bg-background/50 font-retro text-xs";
 
@@ -316,11 +346,16 @@ export default function DraftPromotionSetup() {
               </Button>
               <div>
                 <div className="text-xs uppercase tracking-[0.22em] text-orange-300">// Prepare setup</div>
-                <div className="font-retro text-sm uppercase tracking-[0.12em] text-muted-foreground">${draft.ticker} · Draft {shortDraftId(draft.id)}</div>
+                <div className="font-retro text-sm uppercase tracking-[0.12em] text-muted-foreground">${draft.ticker} · {getDraftChainLabel(draft.chainId)} · Draft {shortDraftId(draft.id)}</div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{draft.status.replace(/_/g, " ")}</span>
+              {isSolanaDraft && (
+                <span className="inline-flex items-center gap-1 rounded border border-cyan-300/40 bg-cyan-300/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100">
+                  <Wallet className="h-3 w-3" /> Solana draft-only
+                </span>
+              )}
               <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button h-8 px-3 text-xs">
                 <Save className="mr-1 h-3 w-3" /> Save
               </Button>
@@ -463,7 +498,11 @@ export default function DraftPromotionSetup() {
             <Button onClick={() => save({ publish: true })} disabled={saving} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
-            {canPushLive && (
+            {isSolanaDraft ? (
+              <Button disabled variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro opacity-70">
+                <Rocket className="mr-2 h-4 w-4" /> Solana Launch Soon
+              </Button>
+            ) : canPushLive && (
               DRAFT_PUSH_LIVE_ENABLED ? (
                 <Button asChild className="mwz-button mwz-button-orange mt-2 h-10 w-full justify-center font-retro">
                   <Link to={`/drafts/${draft.id}/push-live`}>
