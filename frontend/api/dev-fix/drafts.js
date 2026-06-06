@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isEvmAddress, isSolanaPublicKey, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner } from "./prepare-notify.js";
 
@@ -26,8 +26,16 @@ function methodAllowed(req, res, allowed) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  if (isEvmAddress(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return "";
+}
+
+function sameWallet(a, b) {
+  const left = normalizeAddress(a);
+  const right = normalizeAddress(b);
+  return Boolean(left && right && left === right);
 }
 
 function normalizeTicker(value) {
@@ -174,7 +182,7 @@ function mapDraftRow(row) {
   return {
     id: String(row.id),
     chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    creatorWallet: normalizeAddress(row.creator_wallet ?? row.creatorWallet ?? ""),
     name: String(row.name || ""),
     ticker: normalizeTicker(row.ticker),
     description: row.description || null,
@@ -238,7 +246,7 @@ function isPublicDiscoverableDraft(draft) {
 function canViewDraft(draft, viewer) {
   if (!draft) return false;
   if (draft.visibility !== "private") return true;
-  return viewer && draft.creatorWallet.toLowerCase() === viewer.toLowerCase();
+  return sameWallet(draft.creatorWallet, viewer);
 }
 
 async function getDraftBundleById(id, viewer, { bypassVisibility = false } = {}) {
@@ -336,7 +344,7 @@ export async function drafts(req, res) {
 
     const store = memoryStore();
     const items = Array.from(store.drafts.values())
-      .filter((draft) => (owner ? draft.creatorWallet === owner : isPublicDiscoverableDraft(draft)))
+      .filter((draft) => (owner ? sameWallet(draft.creatorWallet, owner) : isPublicDiscoverableDraft(draft)))
       .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     return json(res, 200, { items });
   }
@@ -390,7 +398,7 @@ export async function drafts(req, res) {
   }
 
   const store = memoryStore();
-  const activeForOwner = Array.from(store.drafts.values()).filter((draft) => draft.creatorWallet === creatorWallet && draft.status !== "archived");
+  const activeForOwner = Array.from(store.drafts.values()).filter((draft) => sameWallet(draft.creatorWallet, creatorWallet) && draft.status !== "archived");
   if (activeForOwner.length >= 10) return json(res, 409, { error: "Draft limit reached. Max 10 non-archived drafts per creator." });
 
   const dup = Array.from(store.drafts.values()).find((draft) => Number(draft.chainId) === chainId && draft.ticker === ticker && draft.status !== "archived");
@@ -589,7 +597,7 @@ export async function draftComments(req, res) {
   }
 
   const body = await readJson(req);
-  const wallet = normalizeAddress(body.walletAddress || body.address);
+  const wallet = normalizeAddress(body.walletAddress || body.address || body.auth?.walletAddress);
   const commentBody = cleanText(body.body, 800);
   const parentCommentId = cleanText(body.parentCommentId, 80) || null;
   if (!wallet) return json(res, 400, { error: "Connect wallet to send a transmission." });
@@ -597,7 +605,7 @@ export async function draftComments(req, res) {
 
   const bundle = await getDraftBundleById(id, "", { bypassVisibility: true });
   if (!bundle || bundle.forbidden) return json(res, 404, { error: "Draft not found" });
-  if (parentCommentId && wallet.toLowerCase() !== bundle.draft.creatorWallet.toLowerCase()) {
+  if (parentCommentId && !sameWallet(wallet, bundle.draft.creatorWallet)) {
     return json(res, 403, { error: "Only the creator can reply to transmissions." });
   }
 
