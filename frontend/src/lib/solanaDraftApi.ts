@@ -15,22 +15,18 @@ async function ensureSolanaWallet(walletAddress?: string | null) {
   return connectSolanaWallet();
 }
 
-function buildSolanaConnectedAuth(input: {
+async function buildSolanaConnectedAuth(input: {
   action: DraftAuthAction;
   walletAddress: string;
   chainId: number;
   draftId?: string | null;
-}): DraftActionAuth & { walletType: "solana" } {
-  return {
+}): Promise<DraftActionAuth & { walletType: "solana" }> {
+  return signSolanaDraftAction({
     action: input.action,
-    walletType: "solana",
     walletAddress: input.walletAddress,
-    chainId: Number(input.chainId),
+    chainId: input.chainId,
     draftId: input.draftId || null,
-    nonce: "",
-    message: "",
-    signature: "",
-  };
+  });
 }
 
 async function parseJson(res: Response) {
@@ -67,7 +63,7 @@ export async function fetchCampaignDraftWithSolanaOwner(draftId: string): Promis
   }
 
   const walletAddress = solanaWalletAddress() || await connectSolanaWallet();
-  const auth = buildSolanaConnectedAuth({ action: "read_draft", walletAddress, chainId, draftId });
+  const auth = await buildSolanaConnectedAuth({ action: "read_draft", walletAddress, chainId, draftId });
   const authed = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -82,7 +78,7 @@ export async function saveSolanaDraftPromotion(
   walletAddress: string,
   input: Record<string, unknown> & { publish?: boolean },
 ): Promise<PrepareDraftBundle> {
-  const auth = buildSolanaConnectedAuth({
+  const auth = await buildSolanaConnectedAuth({
     action: input.publish ? "publish_promotion" : "save_promotion",
     walletAddress,
     chainId,
@@ -97,7 +93,7 @@ export async function saveSolanaDraftPromotion(
 }
 
 export async function archiveSolanaCampaignDraft(draftId: string, chainId: number, walletAddress: string): Promise<PrepareDraftBundle> {
-  const auth = buildSolanaConnectedAuth({ action: "archive_draft", walletAddress, chainId, draftId });
+  const auth = await buildSolanaConnectedAuth({ action: "archive_draft", walletAddress, chainId, draftId });
   const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/archive`, {
     method: "POST",
     headers: { "content-type": "application/json" },
