@@ -6,13 +6,19 @@ function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
 }
 
+function normalizeWalletAddress(value) {
+  const raw = String(value ?? "").trim();
+  if (raw.startsWith("0x")) return raw.toLowerCase();
+  return raw;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId);
-    const address = String(q.address ?? "").toLowerCase();
+    const address = normalizeWalletAddress(q.address);
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
     if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
