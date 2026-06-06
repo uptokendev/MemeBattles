@@ -1,6 +1,8 @@
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, isEvmAddress, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
+
+const SOLANA_CHAIN_IDS = new Set([101, 102]);
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -10,7 +12,7 @@ function methodAllowed(req, res, allowed) {
 
 function normalizeAddress(value) {
   const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  return isEvmAddress(raw) ? raw : "";
 }
 
 function isDraftPushLiveEnabled() {
@@ -37,7 +39,7 @@ function mapDraftRow(row) {
   return {
     id: String(row.id),
     chainId: Number(row.chain_id ?? 97),
-    creatorWallet: String(row.creator_wallet || "").toLowerCase(),
+    creatorWallet: String(row.creator_wallet || ""),
     name: String(row.name || ""),
     ticker: String(row.ticker || ""),
     description: row.description || null,
@@ -90,6 +92,12 @@ export async function draftDeploy(req, res) {
   if (!existing.rows.length) return json(res, 404, { error: "Draft not found" });
 
   const row = existing.rows[0];
+  if (SOLANA_CHAIN_IDS.has(Number(row.chain_id))) {
+    return json(res, 409, {
+      error: "Solana drafts are draft-only for now. Deployment will unlock in a later Solana launch task.",
+      code: "SOLANA_DEPLOY_NOT_AVAILABLE",
+    });
+  }
   if (row.status === "archived") return json(res, 409, { error: "Archived drafts cannot be pushed live." });
 
   const ok = await requireDraftActionAuth({

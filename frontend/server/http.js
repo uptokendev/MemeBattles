@@ -68,6 +68,22 @@ export function getQuery(req) {
   return out;
 }
 
-export function isAddress(v) {
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+export function isEvmAddress(v) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(v ?? ""));
+}
+
+export function isSolanaPublicKey(v) {
+  const value = String(v ?? "").trim();
+  if (value.length < 32 || value.length > 44) return false;
+  return [...value].every((char) => BASE58_ALPHABET.includes(char));
+}
+
+export function isWalletAddress(v) {
+  return isEvmAddress(v) || isSolanaPublicKey(v);
+}
+
+export function isAddress(v) {
+  return isEvmAddress(v);
 }

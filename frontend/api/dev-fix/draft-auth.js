@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import { ethers } from "ethers";
-import { isAddress, json } from "../../server/http.js";
+import { isAddress, isEvmAddress, isSolanaPublicKey, json } from "../../server/http.js";
 
 const ACTIONS = new Set([
   "create_draft",
@@ -22,16 +23,29 @@ const CONNECTED_WALLET_ALLOWED_ACTIONS = new Set([
   "deploy_draft",
 ]);
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+const SOLANA_CHAIN_IDS = new Set([101, 102]);
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function normalizeWallet(value) {
+  const raw = String(value || "").trim();
+  if (isEvmAddress(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return "";
+}
+
+function walletTypeFor(chainId, auth) {
+  const explicit = String(auth?.walletType || auth?.type || "").trim().toLowerCase();
+  if (explicit === "solana" || explicit === "evm") return explicit;
+  return SOLANA_CHAIN_IDS.has(Number(chainId)) ? "solana" : "evm";
 }
 
 function buildDraftAuthMessage({ action, walletAddress, chainId, nonce, draftId }) {
+  const wallet = normalizeWallet(walletAddress);
   const lines = [
     "MemeWarzone Prepare Mode",
     `Action: ${action}`,
-    `Wallet: ${normalizeAddress(walletAddress)}`,
+    `Wallet: ${wallet}`,
     `Chain ID: ${Number(chainId)}`,
   ];
 
@@ -39,6 +53,66 @@ function buildDraftAuthMessage({ action, walletAddress, chainId, nonce, draftId 
   lines.push(`Nonce: ${String(nonce || "")}`);
 
   return lines.join("\n");
+}
+
+function decodeBase58(value) {
+  const input = String(value || "").trim();
+  let bytes = [0];
+
+  for (const char of input) {
+    const valueIndex = BASE58_ALPHABET.indexOf(char);
+    if (valueIndex < 0) return Buffer.alloc(0);
+
+    let carry = valueIndex;
+    for (let i = 0; i < bytes.length; i += 1) {
+      carry += bytes[i] * 58;
+      bytes[i] = carry & 0xff;
+      carry >>= 8;
+    }
+
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+
+  for (const char of input) {
+    if (char !== "1") break;
+    bytes.push(0);
+  }
+
+  return Buffer.from(bytes.reverse());
+}
+
+function decodeSignature(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return Buffer.alloc(0);
+
+  const asBase64 = Buffer.from(raw, "base64");
+  if (asBase64.length === 64) return asBase64;
+
+  const asHex = /^[a-fA-F0-9]+$/.test(raw) ? Buffer.from(raw, "hex") : Buffer.alloc(0);
+  if (asHex.length === 64) return asHex;
+
+  const asBase58 = decodeBase58(raw);
+  return asBase58.length === 64 ? asBase58 : Buffer.alloc(0);
+}
+
+function verifySolanaMessage({ message, signature, publicKey }) {
+  const publicKeyBytes = decodeBase58(publicKey);
+  const signatureBytes = decodeSignature(signature);
+  if (publicKeyBytes.length !== 32 || signatureBytes.length !== 64) return false;
+
+  try {
+    const key = crypto.createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]),
+      format: "der",
+      type: "spki",
+    });
+    return crypto.verify(null, Buffer.from(message), key, signatureBytes);
+  } catch {
+    return false;
+  }
 }
 
 export async function requireDraftActionAuth({
@@ -55,9 +129,10 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  const wallet = normalizeAddress(auth?.walletAddress || auth?.address || auth?.viewer);
-  const expected = normalizeAddress(expectedWallet);
   const expectedChainId = Number(chainId);
+  const type = walletTypeFor(expectedChainId, auth);
+  const wallet = normalizeWallet(auth?.walletAddress || auth?.address || auth?.viewer);
+  const expected = normalizeWallet(expectedWallet);
 
   if (!wallet || !expected || wallet !== expected) {
     json(res, 401, { error: "Connected wallet does not match the draft owner." });
@@ -66,6 +141,16 @@ export async function requireDraftActionAuth({
 
   if (!Number.isFinite(expectedChainId) || expectedChainId <= 0) {
     json(res, 400, { error: "Invalid draft chain id." });
+    return null;
+  }
+
+  if (type === "solana" && !SOLANA_CHAIN_IDS.has(expectedChainId)) {
+    json(res, 400, { error: "Solana draft auth requires a Solana draft chain id." });
+    return null;
+  }
+
+  if (type === "evm" && !isAddress(wallet)) {
+    json(res, 400, { error: "Invalid wallet address." });
     return null;
   }
 
@@ -80,6 +165,7 @@ export async function requireDraftActionAuth({
     return {
       walletAddress: wallet,
       chainId: expectedChainId,
+      walletType: type,
     };
   }
 
@@ -112,20 +198,27 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  let recovered = "";
+  if (type === "solana") {
+    if (!verifySolanaMessage({ message: expectedMessage, signature, publicKey: wallet })) {
+      json(res, 401, { error: "Invalid Solana wallet signature." });
+      return null;
+    }
+  } else {
+    let recovered = "";
 
-  try {
-    recovered = normalizeAddress(ethers.verifyMessage(expectedMessage, signature));
-  } catch {
-    json(res, 401, { error: "Invalid wallet signature." });
-    return null;
-  }
+    try {
+      recovered = normalizeWallet(ethers.verifyMessage(expectedMessage, signature));
+    } catch {
+      json(res, 401, { error: "Invalid wallet signature." });
+      return null;
+    }
 
-  if (recovered !== wallet) {
-    json(res, 401, {
-      error: "Wallet signature was not produced by the connected wallet.",
-    });
-    return null;
+    if (recovered !== wallet) {
+      json(res, 401, {
+        error: "Wallet signature was not produced by the connected wallet.",
+      });
+      return null;
+    }
   }
 
   const nonceRes = await pool.query(
@@ -168,5 +261,6 @@ export async function requireDraftActionAuth({
   return {
     walletAddress: wallet,
     chainId: expectedChainId,
+    walletType: type,
   };
 }
