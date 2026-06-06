@@ -49,6 +49,12 @@ export async function connectSolanaWallet(): Promise<string> {
   return publicKey;
 }
 
+export async function disconnectSolanaWallet(): Promise<void> {
+  const provider = getProvider();
+  if (!provider?.disconnect) return;
+  await provider.disconnect();
+}
+
 export async function signSolanaDraftAction(input: {
   walletAddress: string;
   chainId: number;
