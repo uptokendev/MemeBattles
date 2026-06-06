@@ -12,7 +12,7 @@ import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { DRAFT_CHAIN_OPTIONS, getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
-import { connectSolanaWallet, getSolanaProvider, signSolanaDraftAction } from "@/lib/solanaWallet";
+import { connectSolanaWallet, disconnectSolanaWallet, getSolanaProvider, signSolanaDraftAction } from "@/lib/solanaWallet";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -142,6 +142,16 @@ const Create = () => {
       toast.error(err?.message || "Could not connect Phantom.");
     } finally {
       setConnectingSolana(false);
+    }
+  };
+
+  const disconnectSolanaForDraft = async () => {
+    try {
+      await disconnectSolanaWallet();
+      setSolanaAccount("");
+      toast.success("Phantom disconnected from Solana draft mode.");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not disconnect Phantom.");
     }
   };
 
@@ -421,10 +431,17 @@ const Create = () => {
                   <div className="font-retro uppercase tracking-[0.14em]">Solana Prepare Mode</div>
                   <p className="mt-1 text-cyan-100/75">Draft creation and promotion pages are enabled. Push Live remains blocked.</p>
                 </div>
-                <Button type="button" onClick={connectSolanaForDraft} disabled={connectingSolana} variant="outline" className="mwz-button h-9 shrink-0 px-3 font-retro text-xs">
-                  <Wallet className="mr-2 h-4 w-4" />
-                  {solanaAccount ? "Reconnect" : connectingSolana ? "Connecting" : "Connect Phantom"}
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button type="button" onClick={connectSolanaForDraft} disabled={connectingSolana} variant="outline" className="mwz-button h-9 px-3 font-retro text-xs">
+                    <Wallet className="mr-2 h-4 w-4" />
+                    {solanaAccount ? "Reconnect" : connectingSolana ? "Connecting" : "Connect Phantom"}
+                  </Button>
+                  {solanaAccount && (
+                    <Button type="button" onClick={disconnectSolanaForDraft} disabled={connectingSolana || isDrafting} variant="outline" className="h-9 px-3 font-retro text-xs">
+                      Disconnect
+                    </Button>
+                  )}
+                </div>
               </div>
               {solanaAccount && <div className="truncate font-mono text-[11px] text-cyan-100/80">{solanaAccount}</div>}
             </div>
