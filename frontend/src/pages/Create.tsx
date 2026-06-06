@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
+import { X, ImageIcon, Info, BookOpen, FileText, Rocket, Network, Wallet } from "lucide-react";
 import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
@@ -11,6 +11,8 @@ import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type 
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId } from "@/lib/chainConfig";
+import { DRAFT_CHAIN_OPTIONS, getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
+import { connectSolanaWallet, getSolanaProvider, signSolanaDraftAction } from "@/lib/solanaWallet";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -75,14 +77,23 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
+  const [selectedChainId, setSelectedChainId] = useState<number>(() => getActiveChainId(wallet.chainId));
+  const [solanaAccount, setSolanaAccount] = useState("");
+  const [connectingSolana, setConnectingSolana] = useState(false);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  // Reject unsupported chains (e.g. Ethereum mainnet=1). getActiveChainId returns
-  // the wallet's chain only if it's in the allowed list [56, 97]; otherwise
-  // falls back to VITE_DEFAULT_CHAIN_ID (or 97 if unset).
-  const chainId = getActiveChainId(wallet.chainId);
+  const chainId = selectedChainId;
+  const selectedChainLabel = getDraftChainLabel(chainId);
+  const isSolanaDraft = isSolanaDraftChainId(chainId);
+  const activeCreatorWallet = isSolanaDraft ? solanaAccount : wallet.account;
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
+
+  useEffect(() => {
+    const provider = getSolanaProvider();
+    const publicKey = provider?.publicKey?.toString?.() || "";
+    if (publicKey) setSolanaAccount(publicKey);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +131,19 @@ const Create = () => {
       window.clearTimeout(timer);
     };
   }, [normalizedTicker, chainId]);
+
+  const connectSolanaForDraft = async () => {
+    setConnectingSolana(true);
+    try {
+      const publicKey = await connectSolanaWallet();
+      setSolanaAccount(publicKey);
+      toast.success("Phantom connected for Solana draft mode.");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not connect Phantom.");
+    } finally {
+      setConnectingSolana(false);
+    }
+  };
 
   const ensureTickerAvailable = () => {
     if (!normalizedTicker) {
@@ -181,6 +205,14 @@ const Create = () => {
       return false;
     }
 
+    if (isSolanaDraft) {
+      if (!solanaAccount) {
+        toast.error("Connect Phantom before saving a Solana draft.");
+        return false;
+      }
+      return true;
+    }
+
     if (!wallet.isConnected || !wallet.account) {
       toast.error("Please connect your wallet first");
       return false;
@@ -190,10 +222,8 @@ const Create = () => {
   };
 
   const uploadLogo = async () => {
-    if (!formData.image || !wallet.account) throw new Error("Missing logo or wallet");
-    const chainIdForUpload = String(getActiveChainId(wallet.chainId));
-    const address = wallet.account.toLowerCase();
-    const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
+    if (!formData.image || !activeCreatorWallet) throw new Error("Missing logo or wallet");
+    const qs = new URLSearchParams({ kind: "logo", chainId: String(chainId), address: activeCreatorWallet }).toString();
     const fd = new FormData();
     fd.append("file", formData.image);
 
@@ -217,18 +247,25 @@ const Create = () => {
     setIsDrafting(true);
 
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account!,
-        chainId,
-        action: "create_draft",
-      });
+      const creatorWallet = activeCreatorWallet!;
+      const auth = isSolanaDraft
+        ? await signSolanaDraftAction({
+            walletAddress: creatorWallet,
+            chainId,
+            action: "create_draft",
+          })
+        : await signDraftAction({
+            signer: wallet.signer,
+            walletAddress: creatorWallet,
+            chainId,
+            action: "create_draft",
+          });
 
       const logoUrl = await uploadLogo();
       const draft = await createCampaignDraft({
-        auth,
+        auth: auth as any,
         chainId,
-        creatorWallet: wallet.account!,
+        creatorWallet,
         name: formData.name,
         ticker: normalizedTicker,
         description: formData.description || null,
@@ -243,16 +280,23 @@ const Create = () => {
       } as any);
 
       try {
-        const promotionAuth = await signDraftAction({
-          signer: wallet.signer,
-          walletAddress: wallet.account!,
-          chainId,
-          action: "save_promotion" as any,
-          draftId: draft.id,
-        } as any);
+        const promotionAuth = isSolanaDraft
+          ? await signSolanaDraftAction({
+              walletAddress: creatorWallet,
+              chainId,
+              action: "save_promotion" as any,
+              draftId: draft.id,
+            })
+          : await signDraftAction({
+              signer: wallet.signer,
+              walletAddress: creatorWallet,
+              chainId,
+              action: "save_promotion" as any,
+              draftId: draft.id,
+            } as any);
 
         await saveDraftPromotion(draft.id, {
-          auth: promotionAuth,
+          auth: promotionAuth as any,
           websiteUrl: formData.website || "",
           xUrl: formData.twitter || "",
           telegramUrl: formData.telegram || "",
@@ -266,7 +310,7 @@ const Create = () => {
 
       clearJustCreatedDraftCache(draft.id);
       cacheDraftLogo(draft.id, logoUrl);
-      toast.success("Draft saved. No gas spent.");
+      toast.success(isSolanaDraft ? "Solana draft saved. Deploy stays locked for now." : "Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);
     } catch (error: any) {
       console.error(error);
@@ -283,7 +327,8 @@ const Create = () => {
 
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
-  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
+  const missingWallet = isSolanaDraft ? !solanaAccount : !wallet.account;
+  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown || missingWallet;
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
@@ -295,7 +340,7 @@ const Create = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-muted-foreground md:max-w-md">
             <span className="font-retro uppercase tracking-[0.14em] text-accent">Prepare Mode:</span>{" "}
-            Drafts and promotion pages are open now. Direct deploy unlocks at live launch.
+            Drafts and promotion pages are open now. Solana is draft-only until launch tooling is ready.
           </div>
           <Button asChild size="sm" className="mwz-button mwz-button-orange shrink-0 font-retro">
             <Link to="/playbook">
@@ -340,11 +385,51 @@ const Create = () => {
 
           <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
             <div className="mb-1 font-retro text-foreground">Launch path</div>
-            Draft Mode opens promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
+            Draft Mode opens promotion setup first. Solana drafts can build pages now; deployment stays unavailable until Solana launch infrastructure is added.
           </div>
         </section>
 
         <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <Network className="h-4 w-4 text-accent" />
+              <label className="font-retro text-sm text-foreground">Draft chain</label>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {DRAFT_CHAIN_OPTIONS.map((chain) => {
+                const selected = chain.id === selectedChainId;
+                return (
+                  <button
+                    key={chain.id}
+                    type="button"
+                    onClick={() => setSelectedChainId(chain.id)}
+                    aria-pressed={selected}
+                    className={`rounded-lg border px-3 py-2 text-left font-retro text-xs transition-all ${selected ? "border-accent bg-accent/20 text-accent" : "border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  >
+                    <span className="block text-sm text-foreground">{chain.shortLabel}</span>
+                    <span className="mt-1 block uppercase tracking-[0.12em]">{chain.draftOnly ? "Draft only" : "Draft + deploy"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {isSolanaDraft && (
+            <div className="rounded-2xl border border-cyan-300/35 bg-cyan-300/10 p-3 text-xs text-cyan-100">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-retro uppercase tracking-[0.14em]">Solana Prepare Mode</div>
+                  <p className="mt-1 text-cyan-100/75">Draft creation and promotion pages are enabled. Push Live remains blocked.</p>
+                </div>
+                <Button type="button" onClick={connectSolanaForDraft} disabled={connectingSolana} variant="outline" className="mwz-button h-9 shrink-0 px-3 font-retro text-xs">
+                  <Wallet className="mr-2 h-4 w-4" />
+                  {solanaAccount ? "Reconnect" : connectingSolana ? "Connecting" : "Connect Phantom"}
+                </Button>
+              </div>
+              {solanaAccount && <div className="truncate font-mono text-[11px] text-cyan-100/80">{solanaAccount}</div>}
+            </div>
+          )}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
@@ -356,7 +441,7 @@ const Create = () => {
               <Input value={formData.ticker} onChange={(e) => setTicker(normalizeTicker(e.target.value))} placeholder="TICKER" maxLength={TOKEN_VALIDATION_LIMITS.TICKER_MAX_LENGTH} className="h-11 rounded-lg border-border bg-background/50 font-retro text-base uppercase text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled} />
               {normalizedTicker && (
                 <div className={`mt-1 text-[0.68rem] font-retro uppercase tracking-[0.12em] ${tickerConfirmedAvailable ? "text-green-300" : tickerBlocked || tickerCheckError ? "text-red-300" : "text-orange-300"}`}>
-                  {checkingTicker ? "Checking ticker availability..." : tickerConfirmedAvailable ? `$${normalizedTicker} available` : tickerCheckError ? tickerCheckError : tickerAvailability?.reason || "Ticker availability pending"}
+                  {checkingTicker ? `Checking ${selectedChainLabel} ticker availability...` : tickerConfirmedAvailable ? `$${normalizedTicker} available on ${selectedChainLabel}` : tickerCheckError ? tickerCheckError : tickerAvailability?.reason || "Ticker availability pending"}
                 </div>
               )}
             </div>
@@ -412,22 +497,22 @@ const Create = () => {
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a {selectedChainLabel} draft, reserve the ticker on that chain, and open the promotion setup page.</p>
             </div>
             <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
               <FileText className="mr-2 h-5 w-5" />
-              {isDrafting ? "Saving Draft..." : "Save Draft"}
+              {isDrafting ? "Saving Draft..." : isSolanaDraft ? "Save Solana Draft" : "Save Draft"}
             </Button>
           </div>
 
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{isSolanaDraft ? "Solana deployment is not available yet. Build the Prepare page now and launch later." : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page."}</p>
             </div>
             <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
               <Rocket className="mr-2 h-5 w-5" />
-              Locked in Prepare Mode
+              {isSolanaDraft ? "Solana Launch Soon" : "Locked in Prepare Mode"}
             </Button>
           </div>
 
