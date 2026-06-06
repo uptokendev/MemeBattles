@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isEvmAddress, isSolanaPublicKey, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 
 const STATUSES = new Set([
@@ -18,9 +18,11 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeWallet(value) {
+  const raw = String(value || "").trim();
+  if (isEvmAddress(raw)) return raw.toLowerCase();
+  if (isSolanaPublicKey(raw)) return raw;
+  return "";
 }
 
 async function getPool() {
@@ -48,7 +50,7 @@ function mapDraftRow(row) {
   return {
     id: String(row.id),
     chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    creatorWallet: normalizeWallet(row.creator_wallet ?? row.creatorWallet ?? ""),
     name: String(row.name || ""),
     ticker: normalizeTicker(row.ticker),
     description: row.description || null,
@@ -215,7 +217,7 @@ export async function signedPrepareBySlug(req, res) {
   // Per-viewer engagement state. Lets the frontend hydrate the Prepare page CTAs
   // (Arm / Follow) into their post-click visual on reload, instead of always
   // showing the orange "do it" state regardless of subscription status.
-  const viewer = normalizeAddress(getQuery(req).viewer || "");
+  const viewer = normalizeWallet(getQuery(req).viewer || "");
   let viewerFollowing = false;
   let viewerArmed = false;
   if (viewer) {
