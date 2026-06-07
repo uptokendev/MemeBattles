@@ -1,17 +1,38 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useWallet, type WalletType } from "@/contexts/WalletContext";
 import { Loader2, ChevronDown, Check } from "lucide-react";
+import {
+  connectSolanaWallet,
+  disconnectSolanaWallet,
+  getStoredSolanaWallet,
+  SOLANA_WALLET_EVENT,
+} from "@/lib/solanaWallet";
 
 export const ConnectWalletButton = () => {
   const { connect, disconnect, isConnected, account, connecting } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false); // <- NEW
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [solanaAccount, setSolanaAccount] = useState(() => getStoredSolanaWallet());
+  const [connectingSolana, setConnectingSolana] = useState(false);
 
-  const shortAddress =
-    account && account.length > 10
-      ? `${account.slice(0, 6)}...${account.slice(-4)}`
-      : account;
+  useEffect(() => {
+    const syncSolana = () => setSolanaAccount(getStoredSolanaWallet());
+    syncSolana();
+    window.addEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
+    window.addEventListener("focus", syncSolana);
+    return () => {
+      window.removeEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
+      window.removeEventListener("focus", syncSolana);
+    };
+  }, []);
+
+  const activeAccount = solanaAccount || account;
+  const hasActiveWallet = Boolean(activeAccount || isConnected);
+  const shortAddress = useMemo(() => {
+    if (!activeAccount) return "";
+    return activeAccount.length > 10 ? `${activeAccount.slice(0, 6)}...${activeAccount.slice(-4)}` : activeAccount;
+  }, [activeAccount]);
 
   const handleConnect = async (type: WalletType) => {
     try {
@@ -23,7 +44,33 @@ export const ConnectWalletButton = () => {
     }
   };
 
-  if (isConnected) {
+  const handleSolanaConnect = async () => {
+    setConnectingSolana(true);
+    try {
+      const publicKey = await connectSolanaWallet();
+      setSolanaAccount(publicKey);
+      setIsOpen(false);
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || "Failed to connect Phantom");
+    } finally {
+      setConnectingSolana(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      if (solanaAccount) {
+        await disconnectSolanaWallet();
+        setSolanaAccount("");
+      }
+      if (isConnected) await disconnect();
+    } finally {
+      setShowDropdown(false);
+    }
+  };
+
+  if (hasActiveWallet) {
     return (
       <div
         className="relative"
@@ -42,10 +89,7 @@ export const ConnectWalletButton = () => {
           <div className="absolute right-0 mt-1 w-32 rounded-md border border-border bg-background shadow-lg z-50">
             <button
               className="w-full text-left text-xs px-3 py-2 hover:bg-muted"
-              onClick={() => {
-                disconnect();
-                setShowDropdown(false);
-              }}
+              onClick={handleDisconnect}
             >
               Disconnect
             </button>
@@ -59,10 +103,10 @@ export const ConnectWalletButton = () => {
     <>
       <Button
         onClick={() => setIsOpen(true)}
-        disabled={connecting}
+        disabled={connecting || connectingSolana}
         className="font-retro text-xs md:text-sm rounded-full px-3 md:px-4 py-1 h-auto flex items-center gap-1"
       >
-        {connecting ? (
+        {connecting || connectingSolana ? (
           <>
             <Loader2 className="h-3 w-3 animate-spin" />
             Connecting...
@@ -91,12 +135,10 @@ export const ConnectWalletButton = () => {
             </div>
 
             <p className="text-xs text-muted-foreground mb-2">
-              Select a BSC-compatible EVM wallet. You can switch between
-              testnet and mainnet from your wallet settings.
+              Select the wallet you want to use. BNB wallets use the existing deploy flow; Phantom creates Solana drafts while Solana deployment is locked.
             </p>
 
             <div className="space-y-2">
-              {/* MetaMask / Rabby / browser wallet */}
               <button
                 onClick={() => handleConnect("metamask")}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
@@ -113,7 +155,6 @@ export const ConnectWalletButton = () => {
                 </div>
               </button>
 
-              {/* Binance Wallet */}
               <button
                 onClick={() => handleConnect("binance")}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
@@ -130,7 +171,6 @@ export const ConnectWalletButton = () => {
                 </div>
               </button>
 
-              {/* Generic injected fallback */}
               <button
                 onClick={() => handleConnect("injected")}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
@@ -141,15 +181,30 @@ export const ConnectWalletButton = () => {
                     Any injected BSC-compatible wallet
                   </p>
                 </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span>EVM</span>
+                </div>
               </button>
 
-              {/* If later you add WalletConnect, you can add a fourth option here */}
-              {/* <button ...>WalletConnect (mobile)</button> */}
+              <button
+                onClick={handleSolanaConnect}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
+              >
+                <div>
+                  <p className="text-xs md:text-sm font-medium">Phantom</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Solana draft creation and promotion signing
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span>SOL</span>
+                  <Check className="h-3 w-3 opacity-60" />
+                </div>
+              </button>
             </div>
 
             <p className="text-[10px] text-muted-foreground mt-2">
-              Make sure your selected wallet is configured for Binance Smart
-              Chain (BSC mainnet or testnet, depending on your setup).
+              Solana deployment remains locked until launch tooling is ready. Drafts and promotion pages are available now.
             </p>
           </div>
         </div>
