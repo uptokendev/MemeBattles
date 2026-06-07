@@ -500,7 +500,7 @@ export default function DraftPromotionSetup() {
             </Button>
             {isSolanaDraft ? (
               <Button disabled variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro opacity-70">
-                <Rocket className="mr-2 h-4 w-4" /> Solana Launch Soon
+                <Rocket className="mr-2 h-4 w-4" /> Solana Draft-Only
               </Button>
             ) : canPushLive && (
               DRAFT_PUSH_LIVE_ENABLED ? (
@@ -536,7 +536,7 @@ export default function DraftPromotionSetup() {
             <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
               <ShieldCheck className="h-4 w-4 text-orange-300" /> Fixed setup sections
             </div>
-            {["Identity", "Mission", "Strategy", "Comms", "Docs + Note"].map((name, index) => (
+            {['Identity', 'Mission', 'Strategy', 'Comms', 'Docs + Note'].map((name, index) => (
               <div key={name} className="flex items-center gap-3 border-b border-border/40 py-1.5 last:border-b-0">
                 <LockKeyhole className="h-3.5 w-3.5 text-orange-300" />
                 <div className="min-w-0 flex-1 font-retro text-xs text-foreground">{name}</div>
