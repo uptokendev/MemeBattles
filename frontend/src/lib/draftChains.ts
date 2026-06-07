@@ -33,7 +33,7 @@ export const DRAFT_CHAIN_OPTIONS: DraftChainOption[] = [
   },
   {
     id: SOLANA_MAINNET_CHAIN_ID,
-    label: "Solana",
+    label: "Solana draft-only",
     shortLabel: "Solana",
     family: "solana",
     network: "mainnet",
@@ -41,7 +41,7 @@ export const DRAFT_CHAIN_OPTIONS: DraftChainOption[] = [
   },
   {
     id: SOLANA_DEVNET_CHAIN_ID,
-    label: "Solana Devnet",
+    label: "Solana Devnet draft-only",
     shortLabel: "Solana Devnet",
     family: "solana",
     network: "devnet",
