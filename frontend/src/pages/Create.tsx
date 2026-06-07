@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { X, ImageIcon, Info, BookOpen, FileText, Rocket, Network, Wallet } from "lucide-react";
+import { X, ImageIcon, Info, BookOpen, FileText, Rocket } from "lucide-react";
 import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
@@ -11,8 +11,8 @@ import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type 
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId } from "@/lib/chainConfig";
-import { DRAFT_CHAIN_OPTIONS, getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
-import { connectSolanaWallet, disconnectSolanaWallet, getSolanaProvider, signSolanaDraftAction } from "@/lib/solanaWallet";
+import { getDraftChainLabel, isSolanaDraftChainId, SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
+import { getStoredSolanaWallet, signSolanaDraftAction, SOLANA_WALLET_EVENT } from "@/lib/solanaWallet";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -77,22 +77,25 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
-  const [selectedChainId, setSelectedChainId] = useState<number>(() => getActiveChainId(wallet.chainId));
-  const [solanaAccount, setSolanaAccount] = useState("");
-  const [connectingSolana, setConnectingSolana] = useState(false);
+  const [solanaAccount, setSolanaAccount] = useState(() => getStoredSolanaWallet());
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  const chainId = selectedChainId;
+  const isSolanaDraft = Boolean(solanaAccount);
+  const chainId = isSolanaDraft ? SOLANA_MAINNET_CHAIN_ID : getActiveChainId(wallet.chainId);
   const selectedChainLabel = getDraftChainLabel(chainId);
-  const isSolanaDraft = isSolanaDraftChainId(chainId);
   const activeCreatorWallet = isSolanaDraft ? solanaAccount : wallet.account;
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
 
   useEffect(() => {
-    const provider = getSolanaProvider();
-    const publicKey = provider?.publicKey?.toString?.() || "";
-    if (publicKey) setSolanaAccount(publicKey);
+    const syncSolana = () => setSolanaAccount(getStoredSolanaWallet());
+    syncSolana();
+    window.addEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
+    window.addEventListener("focus", syncSolana);
+    return () => {
+      window.removeEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
+      window.removeEventListener("focus", syncSolana);
+    };
   }, []);
 
   useEffect(() => {
@@ -131,29 +134,6 @@ const Create = () => {
       window.clearTimeout(timer);
     };
   }, [normalizedTicker, chainId]);
-
-  const connectSolanaForDraft = async () => {
-    setConnectingSolana(true);
-    try {
-      const publicKey = await connectSolanaWallet();
-      setSolanaAccount(publicKey);
-      toast.success("Phantom connected for Solana draft mode.");
-    } catch (err: any) {
-      toast.error(err?.message || "Could not connect Phantom.");
-    } finally {
-      setConnectingSolana(false);
-    }
-  };
-
-  const disconnectSolanaForDraft = async () => {
-    try {
-      await disconnectSolanaWallet();
-      setSolanaAccount("");
-      toast.success("Phantom disconnected from Solana draft mode.");
-    } catch (err: any) {
-      toast.error(err?.message || "Could not disconnect Phantom.");
-    }
-  };
 
   const ensureTickerAvailable = () => {
     if (!normalizedTicker) {
@@ -217,7 +197,7 @@ const Create = () => {
 
     if (isSolanaDraft) {
       if (!solanaAccount) {
-        toast.error("Connect Phantom before saving a Solana draft.");
+        toast.error("Connect Phantom from the wallet menu before saving a Solana draft.");
         return false;
       }
       return true;
@@ -400,52 +380,17 @@ const Create = () => {
         </section>
 
         <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <Network className="h-4 w-4 text-accent" />
-              <label className="font-retro text-sm text-foreground">Draft chain</label>
+          <div className="rounded-2xl border border-border/50 bg-background/25 p-3 text-xs text-muted-foreground">
+            <div className="font-retro text-sm uppercase tracking-[0.12em] text-foreground">
+              Connected wallet flow
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {DRAFT_CHAIN_OPTIONS.map((chain) => {
-                const selected = chain.id === selectedChainId;
-                return (
-                  <button
-                    key={chain.id}
-                    type="button"
-                    onClick={() => setSelectedChainId(chain.id)}
-                    aria-pressed={selected}
-                    className={`rounded-lg border px-3 py-2 text-left font-retro text-xs transition-all ${selected ? "border-accent bg-accent/20 text-accent" : "border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}
-                  >
-                    <span className="block text-sm text-foreground">{chain.shortLabel}</span>
-                    <span className="mt-1 block uppercase tracking-[0.12em]">{chain.draftOnly ? "Draft only" : "Draft + deploy"}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <p className="mt-1">
+              {isSolanaDraft
+                ? "Phantom is connected. This coin will be saved as a Solana draft; deployment stays locked until Solana launch tooling is ready."
+                : "Connect a BNB wallet for the existing BNB draft flow, or connect Phantom from the wallet menu for Solana draft mode."}
+            </p>
+            {activeCreatorWallet && <div className="mt-2 truncate font-mono text-[11px] text-muted-foreground">{activeCreatorWallet}</div>}
           </div>
-
-          {isSolanaDraft && (
-            <div className="rounded-2xl border border-cyan-300/35 bg-cyan-300/10 p-3 text-xs text-cyan-100">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-retro uppercase tracking-[0.14em]">Solana Prepare Mode</div>
-                  <p className="mt-1 text-cyan-100/75">Draft creation and promotion pages are enabled. Push Live remains blocked.</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button type="button" onClick={connectSolanaForDraft} disabled={connectingSolana} variant="outline" className="mwz-button h-9 px-3 font-retro text-xs">
-                    <Wallet className="mr-2 h-4 w-4" />
-                    {solanaAccount ? "Reconnect" : connectingSolana ? "Connecting" : "Connect Phantom"}
-                  </Button>
-                  {solanaAccount && (
-                    <Button type="button" onClick={disconnectSolanaForDraft} disabled={connectingSolana || isDrafting} variant="outline" className="h-9 px-3 font-retro text-xs">
-                      Disconnect
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {solanaAccount && <div className="truncate font-mono text-[11px] text-cyan-100/80">{solanaAccount}</div>}
-            </div>
-          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -514,7 +459,11 @@ const Create = () => {
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a {selectedChainLabel} draft, reserve the ticker on that chain, and open the promotion setup page.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isSolanaDraft
+                  ? "Save the coin as a Solana draft, reserve the ticker, and open the promotion setup page."
+                  : "Save the coin as a BNB draft, reserve the ticker, and open the promotion setup page."}
+              </p>
             </div>
             <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
               <FileText className="mr-2 h-5 w-5" />
@@ -525,11 +474,15 @@ const Create = () => {
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">{isSolanaDraft ? "Solana deployment is not available yet. Build the Prepare page now and launch later." : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page."}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isSolanaDraft
+                  ? "Solana deployment is not active until we launch Solana tooling. Build the Prepare page now and launch later."
+                  : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page."}
+              </p>
             </div>
             <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
               <Rocket className="mr-2 h-5 w-5" />
-              {isSolanaDraft ? "Solana Launch Soon" : "Locked in Prepare Mode"}
+              {isSolanaDraft ? "Solana Deploy Locked" : "Locked in Prepare Mode"}
             </Button>
           </div>
 
