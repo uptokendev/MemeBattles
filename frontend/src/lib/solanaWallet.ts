@@ -1,6 +1,9 @@
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 
+export const SOLANA_WALLET_STORAGE_KEY = "mwz:solana_wallet";
+export const SOLANA_WALLET_EVENT = "memewarzone:solana-wallet-changed";
+
 export type SolanaProvider = {
   isPhantom?: boolean;
   publicKey?: { toString: () => string } | null;
@@ -18,6 +21,17 @@ function getProvider(): SolanaProvider | null {
 
 function normalizePublicKey(value: string) {
   return String(value || "").trim();
+}
+
+function notifySolanaWalletChanged(publicKey: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (publicKey) window.localStorage.setItem(SOLANA_WALLET_STORAGE_KEY, publicKey);
+    else window.localStorage.removeItem(SOLANA_WALLET_STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(SOLANA_WALLET_EVENT, { detail: { publicKey } }));
+  } catch {
+    // Ignore storage/event failures.
+  }
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -40,19 +54,31 @@ export function getSolanaProvider(): SolanaProvider | null {
   return getProvider();
 }
 
+export function getStoredSolanaWallet(): string {
+  const providerKey = normalizePublicKey(getProvider()?.publicKey?.toString?.() || "");
+  if (providerKey) return providerKey;
+  if (typeof window === "undefined") return "";
+  try {
+    return normalizePublicKey(window.localStorage.getItem(SOLANA_WALLET_STORAGE_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
 export async function connectSolanaWallet(): Promise<string> {
   const provider = getProvider();
   if (!provider?.connect) throw new Error("Phantom wallet not detected.");
   const result = await provider.connect();
   const publicKey = normalizePublicKey(result?.publicKey?.toString?.() || provider.publicKey?.toString?.() || "");
   if (!publicKey) throw new Error("No Solana public key returned.");
+  notifySolanaWalletChanged(publicKey);
   return publicKey;
 }
 
 export async function disconnectSolanaWallet(): Promise<void> {
   const provider = getProvider();
-  if (!provider?.disconnect) return;
-  await provider.disconnect();
+  if (provider?.disconnect) await provider.disconnect();
+  notifySolanaWalletChanged("");
 }
 
 export async function signSolanaDraftAction(input: {
@@ -64,7 +90,7 @@ export async function signSolanaDraftAction(input: {
   const provider = getProvider();
   if (!provider?.signMessage) throw new Error("Phantom message signing is unavailable.");
 
-  const walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || "");
+  const walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || getStoredSolanaWallet());
   if (!walletAddress) throw new Error("Solana wallet not connected.");
 
   const nonce = await fetchNonce(input.chainId, walletAddress);
