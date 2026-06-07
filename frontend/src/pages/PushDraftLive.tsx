@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
-import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { getDraftChainLabel, isSolanaDraftChainId } from "@/lib/draftChains";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -48,6 +48,7 @@ export default function PushDraftLive() {
 
   const draft = bundle?.draft;
   const isSolanaDraft = Boolean(draft && isSolanaDraftChainId(draft.chainId));
+  const chainLabel = draft ? getDraftChainLabel(draft.chainId) : "Draft";
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
 
   const pushLive = async () => {
@@ -176,10 +177,12 @@ export default function PushDraftLive() {
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">Prepare Mode</div>
-            <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">Push Draft Live</h1>
+            <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">
+              {isSolanaDraft ? "Solana Draft-Only" : "Push Draft Live"}
+            </h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               {isSolanaDraft
-                ? "Solana drafts can publish Prepare pages now, but Solana deployment is not available yet."
+                ? "Solana drafts can publish Prepare pages now, but Solana deployment, token creation, and trading launch are not available yet."
                 : "This converts the published promotion draft into a normal live on-chain campaign, then marks the draft as deployed. Initial buys are disabled by design."}
             </p>
           </div>
@@ -205,13 +208,15 @@ export default function PushDraftLive() {
             <div className="relative aspect-square border-b border-success/25 bg-black">
               <img src={logoURI || "/placeholder.svg"} alt={draft.name} className="h-full w-full object-cover" />
               <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
-                <ShieldCheck className="h-3 w-3" /> {isSolanaDraft ? "Draft" : "Ready"}
+                <ShieldCheck className="h-3 w-3" /> {isSolanaDraft ? "Draft-only" : "Ready"}
               </div>
             </div>
             <div className="p-3 text-success">
               <div className="mwz-section-title truncate text-lg">{draft.name}</div>
               <div className="mt-1 text-sm text-success/70">${draft.ticker}</div>
-              <div className="mt-3 text-xs text-muted-foreground">Status: {draft.status.replace(/_/g, " ")}</div>
+              <div className="mt-3 text-xs text-muted-foreground">
+                Status: {isSolanaDraft ? `${chainLabel} draft-only` : draft.status.replace(/_/g, " ")}
+              </div>
             </div>
           </div>
 
@@ -225,7 +230,7 @@ export default function PushDraftLive() {
 
             <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
               {isSolanaDraft
-                ? "Solana drafts remain in Prepare Mode. The backend rejects direct deploy marker calls for Solana chain IDs."
+                ? "Solana drafts remain in Prepare Mode. No Solana deployment, token creation, or trading launch is available from this route yet."
                 : "Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment."}
             </div>
 
@@ -241,7 +246,7 @@ export default function PushDraftLive() {
               className="mwz-button mwz-button-orange h-12 w-full justify-center font-retro"
             >
               <Rocket className="mr-2 h-4 w-4" />
-              {pushing ? "Pushing Live..." : isSolanaDraft ? "Solana Launch Soon" : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
+              {pushing ? "Pushing Live..." : isSolanaDraft ? "Solana Draft-Only" : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
             </Button>
           </div>
         </div>
