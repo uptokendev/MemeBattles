@@ -5,6 +5,7 @@ import { Coins, FileText, Rocket } from "lucide-react";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { getDraftChainPill } from "@/lib/draftChains";
 import { fetchOwnerCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 
 function formatDate(value?: string | null) {
@@ -137,7 +138,20 @@ export default function CommandCenterCoins() {
                   <img src={draft.logoUrl || "/placeholder.svg"} alt={draft.name} className="h-12 w-12 shrink-0 rounded-2xl object-cover" />
                   <div className="min-w-0">
                     <div className="truncate font-retro text-sm text-foreground">{draft.name}</div>
-                    <div className="text-xs text-muted-foreground">${draft.ticker}</div>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <div className="text-xs text-muted-foreground">${draft.ticker}</div>
+                      {(() => {
+                        const p = getDraftChainPill(draft.chainId);
+                        return (
+                          <span
+                            className={`inline-flex shrink-0 items-center rounded px-1 py-px text-[8px] font-medium uppercase tracking-[0.06em] border ${p.className}`}
+                            title={p.label === "Solana" ? "Solana mainnet draft (101)" : "BNB mainnet draft (56)"}
+                          >
+                            {p.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs">

@@ -54,7 +54,7 @@ function mapFactoryCampaign(raw: any, id: number) {
 }
 
 async function fetchCreatedCampaignsOnChain(chainId: number | undefined, creator: string): Promise<any[]> {
-  const activeChainId = getActiveChainId(Number(chainId ?? 97));
+  const activeChainId = getActiveChainId(Number(chainId ?? 56));
   const factoryAddress = getFactoryAddress(activeChainId);
   if (!factoryAddress) return [];
 

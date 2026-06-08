@@ -17,6 +17,9 @@ import {
 import { signDraftAction } from "@/lib/draftAuth";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { normalizeSocialUrl } from "@/lib/socialLinks";
+import { isSolanaDraftChainId, SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
@@ -92,6 +95,7 @@ export default function DraftPromotionSetup() {
   const [docsText, setDocsText] = useState("");
   const [creatorNote, setCreatorNote] = useState("");
   const [visibility, setVisibility] = useState<DraftVisibility>("private");
+  const { solanaAccount } = useSolanaWallet();
 
   useEffect(() => {
     setCachedLogoUrl(getCachedLogo(draftId));
@@ -110,17 +114,26 @@ export default function DraftPromotionSetup() {
 
         if (first) return first;
 
-        if (!wallet.account || !wallet.signer) {
+        const isSolana = isSolanaDraftChainId(draft?.chainId ?? bundle?.draft?.chainId);
+        const solanaAddr = solanaAccount;
+        if (isSolana ? !solanaAddr : (!wallet.account || !wallet.signer)) {
           throw new Error("Connect the draft owner wallet to open this private draft.");
         }
 
-        const readAuth = await signDraftAction({
-          signer: wallet.signer,
-          walletAddress: wallet.account,
-          chainId: getActiveChainId(wallet.chainId),
-          action: "read_draft",
-          draftId,
-        });
+        const readAuth = isSolana
+          ? await signSolanaDraftAction({
+              walletAddress: solanaAddr,
+              chainId: draft?.chainId ?? SOLANA_MAINNET_CHAIN_ID,
+              action: "read_draft",
+              draftId,
+            })
+          : await signDraftAction({
+              signer: wallet.signer,
+              walletAddress: wallet.account,
+              chainId: getActiveChainId(wallet.chainId),
+              action: "read_draft",
+              draftId,
+            });
 
         return fetchCampaignDraftWithAuth(draftId, readAuth);
       } catch (err: any) {
@@ -153,7 +166,7 @@ export default function DraftPromotionSetup() {
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account, wallet.signer, wallet.chainId]);
+  }, [draftId, wallet.account, wallet.signer, wallet.chainId, solanaAccount]);
 
   const draft = bundle?.draft;
   const pop = bundle?.popularity;
@@ -177,12 +190,14 @@ export default function DraftPromotionSetup() {
 
     if (!draft) return null;
 
-    if (!wallet.account || !wallet.signer) {
+    const isSolana = isSolanaDraftChainId(draft.chainId);
+    const solanaAddr = solanaAccount;
+    if (isSolana ? !solanaAddr : (!wallet.account || !wallet.signer)) {
       toast.error("Connect the draft owner wallet before saving.");
       return null;
     }
 
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+    if (isSolana ? (draft.creatorWallet !== solanaAddr) : (draft.creatorWallet.toLowerCase() !== wallet.account!.toLowerCase())) {
       toast.error("Only the draft owner wallet can edit this promotion page.");
       return null;
     }
@@ -195,13 +210,20 @@ export default function DraftPromotionSetup() {
 
     setSaving(true);
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: publish ? "publish_promotion" : "save_promotion",
-        draftId,
-      });
+      const auth = isSolana
+        ? await signSolanaDraftAction({
+            walletAddress: solanaAddr,
+            chainId: draft.chainId,
+            action: publish ? "publish_promotion" : "save_promotion",
+            draftId,
+          })
+        : await signDraftAction({
+            signer: wallet.signer,
+            walletAddress: wallet.account,
+            chainId: draft.chainId,
+            action: publish ? "publish_promotion" : "save_promotion",
+            draftId,
+          });
 
       const updated = await saveDraftPromotion(draftId, {
         auth,

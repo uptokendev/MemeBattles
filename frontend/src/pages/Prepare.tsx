@@ -154,10 +154,7 @@ function buildShareCardUrl(bundle: PrepareDraftBundle, download = false, version
   const params = new URLSearchParams({
     name: draft.name,
     ticker: draft.ticker,
-    chain:
-      Number(draft.chainId) === 101 || Number(draft.chainId) === 102
-        ? "SOLANA"
-        : "BNB CHAIN",
+    chain: "PREPARE",
     status,
     recruits: String(recruits),
     heat: `${popularity.popularityPercentage}%`,

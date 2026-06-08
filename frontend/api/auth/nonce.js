@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, normalizeAddress, json } from "../../server/http.js";
 
 function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
@@ -12,9 +12,11 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId);
-    const address = String(q.address ?? "").toLowerCase();
+    const rawAddress = String(q.address ?? "").trim();
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+
+    const address = normalizeAddress(rawAddress, chainId);
+    if (!address) return json(res, 400, { error: "Invalid address" });
     if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });
 
     const nonce = makeNonce();

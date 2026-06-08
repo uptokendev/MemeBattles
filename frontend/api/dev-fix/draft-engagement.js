@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { insertPrepareNotification, notifyDraftOwner } from "./prepare-notify.js";
 
@@ -8,9 +8,8 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeAddress(value, chainId) {
+  return normalizeAddressBase(value, chainId);
 }
 
 function shortAddress(address) {
@@ -133,7 +132,7 @@ async function getDraftAuthContext(pool, draftId) {
 
   return {
     id: String(row.id),
-    creatorWallet: normalizeAddress(row.creator_wallet),
+    creatorWallet: isSolanaChain(row.chain_id) ? String(row.creator_wallet) : normalizeAddress(row.creator_wallet),
     chainId: Number(row.chain_id),
     name: String(row.name || "Draft"),
     ticker: String(row.ticker || "DRAFT"),

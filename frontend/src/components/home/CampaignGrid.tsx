@@ -119,7 +119,7 @@ function mergeCampaignItems(primary: CampaignFeedItemApi[], fallback: CampaignFe
 }
 
 async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
-  const chainId = Number(params.chainId || 97);
+  const chainId = Number(params.chainId || 56);
   const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
   const cursor = Math.max(0, Number(params.cursor || 0));
   const factoryAddress = getFactoryAddress(chainId as any);

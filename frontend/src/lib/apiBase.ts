@@ -69,10 +69,10 @@ function getTokenPageCampaignAddress(): string {
 function getChainIdFromApiPath(path: string): number {
   try {
     const url = new URL(path, "http://local");
-    const raw = Number(url.searchParams.get("chainId") || 97);
-    return Number.isFinite(raw) ? raw : 97;
+    const raw = Number(url.searchParams.get("chainId") || 56);
+    return Number.isFinite(raw) ? raw : 56;
   } catch {
-    return 97;
+    return 56;
   }
 }
 

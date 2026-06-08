@@ -41,7 +41,7 @@ function shorten(addr?: string | null) {
 }
 
 function getExplorerBase(chainId?: number): string {
-  if (chainId === 97) return "https://testnet.bscscan.com";
+  if (chainId === 97) return "https://testnet.bscscan.com"; // legacy
   if (chainId === 56) return "https://bscscan.com";
   return "https://bscscan.com";
 }

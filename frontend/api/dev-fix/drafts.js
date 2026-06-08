@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner } from "./prepare-notify.js";
 
@@ -25,9 +25,9 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeAddress(value, chainId) {
+  // delegate to http.js version that handles Solana vs EVM based on chain
+  return normalizeAddressBase(value, chainId);
 }
 
 function normalizeTicker(value) {
@@ -171,10 +171,12 @@ function memoryStore() {
 
 function mapDraftRow(row) {
   if (!row) return null;
+  const chainId = Number(row.chain_id ?? row.chainId ?? 97);
+  const rawCreator = String(row.creator_wallet ?? row.creatorWallet ?? "");
   return {
     id: String(row.id),
-    chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    chainId,
+    creatorWallet: isSolanaChain(chainId) ? rawCreator : rawCreator.toLowerCase(),
     name: String(row.name || ""),
     ticker: normalizeTicker(row.ticker),
     description: row.description || null,
@@ -321,7 +323,8 @@ export async function drafts(req, res) {
 
   if (req.method === "GET") {
     const q = getQuery(req);
-    const owner = normalizeAddress(q.owner);
+    const ownerChain = q.chainId ? Number(q.chainId) : null;
+    const owner = normalizeAddress(q.owner, ownerChain);
     const pool = await getPool();
 
     if (pool) {
@@ -342,7 +345,8 @@ export async function drafts(req, res) {
   }
 
   const body = await readJson(req);
-  const creatorWallet = normalizeAddress(body.creatorWallet || body.walletAddress);
+  const chainId = Number(body.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);
+  const creatorWallet = normalizeAddress(body.creatorWallet || body.walletAddress, chainId);
   if (!creatorWallet) return json(res, 400, { error: "Draft requires a connected wallet." });
 
   const name = cleanText(body.name, 80);
@@ -350,7 +354,6 @@ export async function drafts(req, res) {
   if (!name) return json(res, 400, { error: "Draft name is required." });
   if (!ticker) return json(res, 400, { error: "Draft ticker is required." });
 
-  const chainId = Number(body.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);
   const visibility = VISIBILITIES.has(body.visibility) ? body.visibility : "private";
   const now = new Date().toISOString();
   const pool = await getPool();
@@ -428,7 +431,7 @@ export async function drafts(req, res) {
 export async function draftById(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const bundle = await getDraftBundleById(String(req.params?.draftId || ""), normalizeAddress(q.viewer));
+  const bundle = await getDraftBundleById(String(req.params?.draftId || ""), normalizeAddress(q.viewer, q.chainId ? Number(q.chainId) : null));
   if (!bundle) return json(res, 404, { error: "Draft not found" });
   if (bundle.forbidden) return json(res, 403, { error: "This draft is private." });
   return json(res, 200, bundle);
@@ -437,7 +440,7 @@ export async function draftById(req, res) {
 export async function prepareBySlug(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const bundle = await getDraftBundleBySlug(String(req.params?.slug || ""), normalizeAddress(q.viewer), true);
+  const bundle = await getDraftBundleBySlug(String(req.params?.slug || ""), normalizeAddress(q.viewer, q.chainId ? Number(q.chainId) : null), true);
   if (!bundle) return json(res, 404, { error: "Prepare page not found" });
   if (bundle.forbidden) return json(res, 403, { error: "This draft is private." });
   return json(res, 200, bundle);

@@ -12,6 +12,7 @@ import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-ro
 import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { SolanaWalletProvider } from "@/contexts/SolanaWalletContext";
 import Showcase from "./pages/Showcase";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
@@ -120,6 +121,7 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
+        <SolanaWalletProvider>
         <TooltipProvider>
           <Toaster />
           <Sonner />
@@ -193,6 +195,7 @@ const App = () => {
             </BrowserRouter>
           </div>
         </TooltipProvider>
+        </SolanaWalletProvider>
       </WalletProvider>
     </QueryClientProvider>
   );

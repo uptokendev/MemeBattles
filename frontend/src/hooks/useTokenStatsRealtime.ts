@@ -34,7 +34,7 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
   const [error, setError] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
 
-  const cid = useMemo<SupportedChainId>(() => getActiveChainId(Number(chainId ?? 97)), [chainId]);
+  const cid = useMemo<SupportedChainId>(() => getActiveChainId(Number(chainId ?? 56)), [chainId]);
 
   const url = useMemo(() => {
     if (!API_BASE || !campaignAddress) return "";

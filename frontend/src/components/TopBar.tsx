@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
@@ -77,6 +78,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -148,7 +150,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [notificationOpen, disconnectOpen]);
 
-  const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
+  // Prefer Solana address if Solana connected (Phantom), else EVM.
+  const activeAddress = isSolanaConnected ? solanaAccount : wallet.account;
+  const shortAddress = activeAddress && activeAddress.length > 8 ? `${activeAddress.slice(0, 4)}...${activeAddress.slice(-4)}` : activeAddress;
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
@@ -508,7 +512,8 @@ tickerInitialLoadedRef.current = true;
               ref={walletRef}
               className={topbarButtonClass}
               onClick={() => {
-                if (!wallet.isConnected) {
+                const isAnyConnected = wallet.isConnected || isSolanaConnected;
+                if (!isAnyConnected) {
                   openWalletModal();
                   return;
                 }
@@ -516,11 +521,11 @@ tickerInitialLoadedRef.current = true;
                 setDisconnectOpen((prev) => !prev);
               }}
             >
-              <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
-              <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
+              <span className="hidden sm:inline">{(wallet.isConnected || isSolanaConnected) ? shortAddress : "Connect Wallet"}</span>
+              <span className="sm:hidden">{(wallet.isConnected || isSolanaConnected) ? "Wallet" : "Connect"}</span>
             </Button>
 
-            {wallet.isConnected && disconnectOpen && popoverAnchor && createPortal(
+            {(wallet.isConnected || isSolanaConnected) && disconnectOpen && popoverAnchor && createPortal(
               <div
                 data-topbar-popover
                 className="w-44 mwz-panel overflow-hidden p-1"
@@ -529,7 +534,11 @@ tickerInitialLoadedRef.current = true;
                 <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={() => { setDisconnectOpen(false); openWalletModal(); }}>
                   Change wallet
                 </button>
-                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => { await wallet.disconnect(); setDisconnectOpen(false); }}>
+                <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => {
+                  if (isSolanaConnected) await disconnectSolana();
+                  if (wallet.isConnected) await wallet.disconnect();
+                  setDisconnectOpen(false);
+                }}>
                   Disconnect
                 </button>
               </div>,

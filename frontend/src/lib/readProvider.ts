@@ -5,6 +5,7 @@ import { getPublicRpcUrls, type SupportedChainId } from "./chainConfig";
 const providerCache = new Map<number, ethers.AbstractProvider>();
 
 function networkName(chainId: number) {
+  // Only mainnet BNB (56) supported now. Fallback name for legacy.
   return chainId === 56 ? "bsc" : "bsc-testnet";
 }
 

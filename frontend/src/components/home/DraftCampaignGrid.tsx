@@ -11,6 +11,7 @@ import {
   type CampaignDraft,
   type DraftPopularity,
 } from "@/lib/draftApi";
+import { getDraftChainPill } from "@/lib/draftChains";
 import type { HomeQuery } from "./CampaignGrid";
 
 type DraftCampaignVM = {
@@ -253,8 +254,21 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                         </div>
                       </Link>
 
-                      <div className="mt-1 truncate text-sm text-success/70">
-                        {draft.ticker ? `$${draft.ticker}` : ""}
+                      <div className="mt-1 flex items-center gap-1.5 overflow-hidden">
+                        <div className="truncate text-sm text-success/70">
+                          {draft.ticker ? `$${draft.ticker}` : ""}
+                        </div>
+                        {(() => {
+                          const p = getDraftChainPill(draft.chainId);
+                          return (
+                            <span
+                              className={`inline-flex shrink-0 items-center rounded px-1.5 py-px text-[9px] font-medium uppercase tracking-[0.08em] border ${p.className}`}
+                              title={p.label === "Solana" ? "Solana mainnet draft (101)" : "BNB mainnet draft (56)"}
+                            >
+                              {p.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 

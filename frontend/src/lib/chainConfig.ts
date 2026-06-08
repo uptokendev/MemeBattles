@@ -1,13 +1,12 @@
 // src/lib/chainConfig.ts
-// Centralized chain + env config for MemeBattles (BSC mainnet + testnet).
+// Centralized chain + env config for MemeWarzone (BNB Smart Chain mainnet ONLY + Solana mainnet for drafts).
 //
-// Design goal:
-// - Reads follow the wallet's connected chain (if allowed), otherwise fall back to default chain.
-// - No redeploy needed to switch between testnet/mainnet; only switch the wallet network.
+// We no longer support testnet/devnet (97/102). Only mainnets: BNB 56 and Solana 101 (Solana handled separately via Phantom path).
+// EVM connections are strictly limited to BNB mainnet 56.
 
-export type SupportedChainId = 56 | 97;
+export type SupportedChainId = 56;
 
-const DEFAULT_ALLOWED: SupportedChainId[] = [56, 97];
+const DEFAULT_ALLOWED: SupportedChainId[] = [56];
 const DEFAULT_CHAIN: SupportedChainId = 56;
 
 const parseCsvNumbers = (raw?: string): number[] => {
@@ -72,22 +71,13 @@ export function getPublicRpcUrl(chainId: SupportedChainId): string {
   if (explicitFirst) return explicitFirst;
 
   // Secondary env keys (common naming)
-  if (chainId === 56) {
-    const v =
-      (import.meta.env.VITE_BSC_MAINNET_RPC as string | undefined) ??
-      (import.meta.env.VITE_PUBLIC_RPC_MAINNET as string | undefined);
-    const vFirst = firstFromCsv(v);
-    if (vFirst) return vFirst;
-    return "https://bsc-dataseed.binance.org/";
-  }
-
-  // 97
+  // Only mainnet BNB (56) is supported. Testnet (97) removed per requirements.
   const v =
-    (import.meta.env.VITE_BSC_TESTNET_RPC as string | undefined) ??
-    (import.meta.env.VITE_PUBLIC_RPC_TESTNET as string | undefined);
+    (import.meta.env.VITE_BSC_MAINNET_RPC as string | undefined) ??
+    (import.meta.env.VITE_PUBLIC_RPC_MAINNET as string | undefined);
   const vFirst = firstFromCsv(v);
   if (vFirst) return vFirst;
-  return "https://data-seed-prebsc-1-s1.binance.org:8545/";
+  return "https://bsc-dataseed.binance.org/";
 }
 
 // For redundancy: get *all* configured public RPC URLs for a chain.
@@ -114,19 +104,12 @@ export function getPublicRpcUrls(chainId: SupportedChainId): string[] {
   const explicitList = fromCsv(explicit);
   if (explicitList.length) return explicitList;
 
-  if (chainId === 56) {
-    const v =
-      (import.meta.env.VITE_BSC_MAINNET_RPC as string | undefined) ??
-      (import.meta.env.VITE_PUBLIC_RPC_MAINNET as string | undefined);
-    const list = fromCsv(v);
-    return list.length ? list : ["https://bsc-dataseed.binance.org/"];
-  }
-
+  // Only mainnet BNB (56) supported. (Legacy 97 branches removed.)
   const v =
-    (import.meta.env.VITE_BSC_TESTNET_RPC as string | undefined) ??
-    (import.meta.env.VITE_PUBLIC_RPC_TESTNET as string | undefined);
+    (import.meta.env.VITE_BSC_MAINNET_RPC as string | undefined) ??
+    (import.meta.env.VITE_PUBLIC_RPC_MAINNET as string | undefined);
   const list = fromCsv(v);
-  return list.length ? list : ["https://data-seed-prebsc-1-s1.binance.org:8545/"];
+  return list.length ? list : ["https://bsc-dataseed.binance.org/"];
 }
 
 export function getFactoryAddress(chainId: SupportedChainId): string {
@@ -164,7 +147,8 @@ export function getTreasuryVaultAddress(chainId: SupportedChainId): string {
 }
 
 export function getExplorerTxBase(chainId: SupportedChainId): string {
-  return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
+  // Only mainnet (56) supported. Legacy testnet explorer kept for old data display only.
+  return "https://bscscan.com/tx/";
 }
 
 // Common chains the wallet may be connected to but the app doesn't support.
@@ -172,7 +156,7 @@ export function getExplorerTxBase(chainId: SupportedChainId): string {
 const CHAIN_LABELS: Record<number, string> = {
   1: "Ethereum",
   56: "BNB Smart Chain",
-  97: "BNB Smart Chain Testnet",
+  97: "BNB Smart Chain Testnet (legacy - no longer supported)",
   137: "Polygon",
   8453: "Base",
   42161: "Arbitrum One",
@@ -186,20 +170,12 @@ export function getChainLabel(chainId?: number | null): string | null {
 }
 
 export function getChainParams(chainId: SupportedChainId) {
-  if (chainId === 56) {
-    return {
-      chainId: "0x38",
-      chainName: "BNB Smart Chain",
-      nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-      rpcUrls: [getPublicRpcUrl(56)],
-      blockExplorerUrls: ["https://bscscan.com/"],
-    };
-  }
+  // Only BNB mainnet (56) supported for EVM. Testnet removed.
   return {
-    chainId: "0x61",
-    chainName: "BNB Smart Chain Testnet",
-    nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-    rpcUrls: [getPublicRpcUrl(97)],
-    blockExplorerUrls: ["https://testnet.bscscan.com/"],
+    chainId: "0x38",
+    chainName: "BNB Smart Chain",
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+    rpcUrls: [getPublicRpcUrl(56)],
+    blockExplorerUrls: ["https://bscscan.com/"],
   };
 }

@@ -56,8 +56,8 @@ type TxRow = {
 function getExplorerBase(chainId?: number): string {
   const id = Number(chainId ?? 0);
   if (id === 56) return "https://bscscan.com";
-  if (id === 97) return "https://testnet.bscscan.com";
-  // Sensible default
+  if (id === 97) return "https://testnet.bscscan.com"; // legacy testnet only
+  // Sensible default (mainnet)
   return "https://bscscan.com";
 }
 
@@ -270,7 +270,7 @@ const TokenDetails = () => {
 
   // Fetch maker profiles for displayed trades (best-effort; do not block UI)
   useEffect(() => {
-    const chainIdNum = Number(wallet.chainId ?? 97);
+    const chainIdNum = Number(wallet.chainId ?? 56);
     if (!txs.length) return;
 
     const uniq = Array.from(
@@ -311,7 +311,7 @@ const TokenDetails = () => {
       return;
     }
 
-    const chainIdNum = Number(wallet.chainId ?? 97);
+    const chainIdNum = Number(wallet.chainId ?? 56);
     let cancelled = false;
 
     (async () => {

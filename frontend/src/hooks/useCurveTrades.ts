@@ -108,7 +108,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const prevCampaignRef = useRef<string>("");
 
   const chainId = useMemo<SupportedChainId>(() => {
-    const cid = Number(opts?.chainId ?? 97);
+    const cid = Number(opts?.chainId ?? 56);
     return getActiveChainId(cid);
   }, [opts?.chainId]);
 

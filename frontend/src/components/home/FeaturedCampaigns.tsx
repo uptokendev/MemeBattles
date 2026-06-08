@@ -84,7 +84,7 @@ function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   const campaignAddress = String(src.campaignAddress ?? src.campaign_address ?? src.campaign ?? "").toLowerCase();
   if (!campaignAddress) return null;
   return {
-    chainId: Number(src.chainId ?? src.chain_id ?? 97),
+    chainId: Number(src.chainId ?? src.chain_id ?? 56),
     campaignAddress,
     tokenAddress: src.tokenAddress ?? src.token_address ?? src.token ?? null,
     creatorAddress: src.creatorAddress ?? src.creator_address ?? src.creator ?? null,

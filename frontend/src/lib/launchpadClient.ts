@@ -515,7 +515,7 @@ const fetchOnChainCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
 }, [fetchCampaignsCount, fetchCampaignPage]);
 
 const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
-  const chainId = Number(activeChainId || 97);
+  const chainId = Number(activeChainId || 56); // mainnet only now (testnet removed)
   const db = await fetchDbCampaigns(chainId);
 
   // Migration default: Railway/Supabase DB is the source of truth for campaign

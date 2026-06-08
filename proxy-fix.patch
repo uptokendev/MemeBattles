@@ -1,0 +1,29 @@
+﻿diff --git a/server/railwayProxy.js b/server/railwayProxy.js
+index b412d72..6c8d17d 100644
+--- a/server/railwayProxy.js
++++ b/server/railwayProxy.js
+@@ -35,7 +35,10 @@ const RAILWAY_PATH_PREFIXES = [
+   "/api/status",
+   "/api/token/",
+   "/api/token-metadata",
+-  "/api/upload",
++  # "/api/upload" is intentionally NOT proxied here (see shouldProxyToRailway) because
++  # multipart/form-data bodies cannot be correctly forwarded by the current JSON-body
++  # reconstruction logic. Uploads are always handled by a process that has the raw
++  # request stream + Supabase credentials mounted directly.
+   "/api/votes",
+   "/api/vote_counts",
+   "/internal/",
+@@ -97,6 +100,12 @@ function shouldProxyToRailway(path) {
+
+   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
+
++  # /api/upload uses multipart/form-data + formidable. The current proxy
++  # implementation rewrites bodies as JSON (from req.body) and cannot forward
++  # the original upload stream. Always let the locally-mounted upload handler
++  # (which has direct access to Supabase keys + formidable) serve it.
++  if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
++
+   return RAILWAY_PATH_PREFIXES.some((prefix) => {
+     if (prefix.endsWith("/")) return pathname.startsWith(prefix);
+     return pathname === prefix || pathname.startsWith(`${prefix}/`);

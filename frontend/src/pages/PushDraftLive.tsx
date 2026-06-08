@@ -9,6 +9,9 @@ import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "
 import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
@@ -28,11 +31,12 @@ export default function PushDraftLive() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
+  const { solanaAccount } = useSolanaWallet();
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchCampaignDraft(draftId, wallet.account)
+    fetchCampaignDraft(draftId, wallet.account || solanaAccount)
       .then((data) => {
         if (!cancelled) setBundle(data);
       })
@@ -43,7 +47,7 @@ export default function PushDraftLive() {
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account]);
+  }, [draftId, wallet.account, solanaAccount]);
 
   const draft = bundle?.draft;
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
@@ -56,13 +60,20 @@ export default function PushDraftLive() {
       return;
     }
 
-    if (!wallet.account || !wallet.signer) {
+    const isSolana = isSolanaDraftChainId(draft.chainId);
+    const solanaAddr = solanaAccount;
+    if (isSolana ? !solanaAddr : (!wallet.account || !wallet.signer)) {
       toast.error("Connect the draft owner wallet first.");
       return;
     }
 
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+    if (isSolana ? (draft.creatorWallet !== solanaAddr) : (draft.creatorWallet.toLowerCase() !== wallet.account!.toLowerCase())) {
       toast.error("Only the draft owner wallet can push this draft live.");
+      return;
+    }
+
+    if (isSolana) {
+      toast.error("Push Live is locked until the platform launch switch is enabled.");
       return;
     }
 

@@ -7,10 +7,13 @@ import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -70,17 +73,17 @@ const Create = () => {
   } = useTokenForm();
 
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected: isSolanaDraftFromContext, connectingSolana: _connectingSolana } = useSolanaWallet();
   const navigate = useNavigate();
   const [isDrafting, setIsDrafting] = useState(false);
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
+  const isSolanaDraft = !!solanaAccount;
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  // Reject unsupported chains (e.g. Ethereum mainnet=1). getActiveChainId returns
-  // the wallet's chain only if it's in the allowed list [56, 97]; otherwise
-  // falls back to VITE_DEFAULT_CHAIN_ID (or 97 if unset).
-  const chainId = getActiveChainId(wallet.chainId);
+  const chainId = isSolanaDraft ? SOLANA_MAINNET_CHAIN_ID : getActiveChainId(wallet.chainId);
+  const activeCreatorWallet = isSolanaDraft ? solanaAccount : wallet.account;
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
 
@@ -120,6 +123,8 @@ const Create = () => {
       window.clearTimeout(timer);
     };
   }, [normalizedTicker, chainId]);
+
+  // No local sync needed; SolanaWalletContext handles global solanaAccount updates across modals and components.
 
   const ensureTickerAvailable = () => {
     if (!normalizedTicker) {
@@ -181,18 +186,37 @@ const Create = () => {
       return false;
     }
 
-    if (!wallet.isConnected || !wallet.account) {
+    // Support pure-Solana (Phantom) or EVM flows transparently.
+    // activeCreatorWallet already encodes the preference (solanaAccount wins when present).
+    if (!activeCreatorWallet) {
       toast.error("Please connect your wallet first");
       return false;
+    }
+
+    // Enforce accepted chains at draft time too: EVM must be on actual allowed BNB (no ETH fallback from getActive).
+    // This prevents creating BNB-chainId drafts with Ethereum addresses (which led to wrong BNB pills on bad data).
+    if (!isSolanaDraft) {
+      const rawEvmChain = wallet.chainId;
+      if (!rawEvmChain || !isAllowedChainId(rawEvmChain)) {
+        toast.error("Connect a BNB Chain wallet (Ethereum and other networks are not supported).");
+        return false;
+      }
     }
 
     return true;
   };
 
   const uploadLogo = async () => {
-    if (!formData.image || !wallet.account) throw new Error("Missing logo or wallet");
-    const chainIdForUpload = String(getActiveChainId(wallet.chainId));
-    const address = wallet.account.toLowerCase();
+    if (!formData.image) throw new Error("Missing logo");
+    // Use the same preference as the rest of draft creation: solanaAccount (when present) over EVM wallet.account.
+    // This ensures the upload goes to the correct owner (base58 on chain 101 for Phantom, 0x on BNB for EVM).
+    const sol = solanaAccount || getStoredSolanaWallet();
+    const isSolana = Boolean(sol);
+    const chainIdForUpload = String(
+      isSolana ? SOLANA_MAINNET_CHAIN_ID : getActiveChainId(wallet.chainId)
+    );
+    const address = isSolana ? sol : (wallet.account || "").toLowerCase();
+    if (!address) throw new Error("Missing wallet address for upload");
     const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
     const fd = new FormData();
     fd.append("file", formData.image);
@@ -217,18 +241,25 @@ const Create = () => {
     setIsDrafting(true);
 
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account!,
-        chainId,
-        action: "create_draft",
-      });
+      const creatorWallet = activeCreatorWallet!;
+      const auth = isSolanaDraft
+        ? await signSolanaDraftAction({
+            walletAddress: creatorWallet,
+            chainId,
+            action: "create_draft",
+          })
+        : await signDraftAction({
+            signer: wallet.signer,
+            walletAddress: creatorWallet,
+            chainId,
+            action: "create_draft",
+          });
 
       const logoUrl = await uploadLogo();
       const draft = await createCampaignDraft({
-        auth,
+        auth: auth as any,
         chainId,
-        creatorWallet: wallet.account!,
+        creatorWallet,
         name: formData.name,
         ticker: normalizedTicker,
         description: formData.description || null,
@@ -243,16 +274,23 @@ const Create = () => {
       } as any);
 
       try {
-        const promotionAuth = await signDraftAction({
-          signer: wallet.signer,
-          walletAddress: wallet.account!,
-          chainId,
-          action: "save_promotion" as any,
-          draftId: draft.id,
-        } as any);
+        const promotionAuth = isSolanaDraft
+          ? await signSolanaDraftAction({
+              walletAddress: creatorWallet,
+              chainId,
+              action: "save_promotion" as any,
+              draftId: draft.id,
+            })
+          : await signDraftAction({
+              signer: wallet.signer,
+              walletAddress: creatorWallet,
+              chainId,
+              action: "save_promotion" as any,
+              draftId: draft.id,
+            } as any);
 
         await saveDraftPromotion(draft.id, {
-          auth: promotionAuth,
+          auth: promotionAuth as any,
           websiteUrl: formData.website || "",
           xUrl: formData.twitter || "",
           telegramUrl: formData.telegram || "",
@@ -270,7 +308,13 @@ const Create = () => {
       navigate(`/drafts/${draft.id}/promotion`);
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Failed to create draft");
+      const msg = error?.message || "Failed to create draft";
+      // If it's the server/nonce error for Solana, give guidance per branch rules (no API changes on staging).
+      if (msg.includes("Server error") || msg.includes("nonce") || msg.includes("Could not create Solana auth nonce")) {
+        toast.error("Failed to sign with Solana (nonce from server). The dev backend may not support Solana auth yet — ensure the real dev branch (not this frontend staging) has the nonce/normalize fixes deployed to Railway.");
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setIsDrafting(false);
     }
@@ -283,7 +327,8 @@ const Create = () => {
 
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
-  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
+  const missingWallet = isSolanaDraft ? !solanaAccount : !wallet.account;
+  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown || missingWallet;
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
@@ -336,11 +381,6 @@ const Create = () => {
               <p>Upload a compressed PNG, JPG, or WebP.</p>
               <p>Max upload size: 5 MB.</p>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-            <div className="mb-1 font-retro text-foreground">Launch path</div>
-            Draft Mode opens promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
           </div>
         </section>
 
@@ -412,7 +452,9 @@ const Create = () => {
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.
+              </p>
             </div>
             <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
               <FileText className="mr-2 h-5 w-5" />
@@ -423,7 +465,9 @@ const Create = () => {
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.
+              </p>
             </div>
             <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
               <Rocket className="mr-2 h-5 w-5" />
@@ -431,10 +475,7 @@ const Create = () => {
             </Button>
           </div>
 
-          <div className="mt-auto rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-            <div className="mb-1 font-retro text-foreground">Official links</div>
-            Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
-          </div>
+          
         </section>
       </form>
     </div>
