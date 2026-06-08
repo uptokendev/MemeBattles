@@ -27,7 +27,7 @@
 # when the site environment exceeds Lambda's 4KB env limit.
 [[redirects]]
   from = "/api/*"
-  to = "https://memewarzonefrontend-production.up.railway.app/api/:splat"
+  to = "https://memebattles-production.up.railway.app/api/:splat"
   status = 200
   force = true
 
