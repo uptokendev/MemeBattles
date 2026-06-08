@@ -28,12 +28,12 @@ import profile from "./profile.js";
 import profileCabinet from "./profileCabinet.js";
 import profilePortfolio from "./profile/portfolio.js";
 import postgrad from "./postgrad.js";
+import upload from "./upload.js";
 import rewards from "./rewards.js";
 import shareCard from "./shareCard.js";
 import prepareShareCard from "./prepare-share-card.js";
 import status from "./status.js";
 import tokenMetadata from "./token-metadata.js";
-import upload from "./upload.js";
 import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
 import wmAdminAuth from "./war-missions/admin-auth.js";
@@ -192,6 +192,24 @@ app.use((req, res, next) => {
   next();
 });
 
+function wrap(fn) {
+  return async (req, res, next) => {
+    try {
+      await fn(req, res);
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+// Upload route MUST be mounted BEFORE express.json, express.urlencoded, and
+// the railwayProxyMiddleware. This guarantees that formidable receives the
+// raw multipart/form-data request stream. Any body parser or proxy that
+// touches the stream first commonly causes ERR_CONNECTION_RESET or
+// "request aborted" on /api/upload (especially for logo uploads during
+// draft creation, and when the railway proxy is enabled in local dev).
+app.use("/api/upload", wrap(upload));
+
 app.get("/", (_req, res) => res.json({ ok: true, service: "MemeWarzone API", healthz: "/healthz", api: "/api" }));
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 app.get("/health", async (_req, res) => {
@@ -204,19 +222,27 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.use(express.json({ limit: process.env.API_JSON_LIMIT || "2mb" }));
-app.use(express.urlencoded({ extended: false, limit: process.env.API_FORM_LIMIT || "2mb" }));
-app.use(createRailwayProxyMiddleware({ serviceName: "local-api-gateway" }));
+app.use(express.json({ limit: process.env.API_JSON_LIMIT || "10mb" }));
+app.use(express.urlencoded({ extended: false, limit: process.env.API_FORM_LIMIT || "10mb" }));
 
-function wrap(fn) {
-  return async (req, res, next) => {
-    try {
-      await fn(req, res);
-    } catch (err) {
-      next(err);
+// Handle payload too large errors from body-parser early (e.g. if a draft payload or other JSON
+// exceeds the limit). This turns the raw PayloadTooLargeError into a clean 413 response instead
+// of an unhandled error that becomes a generic 500.
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    console.error(`[api/server] Payload too large for ${req.path}: ${err.length} bytes > ${err.limit} limit`);
+    if (!res.headersSent) {
+      return res.status(413).json({ 
+        error: "Payload too large", 
+        limit: err.limit, 
+        length: err.length 
+      });
     }
-  };
-}
+  }
+  next(err);
+});
+
+app.use(createRailwayProxyMiddleware({ serviceName: "local-api-gateway" }));
 
 const router = express.Router();
 
@@ -249,7 +275,6 @@ router.all("/prepare-share-card", wrap(prepareShareCard));
 router.all("/status", wrap(status));
 router.all("/token-metadata/:chainId/:address", wrap(tokenMetadata));
 router.all("/token-metadata", wrap(tokenMetadata));
-router.all("/upload", wrap(upload));
 router.all("/votes", wrap(votes));
 router.all("/vote_counts", wrap(voteCounts));
 router.all("/content-ai/generate-variants", wrap(contentAiGenerateVariants));

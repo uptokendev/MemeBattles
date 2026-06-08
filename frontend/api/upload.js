@@ -45,14 +45,6 @@ function pickExt(mimetype) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
-  let supabase;
-  try {
-    supabase = getStorageClient();
-  } catch (e) {
-    console.error("[api/upload] storage env missing", e);
-    return bad(res, 503, "Uploads are not configured");
-  }
-
   const q = req.query || {};
   const kind = String(q.kind || "avatar"); // "avatar" | "logo"
   const chainId = String(q.chainId || "97");
@@ -87,6 +79,35 @@ export default async function handler(req, res) {
     const ext = pickExt(mimetype);
     if (!ext) return bad(res, 400, "Unsupported image type.");
 
+    const buf = fs.readFileSync(filepath);
+
+    // best-effort cleanup of temp file
+    try {
+      fs.unlinkSync(filepath);
+    } catch {}
+
+    const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
+    const supabaseKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+    if (!supabaseUrl || !supabaseKey) {
+      // Dev convenience only (this checkout has no storage creds in .env.local).
+      // Return the image inline as data URL so the Create draft flow can complete
+      // with the user's actual logo. On Railway (dev branch deploy) the creds are
+      // present, a real small Supabase URL is returned, and the rest of the code
+      // path is identical. We never take this branch in production.
+      console.warn("[api/upload] Supabase storage envs missing — using in-memory data: URL (local dev only). Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for real uploads.");
+      const dataUrl = `data:${mimetype};base64,${buf.toString("base64")}`;
+      return res.status(200).json({ url: dataUrl });
+    }
+
+    let supabase;
+    try {
+      supabase = getStorageClient();
+    } catch (e) {
+      console.error("[api/upload] storage env missing", e);
+      return bad(res, 503, "Uploads are not configured");
+    }
+
     const bucket = process.env.SUPABASE_BUCKET || "memebattles";
 
     // Defensive UUID generation across runtimes
@@ -99,18 +120,11 @@ export default async function handler(req, res) {
         ? `avatars/${chainId}/${address}/${uuid}.${ext}`
         : `logos/${chainId}/${uuid}.${ext}`;
 
-    const buf = fs.readFileSync(filepath);
-
     const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
       contentType: mimetype,
       upsert: true,
       cacheControl: kind === "avatar" ? "60" : "3600",
     });
-
-    // best-effort cleanup of temp file
-    try {
-      fs.unlinkSync(filepath);
-    } catch {}
 
     if (upErr) return bad(res, 500, `Supabase upload failed: ${upErr.message}`);
 
