@@ -90,6 +90,13 @@ export const sidebar: NavSection[] = [
     ]
   },
   {
+    title: 'Legal',
+    items: [
+      { title: 'Privacy Statement', href: '/legal/privacy-policy' },
+      { title: 'Terms of Service', href: '/legal/terms-of-service' }
+    ]
+  },
+  {
     title: 'FAQ',
     items: [
       { title: 'FAQ', href: '/faq' },
