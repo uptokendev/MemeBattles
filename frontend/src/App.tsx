@@ -38,7 +38,7 @@ import NotFound from "./pages/NotFound";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
-import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
+// LiveStreamOverlay removed to stop Mux 412 spam (no active stream)
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
 import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
@@ -137,7 +137,6 @@ const App = () => {
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
-                <LiveStreamOverlay />
                 <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />

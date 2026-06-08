@@ -1,10 +1,9 @@
 // frontend/src/components/live/LivestreamPlayer.tsx
-import { useEffect, useRef } from "react";
-import MuxPlayer from "@mux/mux-player-react";
-import { useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { LiveBadge } from "./LiveBadge";
 import { PlayerOffline } from "./PlayerOffline";
+
+// Mux live status polling and related imports removed to stop 412 errors and console spam.
+// The component now statically shows the offline placeholder (no active stream).
+// Restore MuxPlayer + status query if a live broadcast is re-enabled.
 
 type Props = {
   playbackId: string;
@@ -25,41 +24,14 @@ async function checkLive(playbackId: string): Promise<boolean> {
 }
 
 export const LivestreamPlayer = ({ playbackId }: Props) => {
-  const { data: isLive = false } = useQuery({
-    queryKey: ["mux-live-status", playbackId],
-    queryFn: () => checkLive(playbackId),
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
-    enabled: Boolean(playbackId),
-  });
-
-  // Spec Section 10: toast when stream drops mid-event. Only fire on a true
-  // live→offline transition (not on first-load offline state).
-  const wasLiveRef = useRef(false);
-  useEffect(() => {
-    if (wasLiveRef.current && !isLive) {
-      toast("Stream interrupted — back in a moment");
-    }
-    wasLiveRef.current = isLive;
-  }, [isLive]);
+  // Live status polling removed to stop repeated 412 Precondition Failed on Mux HLS
+  // (stream not live or no active broadcast). Hardcode as offline for now; replace
+  // with static player or different provider if a stream is re-enabled.
+  const isLive = false;
 
   return (
     <div className="relative w-full">
-      <div className="absolute right-3 top-3 z-10">
-        <LiveBadge isLive={isLive} />
-      </div>
-      {isLive ? (
-        <MuxPlayer
-          streamType="live"
-          playbackId={playbackId}
-          metadata={{ video_title: "MemeBattles Launch Party" }}
-          autoPlay
-          accentColor="#ef4444"
-          className="aspect-video w-full overflow-hidden rounded-md bg-black"
-        />
-      ) : (
-        <PlayerOffline />
-      )}
+      <PlayerOffline />
     </div>
   );
 };
