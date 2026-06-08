@@ -106,20 +106,31 @@ function shouldProxyToRailway(path) {
   // (which has direct access to Supabase keys + formidable) serve it.
   if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
 
-  // Solana auth nonce and all drafts routes must always use the local handlers
-  // (which include the Solana normalizeAddress for base58 + chain 101/102 support,
-  // and the dev-fix drafts/ticker etc that were updated for Solana).
-  // This prevents proxying them to an upstream that returns 404 or old EVM-only
-  // "Invalid address", causing fallback to local old code or 404s.
+  // === Critical bypasses for the "frontend gateway" service (memewarzonefrontend-production) ===
+  // This service owns the local handlers for drafts/Prepare, campaigns feed, auth nonces used by
+  // draft create/promotion etc., and Command Center / War Room state.
+  // Its internal RAILWAY_API_PROXY (when enabled) forwards many /api/* to the token indexer
+  // (memebattles-production). The indexer does NOT implement campaigns lists, draft routes,
+  // or the Solana-aware nonce (isSolanaChain + base58 normalize in server/http.js).
+  //
+  // These early returns force the request to local handlers on THIS service (the one with the
+  // DB tables for campaign_drafts + the updated normalize for chain 101 + base58 Phantom keys).
+  // BNB draft flows worked before because EVM paths (lowercased 0x + chain 56) were already
+  // present and accepted even in older versions of the local handlers.
+  //
+  // Solana draft flow (signSolanaDraftAction → its fetchNonce with raw base58 + chain 101,
+  // then createCampaignDraft POST with walletType:"solana", then promotion signs) exercises
+  // the new paths. Ticker checks (live in Create useEffect), bare /api/drafts, /api/drafts/:id,
+  // and /api/campaigns all need to reach the local code, not the indexer.
   if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
   if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
 
-  // Solana auth nonce and drafts must always use local handlers (which have
-  // the Solana normalizeAddress / base58 support and chainId handling).
-  // Do not proxy them even if prefixes would match, to avoid falling back
-  // to an upstream that returns 404 or old EVM-only "Invalid address".
-  if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
-  if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
+  // Campaigns and featured are the "frontend related" discovery feeds (Command Center, grids,
+  // War Room, homepage trending etc.). They must be served by the local api/campaigns.js handler
+  // (rich stats + DB) on this gateway, not proxied to the token indexer (which returns 404 for them
+  // by design — see apiBase.ts comments and RAILWAY_API_GATEWAY_DEPLOY.md).
+  if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
+  if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);
