@@ -72,6 +72,15 @@ ALTER TABLE public.auth_nonces
 -- The CREATE TABLE above uses "text", but IF NOT EXISTS + old tables may have left a narrower type.
 ALTER TABLE public.auth_nonces ALTER COLUMN address TYPE text;
 
+-- Drop any legacy EVM-only CHECK constraint that forces addresses to be lowercase.
+-- Solana base58 addresses (used for chain_id 101/102) are case-sensitive in their encoding
+-- and must be stored/passed exactly as returned by the wallet (e.g. Phantom).
+-- normalizeAddress() in server/http.js intentionally preserves the original casing for Solana
+-- chains while lowercasing EVM addresses. The old constraint "auth_nonces_address_lowercase"
+-- was causing INSERTs to fail with "violates check constraint" for Solana nonces (see error logs).
+-- Safe to run repeatedly.
+ALTER TABLE public.auth_nonces DROP CONSTRAINT IF EXISTS auth_nonces_address_lowercase;
+
 -- ---------------------------
 -- token_comments
 -- ---------------------------
