@@ -106,6 +106,21 @@ function shouldProxyToRailway(path) {
   // (which has direct access to Supabase keys + formidable) serve it.
   if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
 
+  // Solana auth nonce and all drafts routes must always use the local handlers
+  // (which include the Solana normalizeAddress for base58 + chain 101/102 support,
+  // and the dev-fix drafts/ticker etc that were updated for Solana).
+  // This prevents proxying them to an upstream that returns 404 or old EVM-only
+  // "Invalid address", causing fallback to local old code or 404s.
+  if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
+  if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
+
+  // Solana auth nonce and drafts must always use local handlers (which have
+  // the Solana normalizeAddress / base58 support and chainId handling).
+  // Do not proxy them even if prefixes would match, to avoid falling back
+  // to an upstream that returns 404 or old EVM-only "Invalid address".
+  if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
+  if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
+
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);
     return pathname === prefix || pathname.startsWith(`${prefix}/`);
