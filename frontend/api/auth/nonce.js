@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isWalletAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isEvmAddress, isWalletAddress, json } from "../../server/http.js";
 
 function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
@@ -10,6 +10,11 @@ function normalizeWalletAddress(value) {
   const raw = String(value ?? "").trim();
   if (raw.startsWith("0x")) return raw.toLowerCase();
   return raw;
+}
+
+function nonceStorageAddress(address) {
+  if (isEvmAddress(address)) return address.toLowerCase();
+  return `sol:${crypto.createHash("sha256").update(address).digest("hex").slice(0, 36)}`;
 }
 
 export default async function handler(req, res) {
@@ -25,13 +30,14 @@ export default async function handler(req, res) {
 
     const nonce = makeNonce();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const storageAddress = nonceStorageAddress(address);
 
     await pool.query(
       `INSERT INTO auth_nonces (chain_id, address, nonce, expires_at)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (chain_id, address)
        DO UPDATE SET nonce = EXCLUDED.nonce, expires_at = EXCLUDED.expires_at, used_at = NULL`,
-      [chainId, address, nonce, expiresAt]
+      [chainId, storageAddress, nonce, expiresAt]
     );
 
     return json(res, 200, { nonce, expiresAt: expiresAt.toISOString() });
