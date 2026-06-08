@@ -34,6 +34,11 @@ function normalizeWallet(value) {
   return "";
 }
 
+function nonceStorageAddress(wallet) {
+  if (isEvmAddress(wallet)) return String(wallet).toLowerCase();
+  return `sol:${crypto.createHash("sha256").update(String(wallet)).digest("hex").slice(0, 36)}`;
+}
+
 function walletTypeFor(chainId, auth) {
   const explicit = String(auth?.walletType || auth?.type || "").trim().toLowerCase();
   if (explicit === "solana" || explicit === "evm") return explicit;
@@ -227,6 +232,7 @@ export async function requireDraftActionAuth({
     }
   }
 
+  const storedWallet = nonceStorageAddress(wallet);
   const nonceRes = await pool.query(
     `select nonce, expires_at, used_at
        from auth_nonces
@@ -234,7 +240,7 @@ export async function requireDraftActionAuth({
         and address = $2
         and nonce = $3
       limit 1`,
-    [expectedChainId, wallet, nonce],
+    [expectedChainId, storedWallet, nonce],
   );
 
   const row = nonceRes.rows[0];
@@ -261,7 +267,7 @@ export async function requireDraftActionAuth({
         and address = $2
         and nonce = $3
         and used_at is null`,
-    [expectedChainId, wallet, nonce],
+    [expectedChainId, storedWallet, nonce],
   );
 
   return {
