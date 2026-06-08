@@ -157,12 +157,11 @@ async function fetchNonce(chainId: number, walletAddress: string) {
   const res = await apiFetch(`/api/auth/nonce?${qs.toString()}`, { cache: "no-store" });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.nonce) {
-    const msg = String(json?.error || json?.message || "Server error");
-    // The 500 "Server error" typically means the dev backend (Railway) /api/auth/nonce does not yet
-    // support Solana (chainId 101 + base58 address). Per project rules, all API/backend changes
-    // must be made on the dev branch (this frontend staging only proxies to it). Make sure dev
-    // branch has the Solana nonce fixes (normalizeAddress for base58, isSolanaChain, etc.).
-    throw new Error(msg === "Server error" ? "Server error (backend may not support Solana nonce yet — check dev branch)" : msg);
+    const msg = String(json?.error || json?.message || `Request failed (${res.status})`);
+    // Surface the actual backend error (now that normalize + Solana support is deployed on the gateway service).
+    // Common real causes for 500 here: DB insert failure (auth_nonces table/column schema not widened for base58,
+    // or DATABASE_URL on the memewarzonefrontend-production service points at a DB without the table).
+    throw new Error(msg);
   }
   return String(json.nonce);
 }

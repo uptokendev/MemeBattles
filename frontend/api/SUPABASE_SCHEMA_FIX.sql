@@ -67,6 +67,11 @@ ALTER TABLE public.auth_nonces
   ADD COLUMN IF NOT EXISTS used_at timestamptz,
   ADD COLUMN IF NOT EXISTS created_at timestamptz;
 
+-- Widen the address column (if it was previously created with a narrow EVM-only limit such as varchar(42))
+-- to support Solana base58 public keys (~32-44 characters, mixed case). Safe to run repeatedly.
+-- The CREATE TABLE above uses "text", but IF NOT EXISTS + old tables may have left a narrower type.
+ALTER TABLE public.auth_nonces ALTER COLUMN address TYPE text;
+
 -- ---------------------------
 -- token_comments
 -- ---------------------------

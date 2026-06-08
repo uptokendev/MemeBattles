@@ -33,6 +33,12 @@ export default async function handler(req, res) {
     return json(res, 200, { nonce, expiresAt: expiresAt.toISOString() });
   } catch (e) {
     console.error("[api/auth/nonce]", e);
-    return json(res, 500, { error: "Server error" });
+    // Return the real error message in the response body so client logs / toasts show the actual cause
+    // (e.g. "value too long for type character varying(42)", "relation \"auth_nonces\" does not exist", etc.).
+    // This helps diagnose schema vs code issues without needing to tail Railway logs every time.
+    return json(res, 500, {
+      error: "Server error",
+      message: String(e?.message || e),
+    });
   }
 }
