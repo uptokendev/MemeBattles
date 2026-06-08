@@ -107,14 +107,20 @@ export default function DraftPromotionSetup() {
 
     const loadDraft = async () => {
       try {
+        let privateReadInfo: { chainId?: number; draftId?: string } | null = null;
+
         const first = await fetchCampaignDraft(draftId, null).catch((err: any) => {
-          if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
+          if (String(err?.message || "").toLowerCase().includes("private draft") || err?.chainId) {
+            privateReadInfo = { chainId: err?.chainId, draftId: err?.draftId };
+            return null;
+          }
           throw err;
         });
 
         if (first) return first;
 
-        const isSolana = isSolanaDraftChainId(draft?.chainId ?? bundle?.draft?.chainId);
+        const chainForDecision = draft?.chainId ?? bundle?.draft?.chainId ?? privateReadInfo?.chainId;
+        const isSolana = isSolanaDraftChainId(chainForDecision);
         const solanaAddr = solanaAccount;
         if (isSolana ? !solanaAddr : (!wallet.account || !wallet.signer)) {
           throw new Error("Connect the draft owner wallet to open this private draft.");
@@ -123,7 +129,7 @@ export default function DraftPromotionSetup() {
         const readAuth = isSolana
           ? await signSolanaDraftAction({
               walletAddress: solanaAddr,
-              chainId: draft?.chainId ?? SOLANA_MAINNET_CHAIN_ID,
+              chainId: chainForDecision ?? SOLANA_MAINNET_CHAIN_ID,
               action: "read_draft",
               draftId,
             })

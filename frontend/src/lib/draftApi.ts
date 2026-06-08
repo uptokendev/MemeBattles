@@ -477,7 +477,12 @@ async function retryPrivateReadWithAuth(
   fallbackDraftId?: string | null
 ): Promise<PrepareDraftBundle> {
   const wallet = normalizeWallet(walletAddress || "");
-  if (!wallet) throw new Error(String(json?.error || "Private draft requires the owner wallet."));
+  if (!wallet) {
+    const err: any = new Error(String(json?.error || "Private draft requires the owner wallet."));
+    err.chainId = json?.chainId;
+    err.draftId = json?.draftId || fallbackDraftId || "";
+    throw err;
+  }
 
   const chainId = Number(json?.chainId);
   const draftId = String(json?.draftId || fallbackDraftId || "");
