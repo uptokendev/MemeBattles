@@ -330,7 +330,7 @@ const Create = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-muted-foreground md:max-w-md">
             <span className="font-retro uppercase tracking-[0.14em] text-accent">Prepare Mode:</span>{" "}
-            Drafts and promotion pages are open now. Solana is draft-only until launch tooling is ready.
+            Drafts and promotion pages are open now. Live on-chain deployment is locked until launch.
           </div>
           <Button asChild size="sm" className="mwz-button mwz-button-orange shrink-0 font-retro">
             <Link to="/playbook">
@@ -372,26 +372,9 @@ const Create = () => {
               <p>Max upload size: 5 MB.</p>
             </div>
           </div>
-
-          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-            <div className="mb-1 font-retro text-foreground">Launch path</div>
-            Draft Mode opens promotion setup first. Solana drafts can build pages now; deployment stays unavailable until Solana launch infrastructure is added.
-          </div>
         </section>
 
         <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-3 text-xs text-muted-foreground">
-            <div className="font-retro text-sm uppercase tracking-[0.12em] text-foreground">
-              Connected wallet flow
-            </div>
-            <p className="mt-1">
-              {isSolanaDraft
-                ? "Phantom is connected. This coin will be saved as a Solana draft; deployment stays locked until Solana launch tooling is ready."
-                : "Connect a BNB wallet for the existing BNB draft flow, or connect Phantom from the wallet menu for Solana draft mode."}
-            </p>
-            {activeCreatorWallet && <div className="mt-2 truncate font-mono text-[11px] text-muted-foreground">{activeCreatorWallet}</div>}
-          </div>
-
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
@@ -476,19 +459,14 @@ const Create = () => {
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {isSolanaDraft
-                  ? "Solana deployment is not active until we launch Solana tooling. Build the Prepare page now and launch later."
+                  ? "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page."
                   : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page."}
               </p>
             </div>
             <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
               <Rocket className="mr-2 h-5 w-5" />
-              {isSolanaDraft ? "Solana Deploy Locked" : "Locked in Prepare Mode"}
+              {isSolanaDraft ? "Deploy Locked" : "Deploy Locked"}
             </Button>
-          </div>
-
-          <div className="mt-auto rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-            <div className="mb-1 font-retro text-foreground">Official links</div>
-            Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
           </div>
         </section>
       </form>

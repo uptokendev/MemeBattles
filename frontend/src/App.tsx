@@ -129,7 +129,7 @@ const App = () => {
               showContent ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`}
           >
-            <BrowserRouter>
+            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
               <InternalLinkInterceptor />
               <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />

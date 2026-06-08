@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useWallet, type WalletType } from "@/contexts/WalletContext";
 import { Loader2, ChevronDown, Check } from "lucide-react";
 import {
   connectSolanaWallet,
   disconnectSolanaWallet,
+  getSolanaProvider,
   getStoredSolanaWallet,
   SOLANA_WALLET_EVENT,
 } from "@/lib/solanaWallet";
@@ -16,27 +17,71 @@ export const ConnectWalletButton = () => {
   const [solanaAccount, setSolanaAccount] = useState(() => getStoredSolanaWallet());
   const [connectingSolana, setConnectingSolana] = useState(false);
 
-  useEffect(() => {
-    const syncSolana = () => setSolanaAccount(getStoredSolanaWallet());
-    syncSolana();
-    window.addEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
-    window.addEventListener("focus", syncSolana);
-    return () => {
-      window.removeEventListener(SOLANA_WALLET_EVENT, syncSolana as EventListener);
-      window.removeEventListener("focus", syncSolana);
-    };
-  }, []);
+  // Explicit active wallet mode for strict SOL preference
+  const [activeWalletType, setActiveWalletType] = useState<"solana" | "evm" | null>(null);
 
-  const activeAccount = solanaAccount || account;
-  const hasActiveWallet = Boolean(activeAccount || isConnected);
+  // Ref to always have latest EVM account for event handlers (avoids stale closures)
+  const evmAccountRef = useRef<string>("");
+  useEffect(() => {
+    evmAccountRef.current = account || "";
+  }, [account]);
+
+  // Recompute prefers live Solana (via getStoredSolanaWallet which now triggers
+  // the global Phantom listener attachment in solanaWallet.ts) and falls back to EVM.
+  // We still listen to the custom event (dispatched by the global listeners on
+  // native Phantom connect/disconnect/accountChanged) + focus for robustness.
+  useEffect(() => {
+    let cancelled = false;
+
+    const recompute = () => {
+      if (cancelled) return;
+      const live = getStoredSolanaWallet();
+      setSolanaAccount(live);
+      if (live) {
+        setActiveWalletType("solana");
+      } else if (evmAccountRef.current) {
+        setActiveWalletType("evm");
+      } else {
+        setActiveWalletType(null);
+      }
+    };
+
+    recompute();
+    window.addEventListener(SOLANA_WALLET_EVENT, recompute as EventListener);
+    window.addEventListener("focus", recompute);
+
+    // Seed the global listeners (if not already attached) by reading the wallet.
+    // The lib's ensurePhantomListeners will attach native provider listeners once
+    // and dispatch SOLANA_WALLET_EVENT on changes so this recompute runs.
+    getStoredSolanaWallet();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(SOLANA_WALLET_EVENT, recompute as EventListener);
+      window.removeEventListener("focus", recompute);
+    };
+  }, [account]);
+
+  // Prefer Solana whenever a Phantom key is present.
+  // Only fall back to EVM when there is no active Solana wallet.
+  const displayedAccount = solanaAccount || account;
+  const hasActiveWallet = Boolean(displayedAccount || isConnected);
   const shortAddress = useMemo(() => {
-    if (!activeAccount) return "";
-    return activeAccount.length > 10 ? `${activeAccount.slice(0, 6)}...${activeAccount.slice(-4)}` : activeAccount;
-  }, [activeAccount]);
+    if (!displayedAccount) return "";
+    return displayedAccount.length > 10
+      ? `${displayedAccount.slice(0, 6)}...${displayedAccount.slice(-4)}`
+      : displayedAccount;
+  }, [displayedAccount]);
+
+  const walletLabel = solanaAccount ? "SOL" : account ? "EVM" : "";
 
   const handleConnect = async (type: WalletType) => {
     try {
       await connect(type);
+      // If no Solana is active, mark EVM as the displayed type immediately.
+      if (!solanaAccount) {
+        setActiveWalletType("evm");
+      }
       setIsOpen(false);
     } catch (e: any) {
       console.error(e);
@@ -49,6 +94,7 @@ export const ConnectWalletButton = () => {
     try {
       const publicKey = await connectSolanaWallet();
       setSolanaAccount(publicKey);
+      setActiveWalletType("solana");
       setIsOpen(false);
     } catch (e: any) {
       console.error(e);
@@ -60,11 +106,18 @@ export const ConnectWalletButton = () => {
 
   const handleDisconnect = async () => {
     try {
+      // If Solana is (or was) the active displayed wallet, disconnect it first.
+      // The direct listeners + recompute will also react to the provider 'disconnect'.
       if (solanaAccount) {
         await disconnectSolanaWallet();
         setSolanaAccount("");
+        setActiveWalletType(evmAccountRef.current ? "evm" : null);
       }
-      if (isConnected) await disconnect();
+      // Only disconnect EVM if we are currently not showing a Solana address.
+      if (!solanaAccount && isConnected) {
+        await disconnect();
+        setActiveWalletType(null);
+      }
     } finally {
       setShowDropdown(false);
     }
@@ -83,6 +136,11 @@ export const ConnectWalletButton = () => {
         >
           <span className="w-2 h-2 rounded-full bg-emerald-500" />
           {shortAddress}
+          {walletLabel && (
+            <span className="ml-1 rounded border border-white/25 bg-white/5 px-1 py-px text-[9px] font-mono tracking-[0.5px] opacity-80">
+              {walletLabel}
+            </span>
+          )}
         </Button>
 
         {showDropdown && (

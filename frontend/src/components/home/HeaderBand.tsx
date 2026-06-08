@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +29,8 @@ function formatUptime(now: number, launch: number): string {
 
 function useSystemUptime(): string {
   const [uptime, setUptime] = useState(() => formatUptime(Date.now(), getLaunchMs()));
+  const intervalRef = useRef<number | null>(null);
+
   useEffect(() => {
     const launch = getLaunchMs();
     const tick = () => setUptime(formatUptime(Date.now(), launch));
@@ -36,18 +38,21 @@ function useSystemUptime(): string {
     // Align the first interval to the next minute boundary so the M digit
     // changes when the wall clock minute rolls over.
     const msToNextMinute = 60_000 - (Date.now() % 60_000);
-    const initial = window.setTimeout(() => {
+
+    const initialTimeout = window.setTimeout(() => {
       tick();
-      const id = window.setInterval(tick, 60_000);
-      // Smuggle the interval id out so the outer cleanup can clear it.
-      (initial as unknown as { _intervalId?: number })._intervalId = id;
+      intervalRef.current = window.setInterval(tick, 60_000);
     }, msToNextMinute);
+
     return () => {
-      const id = (initial as unknown as { _intervalId?: number })._intervalId;
-      if (id) window.clearInterval(id);
-      window.clearTimeout(initial);
+      if (intervalRef.current != null) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      window.clearTimeout(initialTimeout);
     };
   }, []);
+
   return uptime;
 }
 
