@@ -57,15 +57,6 @@ export default async function handler(req, res) {
     maxTotalFileSize: maxBytes,
   });
 
-<<<<<<< HEAD
-  form.parse(req, async (err, fields, files) => {
-    try {
-      if (err) return bad(res, 400, `Upload parse failed: ${err.message}`);
-
-      const fRaw = files.file;
-      const f = Array.isArray(fRaw) ? fRaw[0] : fRaw;
-      if (!f) return bad(res, 400, "Missing file (field name: file)");
-=======
   // Use the promise API for cleaner error handling and to ensure we always
   // send a response even if parsing or upload has issues. This helps avoid
   // situations where the connection gets reset without a proper HTTP response.
@@ -133,51 +124,13 @@ export default async function handler(req, res) {
     });
 
     if (upErr) return bad(res, 500, `Supabase upload failed: ${upErr.message}`);
->>>>>>> d570b66 (fix: make draft creation (logo upload + /drafts) robust for local dev without Supabase storage creds)
 
-      const filepath = f.filepath || f.path;
-      const mimetype = String(f.mimetype || "");
-      if (!/^image\/(png|jpeg|jpg|webp)$/.test(mimetype)) {
-        return bad(res, 400, "Unsupported image type. Use png/jpg/webp.");
-      }
+    const { data } = supabase.storage.from(bucket).getPublicUrl(name);
+    if (!data?.publicUrl) return bad(res, 500, "Failed to produce public URL");
 
-      const ext = pickExt(mimetype);
-      if (!ext) return bad(res, 400, "Unsupported image type.");
-
-      const bucket = process.env.SUPABASE_BUCKET || "memebattles";
-
-      // Defensive UUID generation across runtimes
-      const uuid =
-        (crypto && typeof crypto.randomUUID === "function" && crypto.randomUUID()) ||
-        `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-      const name =
-        kind === "avatar" && address
-          ? `avatars/${chainId}/${address}/${uuid}.${ext}`
-          : `logos/${chainId}/${uuid}.${ext}`;
-
-      const buf = fs.readFileSync(filepath);
-
-      const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
-        contentType: mimetype,
-        upsert: true,
-        cacheControl: kind === "avatar" ? "60" : "3600",
-      });
-
-      // best-effort cleanup of temp file
-      try {
-        fs.unlinkSync(filepath);
-      } catch {}
-
-      if (upErr) return bad(res, 500, `Supabase upload failed: ${upErr.message}`);
-
-      const { data } = supabase.storage.from(bucket).getPublicUrl(name);
-      if (!data?.publicUrl) return bad(res, 500, "Failed to produce public URL");
-
-      return res.status(200).json({ url: data.publicUrl });
-    } catch (e) {
-      console.error("[api/upload]", e);
-      return bad(res, 500, "Server error");
-    }
-  });
+    return res.status(200).json({ url: data.publicUrl });
+  } catch (e) {
+    console.error("[api/upload]", e);
+    return bad(res, 500, "Server error");
+  }
 }
