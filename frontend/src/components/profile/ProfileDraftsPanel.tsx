@@ -123,7 +123,7 @@ export function ProfileDraftsPanel({
   useEffect(() => {
     void loadDrafts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedViewedAddress, isOwnProfile, chainId]);
+  }, [normalizedViewedAddress, isOwnProfile]);
 
   const copyPrepareLink = async (draft: CampaignDraft) => {
     const url = `${window.location.origin}/prepare/${draft.slug}`;

@@ -23,6 +23,7 @@ import type { DetectedWallet, WalletType } from "@/contexts/WalletContext";
 type ConnectWalletModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  filter?: 'evm' | 'solana' | null;
 };
 
 type WalletDirectoryLink = {
@@ -125,7 +126,7 @@ function WalletCard({
   );
 }
 
-export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalProps) {
+export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWalletModalProps) {
   const {
     account,
     chainId,
@@ -262,7 +263,11 @@ export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalPro
                     Connect a wallet
                   </h2>
                   <p className="mt-2 max-w-[420px] text-sm leading-relaxed text-muted-foreground">
-                    Pick an installed EVM wallet. MemeWarzone only requests your public address and lets your wallet handle approvals.
+                    {filter === 'evm' 
+                      ? "Connect a BNB Chain (EVM) wallet to interact with this draft. Phantom is for Solana only."
+                      : filter === 'solana'
+                      ? "Connect Phantom (Solana mainnet 101) to interact with this draft."
+                      : "Pick an installed EVM wallet. MemeWarzone only requests your public address and lets your wallet handle approvals."}
                   </p>
                 </div>
 
@@ -321,7 +326,7 @@ export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalPro
               {/* Solana wallets section first (like pump.fun) - explicit Phantom for correct Solana chain connect.
                   Detected via window.solana. Not mixed into EVM list (we filter isPhantom from EVM detection).
                   This ensures using Phantom always does Solana (101) connect, not EVM side. */}
-              {getSolanaProvider() && (
+              {(!filter || filter === 'solana') && getSolanaProvider() && (
                 <div className="mb-4">
                   <p className="font-retro text-sm text-foreground">Solana wallets</p>
                   <p className="mt-1 text-xs text-muted-foreground">Phantom for Solana mainnet (101) drafts.</p>
@@ -353,6 +358,7 @@ export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalPro
                 </div>
               )}
 
+              {(!filter || filter === 'evm') && (
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-retro text-sm text-foreground">Detected wallets (EVM)</p>
@@ -393,7 +399,9 @@ export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalPro
                   </div>
                 )}
               </div>
+              )}
 
+              {(!filter || filter === 'evm') && (
               <div className="mt-6 rounded-3xl border border-border/70 bg-background/35 p-4">
                 <p className="font-retro text-sm text-foreground">Need another EVM wallet?</p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -430,6 +438,7 @@ export function ConnectWalletModal({ open, onOpenChange }: ConnectWalletModalPro
                   <span className="font-retro text-foreground">3.</span> Switch chain in-wallet if needed.
                 </div>
               </div>
+              )}
             </div>
           </motion.section>
         </motion.div>

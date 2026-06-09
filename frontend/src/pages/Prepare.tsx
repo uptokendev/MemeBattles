@@ -414,6 +414,16 @@ function TransmissionList({
       return;
     }
 
+    if (chainMismatchForInteraction) {
+      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to comment on this draft." : "Switch to a BNB/EVM wallet to comment on this draft.", {
+        action: {
+          label: "Switch wallet",
+          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
+        },
+      });
+      return;
+    }
+
     if (reply && !isCreator) {
       toast.error("Only the creator can reply to transmissions.");
       return;
@@ -639,6 +649,16 @@ export default function Prepare() {
       return;
     }
 
+    if (chainMismatchForInteraction) {
+      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to arm notifications on this draft." : "Switch to a BNB/EVM wallet to arm notifications on this draft.", {
+        action: {
+          label: "Switch wallet",
+          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
+        },
+      });
+      return;
+    }
+
     setArmingNotification(true);
 
     try {
@@ -659,6 +679,16 @@ export default function Prepare() {
 
     if (!activeWalletAddress) {
       toast.error("Connect wallet to follow this draft.");
+      return;
+    }
+
+    if (chainMismatchForInteraction) {
+      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to follow this draft." : "Switch to a BNB/EVM wallet to follow this draft.", {
+        action: {
+          label: "Switch wallet",
+          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
+        },
+      });
       return;
     }
 
@@ -705,6 +735,10 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
       draft.creatorWallet &&
       addressesMatch(activeWalletAddress, draft.creatorWallet, draft.chainId),
   );
+
+  const draftIsSolana = draft.chainId === 101;
+  const currentIsSolana = !!isSolanaConnected;
+  const chainMismatchForInteraction = draftIsSolana !== currentIsSolana;
 
   const links = [
     ["X / Twitter", normalizeExternalUrl(promo.xUrl || draft.xUrl, "x"), "Frontline updates", "X"],

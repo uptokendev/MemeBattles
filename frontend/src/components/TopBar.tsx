@@ -80,6 +80,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const wallet = useWallet();
   const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [walletModalFilter, setWalletModalFilter] = useState<'evm' | 'solana' | null>(null);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
@@ -158,7 +159,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const topbarButtonClass =
   "mwz-button !h-7 !min-h-0 !px-2 md:!px-3 !py-0 text-[10px] md:text-[11px] leading-none font-retro";
 
-  const openWalletModal = () => {
+  const openWalletModal = (filter?: 'evm' | 'solana') => {
+    if (filter) setWalletModalFilter(filter);
     setWalletModalOpen(true);
   };
 
@@ -306,7 +308,10 @@ tickerInitialLoadedRef.current = true;
   }, [location.pathname, setMobileMenuOpen]);
 
   useEffect(() => {
-    const onOpenWalletModal = () => setWalletModalOpen(true);
+    const onOpenWalletModal = (e: CustomEvent<{ only?: 'evm' | 'solana' }>) => {
+      if (e?.detail?.only) setWalletModalFilter(e.detail.only);
+      setWalletModalOpen(true);
+    };
     window.addEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
     return () => window.removeEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
   }, []);
@@ -548,7 +553,14 @@ tickerInitialLoadedRef.current = true;
         </div>
       </div>
 
-      <ConnectWalletModal open={walletModalOpen} onOpenChange={setWalletModalOpen} />
+      <ConnectWalletModal
+        open={walletModalOpen}
+        onOpenChange={(open) => {
+          if (!open) setWalletModalFilter(null);
+          setWalletModalOpen(open);
+        }}
+        filter={walletModalFilter}
+      />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} allCampaigns={allCampaigns} />
 
       <style>{`
