@@ -9,6 +9,7 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { getActiveChainId, getChainLabel, isAllowedChainId } from "@/lib/chainConfig";
 import { requestWalletChainSwitch } from "@/lib/launchpadReadiness";
 
@@ -38,6 +39,8 @@ export default function CommandCenterSettings() {
   } = useCommandCenterData();
 
   const wallet = useWallet();
+  const { isSolanaConnected } = useSolanaWallet();
+  const isAnyConnected = isSolanaConnected || wallet.isConnected || !!wallet.account;
   const [switchingChain, setSwitchingChain] = useState(false);
   const handleSwitchChain = async () => {
     if (!wallet.provider) {

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   fetchWarMissionsRecruiterState,
   requestWarMissionsAuthNonce,
@@ -96,6 +97,7 @@ function formFromApplication(application: WarMissionsRecruiterApplication | null
 export default function CommandCenterRecruiter() {
   const { walletAddress } = useCommandCenterData();
   const wallet = useWallet();
+  const { isSolanaConnected } = useSolanaWallet();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -153,7 +155,11 @@ export default function CommandCenterRecruiter() {
   const signIntoWarMissions = async () => {
     const account = wallet.account || walletAddress;
     if (!wallet.isConnected || !account || !wallet.signer) {
-      toast.error("Connect the wallet for this profile before unlocking recruiter missions.");
+      if (isSolanaConnected) {
+        toast.error("Recruiter / War Missions sign-in currently requires a connected BNB wallet (EVM). Solana support for this section is coming.");
+      } else {
+        toast.error("Connect the wallet for this profile before unlocking recruiter missions.");
+      }
       return;
     }
 

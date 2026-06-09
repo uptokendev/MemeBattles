@@ -5,6 +5,7 @@ import { Bell, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import type { ProfileTab } from "@/types/profile";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
@@ -39,16 +40,20 @@ import { useProfileRewards } from "@/hooks/profile/useProfileRewards";
 
 const Profile = () => {
   const navigate = useNavigate();
-  const wallet = useWallet();
+  const evmWallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
 
-  const anyWallet: any = wallet as any;
+  const anyWallet: any = evmWallet as any;
 
-  const isConnected: boolean = Boolean(
-    anyWallet?.isConnected ?? anyWallet?.connected ?? wallet.account
+  const isConnected: boolean = isSolanaConnected || Boolean(
+    anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account
   );
 
-  const account: string | null = isConnected ? wallet.account ?? null : null;
+  // For Solana, preserve exact base58 (case sensitive). For EVM, lowercase.
+  const account: string | null = isConnected
+    ? (isSolanaConnected ? solanaAccount : evmWallet.account?.toLowerCase() ?? null)
+    : null;
 
   const {
     addressParam,
@@ -64,13 +69,15 @@ const Profile = () => {
   const isOwnProfile = Boolean(
     account &&
       viewedAddress &&
-      account.toLowerCase() === viewedAddress.toLowerCase()
+      (isSolanaConnected
+        ? account === viewedAddress  // exact match for base58
+        : account.toLowerCase() === viewedAddress.toLowerCase())
   );
 
   // Map to the active app chain so signed messages (profile upsert, rewards
   // claim) and chain-keyed API calls never carry an unsupported chainId.
-  const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-  const chainId: number | undefined = walletChainId ? getActiveChainId(walletChainId) : undefined;
+  const walletChainId: number | undefined = isSolanaConnected ? 101 : (anyWallet?.chainId ?? anyWallet?.network?.chainId);
+  const chainId: number | undefined = isSolanaConnected ? 101 : (walletChainId ? getActiveChainId(walletChainId) : undefined);
 const [profileDrafts, setProfileDrafts] = useState<CampaignDraft[]>([]);
 const [loadingDrafts, setLoadingDrafts] = useState(false);
 const [draftsError, setDraftsError] = useState<string | null>(null);

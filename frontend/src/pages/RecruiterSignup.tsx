@@ -5,9 +5,12 @@ import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 
 export default function RecruiterSignup() {
-  const wallet = useWallet();
+  const evmWallet = useWallet();
+  const { isSolanaConnected } = useSolanaWallet();
+  const isAnyConnected = isSolanaConnected || evmWallet.isConnected || !!evmWallet.account;
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 py-8">
@@ -33,7 +36,7 @@ export default function RecruiterSignup() {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {wallet.isConnected ? (
+          {isAnyConnected ? (
             <Button asChild className="font-retro">
               <Link to="/command/recruiter">
                 Open recruiter panel

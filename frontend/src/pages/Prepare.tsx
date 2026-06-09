@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { resolveImageUri } from "@/lib/media";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
 import {
@@ -380,6 +381,8 @@ function TransmissionList({
   isCreator: boolean;
 }) {
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const activeWalletAddress = isSolanaConnected ? solanaAccount : wallet.account;
   const [items, setItems] = useState<DraftComment[]>([]);
   const [body, setBody] = useState("");
   const [replyingTo, setReplyingTo] = useState<DraftComment | null>(null);
@@ -405,7 +408,7 @@ function TransmissionList({
   const send = async (reply = false) => {
     const text = reply ? replyBody.trim() : body.trim();
 
-    if (!wallet.account) {
+    if (!activeWalletAddress) {
       toast.error("Connect wallet to send a transmission.");
       return;
     }
@@ -425,7 +428,7 @@ function TransmissionList({
           ? `↳ Creator reply to ${replyingTo.displayName || shortWallet(replyingTo.walletAddress)}: `
           : "";
 
-      const comment = await addDraftComment(draftId, wallet.account, `${prefix}${text}`);
+      const comment = await addDraftComment(draftId, activeWalletAddress, `${prefix}${text}`);
 
       setItems((prev) => [comment, ...prev]);
       setBody("");
@@ -563,7 +566,7 @@ function TransmissionList({
             Send transmission
           </Button>
 
-          {!wallet.account && (
+          {!activeWalletAddress && (
             <p className="mt-3 text-xs text-muted-foreground">
               Wallet connection required for bunker actions.
             </p>
@@ -577,6 +580,8 @@ function TransmissionList({
 export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const activeWalletAddress = isSolanaConnected ? solanaAccount : wallet.account;
 
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -592,7 +597,7 @@ export default function Prepare() {
 
     setLoading(true);
 
-    void fetchPrepareDraft(slug, wallet.account)
+    void fetchPrepareDraft(slug, activeWalletAddress)
       .then((data) => {
         if (cancelled) return;
         setBundle(data);
@@ -619,7 +624,7 @@ export default function Prepare() {
   const pop = bundle?.popularity;
 
   const refreshPrepareBundle = async () => {
-    const data = await fetchPrepareDraft(slug, wallet.account);
+    const data = await fetchPrepareDraft(slug, activeWalletAddress);
     setBundle(data);
     setFollowCount(data.popularity.follows);
     return data;
@@ -628,7 +633,7 @@ export default function Prepare() {
   const handleArmNotification = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!activeWalletAddress) {
       toast.error("Connect wallet to arm notifications.");
       return;
     }
@@ -636,7 +641,7 @@ export default function Prepare() {
     setArmingNotification(true);
 
     try {
-      await armDraftNotifications(draft.id, wallet.account);
+      await armDraftNotifications(draft.id, activeWalletAddress);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:notifications-changed"));
       setHasArmed(true);
@@ -651,7 +656,7 @@ export default function Prepare() {
   const handleFollow = async () => {
     if (!draft) return;
 
-    if (!wallet.account) {
+    if (!activeWalletAddress) {
       toast.error("Connect wallet to follow this draft.");
       return;
     }
@@ -659,7 +664,7 @@ export default function Prepare() {
     setFollowingDraft(true);
 
     try {
-      const result = await followDraft(draft.id, wallet.account);
+      const result = await followDraft(draft.id, activeWalletAddress);
       setFollowCount(result.followCount);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
@@ -695,9 +700,11 @@ const ticker = `$${draft.ticker}`;
 const heroImageUrl = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
 const heroTagline = draft.description || "The launchpad that turns every drop into a war.";
   const isCreator = Boolean(
-    wallet.account &&
+    activeWalletAddress &&
       draft.creatorWallet &&
-      wallet.account.toLowerCase() === draft.creatorWallet.toLowerCase(),
+      (isSolanaConnected
+        ? activeWalletAddress === draft.creatorWallet
+        : activeWalletAddress.toLowerCase() === draft.creatorWallet.toLowerCase()),
   );
 
   const links = [

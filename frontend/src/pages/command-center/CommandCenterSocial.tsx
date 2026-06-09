@@ -6,6 +6,7 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
 import type { ProfileTab } from "@/types/profile";
@@ -44,6 +45,8 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
     createdCount,
   } = useCommandCenterData();
   const wallet = useWallet();
+  const { isSolanaConnected, solanaAccount } = useSolanaWallet();
+  const activeAccount = isSolanaConnected ? solanaAccount : wallet.account;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const activeTab = mode as ProfileTab;
 
@@ -57,7 +60,7 @@ export default function CommandCenterSocial({ mode }: CommandCenterSocialProps) 
     viewedAddress: walletAddress,
     isOwnProfile: true,
     chainId,
-    account: wallet.account ?? walletAddress,
+    account: activeAccount ?? walletAddress,
     fetchCampaigns,
     fetchCampaignSummary,
   });
