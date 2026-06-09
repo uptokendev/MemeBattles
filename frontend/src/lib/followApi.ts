@@ -1,5 +1,7 @@
 import { isAddress } from "ethers";
 import { apiFetch } from "@/lib/apiBase";
+import { normalizeAddress as centralNormalize, isSolanaAddress } from "@/lib/address";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
 
 type FollowUserPayload = {
   chainId: number;
@@ -25,21 +27,25 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function normAddr(a: string) {
-  return (a ?? "").trim().toLowerCase();
+function normAddr(a: string, chainId?: number) {
+  return centralNormalize(a, chainId);
 }
 
-function assertAddr(a: string, label: string) {
-  const v = normAddr(a);
-  if (!isAddress(v)) throw new Error(`Invalid ${label} address`);
+function assertAddr(a: string, label: string, chainId?: number) {
+  const v = normAddr(a, chainId);
+  if (chainId && isSolanaDraftChainId(chainId)) {
+    if (!isSolanaAddress(v)) throw new Error(`Invalid ${label} address`);
+  } else if (!isAddress(v)) {
+    throw new Error(`Invalid ${label} address`);
+  }
   return v;
 }
 
 export async function followUser(followerAddress: string, followingAddress: string, chainId = 0): Promise<void> {
   const payload: FollowUserPayload = {
     chainId,
-    followerAddress: assertAddr(followerAddress, "follower"),
-    followingAddress: assertAddr(followingAddress, "following"),
+    followerAddress: assertAddr(followerAddress, "follower", chainId),
+    followingAddress: assertAddr(followingAddress, "following", chainId),
   };
   await api<{ ok: true }>(`/api/follows/user`, {
     method: "POST",
@@ -50,8 +56,8 @@ export async function followUser(followerAddress: string, followingAddress: stri
 export async function unfollowUser(followerAddress: string, followingAddress: string, chainId = 0): Promise<void> {
   const payload: FollowUserPayload = {
     chainId,
-    followerAddress: assertAddr(followerAddress, "follower"),
-    followingAddress: assertAddr(followingAddress, "following"),
+    followerAddress: assertAddr(followerAddress, "follower", chainId),
+    followingAddress: assertAddr(followingAddress, "following", chainId),
   };
   await api<{ ok: true }>(`/api/follows/user`, {
     method: "POST",
@@ -64,36 +70,36 @@ export async function isFollowingUser(
   followingAddress: string,
   chainId = 0
 ): Promise<boolean> {
-  const follower = assertAddr(followerAddress, "follower");
-  const following = assertAddr(followingAddress, "following");
+  const follower = assertAddr(followerAddress, "follower", chainId);
+  const following = assertAddr(followingAddress, "following", chainId);
   const q = new URLSearchParams({ chainId: String(chainId), follower, following });
   const out = await api<{ isFollowing: boolean }>(`/api/follows/user?${q.toString()}`);
   return !!out.isFollowing;
 }
 
 export async function getFollowersCount(address: string, chainId = 0): Promise<number> {
-  const a = assertAddr(address, "address");
+  const a = assertAddr(address, "address", chainId);
   const q = new URLSearchParams({ chainId: String(chainId), address: a });
   const out = await api<{ followers: number }>(`/api/follows/user-counts?${q.toString()}`);
   return out.followers ?? 0;
 }
 
 export async function getFollowingCount(address: string, chainId = 0): Promise<number> {
-  const a = assertAddr(address, "address");
+  const a = assertAddr(address, "address", chainId);
   const q = new URLSearchParams({ chainId: String(chainId), address: a });
   const out = await api<{ following: number }>(`/api/follows/user-counts?${q.toString()}`);
   return out.following ?? 0;
 }
 
 export async function getFollowers(address: string, chainId = 0) {
-  const a = assertAddr(address, "address");
+  const a = assertAddr(address, "address", chainId);
   const q = new URLSearchParams({ chainId: String(chainId), address: a, type: "followers" });
   const out = await api<{ items: Array<{ address: string; profile?: any }> }>(`/api/follows/user-list?${q.toString()}`);
   return (out.items || []).map((it) => ({ id: it.address, profile: it.profile }));
 }
 
 export async function getFollowing(address: string, chainId = 0) {
-  const a = assertAddr(address, "address");
+  const a = assertAddr(address, "address", chainId);
   const q = new URLSearchParams({ chainId: String(chainId), address: a, type: "following" });
   const out = await api<{ items: Array<{ address: string; profile?: any }> }>(`/api/follows/user-list?${q.toString()}`);
   return (out.items || []).map((it) => ({ id: it.address, profile: it.profile }));
