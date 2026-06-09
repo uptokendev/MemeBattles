@@ -77,12 +77,16 @@ export function isSolanaChain(chainId) {
   return n === 101 || n === 102;
 }
 
-export function isSolanaAddress(value?: string | null): boolean {
+/**
+ * Check if a string looks like a Solana base58 address (32-44 chars, base58 alphabet).
+ * This is the plain JS version for the server (no TS types).
+ */
+export function isSolanaAddress(value) {
   const s = String(value || "").trim();
   return s.length >= 32 && s.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
 }
 
-export function normalizeAddress(value: any, chainId?: number | string | null): string {
+export function normalizeAddress(value, chainId) {
   const raw = String(value || "").trim();
   if (isSolanaChain(chainId)) {
     // Solana base58 pubkey - preserve exact case and format (never lowercase)
@@ -93,12 +97,4 @@ export function normalizeAddress(value: any, chainId?: number | string | null): 
   }
   const lower = raw.toLowerCase();
   return isAddress(lower) ? lower : "";
-}
-
-/**
- * Validate + normalize in one step for a given chain.
- * Returns normalized string or "" if invalid for the chain.
- */
-export function normalizeAndValidateAddress(value: any, chainId?: number | string | null): string {
-  return normalizeAddress(value, chainId);
 }
