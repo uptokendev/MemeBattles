@@ -240,7 +240,9 @@ function isPublicDiscoverableDraft(draft) {
 function canViewDraft(draft, viewer) {
   if (!draft) return false;
   if (draft.visibility !== "private") return true;
-  return viewer && draft.creatorWallet.toLowerCase() === viewer.toLowerCase();
+  const c = normalizeAddress(draft.creatorWallet, draft.chainId);
+  const v = normalizeAddress(viewer, draft.chainId);
+  return !!c && !!v && c === v;
 }
 
 async function getDraftBundleById(id, viewer, { bypassVisibility = false } = {}) {
@@ -600,7 +602,7 @@ export async function draftComments(req, res) {
 
   const bundle = await getDraftBundleById(id, "", { bypassVisibility: true });
   if (!bundle || bundle.forbidden) return json(res, 404, { error: "Draft not found" });
-  if (parentCommentId && wallet.toLowerCase() !== bundle.draft.creatorWallet.toLowerCase()) {
+  if (parentCommentId && normalizeAddress(wallet, bundle.draft.chainId) !== normalizeAddress(bundle.draft.creatorWallet, bundle.draft.chainId)) {
     return json(res, 403, { error: "Only the creator can reply to transmissions." });
   }
 

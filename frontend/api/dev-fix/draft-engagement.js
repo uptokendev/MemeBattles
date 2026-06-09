@@ -65,10 +65,12 @@ function mapCommentRow(row) {
 
 function mapDraftRow(row) {
   if (!row) return null;
+  const draftChainId = Number(row.chain_id ?? row.chainId ?? 97);
+  const rawCreator = String(row.creator_wallet ?? row.creatorWallet ?? "");
   return {
     id: String(row.id),
-    chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    chainId: draftChainId,
+    creatorWallet: isSolanaChain(draftChainId) ? rawCreator : rawCreator.toLowerCase(),
     name: String(row.name || ""),
     ticker: String(row.ticker || ""),
     description: row.description || null,
@@ -157,7 +159,8 @@ export async function signedDraftFollow(req, res) {
       body.address ||
       body.userAddress ||
       body.followerAddress ||
-      body.auth?.walletAddress
+      body.auth?.walletAddress,
+    draft.chainId
   );
   if (!wallet) return json(res, 400, { error: "Connect wallet to follow this draft." });
 
@@ -219,7 +222,7 @@ export async function signedDraftNotificationSubscription(req, res) {
   const draft = await getDraftAuthContext(pool, draftId);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  const wallet = normalizeAddress(body.auth?.walletAddress);
+  const wallet = normalizeAddress(body.auth?.walletAddress, draft.chainId);
   if (!wallet) return json(res, 400, { error: "Connect wallet to arm notifications." });
 
   const authOk = await requireDraftActionAuth({
@@ -265,8 +268,8 @@ export async function followedDrafts(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
 
   const q = getQuery(req);
-  const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address);
   const chainId = Number(q.chainId || 0);
+  const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address, chainId);
   const pool = await getPool();
 
   if (!wallet) return json(res, 400, { error: "Wallet address required." });
@@ -326,7 +329,7 @@ export async function signedDraftComments(req, res) {
   const draft = await getDraftAuthContext(pool, draftId);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  const wallet = normalizeAddress(body.auth?.walletAddress);
+  const wallet = normalizeAddress(body.auth?.walletAddress, draft.chainId);
   if (!wallet) return json(res, 400, { error: "Connect wallet to send a transmission." });
 
   const authOk = await requireDraftActionAuth({

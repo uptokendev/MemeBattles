@@ -44,10 +44,12 @@ function normalizeTicker(value) {
 
 function mapDraftRow(row) {
   if (!row) return null;
+  const draftChainId = Number(row.chain_id ?? row.chainId ?? 97);
+  const rawCreator = String(row.creator_wallet ?? row.creatorWallet ?? "");
   return {
     id: String(row.id),
-    chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    chainId: draftChainId,
+    creatorWallet: isSolanaChain(draftChainId) ? rawCreator : rawCreator.toLowerCase(),
     name: String(row.name || ""),
     ticker: normalizeTicker(row.ticker),
     description: row.description || null,

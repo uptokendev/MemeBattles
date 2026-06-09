@@ -27,7 +27,7 @@ function buildDraftAuthMessage({ action, walletAddress, chainId, nonce, draftId 
   const lines = [
     "MemeWarzone Prepare Mode",
     `Action: ${action}`,
-    `Wallet: ${normalizeAddress(walletAddress)}`,
+    `Wallet: ${normalizeAddress(walletAddress, chainId)}`,
     `Chain ID: ${Number(chainId)}`,
   ];
 

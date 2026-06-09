@@ -1,4 +1,4 @@
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, isAddress, isSolanaChain, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
 
@@ -34,10 +34,12 @@ async function getPool() {
 
 function mapDraftRow(row) {
   if (!row) return null;
+  const draftChainId = Number(row.chain_id ?? 97);
+  const rawCreator = String(row.creator_wallet || row.creatorWallet || "");
   return {
     id: String(row.id),
-    chainId: Number(row.chain_id ?? 97),
-    creatorWallet: String(row.creator_wallet || "").toLowerCase(),
+    chainId: draftChainId,
+    creatorWallet: isSolanaChain(draftChainId) ? rawCreator : rawCreator.toLowerCase(),
     name: String(row.name || ""),
     ticker: String(row.ticker || ""),
     description: row.description || null,

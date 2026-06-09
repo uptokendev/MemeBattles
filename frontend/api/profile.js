@@ -86,10 +86,10 @@ export default async function handler(req, res) {
       );
 
       const profile = rows[0] ?? null;
-      const rankState = await loadRankState(chainId, address);
+      const rankState = await loadRankState(chainId, addr);
 
       return json(res, 200, {
-        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address, displayName: null, avatarUrl: null, bio: null, updatedAt: null, ...rankState } : null,
+        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address: addr, displayName: null, avatarUrl: null, bio: null, updatedAt: null, ...rankState } : null,
       });
     } catch (e) {
       // Common deployment footguns: missing table/columns after a new migration.
