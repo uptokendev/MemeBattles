@@ -1,4 +1,5 @@
 import { apiFetch, apiUrl } from "@/lib/apiBase";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
 
 export type UserProfile = {
   chainId: number;
@@ -27,8 +28,12 @@ function buildUrl(pathWithQuery: string): string {
   return apiUrl(pathWithQuery);
 }
 
-function normalizeAddress(addr: string): string {
-  return String(addr ?? "").trim().toLowerCase();
+function normalizeAddress(addr: string, chainId?: number): string {
+  const raw = String(addr ?? "").trim();
+  if (chainId != null && isSolanaDraftChainId(chainId)) {
+    return raw; // preserve base58 case for Solana
+  }
+  return raw.toLowerCase();
 }
 
 export function buildProfileMessage(args: {
@@ -53,7 +58,7 @@ export function buildProfileMessage(args: {
 }
 
 export async function fetchUserProfile(chainId: number, address: string): Promise<UserProfile | null> {
-  const addr = normalizeAddress(address);
+  const addr = normalizeAddress(address, chainId);
   const url = buildUrl(`/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`);
 
   const res = await fetch(url, { method: "GET" });
@@ -82,7 +87,7 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
 }
 
 export async function requestNonce(chainId: number, address: string): Promise<string> {
-  const addr = normalizeAddress(address);
+  const addr = normalizeAddress(address, chainId);
   const res = await apiFetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`, { method: "GET" });
   if (!res.ok) {
     const j = await readJson(res);
@@ -109,7 +114,7 @@ export async function saveUserProfile(input: SaveProfileInput): Promise<void> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       chainId: input.chainId,
-      address: normalizeAddress(input.address),
+      address: normalizeAddress(input.address, input.chainId),
       displayName: input.displayName,
       avatarUrl: input.avatarUrl,
       bio: input.bio,

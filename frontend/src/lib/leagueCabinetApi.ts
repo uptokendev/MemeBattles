@@ -10,6 +10,14 @@ function buildUrl(pathWithQuery: string): string {
   return new URL(pathWithQuery, window.location.origin).toString();
 }
 
+function normalizeAddressForQuery(addr: string, chainId: number): string {
+  const raw = String(addr ?? "").trim();
+  if (isSolanaDraftChainId(chainId)) {
+    return raw;
+  }
+  return raw.toLowerCase();
+}
+
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
   if (!text) return null;
@@ -64,8 +72,9 @@ function normalizeCabinet(raw: any): LeagueCabinet {
 }
 
 export async function fetchLeagueCabinet(chainId: number, address: string): Promise<LeagueCabinet> {
+  const addr = normalizeAddressForQuery(address, chainId);
   const url = buildUrl(
-    `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address.toLowerCase())}`
+    `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
   );
 
   const res = await fetch(url, { method: "GET" });

@@ -104,6 +104,11 @@ export function CommandCenterDataProvider({
   } = editableProfile;
 
   useEffect(() => {
+    if (isSol) {
+      setAttribution(null);
+      setLoadingAttribution(false);
+      return;
+    }
     let cancelled = false;
     setLoadingAttribution(true);
     void fetchWalletAttributionState(walletAddress)
@@ -120,7 +125,7 @@ export function CommandCenterDataProvider({
     return () => {
       cancelled = true;
     };
-  }, [walletAddress]);
+  }, [walletAddress, isSol]);
 
   const {
     followersCount,

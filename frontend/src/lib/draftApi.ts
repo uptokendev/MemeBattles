@@ -1,6 +1,10 @@
 import { verifyMessage } from "ethers";
 import { apiFetch, apiUrl } from "@/lib/apiBase";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
 const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
@@ -476,32 +480,63 @@ async function retryPrivateReadWithAuth(
   json: any,
   fallbackDraftId?: string | null
 ): Promise<PrepareDraftBundle> {
-  const wallet = normalizeWallet(walletAddress || "");
-  if (!wallet) {
-    const err: any = new Error(String(json?.error || "Private draft requires the owner wallet."));
-    err.chainId = json?.chainId;
-    err.draftId = json?.draftId || fallbackDraftId || "";
-    throw err;
-  }
-
   const chainId = Number(json?.chainId);
   const draftId = String(json?.draftId || fallbackDraftId || "");
   if (!draftId) throw new Error("Private draft auth could not identify the draft. Refresh and try again.");
 
-  const auth = await signDraftActionWithKnownChain({ action: "read_draft", draftId, walletAddress: wallet, chainId, useOwnerSession: true });
+  const isSol = isSolanaDraftChainId(chainId);
+  let auth: DraftActionAuth;
+
+  if (isSol) {
+    const solanaAddr = (walletAddress || json?.viewer || "").trim();
+    if (!solanaAddr) {
+      const err: any = new Error(String(json?.error || "Private draft requires the owner wallet."));
+      err.chainId = json?.chainId;
+      err.draftId = json?.draftId || fallbackDraftId || "";
+      throw err;
+    }
+    auth = await signSolanaDraftAction({
+      walletAddress: solanaAddr,
+      chainId,
+      action: "read_draft",
+      draftId,
+    });
+  } else {
+    const wallet = normalizeWallet(walletAddress || "");
+    if (!wallet) {
+      const err: any = new Error(String(json?.error || "Private draft requires the owner wallet."));
+      err.chainId = json?.chainId;
+      err.draftId = json?.draftId || fallbackDraftId || "";
+      throw err;
+    }
+    auth = await signDraftActionWithKnownChain({ action: "read_draft", draftId, walletAddress: wallet, chainId, useOwnerSession: true });
+  }
+
   let res = await postPrivateRead(url, auth);
 
   if (!res.ok) {
     const errorJson = await readResponseJson(res);
     if (res.status === 401 && shouldRetryWithFreshOwnerSession(errorJson)) {
-      const freshAuth = await signDraftActionWithKnownChain({
-        action: "read_draft",
-        draftId,
-        walletAddress: wallet,
-        chainId,
-        useOwnerSession: true,
-        forceNewOwnerSession: true,
-      });
+      let freshAuth: DraftActionAuth;
+      if (isSol) {
+        const solanaAddr = (walletAddress || json?.viewer || "").trim();
+        freshAuth = await signSolanaDraftAction({
+          walletAddress: solanaAddr,
+          chainId,
+          action: "read_draft",
+          draftId,
+        });
+      } else {
+        const wallet = normalizeWallet(walletAddress || "");
+        freshAuth = await signDraftActionWithKnownChain({
+          action: "read_draft",
+          draftId,
+          walletAddress: wallet,
+          chainId,
+          useOwnerSession: true,
+          forceNewOwnerSession: true,
+        });
+      }
       res = await postPrivateRead(url, freshAuth);
     } else {
       throw new Error(String(errorJson?.error || errorJson?.message || `Request failed (${res.status})`));

@@ -46,11 +46,18 @@ export function useProfileBalances({
   fetchCampaigns,
   fetchCampaignSummary,
 }: UseProfileBalancesArgs) {
+  const isSolanaAddr = !/^0x[a-fA-F0-9]{40}$/.test(String(account || ""));
   const [nativeBalance, setNativeBalance] = useState<string>("");
   const [tokenBalances, setTokenBalances] = useState<TokenBalanceRow[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
 
   useEffect(() => {
+    if (isSolanaAddr) {
+      setNativeBalance("");
+      setTokenBalances([]);
+      setLoadingBalances(false);
+      return;
+    }
     let cancelled = false;
 
     const resolveReadProvider = (): ethers.Provider | null => {
