@@ -359,85 +359,85 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
               )}
 
               {(!filter || filter === 'evm') && (
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-retro text-sm text-foreground">Detected wallets (EVM)</p>
-                  <p className="mt-1 text-xs text-muted-foreground">EIP-6963 wallets are listed first, then legacy injected providers. (Phantom excluded to prevent EVM-side connect.)</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  disabled={isBusy}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <RefreshCcw className="h-3.5 w-3.5" />
-                  Refresh
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {detectedWallets.length > 0 ? (
-                  detectedWallets.map((detectedWallet) => (
-                    <WalletCard
-                      key={`${detectedWallet.id}:${detectedWallet.rdns || detectedWallet.name}`}
-                      wallet={detectedWallet}
-                      disabled={isBusy}
-                      connecting={selectedWalletId === detectedWallet.id || connectingWalletId === detectedWallet.id}
-                      onConnect={handleConnect}
-                    />
-                  ))
-                ) : (
-                  <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent">
-                      <AlertTriangle className="h-5 w-5" />
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-retro text-sm text-foreground">Detected wallets (EVM)</p>
+                      <p className="mt-1 text-xs text-muted-foreground">EIP-6963 wallets are listed first, then legacy injected providers. (Phantom excluded to prevent EVM-side connect.)</p>
                     </div>
-                    <p className="mt-3 font-retro text-sm text-foreground">No EVM wallet detected</p>
-                    <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-                      Install Phantom for Solana (see above) or an EVM wallet extension (MetaMask etc.), unlock it, then refresh. On mobile, open inside the wallet browser.
-                    </p>
-                  </div>
-                )}
-              </div>
-              )}
 
-              {(!filter || filter === 'evm') && (
-              <div className="mt-6 rounded-3xl border border-border/70 bg-background/35 p-4">
-                <p className="font-retro text-sm text-foreground">Need another EVM wallet?</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Use a trusted wallet directory instead of search ads. After installing, refresh this modal and the wallet should appear automatically.
-                </p>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {walletDirectoryLinks.map((link) => (
-                    <a
-                      key={link.href}
-                      href={link.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group rounded-2xl border border-border/60 bg-card/70 p-3 transition hover:border-accent/40 hover:bg-card"
+                    <button
+                      type="button"
+                      onClick={handleRefresh}
+                      disabled={isBusy}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <span className="flex items-center justify-between gap-2 text-sm text-foreground">
-                        {link.label}
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground transition group-hover:text-accent" />
-                      </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{link.description}</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
+                      <RefreshCcw className="h-3.5 w-3.5" />
+                      Refresh
+                    </button>
+                  </div>
 
-              <div className="mt-4 grid gap-2 rounded-3xl border border-accent/15 bg-accent/5 p-4 text-xs leading-relaxed text-muted-foreground sm:grid-cols-3">
-                <div>
-                  <span className="font-retro text-foreground">1.</span> Select a detected wallet.
-                </div>
-                <div>
-                  <span className="font-retro text-foreground">2.</span> Approve the account request in your wallet.
-                </div>
-                <div>
-                  <span className="font-retro text-foreground">3.</span> Switch chain in-wallet if needed.
-                </div>
-              </div>
+                  <div className="mt-4 space-y-3">
+                    {detectedWallets.length > 0 ? (
+                      detectedWallets.map((detectedWallet) => (
+                        <WalletCard
+                          key={`${detectedWallet.id}:${detectedWallet.rdns || detectedWallet.name}`}
+                          wallet={detectedWallet}
+                          disabled={isBusy}
+                          connecting={selectedWalletId === detectedWallet.id || connectingWalletId === detectedWallet.id}
+                          onConnect={handleConnect}
+                        />
+                      ))
+                    ) : (
+                      <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent">
+                          <AlertTriangle className="h-5 w-5" />
+                        </div>
+                        <p className="mt-3 font-retro text-sm text-foreground">No EVM wallet detected</p>
+                        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                          Install Phantom for Solana (see above) or an EVM wallet extension (MetaMask etc.), unlock it, then refresh. On mobile, open inside the wallet browser.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-6 rounded-3xl border border-border/70 bg-background/35 p-4">
+                    <p className="font-retro text-sm text-foreground">Need another EVM wallet?</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Use a trusted wallet directory instead of search ads. After installing, refresh this modal and the wallet should appear automatically.
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {walletDirectoryLinks.map((link) => (
+                        <a
+                          key={link.href}
+                          href={link.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group rounded-2xl border border-border/60 bg-card/70 p-3 transition hover:border-accent/40 hover:bg-card"
+                        >
+                          <span className="flex items-center justify-between gap-2 text-sm text-foreground">
+                            {link.label}
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground transition group-hover:text-accent" />
+                          </span>
+                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{link.description}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 rounded-3xl border border-accent/15 bg-accent/5 p-4 text-xs leading-relaxed text-muted-foreground sm:grid-cols-3">
+                    <div>
+                      <span className="font-retro text-foreground">1.</span> Select a detected wallet.
+                    </div>
+                    <div>
+                      <span className="font-retro text-foreground">2.</span> Approve the account request in your wallet.
+                    </div>
+                    <div>
+                      <span className="font-retro text-foreground">3.</span> Switch chain in-wallet if needed.
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </motion.section>
