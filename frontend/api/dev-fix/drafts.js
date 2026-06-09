@@ -336,7 +336,7 @@ export async function drafts(req, res) {
       }
       const chainId = q.chainId ? Number(q.chainId) : null;
       const where = ["visibility = 'public'", "status = any($1::text[])"];
-      const params: any[] = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
+      const params = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
       if (chainId) {
         where.push(`chain_id = $${params.length + 1}`);
         params.push(chainId);
