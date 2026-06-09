@@ -1,5 +1,6 @@
 import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
 import { apiFetch } from "@/lib/apiBase";
+import { normalizeAddress as centralNormalize } from "./address";
 
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
@@ -301,8 +302,8 @@ export async function fetchWalletRewardClaims(walletAddress: string, limit = 50,
   return Array.isArray(json?.claims) ? json.claims : [];
 }
 
-function normalizeWalletAddress(walletAddress: string): string {
-  return String(walletAddress || "").trim().toLowerCase();
+function normalizeWalletAddress(walletAddress: string, chainId?: number): string {
+  return centralNormalize(walletAddress, chainId);
 }
 
 function normalizeRecruiterCode(code: string): string {

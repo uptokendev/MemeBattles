@@ -6,6 +6,7 @@ import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import { useWallet } from "@/contexts/WalletContext";
+import { normalizeAddress as centralNormalize, isSolanaAddress } from "@/lib/address";
 
 type CampaignTickerItem = {
   campaignAddress: string;
@@ -39,12 +40,14 @@ const REALTIME_API_BASE = String(
 
 const MIN_TICKER_RENDERED_ITEMS = 18;
 
-function normalizeAddress(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
+function normalizeAddress(value: unknown, chainId?: number) {
+  return centralNormalize(String(value ?? ""), chainId);
 }
 
 function isAddress(value: unknown) {
-  return /^0x[a-f0-9]{40}$/.test(normalizeAddress(value));
+  const raw = String(value ?? "").trim();
+  if (isSolanaAddress(raw)) return true;
+  return /^0x[a-f0-9]{40}$/.test(normalizeAddress(raw));
 }
 
 function asNumber(value: unknown): number | null {

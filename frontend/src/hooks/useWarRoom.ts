@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAblyWarRoomChannel } from "@/hooks/useAblyWarRoomChannel";
 import { useWallet } from "@/contexts/WalletContext";
+import { normalizeAddress as centralNormalize } from "@/lib/address";
 import {
   buildChatSessionMessage,
   fetchWarRoomHistory,
@@ -14,9 +15,8 @@ import {
 const FALLBACK_POLL_MS = 8000;
 const RECONCILE_POLL_MS = 30000;
 
-function normalizeAddress(value?: string | null) {
-  const v = String(value ?? "").trim().toLowerCase();
-  return /^0x[a-f0-9]{40}$/.test(v) ? v : "";
+function normalizeAddress(value?: string | null, chainId?: number) {
+  return centralNormalize(value, chainId);
 }
 
 function sessionStorageKey(chainId: number, campaignAddress: string, walletAddress: string) {

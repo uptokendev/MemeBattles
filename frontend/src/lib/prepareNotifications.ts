@@ -9,8 +9,10 @@ async function parseJson(res: Response) {
   return json as any;
 }
 
-function normalizeWallet(value?: string | null) {
-  return String(value || "").trim().toLowerCase();
+import { normalizeAddress as centralNormalize } from "./address";
+
+function normalizeWallet(value?: string | null, chainId?: number) {
+  return centralNormalize(value, chainId);
 }
 
 export async function fetchPrepareNotifications(walletAddress?: string | null, limit = 20): Promise<DraftNotification[]> {

@@ -3,6 +3,7 @@ import { apiFetch, apiUrl } from "@/lib/apiBase";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 import { isSolanaDraftChainId } from "@/lib/draftChains";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { normalizeAddress as centralNormalize } from "@/lib/address";
 import { isSolanaDraftChainId } from "@/lib/draftChains";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 
@@ -57,8 +58,8 @@ function query(params: Record<string, string | number | null | undefined>) {
   return out ? `?${out}` : "";
 }
 
-function normalizeWallet(value: string) {
-  return String(value || "").trim().toLowerCase();
+function normalizeWallet(value: string, chainId?: number) {
+  return centralNormalize(value, chainId);
 }
 
 function buildDraftAuthMessage(input: {

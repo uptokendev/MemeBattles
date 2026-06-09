@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { normalizeAddress as centralNormalize } from "@/lib/address";
 import { useAblyLeagueChannel } from "@/hooks/useAblyLeagueChannel";
 import { getActiveChainId } from "@/lib/chainConfig";
 import {
@@ -10,8 +11,8 @@ import {
   writeStoredRank,
 } from "@/lib/ranks";
 
-function normalizeAddress(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+function normalizeAddress(value: unknown, chainId?: number): string {
+  return centralNormalize(String(value ?? ""), chainId);
 }
 
 export function RankPromotionListener() {

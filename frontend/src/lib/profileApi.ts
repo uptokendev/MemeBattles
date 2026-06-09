@@ -1,5 +1,5 @@
 import { apiFetch, apiUrl } from "@/lib/apiBase";
-import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { normalizeAddress as centralNormalize } from "@/lib/address";
 
 export type UserProfile = {
   chainId: number;
@@ -29,11 +29,7 @@ function buildUrl(pathWithQuery: string): string {
 }
 
 function normalizeAddress(addr: string, chainId?: number): string {
-  const raw = String(addr ?? "").trim();
-  if (chainId != null && isSolanaDraftChainId(chainId)) {
-    return raw; // preserve base58 case for Solana
-  }
-  return raw.toLowerCase();
+  return centralNormalize(addr, chainId);
 }
 
 export function buildProfileMessage(args: {

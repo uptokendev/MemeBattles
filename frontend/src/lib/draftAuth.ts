@@ -1,5 +1,6 @@
 import type { JsonRpcSigner } from "ethers";
 import { apiFetch } from "@/lib/apiBase";
+import { normalizeAddress as centralNormalize } from "./address";
 
 export type DraftAuthAction =
   | "create_draft"
@@ -61,8 +62,8 @@ function buildConnectedWalletDraftAuth(input: {
 }
 
 
-function normalizeWallet(value: string) {
-  return String(value || "").trim().toLowerCase();
+function normalizeWallet(value: string, chainId?: number) {
+  return centralNormalize(value, chainId);
 }
 
 function buildDraftAuthMessage(input: {

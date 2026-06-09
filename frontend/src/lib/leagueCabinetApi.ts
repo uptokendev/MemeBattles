@@ -1,4 +1,5 @@
 import type { LeagueCabinet, LeagueCabinetMastery, LeagueCabinetWin } from "@/lib/leagueCabinet";
+import { normalizeAddress as centralNormalize } from "@/lib/address";
 
 const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
 const API_BASE = rawBase.replace(/\/$/, "");
@@ -11,11 +12,7 @@ function buildUrl(pathWithQuery: string): string {
 }
 
 function normalizeAddressForQuery(addr: string, chainId: number): string {
-  const raw = String(addr ?? "").trim();
-  if (isSolanaDraftChainId(chainId)) {
-    return raw;
-  }
-  return raw.toLowerCase();
+  return centralNormalize(addr, chainId);
 }
 
 async function readJson(res: Response): Promise<any> {
