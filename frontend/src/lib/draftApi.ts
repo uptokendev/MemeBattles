@@ -4,8 +4,6 @@ import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 import { isSolanaDraftChainId } from "@/lib/draftChains";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { normalizeAddress as centralNormalize } from "@/lib/address";
-import { isSolanaDraftChainId } from "@/lib/draftChains";
-import { signSolanaDraftAction } from "@/lib/solanaWallet";
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
 const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";

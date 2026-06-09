@@ -1,19 +1,6 @@
 import type { LeagueCabinet, LeagueCabinetMastery, LeagueCabinetWin } from "@/lib/leagueCabinet";
+import { apiFetch, apiUrl } from "@/lib/apiBase";
 import { normalizeAddress as centralNormalize } from "@/lib/address";
-
-const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
-const API_BASE = rawBase.replace(/\/$/, "");
-
-function buildUrl(pathWithQuery: string): string {
-  if (API_BASE && /^https?:\/\//i.test(API_BASE)) {
-    return `${API_BASE}${pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`}`;
-  }
-  return new URL(pathWithQuery, window.location.origin).toString();
-}
-
-function normalizeAddressForQuery(addr: string, chainId: number): string {
-  return centralNormalize(addr, chainId);
-}
 
 async function readJson(res: Response): Promise<any> {
   const text = await res.text();
@@ -69,12 +56,12 @@ function normalizeCabinet(raw: any): LeagueCabinet {
 }
 
 export async function fetchLeagueCabinet(chainId: number, address: string): Promise<LeagueCabinet> {
-  const addr = normalizeAddressForQuery(address, chainId);
-  const url = buildUrl(
+  const addr = centralNormalize(address, chainId);
+  const url = apiUrl(
     `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`
   );
 
-  const res = await fetch(url, { method: "GET" });
+  const res = await apiFetch(url, { method: "GET" });
   if (!res.ok) {
     if (res.status === 404 || res.status === 400) {
       return normalizeCabinet({ summary: {}, items: [], mastery: [] });

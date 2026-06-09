@@ -1,14 +1,18 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json, readJson } from "../../server/http.js";
 
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const q = getQuery(req);
       const chainId = Number(q.chainId ?? 0) || 0;
-      const follower = String(q.follower ?? "").toLowerCase();
-      const following = String(q.following ?? "").toLowerCase();
-      if (!isAddress(follower) || !isAddress(following)) return json(res, 400, { error: "Invalid address" });
+      const rawFollower = String(q.follower ?? "").trim();
+      const rawFollowing = String(q.following ?? "").trim();
+      const isSol = isSolanaChain(chainId);
+      const follower = normalizeAddress(rawFollower, chainId);
+      const following = normalizeAddress(rawFollowing, chainId);
+      if (!follower || !following) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && (!isAddress(follower) || !isAddress(following))) return json(res, 400, { error: "Invalid address" });
 
       const { rows } = await pool.query(
         `SELECT 1 FROM public.user_follows
@@ -23,9 +27,13 @@ export default async function handler(req, res) {
       const body = await readJson(req);
       const chainId = Number(body.chainId ?? 0) || 0;
       const action = String(body.action ?? "").toLowerCase();
-      const follower = String(body.followerAddress ?? "").toLowerCase();
-      const following = String(body.followingAddress ?? "").toLowerCase();
-      if (!isAddress(follower) || !isAddress(following)) return json(res, 400, { error: "Invalid address" });
+      const rawFollower = String(body.followerAddress ?? "").trim();
+      const rawFollowing = String(body.followingAddress ?? "").trim();
+      const isSol = isSolanaChain(chainId);
+      const follower = normalizeAddress(rawFollower, chainId);
+      const following = normalizeAddress(rawFollowing, chainId);
+      if (!follower || !following) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && (!isAddress(follower) || !isAddress(following))) return json(res, 400, { error: "Invalid address" });
       if (follower === following) return json(res, 400, { error: "Cannot follow self" });
       if (action !== "follow" && action !== "unfollow") return json(res, 400, { error: "Invalid action" });
 

@@ -4,28 +4,16 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import PublicProfile from "./PublicProfile";
-
-function isSolanaAddress(raw: string): boolean {
-  const s = String(raw || "").trim();
-  return s.length >= 32 && s.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
-}
+import { normalizeAddress as centralNormalize, isSolanaAddress, addressesMatch } from "@/lib/address";
 
 function normalizeWallet(value?: string | null): string | null {
-  const raw = String(value ?? "").trim();
-  if (isSolanaAddress(raw)) return raw; // preserve exact base58 for Solana
-  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw.toLowerCase();
-  return null;
+  const n = centralNormalize(value, null as any);
+  return n || null;
 }
 
 function sameWallet(a?: string | null, b?: string | null): boolean {
-  const aa = normalizeWallet(a);
-  const bb = normalizeWallet(b);
-  if (!aa || !bb) return false;
-  // For Solana base58, use exact match (case sensitive); for EVM, normalized lower
-  if (isSolanaAddress(aa) || isSolanaAddress(bb)) {
-    return aa === bb;
-  }
-  return aa === bb;
+  // addressesMatch uses central normalize + exact for solana base58
+  return addressesMatch(a, b, null as any);
 }
 
 function openWalletModal(wallet: any) {

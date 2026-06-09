@@ -1,4 +1,4 @@
-import { json, getQuery, isAddress, badMethod } from "../../server/http.js";
+import { json, getQuery, isAddress, isSolanaChain, normalizeAddress, badMethod } from "../../server/http.js";
 import {
   derivePortfolioMetrics,
 } from "../lib/portfolioCalculations.js";
@@ -9,10 +9,14 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId);
-    const address = String(q.address ?? "").trim().toLowerCase();
+    const raw = String(q.address ?? "").trim();
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+
+    const isSol = isSolanaChain(chainId);
+    const addr = normalizeAddress(raw, chainId);
+    if (!addr) return json(res, 400, { error: "Invalid address" });
+    if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
 
     // NOTE: This is currently a stub.
     // Real implementation will need to:

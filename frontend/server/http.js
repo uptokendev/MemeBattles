@@ -77,10 +77,15 @@ export function isSolanaChain(chainId) {
   return n === 101 || n === 102;
 }
 
-export function normalizeAddress(value, chainId) {
+export function isSolanaAddress(value?: string | null): boolean {
+  const s = String(value || "").trim();
+  return s.length >= 32 && s.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
+}
+
+export function normalizeAddress(value: any, chainId?: number | string | null): string {
   const raw = String(value || "").trim();
   if (isSolanaChain(chainId)) {
-    // Solana base58 pubkey - preserve exact case and format
+    // Solana base58 pubkey - preserve exact case and format (never lowercase)
     if (raw.length >= 32 && raw.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(raw)) {
       return raw;
     }
@@ -88,4 +93,12 @@ export function normalizeAddress(value, chainId) {
   }
   const lower = raw.toLowerCase();
   return isAddress(lower) ? lower : "";
+}
+
+/**
+ * Validate + normalize in one step for a given chain.
+ * Returns normalized string or "" if invalid for the chain.
+ */
+export function normalizeAndValidateAddress(value: any, chainId?: number | string | null): string {
+  return normalizeAddress(value, chainId);
 }

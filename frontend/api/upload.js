@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import formidable from "formidable";
 import fs from "fs";
 import crypto from "crypto";
+import { normalizeAddress } from "../server/http.js";
 
 // Keep as-is; harmless unless interpreted Next-style
 export const config = {
@@ -47,8 +48,9 @@ export default async function handler(req, res) {
 
   const q = req.query || {};
   const kind = String(q.kind || "avatar"); // "avatar" | "logo"
-  const chainId = String(q.chainId || "97");
-  const address = String(q.address || "").toLowerCase();
+  const chainIdNum = Number(q.chainId || 97);
+  const raw = String(q.address || "").trim();
+  const address = normalizeAddress(raw, chainIdNum) || raw.toLowerCase();
 
   const maxBytes = 5 * 1024 * 1024;
   const form = formidable({

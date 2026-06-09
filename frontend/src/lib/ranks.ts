@@ -1,3 +1,5 @@
+import { normalizeAddress as centralNormalize } from "./address";
+
 export const RANK_SEQUENCE = ["Recruit", "Soldier", "Corporal", "Captain", "General"] as const;
 
 export type RankName = (typeof RANK_SEQUENCE)[number];
@@ -24,8 +26,8 @@ function sanitizeRankValue(value: unknown): string {
     .toLowerCase();
 }
 
-function normalizeAddress(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+function normalizeAddress(value: unknown, chainId?: number): string {
+  return centralNormalize(String(value ?? ""), chainId);
 }
 
 export function normalizeRank(value: unknown): RankName {

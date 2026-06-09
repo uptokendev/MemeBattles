@@ -58,7 +58,7 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
   const addr = normalizeAddress(address, chainId);
   const url = buildUrl(`/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`);
 
-  const res = await fetch(url, { method: "GET" });
+  const res = await apiFetch(url, { method: "GET" });
   if (!res.ok) {
     if (res.status === 404 || (chainId && isSolanaDraftChainId(chainId) && res.status === 400)) return null;
     const j = await readJson(res);

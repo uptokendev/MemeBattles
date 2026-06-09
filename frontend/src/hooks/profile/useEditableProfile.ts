@@ -8,6 +8,8 @@ import {
   saveUserProfile,
   type UserProfile,
 } from "@/lib/profileApi";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
+import { isSolanaAddress } from "@/lib/address";
 
 interface UseEditableProfileArgs {
   chainId?: number;
@@ -29,6 +31,8 @@ export function useEditableProfile({
   const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
+
+  const isSolana = (chainId != null && isSolanaDraftChainId(chainId)) || isSolanaAddress(account || "");
 
   useEffect(() => {
     let cancelled = false;
@@ -133,8 +137,13 @@ export function useEditableProfile({
       return;
     }
 
-    if (!wallet.signer) {
+    if (!isSolana && !wallet.signer) {
       toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
+      return;
+    }
+
+    if (isSolana) {
+      toast.error("Profile customization for Solana is coming soon.");
       return;
     }
 
@@ -209,8 +218,13 @@ export function useEditableProfile({
       return;
     }
 
-    if (!wallet.signer) {
+    if (!isSolana && !wallet.signer) {
       toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
+      return;
+    }
+
+    if (isSolana) {
+      toast.error("Profile customization for Solana is coming soon.");
       return;
     }
 
