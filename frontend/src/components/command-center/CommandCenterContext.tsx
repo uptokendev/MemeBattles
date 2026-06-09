@@ -85,7 +85,7 @@ export function CommandCenterDataProvider({
     chainId,
     account,
     viewedAddress: walletAddress,
-    wallet,
+    wallet: evmWallet,
   });
 
   const {
@@ -167,7 +167,7 @@ export function CommandCenterDataProvider({
   const { nativeBalance, tokenBalances, loadingBalances } = useProfileBalances({
     viewedAddress: walletAddress,
     account,
-    wallet,
+    wallet: evmWallet,
     fetchCampaigns,
     fetchCampaignSummary,
   });

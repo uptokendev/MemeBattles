@@ -617,7 +617,7 @@ export default function Prepare() {
     return () => {
       cancelled = true;
     };
-  }, [slug, wallet.account]);
+  }, [slug, activeWalletAddress]);
 
   const draft = bundle?.draft;
   const promo = bundle?.promotion;

@@ -97,7 +97,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
     chainId,
     account,
     viewedAddress,
-    wallet,
+    wallet: evmWallet,
   });
 
   const { leagueCabinet, loadingLeagueCabinet } = useLeagueCabinet(
