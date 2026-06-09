@@ -1213,5 +1213,6 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </p>
         </DialogContent>
       </Dialog>
+    </div>
   );
 }
