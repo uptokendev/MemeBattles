@@ -15,6 +15,7 @@ import {
   Shield,
   Star,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,6 +24,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getSolanaProvider } from "@/lib/solanaWallet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { resolveImageUri } from "@/lib/media";
 import { addressesMatch } from "@/lib/address";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
@@ -415,12 +424,7 @@ function TransmissionList({
     }
 
     if (chainMismatchForInteraction) {
-      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to comment on this draft." : "Switch to a BNB/EVM wallet to comment on this draft.", {
-        action: {
-          label: "Switch wallet",
-          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
-        },
-      });
+      openCrossChainPrompt(draftIsSolana);
       return;
     }
 
@@ -591,7 +595,8 @@ function TransmissionList({
 export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
-  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const { connect: connectEvm, detectedWallets } = wallet;
+  const { solanaAccount, isSolanaConnected, connectSolana } = useSolanaWallet();
   const activeWalletAddress = isSolanaConnected ? solanaAccount : wallet.account;
 
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
@@ -602,6 +607,8 @@ export default function Prepare() {
   const [followingDraft, setFollowingDraft] = useState(false);
   const [hasArmed, setHasArmed] = useState(false);
   const [hasFollowed, setHasFollowed] = useState(false);
+  const [showCrossChainDialog, setShowCrossChainDialog] = useState(false);
+  const [requiredChainForDialog, setRequiredChainForDialog] = useState<'solana' | 'evm' | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -650,12 +657,7 @@ export default function Prepare() {
     }
 
     if (chainMismatchForInteraction) {
-      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to arm notifications on this draft." : "Switch to a BNB/EVM wallet to arm notifications on this draft.", {
-        action: {
-          label: "Switch wallet",
-          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
-        },
-      });
+      openCrossChainPrompt(draftIsSolana);
       return;
     }
 
@@ -683,12 +685,7 @@ export default function Prepare() {
     }
 
     if (chainMismatchForInteraction) {
-      toast.error(draftIsSolana ? "Switch to a Solana (Phantom) wallet to follow this draft." : "Switch to a BNB/EVM wallet to follow this draft.", {
-        action: {
-          label: "Switch wallet",
-          onClick: () => window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", { detail: { only: draftIsSolana ? 'solana' : 'evm' } })),
-        },
-      });
+      openCrossChainPrompt(draftIsSolana);
       return;
     }
 
@@ -739,6 +736,11 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
   const draftIsSolana = draft.chainId === 101;
   const currentIsSolana = !!isSolanaConnected;
   const chainMismatchForInteraction = draftIsSolana !== currentIsSolana;
+
+  const openCrossChainPrompt = (isSolanaDraft: boolean) => {
+    setRequiredChainForDialog(isSolanaDraft ? 'solana' : 'evm');
+    setShowCrossChainDialog(true);
+  };
 
   const links = [
     ["X / Twitter", normalizeExternalUrl(promo.xUrl || draft.xUrl, "x"), "Frontline updates", "X"],
@@ -1017,7 +1019,116 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
             </div>
           </div>
         </section>
+            <div className="mt-7 flex justify-center">
+              <Button
+                onClick={handleArmNotification}
+                disabled={armingNotification}
+                className={`mwz-button h-13 px-6 font-retro text-base active:!translate-y-px ${
+                  hasArmed
+                    ? "!border-green-400 !bg-green-500/25 !text-green-100"
+                    : "mwz-button-orange"
+                }`}
+              >
+                <Bell className="mr-2 h-4 w-4" fill={hasArmed ? "currentColor" : "none"} />
+                {armLabel}
+              </Button>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
+
+      <Dialog open={showCrossChainDialog} onOpenChange={setShowCrossChainDialog}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Wallet required to interact</DialogTitle>
+            <DialogDescription>
+              When interacting with this draft, you need to connect with a {requiredChainForDialog === 'solana' ? 'Solana (Phantom)' : 'BNB Chain (EVM)'} wallet.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-3">
+            {requiredChainForDialog === 'solana' && getSolanaProvider() && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await connectSolana();
+                    setShowCrossChainDialog(false);
+                    toast.success("Connected to Solana wallet. You can now interact with the draft.");
+                  } catch (error: any) {
+                    toast.error(error?.message || "Failed to connect Phantom");
+                  }
+                }}
+                disabled={false}
+                className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="relative flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-400">👻</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate font-retro text-sm text-foreground">Phantom</p>
+                      <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
+                        detected
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Solana mainnet (101) — required for this draft.</p>
+                  </div>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
+                    <Wallet className="h-4 w-4" />
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {requiredChainForDialog === 'evm' && (
+              <div className="mt-1 space-y-3">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Detected BNB/EVM wallets</p>
+                {detectedWallets.length > 0 ? (
+                  detectedWallets.map((detectedWallet) => (
+                    <button
+                      type="button"
+                      key={detectedWallet.id}
+                      onClick={async () => {
+                        try {
+                          await connectEvm(detectedWallet.id);
+                          setShowCrossChainDialog(false);
+                          toast.success(`Connected ${detectedWallet.name}`);
+                        } catch (error) {
+                          toast.error("Failed to connect wallet. Please try again.");
+                        }
+                      }}
+                      className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                      <div className="relative flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent text-sm font-bold">
+                          {detectedWallet.name?.[0]?.toUpperCase() || 'W'}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-retro text-sm text-foreground">{detectedWallet.name}</p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-1">{detectedWallet.description}</p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
+                          <Wallet className="h-4 w-4" />
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center text-sm text-muted-foreground">
+                    No EVM/BNB wallets detected. Install MetaMask or another compatible wallet.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <p className="mt-3 text-center text-[10px] text-muted-foreground">
+            After connecting the correct wallet, click the action button again.
+          </p>
+        </DialogContent>
+      </Dialog>
   );
 }
