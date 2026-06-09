@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { resolveImageUri } from "@/lib/media";
+import { addressesMatch } from "@/lib/address";
 import warzoneHud from "@/assets/promotion/warzonehud.png";
 import {
   addDraftComment,
@@ -664,7 +665,7 @@ export default function Prepare() {
     setFollowingDraft(true);
 
     try {
-      const result = await followDraft(draft.id, activeWalletAddress);
+      const result = await followDraft(draft.id, activeWalletAddress, draft.chainId);
       setFollowCount(result.followCount);
       await refreshPrepareBundle().catch(() => null);
       window.dispatchEvent(new CustomEvent("mwz:draft-follows-changed"));
@@ -702,9 +703,7 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
   const isCreator = Boolean(
     activeWalletAddress &&
       draft.creatorWallet &&
-      (isSolanaConnected
-        ? activeWalletAddress === draft.creatorWallet
-        : activeWalletAddress.toLowerCase() === draft.creatorWallet.toLowerCase()),
+      addressesMatch(activeWalletAddress, draft.creatorWallet, draft.chainId),
   );
 
   const links = [

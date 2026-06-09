@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { cn } from "@/lib/utils";
 import {
   addDraftComment,
@@ -481,6 +482,7 @@ function BunkerComment({
 const PublicPromotion = () => {
   const params = useParams();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const [draft, setDraft] = useState<CampaignDraft | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -520,13 +522,18 @@ const PublicPromotion = () => {
     );
   }
 
-  const account = wallet.account || "";
+  const activeAddress = isSolanaConnected ? solanaAccount : wallet.account;
+  const account = activeAddress || "";
   const followed = isDraftFollowed(draft.id, account);
-  const isOwner = draft.creatorAddress === "local-creator" || account.toLowerCase() === draft.creatorAddress.toLowerCase();
+  const isOwner = draft.creatorAddress === "local-creator" ||
+    (isSolanaConnected
+      ? account === draft.creatorAddress
+      : account.toLowerCase() === draft.creatorAddress.toLowerCase());
   const privateBlocked = draft.visibility === "private" && !isOwner;
   const publicUrl = typeof window !== "undefined" ? `${window.location.origin}/prepare/${draft.slug}` : `/prepare/${draft.slug}`;
 
   const requireWallet = () => {
+    if (isSolanaConnected && solanaAccount) return solanaAccount;
     if (wallet.isConnected && wallet.account) return wallet.account;
     window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
     toast.message("Connect your wallet to join this draft.");

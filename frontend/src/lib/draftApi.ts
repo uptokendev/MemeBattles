@@ -462,7 +462,16 @@ async function signPrepareEngagement(input: {
   const walletAddress = normalizeWallet(input.walletAddress);
   if (!walletAddress) throw new Error("Wallet address missing. Reconnect your wallet and try again.");
   const bundle = await fetchCampaignDraft(input.draftId, walletAddress);
-  return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId: Number(bundle.draft.chainId) });
+  const chainId = Number(bundle.draft.chainId);
+  if (isSolanaDraftChainId(chainId)) {
+    return signSolanaDraftAction({
+      walletAddress,
+      chainId,
+      action: input.action,
+      draftId: input.draftId,
+    });
+  }
+  return signDraftActionWithKnownChain({ action: input.action, draftId: input.draftId, walletAddress, chainId });
 }
 
 async function postPrivateRead(url: string, auth: DraftActionAuth) {
@@ -796,9 +805,11 @@ export async function fetchPrepareDraft(slug: string, viewer?: string | null): P
   throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
-export async function followDraft(input: DraftActionAuth | string, walletAddress?: string): Promise<{ following: boolean; followCount: number }> {
+export async function followDraft(input: DraftActionAuth | string, walletAddress?: string, chainId?: number): Promise<{ following: boolean; followCount: number }> {
   const draftId = typeof input === "string" ? input : String(input.draftId || "");
-  const wallet = typeof input === "string" ? normalizeWallet(walletAddress || "") : normalizeWallet(input.walletAddress || walletAddress || "");
+  const wallet = typeof input === "string"
+    ? normalizeWallet(walletAddress || "", chainId)
+    : normalizeWallet(input.walletAddress || walletAddress || "", chainId);
 
   if (!draftId) throw new Error("Draft id missing.");
   if (!wallet) throw new Error("Connect wallet to follow this draft.");
