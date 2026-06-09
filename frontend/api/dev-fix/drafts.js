@@ -330,12 +330,21 @@ export async function drafts(req, res) {
     const pool = await getPool();
 
     if (pool) {
-      const result = owner
-        ? await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner])
-        : await pool.query(
-            "select * from campaign_drafts where visibility = 'public' and status = any($1::text[]) order by created_at desc limit 50",
-            [Array.from(PUBLIC_DISCOVERY_STATUSES)],
-          );
+      if (owner) {
+        const result = await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner]);
+        return json(res, 200, { items: result.rows.map(mapDraftRow) });
+      }
+      const chainId = q.chainId ? Number(q.chainId) : null;
+      const where = ["visibility = 'public'", "status = any($1::text[])"];
+      const params: any[] = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
+      if (chainId) {
+        where.push(`chain_id = $${params.length + 1}`);
+        params.push(chainId);
+      }
+      const result = await pool.query(
+        `select * from campaign_drafts where ${where.join(" and ")} order by created_at desc limit 50`,
+        params,
+      );
       return json(res, 200, { items: result.rows.map(mapDraftRow) });
     }
 
@@ -491,7 +500,8 @@ export async function draftPromotion(req, res) {
       "insert into campaign_draft_promotion (draft_id, mission_statement, roadmap, launch_strategy, telegram_url, discord_url, x_url, website_url, docs, creator_note, banner_url, share_message, published_at, updated_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,now()) on conflict (draft_id) do update set mission_statement = excluded.mission_statement, roadmap = excluded.roadmap, launch_strategy = excluded.launch_strategy, telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, creator_note = excluded.creator_note, banner_url = excluded.banner_url, share_message = excluded.share_message, published_at = coalesce(excluded.published_at, campaign_draft_promotion.published_at), updated_at = now()",
       [id, promotion.missionStatement, JSON.stringify(promotion.roadmap), promotion.launchStrategy, promotion.telegramUrl, promotion.discordUrl, promotion.xUrl, promotion.websiteUrl, JSON.stringify(promotion.docs), promotion.creatorNote, promotion.bannerUrl, promotion.shareMessage, publish ? now : null],
     );
-    await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, visibility || null, publish]);
+    const updateVis = publish ? "public" : (visibility || null);
+    await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, updateVis, publish]);
     const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
 
     if (publish && before.status !== "promotion_published" && updated?.draft) {

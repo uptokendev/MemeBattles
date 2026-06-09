@@ -4,6 +4,7 @@ import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveImageUri } from "@/lib/media";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
@@ -57,7 +58,9 @@ function heatClass(label?: string) {
 }
 
 export function UpcomingDrafts({ className }: { className?: string }) {
-  const { activeChainId } = useLaunchpad();
+  const { activeChainId: launchpadChainId } = useLaunchpad();
+  const { isSolanaConnected } = useSolanaWallet();
+  const activeChainId = isSolanaConnected ? 101 : launchpadChainId;
   const [items, setItems] = useState<UpcomingDraftVM[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
