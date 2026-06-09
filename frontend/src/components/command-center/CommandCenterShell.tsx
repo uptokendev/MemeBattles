@@ -3,12 +3,19 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { CommandCenterLayout } from "@/components/command-center/CommandCenterLayout";
+
+function isSolanaAddress(raw: string): boolean {
+  const s = String(raw || "").trim();
+  return s.length >= 32 && s.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
+}
 
 function normalizeWallet(value?: string | null): string | null {
   const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  if (isSolanaAddress(raw)) return raw; // preserve exact base58 casing for Solana
+  if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw.toLowerCase();
+  return null;
 }
 
 function openWalletModal(wallet: any) {
@@ -69,10 +76,15 @@ type CommandCenterShellProps = {
 export function CommandCenterShell({ children }: CommandCenterShellProps) {
   const { wallet: walletParam } = useParams<{ wallet?: string }>();
   const location = useLocation();
-  const wallet = useWallet();
-  const anyWallet: any = wallet as any;
+  const evmWallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const anyWallet: any = evmWallet as any;
 
-  const connectedWallet = normalizeWallet(wallet.account);
+  // Prefer Solana (Phantom) if connected, matching TopBar / Create behavior.
+  // normalizeWallet now accepts base58 (exact case) or 0x (lowercased).
+  const connectedWallet = isSolanaConnected && solanaAccount
+    ? normalizeWallet(solanaAccount)
+    : normalizeWallet(evmWallet.account);
   const requestedWallet = normalizeWallet(walletParam);
 
   if (!requestedWallet) return <Navigate to="/profile" replace />;

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
@@ -61,16 +62,19 @@ export function CommandCenterDataProvider({
   walletAddress: string;
   children: ReactNode;
 }) {
-  const wallet = useWallet();
-  const anyWallet: any = wallet as any;
-  // `walletChainId` is what the wallet reports (could be unsupported, e.g. ETH=1
-  // for an ETH-mainnet wallet). `chainId` is the active app chain — mapped to a
-  // supported value so signed messages and reads never carry an unsupported id.
-  const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-  const chainId: number | undefined = walletChainId
-    ? getActiveChainId(walletChainId)
-    : undefined;
-  const account = wallet.account || walletAddress;
+  const evmWallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const anyWallet: any = evmWallet as any;
+  // Prefer Solana for active account/chain when connected (consistent with Shell, TopBar, Create, drafts).
+  const isSol = isSolanaConnected;
+  // `walletChainId` is what the wallet reports... For Solana we force 101.
+  const walletChainId: number | undefined = isSol ? 101 : (anyWallet?.chainId ?? anyWallet?.network?.chainId);
+  const chainId: number | undefined = isSol
+    ? 101
+    : walletChainId
+      ? getActiveChainId(walletChainId)
+      : undefined;
+  const account = isSol ? (solanaAccount || walletAddress) : (evmWallet.account || walletAddress);
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [loadingAttribution, setLoadingAttribution] = useState(false);
