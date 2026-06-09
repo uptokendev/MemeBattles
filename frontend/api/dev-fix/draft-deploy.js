@@ -1,4 +1,4 @@
-import { badMethod, isAddress, isSolanaChain, json, readJson } from "../../server/http.js";
+import { badMethod, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner, notifyDraftSubscribers } from "./prepare-notify.js";
 
@@ -8,7 +8,9 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
+function normalizeAddress(value, chainId) {
+  // Delegate to central (handles Solana raw base58 via isSolanaAddress heuristic even if no chainId)
+  if (normalizeAddressBase) return normalizeAddressBase(value, chainId);
   const raw = String(value || "").trim().toLowerCase();
   return isAddress(raw) ? raw : "";
 }
