@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Users, UserPlus, Coins } from "lucide-react";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { useCreatedCampaigns } from "@/hooks/profile/useCreatedCampaigns";
@@ -37,10 +38,12 @@ function syncCreatedCoinsAnchor() {
 export function PublicProfileStatsBar({ profileWallet, isOwnProfile }: PublicProfileStatsBarProps) {
   const navigate = useNavigate();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const anyWallet: any = wallet as any;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
-  const chainId = getActiveChainId(anyWallet?.chainId ?? null);
-  const account = wallet.account ?? null;
+  const isSol = isSolanaConnected;
+  const chainId = isSol ? 101 : getActiveChainId(anyWallet?.chainId ?? null);
+  const account = isSol ? (solanaAccount ?? null) : (wallet.account ?? null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("balances");
 
   const created = useCreatedCampaigns({
