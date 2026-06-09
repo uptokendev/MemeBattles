@@ -1,5 +1,6 @@
 import { apiFetch, apiUrl } from "@/lib/apiBase";
 import { normalizeAddress as centralNormalize } from "@/lib/address";
+import { isSolanaDraftChainId } from "@/lib/draftChains";
 
 export type UserProfile = {
   chainId: number;
@@ -59,7 +60,7 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
 
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
-    if (res.status === 404) return null;
+    if (res.status === 404 || (chainId && isSolanaDraftChainId(chainId) && res.status === 400)) return null;
     const j = await readJson(res);
     throw new Error(j?.error || `Failed to load profile (${res.status})`);
   }

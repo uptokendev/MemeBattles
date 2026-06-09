@@ -206,7 +206,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
     setDraftsError(null);
 
     try {
-      const normalizedViewedAddress = viewedAddress.toLowerCase();
+      const normalizedViewedAddress = isSolanaConnected ? viewedAddress : viewedAddress.toLowerCase();
 
       const drafts = isOwnProfile
         ? await fetchOwnerCampaignDrafts(normalizedViewedAddress, {
@@ -218,8 +218,9 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
             limit: 100,
           })).filter(
             (draft) =>
-              String(draft.creatorWallet || "").toLowerCase() ===
-              normalizedViewedAddress
+              (isSolanaConnected
+                ? String(draft.creatorWallet || "") === normalizedViewedAddress
+                : String(draft.creatorWallet || "").toLowerCase() === normalizedViewedAddress)
           );
 
       if (cancelled) return;

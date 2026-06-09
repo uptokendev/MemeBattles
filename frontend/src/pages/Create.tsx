@@ -13,7 +13,7 @@ import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
-import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { signSolanaDraftAction, getStoredSolanaWallet } from "@/lib/solanaWallet";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";

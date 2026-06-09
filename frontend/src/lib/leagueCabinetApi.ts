@@ -76,7 +76,7 @@ export async function fetchLeagueCabinet(chainId: number, address: string): Prom
 
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
-    if (res.status === 404) {
+    if (res.status === 404 || res.status === 400) {
       return normalizeCabinet({ summary: {}, items: [], mastery: [] });
     }
     const j = await readJson(res);

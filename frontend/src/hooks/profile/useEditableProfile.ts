@@ -102,7 +102,7 @@ export function useEditableProfile({
 
     const url = `/api/upload?kind=avatar&chainId=${encodeURIComponent(
       String(chainId)
-    )}&address=${encodeURIComponent(account.toLowerCase())}`;
+    )}&address=${encodeURIComponent(account)}`;
 
     const res = await apiFetch(url, { method: "POST", body: fd });
     const j = await res.json().catch(() => null);
@@ -145,7 +145,7 @@ export function useEditableProfile({
       const uploadedUrl = await uploadAvatarFile(file);
 
       // Sign and persist the new avatar url.
-      const addr = account.toLowerCase();
+      const addr = account;
       const nonce = await requestNonce(chainId, addr);
       const displayName = (profile?.displayName ?? "").trim() || null;
       const bio = (profile?.bio ?? "").trim() || null;
@@ -219,7 +219,7 @@ export function useEditableProfile({
     const toastId = toast.loading("Preparing signature…");
 
     try {
-      const addr = account.toLowerCase();
+      const addr = account;
       const nonce = await requestNonce(chainId, addr);
       const displayName = values.username.trim();
       const avatarUrl = profile?.avatarUrl ?? null;
