@@ -1021,11 +1021,6 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
         </section>
       </main>
 
-      </Dialog>
-    </div>
-  );
-}
-
       <Dialog open={showCrossChainDialog} onOpenChange={setShowCrossChainDialog}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
