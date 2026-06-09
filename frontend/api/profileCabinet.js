@@ -88,8 +88,6 @@ export default async function handler(req, res) {
     if (!addr) return json(res, 400, { error: "Invalid address" });
     if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
 
-    const isSol = isSolanaChain(chainId);
-    const addr = normalizeAddress(raw, chainId);
     const whereClause = isSol
       ? `chain_id = $1 AND recipient_address = $2`
       : `chain_id = $1 AND lower(recipient_address) = $2`;
