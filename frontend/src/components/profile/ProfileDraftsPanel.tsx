@@ -14,6 +14,7 @@ import {
   fetchPublicCampaignDrafts,
   type CampaignDraft,
 } from "@/lib/draftApi";
+import { isSolanaAddress } from "@/lib/address";
 
 const PUBLIC_PROFILE_DRAFT_STATUSES = new Set([
   "promotion_published",
@@ -69,10 +70,8 @@ export function ProfileDraftsPanel({
   const [loading, setLoading] = useState(false);
   const [busyDraftId, setBusyDraftId] = useState<string | null>(null);
 
-  const chainId = getActiveChainId(wallet.chainId);
-
   const normalizedViewedAddress = useMemo(
-    () => String(viewedAddress || "").trim().toLowerCase(),
+    () => String(viewedAddress || "").trim(),
     [viewedAddress]
   );
 
@@ -86,30 +85,31 @@ export function ProfileDraftsPanel({
 
     try {
       if (isOwnProfile) {
-        const drafts = await fetchOwnerCampaignDrafts(normalizedViewedAddress, {
-          chainId,
-          limit: 100,
-        });
+        // Fetch all chains for this owner address (Solana raw or EVM). Show everything;
+        // switch wallet to interact with specific chain's drafts.
+        const drafts = await fetchOwnerCampaignDrafts(normalizedViewedAddress, { limit: 100 });
 
         setItems(
-          drafts
-            .filter((draft) => Number(draft.chainId) === Number(chainId))
-            .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+          drafts.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
         );
         return;
       }
 
-      const publicDrafts = await fetchPublicCampaignDrafts({
-        chainId,
-        limit: 100,
-      });
+      // Public profile: show all public drafts by this address across chains.
+      const publicDrafts = await fetchPublicCampaignDrafts({ limit: 100 });
 
       setItems(
         publicDrafts
-          .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => PUBLIC_PROFILE_DRAFT_STATUSES.has(String(draft.status)))
-          .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === normalizedViewedAddress)
+          .filter((draft) => {
+            const dc = String(draft.creatorWallet || "").trim();
+            const pa = normalizedViewedAddress;
+            if (isSolanaAddress(dc) || isSolanaAddress(pa)) {
+              return dc === pa;
+            }
+            return dc.toLowerCase() === pa.toLowerCase();
+          })
           .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
       );
     } catch (err: any) {

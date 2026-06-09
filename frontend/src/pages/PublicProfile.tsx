@@ -7,6 +7,7 @@ import type { CampaignSummary } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { isSolanaAddress } from "@/lib/address";
 import {
   fetchRecruiterSummaryByWallet,
   fetchSquadSummary,
@@ -260,12 +261,21 @@ export default function PublicProfile({
       setLoadingDrafts(true);
       setDraftsError(null);
       try {
-        const drafts = await fetchPublicCampaignDrafts({ chainId: activeChainId, limit: 100 });
+        // Fetch across all chains so Solana users can see BNB profiles' drafts (and vice versa).
+        // Interact requires switching to matching wallet.
+        const drafts = await fetchPublicCampaignDrafts({ limit: 100 });
         if (cancelled) return;
 
         setVisibleDrafts(
           drafts
-            .filter((draft) => String(draft.creatorWallet || "").toLowerCase() === profileWallet.toLowerCase())
+            .filter((draft) => {
+              const dc = String(draft.creatorWallet || "").trim();
+              const pa = String(profileWallet || "").trim();
+              if (isSolanaAddress(dc) || isSolanaAddress(pa)) {
+                return dc === pa; // exact for Solana raw base58
+              }
+              return dc.toLowerCase() === pa.toLowerCase();
+            })
             .filter(isDraftVisibleOnPublicProfile)
         );
       } catch (e: any) {
@@ -283,7 +293,7 @@ export default function PublicProfile({
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, profileWallet]);
+  }, [profileWallet]);
 
   useEffect(() => {
     let cancelled = false;

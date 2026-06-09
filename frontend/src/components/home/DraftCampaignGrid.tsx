@@ -4,8 +4,6 @@ import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { resolveImageUri } from "@/lib/media";
-import { useLaunchpad } from "@/lib/launchpadClient";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
@@ -98,9 +96,6 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
 }
 
 export function DraftCampaignGrid({ className, query }: { className?: string; query: HomeQuery & { tab?: string } }) {
-  const { activeChainId: launchpadChainId } = useLaunchpad();
-  const { isSolanaConnected } = useSolanaWallet();
-  const activeChainId = isSolanaConnected ? 101 : launchpadChainId;
   const [items, setItems] = useState<DraftCampaignVM[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -113,13 +108,11 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
       setErr(null);
 
       try {
-        const drafts = await fetchPublicCampaignDrafts({
-          chainId: activeChainId,
-          limit: 50,
-        });
+        // Fetch ALL public drafts across chains (BNB + Solana). Users see everything;
+        // interactions require matching wallet/chain (switch to interact).
+        const drafts = await fetchPublicCampaignDrafts({ limit: 50 });
 
         const candidates = drafts
-          .filter((draft) => Number(draft.chainId) === Number(activeChainId))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
           .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
@@ -164,7 +157,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
     return () => {
       alive = false;
     };
-  }, [activeChainId]);
+  }, []);
 
   const visibleItems = useMemo(() => {
     return sortDrafts(
