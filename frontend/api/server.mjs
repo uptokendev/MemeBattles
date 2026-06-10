@@ -166,6 +166,15 @@ const allowedOrigins = new Set(
   )
 );
 
+const DEV_ALLOWED_IPS = new Set(
+  String(process.env.DEV_ALLOWED_IPS || "185.184.192.242")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+console.log(`[api/server] DEV_ALLOWED_IPS for full dev access: ${Array.from(DEV_ALLOWED_IPS).join(", ") || "(none)"}`);
+
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (allowedOrigins.has(origin)) return true;
@@ -178,13 +187,26 @@ function isAllowedOrigin(origin) {
   return false;
 }
 
+function isDevAllowedIP(req) {
+  if (DEV_ALLOWED_IPS.size === 0) return false;
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = forwarded || req.ip || req.socket?.remoteAddress || "";
+  const clean = ip.replace(/^::ffff:/, ""); // IPv4-mapped
+  return DEV_ALLOWED_IPS.has(ip) || DEV_ALLOWED_IPS.has(clean);
+}
+
 app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
-  if (isAllowedOrigin(origin)) {
+  const devIp = isDevAllowedIP(req);
+
+  if (devIp || isAllowedOrigin(origin)) {
     if (origin) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else if (devIp) {
+      // For direct IP access from allowed dev IP (no origin or cross-origin tools), be permissive
+      res.setHeader("Access-Control-Allow-Origin", "*");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token, x-war-missions-internal-token");

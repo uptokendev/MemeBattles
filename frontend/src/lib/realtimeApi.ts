@@ -37,7 +37,9 @@ function inferLocalRealtimeApiBase(): string {
   try {
     const { protocol, hostname } = window.location;
     if (!isLoopbackHost(hostname)) return "";
-    return `${protocol}//${hostname}:3000`;
+    // Match the Vite dev proxy target port (default 3001) for local test environment.
+    // This ensures realtime calls in local dev also hit the user's localhost backend.
+    return `${protocol}//${hostname}:3001`;
   } catch {
     return "";
   }

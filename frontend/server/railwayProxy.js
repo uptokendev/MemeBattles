@@ -2,6 +2,23 @@ const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
 const EXACT_RAILWAY_PATHS = new Set([]);
 
+const DEV_ALLOWED_IPS = new Set(
+  String(process.env.DEV_ALLOWED_IPS || "185.184.192.242")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function isDevAllowedIP(req) {
+  if (DEV_ALLOWED_IPS.size === 0) return false;
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = forwarded || req.ip || req.socket?.remoteAddress || "";
+  const clean = ip.replace(/^::ffff:/, ""); // handle IPv4-mapped IPv6
+  return DEV_ALLOWED_IPS.has(ip) || DEV_ALLOWED_IPS.has(clean);
+}
+
+console.log(`[railway-proxy] DEV_ALLOWED_IPS loaded: ${Array.from(DEV_ALLOWED_IPS).join(", ") || "(none)"}`);
+
 const RAILWAY_PATH_PREFIXES = [
   "/api/ably",
   "/api/activity",
@@ -175,7 +192,10 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (!railwayProxyEnabled()) return next();
 
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
-    if (!shouldProxyToRailway(path)) return next();
+    const isDevIP = isDevAllowedIP(req);
+
+    // For dev IPs, proxy EVERYTHING (full access to any route on the dev branch)
+    if (!isDevIP && !shouldProxyToRailway(path)) return next();
 
     const base = railwayBaseUrl();
     if (!base) {

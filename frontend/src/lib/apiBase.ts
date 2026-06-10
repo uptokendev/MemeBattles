@@ -40,6 +40,26 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+}
+
+function shouldUseLocalDevProxy(path: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const { hostname } = window.location;
+    if (!isLoopbackHost(hostname)) return false;
+    // In local dev, use relative paths for main app endpoints so Vite proxy
+    // forwards to the local test backend (whatever the user has running on the
+    // VITE_DEV_API_PROXY_TARGET port, e.g. 3001). This keeps the test environment
+    // working with localhost.
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function shouldUseRealtimeIndexer(path: string): boolean {
   return REALTIME_INDEXER_API_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return path.startsWith(prefix);
@@ -199,6 +219,13 @@ export function apiUrl(path: string): string {
 
   if (EXPLICIT_REALTIME_API_BASE && shouldUseRealtimeIndexer(normalized)) {
     return `${EXPLICIT_REALTIME_API_BASE}${normalized}`;
+  }
+
+  if (shouldUseLocalDevProxy(normalized)) {
+    // Local dev: relative so Vite /api proxy handles it to the user's local test backend.
+    // This ensures the test environment works with whatever localhost backend the user
+    // has running on the configured proxy port (e.g. 3001).
+    return normalized;
   }
 
   return EXPLICIT_API_BASE ? `${EXPLICIT_API_BASE}${normalized}` : normalized;
