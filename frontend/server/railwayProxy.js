@@ -214,6 +214,7 @@ function responseLabel(serviceName, path, upstream) {
 function hasEmptyItemsPayload(text) {
   try {
     const json = JSON.parse(text);
+    if (Array.isArray(json)) return json.length === 0;
     return Array.isArray(json?.items) && json.items.length === 0;
   } catch {
     return false;
