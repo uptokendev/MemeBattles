@@ -35,7 +35,6 @@ for (const [expected, label] of requiredProxyTerms) {
 }
 
 const tokenIndexerRoutes = [
-  "/api/campaigns",
   "/api/epochPools",
   "/api/token/",
   "/api/token-metadata",
@@ -48,6 +47,7 @@ const frontendProductRoutes = [
   "/api/war-room",
   "/api/sponsored",
   "/api/sponsorship-applications",
+  "/api/campaigns",
   "/api/profile",
   "/api/drafts",
   "/api/prepare",
@@ -77,6 +77,7 @@ for (const [expected, label] of requiredEnvTerms) {
 }
 
 requireIncludes(packageJson, '"check:localdev-gateway"', "package script", failures);
+requireIncludes(packageJson, '"check:railway-upstreams"', "Railway upstream diagnostic script", failures);
 
 if (failures.length) {
   console.error("Local dev gateway readiness check failed.");
