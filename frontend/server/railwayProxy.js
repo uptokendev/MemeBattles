@@ -1,4 +1,5 @@
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 const EXACT_RAILWAY_PATHS = new Set([]);
 
@@ -93,12 +94,27 @@ function truthy(value) {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
 }
 
+function explicitFalsy(value) {
+  return FALSE_VALUES.has(String(value || "").trim().toLowerCase());
+}
+
+function firstConfiguredEnvValue(names) {
+  for (const name of names) {
+    const value = String(process.env[name] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function railwayProxyEnabled() {
   return truthy(process.env.API_RAILWAY_PROXY || process.env.RAILWAY_API_PROXY || process.env.VITE_API_RAILWAY_PROXY);
 }
 
 function railwayProxyStrict() {
-  return truthy(process.env.API_RAILWAY_PROXY_STRICT || process.env.RAILWAY_API_PROXY_STRICT);
+  const configured = firstConfiguredEnvValue(["API_RAILWAY_PROXY_STRICT", "RAILWAY_API_PROXY_STRICT"]);
+  if (explicitFalsy(configured)) return false;
+  if (truthy(configured)) return true;
+  return railwayProxyEnabled();
 }
 
 function normalizeBaseUrl(raw) {
