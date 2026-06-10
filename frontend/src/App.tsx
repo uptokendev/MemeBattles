@@ -53,6 +53,7 @@ import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
+import { UnsupportedChainGuard } from "@/components/chain/UnsupportedChainGuard";
 
 const queryClient = new QueryClient();
 
@@ -137,6 +138,7 @@ const App = () => {
                 <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
                 <RankPromotionListener />
+                <UnsupportedChainGuard />
                 <main className="flex-1 overflow-auto scroll-pt-[3.25rem] md:scroll-pt-[4.25rem] pt-[2rem] md:pt-[4.75rem] px-2 md:px-3 lg:px-4 pb-4 md:pb-6 lg:pb-8">
                   <Routes>
                     <Route path="/" element={<Showcase />} />

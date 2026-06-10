@@ -14,6 +14,7 @@ import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { isSupportedChainId, getChainLabel } from "@/lib/chainConfig";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
@@ -154,6 +155,11 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   // Prefer Solana address if Solana connected (Phantom), else EVM.
   const activeAddress = isSolanaConnected ? solanaAccount : wallet.account;
   const shortAddress = activeAddress && activeAddress.length > 8 ? `${activeAddress.slice(0, 4)}...${activeAddress.slice(-4)}` : activeAddress;
+
+  // Frontend-wide supported chain status (used for badges + to open correct filtered modal).
+  const rawChainForTopbar = isSolanaConnected ? 101 : wallet.chainId;
+  const isOnSupportedChain = !activeAddress || isSupportedChainId(rawChainForTopbar);
+  const chainPillLabel = isSolanaConnected ? "SOL" : (wallet.chainId ? getChainLabel(wallet.chainId)?.split(" ")[0] || "EVM" : "");
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
@@ -513,6 +519,22 @@ tickerInitialLoadedRef.current = true;
           )}
 
           <div className="relative" data-topbar-popover>
+            {/* Frontend-wide chain status indicator. Red "WRONG NET" when connected on unsupported chain (e.g. Trust on Ethereum). */}
+            {(wallet.isConnected || isSolanaConnected) && (
+              <button
+                type="button"
+                onClick={() => openWalletModal(isSolanaConnected ? "solana" : "evm")}
+                className={`mr-1 hidden md:inline-flex items-center rounded-full border px-1.5 py-px text-[9px] font-retro tracking-[0.16em] transition ${
+                  isOnSupportedChain
+                    ? "border-border/50 bg-card/30 text-muted-foreground hover:border-accent/40"
+                    : "border-destructive/70 bg-destructive/10 text-destructive hover:bg-destructive/20"
+                }`}
+                title={isOnSupportedChain ? `Connected on supported chain` : "Unsupported chain — click to switch or reconnect"}
+              >
+                {isOnSupportedChain ? (isSolanaConnected ? "SOL" : "BNB") : "BAD NET"}
+              </button>
+            )}
+
             <Button
               ref={walletRef}
               className={topbarButtonClass}

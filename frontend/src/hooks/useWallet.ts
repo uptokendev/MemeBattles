@@ -2,7 +2,7 @@ import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { syncWalletRecruiterAttribution } from "@/lib/recruiterApi";
-import { isAllowedChainId } from "@/lib/chainConfig";
+import { isAllowedChainId, isSupportedChainId } from "@/lib/chainConfig";
 
 export type WalletType =
   | "metamask"
@@ -81,6 +81,8 @@ export type WalletHook = {
   disconnect: () => Promise<void>;
   detectWallets: () => DetectedWallet[];
   isConnected: boolean;
+  /** True only when an EVM wallet is connected AND on a supported chain (56). False when on wrong chain. */
+  isOnSupportedChain: boolean;
 };
 
 declare global {
@@ -625,6 +627,8 @@ export function useWallet(): WalletHook {
     }
   }, [resetWalletState]);
 
+  const isOnSupportedChain = Boolean(account && signer && isSupportedChainId(chainId));
+
   return useMemo(() => ({
     provider,
     signer,
@@ -638,5 +642,6 @@ export function useWallet(): WalletHook {
     disconnect,
     detectWallets,
     isConnected: Boolean(account && signer),
-  }), [provider, signer, account, chainId, connecting, connectingWalletId, detectedWallets, connect, disconnect, detectWallets]);
+    isOnSupportedChain,
+  }), [provider, signer, account, chainId, connecting, connectingWalletId, detectedWallets, connect, disconnect, detectWallets, isOnSupportedChain]);
 }

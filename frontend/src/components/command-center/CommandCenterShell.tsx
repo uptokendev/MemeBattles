@@ -6,6 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { CommandCenterLayout } from "@/components/command-center/CommandCenterLayout";
 import { normalizeAddress as centralNormalize } from "@/lib/address";
+import { isSupportedChainId, getChainLabel, getSupportedChainsLabel } from "@/lib/chainConfig";
 
 function normalizeWallet(value?: string | null): string | null {
   const n = centralNormalize(value, /* chain unknown here, rely on isSolanaAddress heuristic inside central */ null as any);
@@ -92,6 +93,47 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
   if (connectedWallet !== requestedWallet) {
     const section = getCommandSection(location.pathname);
     return <Navigate to={`/profile/${connectedWallet}/command${section}`} replace />;
+  }
+
+  // === NEW: Hard frontend-wide chain gate for Command Center ===
+  // Even if address matches, if the connected wallet is on a non-supported chain we MUST NOT
+  // render the Layout + DataProvider (which would load partial/broken data with getActiveChainId fallback).
+  const rawChain = isSolanaConnected ? 101 : (anyWallet?.chainId ?? anyWallet?.network?.chainId);
+  if (!isSupportedChainId(rawChain)) {
+    const chainLabel = getChainLabel(rawChain) || `Chain ${rawChain ?? "unknown"}`;
+    return (
+      <div className="mx-auto flex min-h-[65vh] w-full max-w-3xl items-center justify-center px-4">
+        <div className="w-full rounded-3xl border border-destructive/40 bg-card/70 p-6 text-center shadow-2xl backdrop-blur-md md:p-10">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-destructive/30 bg-destructive/10 font-retro text-2xl text-destructive">
+            !
+          </div>
+          <h1 className="font-retro text-2xl text-foreground md:text-4xl">Unsupported chain in Command Center</h1>
+          <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground md:text-base">
+            You are connected on <span className="font-medium text-foreground">{chainLabel}</span>.
+            Command Center (and all owner tools) are only available on {getSupportedChainsLabel()}.
+          </p>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Button onClick={() => openWalletModal(anyWallet)} className="font-retro">
+              Open wallet selector
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // Let the global UnsupportedChainGuard handle the prominent actions (switch/disconnect/Phantom).
+                // We just close/reopen modal as a convenience.
+                openWalletModal(isSolanaConnected ? "solana" : "evm");
+              }}
+              className="font-retro"
+            >
+              Switch or connect supported wallet
+            </Button>
+          </div>
+          <p className="mt-4 text-[10px] text-muted-foreground">
+            A full-screen notice is also shown app-wide while you are on an unsupported network.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isSupportedChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
 import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
@@ -22,6 +22,8 @@ type CommandCenterData = {
   walletAddress: string;
   chainId?: number;
   walletChainId?: number;
+  /** True when a wallet is connected but reports a chain we do not support (e.g. Trust on Ethereum). */
+  isUnsupportedChain: boolean;
   profile: ReturnType<typeof useEditableProfile>["profile"];
   loadingProfile: boolean;
   editOpen: boolean;
@@ -74,6 +76,12 @@ export function CommandCenterDataProvider({
     : walletChainId
       ? getActiveChainId(walletChainId)
       : undefined;
+
+  // If the user is connected but on a completely unsupported chain we treat the whole
+  // Command Center data surface as unavailable (the Shell already blocks rendering the provider in most cases,
+  // but we also short-circuit here to avoid firing lots of failing requests).
+  const isUnsupportedChain = !!(walletChainId && !isSupportedChainId(walletChainId));
+
   const account = isSol ? (solanaAccount || walletAddress) : (evmWallet.account || walletAddress);
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
@@ -150,6 +158,11 @@ export function CommandCenterDataProvider({
   });
 
   useEffect(() => {
+    if (isUnsupportedChain) {
+      setDraftCount(0);
+      setLoadingDraftCount(false);
+      return;
+    }
     let cancelled = false;
     setLoadingDraftCount(true);
 
@@ -167,7 +180,7 @@ export function CommandCenterDataProvider({
     return () => {
       cancelled = true;
     };
-  }, [walletAddress, chainId]);
+  }, [walletAddress, chainId, isUnsupportedChain]);
 
   const { nativeBalance, tokenBalances, loadingBalances } = useProfileBalances({
     viewedAddress: walletAddress,
@@ -186,6 +199,12 @@ export function CommandCenterDataProvider({
 
   const { leagueCabinet, loadingLeagueCabinet } = useLeagueCabinet(chainId, walletAddress);
 
+  // When on an unsupported chain we deliberately return zeros/empty for the counts that power
+  // the Command Center hero + coins list so the UI does not show confusing partial data.
+  // The real protection is the Shell guard + global UnsupportedChainGuard.
+  const effectiveDraftCount = isUnsupportedChain ? 0 : draftCount;
+  const effectiveLoadingDraftCount = isUnsupportedChain ? false : loadingDraftCount;
+
   const displayName = useMemo(() => {
     const name = String(profile?.displayName ?? "").trim();
     return name ? `@${name}` : shortenWallet(walletAddress) || "Command Center";
@@ -199,6 +218,7 @@ export function CommandCenterDataProvider({
     walletAddress,
     chainId,
     walletChainId,
+    isUnsupportedChain,
     profile,
     loadingProfile,
     editOpen,
@@ -220,8 +240,8 @@ export function CommandCenterDataProvider({
     loadingFollows,
     createdCount: created.length,
     created,
-    draftCount,
-    loadingDraftCount,
+    draftCount: isUnsupportedChain ? 0 : draftCount,
+    loadingDraftCount: isUnsupportedChain ? false : loadingDraftCount,
     nativeBalance,
     tokenBalances,
     loadingBalances,
@@ -260,6 +280,7 @@ export function CommandCenterDataProvider({
     liveRank,
     leagueCabinet,
     loadingLeagueCabinet,
+    isUnsupportedChain,
   ]);
 
   return <CommandCenterContext.Provider value={value}>{children}</CommandCenterContext.Provider>;
