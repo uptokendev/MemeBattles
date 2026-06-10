@@ -31,10 +31,10 @@ const checks = [
   ["frontend", frontend, "/healthz"],
   ["frontend", frontend, "/api/campaigns?chainId=97&limit=1"],
   ["frontend", frontend, "/api/drafts?chainId=97&limit=5"],
+  ["frontend", frontend, "/api/token-metadata?chainId=97&address=0x0000000000000000000000000000000000000000"],
+  ["frontend", frontend, "/api/epochPools?chainId=97"],
   ["frontend", frontend, "/api/prepare-notifications?limit=1"],
   ["token", token, "/healthz"],
-  ["token", token, "/api/token-metadata?chainId=97&address=0x0000000000000000000000000000000000000000"],
-  ["token", token, "/api/epochPools?chainId=97"],
 ];
 
 async function probe(label, upstream, path) {
