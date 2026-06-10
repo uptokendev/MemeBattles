@@ -3,13 +3,20 @@ const EXPLICIT_REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE
   .replace(/\/$/, "");
 
 const NETLIFY_OWNED_API_PREFIXES = [
+  // Core app / CC / draft / profile flows — must stay same-origin so Netlify /api/* proxy
+  // sends them to the memewarzonefrontend Railway service (not the memebattles realtime-indexer).
   "/api/activity",
   "/api/airdrops",
   "/api/attribution",
-  "/api/drafts",
   "/api/auth",
+  "/api/campaigns",           // CC / list contexts
+  "/api/drafts",
+  "/api/follows",
   "/api/internal/rewards",
   "/api/prepare",
+  "/api/prepare-notifications",
+  "/api/profile",
+  "/api/profileCabinet",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
   "/api/recruiters",
