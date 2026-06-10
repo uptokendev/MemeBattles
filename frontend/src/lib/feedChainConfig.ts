@@ -1,7 +1,8 @@
 import { getActiveChainId, getDefaultChainId, isAllowedChainId, type SupportedChainId } from "@/lib/chainConfig";
 
 function readEnvChainId(name: string): SupportedChainId | null {
-  const raw = (import.meta.env[name] as string | undefined) ?? "";
+  const env = import.meta.env as Record<string, string | boolean | undefined>;
+  const raw = String(env[name] ?? "");
   const chainId = Number(raw);
   return Number.isFinite(chainId) && isAllowedChainId(chainId) ? (chainId as SupportedChainId) : null;
 }
