@@ -2,14 +2,7 @@ const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 const EXACT_RAILWAY_PATHS = new Set([]);
-
-const TOKEN_INDEXER_PATH_PREFIXES = [
-  "/api/epochPools",
-  "/api/token/",
-  "/api/token-metadata",
-  "/api/vote_counts",
-  "/api/votes",
-];
+const TOKEN_INDEXER_PATH_PREFIXES = [];
 
 const FRONTEND_PRODUCT_PATH_PREFIXES = [
   "/api/ably",
@@ -27,6 +20,7 @@ const FRONTEND_PRODUCT_PATH_PREFIXES = [
   "/api/content-tags",
   "/api/diagnostics",
   "/api/drafts",
+  "/api/epochPools",
   "/api/featured",
   "/api/follows",
   "/api/internal",
@@ -53,8 +47,12 @@ const FRONTEND_PRODUCT_PATH_PREFIXES = [
   "/api/sponsorship-applications",
   "/api/squads",
   "/api/status",
+  "/api/token/",
+  "/api/token-metadata",
   "/api/upload",
   "/api/variants",
+  "/api/vote_counts",
+  "/api/votes",
   "/api/war-room",
   "/api/wm-",
   "/internal/",
