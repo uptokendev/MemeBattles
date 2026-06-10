@@ -13,7 +13,6 @@ import { useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
-import Arena from "./pages/Arena";
 import ArenaBattles from "./pages/ArenaBattles";
 import WarRoom from "./pages/WarRoom";
 import BattleDetails from "./pages/BattleDetails";
@@ -174,7 +173,6 @@ function AppShellLayout({
       >
         <Routes>
           <Route path="/" element={<Showcase />} />
-          {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
           {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
           {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
