@@ -87,6 +87,7 @@ const UPSTREAMS = {
 };
 
 const FALLBACK_STATUSES = new Set([404, 405]);
+const EMPTY_FEED_FALLBACK_PATHS = new Set(["/api/featured", "/api/war-room"]);
 
 function truthy(value) {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
@@ -210,6 +211,52 @@ function responseLabel(serviceName, path, upstream) {
   return `[railway-proxy:${serviceName}:${upstream.key}] ${path}`;
 }
 
+function hasEmptyItemsPayload(text) {
+  try {
+    const json = JSON.parse(text);
+    return Array.isArray(json?.items) && json.items.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function buildCampaignFeedFallbackPath(path) {
+  const url = new URL(path, "http://localhost");
+  const chainId = url.searchParams.get("chainId") || "97";
+  const limit = url.searchParams.get("limit") || (url.pathname === "/api/war-room" ? "250" : "20");
+  const params = new URLSearchParams({
+    chainId,
+    limit,
+    tab: "trending",
+    sort: "default",
+    status: "all",
+  });
+  return `/api/campaigns?${params.toString()}`;
+}
+
+async function maybeFetchEmptyFeedFallback({ base, path, method, headers, upstreamStatus, upstreamText }) {
+  if (method !== "GET") return null;
+  if (upstreamStatus < 200 || upstreamStatus >= 300) return null;
+  if (!EMPTY_FEED_FALLBACK_PATHS.has(getPathname(path))) return null;
+  if (!hasEmptyItemsPayload(upstreamText)) return null;
+
+  const fallbackPath = buildCampaignFeedFallbackPath(path);
+  const fallback = await fetch(`${base}${fallbackPath}`, {
+    method: "GET",
+    headers,
+    redirect: "manual",
+  });
+  const fallbackText = await fallback.text();
+  if (fallback.status < 200 || fallback.status >= 300 || hasEmptyItemsPayload(fallbackText)) return null;
+
+  return {
+    path: fallbackPath,
+    status: fallback.status,
+    text: fallbackText,
+    contentType: fallback.headers.get("content-type") || "application/json; charset=utf-8",
+  };
+}
+
 export function createRailwayProxyMiddleware(options = {}) {
   const {
     prefixApiWhenMissing = false,
@@ -242,11 +289,12 @@ export function createRailwayProxyMiddleware(options = {}) {
     const method = String(req.method || "GET").toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
     const body = hasBody ? JSON.stringify(req.body ?? {}) : undefined;
+    const requestHeaders = copyRequestHeaders(req, hasBody);
 
     try {
       const upstream = await fetch(target, {
         method,
-        headers: copyRequestHeaders(req, hasBody),
+        headers: requestHeaders,
         body,
         redirect: "manual",
       });
@@ -257,16 +305,28 @@ export function createRailwayProxyMiddleware(options = {}) {
       }
 
       const text = await upstream.text();
-      res.statusCode = upstream.status;
+      const fallback = await maybeFetchEmptyFeedFallback({
+        base,
+        path,
+        method,
+        headers: requestHeaders,
+        upstreamStatus: upstream.status,
+        upstreamText: text,
+      });
+      const responsePath = fallback?.path || path;
+      const responseText = fallback?.text || text;
+      const contentType = fallback?.contentType || upstream.headers.get("content-type") || "application/json; charset=utf-8";
 
-      const contentType = upstream.headers.get("content-type") || "application/json; charset=utf-8";
+      res.statusCode = fallback?.status || upstream.status;
+
       res.setHeader("content-type", contentType);
       res.setHeader("x-mwz-api-upstream", "railway");
       res.setHeader("x-mwz-api-upstream-service", upstreamConfig.key);
       res.setHeader("x-mwz-api-upstream-env", envName);
-      res.setHeader("x-mwz-api-upstream-path", path);
+      res.setHeader("x-mwz-api-upstream-path", responsePath);
+      if (fallback) res.setHeader("x-mwz-api-upstream-fallback", "campaigns");
 
-      res.end(text);
+      res.end(responseText);
     } catch (err) {
       if (!railwayProxyStrict()) {
         console.warn(`${responseLabel(serviceName, path, upstreamConfig)} upstream failed; falling back to local handler`, err?.message || err);
