@@ -34,29 +34,20 @@ for (const [expected, label] of requiredProxyTerms) {
   requireIncludes(proxy, expected, label, failures);
 }
 
-const tokenIndexerRoutes = [
-  "/api/epochPools",
-  "/api/token/",
-  "/api/token-metadata",
-  "/api/vote_counts",
-  "/api/votes",
-];
-
 const frontendProductRoutes = [
   "/api/arena",
   "/api/war-room",
   "/api/sponsored",
   "/api/sponsorship-applications",
   "/api/campaigns",
+  "/api/epochPools",
+  "/api/token-metadata",
+  "/api/vote_counts",
+  "/api/votes",
   "/api/profile",
   "/api/drafts",
   "/api/prepare",
 ];
-
-for (const route of tokenIndexerRoutes) {
-  requireIncludes(proxy, route, "token/indexer proxy route", failures);
-  requireIncludes(envExample, route, "token/indexer env route summary", failures);
-}
 
 for (const route of frontendProductRoutes) {
   requireIncludes(proxy, route, "frontend/product proxy route", failures);
