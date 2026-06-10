@@ -5,6 +5,7 @@ import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveImageUri } from "@/lib/media";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { getDraftDiscoveryChainId } from "@/lib/feedChainConfig";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
@@ -97,6 +98,7 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
 
 export function DraftCampaignGrid({ className, query }: { className?: string; query: HomeQuery & { tab?: string } }) {
   const { activeChainId } = useLaunchpad();
+  const draftChainId = getDraftDiscoveryChainId(activeChainId);
   const [items, setItems] = useState<DraftCampaignVM[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -110,12 +112,12 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
 
       try {
         const drafts = await fetchPublicCampaignDrafts({
-          chainId: activeChainId,
+          chainId: draftChainId,
           limit: 50,
         });
 
         const candidates = drafts
-          .filter((draft) => Number(draft.chainId) === Number(activeChainId))
+          .filter((draft) => Number(draft.chainId) === Number(draftChainId))
           .filter((draft) => draft.visibility === "public")
           .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
           .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
@@ -160,7 +162,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
     return () => {
       alive = false;
     };
-  }, [activeChainId]);
+  }, [draftChainId]);
 
   const visibleItems = useMemo(() => {
     return sortDrafts(
