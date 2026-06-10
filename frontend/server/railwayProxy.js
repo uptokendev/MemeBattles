@@ -4,7 +4,6 @@ const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 const EXACT_RAILWAY_PATHS = new Set([]);
 
 const TOKEN_INDEXER_PATH_PREFIXES = [
-  "/api/campaigns",
   "/api/epochPools",
   "/api/token/",
   "/api/token-metadata",
@@ -20,6 +19,7 @@ const FRONTEND_PRODUCT_PATH_PREFIXES = [
   "/api/attribution",
   "/api/auth",
   "/api/calendar",
+  "/api/campaigns",
   "/api/chat",
   "/api/comments",
   "/api/content-ai",
