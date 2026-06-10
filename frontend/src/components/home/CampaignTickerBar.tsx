@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { Contract } from "ethers";
 import { cn } from "@/lib/utils";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
+import { getFactoryAddress } from "@/lib/chainConfig";
+import { getTickerFeedChainId } from "@/lib/feedChainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import { useWallet } from "@/contexts/WalletContext";
 
@@ -146,7 +147,7 @@ function buildRepeatedTickerItems(items: CampaignTickerItem[]) {
 
 export function CampaignTickerBar({ className }: { className?: string }) {
   const wallet = useWallet();
-  const chainId = getActiveChainId((wallet as any)?.chainId ?? (wallet as any)?.network?.chainId);
+  const chainId = getTickerFeedChainId((wallet as any)?.chainId ?? (wallet as any)?.network?.chainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [items, setItems] = useState<CampaignTickerItem[]>([]);
   const [loaded, setLoaded] = useState(false);
