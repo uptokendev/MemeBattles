@@ -12,6 +12,7 @@ import { ChevronLeft, ChevronRight, Flame, Star, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
+import { getFeaturedFeedChainId } from "@/lib/feedChainConfig";
 import { resolveImageUri } from "@/lib/media";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { apiFetch } from "@/lib/apiBase";
@@ -102,6 +103,25 @@ function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   };
 }
 
+async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
+  const featured = await apiFetch(`/api/featured?chainId=${chainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+  const featuredJson = await featured.json().catch(() => null);
+  const featuredItems = Array.isArray(featuredJson) ? featuredJson : Array.isArray(featuredJson?.items) ? featuredJson.items : [];
+
+  if (featured.ok && featuredItems.length) {
+    return featuredItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+  }
+
+  const campaigns = await apiFetch(`/api/campaigns?chainId=${chainId}&limit=20&tab=trending&sort=default&status=all&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+  const campaignJson = await campaigns.json().catch(() => null);
+  if (!campaigns.ok) {
+    throw new Error(String(featuredJson?.error || campaignJson?.error || "Failed to load featured"));
+  }
+
+  const campaignItems = Array.isArray(campaignJson) ? campaignJson : Array.isArray(campaignJson?.items) ? campaignJson.items : [];
+  return campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+}
+
 async function safeString(fn: () => Promise<unknown>, fallback = "") {
   try {
     const value = await fn();
@@ -153,6 +173,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   const { toast } = useToast();
   const navigate = useNavigate();
   const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
+  const featuredChainId = getFeaturedFeedChainId(activeChainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [voteMode, setVoteMode] = useState<"24h" | "all">("24h");
   const [refetchNonce, setRefetchNonce] = useState(0);
@@ -168,7 +189,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
 
   const { patchByCampaign } = useLeagueRealtime({
     enabled: true,
-    chainId: activeChainId,
+    chainId: featuredChainId,
     fallbackMs: 25000,
     onFallbackRefresh: () => setRefetchNonce((n) => n + 1),
   });
@@ -183,7 +204,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
     const onRefresh = (e: Event) => {
       const d = (e as CustomEvent<{ chainId?: number }>).detail ?? {};
       const cid = Number(d.chainId ?? NaN);
-      if (Number.isFinite(cid) && cid !== activeChainId) return;
+      if (Number.isFinite(cid) && cid !== featuredChainId) return;
       setRefetchNonce((n) => n + 1);
     };
     window.addEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
@@ -192,7 +213,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       window.removeEventListener("memebattles:upvoteConfirmed", onRefresh as EventListener);
       window.removeEventListener("memebattles:txConfirmed", onRefresh as EventListener);
     };
-  }, [activeChainId]);
+  }, [featuredChainId]);
 
   useEffect(() => {
     let mounted = true;
@@ -200,18 +221,13 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       if (!initialLoadedRef.current) setLoading(true);
       setErr(null);
       try {
-        const r = await apiFetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? "Failed to load featured");
-        if (!mounted) return;
-        const rawItems = Array.isArray(j) ? j : Array.isArray(j.items) ? j.items : [];
-        const normalized = rawItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+        const normalized = await fetchFeaturedItems(featuredChainId, refetchNonce);
         setItems(normalized);
         initialLoadedRef.current = true;
 
         // Featured endpoint can be intentionally lightweight. Hydrate sparse rows
         // from campaign/token contracts so cards do not render as Unknown.
-        hydrateFeaturedMetadata(normalized, activeChainId).then((next) => {
+        hydrateFeaturedMetadata(normalized, featuredChainId).then((next) => {
           if (mounted) setItems(next);
         });
       } catch (e: unknown) {
@@ -224,7 +240,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
     return () => {
       mounted = false;
     };
-  }, [activeChainId, refetchNonce]);
+  }, [featuredChainId, refetchNonce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,7 +280,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
 
     (async () => {
       const results = await Promise.all(missing.map(async (addr) => {
-        try { return [addr, await fetchUserProfile(activeChainId, addr)] as const; }
+        try { return [addr, await fetchUserProfile(featuredChainId, addr)] as const; }
         catch { return [addr, null] as const; }
       }));
       if (cancelled) return;
@@ -276,7 +292,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
     })();
 
     return () => { cancelled = true; };
-  }, [items, activeChainId, profilesByAddr]);
+  }, [items, featuredChainId, profilesByAddr]);
 
   const cards: FeaturedCardVM[] = useMemo(() => {
     const mapped = items.map((it, idx) => {
@@ -300,7 +316,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
 
       return {
         idx: idx + 1,
-        chainId: Number(it.chainId ?? 0) || activeChainId,
+        chainId: Number(it.chainId ?? 0) || featuredChainId,
         addr,
         name: String(it.name || "Unknown"),
         symbol: String(it.symbol ?? ""),
@@ -323,7 +339,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
     });
 
     return mapped.map((c, i) => ({ ...c, idx: i + 1 }));
-  }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr, voteMode, activeChainId]);
+  }, [items, patchByCampaign, bnbUsd, logoCache, profilesByAddr, voteMode, featuredChainId]);
 
   useEffect(() => {
     let alive = true;
@@ -464,7 +480,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                     </div>
 
                     <div className="absolute inset-x-3 bottom-2 pointer-events-none">
-                      <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${activeChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
+                      <AthBar currentLabel={c.mcapUsdLabel ?? null} storageKey={`ath:${featuredChainId}:${c.addr}`} className="text-[10px]" barWidthPx={420} barMaxWidth="100%" />
                     </div>
                   </div>
                 </div>
