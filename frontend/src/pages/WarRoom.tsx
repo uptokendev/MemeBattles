@@ -7,6 +7,7 @@ import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "@/hooks/useWarRoomCampaignFeed";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { getWarRoomFeedChainId } from "@/lib/feedChainConfig";
 import { resolveImageUri } from "@/lib/media";
 
 type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
@@ -47,6 +48,7 @@ function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKe
 
 const WarRoom = () => {
   const { activeChainId } = useLaunchpad();
+  const warRoomChainId = getWarRoomFeedChainId(activeChainId);
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
@@ -55,7 +57,7 @@ const WarRoom = () => {
 
   const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
-    activeChainId: Number(activeChainId || 97),
+    activeChainId: Number(warRoomChainId || 97),
     bnbUsd,
     search,
   });
