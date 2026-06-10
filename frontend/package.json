@@ -19,6 +19,7 @@
     "check:postgrad-economics": "node scripts/check-postgrad-economics-readiness.mjs",
     "check:localdev-gateway": "node scripts/check-localdev-gateway-readiness.mjs",
     "check:railway-upstreams": "node scripts/check-railway-upstreams.mjs",
+    "check:featured-feed": "node scripts/check-featured-feed.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
