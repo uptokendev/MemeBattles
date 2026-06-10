@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
+import net from "node:net";
 
 const isWindows = process.platform === "win32";
 
-const apiPort = process.env.PORT || process.env.API_PORT || process.env.VITE_DEV_API_PORT || "3001";
+const requestedApiPort = Number(process.env.PORT || process.env.API_PORT || process.env.VITE_DEV_API_PORT || 3001);
 const vitePort = process.env.VITE_PORT || "5173";
-const apiBase = `http://127.0.0.1:${apiPort}`;
-const healthUrl = `${apiBase}/healthz`;
+const reuseExistingApi = ["1", "true", "yes", "on"].includes(String(process.env.DEV_HYBRID_REUSE_API || "").trim().toLowerCase());
 
 const children = [];
 let shuttingDown = false;
@@ -14,19 +14,45 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function isApiHealthy() {
+function apiBaseForPort(port) {
+  return `http://127.0.0.1:${port}`;
+}
+
+function healthUrlForPort(port) {
+  return `${apiBaseForPort(port)}/healthz`;
+}
+
+async function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+async function findFreePort(startPort) {
+  for (let port = startPort; port < startPort + 20; port += 1) {
+    if (await isPortFree(port)) return port;
+  }
+  throw new Error(`No free API port found from ${startPort} to ${startPort + 19}`);
+}
+
+async function isApiHealthy(port) {
   try {
-    const res = await fetch(healthUrl, { cache: "no-store" });
+    const res = await fetch(healthUrlForPort(port), { cache: "no-store" });
     return res.ok;
   } catch {
     return false;
   }
 }
 
-async function waitForApi(timeoutMs = 30000) {
+async function waitForApi(port, timeoutMs = 30000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (await isApiHealthy()) return true;
+    if (await isApiHealthy(port)) return true;
     await sleep(500);
   }
   return false;
@@ -84,26 +110,40 @@ function shutdown(code = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-console.log(`[dev-hybrid] API: ${apiBase}`);
+const requestedApiBase = apiBaseForPort(requestedApiPort);
+console.log(`[dev-hybrid] API: ${requestedApiBase}`);
 console.log(`[dev-hybrid] Web: http://127.0.0.1:${vitePort}`);
 
-const apiAlreadyRunning = await isApiHealthy();
+let apiPort = requestedApiPort;
+let apiBase = requestedApiBase;
+const requestedApiAlreadyRunning = await isApiHealthy(requestedApiPort);
 
-if (apiAlreadyRunning) {
-  console.log(`[dev-hybrid] API already healthy, reusing existing server: ${healthUrl}`);
+if (requestedApiAlreadyRunning && reuseExistingApi) {
+  console.log(`[dev-hybrid] API already healthy, reusing existing server: ${healthUrlForPort(requestedApiPort)}`);
 } else {
+  if (requestedApiAlreadyRunning) {
+    apiPort = await findFreePort(requestedApiPort + 1);
+    apiBase = apiBaseForPort(apiPort);
+    console.log(`[dev-hybrid] API already running on ${requestedApiBase}; starting a fresh gateway on ${apiBase}`);
+    console.log("[dev-hybrid] set DEV_HYBRID_REUSE_API=true to intentionally reuse an existing API server");
+  } else if (!(await isPortFree(requestedApiPort))) {
+    apiPort = await findFreePort(requestedApiPort + 1);
+    apiBase = apiBaseForPort(apiPort);
+    console.log(`[dev-hybrid] API port ${requestedApiPort} is occupied; starting a fresh gateway on ${apiBase}`);
+  }
+
   // Use stable API mode by default. The node --watch API script can restart from
   // unrelated file activity and cause browser refreshes across every route.
   start("api", "api:start", {
-    PORT: apiPort,
-    API_PORT: apiPort,
+    PORT: String(apiPort),
+    API_PORT: String(apiPort),
   });
 
-  console.log(`[dev-hybrid] waiting for API health: ${healthUrl}`);
-  const apiReady = await waitForApi();
+  console.log(`[dev-hybrid] waiting for API health: ${healthUrlForPort(apiPort)}`);
+  const apiReady = await waitForApi(apiPort);
 
   if (!apiReady) {
-    console.error(`[dev-hybrid] API did not become healthy at ${healthUrl}`);
+    console.error(`[dev-hybrid] API did not become healthy at ${healthUrlForPort(apiPort)}`);
     shutdown(1);
   } else {
     console.log(`[dev-hybrid] API is healthy`);
@@ -111,7 +151,7 @@ if (apiAlreadyRunning) {
 }
 
 start("vite", "dev:vite", {
-  VITE_DEV_API_PORT: apiPort,
+  VITE_DEV_API_PORT: String(apiPort),
   VITE_DEV_API_PROXY_TARGET: apiBase,
   VITE_PORT: vitePort,
 });
