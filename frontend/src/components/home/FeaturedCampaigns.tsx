@@ -54,19 +54,6 @@ function isEvmAddress(addr?: string | null) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
 }
 
-function usableCampaignItems(items: FeaturedItemApi[]) {
-  return items.filter((it) => isEvmAddress(it?.campaignAddress));
-}
-
-async function fetchFeedItems(path: string): Promise<FeaturedItemApi[]> {
-  const r = await fetch(path, { cache: "no-store" as any });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    throw new Error(j?.error ?? `Request failed (${r.status})`);
-  }
-  return Array.isArray(j.items) ? j.items : [];
-}
-
 export function FeaturedCampaigns({ className }: { className?: string }) {
   const wallet = useWallet();
   const { toast } = useToast();
@@ -127,28 +114,12 @@ export function FeaturedCampaigns({ className }: { className?: string }) {
       setErr(null);
       try {
         // Avoid edge/browser caching so vote counts/order refresh immediately after tx confirmation.
-        const featuredPath = `/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`;
-        let nextItems: FeaturedItemApi[] = [];
-        let featuredError: unknown = null;
-
-        try {
-          nextItems = usableCampaignItems(await fetchFeedItems(featuredPath));
-        } catch (e) {
-          featuredError = e;
-        }
-
-        if (!nextItems.length) {
-          const fallbackPath = `/api/campaigns?chainId=${activeChainId}&limit=20&tab=trending&sort=default&status=all&_r=${refetchNonce}`;
-          nextItems = usableCampaignItems(await fetchFeedItems(fallbackPath));
-        }
-
+        const r = await fetch(`/api/featured?chainId=${activeChainId}&sort=activity&limit=20&_r=${refetchNonce}`, {
+          cache: "no-store" as any,
+        });
+        const j = await r.json();
         if (!mounted) return;
-        setItems(nextItems);
-        setErr(null);
-
-        if (featuredError && !nextItems.length) {
-          console.warn("[FeaturedCampaigns] featured feed failed and campaign fallback was empty", featuredError);
-        }
+        setItems(Array.isArray(j.items) ? j.items : []);
       } catch (e: any) {
         if (!mounted) return;
         setErr(e?.message ?? "Failed to load featured");
