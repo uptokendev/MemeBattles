@@ -298,14 +298,20 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         initialLoadedRef.current = true;
       } catch (apiError: any) {
         console.warn("[useCurveTrades] trade API failed; falling back to on-chain logs", apiError);
-        const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-        const applied = applySnapshot(fallbackRows);
-        setError(applied > 0 ? null : null);
+        try {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          applySnapshot(fallbackRows);
+        } catch (fallbackError) {
+          console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+        }
+        setError(null);
         initialLoadedRef.current = true;
       }
     } catch (e: any) {
       if (e?.name !== "AbortError") {
-        setError(String(e?.message || "Failed to load trades"));
+        console.warn("[useCurveTrades] trade snapshot failed", e);
+        setError(null);
+        initialLoadedRef.current = true;
       }
     } finally {
       setLoading(false);
