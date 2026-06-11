@@ -478,7 +478,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                         <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-8 w-8", followedMap[c.addr] && "mwz-button-active")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
                           <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/75")} />
                         </Button>
-                        <UpvoteDialog campaignAddress={c.addr} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
+                        <UpvoteDialog campaignAddress={c.addr} chainId={c.chainId} className="mwz-button mwz-button-active h-8 px-3 text-[10px]" buttonVariant="ghost" buttonSize="sm" />
                       </div>
                     </div>
 
