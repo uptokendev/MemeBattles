@@ -235,11 +235,13 @@ function buildCampaignFeedFallbackPath(path) {
   return `/api/campaigns?${params.toString()}`;
 }
 
-async function maybeFetchEmptyFeedFallback({ base, path, method, headers, upstreamStatus, upstreamText }) {
+async function maybeFetchFeedFallback({ base, path, method, headers, upstreamStatus, upstreamText }) {
   if (method !== "GET") return null;
-  if (upstreamStatus < 200 || upstreamStatus >= 300) return null;
   if (!EMPTY_FEED_FALLBACK_PATHS.has(getPathname(path))) return null;
-  if (!hasEmptyItemsPayload(upstreamText)) return null;
+
+  const upstreamFailed = upstreamStatus >= 400;
+  const upstreamEmpty = upstreamStatus >= 200 && upstreamStatus < 300 && hasEmptyItemsPayload(upstreamText);
+  if (!upstreamFailed && !upstreamEmpty) return null;
 
   const fallbackPath = buildCampaignFeedFallbackPath(path);
   const fallback = await fetch(`${base}${fallbackPath}`, {
@@ -306,7 +308,7 @@ export function createRailwayProxyMiddleware(options = {}) {
       }
 
       const text = await upstream.text();
-      const fallback = await maybeFetchEmptyFeedFallback({
+      const fallback = await maybeFetchFeedFallback({
         base,
         path,
         method,
