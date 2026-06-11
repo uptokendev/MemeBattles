@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+const CHART_CHAIN_IDS = String(import.meta.env.VITE_TOKEN_CHART_CHAIN_IDS || "").trim();
 
 export type TokenStatsRealtime = {
   lastPriceBnb: number | null;
@@ -11,7 +12,20 @@ export type TokenStatsRealtime = {
   vol24hBnb: number;
   soldTokens: number | null;
   updatedAt?: string;
+  chainId?: number;
 };
+
+function uniquePositiveNumbers(values: number[]) {
+  return Array.from(new Set(values.filter((n) => Number.isFinite(n) && n > 0)));
+}
+
+function getChartChainIds(primaryChainId: number): number[] {
+  const configured = CHART_CHAIN_IDS
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return uniquePositiveNumbers(configured.length ? configured : [primaryChainId]);
+}
 
 async function fetchJson(url: string, signal?: AbortSignal) {
   const r = await fetch(url, { method: "GET", signal });
@@ -34,12 +48,17 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
   const [error, setError] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
 
-  const cid = useMemo<SupportedChainId>(() => getActiveChainId(Number(chainId ?? 56)), [chainId]);
+  const cid = useMemo(() => getActiveChainId(Number(chainId ?? 56)), [chainId]);
+  const chartChainIds = useMemo(() => getChartChainIds(cid), [cid]);
 
-  const url = useMemo(() => {
-    if (!API_BASE || !campaignAddress) return "";
-    return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/summary?chainId=${cid}`;
-  }, [campaignAddress, cid]);
+  const urls = useMemo(() => {
+    if (!API_BASE || !campaignAddress) return [] as Array<{ chainId: number; url: string }>;
+    const campaign = campaignAddress.toLowerCase();
+    return chartChainIds.map((chartChainId) => ({
+      chainId: chartChainId,
+      url: `${API_BASE}/api/token/${campaign}/summary?chainId=${chartChainId}`,
+    }));
+  }, [campaignAddress, chartChainIds]);
 
   const pull = useCallback(async (signal?: AbortSignal) => {
     if (!enabled || !campaignAddress) {
@@ -48,17 +67,32 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
       setError(null);
       return;
     }
-    if (!url) {
+    if (!urls.length) {
       setError("Missing VITE_REALTIME_API_BASE");
       setLoading(false);
       return;
     }
     try {
       if (!initialLoadedRef.current) setLoading(true);
-      const row = await fetchJson(url, signal);
+      const results = await Promise.allSettled(
+        urls.map(async (entry) => ({
+          chainId: entry.chainId,
+          row: await fetchJson(entry.url, signal),
+        }))
+      );
+      const successes = results.filter((r): r is PromiseFulfilledResult<{ chainId: number; row: any }> => r.status === "fulfilled");
+      const selected = successes.find((r) => r.value.row) ?? successes[0] ?? null;
+
+      if (!selected) {
+        const firstError = results.find((r): r is PromiseRejectedResult => r.status === "rejected")?.reason;
+        throw firstError || new Error("Failed to load token stats");
+      }
+
+      const row = selected.value.row;
       if (!row) {
         setStats(null);
         setError(null);
+        initialLoadedRef.current = true;
         return;
       }
       setStats({
@@ -67,6 +101,7 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
         vol24hBnb: Number(num(row.vol_24h_bnb) ?? 0),
         soldTokens: num(row.sold_tokens),
         updatedAt: String(row.updated_at ?? ""),
+        chainId: Number(row.chain_id ?? selected.value.chainId),
       });
       setError(null);
       initialLoadedRef.current = true;
@@ -75,7 +110,7 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
     } finally {
       setLoading(false);
     }
-  }, [enabled, campaignAddress, url]);
+  }, [enabled, campaignAddress, urls]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -109,6 +144,7 @@ export function useTokenStatsRealtime(campaignAddress?: string, chainId?: number
           vol24hBnb: Number(num(data.vol24hBnb) ?? prev?.vol24hBnb ?? 0),
           soldTokens: prev?.soldTokens ?? null,
           updatedAt: prev?.updatedAt,
+          chainId: prev?.chainId ?? cid,
         };
         return next;
       });
