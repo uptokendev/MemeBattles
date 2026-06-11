@@ -34,6 +34,7 @@ function safeLowerHex(s?: string | null): string {
 
 type Props = {
   campaignAddress: string;
+  chainId?: number | null;
   className?: string;
   buttonVariant?: "default" | "secondary" | "outline" | "ghost" | "destructive";
   buttonSize?: "default" | "sm" | "lg" | "icon";
@@ -47,6 +48,7 @@ type Props = {
  */
 export function UpvoteDialog({
   campaignAddress,
+  chainId: chainIdOverride,
   className,
   buttonVariant = "secondary",
   buttonSize = "sm",
@@ -55,7 +57,7 @@ export function UpvoteDialog({
   const wallet = useWallet();
   const { price: priceUsd } = useBnbUsdPrice();
 
-  const chainId = getActiveChainId(wallet.chainId);
+  const chainId = getActiveChainId(chainIdOverride ?? wallet.chainId);
   const treasuryAddress = useMemo(() => {
     return safeLowerHex(getVoteTreasuryAddress(chainId));
   }, [chainId]);
@@ -461,7 +463,6 @@ if (balanceWei != null) {
           variant={buttonVariant}
           size={buttonSize}
           className={className}
-          disabled={!treasuryAddress}
           title={!treasuryAddress ? "UP Vote treasury not configured" : "Upvote"}
         >
           UP Vote
@@ -500,6 +501,8 @@ if (balanceWei != null) {
                 ) : null}
                 <span className="ml-2">(min: max(0.005 BNB, ~$2))</span>
               </>
+            ) : !treasuryAddress ? (
+              "UP Vote treasury is not configured for this chain."
             ) : (
               "UP Vote is currently disabled on this chain."
             )}
