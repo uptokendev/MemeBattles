@@ -2,7 +2,15 @@ const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 const EXACT_RAILWAY_PATHS = new Set([]);
-const TOKEN_INDEXER_PATH_PREFIXES = [];
+const TOKEN_INDEXER_PATH_PREFIXES = [
+  "/api/ably/token",
+  "/api/league",
+  "/api/leaguePayouts",
+  "/api/leagueRoot",
+  "/api/token/",
+  "/api/vote_counts",
+  "/api/votes",
+];
 
 const FRONTEND_PRODUCT_PATH_PREFIXES = [
   "/api/ably",
