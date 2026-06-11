@@ -6,6 +6,8 @@ import { ethers } from "ethers";
 
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
+import { useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignMetrics } from "@/lib/launchpadClient";
 import { CurveTradesChart } from "@/lib/chart/CurveTradesChart";
 import type { CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 
@@ -34,6 +36,16 @@ function tokensFromWeiSafe(wei: bigint | undefined | null): number {
   try {
     if (!wei) return 0;
     const n = Number(ethers.formatUnits(wei, 18));
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function bnbFromWeiSafe(wei: bigint | undefined | null): number {
+  try {
+    if (!wei) return 0;
+    const n = Number(ethers.formatEther(wei));
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0;
@@ -76,6 +88,22 @@ function toMarketCapPointsUsd(trades: CurveTradePoint[], bnbUsd: number): ChartP
   return out;
 }
 
+function toCurrentMarketCapAnchor(metrics: CampaignMetrics | null, bnbUsd: number): ChartPoint[] {
+  if (!metrics || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
+
+  const circulating = tokensFromWeiSafe(metrics.launched ? metrics.curveSupply : metrics.sold);
+  const priceBnb = bnbFromWeiSafe(metrics.currentPrice);
+  const marketCapUsd = circulating * priceBnb * bnbUsd;
+
+  if (!Number.isFinite(marketCapUsd) || marketCapUsd <= 0) return [];
+
+  const now = Date.now();
+  return [
+    { ts: now - 5 * 60 * 1000, value: marketCapUsd },
+    { ts: now, value: marketCapUsd },
+  ];
+}
+
 export const CurvePriceChart = ({
   campaignAddress,
   curvePointsOverride,
@@ -84,56 +112,81 @@ export const CurvePriceChart = ({
 }: CurvePriceChartProps) => {
   // HOOKS MUST ALWAYS RUN BEFORE ANY RETURN
   const [tf, setTf] = useState<TimeframeKey>("1m");
-const bucketSec = useMemo(
-  () => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60,
-  [tf]
-);
+  const [metricsFallback, setMetricsFallback] = useState<CampaignMetrics | null>(null);
+  const bucketSec = useMemo(
+    () => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60,
+    [tf]
+  );
 
-const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
-const livePoints = curvePointsOverride ?? live.points;
-const liveLoading = loadingOverride ?? live.loading;
-const liveError = errorOverride ?? live.error;
+  const { fetchCampaignMetrics } = useLaunchpad();
+  const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
+  const livePoints = curvePointsOverride ?? live.points;
+  const liveLoading = loadingOverride ?? live.loading;
+  const liveError = errorOverride ?? live.error;
 
-const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
+  const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
 
-// Keep last known-good USD so we never blank during refresh.
-const lastUsdRef = useRef<number>(0);
-useEffect(() => {
-  if (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0) lastUsdRef.current = bnbUsd;
-}, [bnbUsd]);
+  // Keep last known-good USD so we never blank during refresh.
+  const lastUsdRef = useRef<number>(0);
+  useEffect(() => {
+    if (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0) lastUsdRef.current = bnbUsd;
+  }, [bnbUsd]);
 
-const usd = (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0 ? bnbUsd : lastUsdRef.current) || 0;
+  const usd = (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0 ? bnbUsd : lastUsdRef.current) || 0;
 
-const chartPointsComputed: ChartPoint[] = useMemo(() => {
-  if (!usd || usd <= 0) return [];
-  return toMarketCapPointsUsd(livePoints || [], usd);
-}, [livePoints, usd]);
+  useEffect(() => {
+    let cancelled = false;
 
-// Keep last non-empty points to avoid flicker on brief loading toggles.
-const lastPointsRef = useRef<ChartPoint[]>([]);
-useEffect(() => {
-  if (chartPointsComputed.length) lastPointsRef.current = chartPointsComputed;
-}, [chartPointsComputed]);
+    if (!campaignAddress || (livePoints?.length ?? 0) > 0) {
+      setMetricsFallback(null);
+      return;
+    }
 
-const renderPoints = chartPointsComputed.length ? chartPointsComputed : lastPointsRef.current;
+    (async () => {
+      try {
+        const metrics = await fetchCampaignMetrics(campaignAddress);
+        if (!cancelled) setMetricsFallback(metrics);
+      } catch (error) {
+        console.warn("[CurvePriceChart] metrics fallback failed", error);
+        if (!cancelled) setMetricsFallback(null);
+      }
+    })();
 
-// Only show blocking placeholders when we truly have no points to render.
-if (renderPoints.length === 0) {
-  if (liveError) {
-    return <div className="flex items-center justify-center h-full text-xs text-destructive p-4">{liveError}</div>;
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignAddress, fetchCampaignMetrics, livePoints?.length]);
+
+  const chartPointsComputed: ChartPoint[] = useMemo(() => {
+    if (!usd || usd <= 0) return [];
+    const tradePoints = toMarketCapPointsUsd(livePoints || [], usd);
+    return tradePoints.length ? tradePoints : toCurrentMarketCapAnchor(metricsFallback, usd);
+  }, [livePoints, metricsFallback, usd]);
+
+  // Keep last non-empty points to avoid flicker on brief loading toggles.
+  const lastPointsRef = useRef<ChartPoint[]>([]);
+  useEffect(() => {
+    if (chartPointsComputed.length) lastPointsRef.current = chartPointsComputed;
+  }, [chartPointsComputed]);
+
+  const renderPoints = chartPointsComputed.length ? chartPointsComputed : lastPointsRef.current;
+
+  // Only show blocking placeholders when we truly have no points to render.
+  if (renderPoints.length === 0) {
+    if (liveLoading) {
+      return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading curve trades…</div>;
+    }
+    if (bnbUsdError) {
+      return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Waiting for USD conversion…</div>;
+    }
+    if (bnbUsdLoading || !usd) {
+      return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading USD conversion…</div>;
+    }
+    if (liveError) {
+      return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Waiting for curve trades…</div>;
+    }
+    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Waiting for curve trades…</div>;
   }
-  if (bnbUsdError) {
-    return <div className="flex items-center justify-center h-full text-xs text-destructive p-4">{bnbUsdError}</div>;
-  }
-  if (liveLoading) {
-    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading curve trades…</div>;
-  }
-  if (bnbUsdLoading || !usd) {
-    return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">Loading USD conversion…</div>;
-  }
-  return <div className="flex items-center justify-center h-full text-xs text-muted-foreground p-4">No curve data available yet.</div>;
-}
-  
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -157,4 +210,4 @@ if (renderPoints.length === 0) {
       </div>
     </div>
   );
-}
+};
