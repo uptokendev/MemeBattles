@@ -103,23 +103,30 @@ function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
   };
 }
 
+function getResponseItems(json: any) {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.items)) return json.items;
+  return [];
+}
+
 async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
-  const featured = await apiFetch(`/api/featured?chainId=${chainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
-  const featuredJson = await featured.json().catch(() => null);
-  const featuredItems = Array.isArray(featuredJson) ? featuredJson : Array.isArray(featuredJson?.items) ? featuredJson.items : [];
-
-  if (featured.ok && featuredItems.length) {
-    return featuredItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
-  }
-
   const campaigns = await apiFetch(`/api/campaigns?chainId=${chainId}&limit=20&tab=trending&sort=default&status=all&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
   const campaignJson = await campaigns.json().catch(() => null);
-  if (!campaigns.ok) {
-    throw new Error(String(featuredJson?.error || campaignJson?.error || "Failed to load featured"));
+  const campaignItems = getResponseItems(campaignJson);
+
+  if (campaigns.ok && campaignItems.length) {
+    return campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
   }
 
-  const campaignItems = Array.isArray(campaignJson) ? campaignJson : Array.isArray(campaignJson?.items) ? campaignJson.items : [];
-  return campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+  const featured = await apiFetch(`/api/featured?chainId=${chainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+  const featuredJson = await featured.json().catch(() => null);
+  const featuredItems = getResponseItems(featuredJson);
+
+  if (!featured.ok) {
+    throw new Error(String(campaignJson?.error || featuredJson?.error || "Failed to load featured"));
+  }
+
+  return featuredItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
 }
 
 async function safeString(fn: () => Promise<unknown>, fallback = "") {
