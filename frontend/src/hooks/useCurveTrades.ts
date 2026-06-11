@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
+import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 50_000;
+const ONCHAIN_FALLBACK_CHUNK_SIZE = 700;
 
 type RealtimeChannel = any;
 
@@ -29,6 +33,8 @@ type UseCurveTradesOptions = {
   /** Safety net: periodically re-fetch snapshot to reconcile any missed messages. Disabled by default. */
   reconcileMs?: number;
 };
+
+const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 
 function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
   return `${t.txHash.toLowerCase()}:${Number(t.logIndex ?? 0)}`;
@@ -85,6 +91,15 @@ function toTimestampSec(v: unknown): number {
   }
 }
 
+function numberFromWei(wei: bigint, decimals = 18): number {
+  try {
+    const n = Number(ethers.formatUnits(wei, decimals));
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function fetchJson(url: string, signal?: AbortSignal) {
   const r = await fetch(url, { method: "GET", signal });
   if (!r.ok) {
@@ -94,11 +109,112 @@ async function fetchJson(url: string, signal?: AbortSignal) {
   return r.json();
 }
 
+async function getLogsChunked(
+  provider: ethers.Provider,
+  params: { address: string; topics?: (string | string[] | null)[] },
+  fromBlock: number,
+  toBlock: number,
+  signal?: AbortSignal,
+) {
+  const logs: ethers.Log[] = [];
+
+  for (let start = fromBlock; start <= toBlock; start += ONCHAIN_FALLBACK_CHUNK_SIZE) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const end = Math.min(toBlock, start + ONCHAIN_FALLBACK_CHUNK_SIZE - 1);
+    const chunk = await provider.getLogs({ ...params, fromBlock: start, toBlock: end } as any);
+    logs.push(...chunk);
+  }
+
+  return logs;
+}
+
+async function fetchOnChainTradeSnapshot(
+  campaignAddress: string,
+  chainId: SupportedChainId,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<CurveTradePoint[]> {
+  const provider = getReadProvider(chainId) as ethers.Provider;
+  const iface = new ethers.Interface(CAMPAIGN_ABI);
+  const buyEvent = iface.getEvent("TokensPurchased");
+  const sellEvent = iface.getEvent("TokensSold");
+  const buyTopic = buyEvent?.topicHash;
+  const sellTopic = sellEvent?.topicHash;
+  if (!buyTopic || !sellTopic) return [];
+
+  const latest = await provider.getBlockNumber();
+  const fromBlock = Math.max(0, latest - ONCHAIN_FALLBACK_LOOKBACK_BLOCKS);
+  const address = campaignAddress.toLowerCase();
+
+  const [buyLogs, sellLogs] = await Promise.all([
+    getLogsChunked(provider, { address, topics: [buyTopic] }, fromBlock, latest, signal),
+    getLogsChunked(provider, { address, topics: [sellTopic] }, fromBlock, latest, signal),
+  ]);
+
+  const blockTimeCache = new Map<number, number>();
+  const timestampForBlock = async (blockNumber: number) => {
+    if (blockTimeCache.has(blockNumber)) return blockTimeCache.get(blockNumber) || 0;
+    try {
+      const block = await provider.getBlock(blockNumber);
+      const ts = Number(block?.timestamp ?? 0);
+      blockTimeCache.set(blockNumber, ts);
+      return ts;
+    } catch {
+      blockTimeCache.set(blockNumber, 0);
+      return 0;
+    }
+  };
+
+  const allLogs = [...buyLogs, ...sellLogs]
+    .sort((a, b) => {
+      if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
+      return Number(a.index ?? 0) - Number(b.index ?? 0);
+    })
+    .slice(-limit);
+
+  const out: CurveTradePoint[] = [];
+
+  for (const log of allLogs) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    try {
+      const parsed = iface.parseLog(log);
+      if (!parsed) continue;
+
+      const isSell = parsed.name === "TokensSold";
+      const tokensWei = BigInt(String(isSell ? parsed.args.amountIn : parsed.args.amountOut));
+      const nativeWei = BigInt(String(isSell ? parsed.args.payout : parsed.args.cost));
+      const tokens = numberFromWei(tokensWei, 18);
+      const bnb = numberFromWei(nativeWei, 18);
+      const pricePerToken = tokens > 0 ? bnb / tokens : 0;
+      const timestamp = await timestampForBlock(log.blockNumber);
+
+      out.push({
+        type: isSell ? "sell" : "buy",
+        from: String(isSell ? parsed.args.seller : parsed.args.buyer).toLowerCase(),
+        to: address,
+        tokensWei,
+        nativeWei,
+        pricePerToken,
+        timestamp,
+        txHash: String(log.transactionHash || "").toLowerCase(),
+        blockNumber: Number(log.blockNumber ?? 0),
+        logIndex: Number(log.index ?? 0),
+      });
+    } catch {
+      // Ignore malformed legacy logs; a partial chart is better than a blank chart.
+    }
+  }
+
+  return out.filter((t) => /^0x[a-f0-9]{64}$/i.test(t.txHash) && t.blockNumber > 0 && t.timestamp > 0);
+}
+
 /**
  * Curve trades backed by:
  *  1) Snapshot: Railway realtime-indexer REST endpoint
- *  2) Realtime: Ably channel updates
- *  3) Optional safety reconcile when VITE_ENABLE_TOKEN_POLLING=1
+ *  2) Fallback snapshot: recent on-chain campaign trade logs when Railway fails
+ *  3) Realtime: Ably channel updates
+ *  4) Optional safety reconcile when VITE_ENABLE_TOKEN_POLLING=1
  */
 export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOptions) {
   const enabled = opts?.enabled ?? true;
@@ -152,6 +268,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       .filter((t) => /^0x[a-f0-9]{64}$/i.test(t.txHash) && Number.isFinite(t.blockNumber));
 
     setPoints((prev) => mergeTrades(prev, next));
+    return next.length;
   }, [campaignAddress]);
 
   const pullSnapshot = useCallback(async (signal?: AbortSignal) => {
@@ -161,26 +278,40 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setError(null);
       return;
     }
-    if (!apiTradesUrl) {
-      setError("Missing VITE_REALTIME_API_BASE");
-      setLoading(false);
-      return;
-    }
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
       if (!initialLoadedRef.current) setLoading(true);
-      const rows = await fetchJson(apiTradesUrl, signal);
-      applySnapshot(Array.isArray(rows) ? rows : []);
-      setError(null);
-      initialLoadedRef.current = true;
+
+      if (!apiTradesUrl) {
+        const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+        applySnapshot(fallbackRows);
+        setError(null);
+        initialLoadedRef.current = true;
+        return;
+      }
+
+      try {
+        const rows = await fetchJson(apiTradesUrl, signal);
+        applySnapshot(Array.isArray(rows) ? rows : []);
+        setError(null);
+        initialLoadedRef.current = true;
+      } catch (apiError: any) {
+        console.warn("[useCurveTrades] trade API failed; falling back to on-chain logs", apiError);
+        const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+        const applied = applySnapshot(fallbackRows);
+        setError(applied > 0 ? null : null);
+        initialLoadedRef.current = true;
+      }
     } catch (e: any) {
-      setError(String(e?.message || "Failed to load trades"));
+      if (e?.name !== "AbortError") {
+        setError(String(e?.message || "Failed to load trades"));
+      }
     } finally {
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [enabled, campaignAddress, apiTradesUrl, applySnapshot]);
+  }, [enabled, campaignAddress, apiTradesUrl, applySnapshot, chainId, limit]);
 
   useEffect(() => {
     const ac = new AbortController();
