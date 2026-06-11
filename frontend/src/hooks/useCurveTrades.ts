@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId } from "@/lib/chainConfig";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+const CHART_CHAIN_IDS = String(import.meta.env.VITE_TOKEN_CHART_CHAIN_IDS || "").trim();
 
 type RealtimeChannel = any;
 
@@ -20,6 +21,7 @@ export type CurveTradePoint = {
   txHash: string;
   blockNumber: number;
   logIndex: number;
+  chainId?: number;
 };
 
 type UseCurveTradesOptions = {
@@ -30,11 +32,24 @@ type UseCurveTradesOptions = {
   reconcileMs?: number;
 };
 
-function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
-  return `${t.txHash.toLowerCase()}:${Number(t.logIndex ?? 0)}`;
+function uniquePositiveNumbers(values: number[]) {
+  return Array.from(new Set(values.filter((n) => Number.isFinite(n) && n > 0)));
+}
+
+function getChartChainIds(primaryChainId: number): number[] {
+  const configured = CHART_CHAIN_IDS
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return uniquePositiveNumbers(configured.length ? configured : [primaryChainId]);
+}
+
+function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex" | "chainId">) {
+  return `${Number(t.chainId || 0)}:${t.txHash.toLowerCase()}:${Number(t.logIndex ?? 0)}`;
 }
 
 function sortAsc(a: CurveTradePoint, b: CurveTradePoint) {
+  if ((a.chainId || 0) !== (b.chainId || 0)) return (a.chainId || 0) - (b.chainId || 0);
   if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
   return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
 }
@@ -107,22 +122,27 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const [error, setError] = useState<string | null>(null);
   const prevCampaignRef = useRef<string>("");
 
-  const chainId = useMemo<SupportedChainId>(() => {
+  const chainId = useMemo(() => {
     const cid = Number(opts?.chainId ?? 56);
     return getActiveChainId(cid);
   }, [opts?.chainId]);
 
+  const chartChainIds = useMemo(() => getChartChainIds(chainId), [chainId]);
   const inFlightRef = useRef(false);
   const initialLoadedRef = useRef(false);
   const reconcileMs = opts?.reconcileMs ?? 60_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
 
-  const apiTradesUrl = useMemo(() => {
-    if (!API_BASE || !campaignAddress) return "";
-    return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-  }, [campaignAddress, chainId, limit]);
+  const apiTradesUrls = useMemo(() => {
+    if (!API_BASE || !campaignAddress) return [] as Array<{ chainId: number; url: string }>;
+    const campaign = campaignAddress.toLowerCase();
+    return chartChainIds.map((cid) => ({
+      chainId: cid,
+      url: `${API_BASE}/api/token/${campaign}/trades?chainId=${cid}&limit=${limit}`,
+    }));
+  }, [campaignAddress, chartChainIds, limit]);
 
-  const applySnapshot = useCallback((rows: any[]) => {
+  const applySnapshot = useCallback((rows: any[], sourceChainId = chainId) => {
     const next: CurveTradePoint[] = (rows || [])
       .map((r: any) => {
         const side = String(r.side || r.type || "").toLowerCase() === "sell" ? "sell" : "buy";
@@ -147,12 +167,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
           txHash,
           blockNumber,
           logIndex,
+          chainId: Number(r.chain_id ?? r.chainId ?? sourceChainId),
         } satisfies CurveTradePoint;
       })
       .filter((t) => /^0x[a-f0-9]{64}$/i.test(t.txHash) && Number.isFinite(t.blockNumber));
 
     setPoints((prev) => mergeTrades(prev, next));
-  }, [campaignAddress]);
+  }, [campaignAddress, chainId]);
 
   const pullSnapshot = useCallback(async (signal?: AbortSignal) => {
     if (!enabled || !campaignAddress) {
@@ -161,7 +182,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setError(null);
       return;
     }
-    if (!apiTradesUrl) {
+    if (!apiTradesUrls.length) {
       setError("Missing VITE_REALTIME_API_BASE");
       setLoading(false);
       return;
@@ -170,8 +191,23 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     inFlightRef.current = true;
     try {
       if (!initialLoadedRef.current) setLoading(true);
-      const rows = await fetchJson(apiTradesUrl, signal);
-      applySnapshot(Array.isArray(rows) ? rows : []);
+      const results = await Promise.allSettled(
+        apiTradesUrls.map(async (entry) => ({
+          chainId: entry.chainId,
+          rows: await fetchJson(entry.url, signal),
+        }))
+      );
+
+      const successes = results.filter((r): r is PromiseFulfilledResult<{ chainId: number; rows: any }> => r.status === "fulfilled");
+      for (const result of successes) {
+        applySnapshot(Array.isArray(result.value.rows) ? result.value.rows : [], result.value.chainId);
+      }
+
+      if (!successes.length) {
+        const firstError = results.find((r): r is PromiseRejectedResult => r.status === "rejected")?.reason;
+        throw firstError || new Error("Failed to load trades");
+      }
+
       setError(null);
       initialLoadedRef.current = true;
     } catch (e: any) {
@@ -180,7 +216,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [enabled, campaignAddress, apiTradesUrl, applySnapshot]);
+  }, [enabled, campaignAddress, apiTradesUrls, applySnapshot]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -215,8 +251,8 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
     const onTrade = (msg: any) => {
       const data = msg?.data;
-      if (Array.isArray(data)) return applySnapshot(data);
-      if (data && typeof data === "object") return applySnapshot([data]);
+      if (Array.isArray(data)) return applySnapshot(data, chainId);
+      if (data && typeof data === "object") return applySnapshot([data], chainId);
     };
 
     try {
@@ -232,7 +268,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         // ignore
       }
     };
-  }, [enabled, campaignAddress, ably.channel, ably.missingBase, applySnapshot]);
+  }, [enabled, campaignAddress, chainId, ably.channel, ably.missingBase, applySnapshot]);
 
   return { points, loading, error };
 }
