@@ -220,15 +220,6 @@ export async function connectSolanaWallet(
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
   }
 
-  console.log("[MWZ Solana connect:start]", {
-    requestedWalletId: walletId,
-    selectedId: wallet.id,
-    selectedName: wallet.name,
-    isPhantom: Boolean(wallet.provider.isPhantom),
-    isSolflare: Boolean((wallet.provider as any).isSolflare),
-    hasPublicKey: Boolean(wallet.provider.publicKey),
-  });
-
   let result: { publicKey?: { toString: () => string } } | undefined;
 
   if (wallet.id === "phantom") {
@@ -245,14 +236,6 @@ export async function connectSolanaWallet(
     // Other Solana wallets, like Solflare, work better with plain connect().
     result = await wallet.provider.connect();
   }
-
-  console.log("[MWZ Solana connect:result]", {
-    selectedId: wallet.id,
-    selectedName: wallet.name,
-    resultPublicKey: Boolean(result?.publicKey),
-    providerPublicKey: Boolean(wallet.provider.publicKey),
-  });
-
   const publicKey = normalizePublicKey(
     result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "",
   );
