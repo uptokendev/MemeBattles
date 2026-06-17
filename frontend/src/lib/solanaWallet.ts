@@ -49,19 +49,19 @@ export function detectSolanaWallets(): DetectedSolanaWallet[] {
   const wallets: DetectedSolanaWallet[] = [];
   const seen = new Set<SolanaProvider>();
 
-  addWallet(wallets, seen, w.phantom?.solana ? {
-    id: "phantom",
-    name: "Phantom",
-    icon: "👻",
-    provider: w.phantom.solana,
-  } : null);
-
   addWallet(wallets, seen, w.solana?.isPhantom ? {
-    id: "phantom",
-    name: "Phantom",
-    icon: "👻",
-    provider: w.solana,
-  } : null);
+  id: "phantom",
+  name: "Phantom",
+  icon: "👻",
+  provider: w.solana,
+} : null);
+
+addWallet(wallets, seen, w.phantom?.solana ? {
+  id: "phantom",
+  name: "Phantom",
+  icon: "👻",
+  provider: w.phantom.solana,
+} : null);
 
   addWallet(wallets, seen, w.solflare ? {
     id: "solflare",
@@ -217,8 +217,14 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
   if (!wallet?.provider?.connect) {
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
   }
-
-  const result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
+console.log("[MWZ Solana connect]", {
+  walletId,
+  selected: wallet?.id,
+  name: wallet?.name,
+  hasConnect: typeof wallet?.provider?.connect,
+  hasPublicKey: Boolean(wallet?.provider?.publicKey),
+});
+  const result = await wallet.provider.connect();
   const publicKey = normalizePublicKey(result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "");
 
   if (!publicKey) throw new Error("No Solana public key returned.");
