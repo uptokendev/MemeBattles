@@ -208,35 +208,54 @@ export function ensureSolanaListeners(): void {
   });
 }
 
-export async function connectSolanaWallet(walletId?: string): Promise<{ publicKey: string; walletId: string; walletName: string }> {
+export async function connectSolanaWallet(
+  walletId?: string,
+): Promise<{ publicKey: string; walletId: string; walletName: string }> {
   const wallets = detectSolanaWallets();
   const wallet =
     wallets.find((item) => item.id === walletId || item.name === walletId) ||
     wallets[0];
-    console.log("[MWZ Solana connect]", {
-  requestedWalletId: walletId,
-  selectedId: wallet?.id,
-  selectedName: wallet?.name,
-  providerFlags: {
-    isPhantom: Boolean(wallet?.provider?.isPhantom),
-    isSolflare: Boolean((wallet?.provider as any)?.isSolflare),
-  },
-  hasConnect: typeof wallet?.provider?.connect,
-  hasPublicKey: Boolean(wallet?.provider?.publicKey),
-});
 
   if (!wallet?.provider?.connect) {
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
   }
-console.log("[MWZ Solana connect]", {
-  walletId,
-  selected: wallet?.id,
-  name: wallet?.name,
-  hasConnect: typeof wallet?.provider?.connect,
-  hasPublicKey: Boolean(wallet?.provider?.publicKey),
-});
-  const result = await wallet.provider.connect();
-  const publicKey = normalizePublicKey(result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "");
+
+  console.log("[MWZ Solana connect:start]", {
+    requestedWalletId: walletId,
+    selectedId: wallet.id,
+    selectedName: wallet.name,
+    isPhantom: Boolean(wallet.provider.isPhantom),
+    isSolflare: Boolean((wallet.provider as any).isSolflare),
+    hasPublicKey: Boolean(wallet.provider.publicKey),
+  });
+
+  let result: { publicKey?: { toString: () => string } } | undefined;
+
+  if (wallet.id === "phantom") {
+    // Restore the old Phantom behavior that worked before:
+    // clear stale Phantom session first, then force a user-facing connect prompt.
+    try {
+      await wallet.provider.disconnect?.();
+    } catch {
+      // ignore Phantom disconnect errors
+    }
+
+    result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
+  } else {
+    // Other Solana wallets, like Solflare, work better with plain connect().
+    result = await wallet.provider.connect();
+  }
+
+  console.log("[MWZ Solana connect:result]", {
+    selectedId: wallet.id,
+    selectedName: wallet.name,
+    resultPublicKey: Boolean(result?.publicKey),
+    providerPublicKey: Boolean(wallet.provider.publicKey),
+  });
+
+  const publicKey = normalizePublicKey(
+    result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "",
+  );
 
   if (!publicKey) throw new Error("No Solana public key returned.");
 
