@@ -16,7 +16,6 @@ import { toast } from "sonner";
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getSolanaProvider } from "@/lib/solanaWallet";
 
 import type { DetectedWallet, WalletType } from "@/contexts/WalletContext";
 
@@ -139,13 +138,15 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     isConnected,
   } = useWallet();
   const {
+    availableSolanaWallets,
     connectingSolana,
     connectSolana,
     disconnectSolana,
   } = useSolanaWallet();
   const [selectedWalletId, setSelectedWalletId] = useState<WalletType | null>(null);
+  const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
 
-  const isBusy = connecting || Boolean(selectedWalletId) || connectingSolana;
+  const isBusy = connecting || Boolean(selectedWalletId) || Boolean(selectedSolanaWalletId) || connectingSolana;
 
   const handleClose = useCallback(() => {
     if (!isBusy) onOpenChange(false);
@@ -183,15 +184,22 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     }
   }, [disconnect, onOpenChange]);
 
-  const handleSolanaConnect = useCallback(async () => {
-    try {
-      await connectSolana();
-      toast.success("Connected Phantom (Solana)");
-      onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error?.message || "Failed to connect Phantom for Solana");
-    }
-  }, [connectSolana, onOpenChange]);
+  const handleSolanaConnect = useCallback(
+    async (walletId: string, walletName: string) => {
+      setSelectedSolanaWalletId(walletId);
+
+      try {
+        await connectSolana(walletId);
+        toast.success(`Connected ${walletName}`);
+        onOpenChange(false);
+      } catch (error: any) {
+        toast.error(error?.message || "Failed to connect Solana wallet");
+      } finally {
+        setSelectedSolanaWalletId(null);
+      }
+    },
+    [connectSolana, onOpenChange],
+  );
 
   const statusCopy = useMemo(() => {
     if (isConnected && account) return `Connected: ${shortAddress(account)}`;
@@ -266,7 +274,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                     {filter === 'evm' 
                       ? "Connect a BNB Chain (EVM) wallet to interact with this draft. Phantom is for Solana only."
                       : filter === 'solana'
-                      ? "Connect Phantom (Solana mainnet 101) to interact with this draft."
+                      ? "Connect a Solana mainnet (101) wallet to interact with this draft."
                       : "Pick an installed EVM wallet. MemeWarzone only requests your public address and lets your wallet handle approvals."}
                   </p>
                 </div>
@@ -323,37 +331,51 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                 </div>
               )}
 
-              {/* Solana wallets section first (like pump.fun) - explicit Phantom for correct Solana chain connect.
-                  Detected via window.solana. Not mixed into EVM list (we filter isPhantom from EVM detection).
-                  This ensures using Phantom always does Solana (101) connect, not EVM side. */}
-              {(!filter || filter === 'solana') && getSolanaProvider() && (
+              {(!filter || filter === 'solana') && (
                 <div className="mb-4">
                   <p className="font-retro text-sm text-foreground">Solana wallets</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Phantom for Solana mainnet (101) drafts.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Detected wallets for Solana mainnet (101) drafts.</p>
                   <div className="mt-3 space-y-3">
-                    <button
-                      type="button"
-                      onClick={handleSolanaConnect}
-                      disabled={isBusy}
-                      className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                      <div className="relative flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-400">👻</div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate font-retro text-sm text-foreground">Phantom</p>
-                            <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
-                              detected
-                            </span>
+                    {availableSolanaWallets.length > 0 ? (
+                      availableSolanaWallets.map((wallet) => (
+                        <button
+                          type="button"
+                          key={wallet.id}
+                          onClick={() => handleSolanaConnect(wallet.id, wallet.name)}
+                          disabled={isBusy}
+                          className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                          <div className="relative flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-xl text-purple-400">
+                              {wallet.icon}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate font-retro text-sm text-foreground">{wallet.name}</p>
+                                <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
+                                  detected
+                                </span>
+                              </div>
+                              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                                Solana mainnet (101) - use for Solana drafts.
+                              </p>
+                            </div>
+                            <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
+                              {connectingSolana && selectedSolanaWalletId === wallet.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Wallet className="h-4 w-4" />
+                              )}
+                            </div>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">Solana mainnet (101) - use for Solana drafts. If no Phantom popup appears, disconnect this site in Phantom's settings and click again to force prompt.</p>
-                        </div>
-                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
-                          {connectingSolana ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                        </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center text-sm text-muted-foreground">
+                        No Solana wallets detected. Install Phantom, Solflare, Backpack, or Glow.
                       </div>
-                    </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -395,7 +417,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                         </div>
                         <p className="mt-3 font-retro text-sm text-foreground">No EVM wallet detected</p>
                         <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-                          Install Phantom for Solana (see above) or an EVM wallet extension (MetaMask etc.), unlock it, then refresh. On mobile, open inside the wallet browser.
+                          Install a Solana wallet above or an EVM wallet extension (MetaMask etc.), unlock it, then refresh. On mobile, open inside the wallet browser.
                         </p>
                       </div>
                     )}

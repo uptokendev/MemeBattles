@@ -24,7 +24,6 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getSolanaProvider } from "@/lib/solanaWallet";
 import {
   Dialog,
   DialogContent,
@@ -386,9 +385,15 @@ function ShareModal({
 function TransmissionList({
   draftId,
   isCreator,
+  chainMismatchForInteraction,
+  draftIsSolana,
+  openCrossChainPrompt,
 }: {
   draftId: string;
   isCreator: boolean;
+  chainMismatchForInteraction: boolean;
+  draftIsSolana: boolean;
+  openCrossChainPrompt: (isSolanaDraft: boolean) => void;
 }) {
   const wallet = useWallet();
   const { solanaAccount, isSolanaConnected } = useSolanaWallet();
@@ -596,7 +601,7 @@ export default function Prepare() {
   const { slug = DEMO_SLUG } = useParams();
   const wallet = useWallet();
   const { connect: connectEvm, detectedWallets } = wallet;
-  const { solanaAccount, isSolanaConnected, connectSolana } = useSolanaWallet();
+  const { solanaAccount, isSolanaConnected, connectSolana, availableSolanaWallets } = useSolanaWallet();
   const activeWalletAddress = isSolanaConnected ? solanaAccount : wallet.account;
 
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
@@ -986,7 +991,13 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </div>
         </section>
 
-        <TransmissionList draftId={draft.id} isCreator={isCreator} />
+        <TransmissionList
+          draftId={draft.id}
+          isCreator={isCreator}
+          chainMismatchForInteraction={chainMismatchForInteraction}
+          draftIsSolana={draftIsSolana}
+          openCrossChainPrompt={openCrossChainPrompt}
+        />
 
         <section className="mx-auto max-w-7xl px-4 py-10 pb-20 md:px-8 md:py-14 md:pb-24">
           <div className="mwz-card border-orange-400/50 bg-[radial-gradient(ellipse_at_top,rgba(255,153,0,0.18),rgba(2,17,4,0.92)_70%)] p-8 text-center md:p-12">
@@ -1031,38 +1042,56 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
           </DialogHeader>
 
           <div className="mt-4 space-y-3">
-            {requiredChainForDialog === 'solana' && getSolanaProvider() && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await connectSolana();
-                    setShowCrossChainDialog(false);
-                    toast.success("Connected to Solana wallet. You can now interact with the draft.");
-                  } catch (error: any) {
-                    toast.error(error?.message || "Failed to connect Phantom");
-                  }
-                }}
-                disabled={false}
-                className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card"
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                <div className="relative flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-400">👻</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate font-retro text-sm text-foreground">Phantom</p>
-                      <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
-                        detected
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Solana mainnet (101) — required for this draft.</p>
+            {requiredChainForDialog === 'solana' && (
+              <div className="mt-1 space-y-3">
+                <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
+                  Detected Solana wallets
+                </p>
+
+                {availableSolanaWallets.length > 0 ? (
+                  availableSolanaWallets.map((solanaWallet) => (
+                    <button
+                      type="button"
+                      key={solanaWallet.id}
+                      onClick={async () => {
+                        try {
+                          await connectSolana(solanaWallet.id);
+                          setShowCrossChainDialog(false);
+                          toast.success(`Connected ${solanaWallet.name}. You can now interact with the draft.`);
+                        } catch (error: any) {
+                          toast.error(error?.message || "Failed to connect Solana wallet");
+                        }
+                      }}
+                      className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                      <div className="relative flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-400">
+                          {solanaWallet.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-retro text-sm text-foreground">{solanaWallet.name}</p>
+                            <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
+                              detected
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            Solana mainnet (101) - required for this draft.
+                          </p>
+                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
+                          <Wallet className="h-4 w-4" />
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center text-sm text-muted-foreground">
+                    No Solana wallets detected. Install Phantom, Solflare, Backpack, or Glow.
                   </div>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
-                    <Wallet className="h-4 w-4" />
-                  </div>
-                </div>
-              </button>
+                )}
+              </div>
             )}
 
             {requiredChainForDialog === 'evm' && (

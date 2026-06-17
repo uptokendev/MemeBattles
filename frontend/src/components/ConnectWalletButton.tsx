@@ -4,9 +4,8 @@ import { useWallet, type WalletType } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { Loader2, ChevronDown, Check } from "lucide-react";
 import {
-  ensurePhantomListeners,
-  getSolanaProvider,
   getStoredSolanaWallet,
+  ensureSolanaListeners,
   SOLANA_WALLET_EVENT,
 } from "@/lib/solanaWallet";
 
@@ -14,25 +13,26 @@ export const ConnectWalletButton = () => {
   const { connect, disconnect, isConnected, account, connecting } = useWallet();
   const {
     solanaAccount,
+    solanaWalletName,
     isSolanaConnected,
     connectingSolana,
     connectSolana,
     disconnectSolana,
+    availableSolanaWallets,
   } = useSolanaWallet();
   const [isOpen, setIsOpen] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeWalletType, setActiveWalletType] = useState<"solana" | "evm" | null>(null);
 
-  // Robust preference for Phantom / Solana:
-  // - Always prefer a live provider.publicKey (getStoredSolanaWallet does the live check first).
-  // - Attach listeners + do multiple timed probes after mount so that Phantom's silent
-  //   onlyIfTrusted auto-connect on reload wins even when the EVM wallet auto-rehydrates.
-  // - When Phantom state appears at any point, force displayed + active to Solana.
+  // Robust preference for Solana:
+  // - Always prefer a live provider.publicKey or the stored Solana address.
+  // - Attach listeners and probe provider.publicKey without triggering wallet popups.
+  // - When Solana state appears at any point, force displayed + active to Solana.
   useEffect(() => {
-    ensurePhantomListeners();
+    ensureSolanaListeners();
 
     const forceSync = () => {
-      ensurePhantomListeners();
+      ensureSolanaListeners();
       const live = getStoredSolanaWallet();
       if (live) {
         setActiveWalletType("solana");
@@ -87,11 +87,10 @@ export const ConnectWalletButton = () => {
   const handleConnect = async (type: WalletType) => {
     try {
       await connect(type);
-      // After an EVM connect attempt, immediately re-prefer Solana if Phantom has (or just got) a key.
-      // This stops the EVM auto-connect from winning the button when the user intends to use Phantom.
+      // After an EVM connect attempt, immediately re-prefer Solana if a key is present.
+      // This stops the EVM auto-connect from winning the button when the user intends to use Solana.
       const live = getStoredSolanaWallet();
       if (live) {
-        setSolanaAccount(live);
         setActiveWalletType("solana");
       } else if (!solanaAccount) {
         setActiveWalletType("evm");
@@ -103,14 +102,14 @@ export const ConnectWalletButton = () => {
     }
   };
 
-  const handleSolanaConnect = async () => {
+  const handleSolanaConnect = async (walletId?: string) => {
     try {
-      await connectSolana();
+      await connectSolana(walletId);
       setActiveWalletType("solana");
       setIsOpen(false);
     } catch (e: any) {
       console.error(e);
-      alert(e?.message || "Failed to connect Phantom");
+      alert(e?.message || "Failed to connect Solana wallet");
     }
   };
 
@@ -118,7 +117,7 @@ export const ConnectWalletButton = () => {
     try {
       // Prefer disconnecting the Solana side first if it is (or was) the active one shown.
       // Then also disconnect EVM if it is connected (so a full "disconnect wallet" clears both).
-      ensurePhantomListeners();
+      ensureSolanaListeners();
       if (solanaAccount || getStoredSolanaWallet()) {
         await disconnectSolana();
       }
@@ -197,32 +196,32 @@ export const ConnectWalletButton = () => {
             </div>
 
             <p className="text-xs text-muted-foreground mb-2">
-              Connect a wallet. Phantom is for Solana (101) only — use it for correct Solana chain connect. EVM wallets for BNB mainnet (56) only. If no popup appears when clicking Phantom, disconnect the site in Phantom's extension settings and try again to force the prompt.
+              Connect a wallet. Solana wallets use Solana mainnet (101). EVM wallets use BNB mainnet (56) only.
             </p>
 
-            {/* "or connect a wallet" list styled like pump.fun example: Phantom (Solana) listed prominently first for correct Solana connect, then EVM options. No EVM Phantom mixing. */}
+            {/* Solana wallets are detected only; connection happens when a user clicks a row. */}
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">or connect a wallet</div>
             <div className="space-y-1">
-              {/* Phantom for Solana - always shown if provider present (detected), first like in pump.fun screenshot */}
-              {getSolanaProvider() && (
+              {availableSolanaWallets.map((wallet) => (
                 <button
-                  onClick={handleSolanaConnect}
+                  key={wallet.id}
+                  onClick={() => handleSolanaConnect(wallet.id)}
                   disabled={connectingSolana}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-border bg-card hover:bg-card/80 transition-colors text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">👻</span>
+                    <span className="text-xl">{wallet.icon}</span>
                     <div>
-                      <p className="text-xs md:text-sm font-medium">Phantom</p>
+                      <p className="text-xs md:text-sm font-medium">{wallet.name}</p>
                       <p className="text-[10px] text-muted-foreground">Solana mainnet (101)</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-green-500">
-                    {effectiveSolana ? "RECENT" : "DETECTED"}
+                    {effectiveSolana && solanaWalletName === wallet.name ? "RECENT" : "DETECTED"}
                     <Check className="h-3 w-3" />
                   </div>
                 </button>
-              )}
+              ))}
 
               {/* EVM wallets - hardcoded for main ones, Other for injected. Phantom filtered from EVM detection so no EVM Phantom. */}
               <button
@@ -269,7 +268,7 @@ export const ConnectWalletButton = () => {
                 <div>
                   <p className="text-xs md:text-sm font-medium">Other EVM wallet</p>
                   <p className="text-[10px] text-muted-foreground">
-                    Injected BNB (56) wallet. (Phantom filtered — use Phantom row above for Solana)
+                    Injected BNB (56) wallet. (Phantom filtered - use a Solana wallet row above)
                   </p>
                 </div>
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -281,7 +280,7 @@ export const ConnectWalletButton = () => {
             <div className="text-[10px] text-muted-foreground">More wallets → install and refresh</div>
 
             <p className="text-[10px] text-muted-foreground mt-2">
-              BNB Smart Chain mainnet (56) EVM or Solana mainnet (101 via Phantom) only. Testnets/devnets disabled.
+              BNB Smart Chain mainnet (56) EVM or Solana mainnet (101) only.
             </p>
           </div>
         </div>

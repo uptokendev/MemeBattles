@@ -142,7 +142,7 @@ export function UnsupportedChainGuard() {
             variant="outline"
             className="w-full font-retro"
           >
-            Use Phantom for Solana (101) instead
+            Use a Solana wallet (101) instead
           </Button>
 
           <Button
