@@ -213,6 +213,17 @@ export async function connectSolanaWallet(walletId?: string): Promise<{ publicKe
   const wallet =
     wallets.find((item) => item.id === walletId || item.name === walletId) ||
     wallets[0];
+    console.log("[MWZ Solana connect]", {
+  requestedWalletId: walletId,
+  selectedId: wallet?.id,
+  selectedName: wallet?.name,
+  providerFlags: {
+    isPhantom: Boolean(wallet?.provider?.isPhantom),
+    isSolflare: Boolean((wallet?.provider as any)?.isSolflare),
+  },
+  hasConnect: typeof wallet?.provider?.connect,
+  hasPublicKey: Boolean(wallet?.provider?.publicKey),
+});
 
   if (!wallet?.provider?.connect) {
     throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
