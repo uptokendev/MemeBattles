@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/apiBase";
 import {
   LEAGUES,
   getLimit,
@@ -176,7 +177,7 @@ export async function loadLeagueSummary({
       });
 
       try {
-        const response = await fetch(`/api/league?${params.toString()}`);
+        const response = await apiFetch(`/api/league?${params.toString()}`);
         const json = (await response.json()) as LegacyLeagueResponse;
         return [league.key, json] as const;
       } catch (error) {
