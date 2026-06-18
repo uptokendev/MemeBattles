@@ -11,9 +11,8 @@ import { navItems, socialLinks } from "@/constants/navigation";
 import { isPostGradNavEnabled } from "@/features/postgrad/config";
 import { ArenaMobileNav } from "@/components/postgrad/ArenaMobileNav";
 
-// Use public brand assets so we can swap without touching the build pipeline.
 const brandMark = "/assets/ticker.png";
-const primaryPaths = new Set(["/", "/war-room", "/create"]);
+const primaryPaths = new Set(["/", "/league", "/war-room", "/create"]);
 
 interface SidebarProps {
   mobileMenuOpen: boolean;
@@ -27,7 +26,6 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
 
   return (
     <>
-      {/* Mobile/Tablet Overlay */}
       {mobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/70 backdrop-blur-md lg:hidden"
@@ -35,7 +33,6 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
         />
       )}
 
-      {/* Sidebar - Desktop: Fixed, Mobile/Tablet: Drawer */}
       <aside
         className={`
         fixed top-4 bottom-4 z-50 flex w-[calc(100vw-2rem)] max-w-72 flex-col rounded-3xl border border-sidebar-border/70 bg-[linear-gradient(180deg,rgba(23,26,31,0.94),rgba(11,13,16,0.98))] shadow-[0_28px_80px_-36px_rgba(0,0,0,0.98),0_0_0_1px_rgba(255,153,0,0.08)] backdrop-blur-xl transition-transform duration-300 ease-in-out
@@ -43,7 +40,6 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
         lg:hidden
       `}
       >
-        {/* Mobile Close Button */}
         <button
           onClick={() => setMobileMenuOpen(false)}
           className="absolute right-4 top-4 rounded-lg p-2 transition-colors hover:bg-muted lg:hidden"
@@ -65,8 +61,8 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
         <nav className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
           <div className="space-y-2">
             {launchpadNavItems.length ? <AnimatedNav options={launchpadNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
-            {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
             {remainingPrimaryNavItems.length ? <AnimatedNav options={remainingPrimaryNavItems} onNavigate={() => setMobileMenuOpen(false)} /> : null}
+            {isPostGradNavEnabled() ? <ArenaMobileNav onNavigate={() => setMobileMenuOpen(false)} /> : null}
           </div>
 
           {utilityNavItems.length ? (
@@ -79,7 +75,7 @@ export const Sidebar = ({ mobileMenuOpen, setMobileMenuOpen }: SidebarProps) => 
 
         <div className="space-y-3 border-t border-sidebar-border/50 px-4 py-4">
           <SocialTooltip items={socialLinks} className="justify-start gap-2 [&_a]:!h-9 [&_a]:!w-9" />
-          <p className="hidden text-[11px] text-muted-foreground md:block">© 2026 MemeWarzone. All rights reserved.</p>
+          <p className="hidden text-[11px] text-muted-foreground md:block">(c) 2026 MemeWarzone. All rights reserved.</p>
         </div>
       </aside>
     </>
