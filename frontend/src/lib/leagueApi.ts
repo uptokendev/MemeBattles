@@ -123,6 +123,21 @@ function metricFor(def: LeagueDef, row: any) {
   return def.metricLabel;
 }
 
+function pendingLeagueSummaryCard(league: LeagueDef, warning = league.emptyStateCopy): LeagueSummaryCard {
+  return {
+    key: league.key,
+    title: league.title,
+    status: "pending",
+    entrants: 0,
+    rows: [],
+    warning,
+  };
+}
+
+function isLegacyBackedLeague(league: LeagueDef) {
+  return league.key !== "recruiter_league";
+}
+
 export async function loadLeagueSummary({
   chain,
   chainId,
@@ -133,14 +148,12 @@ export async function loadLeagueSummary({
     return {
       chain,
       period,
-      leagues: LEAGUES.map((league) => ({
-        key: league.key,
-        title: league.title,
-        status: "pending",
-        entrants: 0,
-        rows: [],
-        warning: "Solana league feed pending. No Solana standings yet. Claims open after Solana league payouts are live.",
-      })),
+      leagues: LEAGUES.map((league) =>
+        pendingLeagueSummaryCard(
+          league,
+          "Solana league feed pending. No Solana standings yet. Claims open after Solana league payouts are live.",
+        ),
+      ),
       currentLeaders: [],
       history: [],
     };
@@ -149,6 +162,11 @@ export async function loadLeagueSummary({
   const results = await Promise.all(
     LEAGUES.map(async (league) => {
       const effectivePeriod = league.supports.includes(period) ? period : league.supports[0];
+
+      if (!isLegacyBackedLeague(league)) {
+        return [league.key, { items: [], warning: league.emptyStateCopy } satisfies LegacyLeagueResponse] as const;
+      }
+
       const params = new URLSearchParams({
         chainId: String(chainId),
         period: effectivePeriod,
@@ -175,8 +193,8 @@ export async function loadLeagueSummary({
   for (const [key, payload] of results) {
     const def = LEAGUES.find((league) => league.key === key)!;
     const rows = Array.isArray(payload.items) ? payload.items : [];
-    const isRecruiterPending = key === "recruiter_league" && !rows.length;
-    const status: LeagueStatus = isRecruiterPending ? "pending" : getStatus(rows, payload.warning);
+    const isPendingFeed = key === "recruiter_league" && !rows.length;
+    const status: LeagueStatus = isPendingFeed ? "pending" : getStatus(rows, payload.warning);
 
     if (!epoch && payload.epoch) epoch = payload.epoch;
     if (!prize && payload.prize) prize = payload.prize;
@@ -188,7 +206,7 @@ export async function loadLeagueSummary({
       entrants: rows.length,
       rows,
       prize: payload.prize,
-      warning: isRecruiterPending ? def.emptyStateCopy : payload.warning,
+      warning: isPendingFeed ? def.emptyStateCopy : payload.warning,
     });
 
     const top = rows[0] as any;
