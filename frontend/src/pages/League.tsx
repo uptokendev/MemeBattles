@@ -1,954 +1,508 @@
-import { useEffect, useMemo, useState, useId } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Trophy, Users, Wallet, Zap } from "lucide-react";
+import { ContentContainer } from "@/components/layout/ContentContainer";
+import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
+import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
-import { getDefaultChainId, getPublicRpcUrl, getPublicRpcUrls, getTreasuryVaultAddress, isAllowedChainId } from "@/lib/chainConfig";
-import { LEAGUES, getLimit, periodLabel, type LeagueDef, type Period } from "@/lib/leagues";
+import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import {
+  LEAGUES,
+  calculatePaidPlaces,
+  calculatePayoutCurve,
+  getPayoutPolicy,
+  periodLabel,
+  type LeagueChain,
+  type LeagueDef,
+  type LeagueKey,
+  type Period,
+} from "@/lib/leagues";
+import { loadLeagueSummary, type LeaguePrizeMeta, type LeagueSummaryResponse } from "@/lib/leagueApi";
+import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 
-function mulberry32(seed: number) {
-  let t = seed >>> 0;
-  return () => {
-    t += 0x6d2b79f5;
-    let x = Math.imul(t ^ (t >>> 15), 1 | t);
-    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
-    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
-  };
+type RecruiterRow = {
+  rank?: number;
+  displayName?: string;
+  recruiterCode?: string;
+  wallet?: string;
+  linkedWallets?: number;
+  linkedCreators?: number;
+  linkedTraders?: number;
+  referredVolumeUsd?: number;
+  weightedScore?: number;
+  estimatedPayoutUsd?: number;
+  claimStatus?: string;
+};
+
+function shortAddr(value?: string | null) {
+  const text = String(value ?? "");
+  return text.length > 12 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
 }
 
-const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
-const shortAddr = (a: string) => (a && a.length > 12 ? a.slice(0, 6) + "..." + a.slice(-4) : a);
-
-type LeagueBase = {
-  campaign_address: string;
-  name?: string | null;
-  symbol?: string | null;
-  logo_uri?: string | null;
-};
-
-type GraduationRow = LeagueBase & {
-  duration_seconds?: number | null;
-  unique_buyers?: number | null;
-  sells_count?: number | null;
-  buy_total_raw?: string | null;
-};
-
-type BiggestHitRow = LeagueBase & {
-  buyer_address: string;
-  bnb_amount_raw: string;
-  tx_hash: string;
-  block_number: number;
-  block_time: string;
-  log_index?: number | null;
-};
-
-type CrowdFavoriteRow = LeagueBase & {
-  votes_count: string | number;
-  unique_voters: string | number;
-  amount_raw_sum: string;
-};
-
-type TopEarnerRow = {
-  wallet: string;
-  profit_raw: string;
-  sells_raw?: string;
-  buys_raw?: string;
-  trades_count?: number;
-};
-
-type EpochMeta = {
-  period: "weekly" | "monthly";
-  epochOffset: number;
-  epochStart: string;
-  epochEnd: string;
-  rangeEnd: string;
-  status: "live" | "finalized";
-};
-
-type PrizeMeta = {
-  basis: "league_fee_only";
-  period: "weekly" | "monthly";
-  cutoff?: string | null;
-  rangeEnd?: string | null;
-  computedAt: string;
-  totalLeagueFeeRaw: string;
-  leagueCount: number;
-  winners: number;
-  splitBps: number[];
-  potRaw: string;
-  payoutsRaw: [string, string, string, string, string];
-  rolloverRaw?: string;
-  paidRaw?: string;
-  availablePotRaw?: string;
-  availablePayoutsRaw?: [string, string, string, string, string];
-};
-
-type LeagueResponse<T> = {
-  items: T[];
-  warning?: string;
-  prize?: PrizeMeta;
-  epoch?: EpochMeta;
-  stats?: { campaignsCreated?: number };
-};
-
-function clampInt(n: number, lo: number, hi: number) {
-  if (!Number.isFinite(n)) return lo;
-  return Math.max(lo, Math.min(hi, Math.trunc(n)));
-}
-
-function formatDuration(seconds?: number | null) {
-  const s = Math.max(0, Number(seconds ?? 0));
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(s % 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
-}
-
-function formatBnbFromRaw(raw?: string | null) {
+function rawToBnb(raw?: string | null) {
   try {
-    const v = BigInt(String(raw ?? "0"));
-    const n = Number(ethers.formatUnits(v, 18));
-    if (!Number.isFinite(n)) return "0";
-    if (n >= 100) return n.toFixed(2);
-    if (n >= 1) return n.toFixed(4);
-    return n.toFixed(6);
+    return Number(ethers.formatUnits(BigInt(String(raw ?? "0")), 18));
   } catch {
-    return "0";
+    return 0;
   }
 }
 
-function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
-  const title = (name ? String(name) : "") || "Unknown";
-  const sym = (symbol ? String(symbol) : "") || "";
-  const initial = sym ? sym.slice(0, 1).toUpperCase() : "T";
+function formatBnb(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 BNB";
+  if (value >= 100) return `${value.toFixed(2)} BNB`;
+  if (value >= 1) return `${value.toFixed(4)} BNB`;
+  return `${value.toFixed(6)} BNB`;
+}
+
+function formatUsd(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "$0";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function formatEpochEnd(summary?: LeagueSummaryResponse) {
+  const end = summary?.epoch?.epochEnd;
+  if (!end) return "Awaiting epoch";
+  const date = new Date(end);
+  if (Number.isNaN(date.getTime())) return "Awaiting epoch";
+  return date.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function getPrizeRaw(prize?: LeaguePrizeMeta) {
+  return prize?.availablePotRaw ?? prize?.potRaw ?? "0";
+}
+
+function rowLabel(def: LeagueDef, row: any) {
+  if (def.rowType === "wallet") return shortAddr(row?.wallet);
+  if (def.rowType === "recruiter") return row?.displayName || row?.recruiterCode || shortAddr(row?.wallet) || "Recruiter";
+  return row?.name || row?.symbol || shortAddr(row?.campaign_address) || "Campaign";
+}
+
+function rowMetric(def: LeagueDef, row: any) {
+  if (def.key === "perfect_run") return row?.duration_seconds ? `${row.duration_seconds}s / ${row?.sells_count ?? 0} sells` : def.metricLabel;
+  if (def.key === "fastest_finish") return row?.duration_seconds ? `${row.duration_seconds}s` : def.metricLabel;
+  if (def.key === "biggest_hit") return row?.bnb_amount_raw ? formatBnb(rawToBnb(row.bnb_amount_raw)) : def.metricLabel;
+  if (def.key === "top_earner") return row?.profit_raw ? formatBnb(rawToBnb(row.profit_raw)) : def.metricLabel;
+  if (def.key === "crowd_favorite") return row?.votes_count ? `${row.votes_count} votes` : def.metricLabel;
+  if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
+  return def.metricLabel;
+}
+
+function LeagueSwitch({
+  selected,
+  period,
+  onSelect,
+}: {
+  selected: LeagueKey;
+  period: Period;
+  onSelect: (key: LeagueKey) => void;
+}) {
+  return (
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {LEAGUES.map((league) => {
+        const active = league.key === selected;
+        const validPeriod = league.supports.includes(period);
+        return (
+          <button
+            key={league.key}
+            type="button"
+            onClick={() => onSelect(league.key)}
+            className={[
+              "mwz-hud-frame min-h-[118px] p-4 text-left transition hover:border-accent/60",
+              active ? "border-accent/70 bg-accent/10" : "bg-card/70",
+            ].join(" ")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-retro text-sm text-foreground">{league.title}</div>
+                <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{league.metricLabel}</div>
+              </div>
+              <img src={league.image} alt="" className="h-9 w-9 shrink-0 object-contain opacity-80" draggable={false} />
+            </div>
+            <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{league.ruleSummary}</p>
+            {!validPeriod ? <div className="mt-2 text-[11px] text-accent">Monthly only for launch</div> : null}
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+function StandingsTable({
+  league,
+  rows,
+  status,
+  pendingCopy,
+}: {
+  league: LeagueDef;
+  rows: unknown[];
+  status?: string;
+  pendingCopy?: string;
+}) {
+  if (status === "pending") {
+    return (
+      <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
+        <div className="font-retro text-base text-foreground">{league.title} pending</div>
+        <p className="mt-2 max-w-2xl">{pendingCopy || league.emptyStateCopy}</p>
+        {league.key === "recruiter_league" ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline" className="font-retro">
+              <Link to="/recruiters">Recruiter leaderboard</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="font-retro">
+              <Link to="/recruiter">Recruiter hub</Link>
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!rows.length) {
+    return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{league.emptyStateCopy}</div>;
+  }
+
+  if (league.rowType === "recruiter") {
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] text-left text-sm">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <tr className="border-b border-border/50">
+              <th className="py-3 pr-3">Rank</th>
+              <th className="py-3 pr-3">Recruiter</th>
+              <th className="py-3 pr-3">Wallet</th>
+              <th className="py-3 pr-3">Linked</th>
+              <th className="py-3 pr-3">Volume</th>
+              <th className="py-3 pr-3">Score</th>
+              <th className="py-3 pr-3">Payout</th>
+              <th className="py-3">Claim</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rows as RecruiterRow[]).map((row, index) => (
+              <tr key={`${row.wallet ?? row.recruiterCode ?? index}`} className="border-b border-border/30">
+                <td className="py-3 pr-3 font-retro">#{row.rank ?? index + 1}</td>
+                <td className="py-3 pr-3">
+                  <div className="font-semibold text-foreground">{row.displayName || "Recruiter"}</div>
+                  <div className="text-xs text-muted-foreground">{row.recruiterCode || "Code pending"}</div>
+                </td>
+                <td className="py-3 pr-3 text-muted-foreground">{shortAddr(row.wallet)}</td>
+                <td className="py-3 pr-3 text-muted-foreground">
+                  {row.linkedWallets ?? 0} wallets / {row.linkedCreators ?? 0} creators / {row.linkedTraders ?? 0} traders
+                </td>
+                <td className="py-3 pr-3">{formatUsd(Number(row.referredVolumeUsd ?? 0))}</td>
+                <td className="py-3 pr-3">{Number(row.weightedScore ?? 0).toLocaleString()}</td>
+                <td className="py-3 pr-3">{formatUsd(Number(row.estimatedPayoutUsd ?? 0))}</td>
+                <td className="py-3 text-muted-foreground">{row.claimStatus || "Pending"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-center gap-3 min-w-0">
-      <Avatar className="h-8 w-8">
-        <AvatarImage src={logo || undefined} />
-        <AvatarFallback>{initial}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">
-          {title} {sym ? <span className="text-muted-foreground">({sym})</span> : null}
+    <div className="space-y-2">
+      {rows.slice(0, 25).map((row: any, index) => (
+        <div key={`${league.key}-${row?.campaign_address ?? row?.wallet ?? index}`} className="mwz-hud-frame p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-retro text-sm text-foreground">#{index + 1}</span>
+                <span className="truncate font-semibold text-foreground">{rowLabel(league, row)}</span>
+                {row?.symbol ? <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{row.symbol}</span> : null}
+              </div>
+              <div className="mt-1 truncate text-xs text-muted-foreground">{row?.campaign_address || row?.wallet || "Leaderboard row"}</div>
+            </div>
+            <div className="text-sm font-semibold text-accent">{rowMetric(league, row)}</div>
+          </div>
         </div>
-        <div className="text-[11px] text-muted-foreground truncate">{address}</div>
-      </div>
+      ))}
     </div>
   );
-}
-
-function RowWallet({ address }: { address: string }) {
-  const initial = address?.slice(2, 3)?.toUpperCase?.() || "W";
-  return (
-    <div className="flex items-center gap-3 min-w-0">
-      <Avatar className="h-8 w-8">
-        <AvatarFallback>{initial}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold truncate">Trader</div>
-        <div className="text-[11px] text-muted-foreground truncate">{isAddress(address) ? address : String(address ?? "")}</div>
-      </div>
-    </div>
-  );
-}
-
-function formatIsoTiny(iso?: string | null) {
-  try {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "";
-  }
-}
-
-function formatUtcTiny(iso?: string | null) {
-  try {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    // Force UTC display regardless of client locale.
-    return d.toLocaleString("en-GB", {
-      timeZone: "UTC",
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return "";
-  }
-}
-
-function formatEpochRangeUtc(epoch?: EpochMeta) {
-  if (!epoch) return "";
-  const start = formatUtcTiny(epoch.epochStart);
-  // NOTE: rangeEnd is "now" for live epochs and is only meant for query filtering.
-  // For user-facing timers we must always use the real epochEnd.
-  const end = formatUtcTiny(epoch.epochEnd);
-  if (!start || !end) return "";
-  return `${start} UTC → ${end} UTC`;
-}
-
-function formatEndsIn(epoch?: EpochMeta) {
-  try {
-    if (!epoch) return "";
-    const endIso = epoch.epochEnd;
-    if (!endIso) return "";
-    const end = new Date(endIso).getTime();
-    if (!Number.isFinite(end)) return "";
-    const now = Date.now();
-    const diff = Math.max(0, end - now);
-    const s = Math.floor(diff / 1000);
-    const d = Math.floor(s / 86400);
-    const h = Math.floor((s % 86400) / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    return `${m}m`;
-  } catch {
-    return "";
-  }
 }
 
 export default function League({ chainId = 97 }: { chainId?: number }) {
-  const emberSeed = useId(); // stable per mount
-  const navigate = useNavigate();
-
   const wallet = useWallet();
   const defaultChain = getDefaultChainId();
-  const activeChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
-  const activeChain = (activeChainId === 56 ? 56 : 97) as 56 | 97;
+  const walletChainId = wallet.isConnected && isAllowedChainId(wallet.chainId) ? Number(wallet.chainId) : Number(chainId ?? defaultChain);
+  const activeBnbChainId = walletChainId === 56 ? 56 : 97;
+  const { price: bnbUsd } = useBnbUsdPrice(true);
 
+  const [chain, setChain] = useState<LeagueChain>("bnb");
   const [period, setPeriod] = useState<Period>("weekly");
-  const [epochOffset, setEpochOffset] = useState<number>(0);
+  const [epochOffset, setEpochOffset] = useState(0);
+  const [selectedLeagueKey, setSelectedLeagueKey] = useState<LeagueKey>("fastest_finish");
+  const [summary, setSummary] = useState<LeagueSummaryResponse | undefined>();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>();
 
-  // Automatic refresh: hourly.
-  const [refreshTick, setRefreshTick] = useState(0);
+  const selectedLeague = LEAGUES.find((league) => league.key === selectedLeagueKey) ?? LEAGUES[0];
 
-  const [data, setData] = useState<Record<string, unknown[]>>({});
-  const [warnings, setWarnings] = useState<Record<string, string | undefined>>({});
-  const [prizes, setPrizes] = useState<Record<string, PrizeMeta | undefined>>({});
-  const [epochInfo, setEpochInfo] = useState<EpochMeta | undefined>(undefined);
-  const [campaignsCreated, setCampaignsCreated] = useState<number | undefined>(undefined);
-
-  // On-chain TreasuryVault balance (single global pool; does NOT depend on weekly/monthly toggle)
-  const [treasuryVaultBalanceRaw, setTreasuryVaultBalanceRaw] = useState<string>("0");
-
-  // Fixed epoch-accrued prize pool totals (independent of the UI toggle)
-  const [weeklyPoolTotalRaw, setWeeklyPoolTotalRaw] = useState<string>("0");
-  const [monthlyPoolTotalRaw, setMonthlyPoolTotalRaw] = useState<string>("0");
-
-  // Prize pools are computed per-epoch from *accrued league fees* (plus rollovers)
-  // via /api/league. This keeps weekly/monthly independent and stable mid-epoch.
-  
-
-  // Past winners (Phase 1): filter state (API wiring comes next)
-  const [historyQuery, setHistoryQuery] = useState("");
-  const [historyLeague, setHistoryLeague] = useState<string>("all");
-  const [historyPeriodFilter, setHistoryPeriodFilter] = useState<"all" | "weekly" | "monthly">("all");
-
-  const live = epochInfo?.status === "live";
-
-
-  const periodButtons = useMemo(() => ["weekly", "monthly"] as Period[], []);
-
-  const epochButtons = useMemo(() => {
-    if (period === "weekly") {
-      return [
-        { label: "This week", offset: 0 },
-        { label: "Last week", offset: 1 },
-        { label: "2 weeks ago", offset: 2 },
-      ];
+  useEffect(() => {
+    if (!selectedLeague.supports.includes(period)) {
+      setPeriod(selectedLeague.supports[0]);
+      setEpochOffset(0);
     }
-    return [
-      { label: "This month", offset: 0 },
-      { label: "Last month", offset: 1 },
-    ];
-  }, [period]);
-
-  // Reset history selection when the user flips between Weekly and Monthly.
-  useEffect(() => {
-    setEpochOffset(0);
-  }, [period]);
-
-  // Hourly refresh (full leaderboards / prize boxes).
-  useEffect(() => {
-    const id = window.setInterval(() => setRefreshTick((t) => t + 1), 60 * 60 * 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  }, [period, selectedLeague]);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(undefined);
 
-    const load = async () => {
-      try {
-        setLoading(true);
-
-        const results = await Promise.all(
-          LEAGUES.map(async (l) => {
-            const effectivePeriod = l.supports.includes(period) ? period : l.supports[0];
-            const limit = getLimit(l, effectivePeriod);
-            const qs = `chainId=${encodeURIComponent(String(activeChainId))}&period=${encodeURIComponent(effectivePeriod)}&epochOffset=${encodeURIComponent(
-              String(effectivePeriod === "weekly" ? (period === "weekly" ? epochOffset : 0) : period === "monthly" ? epochOffset : 0)
-            )}&limit=${encodeURIComponent(
-              String(limit)
-            )}&category=${encodeURIComponent(l.key)}`;
-
-            const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<unknown>;
-            return [l.key, r] as const;
-          })
-        );
-
-        if (cancelled) return;
-        const nextData: Record<string, unknown[]> = {};
-        const nextWarnings: Record<string, string | undefined> = {};
-
-        const nextPrizes: Record<string, PrizeMeta | undefined> = {};
-let nextEpoch: EpochMeta | undefined = undefined;
-
-        let nextCampaignsCreated: number | undefined = undefined;
-
-        for (const [k, r] of results) {
-          const items = Array.isArray(r?.items) ? r.items : [];
-          nextData[k] = items;
-          nextWarnings[k] = r?.warning;
-          nextPrizes[k] = r?.prize;
-
-          if (!nextEpoch && r?.epoch) nextEpoch = r.epoch;
-          if (typeof r?.stats?.campaignsCreated === "number" && typeof nextCampaignsCreated !== "number") {
-            nextCampaignsCreated = r.stats.campaignsCreated;
-          }
-        }
-
-        setEpochInfo(nextEpoch);
-        setCampaignsCreated(nextCampaignsCreated);
-
-        setData(nextData);
-        setWarnings(nextWarnings);
-      setPrizes(nextPrizes);
-} catch (e) {
-        console.error("[League] failed to load /api/league", e);
+    loadLeagueSummary({ chain, chainId: activeBnbChainId, period, epochOffset })
+      .then((next) => {
+        if (!cancelled) setSummary(next);
+      })
+      .catch((err) => {
+        console.error("[League] failed to load command center", err);
         if (!cancelled) {
-          setData({});
-          setWarnings({});
+          setSummary(undefined);
+          setError("League feed unavailable.");
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    };
+      });
 
-    load();
     return () => {
       cancelled = true;
     };
-  }, [activeChainId, period, epochOffset, refreshTick]);
+  }, [activeBnbChainId, chain, period, epochOffset]);
 
-// Load on-chain TreasuryVault balance (source of truth for the "Total prize pool" KPI).
-// Uses wallet provider when connected (avoids browser CORS issues), otherwise tries multiple public RPCs.
-useEffect(() => {
-  let cancelled = false;
+  const selectedCard = summary?.leagues.find((league) => league.key === selectedLeagueKey);
+  const rows = useMemo(() => {
+    if (chain === "solana") return [];
+    return selectedCard?.rows ?? [];
+  }, [chain, selectedCard]);
+  const selectedPrize = selectedCard?.prize;
+  const rawPrizeBnb = rawToBnb(getPrizeRaw(selectedPrize));
+  const rawGeneratedUsd = rawPrizeBnb * (bnbUsd || 0);
+  const policy = getPayoutPolicy(period);
+  const cappedPlayerPoolUsd = period === "monthly" ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd) : rawGeneratedUsd;
+  const charityReserveUsd = period === "monthly" ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd) : 0;
+  const qualifiedEntrants = Math.max(selectedCard?.entrants ?? rows.length, rows.length);
+  const paidPlaces = calculatePaidPlaces(qualifiedEntrants, policy);
+  const payoutCurve = calculatePayoutCurve(qualifiedEntrants, cappedPlayerPoolUsd, policy);
+  const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(paidPlaces / 2) || row.rank === paidPlaces);
+  const selectedStatus = chain === "solana" ? "pending" : selectedCard?.status;
 
-  const loadVault = async () => {
-    try {
-      const envVault = (getTreasuryVaultAddress(activeChain) || "").trim();
-      const vault = envVault || (activeChain === 97 ? "0xc9d3e1174983314490B32a7929ac82421E4e5707" : "");
-
-      if (!vault) {
-        if (!cancelled) setTreasuryVaultBalanceRaw("0");
-        return;
-      }
-
-      // Prefer wallet provider when connected
-      const eth = (window as any)?.ethereum;
-      if (wallet?.isConnected && eth) {
-        const provider = new ethers.BrowserProvider(eth);
-        const bal = await provider.getBalance(vault);
-        if (!cancelled) setTreasuryVaultBalanceRaw(bal.toString());
-        return;
-      }
-
-      // Fallback: try multiple public RPCs
-      const rpcs = (() => {
-        try {
-          const list = getPublicRpcUrls(activeChain);
-          if (Array.isArray(list) && list.length) return list;
-        } catch {}
-        return [getPublicRpcUrl(activeChain)];
-      })();
-
-      let lastErr: any = null;
-      for (const rpc of rpcs) {
-        try {
-          const provider = new ethers.JsonRpcProvider(rpc);
-          const bal = await provider.getBalance(vault);
-          if (!cancelled) setTreasuryVaultBalanceRaw(bal.toString());
-          return;
-        } catch (e) {
-          lastErr = e;
-        }
-      }
-
-      console.warn("[League] all RPCs failed reading TreasuryVault", { vault, chain: activeChain, rpcs }, lastErr);
-      if (!cancelled) setTreasuryVaultBalanceRaw("0");
-    } catch (e) {
-      console.warn("[League] failed to load TreasuryVault balance", e);
-      if (!cancelled) setTreasuryVaultBalanceRaw("0");
+  const handleSelectLeague = (key: LeagueKey) => {
+    const next = LEAGUES.find((league) => league.key === key);
+    if (next && !next.supports.includes(period)) {
+      setPeriod(next.supports[0]);
+      setEpochOffset(0);
     }
+    setSelectedLeagueKey(key);
   };
-
-  loadVault();
-  return () => {
-    cancelled = true;
-  };
-}, [activeChain, refreshTick, wallet?.isConnected]);
-
-// Load fixed (toggle-independent) weekly + monthly epoch pools from the API.
-// These are the "accrued this epoch" pools (fee accrual + rollovers), and do not affect each other.
-useEffect(() => {
-  let cancelled = false;
-
-  // Fixed totals come from a dedicated endpoint, so we don't need 9 separate calls.
-  // Totals are *available* pools: accrued + rollovers - recorded payouts.
-  const loadFixedTotals = async () => {
-    try {
-      const r = await fetch(`/api/epochPools?chainId=${encodeURIComponent(String(activeChainId))}`);
-      const j = await r.json();
-      if (cancelled) return;
-      setWeeklyPoolTotalRaw(String(j?.weekly?.availableTotalRaw ?? "0"));
-      setMonthlyPoolTotalRaw(String(j?.monthly?.availableTotalRaw ?? "0"));
-    } catch (e) {
-      console.warn("[League] failed to load fixed weekly/monthly totals", e);
-      if (!cancelled) {
-        setWeeklyPoolTotalRaw("0");
-        setMonthlyPoolTotalRaw("0");
-      }
-    }
-  };
-
-  loadFixedTotals();
-  return () => {
-    cancelled = true;
-  };
-}, [activeChainId, refreshTick]);
-
-
-    const endsIn = useMemo(() => formatEndsIn(epochInfo), [epochInfo]);
-
-  // Total prize pool (KPI) = on-chain TreasuryVault balance (single global pool; does not depend on weekly/monthly).
-  const totalPrizePoolRaw = useMemo(() => treasuryVaultBalanceRaw ?? "0", [treasuryVaultBalanceRaw]);
-  const endAtUtc = useMemo(() => (epochInfo ? formatUtcTiny(epochInfo.epochEnd) : ""), [epochInfo]);
-
-  // Subtle ember particles for the hero banner (deterministic per UTC day).
-  const heroEmbers = useMemo(() => {
-    const now = new Date();
-    const seed = Number(
-      `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`
-    );
-    const rnd = mulberry32(seed);
-    const count = 18;
-    return Array.from({ length: count }).map((_, i) => {
-      const left = rnd() * 100;
-      const top = 55 + rnd() * 45; // biased lower half
-      const size = 1.5 + rnd() * 2.5;
-      const dur = 4 + rnd() * 4;
-      const delay = rnd() * 4;
-      const drift = (rnd() - 0.5) * 60;
-      const blur = rnd() * 1.5;
-      const opacity = 0.22 + rnd() * 0.32;
-      return { i, left, top, size, dur, delay, drift, blur, opacity };
-    });
-  }, []);
-
-  const recentLeaders = useMemo(() => {
-    // Phase 1 "Recent Wins": show the current #1 per league (top row) for the selected period.
-    const out: Array<{ league: LeagueDef; line1: string; line2?: string }> = [];
-    for (const l of LEAGUES) {
-      if (!l.supports.includes(period)) continue;
-      const items = (data[l.key] ?? []) as any[];
-      const top = items?.[0];
-      if (!top) continue;
-      if (typeof top?.campaign_address === "string") {
-        const nm = String(top?.name ?? "Unknown");
-        const sym = String(top?.symbol ?? "");
-        out.push({ league: l, line1: `${nm}${sym ? ` (${sym})` : ""}`, line2: "Currently #1" });
-        continue;
-      }
-      if (typeof top?.wallet === "string") {
-        out.push({ league: l, line1: shortAddr(top.wallet), line2: "Currently #1" });
-      }
-    }
-    return out.slice(0, 8);
-  }, [data, period]);
 
   return (
-    <div className="relative w-full min-h-[100dvh] pt-16 md:pt-16 pb-10 overflow-y-auto overflow-x-hidden">
-      {/* Full-page background (fixed; page content scrolls) */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden isolate">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "url(/assets/league_background.png)",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-        {/* Soft dark overlay (leave more room for fire/smoke to read) */}
-        <div className="absolute inset-0 bg-black/35" />
-
-        {/* Fire glow (adds that "arena on fire" feel) */}
-        <div
-          className="absolute inset-0 opacity-70 mix-blend-screen"
-          style={{
-            background:
-              "radial-gradient(1000px 520px at 50% 92%, rgba(255, 110, 20, 0.55), rgba(255, 110, 20, 0) 58%), radial-gradient(700px 420px at 15% 88%, rgba(255, 160, 60, 0.30), rgba(255, 160, 60, 0) 60%), radial-gradient(720px 440px at 85% 88%, rgba(255, 120, 30, 0.28), rgba(255, 120, 30, 0) 62%)",
-          }}
-        />
-
-            {/* Moving smoke – now lighter, wispier, more movement for battle-arena feel */}
-            <div className="absolute inset-0 opacity-25 pointer-events-none">
-              <div className="smoke-layer smoke-1" />
-              <div className="smoke-layer smoke-2" />
-              <div className="smoke-layer smoke-3" />
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(245,120,32,0.18),transparent_30%),linear-gradient(180deg,rgba(10,12,16,0.98),rgba(5,6,8,1))] pt-14 text-foreground">
+      <ContentContainer className="space-y-5 px-2 pb-10">
+        <section className="mwz-hud-frame p-5 md:p-6">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl">
+              <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Prize League Command Center</div>
+              <h1 className="mt-2 font-retro text-3xl text-foreground md:text-4xl">Six prize leagues. One command surface.</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Track BNB prize league standings, payout depth, prize caps, current leaders, and recruiter rewards without mixing in the Major War League.
+              </p>
             </div>
 
-        {/* Embers overlay */}
-        <div className="absolute inset-0">
-          {Array.from({ length: 32 }).map((_, i) => (
-            <span
-              key={`${emberSeed}-${i}`}
-              className="ember"
-              style={{
-                left: `${(i * 37) % 100}%`,
-                animationDelay: `${(i * 0.37) % 6}s`,
-                animationDuration: `${6 + ((i * 0.29) % 6)}s`,
-                opacity: 0.34 + ((i * 13) % 18) / 100,
-                transform: `translateY(${50 + ((i * 19) % 55)}vh)`,
-                width: `${2 + (i % 3)}px`,
-                height: `${2 + (i % 3)}px`,
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Ensure content is above the fixed background */}
-      <div className="relative z-10">
-
-         {/* Hero banner */}
-         <div className="relative overflow-hidden max-h-[220px] md:min-h-[190px] rounded-3xl border border-border/40 bg-card/55 backdrop-blur-sm mb-6">
-          <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/55 to-background/80" />
-
-            {/* ultra-light ember overlay */}
-            <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
-              <style>{`
-                  @keyframes mb_ember_float {
-                  0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
-                  12% { opacity: var(--mb-ember-opacity, .35); }
-                  70% { opacity: var(--mb-ember-opacity, .35); }
-                  100% { transform: translate3d(var(--mb-ember-drift, 0px), -140px, 0) scale(.85); opacity: 0; }
-                }
-               `}
-              </style>
-                {heroEmbers.map((p) => (
-                  <span
-              key={p.i}
-              className="absolute rounded-full"
-              style={{
-                left: `${p.left}%`,
-                top: `${p.top}%`,
-                width: `${p.size}px`,
-                height: `${p.size}px`,
-                filter: `blur(${p.blur}px)`,
-                background: "rgba(255, 147, 41, 1)",
-                boxShadow: "0 0 12px rgba(255, 147, 41, 0.35)",
-                animation: `mb_ember_float ${p.dur}s linear ${p.delay}s infinite`,
-                // custom properties consumed by keyframes
-                ["--mb-ember-drift" as any]: `${p.drift}px`,
-                ["--mb-ember-opacity" as any]: String(p.opacity),
-              }}
-            />
-          ))}
-        </div>
-
-        <div className="relative p-3 md:p-4">
-          {/* Desktop: buttons left, logo centered (true center). Mobile: stack. */}
-          <div className="flex flex-col gap-4 md:gap-0 md:flex-row md:items-center md:justify-start">
-            {/* LEFT controls */}
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="inline-flex items-center gap-2 rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-1 w-fit">
-                {periodButtons.map((p) => (
+            <div className="flex flex-wrap gap-2">
+              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
+                {(["bnb", "solana"] as LeagueChain[]).map((item) => (
                   <button
-                    key={p}
+                    key={item}
                     type="button"
-                    onClick={() => setPeriod(p)}
-                    className={
-                      "px-3 py-2 rounded-xl text-xs md:text-sm transition-colors " +
-                      (period === p ? "bg-card border border-border text-foreground" : "text-muted-foreground hover:text-foreground")
-                    }
-                 >
-                    {periodLabel(p)}
+                    onClick={() => setChain(item)}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                      chain === item ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {item === "bnb" ? "BNB" : "Solana"}
                   </button>
                 ))}
               </div>
-
-              <div className="flex items-center gap-2 flex-wrap md:justify-start">
-                {epochButtons.map((b) => (
+              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
+                {(["weekly", "monthly"] as Period[]).map((item) => (
                   <button
-                    key={b.offset}
+                    key={item}
                     type="button"
-                    onClick={() => setEpochOffset(b.offset)}
-                    className={
-                      "px-3 py-1.5 rounded-xl border text-[11px] md:text-xs transition-colors " +
-                      (epochOffset === b.offset
-                        ? "bg-card border-border text-foreground"
-                        : "bg-transparent border-border/50 text-muted-foreground hover:text-foreground")
-                    }
+                    disabled={!selectedLeague.supports.includes(item)}
+                    onClick={() => {
+                      setPeriod(item);
+                      setEpochOffset(0);
+                    }}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                      period === item ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    {b.label}
+                    {periodLabel(item)}
                   </button>
-               ))}
-              </div>
-            </div>
-
-            {/* CENTER (mobile): below controls, normal flow */}
-            <div className="flex flex-col items-center text-center md:hidden">
-              <img
-                src="/assets/logo.png"
-                alt="MemeWarzone"
-                className="mt-2 h-[148px] w-[148px] object-contain select-none sm:h-[168px] sm:w-[168px]"
-                draggable={false}
-              />
-              <div className="-mt-8 text-sm md:text-base text-muted-foreground leading-none">
-                Create. Compete. Conquer.
-              </div>
-            </div>
-
-            {/* CENTER (desktop): absolute true center, won’t be pushed by left controls */}
-            <div className="hidden md:flex absolute left-1/2 top-[100%] -translate-x-1/2 -translate-y-1/2 flex-col items-center text-center pointer-events-none">
-              <img
-                src="/assets/logo.png"
-                alt="MemeWarzone"
-                className="h-[200px] w-[200px] object-contain select-none"
-                draggable={false}
-              />
-              <div className="-mt-10 text-sm md:text-base text-muted-foreground leading-none">
-                Create. Compete. Conquer.
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
-        <div className="min-w-0 space-y-6">
-              
-              {/* KPI row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {/* Total pool in TreasuryVault (single global pool) */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
-                  <div className="text-xs text-muted-foreground">Total prize pool</div>
-                  <div className="mt-1 text-2xl font-semibold">{formatBnbFromRaw(totalPrizePoolRaw)} BNB</div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">TreasuryVault (on-chain) · updated hourly</div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <TacticalTag label={chain === "bnb" ? `BNB feed (${activeBnbChainId === 56 ? "mainnet" : "testnet"})` : "Solana feed pending"} tone={chain === "bnb" ? "success" : "default"} />
+            <TacticalTag label={loading ? "Loading" : selectedStatus || "empty"} tone={selectedStatus === "pending" ? "default" : selectedStatus === "error" ? "hot" : "success"} />
+            <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="sponsored" />
+          </div>
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mwz-hud-frame p-4">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Raw generated prize money</div>
+            <div className="mt-2 font-retro text-xl">{formatBnb(rawPrizeBnb)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{bnbUsd ? formatUsd(rawGeneratedUsd) : "USD oracle pending"}</div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div>
+            <div className="mt-2 font-retro text-xl">{period === "monthly" ? "$1.00M" : "No weekly cap"}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Monthly player payouts cap before charity overflow.</div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div>
+            <div className="mt-2 font-retro text-xl">{formatUsd(cappedPlayerPoolUsd)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Used for payout curve preview.</div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div>
+            <div className="mt-2 font-retro text-xl">{formatUsd(charityReserveUsd)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Overflow is not player-claimable.</div>
+          </div>
+          <div className="mwz-hud-frame p-4">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Active paid places</div>
+            <div className="mt-2 font-retro text-xl">{paidPlaces}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Max(min winners, floor(entrants x 15%)).</div>
+          </div>
+        </section>
+
+        <LeagueSwitch selected={selectedLeagueKey} period={period} onSelect={handleSelectLeague} />
+
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-5">
+            <section className="mwz-hud-frame p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Standings</div>
+                  <h2 className="mt-1 font-retro text-2xl text-foreground">{selectedLeague.title}</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{selectedLeague.ruleSummary}</p>
                 </div>
+                <TacticalTag label={`${qualifiedEntrants} qualified`} tone="success" />
+              </div>
+              <div className="mt-5">
+                {error ? (
+                  <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{error}</div>
+                ) : loading ? (
+                  <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">Loading league feed...</div>
+                ) : (
+                  <StandingsTable
+                    league={selectedLeague}
+                    rows={rows}
+                    status={selectedStatus}
+                    pendingCopy={chain === "solana" ? "Solana league feed pending. No Solana standings yet. Claims open after Solana league payouts are live." : selectedCard?.warning}
+                  />
+                )}
+              </div>
+            </section>
 
-                {/* Fixed (toggle-independent) epoch pools */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
-                  <div className="text-xs text-muted-foreground">Current epoch pools</div>
-
-                  <div className="mt-2 flex items-baseline justify-between gap-3">
-                    <div className="text-sm font-semibold text-muted-foreground">Weekly</div>
-                    <div className="text-xl font-semibold">{formatBnbFromRaw(weeklyPoolTotalRaw)} BNB</div>
-                  </div>
-
-                  <div className="mt-2 flex items-baseline justify-between gap-3">
-                    <div className="text-sm font-semibold text-muted-foreground">Monthly</div>
-                    <div className="text-xl font-semibold">{formatBnbFromRaw(monthlyPoolTotalRaw)} BNB</div>
-                  </div>
-
-                  <div className="mt-2 text-[11px] text-muted-foreground">Accrued fees + rollovers − paid out · resets each epoch</div>
-                </div>
-
-                {/* Countdown for selected period */}
-                <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-xs text-muted-foreground">League countdowns</div>
-                    {live ? (
-                      <div className="inline-flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-base md:text-lg font-extrabold tracking-wide text-emerald-500 animate-pulse">LIVE</span>
-                      </div>
-                    ) : (
-                      <div className="text-sm font-semibold text-muted-foreground">FINAL</div>
-                    )}
-                  </div>
-
-                  <div className="mt-2 flex items-baseline justify-between gap-3">
-                    <div className="text-2xl font-semibold">{endsIn ? endsIn : "—"}</div>
-                    <div className="text-[11px] text-muted-foreground text-right">
-                      <div>{endAtUtc ? `${endAtUtc} UTC` : ""}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 text-[11px] text-muted-foreground">
-                    <div className="flex items-center justify-between">
-                      <span>{periodLabel(period)} epoch</span>
-                      <span className="font-semibold text-foreground">{epochInfo ? (epochInfo.status === "live" ? "In progress" : "Finalized") : "—"}</span>
-                    </div>
-                    <div className="mt-1">{epochInfo ? formatEpochRangeUtc(epochInfo) : ""}</div>
-                  </div>
+            <section className="grid gap-5 lg:grid-cols-2">
+              <div className="mwz-hud-frame p-5">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize breakdown</div>
+                <h3 className="mt-1 font-retro text-xl">Poker-style payout depth</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Minimum winners</span><span>{policy.minWinners}</span></div>
+                  <div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Paid field</span><span>{Math.round(policy.paidFieldPct * 100)}%</span></div>
+                  <div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Curve alpha</span><span>{policy.alpha}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-muted-foreground">Future option</span><span>20% paid field ready</span></div>
                 </div>
               </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              {LEAGUES.map((l) => {
-              const effectivePeriod: Period = l.supports.includes(period) ? period : l.supports[0];
-              // Epoch-accurate pot (computed from this period's accrued league fees + rollovers).
-              // Note: prizes[] is fetched using effectivePeriod per league above.
-              const potRaw = prizes[l.key]?.availablePotRaw ?? prizes[l.key]?.potRaw;
-              const potBnb = formatBnbFromRaw(potRaw ?? "0");
 
-              return (
-                <div
-                  key={l.key}
-                  onClick={() => navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      navigate(`/battle-leagues/${l.key}?period=${effectivePeriod}`);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm overflow-hidden text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.16),0_18px_50px_-22px_rgba(240,106,26,0.28)] h-[240px] md:h-[280px] flex flex-col"
-                >
-                  {/* Image box (50%) */}
-                  <div className="relative flex-1">
-                    <div className="absolute inset-0 bg-black/10 flex items-center justify-center p-4">
-                      <img src={l.image} alt={l.title} className="max-w-full max-h-full object-contain" draggable={false} />
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
-                    <div className="absolute left-4 right-4 bottom-3">
-                      <div className="flex items-end justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-base md:text-lg font-semibold truncate">{l.title}</div>
+              <div className="mwz-hud-frame p-5">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Payout curve preview</div>
+                <h3 className="mt-1 font-retro text-xl">Top / mid / min paid</h3>
+                <div className="mt-4 space-y-3">
+                  {previewRanks.length ? (
+                    previewRanks.map((row) => (
+                      <div key={row.rank} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-retro text-sm">Rank #{row.rank}</span>
+                          <span className="text-sm font-semibold">{formatUsd(row.payoutUsd)}</span>
                         </div>
-                        <div className="text-[11px] md:text-xs text-muted-foreground">{periodLabel(effectivePeriod)}</div>
+                        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-background/70">
+                          <div className="h-full bg-accent" style={{ width: `${Math.max(4, row.percentage * 100)}%` }} />
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Info box (50%): prize pool only */}
-                  <div className="flex-1 flex items-center justify-center px-4">
-                    <div className="text-center">
-                      <div className="text-2xl md:text-2xl font-extrabold tracking-tight">{loading ? "—" : potBnb}</div>
-                      <div className="mt-1 text-sm md:text-base font-semibold">BNB</div>
-                    </div>
-                  </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Preview appears when prize data is available.</div>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            </section>
           </div>
 
-          {/* Past winners (Phase 1 shell) */}
-          <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="text-sm font-semibold">Past Winners</div>
-                <div className="text-[11px] text-muted-foreground">Search historical winners across leagues (UI shell — we’ll wire the API next)</div>
-              </div>
-              <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 md:w-auto">
-                <input
-                  value={historyQuery}
-                  onChange={(e) => setHistoryQuery(e.target.value)}
-                  placeholder="Search wallet / token…"
-                  className="h-9 rounded-xl border border-border/40 bg-background/40 px-3 text-sm outline-none focus:border-accent/60"
-                />
-                <select
-                  value={historyLeague}
-                  onChange={(e) => setHistoryLeague(e.target.value)}
-                  className="h-9 rounded-xl border border-border/40 bg-background/40 px-3 text-sm outline-none focus:border-accent/60"
-                >
-                  <option value="all">All leagues</option>
-                  {LEAGUES.map((l) => (
-                    <option key={l.key} value={l.key}>
-                      {l.title}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={historyPeriodFilter}
-                  onChange={(e) => setHistoryPeriodFilter(e.target.value as any)}
-                  className="h-9 rounded-xl border border-border/40 bg-background/40 px-3 text-sm outline-none focus:border-accent/60"
-                >
-                  <option value="all">All periods</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-border/30 bg-card/55 p-4">
-              <div className="text-sm font-semibold">No history loaded yet</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                Next step: add an API endpoint that returns past winners (by league + epoch), then render a paginated table here.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right rail (fixed width; self-scroll) */}
-        <aside className="shrink-0 w-full lg:w-[520px]">
-          <div className="space-y-4 lg:sticky lg:top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto pr-1">
-            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
-              <div className="text-sm font-semibold">Current #1s</div>
-              <div className="text-[11px] text-muted-foreground">The current top spot for each league</div>
-              <div className="mt-3 space-y-2">
-                {recentLeaders.length ? (
-                  recentLeaders.map((x) => (
-                    <div key={x.league.key} className="rounded-xl border border-border/30 bg-card/55 px-3 py-2">
-                      <div className="text-[11px] text-muted-foreground">{x.league.title}</div>
-                      <div className="text-sm font-semibold truncate">{x.line1}</div>
-                      {x.line2 ? <div className="text-[11px] text-muted-foreground truncate">{x.line2}</div> : null}
-                    </div>
+          <aside className="space-y-4">
+            <div className="mwz-hud-frame p-5">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Current #1s</div>
+              <div className="mt-4 space-y-2">
+                {summary?.currentLeaders.length ? (
+                  summary.currentLeaders.map((leader) => (
+                    <button
+                      key={leader.leagueKey}
+                      type="button"
+                      onClick={() => handleSelectLeague(leader.leagueKey)}
+                      className="w-full rounded-xl border border-border/40 bg-card/55 px-3 py-2 text-left transition hover:border-accent/60"
+                    >
+                      <div className="text-[11px] text-muted-foreground">{leader.leagueTitle}</div>
+                      <div className="truncate text-sm font-semibold">{leader.label}</div>
+                      <div className="truncate text-[11px] text-accent">{leader.metric}</div>
+                    </button>
                   ))
                 ) : (
-                  <div className="text-sm text-muted-foreground">No leaders yet.</div>
+                  <div className="text-sm text-muted-foreground">{chain === "solana" ? "Solana leaders pending." : "No leaders yet."}</div>
                 )}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/50 bg-card/70 backdrop-blur-sm p-4 transition-all hover:border-accent/50 hover:shadow-[0_0_0_1px_rgba(240,106,26,0.12),0_14px_40px_-22px_rgba(240,106,26,0.24)]">
-              <div className="text-sm font-semibold">Campaigns Created</div>
-              <div className="text-[11px] text-muted-foreground">Phase 1: total only · Phase 2: newest campaigns feed</div>
-              <div className="mt-3 rounded-xl border border-border/30 bg-card/55 px-3 py-3">
-                <div className="text-[11px] text-muted-foreground">{periodLabel(period)} total</div>
-                <div className="text-2xl font-semibold">{typeof campaignsCreated === "number" ? campaignsCreated : "—"}</div>
-                <div className="mt-2 text-[11px] text-muted-foreground">We can wire a live feed here from the indexer (new campaign events).</div>
+            <div className="mwz-hud-frame p-5">
+              <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Major War League</div>
+              <div className="mt-2 font-retro text-lg">Post-grad competition lives in Arena.</div>
+              <p className="mt-2 text-sm text-muted-foreground">Prize Leagues are separate from the Major War League standings, divisions, and promotion/relegation flow.</p>
+              <Button asChild size="sm" variant="outline" className="mt-4 font-retro">
+                <Link to="/arena/major-war-league">Open Major War League</Link>
+              </Button>
+            </div>
+
+            <div className="mwz-hud-frame p-5">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Wallet className="h-4 w-4" />Rewards</div>
+              <div className="mt-2 font-retro text-lg">Claims land in Profile Rewards.</div>
+              <p className="mt-2 text-sm text-muted-foreground">Claimable, finalized, expired, and rolled-over states are preserved for the backend summary contract.</p>
+              <Button asChild size="sm" variant="outline" className="mt-4 font-retro">
+                <Link to="/profile?tab=rewards">Profile Rewards</Link>
+              </Button>
+            </div>
+
+            <div className="mwz-hud-frame p-5">
+              <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Recruiter links</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button asChild size="sm" variant="outline" className="font-retro"><Link to="/recruiters">Leaderboard</Link></Button>
+                <Button asChild size="sm" variant="outline" className="font-retro"><Link to="/recruiter">Hub</Link></Button>
+                {wallet.account ? (
+                  <Button asChild size="sm" variant="outline" className="font-retro"><Link to={`/profile/${wallet.account}/command/recruiter`}>Command</Link></Button>
+                ) : null}
               </div>
             </div>
-          </div>
-        </aside>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-border/40 bg-card/45 backdrop-blur-sm px-4 py-3 text-[11px] text-muted-foreground">
-        Winners claim in{" "}
-        <button type="button" onClick={() => navigate("/profile?tab=rewards")} className="text-accent hover:text-accent/80 font-semibold">
-          Profile → Rewards
-        </button>
-        <span className="hidden md:inline"> · appears after epoch finalizes (hourly) · claims expire after 90 days — unclaimed rewards roll back into the next pool</span>
-      </div>
-
-      <div className="mt-6 text-xs text-muted-foreground">
-        <div className="font-semibold text-foreground mb-1">Locked rules (summary)</div>
-        <ul className="list-disc ml-5 space-y-1">
-          <li>
-            <span className="font-semibold">Perfect Run</span>: monthly only; campaign must graduate with <span className="font-semibold">zero</span> bonding‑curve sells.
-          </li>
-          <li>
-            <span className="font-semibold">Fastest Finish</span>: time from creation → graduation; creator buys excluded.
-          </li>
-          <li>
-            <span className="font-semibold">Biggest Hit</span>: single largest bonding‑curve buy (BNB).
-          </li>
-          <li>
-            <span className="font-semibold">Top Earner</span>: trader PnL inside bonding curve (net sells − buys in BNB).
-          </li>
-          <li>
-            <span className="font-semibold">Crowd Favorite</span>: most UpVotes (confirmed votes).
-          </li>
-        </ul>
-      </div>
-
-      {/* League-only background animations (scoped CSS) */}
-      <style>{`
-        /* Embers */
-        .ember{
-          position:absolute;
-          bottom:-10vh;
-          width:2px;
-          height:2px;
-          border-radius:9999px;
-          background:rgba(255,150,50,.95);
-          filter: blur(.2px);
-          box-shadow:
-            0 0 10px rgba(255,120,0,.35),
-            0 0 18px rgba(255,80,0,.18);
-          animation-name: emberFloat;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
-        }
-        @keyframes emberFloat{
-          0%   { transform: translate3d(0, 0, 0) scale(1); opacity: .05; }
-          10%  { opacity: .35; }
-          100% { transform: translate3d(-24px, -110vh, 0) scale(.85); opacity: 0; }
-        }
-
-          /* Smoke: lighter grayish wisps, more visible drift, rising tendency */
-            .smoke-layer {
-              position: absolute;
-              inset: -30%;                   /* larger area so edges don't clip harshly */
-              background-color: transparent; /* remove dark base veil – let background fire shine through */
-              background:
-              /* Main smoke masses – warm dark gray instead of black */
-              radial-gradient(closest-side at 20% 30%, rgba(90,80,90,0.75), transparent 70%),
-              radial-gradient(closest-side at 75% 40%, rgba(80,70,85,0.70), transparent 68%),
-              radial-gradient(closest-side at 40% 75%, rgba(70,65,80,0.60), transparent 65%),
-              /* Subtle brighter wisps that catch light from fire glow */
-              radial-gradient(closest-side at 35% 25%, rgba(180,170,200,0.12), transparent 60%),
-              radial-gradient(closest-side at 65% 55%, rgba(200,190,220,0.10), transparent 58%),
-              radial-gradient(closest-side at 55% 85%, rgba(160,150,180,0.08), transparent 62%);
-              filter: blur(32px) contrast(1.15) brightness(1.1); /* less blur = more shape, slight glow */
-              opacity: 0.55; /* per layer – total with wrapper ~0.14–0.20 */
-              will-change: transform, opacity;
-              animation-timing-function: ease-in-out;
-              animation-iteration-count: infinite;
-            }
-            .smoke-1 {
-            animation: smokeDrift1 65s linear infinite;
-            opacity: 0.60;
-            filter: blur(28px) contrast(1.18) brightness(1.12);
-            }
-            .smoke-2 {
-            animation: smokeDrift2 95s linear infinite;
-            opacity: 0.50;
-            filter: blur(38px) contrast(1.12) brightness(1.08);
-            }
-
-            .smoke-3 {
-            animation: smokeDrift3 130s linear infinite;
-            opacity: 0.45;
-            filter: blur(48px) contrast(1.08) brightness(1.05);
-            }
-            /* Bigger, slower, more organic drifts – some upward bias */
-            @keyframes smokeDrift1 {
-            0%   { transform: translate3d(-18%, -10%, 0) scale(1.08); }
-            50%  { transform: translate3d( 16%,  12%, 0) scale(1.14); }
-            100% { transform: translate3d(-18%, -10%, 0) scale(1.08); }
-            }
-
-            @keyframes smokeDrift2 {
-            0%   { transform: translate3d( -8%, -20%, 0) scale(1.10); }
-            50%  { transform: translate3d( 12%,   5%, 0) scale(1.18); }
-            100% { transform: translate3d( -8%, -20%, 0) scale(1.10); }
-            }
-
-            @keyframes smokeDrift3 {
-            0%   { transform: translate3d( 10%, -15%, 0) scale(1.12); }
-            50%  { transform: translate3d(-14%,  18%, 0) scale(1.22); }
-            100% { transform: translate3d( 10%, -15%, 0) scale(1.12); }
-            }
-      `}</style>
-      </div>
+          </aside>
+        </section>
+      </ContentContainer>
     </div>
   );
 }
