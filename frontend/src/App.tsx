@@ -19,6 +19,7 @@ import WarRoom from "./pages/WarRoom";
 import BattleDetails from "./pages/BattleDetails";
 import PostGradEvents from "./pages/PostGradEvents";
 import PostGradLeague from "./pages/PostGradLeague";
+import League from "./pages/League";
 import TournamentDetails from "./pages/TournamentDetails";
 import Create from "./pages/Create";
 import PromotionSetup from "./pages/PromotionSetup";
@@ -127,7 +128,6 @@ function AppShellLayout({
 }) {
   const postGradEnabled = isPostGradRouteEnabled();
 
-  // Collapsible left battle sidebar (desktop). Persisted so users keep their preference.
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("mwz:left-sidebar-collapsed") === "true";
@@ -141,29 +141,19 @@ function AppShellLayout({
     } catch {}
   };
 
-  // Dynamic sidebar widths (matches the new LeftBattleSidebar)
-  const sidebarExpanded = 224; // ~14rem / w-56
-  const sidebarCollapsed = 64;  // w-16
+  const sidebarExpanded = 224;
+  const sidebarCollapsed = 64;
   const currentSidebarWidth = leftSidebarCollapsed ? sidebarCollapsed : sidebarExpanded;
 
   return (
     <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
-      {/* New collapsible left battle sidebar (desktop only) */}
       <div className="hidden lg:block">
-        <LeftBattleSidebar
-          collapsed={leftSidebarCollapsed}
-          onToggleCollapse={toggleLeftSidebar}
-        />
+        <LeftBattleSidebar collapsed={leftSidebarCollapsed} onToggleCollapse={toggleLeftSidebar} />
       </div>
 
-      {/* Mobile drawer (existing behavior) */}
       <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
 
-      <TopBar
-        mobileMenuOpen={mobileMenuOpen}
-        setMobileMenuOpen={setMobileMenuOpen}
-        leftSidebarWidth={currentSidebarWidth}
-      />
+      <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} leftSidebarWidth={currentSidebarWidth} />
 
       <RankPromotionListener />
       <LiveStreamOverlay />
@@ -176,13 +166,15 @@ function AppShellLayout({
           <Route path="/" element={<Showcase />} />
           {postGradEnabled && postGradFlags.arena ? <Route path="/arena" element={<Arena />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/arena/battles" element={<ArenaBattles />} /> : null}
-          {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<PostGradLeague />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/arena/major-war-league" element={<PostGradLeague />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<Navigate to="/arena/major-war-league" replace />} /> : null}
           {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
           {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
           <Route path="/sponsorships/apply" element={<SponsorshipApplication />} />
           {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
-          {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<Navigate to="/arena/leagues" replace />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<League />} /> : null}
+          {postGradEnabled && postGradFlags.league ? <Route path="/leagues" element={<Navigate to="/league" replace />} /> : null}
           {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
           <Route path="/create" element={<Create />} />
           <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
@@ -257,11 +249,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
-          <div
-            className={`transition-all duration-700 ${
-              showContent ? "opacity-100 scale-100" : "opacity-0 scale-95"
-            }`}
-          >
+          <div className={`transition-all duration-700 ${showContent ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
             <BrowserRouter>
               <InternalLinkInterceptor />
               <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
