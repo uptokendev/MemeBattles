@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, Rocket, Target, User, BookOpen, Swords } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, Rocket, Swords, Target, Trophy, User } from "lucide-react";
 import { socialLinks } from "@/constants/navigation";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ interface LeftBattleSidebarProps {
 
 const navItems = [
   { icon: Rocket, label: "Launchpad", path: "/" },
+  { icon: Trophy, label: "Leagues", path: "/league" },
   { icon: Swords, label: "Arena", path: "/arena", hasSubmenu: true },
   { icon: Target, label: "Trade War Room", path: "/war-room" },
   { icon: User, label: "Profile", path: "/profile" },
@@ -25,7 +26,7 @@ const navItems = [
 const arenaSubItems = [
   { label: "Overview", path: "/arena" },
   { label: "Battles", path: "/arena/battles" },
-  { label: "Leagues", path: "/arena/leagues" },
+  { label: "Major War League", path: "/arena/major-war-league" },
   { label: "Events", path: "/arena/events" },
 ];
 
@@ -35,6 +36,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
+    if (path === "/league") return location.pathname === "/league" || location.pathname === "/leagues";
     return location.pathname.startsWith(path);
   };
 
@@ -45,45 +47,29 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
     <aside
       className={cn(
         "fixed left-0 top-0 bottom-0 z-50 flex flex-col border-r border-white/10 bg-[linear-gradient(180deg,rgba(18,20,26,0.98),rgba(11,13,17,0.98))] text-sm transition-all duration-200",
-        sidebarWidth
+        sidebarWidth,
       )}
     >
-      {/* Top header */}
-      <div className={`flex items-center justify-between border-b border-white/10 px-3 ${collapsed ? 'h-14 pt-3' : 'h-14'}`}>
+      <div className={`flex items-center justify-between border-b border-white/10 px-3 ${collapsed ? "h-14 pt-3" : "h-14"}`}>
         {!collapsed && (
           <Link to="/" className="flex items-center">
-            <img
-              src={brandLogo}
-              alt="MemeWarzone"
-              className="ml-1 h-8 w-auto object-contain"
-              draggable={false}
-            />
+            <img src={brandLogo} alt="MemeWarzone" className="ml-1 h-8 w-auto object-contain" draggable={false} />
           </Link>
         )}
 
         <button
           onClick={onToggleCollapse}
-          className={`rounded p-1 text-white/60 transition hover:bg-white/5 hover:text-white ${collapsed ? 'mt-4' : ''}`}
+          className={`rounded p-1 text-white/60 transition hover:bg-white/5 hover:text-white ${collapsed ? "mt-4" : ""}`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
 
-      {/* Navigation */}
-      <nav className={`flex-1 space-y-1 overflow-y-auto px-2 text-sm ${collapsed ? 'pt-1 pb-0' : 'py-3'}`}>
-        {/* Small logo shown only when collapsed, as first menu item for perfect alignment */}
+      <nav className={`flex-1 space-y-1 overflow-y-auto px-2 text-sm ${collapsed ? "pt-1 pb-0" : "py-3"}`}>
         {collapsed && (
-          <Link 
-            to="/" 
-            className="flex w-full justify-center py-2"
-          >
-            <img
-              src={smallLogo}
-              alt="MemeWarzone"
-              className="h-10 w-10 object-contain"
-              draggable={false}
-            />
+          <Link to="/" className="flex w-full justify-center py-2">
+            <img src={smallLogo} alt="MemeWarzone" className="h-10 w-10 object-contain" draggable={false} />
           </Link>
         )}
 
@@ -99,14 +85,12 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
                   className={cn(
                     "flex w-full items-center rounded-lg py-2 text-left transition",
                     collapsed ? "justify-center gap-0 px-0" : "gap-3 px-3",
-                    active ? "bg-white/5 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"
+                    active ? "bg-white/5 text-white" : "text-white/70 hover:bg-white/5 hover:text-white",
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   <span className={cn("flex-1 truncate", labelClass)}>{item.label}</span>
-                  {!collapsed && (
-                    <ChevronDown className={cn("h-3.5 w-3.5 transition", arenaOpen && "rotate-180")} />
-                  )}
+                  {!collapsed && <ChevronDown className={cn("h-3.5 w-3.5 transition", arenaOpen && "rotate-180")} />}
                 </button>
 
                 {arenaOpen && !collapsed && (
@@ -115,10 +99,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
                       <Link
                         key={sub.path}
                         to={sub.path}
-                        className={cn(
-                          "block rounded px-2 py-1.5 text-white/65 transition hover:text-white",
-                          isActive(sub.path) && "text-accent"
-                        )}
+                        className={cn("block rounded px-2 py-1.5 text-white/65 transition hover:text-white", isActive(sub.path) && "text-accent")}
                       >
                         {sub.label}
                       </Link>
@@ -146,7 +127,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
                 className={cn(
                   "flex items-center rounded-lg py-2 text-white/70 transition hover:bg-white/5 hover:text-white",
                   collapsed ? "justify-center gap-0 px-0" : "gap-3 px-3",
-                  active && "bg-white/5 text-white"
+                  active && "bg-white/5 text-white",
                 )}
               >
                 {content}
@@ -161,7 +142,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
               className={cn(
                 "flex items-center rounded-lg py-2 transition",
                 collapsed ? "justify-center gap-0 px-0" : "gap-3 px-3",
-                active ? "bg-white/5 text-white" : "text-white/70 hover:bg-white/5 hover:text-white"
+                active ? "bg-white/5 text-white" : "text-white/70 hover:bg-white/5 hover:text-white",
               )}
             >
               {content}
@@ -170,7 +151,6 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
         })}
       </nav>
 
-      {/* Bottom Socials */}
       <div className={cn("border-t border-white/10 p-1", collapsed ? "flex justify-center pt-10 pb-10 -mt-[80px]" : "")}>
         {collapsed ? (
           <div className="flex flex-col gap-2 items-center">
@@ -188,10 +168,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
             ))}
           </div>
         ) : (
-          <SocialTooltip
-            items={socialLinks}
-            className="justify-end gap-2 [&_a]:!h-8 [&_a]:!w-8"
-          />
+          <SocialTooltip items={socialLinks} className="justify-end gap-2 [&_a]:!h-8 [&_a]:!w-8" />
         )}
       </div>
     </aside>
