@@ -7,12 +7,6 @@ function clampInt(v, lo, hi, def) {
   return Math.max(lo, Math.min(hi, Math.trunc(n)));
 }
 
-function envFlag(name, fallback = false) {
-  const raw = String(process.env[name] ?? "").trim().toLowerCase();
-  if (!raw) return fallback;
-  return ["1", "true", "yes", "on"].includes(raw);
-}
-
 function schemaMissing(error) {
   return error?.code === "42P01" || error?.code === "42703";
 }
@@ -72,7 +66,6 @@ function epochMeta(periodNorm, epochOffset) {
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
 
-  const enabled = envFlag("LEAGUE_RECRUITER_ENABLED", false);
   const q = getQuery(req);
   const periodRaw = String(q.period ?? "weekly").toLowerCase().trim();
   const periodNorm = normPeriod(periodRaw);
@@ -84,15 +77,6 @@ export default async function handler(req, res) {
         : 0;
   const limit = clampInt(q.limit ?? 10, 1, 50, 10);
   const meta = epochMeta(periodNorm, epochOffset);
-
-  if (!enabled) {
-    return json(res, 200, {
-      items: [],
-      warning: "Recruiter League feed is disabled on this API environment.",
-      epoch: meta,
-      stats: { recruitersRanked: 0 },
-    });
-  }
 
   try {
     const startIso = meta?.epochStart || null;
