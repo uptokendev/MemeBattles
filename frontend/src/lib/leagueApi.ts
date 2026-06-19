@@ -91,7 +91,7 @@ type LegacyLeagueResponse = {
   warning?: string;
   prize?: LeaguePrizeMeta;
   epoch?: LeagueEpoch;
-  stats?: { campaignsCreated?: number };
+  stats?: { campaignsCreated?: number; recruitersRanked?: number };
 };
 
 export interface LoadLeagueSummaryOptions {
@@ -101,6 +101,34 @@ export interface LoadLeagueSummaryOptions {
   epochOffset: number;
 }
 
+function toNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeRecruiterRow(row: any, index: number) {
+  return {
+    ...row,
+    rank: toNumber(row?.rank, index + 1),
+    displayName: row?.displayName || row?.display_name || undefined,
+    recruiterCode: row?.recruiterCode || row?.code || undefined,
+    wallet: row?.wallet || row?.walletAddress || row?.wallet_address || undefined,
+    linkedWallets: toNumber(row?.linkedWallets ?? row?.linkedWalletCount ?? row?.linked_wallet_count),
+    linkedCreators: toNumber(row?.linkedCreators ?? row?.linkedCreatorsCount ?? row?.linked_creators_count),
+    linkedTraders: toNumber(row?.linkedTraders ?? row?.linkedTradersCount ?? row?.linked_traders_count),
+    activeSquadMembers: toNumber(row?.activeSquadMembers ?? row?.activeSquadMemberCount ?? row?.active_squad_member_count),
+    referredVolumeUsd: toNumber(row?.referredVolumeUsd ?? row?.referred_volume_usd),
+    weightedScore: toNumber(row?.weightedScore ?? row?.weighted_score),
+    estimatedPayoutUsd: toNumber(row?.estimatedPayoutUsd ?? row?.estimated_payout_usd),
+    claimStatus: row?.claimStatus || row?.claim_status || "Pending",
+  };
+}
+
+function normalizeRows(def: LeagueDef, rows: unknown[]) {
+  if (def.key === "recruiter_league") return rows.map((row, index) => normalizeRecruiterRow(row, index));
+  return rows;
+}
+
 function getStatus(rows: unknown[], warning?: string): LeagueStatus {
   if (warning) return "error";
   return rows.length ? "ready" : "empty";
@@ -108,6 +136,7 @@ function getStatus(rows: unknown[], warning?: string): LeagueStatus {
 
 function leaderLabel(row: any) {
   if (typeof row?.displayName === "string") return row.displayName;
+  if (typeof row?.recruiterCode === "string") return row.recruiterCode;
   if (typeof row?.name === "string") return row.symbol ? `${row.name} (${row.symbol})` : row.name;
   if (typeof row?.wallet === "string") return row.wallet;
   if (typeof row?.campaign_address === "string") return row.campaign_address;
@@ -119,7 +148,7 @@ function metricFor(def: LeagueDef, row: any) {
   if (def.key === "biggest_hit") return row?.bnb_amount_raw ? "Largest buy" : def.metricLabel;
   if (def.key === "top_earner") return row?.profit_raw ? "Trader PnL" : def.metricLabel;
   if (def.key === "crowd_favorite") return row?.votes_count ? `${row.votes_count} votes` : def.metricLabel;
-  if (def.key === "recruiter_league") return row?.weightedScore ? `${row.weightedScore} score` : def.metricLabel;
+  if (def.key === "recruiter_league") return row?.weightedScore ? `${Number(row.weightedScore).toLocaleString()} score` : def.metricLabel;
   return def.metricLabel;
 }
 
@@ -174,7 +203,8 @@ export async function loadLeagueSummary({
 
   for (const [key, payload] of results) {
     const def = LEAGUES.find((league) => league.key === key)!;
-    const rows = Array.isArray(payload.items) ? payload.items : [];
+    const rawRows = Array.isArray(payload.items) ? payload.items : [];
+    const rows = normalizeRows(def, rawRows);
     const isRecruiterPending = key === "recruiter_league" && !rows.length;
     const status: LeagueStatus = isRecruiterPending ? "pending" : getStatus(rows, payload.warning);
 
