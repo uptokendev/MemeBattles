@@ -21,7 +21,7 @@ import followsCampaign from "./follows/campaign.js";
 import followsUserCounts from "./follows/user-counts.js";
 import followsUserList from "./follows/user-list.js";
 import followsUser from "./follows/user.js";
-import league from "./league.js";
+import league from "./leagueRouter.js";
 import leaguePayouts from "./leaguePayouts.js";
 import leagueRoot from "./leagueRoot.js";
 import profile from "./profile.js";
