@@ -12,7 +12,6 @@ import {
   calculatePaidPlaces,
   calculatePayoutCurve,
   getPayoutPolicy,
-  periodLabel,
   type LeagueChain,
   type LeagueDef,
   type LeagueKey,
@@ -34,6 +33,12 @@ type RecruiterRow = {
   weightedScore?: number;
   estimatedPayoutUsd?: number;
   claimStatus?: string;
+};
+
+type SwitchOption<T extends string> = {
+  value: T;
+  label: string;
+  disabled?: boolean;
 };
 
 function shortAddr(value?: string | null) {
@@ -97,6 +102,55 @@ function getEpochOptions(period: Period) {
     offset,
     label: offset === 0 ? "Live epoch" : offset === 1 ? "Previous" : `${offset} back`,
   }));
+}
+
+function ControlSwitch<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: [SwitchOption<T>, SwitchOption<T>];
+  onChange: (value: T) => void;
+}) {
+  const activeIndex = options.findIndex((option) => option.value === value);
+  const active = activeIndex <= 0 ? 0 : 1;
+
+  return (
+    <div className="min-w-[230px]">
+      <div className="mb-1.5 text-[10px] uppercase tracking-[0.24em] text-accent/80">{label}</div>
+      <div className="relative h-12 rounded-full border border-accent/25 bg-[linear-gradient(180deg,rgba(27,30,34,0.98),rgba(8,10,13,0.98))] p-1 shadow-[inset_0_1px_8px_rgba(0,0,0,0.75)]">
+        <div
+          className="absolute bottom-1 top-1 w-[calc(50%-0.25rem)] rounded-full bg-[linear-gradient(180deg,rgba(245,132,32,0.95),rgba(121,56,13,0.95))] shadow-[0_0_18px_rgba(245,132,32,0.28)] transition-transform duration-200"
+          style={{ transform: `translateX(${active * 100}%)` }}
+        />
+        <div
+          className="pointer-events-none absolute top-1 h-10 w-10 rounded-full border border-white/30 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.92),rgba(138,145,153,0.78)_48%,rgba(38,43,49,0.95))] shadow-[0_6px_16px_rgba(0,0,0,0.55)] transition-transform duration-200"
+          style={{ transform: `translateX(calc(${active * 100}% + ${active ? "calc(100% - 2.25rem)" : "0px"}))` }}
+        />
+        <div className="relative z-10 grid h-full grid-cols-2 overflow-hidden rounded-full">
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={option.disabled}
+                onClick={() => onChange(option.value)}
+                className={`px-4 text-center font-retro text-[11px] uppercase tracking-[0.16em] transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                  selected ? "text-background" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LeagueSwitch({
@@ -360,62 +414,52 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   return (
     <div className="relative min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(245,120,32,0.18),transparent_30%),linear-gradient(180deg,rgba(10,12,16,0.98),rgba(5,6,8,1))] pt-14 text-foreground">
       <ContentContainer className="space-y-5 px-2 pb-10">
-        <section className="mwz-hud-frame p-5 md:p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl">
-              <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Prize League Command Center</div>
-              <h1 className="mt-2 font-retro text-3xl text-foreground md:text-4xl">Six prize leagues. One command surface.</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Track BNB prize league standings, payout depth, prize caps, current leaders, and recruiter rewards without mixing in the Major War League.
-              </p>
+        <section className="mwz-hud-frame p-4 md:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.32em] text-accent/80">Prize League Control</div>
+              <div className="mt-1 font-retro text-lg text-foreground">{selectedLeague.title}</div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
-                {(["bnb", "solana"] as LeagueChain[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setChain(item)}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                      chain === item ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {item === "bnb" ? "BNB" : "Solana"}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
-                {(["weekly", "monthly"] as Period[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    disabled={!selectedLeague.supports.includes(item)}
-                    onClick={() => {
-                      setPeriod(item);
-                      setEpochOffset(0);
-                    }}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                      period === item ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {periodLabel(item)}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
-                {epochOptions.map((item) => (
-                  <button
-                    key={item.offset}
-                    type="button"
-                    onClick={() => setEpochOffset(item.offset)}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                      epochOffset === item.offset ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <ControlSwitch<LeagueChain>
+                label="Chain"
+                value={chain}
+                options={[
+                  { value: "bnb", label: "BNB" },
+                  { value: "solana", label: "Solana" },
+                ]}
+                onChange={setChain}
+              />
+              <ControlSwitch<Period>
+                label="Period"
+                value={period}
+                options={[
+                  { value: "weekly", label: "Weekly", disabled: !selectedLeague.supports.includes("weekly") },
+                  { value: "monthly", label: "Monthly", disabled: !selectedLeague.supports.includes("monthly") },
+                ]}
+                onChange={(next) => {
+                  if (!selectedLeague.supports.includes(next)) return;
+                  setPeriod(next);
+                  setEpochOffset(0);
+                }}
+              />
+              <div className="min-w-[230px]">
+                <div className="mb-1.5 text-[10px] uppercase tracking-[0.24em] text-accent/80">Epoch</div>
+                <div className="inline-flex min-h-12 flex-wrap items-center gap-1 rounded-full border border-border/60 bg-background/45 p-1">
+                  {epochOptions.map((item) => (
+                    <button
+                      key={item.offset}
+                      type="button"
+                      onClick={() => setEpochOffset(item.offset)}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                        epochOffset === item.offset ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
