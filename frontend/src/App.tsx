@@ -9,7 +9,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Showcase from "./pages/Showcase";
@@ -144,6 +144,7 @@ function AppShellLayout({
   const sidebarExpanded = 224;
   const sidebarCollapsed = 64;
   const currentSidebarWidth = leftSidebarCollapsed ? sidebarCollapsed : sidebarExpanded;
+  const mainStyle = { "--mwz-left-sidebar-width": `${currentSidebarWidth}px` } as CSSProperties;
 
   return (
     <div className="mwz-app-shell h-screen overflow-hidden flex flex-col">
@@ -159,8 +160,8 @@ function AppShellLayout({
       <LiveStreamOverlay />
 
       <main
-        className="flex-1 overflow-auto scroll-pt-2 md:scroll-pt-3 pt-2 md:pt-3 pb-4 md:pb-6 lg:pb-8"
-        style={{ paddingLeft: `calc(${currentSidebarWidth}px + 0.75rem)` }}
+        className="flex-1 overflow-auto scroll-pt-2 md:scroll-pt-3 pt-2 md:pt-3 pb-4 md:pb-6 lg:pb-8 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]"
+        style={mainStyle}
       >
         <Routes>
           <Route path="/" element={<Showcase />} />
