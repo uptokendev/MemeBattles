@@ -123,12 +123,12 @@ function ControlSwitch<T extends string>({
       <div className="mb-1.5 text-[10px] uppercase tracking-[0.24em] text-accent/80">{label}</div>
       <div className="relative h-12 rounded-full border border-accent/25 bg-[linear-gradient(180deg,rgba(27,30,34,0.98),rgba(8,10,13,0.98))] p-1 shadow-[inset_0_1px_8px_rgba(0,0,0,0.75)]">
         <div
-          className="absolute bottom-1 top-1 w-[calc(50%-0.25rem)] rounded-full bg-[linear-gradient(180deg,rgba(245,132,32,0.95),rgba(121,56,13,0.95))] shadow-[0_0_18px_rgba(245,132,32,0.28)] transition-transform duration-200"
+          className="absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-full bg-[linear-gradient(180deg,rgba(245,132,32,0.95),rgba(121,56,13,0.95))] shadow-[0_0_18px_rgba(245,132,32,0.28)] transition-transform duration-200"
           style={{ transform: `translateX(${active * 100}%)` }}
         />
         <div
-          className="pointer-events-none absolute top-1 h-10 w-10 rounded-full border border-white/30 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.92),rgba(138,145,153,0.78)_48%,rgba(38,43,49,0.95))] shadow-[0_6px_16px_rgba(0,0,0,0.55)] transition-transform duration-200"
-          style={{ transform: `translateX(calc(${active * 100}% + ${active ? "calc(100% - 2.25rem)" : "0px"}))` }}
+          className="pointer-events-none absolute top-1 h-10 w-10 rounded-full border border-white/30 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.92),rgba(138,145,153,0.78)_48%,rgba(38,43,49,0.95))] shadow-[0_6px_16px_rgba(0,0,0,0.55)] transition-[left] duration-200"
+          style={{ left: active ? "calc(100% - 2.75rem)" : "0.25rem" }}
         />
         <div className="relative z-10 grid h-full grid-cols-2 overflow-hidden rounded-full">
           {options.map((option) => {
