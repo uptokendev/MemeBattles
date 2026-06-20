@@ -3,7 +3,7 @@
  * Responsive header with search and actions
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Bell, Menu, Plus, Search } from "lucide-react";
 import { CommandPalette } from "@/components/search/CommandPalette";
@@ -76,6 +76,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const bellRef = useRef<HTMLButtonElement | null>(null);
   const walletRef = useRef<HTMLButtonElement | null>(null);
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; right: number } | null>(null);
+  const topbarStyle = { "--mwz-left-sidebar-width": `${leftSidebarWidth}px` } as CSSProperties;
 
   useEffect(() => {
     const updateAnchor = () => {
@@ -242,22 +243,20 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     setDraftNotifications(getDraftNotifications());
   };
 
-  const leftOffset = leftSidebarWidth;
-
   return (
     <div
-      className="fixed top-0 z-40 bg-transparent transition-[left]"
-      style={{ left: leftOffset, right: 0 }}
+      className="fixed left-0 right-0 top-0 z-40 bg-transparent transition-[left] lg:left-[var(--mwz-left-sidebar-width)]"
+      style={topbarStyle}
     >
       {/* Minimal top action bar - no borders, no menu items, no logo (logo lives in left sidebar) */}
       <div className="mx-2 mt-3 flex min-h-[30px] items-center gap-1.5 px-2 md:mx-3 md:px-3">
         {/* Mobile menu trigger only */}
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="mwz-button h-8 w-8 shrink-0 p-0 lg:hidden"
+          className="mwz-button inline-flex h-8 w-8 shrink-0 items-center justify-center p-0 lg:hidden"
           aria-label="Toggle menu"
         >
-          <Menu className="h-4 w-4" />
+          <Menu className="h-4 w-4 shrink-0" />
         </button>
 
         {/* Small logo only on mobile (desktop logo is in the left sidebar) */}
