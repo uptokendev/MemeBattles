@@ -29,6 +29,7 @@ type RecruiterRow = {
   linkedWallets?: number;
   linkedCreators?: number;
   linkedTraders?: number;
+  activeSquadMembers?: number;
   referredVolumeUsd?: number;
   weightedScore?: number;
   estimatedPayoutUsd?: number;
@@ -130,6 +131,23 @@ function LeagueSwitch({
   );
 }
 
+function RecruiterLinks({ wallet, code }: { wallet?: string; code?: string }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {code ? (
+        <Link to={`/recruiters/${code}`} className="text-xs font-semibold text-accent transition hover:text-foreground">
+          Profile
+        </Link>
+      ) : null}
+      {wallet ? (
+        <Link to={`/profile/${wallet}/command/recruiter`} className="text-xs font-semibold text-accent transition hover:text-foreground">
+          Command
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
 function StandingsTable({
   league,
   rows,
@@ -146,6 +164,14 @@ function StandingsTable({
       <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
         <div className="font-retro text-base text-foreground">{league.title} pending</div>
         <p className="mt-2 max-w-2xl">{pendingCopy || league.emptyStateCopy}</p>
+      </div>
+    );
+  }
+
+  if (!rows.length) {
+    return (
+      <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
+        <p className="max-w-2xl">{league.emptyStateCopy}</p>
         {league.key === "recruiter_league" ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <Button asChild size="sm" variant="outline" className="font-retro">
@@ -160,29 +186,26 @@ function StandingsTable({
     );
   }
 
-  if (!rows.length) {
-    return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">{league.emptyStateCopy}</div>;
-  }
-
   if (league.rowType === "recruiter") {
     return (
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-left text-sm">
+        <table className="w-full min-w-[940px] text-left text-sm">
           <thead className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             <tr className="border-b border-border/50">
               <th className="py-3 pr-3">Rank</th>
               <th className="py-3 pr-3">Recruiter</th>
               <th className="py-3 pr-3">Wallet</th>
-              <th className="py-3 pr-3">Linked</th>
+              <th className="py-3 pr-3">Network</th>
               <th className="py-3 pr-3">Volume</th>
               <th className="py-3 pr-3">Score</th>
               <th className="py-3 pr-3">Payout</th>
-              <th className="py-3">Claim</th>
+              <th className="py-3 pr-3">Claim</th>
+              <th className="py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {(rows as RecruiterRow[]).map((row, index) => (
-              <tr key={`${row.wallet ?? row.recruiterCode ?? index}`} className="border-b border-border/30">
+              <tr key={`${row.wallet ?? row.recruiterCode ?? index}`} className="border-b border-border/30 align-top">
                 <td className="py-3 pr-3 font-retro">#{row.rank ?? index + 1}</td>
                 <td className="py-3 pr-3">
                   <div className="font-semibold text-foreground">{row.displayName || "Recruiter"}</div>
@@ -190,12 +213,14 @@ function StandingsTable({
                 </td>
                 <td className="py-3 pr-3 text-muted-foreground">{shortAddr(row.wallet)}</td>
                 <td className="py-3 pr-3 text-muted-foreground">
-                  {row.linkedWallets ?? 0} wallets / {row.linkedCreators ?? 0} creators / {row.linkedTraders ?? 0} traders
+                  <div>{row.linkedWallets ?? 0} wallets</div>
+                  <div className="text-xs">{row.activeSquadMembers ?? 0} squad / {row.linkedCreators ?? 0} creators / {row.linkedTraders ?? 0} traders</div>
                 </td>
                 <td className="py-3 pr-3">{formatUsd(Number(row.referredVolumeUsd ?? 0))}</td>
                 <td className="py-3 pr-3">{Number(row.weightedScore ?? 0).toLocaleString()}</td>
                 <td className="py-3 pr-3">{formatUsd(Number(row.estimatedPayoutUsd ?? 0))}</td>
-                <td className="py-3 text-muted-foreground">{row.claimStatus || "Pending"}</td>
+                <td className="py-3 pr-3 text-muted-foreground">{row.claimStatus || "Pending"}</td>
+                <td className="py-3"><RecruiterLinks wallet={row.wallet} code={row.recruiterCode} /></td>
               </tr>
             ))}
           </tbody>
@@ -286,9 +311,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const cappedPlayerPoolUsd = period === "monthly" ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd) : rawGeneratedUsd;
   const charityReserveUsd = period === "monthly" ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd) : 0;
   const qualifiedEntrants = Math.max(selectedCard?.entrants ?? rows.length, rows.length);
-  const paidPlaces = calculatePaidPlaces(qualifiedEntrants, policy);
-  const payoutCurve = calculatePayoutCurve(qualifiedEntrants, cappedPlayerPoolUsd, policy);
-  const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(paidPlaces / 2) || row.rank === paidPlaces);
+  const computedPaidPlaces = calculatePaidPlaces(qualifiedEntrants, policy);
+  const activePaidPlaces = qualifiedEntrants > 0 ? computedPaidPlaces : 0;
+  const payoutCurve = activePaidPlaces > 0 ? calculatePayoutCurve(qualifiedEntrants, cappedPlayerPoolUsd, policy) : [];
+  const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces);
   const selectedStatus = chain === "solana" ? "pending" : selectedCard?.status;
 
   const handleSelectLeague = (key: LeagueKey) => {
@@ -379,7 +405,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           </div>
           <div className="mwz-hud-frame p-4">
             <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Active paid places</div>
-            <div className="mt-2 font-retro text-xl">{paidPlaces}</div>
+            <div className="mt-2 font-retro text-xl">{activePaidPlaces}</div>
             <div className="mt-1 text-xs text-muted-foreground">Max(min winners, floor(entrants x 15%)).</div>
           </div>
         </section>
@@ -442,7 +468,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                       </div>
                     ))
                   ) : (
-                    <div className="text-sm text-muted-foreground">Preview appears when prize data is available.</div>
+                    <div className="text-sm text-muted-foreground">Preview appears when qualified entrants and prize data are available.</div>
                   )}
                 </div>
               </div>
