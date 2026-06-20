@@ -91,6 +91,14 @@ function rowMetric(def: LeagueDef, row: any) {
   return def.metricLabel;
 }
 
+function getEpochOptions(period: Period) {
+  const max = period === "weekly" ? 2 : 1;
+  return Array.from({ length: max + 1 }, (_, offset) => ({
+    offset,
+    label: offset === 0 ? "Live epoch" : offset === 1 ? "Previous" : `${offset} back`,
+  }));
+}
+
 function LeagueSwitch({
   selected,
   period,
@@ -148,16 +156,31 @@ function RecruiterLinks({ wallet, code }: { wallet?: string; code?: string }) {
   );
 }
 
+function RecruiterEmptyActions() {
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      <Button asChild size="sm" variant="outline" className="font-retro">
+        <Link to="/recruiters">Recruiter leaderboard</Link>
+      </Button>
+      <Button asChild size="sm" variant="outline" className="font-retro">
+        <Link to="/recruiter">Recruiter hub</Link>
+      </Button>
+    </div>
+  );
+}
+
 function StandingsTable({
   league,
   rows,
   status,
   pendingCopy,
+  warningCopy,
 }: {
   league: LeagueDef;
   rows: unknown[];
   status?: string;
   pendingCopy?: string;
+  warningCopy?: string;
 }) {
   if (status === "pending") {
     return (
@@ -168,20 +191,21 @@ function StandingsTable({
     );
   }
 
+  if (status === "error") {
+    return (
+      <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
+        <div className="font-retro text-base text-foreground">{league.title} feed warning</div>
+        <p className="mt-2 max-w-2xl">{warningCopy || "This league feed returned a warning. Standings will appear when the API response is healthy."}</p>
+        {league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}
+      </div>
+    );
+  }
+
   if (!rows.length) {
     return (
       <div className="mwz-hud-frame p-5 text-sm text-muted-foreground">
         <p className="max-w-2xl">{league.emptyStateCopy}</p>
-        {league.key === "recruiter_league" ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button asChild size="sm" variant="outline" className="font-retro">
-              <Link to="/recruiters">Recruiter leaderboard</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline" className="font-retro">
-              <Link to="/recruiter">Recruiter hub</Link>
-            </Button>
-          </div>
-        ) : null}
+        {league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}
       </div>
     );
   }
@@ -266,6 +290,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [error, setError] = useState<string | undefined>();
 
   const selectedLeague = LEAGUES.find((league) => league.key === selectedLeagueKey) ?? LEAGUES[0];
+  const epochOptions = getEpochOptions(period);
 
   useEffect(() => {
     if (!selectedLeague.supports.includes(period)) {
@@ -273,6 +298,12 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       setEpochOffset(0);
     }
   }, [period, selectedLeague]);
+
+  useEffect(() => {
+    if (!epochOptions.some((option) => option.offset === epochOffset)) {
+      setEpochOffset(0);
+    }
+  }, [epochOffset, epochOptions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -372,6 +403,20 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                   </button>
                 ))}
               </div>
+              <div className="inline-flex rounded-xl border border-border/60 bg-background/45 p-1">
+                {epochOptions.map((item) => (
+                  <button
+                    key={item.offset}
+                    type="button"
+                    onClick={() => setEpochOffset(item.offset)}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                      epochOffset === item.offset ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -434,6 +479,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                     rows={rows}
                     status={selectedStatus}
                     pendingCopy={chain === "solana" ? "Solana league feed pending. No Solana standings yet. Claims open after Solana league payouts are live." : selectedCard?.warning}
+                    warningCopy={selectedCard?.warning}
                   />
                 )}
               </div>
@@ -494,6 +540,22 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
                   ))
                 ) : (
                   <div className="text-sm text-muted-foreground">{chain === "solana" ? "Solana leaders pending." : "No leaders yet."}</div>
+                )}
+              </div>
+            </div>
+
+            <div className="mwz-hud-frame p-5">
+              <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Recent winners</div>
+              <div className="mt-4 space-y-2">
+                {summary?.history.length ? (
+                  summary.history.slice(0, 5).map((item) => (
+                    <div key={item.id} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2">
+                      <div className="text-sm font-semibold text-foreground">{item.winnerLabel || item.label}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">{item.completedAt || "Finalized epoch"}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground">Winner history will appear once finalized league epochs are published.</div>
                 )}
               </div>
             </div>
