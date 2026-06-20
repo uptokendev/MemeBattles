@@ -205,8 +205,7 @@ export async function loadLeagueSummary({
     const def = LEAGUES.find((league) => league.key === key)!;
     const rawRows = Array.isArray(payload.items) ? payload.items : [];
     const rows = normalizeRows(def, rawRows);
-    const isRecruiterPending = key === "recruiter_league" && !rows.length;
-    const status: LeagueStatus = isRecruiterPending ? "pending" : getStatus(rows, payload.warning);
+    const status = getStatus(rows, payload.warning);
 
     if (!epoch && payload.epoch) epoch = payload.epoch;
     if (!prize && payload.prize) prize = payload.prize;
@@ -218,7 +217,7 @@ export async function loadLeagueSummary({
       entrants: rows.length,
       rows,
       prize: payload.prize,
-      warning: isRecruiterPending ? def.emptyStateCopy : payload.warning,
+      warning: payload.warning,
     });
 
     const top = rows[0] as any;
