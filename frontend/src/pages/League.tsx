@@ -337,9 +337,9 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <ContentContainer className="space-y-5 px-2 pb-10">
         <div className="flex flex-col gap-3 pt-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <TacticalSwitch label="Chain" leftLabel="BNB" rightLabel="Solana" checked={chain === "solana"} onCheckedChange={(next) => setChain(next ? "solana" : "bnb")} />
+            <TacticalSwitch label="" leftLabel="BNB" rightLabel="Solana" checked={chain === "solana"} onCheckedChange={(next) => setChain(next ? "solana" : "bnb")} />
             <TacticalSwitch
-              label="Period"
+              label=""
               leftLabel="Weekly"
               rightLabel="Monthly"
               checked={period === "monthly"}
@@ -365,13 +365,6 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             ))}
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <TacticalTag label={chain === "bnb" ? `BNB feed (${activeBnbChainId === 56 ? "mainnet" : "testnet"})` : "Solana feed pending"} tone={chain === "bnb" ? "success" : "default"} />
-          <TacticalTag label={loading ? "Loading" : selectedStatus || "empty"} tone={selectedStatus === "pending" ? "default" : selectedStatus === "error" ? "hot" : "success"} />
-          <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="sponsored" />
-        </div>
-
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Raw generated prize money</div><div className="mt-2 font-retro text-xl">{formatBnb(rawPrizeBnb)}</div><div className="mt-1 text-xs text-muted-foreground">{bnbUsd ? formatUsd(rawGeneratedUsd) : "USD oracle pending"}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div><div className="mt-2 font-retro text-xl">{period === "monthly" ? "$1.00M" : "No weekly cap"}</div><div className="mt-1 text-xs text-muted-foreground">Monthly player payouts cap before charity overflow.</div></div>
