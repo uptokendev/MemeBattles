@@ -12,10 +12,10 @@ export type LeagueStatus = "loading" | "ready" | "empty" | "pending" | "error" |
 export interface LeagueEpoch {
   period: LeaguePeriod;
   epochOffset: number;
-  epochStart: string;
-  epochEnd: string;
-  rangeEnd: string;
-  status: "live" | "finalized";
+  epochStart: string | null;
+  epochEnd: string | null;
+  rangeEnd: string | null;
+  status: "live" | "finalized" | "pending";
 }
 
 export interface LeaguePrizeMeta {
@@ -32,6 +32,10 @@ export interface LeaguePrizeMeta {
   paidRaw?: string;
   availablePotRaw?: string;
   availablePayoutsRaw?: string[];
+  capReached?: boolean;
+  charityReserveUsd?: number;
+  monthlyPlayerPrizeCapUsd?: number;
+  warning?: string;
 }
 
 export interface LeaguePayoutPolicy {
@@ -106,6 +110,16 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function toStatus(value: unknown, fallback: LeagueStatus = "empty"): LeagueStatus {
+  const status = String(value || "").toLowerCase();
+  if (["loading", "ready", "empty", "pending", "error", "claimable", "finalized", "expired", "rolled_over"].includes(status)) return status as LeagueStatus;
+  return fallback;
+}
+
+function isLeagueKey(value: unknown): value is LeagueKey {
+  return LEAGUES.some((league) => league.key === value);
+}
+
 function normalizeRecruiterRow(row: any, index: number) {
   return {
     ...row,
@@ -152,29 +166,86 @@ function metricFor(def: LeagueDef, row: any) {
   return def.metricLabel;
 }
 
-export async function loadLeagueSummary({
-  chain,
-  chainId,
-  period,
-  epochOffset,
-}: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
-  if (chain === "solana") {
-    return {
-      chain,
-      period,
-      leagues: LEAGUES.map((league) => ({
-        key: league.key,
-        title: league.title,
-        status: "pending",
-        entrants: 0,
-        rows: [],
-        warning: "Solana league feed pending. No Solana standings yet. Claims open after Solana league payouts are live.",
-      })),
-      currentLeaders: [],
-      history: [],
-    };
+function solanaPendingSummary(chain: LeagueChain, period: LeaguePeriod, epochOffset: number): LeagueSummaryResponse {
+  return {
+    chain,
+    period,
+    epoch: { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: "pending" },
+    payoutPolicy: { minWinners: period === "weekly" ? 3 : 5, paidFieldPct: 0.15, alpha: 0.72, monthlyPlayerPrizeCapUsd: 1_500_000 },
+    prize: { capReached: false, charityReserveUsd: 0, monthlyPlayerPrizeCapUsd: 1_500_000, warning: "Solana prize feed pending." },
+    leagues: LEAGUES.map((league) => ({
+      key: league.key,
+      title: league.title,
+      status: "pending",
+      entrants: 0,
+      rows: [],
+      warning: "Solana league feed pending. BNB standings and prize pools are not reused for Solana.",
+    })),
+    currentLeaders: [],
+    history: [],
+  };
+}
+
+function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: LeaguePeriod, epochOffset: number): LeagueSummaryResponse | undefined {
+  if (!payload || !Array.isArray(payload.leagues)) return undefined;
+
+  const cards: LeagueSummaryCard[] = [];
+  const leaders: CurrentLeagueLeader[] = [];
+
+  for (const def of LEAGUES) {
+    const incoming = payload.leagues.find((item: any) => item?.key === def.key);
+    const rawRows = Array.isArray(incoming?.rows) ? incoming.rows : Array.isArray(incoming?.items) ? incoming.items : [];
+    const rows = normalizeRows(def, rawRows);
+    const status = toStatus(incoming?.status, getStatus(rows, incoming?.warning));
+
+    cards.push({
+      key: def.key,
+      title: incoming?.title || def.title,
+      status,
+      entrants: toNumber(incoming?.entrants, rows.length),
+      rows,
+      prize: incoming?.prize,
+      warning: incoming?.warning,
+    });
+
+    const top = rows[0] as any;
+    if (top) leaders.push({ leagueKey: def.key, leagueTitle: def.title, label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
+  return {
+    chain: payload.chain === "solana" || payload.chain === "bnb" ? payload.chain : chain,
+    period: payload.period === "weekly" || payload.period === "monthly" ? payload.period : period,
+    epoch: payload.epoch || { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: chain === "solana" ? "pending" : "live" },
+    prize: payload.prize,
+    payoutPolicy: payload.payoutPolicy,
+    leagues: cards,
+    selectedLeague: payload.selectedLeague && isLeagueKey(payload.selectedLeague.key)
+      ? {
+          key: payload.selectedLeague.key,
+          status: toStatus(payload.selectedLeague.status),
+          rows: normalizeRows(LEAGUES.find((league) => league.key === payload.selectedLeague.key)!, Array.isArray(payload.selectedLeague.rows) ? payload.selectedLeague.rows : []),
+          prize: payload.selectedLeague.prize,
+          warning: payload.selectedLeague.warning,
+        }
+      : undefined,
+    currentLeaders: Array.isArray(payload.currentLeaders) && payload.currentLeaders.length ? payload.currentLeaders : leaders,
+    history: Array.isArray(payload.history) ? payload.history : [],
+  };
+}
+
+async function tryLoadFutureSummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions) {
+  const params = new URLSearchParams({ chain, chainId: String(chainId), period, epochOffset: String(epochOffset) });
+  try {
+    const response = await fetch(`/api/league/summary?${params.toString()}`);
+    if (!response.ok) return undefined;
+    const payload = await response.json();
+    return normalizeSummaryPayload(payload, chain, period, epochOffset);
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
   const results = await Promise.all(
     LEAGUES.map(async (league) => {
       const effectivePeriod = league.supports.includes(period) ? period : league.supports[0];
@@ -190,7 +261,7 @@ export async function loadLeagueSummary({
         const response = await fetch(`/api/league?${params.toString()}`);
         const json = (await response.json()) as LegacyLeagueResponse;
         return [league.key, json] as const;
-      } catch (error) {
+      } catch {
         return [league.key, { items: [], warning: "League feed unavailable." } satisfies LegacyLeagueResponse] as const;
       }
     }),
@@ -210,34 +281,18 @@ export async function loadLeagueSummary({
     if (!epoch && payload.epoch) epoch = payload.epoch;
     if (!prize && payload.prize) prize = payload.prize;
 
-    leagues.push({
-      key,
-      title: def.title,
-      status,
-      entrants: rows.length,
-      rows,
-      prize: payload.prize,
-      warning: payload.warning,
-    });
+    leagues.push({ key, title: def.title, status, entrants: rows.length, rows, prize: payload.prize, warning: payload.warning });
 
     const top = rows[0] as any;
-    if (top) {
-      currentLeaders.push({
-        leagueKey: key,
-        leagueTitle: def.title,
-        label: leaderLabel(top),
-        metric: metricFor(def, top),
-      });
-    }
+    if (top) currentLeaders.push({ leagueKey: key, leagueTitle: def.title, label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
-  return {
-    chain,
-    period,
-    epoch,
-    prize,
-    leagues,
-    currentLeaders,
-    history: [],
-  };
+  return { chain, period, epoch, prize, leagues, currentLeaders, history: [] };
+}
+
+export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
+  const futureSummary = await tryLoadFutureSummary(options);
+  if (futureSummary) return futureSummary;
+  if (options.chain === "solana") return solanaPendingSummary(options.chain, options.period, options.epochOffset);
+  return loadLegacySummary(options);
 }
