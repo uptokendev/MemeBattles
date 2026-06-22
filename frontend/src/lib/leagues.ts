@@ -36,7 +36,7 @@ export type LeaguePayoutPolicy = {
 export const DEFAULT_PAID_FIELD_PCT = 0.15;
 export const FUTURE_PAID_FIELD_PCT = 0.2;
 export const PAYOUT_ALPHA = 0.72;
-export const MONTHLY_PLAYER_PRIZE_CAP_USD = 1_500_000;
+export const MONTHLY_PLAYER_PRIZE_CAP_USD = 1_000_000;
 
 export const LEAGUES: LeagueDef[] = [
   {
