@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
 
+const MIN_INITIAL_POT_BNB = 0.1;
 const PUBLIC_LIVE = new Set(["live"]);
 const PUBLIC_QUEUE = new Set(["open_for_battle", "pending", "accepted"]);
 const ARCHIVE = new Set(["completed", "settled"]);
@@ -31,6 +32,11 @@ function normalizeAddress(value) {
 function toNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeInitialPotBnb(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 1e8) / 1e8 : 0;
 }
 
 function participant(row) {
@@ -67,9 +73,16 @@ function mapBattle(row) {
     arenaLane: row.arena_lane || (PUBLIC_QUEUE.has(state) ? "open_for_battle" : "live_battles"),
     scoreBasis: row.score_basis || "market_cap",
     leaderSide: row.leader_side || null,
+    initialPotBnb: normalizeInitialPotBnb(row.initial_pot_bnb),
+    potCurrency: row.pot_currency || "BNB",
+    potStatus: row.pot_status || "pending_escrow",
     updatedAt: row.updated_at || row.created_at || nowIso(),
     participants: Array.isArray(row.participants) ? row.participants : [],
   };
+}
+
+function battleSelect() {
+  return `id, chain_id, state, format, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, leader_side, initial_pot_bnb, pot_currency, pot_status, created_at, updated_at`;
 }
 
 function feedFromBattles(battles) {
@@ -83,7 +96,7 @@ function feedFromBattles(battles) {
 
 async function listBattles() {
   const result = await pool.query(
-    `select id, chain_id, state, format, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, leader_side, created_at, updated_at
+    `select ${battleSelect()}
        from public.arena_battles
       where state in ('open_for_battle', 'pending', 'accepted', 'live', 'completed', 'settled')
       order by coalesce(updated_at, created_at) desc
@@ -94,7 +107,7 @@ async function listBattles() {
 
 async function findBattle(id) {
   const result = await pool.query(
-    `select id, chain_id, state, format, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, leader_side, created_at, updated_at
+    `select ${battleSelect()}
        from public.arena_battles where id = $1 limit 1`,
     [id],
   );
@@ -121,7 +134,7 @@ async function activeBattleFor(row) {
   const campaign = normalizeAddress(row?.campaign_address);
   const token = normalizeAddress(row?.token_address);
   const result = await pool.query(
-    `select id, chain_id, state, format, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, leader_side, created_at, updated_at
+    `select ${battleSelect()}
        from public.arena_battles
       where state in ('open_for_battle', 'pending', 'accepted', 'live', 'completed')
         and (lower(coalesce(primary_campaign_address, '')) = $1 or lower(coalesce(primary_token_address, '')) = $2 or participants::text ilike $3 or participants::text ilike $4)
@@ -152,9 +165,9 @@ async function statusFor(row) {
   const graduated = Boolean(row.graduated_at_chain);
   const active = Boolean(row.is_active);
   const base = { tokenId: normalizeAddress(row.campaign_address), campaignAddress: normalizeAddress(row.campaign_address), tokenAddress: normalizeAddress(row.token_address), tokenName: String(row.name || row.symbol || "Unknown token"), symbol: String(row.symbol || "") };
-  if (battle) return { ...base, eligibility: false, currentState: battle.state, battleState: battle.state, battleId: battle.id, openForBattleState: battle.state === "open_for_battle" ? "open" : "matched", unavailableReason: battle.state === "open_for_battle" ? "already_open_for_battle" : "already_in_battle" };
-  if (graduated) return { ...base, eligibility: false, currentState: "unavailable", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: "graduated_to_dex" };
+  if (battle) return { ...base, eligibility: false, currentState: battle.state, battleState: battle.state, battleId: battle.id, initialPotBnb: battle.initialPotBnb, openForBattleState: battle.state === "open_for_battle" ? "open" : "matched", unavailableReason: battle.state === "open_for_battle" ? "already_open_for_battle" : "already_in_battle" };
   if (!active) return { ...base, eligibility: false, currentState: "unavailable", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: "campaign_inactive" };
+  if (!graduated) return { ...base, eligibility: false, currentState: "unavailable", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: "not_post_grad" };
   return { ...base, eligibility: true, currentState: "eligible", battleState: null, battleId: null, openForBattleState: "not_open", unavailableReason: null };
 }
 
@@ -186,18 +199,20 @@ async function handleOpen(req, res) {
   const body = await readJson(req);
   const chainId = Number(body?.chainId) || 97;
   const identity = String(body?.tokenId || body?.campaignAddress || body?.identity || "");
+  const initialPotBnb = normalizeInitialPotBnb(body?.initialPotBnb);
   if (!identity) return json(res, 400, { ok: false, error: "tokenId is required" });
+  if (initialPotBnb < MIN_INITIAL_POT_BNB) return json(res, 400, { ok: false, error: `initialPotBnb must be at least ${MIN_INITIAL_POT_BNB} BNB`, minInitialPotBnb: MIN_INITIAL_POT_BNB });
 
   const campaign = await campaignByIdentity(chainId, identity);
   if (!campaign) return json(res, 404, { ok: false, error: "Campaign not found", reason: "campaign_not_found" });
   const creatorStatus = await statusFor(campaign);
   if (!creatorStatus.eligibility) return json(res, 409, { ok: false, reason: creatorStatus.unavailableReason || "unavailable", status: creatorStatus });
 
-  const battle = { id: `arena-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`, chainId, state: "open_for_battle", format: "duel", startedAt: nowIso(), endsAt: plusHours(12), settlementAt: plusHours(14), featured: false, arenaLane: "open_for_battle", participants: [participant(campaign), placeholder()] };
+  const battle = { id: `arena-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`, chainId, state: "open_for_battle", format: "duel", startedAt: nowIso(), endsAt: plusHours(12), settlementAt: plusHours(14), featured: false, arenaLane: "open_for_battle", scoreBasis: "market_cap", initialPotBnb, potCurrency: "BNB", potStatus: "pending_escrow", participants: [participant(campaign), placeholder()] };
   await pool.query(
-    `insert into public.arena_battles (id, chain_id, state, format, primary_campaign_address, primary_token_address, creator_address, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14)`,
-    [battle.id, chainId, battle.state, battle.format, normalizeAddress(campaign.campaign_address), normalizeAddress(campaign.token_address) || null, normalizeAddress(campaign.creator_address) || null, JSON.stringify(battle.participants), battle.startedAt, battle.endsAt, battle.settlementAt, false, battle.arenaLane, "market_cap"],
+    `insert into public.arena_battles (id, chain_id, state, format, primary_campaign_address, primary_token_address, creator_address, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, initial_pot_bnb, pot_currency, pot_status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [battle.id, chainId, battle.state, battle.format, normalizeAddress(campaign.campaign_address), normalizeAddress(campaign.token_address) || null, normalizeAddress(campaign.creator_address) || null, JSON.stringify(battle.participants), battle.startedAt, battle.endsAt, battle.settlementAt, false, battle.arenaLane, battle.scoreBasis, initialPotBnb, battle.potCurrency, battle.potStatus],
   );
   return json(res, 200, { ok: true, battle, creatorStatus: await statusFor(campaign) });
 }
@@ -211,7 +226,7 @@ async function handleTransition(req, res, battleId) {
   const nextLane = nextState === "live" ? "live_battles" : PUBLIC_QUEUE.has(nextState) ? "open_for_battle" : "live_battles";
   const result = await pool.query(
     `update public.arena_battles set state = $2, arena_lane = $3, ends_at = case when $2 = 'completed' then now() else ends_at end, settlement_at = case when $2 = 'settled' then now() else settlement_at end, updated_at = now()
-      where id = $1 returning id, chain_id, state, format, participants, started_at, ends_at, settlement_at, featured, arena_lane, score_basis, leader_side, created_at, updated_at`,
+      where id = $1 returning ${battleSelect()}`,
     [battleId, nextState, nextLane],
   );
   return json(res, 200, { ok: true, battle: mapBattle(result.rows?.[0]) });
