@@ -9,6 +9,20 @@ function clampLimit(value) {
 }
 
 const REVIEWABLE_STATUSES = ["pending", "review", "started", "ready", "rejected", "expired"];
+const SOCIAL_VERIFICATION_TYPES = [
+  "manual_review",
+  "social_metric",
+  "social_account",
+  "telegram_join",
+  "discord_join",
+  "telegram_discord_activity",
+  "x_follow",
+  "x_bio_link",
+  "x_unique_post_likes",
+  "x_reply_quality",
+  "x_quote_impressions",
+  "x_post_impressions",
+];
 
 function normalizeStatus(value) {
   const status = String(value || "").trim().toLowerCase();
@@ -50,15 +64,15 @@ export default async function wmAdminSocialChecksList(req, res) {
     const status = normalizeStatus(req.query?.status) || "reviewable";
     const provider = String(req.query?.provider || "").trim().toLowerCase();
 
-    const params = [limit];
-    let statusFilter = "and qc.status = any($2::text[])";
+    const params = [limit, SOCIAL_VERIFICATION_TYPES];
+    let statusFilter = "and qc.status = any($3::text[])";
     params.push(REVIEWABLE_STATUSES);
 
     if (status && !["all", "reviewable"].includes(status)) {
-      params[1] = [status];
+      params[2] = [status];
     } else if (status === "all") {
       statusFilter = "";
-      params.splice(1, 1);
+      params.splice(2, 1);
     }
 
     let providerFilter = "";
@@ -106,7 +120,7 @@ export default async function wmAdminSocialChecksList(req, res) {
           order by vl.created_at desc
           limit 1
         ) vl on true
-        where qt.verification_type in ('manual_review', 'social_metric', 'social_account', 'telegram_join', 'discord_join')
+        where qt.verification_type = any($2::text[])
           ${statusFilter}
           ${providerFilter}
         order by qc.updated_at desc nulls last, qc.created_at desc nulls last

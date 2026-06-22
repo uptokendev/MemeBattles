@@ -16,37 +16,73 @@ function discordRedirectUri(req) {
   return `${proto}://${host}/api/wm-discord-oauth-callback`;
 }
 
+async function loadReusableChallenge(token) {
+  const { rows } = await pool.query(
+    `
+      select *
+      from public.wm_social_link_challenges
+      where provider = 'discord'
+        and token = $1
+        and consumed_at is null
+        and expires_at > now()
+      order by created_at desc
+      limit 1
+    `,
+    [String(token || "")],
+  );
+  return rows[0] || null;
+}
+
 export default async function wmDiscordOAuthStart(req, res) {
   if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
-  const auth = readWarAuth(req);
-  if (!auth) return unauthorized(res);
-
   try {
-    const user = await getUserById(auth.userId);
-    if (!user || user.wallet_address !== auth.address) {
-      return unauthorized(res, "War Missions session is no longer valid.");
-    }
-    if (user.is_banned) return res.status(403).json({ error: "This wallet is excluded from War Missions." });
-
     const clientId = String(process.env.DISCORD_CLIENT_ID || "").trim();
     if (!clientId) return res.status(503).json({ error: "Discord OAuth is not configured yet." });
 
-    const token = makeChallengeToken();
-    await pool.query(
-      `
-        insert into public.wm_social_link_challenges
-          (user_id, provider, token, expires_at)
-        values ($1, 'discord', $2, now() + interval '10 minutes')
-      `,
-      [user.id, token],
-    );
+    const auth = readWarAuth(req);
+    const linkToken = String(req.query?.linkToken || "").trim();
+
+    let user = null;
+    let token = "";
+
+    if (auth) {
+      user = await getUserById(auth.userId);
+      if (!user || user.wallet_address !== auth.address) {
+        return unauthorized(res, "War Missions session is no longer valid.");
+      }
+      if (user.is_banned) return res.status(403).json({ error: "This wallet is excluded from War Missions." });
+
+      token = makeChallengeToken();
+      await pool.query(
+        `
+          insert into public.wm_social_link_challenges
+            (user_id, provider, token, expires_at)
+          values ($1, 'discord', $2, now() + interval '10 minutes')
+        `,
+        [user.id, token],
+      );
+    } else if (linkToken) {
+      const challenge = await loadReusableChallenge(linkToken);
+      if (!challenge) {
+        return res.status(401).json({ error: "Discord reconnect link expired. Refresh the quest page and try again." });
+      }
+
+      user = await getUserById(challenge.user_id);
+      if (!user || user.is_banned) {
+        return res.status(403).json({ error: "This wallet is excluded from War Missions." });
+      }
+
+      token = challenge.token;
+    } else {
+      return unauthorized(res);
+    }
 
     const redirectUri = discordRedirectUri(req);
     const url = new URL("https://discord.com/oauth2/authorize");
     url.searchParams.set("response_type", "code");
     url.searchParams.set("client_id", clientId);
-    url.searchParams.set("scope", "identify");
+    url.searchParams.set("scope", "identify guilds");
     url.searchParams.set("state", token);
     url.searchParams.set("redirect_uri", redirectUri);
     url.searchParams.set("prompt", "consent");

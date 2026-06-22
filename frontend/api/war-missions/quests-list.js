@@ -1,8 +1,9 @@
 import { pool } from "../../server/db.js";
 import { readWarAuth } from "./_lib/auth.js";
 import { ensureCurrentQuestInstances } from "./_lib/periods.js";
-import { buildWarProfile, getUserById } from "./_lib/profile.js";
+import { buildWarProfile, getUserById, syncDailyWarpathQuestForUser } from "./_lib/profile.js";
 import { verifyCommunityJoinQuestsForUser } from "./_lib/community-membership.js";
+import { verifyXFollowQuestForUser } from "./_lib/x-follow.js";
 
 async function getOptionalUser(req) {
   const auth = readWarAuth(req);
@@ -36,8 +37,17 @@ export default async function wmQuestsList(req, res) {
   try {
     const user = await getOptionalUser(req);
     if (user) {
-      await verifyCommunityJoinQuestsForUser(user, "quests_list_auto_check").catch((error) => {
-        console.warn("[war-missions/quests-list] community auto-check skipped", error?.message || error);
+      await Promise.all([
+        verifyCommunityJoinQuestsForUser(user, "quests_list_auto_check").catch((error) => {
+          console.warn("[war-missions/quests-list] community auto-check skipped", error?.message || error);
+        }),
+        verifyXFollowQuestForUser(user, "quests_list_auto_check").catch((error) => {
+          console.warn("[war-missions/quests-list] x auto-check skipped", error?.message || error);
+        }),
+      ]);
+
+      await syncDailyWarpathQuestForUser(user.id).catch((error) => {
+        console.warn("[war-missions/quests-list] daily warpath auto-sync skipped", error?.message || error);
       });
     }
 

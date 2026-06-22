@@ -1,17 +1,7 @@
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, json, readJson } from "../server/http.js";
 
-const VALID_STATUSES = new Set([
-  "submitted",
-  "under_review",
-  "approved",
-  "rejected",
-  "paid",
-  "scheduled",
-  "active",
-  "expired",
-  "paused",
-]);
+const VALID_STATUSES = new Set(["submitted", "under_review", "approved", "rejected", "paid", "scheduled", "active", "expired", "paused"]);
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -30,8 +20,7 @@ function normalizeDate(value) {
   const text = String(value ?? "").trim();
   if (!text) return null;
   const date = new Date(text);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function normalizeStatus(value, fallback = "submitted") {
@@ -62,137 +51,104 @@ function mapRow(row) {
 
 async function listApplications(req, res) {
   const q = getQuery(req);
-  const status = String(q.status || "all").trim().toLowerCase();
+  const status = normalizeStatus(q.status, "all");
   const limit = clamp(toInt(q.limit, 50), 1, 200);
-
   const values = [];
   let where = "";
-  if (status && status !== "all" && VALID_STATUSES.has(status)) {
+  if (status !== "all") {
     values.push(status);
-    where = `WHERE sa.status = $${values.length}`;
+    where = `where status = $${values.length}`;
   }
   values.push(limit);
 
   const result = await pool.query(
-    `SELECT
-       sa.id,
-       sa.project_name AS "projectName",
-       sa.contact_name AS "contactName",
-       sa.contact_channel AS "contactChannel",
-       sa.applicant_wallet AS "applicantWallet",
-       sa.website_url AS "websiteUrl",
-       sa.image_url AS "imageUrl",
-       sa.bio,
-       sa.preferred_slot AS "preferredSlot",
-       sa.preferred_start AS "preferredStart",
-       sa.preferred_end AS "preferredEnd",
-       sa.payment_reference AS "paymentReference",
-       sa.notes,
-       sa.status,
-       sa.created_at AS "createdAt",
-       sa.updated_at AS "updatedAt"
-     FROM sponsorship_applications sa
+    `select
+       id,
+       project_name as "projectName",
+       contact_name as "contactName",
+       contact_channel as "contactChannel",
+       applicant_wallet as "applicantWallet",
+       website_url as "websiteUrl",
+       image_url as "imageUrl",
+       bio,
+       preferred_slot as "preferredSlot",
+       preferred_start as "preferredStart",
+       preferred_end as "preferredEnd",
+       payment_reference as "paymentReference",
+       notes,
+       status,
+       created_at as "createdAt",
+       updated_at as "updatedAt"
+     from public.sponsorship_applications
      ${where}
-     ORDER BY sa.created_at DESC
-     LIMIT $${values.length}`,
+     order by created_at desc
+     limit $${values.length}`,
     values,
   );
-
-  return json(res, 200, {
-    items: result.rows.map(mapRow),
-    updatedAt: new Date().toISOString(),
-  });
+  return json(res, 200, { items: result.rows.map(mapRow), updatedAt: new Date().toISOString() });
 }
 
 async function createApplication(req, res) {
   const body = await readJson(req);
-
   const projectName = cleanText(body.projectName, 120);
   const contactName = cleanText(body.contactName, 120);
   const contactChannel = cleanText(body.contactChannel, 160);
-  const applicantWallet = cleanText(body.applicantWallet, 160);
   const websiteUrl = cleanText(body.websiteUrl, 500);
-  const imageUrl = cleanText(body.imageUrl, 500);
   const bio = cleanText(body.bio, 500);
-  const preferredSlot = cleanText(body.preferredSlot, 80) || "homepage-sponsored-rail";
-  const preferredStart = normalizeDate(body.preferredStart);
-  const preferredEnd = normalizeDate(body.preferredEnd);
-  const paymentReference = cleanText(body.paymentReference, 160);
-  const notes = cleanText(body.notes, 1000);
-  const status = normalizeStatus(body.status, "submitted");
-
   if (!projectName || !contactName || !contactChannel || !websiteUrl || !bio) {
     return json(res, 400, { error: "projectName, contactName, contactChannel, websiteUrl, and bio are required" });
   }
 
+  const values = [
+    projectName,
+    contactName,
+    contactChannel,
+    cleanText(body.applicantWallet, 160) || null,
+    websiteUrl,
+    cleanText(body.imageUrl, 500) || null,
+    bio,
+    cleanText(body.preferredSlot, 80) || "homepage-sponsored-rail",
+    normalizeDate(body.preferredStart),
+    normalizeDate(body.preferredEnd),
+    cleanText(body.paymentReference, 160) || null,
+    cleanText(body.notes, 1000) || null,
+    normalizeStatus(body.status, "submitted"),
+  ];
+
   const result = await pool.query(
-    `INSERT INTO sponsorship_applications (
-       project_name,
-       contact_name,
-       contact_channel,
-       applicant_wallet,
-       website_url,
-       image_url,
-       bio,
-       preferred_slot,
-       preferred_start,
-       preferred_end,
-       payment_reference,
-       notes,
-       status
-     ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
-     )
-     RETURNING
+    `insert into public.sponsorship_applications (
+       project_name, contact_name, contact_channel, applicant_wallet, website_url, image_url, bio,
+       preferred_slot, preferred_start, preferred_end, payment_reference, notes, status
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     returning
        id,
-       project_name AS "projectName",
-       contact_name AS "contactName",
-       contact_channel AS "contactChannel",
-       applicant_wallet AS "applicantWallet",
-       website_url AS "websiteUrl",
-       image_url AS "imageUrl",
+       project_name as "projectName",
+       contact_name as "contactName",
+       contact_channel as "contactChannel",
+       applicant_wallet as "applicantWallet",
+       website_url as "websiteUrl",
+       image_url as "imageUrl",
        bio,
-       preferred_slot AS "preferredSlot",
-       preferred_start AS "preferredStart",
-       preferred_end AS "preferredEnd",
-       payment_reference AS "paymentReference",
+       preferred_slot as "preferredSlot",
+       preferred_start as "preferredStart",
+       preferred_end as "preferredEnd",
+       payment_reference as "paymentReference",
        notes,
        status,
-       created_at AS "createdAt",
-       updated_at AS "updatedAt"`,
-    [
-      projectName,
-      contactName,
-      contactChannel,
-      applicantWallet || null,
-      websiteUrl,
-      imageUrl || null,
-      bio,
-      preferredSlot,
-      preferredStart,
-      preferredEnd,
-      paymentReference || null,
-      notes || null,
-      status,
-    ],
+       created_at as "createdAt",
+       updated_at as "updatedAt"`,
+    values,
   );
-
-  return json(res, 201, {
-    item: mapRow(result.rows[0]),
-    updatedAt: new Date().toISOString(),
-  });
+  return json(res, 201, { item: mapRow(result.rows[0]), updatedAt: new Date().toISOString() });
 }
 
 export default async function handler(req, res) {
   try {
-    if (req.method === "GET") return await listApplications(req, res);
-    if (req.method === "POST") return await createApplication(req, res);
+    if (req.method === "GET") return listApplications(req, res);
+    if (req.method === "POST") return createApplication(req, res);
     return badMethod(res);
   } catch (error) {
     console.error("[api/sponsorship-applications] request failed", error);
-    return json(res, 503, {
-      error: "Sponsorship application storage is unavailable",
-      detail: String(error?.message || error || "unknown error"),
-    });
+    return json(res, 503, { error: "Sponsorship application storage is unavailable", detail: String(error?.message || error || "unknown error") });
   }
 }

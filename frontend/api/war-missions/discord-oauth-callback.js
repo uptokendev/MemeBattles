@@ -81,6 +81,19 @@ async function fetchDiscordUser(accessToken) {
   return json;
 }
 
+async function fetchDiscordGuilds(accessToken) {
+  const response = await fetch("https://discord.com/api/users/@me/guilds", {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+
+  const json = await response.json().catch(() => null);
+  if (!response.ok || !Array.isArray(json)) {
+    return [];
+  }
+
+  return json;
+}
+
 function discordDisplayName(discordUser) {
   const globalName = String(discordUser?.global_name || "").trim();
   if (globalName) return globalName;
@@ -88,6 +101,28 @@ function discordDisplayName(discordUser) {
   const discriminator = String(discordUser?.discriminator || "").trim();
   if (username && discriminator && discriminator !== "0") return `${username}#${discriminator}`;
   return username || String(discordUser?.id || "").trim();
+}
+
+function guildMembershipFromOAuth(guilds = []) {
+  const requiredGuildId = String(process.env.DISCORD_REQUIRED_GUILD_ID || "").trim();
+  if (!requiredGuildId) return null;
+
+  const matched = guilds.find((guild) => String(guild?.id || "") === requiredGuildId);
+  if (!matched) return { checked: true, ok: false, status: "not_member", error: null, source: "oauth_guilds" };
+
+  return {
+    checked: true,
+    ok: true,
+    status: "member",
+    error: null,
+    source: "oauth_guilds",
+    guild: {
+      id: matched.id,
+      name: matched.name || null,
+      owner: Boolean(matched.owner),
+      permissions: matched.permissions || null,
+    },
+  };
 }
 
 async function upsertDiscordAccount({ userId, discordUser }) {
@@ -168,7 +203,9 @@ export default async function wmDiscordOAuthCallback(req, res) {
 
     const token = await exchangeCodeForToken({ code, redirectUri: discordRedirectUri(req) });
     const discordUser = await fetchDiscordUser(token.access_token);
-    const membership = await checkDiscordMembership(discordUser.id);
+    const discordGuilds = await fetchDiscordGuilds(token.access_token);
+    const oauthMembership = guildMembershipFromOAuth(discordGuilds);
+    const membership = oauthMembership || await checkDiscordMembership(discordUser.id);
     const linked = await upsertDiscordAccount({ userId: user.id, discordUser });
 
     await submitSocialStartHereQuest({
@@ -195,7 +232,7 @@ export default async function wmDiscordOAuthCallback(req, res) {
 
     if (membership.ok) {
       await verifyCommunityJoinQuestByProviderUserId("discord", discordUser.id, "discord_oauth_membership_check", {
-        source: "oauth_callback",
+        source: membership.source || "oauth_callback",
       });
     }
 

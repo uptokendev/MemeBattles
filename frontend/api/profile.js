@@ -1,15 +1,16 @@
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json, readJson } from "../server/http.js";
 
 function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }) {
   const name = String(displayName ?? "").trim().slice(0, 32);
   const avatar = String(avatarUrl ?? "").trim().slice(0, 200);
+  // address here is already normalized (raw base58 for Solana, lower 0x for EVM)
   return [
     "MemeBattles Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${chainId}`,
-    `Address: ${String(address).toLowerCase()}`,
+    `Address: ${address}`,
     `Nonce: ${nonce}`,
     "",
     `DisplayName: ${name}`,
@@ -63,9 +64,13 @@ export default async function handler(req, res) {
     try {
       const q = getQuery(req);
       const chainId = Number(q.chainId);
-      const address = String(q.address ?? "").toLowerCase();
+      const raw = String(q.address ?? "").trim();
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+
+      const isSol = isSolanaChain(chainId);
+      const addr = normalizeAddress(raw, chainId);
+      if (!addr) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
 
       const { rows } = await pool.query(
         `SELECT address,
@@ -73,19 +78,18 @@ export default async function handler(req, res) {
                 display_name AS "displayName",
                 avatar_url AS "avatarUrl",
                 bio,
-                updated_at AS "updatedAt",
-                created_at AS "createdAt"
+                updated_at AS "updatedAt"
            FROM user_profiles
           WHERE chain_id = $1 AND address = $2
           LIMIT 1`,
-        [chainId, address]
+        [chainId, addr]
       );
 
       const profile = rows[0] ?? null;
-      const rankState = await loadRankState(chainId, address);
+      const rankState = await loadRankState(chainId, addr);
 
       return json(res, 200, {
-        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address, displayName: null, avatarUrl: null, bio: null, updatedAt: null, createdAt: null, ...rankState } : null,
+        profile: profile ? { ...profile, ...(rankState ?? {}) } : rankState ? { chainId, address: addr, displayName: null, avatarUrl: null, bio: null, updatedAt: null, ...rankState } : null,
       });
     } catch (e) {
       // Common deployment footguns: missing table/columns after a new migration.
@@ -103,7 +107,7 @@ export default async function handler(req, res) {
     try {
       const b = await readJson(req);
       const chainId = Number(b.chainId);
-      const address = String(b.address ?? "").toLowerCase();
+      const raw = String(b.address ?? "").trim();
       const displayName = String(b.displayName ?? "").trim().slice(0, 32);
       const avatarUrl = String(b.avatarUrl ?? "").trim().slice(0, 200) || null;
       const bio = String(b.bio ?? "").trim().slice(0, 280) || null;
@@ -111,7 +115,11 @@ export default async function handler(req, res) {
       const signature = String(b.signature ?? "");
 
       if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-      if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+
+      const isSol = isSolanaChain(chainId);
+      const address = normalizeAddress(raw, chainId);
+      if (!address) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && !isAddress(address)) return json(res, 400, { error: "Invalid address" });
       if (!nonce) return json(res, 400, { error: "Nonce missing" });
       if (!signature) return json(res, 400, { error: "Signature missing" });
       if (!pool) return json(res, 500, { error: "Server misconfigured: DATABASE_URL missing" });

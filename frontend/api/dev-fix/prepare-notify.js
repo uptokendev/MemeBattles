@@ -1,8 +1,8 @@
-import { isAddress } from "../../server/http.js";
+import { isSolanaChain, normalizeAddress as centralNormalize } from "../../server/http.js";
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeAddress(value, chainId) {
+  // Use central server normalizer for full Solana (raw base58) + EVM support
+  return centralNormalize(value, chainId);
 }
 
 function cleanText(value, max = 600) {
@@ -41,7 +41,8 @@ export async function insertPrepareNotification(pool, input) {
 }
 
 export async function notifyDraftOwner(pool, draft, input) {
-  const owner = normalizeAddress(draft?.creatorWallet || draft?.creator_wallet);
+  const chainId = draft?.chainId ?? draft?.chain_id ?? null;
+  const owner = normalizeAddress(draft?.creatorWallet || draft?.creator_wallet, chainId);
   if (!owner) return null;
 
   return insertPrepareNotification(pool, {
@@ -66,7 +67,8 @@ export async function notifyDraftSubscribers(pool, draft, input) {
       )
     `);
 
-    const owner = normalizeAddress(draft?.creatorWallet || draft?.creator_wallet);
+    const chainId = draft?.chainId ?? draft?.chain_id ?? null;
+    const owner = normalizeAddress(draft?.creatorWallet || draft?.creator_wallet, chainId);
     const result = await pool.query(
       `select wallet_address
          from public.campaign_draft_notification_subscriptions
@@ -76,7 +78,7 @@ export async function notifyDraftSubscribers(pool, draft, input) {
 
     let count = 0;
     for (const row of result.rows) {
-      const wallet = normalizeAddress(row.wallet_address);
+      const wallet = normalizeAddress(row.wallet_address, chainId);
       if (!wallet || (owner && wallet === owner)) continue;
       const inserted = await insertPrepareNotification(pool, {
         walletAddress: wallet,

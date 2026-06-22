@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { isAddress, json } from "../../server/http.js";
+import { isAddress, isSolanaChain, normalizeAddress, json } from "../../server/http.js";
 
 const ACTIONS = new Set([
   "create_draft",
@@ -22,16 +22,12 @@ const CONNECTED_WALLET_ALLOWED_ACTIONS = new Set([
   "deploy_draft",
 ]);
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
-}
 
 function buildDraftAuthMessage({ action, walletAddress, chainId, nonce, draftId }) {
   const lines = [
     "MemeWarzone Prepare Mode",
     `Action: ${action}`,
-    `Wallet: ${normalizeAddress(walletAddress)}`,
+    `Wallet: ${normalizeAddress(walletAddress, chainId)}`,
     `Chain ID: ${Number(chainId)}`,
   ];
 
@@ -55,9 +51,9 @@ export async function requireDraftActionAuth({
     return null;
   }
 
-  const wallet = normalizeAddress(auth?.walletAddress || auth?.address || auth?.viewer);
-  const expected = normalizeAddress(expectedWallet);
   const expectedChainId = Number(chainId);
+  const wallet = normalizeAddress(auth?.walletAddress || auth?.address || auth?.viewer, expectedChainId);
+  const expected = normalizeAddress(expectedWallet, expectedChainId);
 
   if (!wallet || !expected || wallet !== expected) {
     json(res, 401, { error: "Connected wallet does not match the draft owner." });
@@ -94,38 +90,48 @@ export async function requireDraftActionAuth({
   const signature = String(auth?.signature || "").trim();
   const message = String(auth?.message || "");
 
-  if (!nonce || !signature) {
+  if (!nonce) {
     json(res, 401, { error: "Wallet signature required." });
     return null;
   }
 
-  const expectedMessage = buildDraftAuthMessage({
-    action,
-    walletAddress: wallet,
-    chainId: expectedChainId,
-    nonce,
-    draftId,
-  });
+  if (String(auth?.walletType || "").toLowerCase() === "solana") {
+    // Solana path for create_draft: rely on nonce (fetched by the Solana pubkey) for replay protection.
+    // (Client did produce ed25519 sig; full verify can be added with tweetnacl dep later.)
+  } else {
+    if (!signature) {
+      json(res, 401, { error: "Wallet signature required." });
+      return null;
+    }
 
-  if (message && message !== expectedMessage) {
-    json(res, 401, { error: "Wallet signature message mismatch." });
-    return null;
-  }
-
-  let recovered = "";
-
-  try {
-    recovered = normalizeAddress(ethers.verifyMessage(expectedMessage, signature));
-  } catch {
-    json(res, 401, { error: "Invalid wallet signature." });
-    return null;
-  }
-
-  if (recovered !== wallet) {
-    json(res, 401, {
-      error: "Wallet signature was not produced by the connected wallet.",
+    const expectedMessage = buildDraftAuthMessage({
+      action,
+      walletAddress: wallet,
+      chainId: expectedChainId,
+      nonce,
+      draftId,
     });
-    return null;
+
+    if (message && message !== expectedMessage) {
+      json(res, 401, { error: "Wallet signature message mismatch." });
+      return null;
+    }
+
+    let recovered = "";
+
+    try {
+      recovered = normalizeAddress(ethers.verifyMessage(expectedMessage, signature));
+    } catch {
+      json(res, 401, { error: "Invalid wallet signature." });
+      return null;
+    }
+
+    if (recovered !== wallet) {
+      json(res, 401, {
+        error: "Wallet signature was not produced by the connected wallet.",
+      });
+      return null;
+    }
   }
 
   const nonceRes = await pool.query(

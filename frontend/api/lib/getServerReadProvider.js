@@ -1,57 +1,101 @@
+import { ethers } from "ethers";
+
 /**
- * Server equivalent of src/lib/readProvider.ts
- * Provides a read-only ethers JsonRpcProvider for on-chain calls from API routes.
+ * Server equivalent of src/lib/readProvider.ts — keep config choices in sync.
  *
- * Env precedence (same spirit as other api/ files):
+ * IMPORTANT (same as client):
+ * - We DISABLE batching (batchMaxCount: 1) because public BSC endpoints
+ *   often rate-limit when getLogs requests are batched.
+ * - We set staticNetwork to avoid extra "detectNetwork" chatter.
+ *
+ * RPC selection logic adapted from:
+ *   - api/dev-fix/route-auth.js:getRpcUrl
+ *   - api/league.js
+ *
+ * Supports env vars:
  *   BSC_RPC_HTTP_${chainId}
  *   VITE_PUBLIC_RPC_${chainId}
- *   Hardcoded public fallbacks for BSC (97/56)
+ *   BSC_RPC_HTTP / VITE_BSC_MAINNET_RPC etc. as fallbacks.
  */
 
-import { JsonRpcProvider, FallbackProvider } from "ethers";
+const providerCache = new Map();
 
-const DEFAULT_BATCH = { batchMaxCount: 1, batchStallTime: 0 };
-
-function getRpcCandidates(chainId) {
-  const id = Number(chainId) || 97;
-  const envPrimary = process.env[`BSC_RPC_HTTP_${id}`] || process.env[`VITE_PUBLIC_RPC_${id}`] || "";
-
-  const seeds = [];
-
-  if (envPrimary) seeds.push(envPrimary);
-
-  // Common public / community endpoints as last-resort fallbacks
-  if (id === 56) {
-    seeds.push("https://bsc-dataseed.binance.org");
-    seeds.push("https://bsc-dataseed1.defibit.io");
-  } else if (id === 97) {
-    seeds.push("https://data-seed-prebsc-1-s1.binance.org:8545");
-    seeds.push("https://data-seed-prebsc-2-s1.binance.org:8545");
-  }
-
-  // Dedupe while preserving order
-  return [...new Set(seeds.filter(Boolean))];
+function networkName(chainId) {
+  return chainId === 56 ? "bsc" : "bsc-testnet";
 }
 
-export function getServerReadProvider(chainId = 97) {
-  const candidates = getRpcCandidates(chainId);
-  if (candidates.length === 0) {
-    throw new Error(`[getServerReadProvider] No RPC configured for chainId=${chainId}`);
+function firstCsvValue(value) {
+  return String(value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)[0] || "";
+}
+
+function getRpcUrl(chainId) {
+  // Primary: per-chain explicit
+  const perChain =
+    process.env[`BSC_RPC_HTTP_${chainId}`] ||
+    process.env[`VITE_PUBLIC_RPC_${chainId}`];
+
+  const perChainFirst = firstCsvValue(perChain);
+  if (perChainFirst) return perChainFirst;
+
+  if (chainId === 56) {
+    return firstCsvValue(
+      process.env.BSC_RPC_HTTP_56 ||
+      process.env.VITE_BSC_MAINNET_RPC ||
+      process.env.BSC_RPC_HTTP
+    );
   }
 
-  if (candidates.length === 1) {
-    return new JsonRpcProvider(candidates[0], Number(chainId), {
-      staticNetwork: true,
-      ...DEFAULT_BATCH,
-    });
+  if (chainId === 97) {
+    return firstCsvValue(
+      process.env.BSC_RPC_HTTP_97 ||
+      process.env.VITE_BSC_TESTNET_RPC ||
+      process.env.BSC_RPC_HTTP
+    );
   }
 
-  // Fallback provider for resilience
-  const providers = candidates.map((url) =>
-    new JsonRpcProvider(url, Number(chainId), { staticNetwork: true, ...DEFAULT_BATCH })
+  // Last resort fallback from league.js style
+  const fallback = String(process.env.BSC_RPC_HTTP || "").trim();
+  if (fallback) return fallback;
+
+  return "";
+}
+
+/**
+ * Returns a read-only provider for server-side on-chain reads.
+ * Uses the exact same configuration decisions as the browser getReadProvider.
+ */
+export function getServerReadProvider(chainId) {
+  const numChainId = Number(chainId);
+  if (!Number.isFinite(numChainId)) {
+    throw new Error(`Invalid chainId for getServerReadProvider: ${chainId}`);
+  }
+
+  const cached = providerCache.get(numChainId);
+  if (cached) return cached;
+
+  const url = getRpcUrl(numChainId);
+  if (!url) {
+    throw new Error(`Missing RPC URL for chainId=${numChainId} (check BSC_RPC_HTTP_${numChainId} or VITE_PUBLIC_RPC_${numChainId})`);
+  }
+
+  const network = ethers.Network.from(numChainId);
+  network.name = networkName(numChainId);
+
+  const provider = new ethers.JsonRpcProvider(
+    url,
+    network,
+    {
+      staticNetwork: network,
+      batchMaxCount: 1,
+      batchStallTime: 0,
+    }
   );
 
-  return new FallbackProvider(providers, Number(chainId));
+  providerCache.set(numChainId, provider);
+  return provider;
 }
 
-export default getServerReadProvider;
+export { getRpcUrl };

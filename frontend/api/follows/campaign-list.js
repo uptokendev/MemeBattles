@@ -1,13 +1,16 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json } from "../../server/http.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 0) || 0;
-    const user = String(q.user ?? "").toLowerCase();
-    if (!isAddress(user)) return json(res, 400, { error: "Invalid address" });
+    const rawUser = String(q.user ?? "").trim();
+    const isSol = isSolanaChain(chainId);
+    const user = normalizeAddress(rawUser, chainId);
+    if (!user) return json(res, 400, { error: "Invalid address" });
+    if (!isSol && !isAddress(user)) return json(res, 400, { error: "Invalid address" });
 
     const { rows } = await pool.query(
       `SELECT campaign_address

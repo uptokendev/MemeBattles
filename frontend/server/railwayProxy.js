@@ -1,116 +1,70 @@
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
-const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
 
 const EXACT_RAILWAY_PATHS = new Set([]);
-const TOKEN_INDEXER_PATH_PREFIXES = [
-  "/api/ably/token",
-  "/api/league",
-  "/api/leaguePayouts",
-  "/api/leagueRoot",
-  "/api/token/",
-  "/api/vote_counts",
-  "/api/votes",
-];
 
-const FRONTEND_PRODUCT_PATH_PREFIXES = [
+const DEV_ALLOWED_IPS = new Set(
+  String(process.env.DEV_ALLOWED_IPS || "185.184.192.242")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+function isDevAllowedIP(req) {
+  if (DEV_ALLOWED_IPS.size === 0) return false;
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = forwarded || req.ip || req.socket?.remoteAddress || "";
+  const clean = ip.replace(/^::ffff:/, ""); // handle IPv4-mapped IPv6
+  return DEV_ALLOWED_IPS.has(ip) || DEV_ALLOWED_IPS.has(clean);
+}
+
+console.log(`[railway-proxy] DEV_ALLOWED_IPS loaded: ${Array.from(DEV_ALLOWED_IPS).join(", ") || "(none)"}`);
+
+const RAILWAY_PATH_PREFIXES = [
   "/api/ably",
   "/api/activity",
-  "/api/airdrops",
-  "/api/arena",
-  "/api/attribution",
   "/api/auth",
-  "/api/calendar",
   "/api/campaigns",
-  "/api/chat",
   "/api/comments",
-  "/api/content-ai",
-  "/api/content-campaigns",
-  "/api/content-tags",
+  "/api/chat",
   "/api/diagnostics",
   "/api/drafts",
   "/api/epochPools",
   "/api/featured",
   "/api/follows",
-  "/api/internal",
   "/api/league",
   "/api/leaguePayouts",
   "/api/leagueRoot",
-  "/api/posts",
   "/api/prepare",
   "/api/prepare-notifications",
   "/api/profile",
   "/api/profileCabinet",
+  "/api/rewards",
+  "/api/airdrops",
+  "/api/squads",
+  "/api/recruiters",
   "/api/recruiter-auth",
   "/api/recruiter-logout",
   "/api/recruiter-portal",
   "/api/recruiter-routing",
   "/api/recruiter-signup",
-  "/api/recruiters",
-  "/api/rewards",
   "/api/routing",
-  "/api/schedules",
   "/api/shareCard",
-  "/api/social-x-callback",
-  "/api/sponsored",
-  "/api/sponsorship-applications",
-  "/api/squads",
   "/api/status",
   "/api/token/",
   "/api/token-metadata",
-  "/api/upload",
-  "/api/variants",
-  "/api/vote_counts",
+  // "/api/upload" is intentionally NOT proxied here (see shouldProxyToRailway) because
+  // multipart/form-data bodies cannot be correctly forwarded by the current JSON-body
+  // reconstruction logic. Uploads are always handled by a process that has the raw
+  // request stream + Supabase credentials mounted directly.
   "/api/votes",
-  "/api/war-room",
-  "/api/wm-",
+  "/api/vote_counts",
   "/internal/",
 ];
 
-const RAILWAY_PATH_PREFIXES = [
-  ...TOKEN_INDEXER_PATH_PREFIXES,
-  ...FRONTEND_PRODUCT_PATH_PREFIXES,
-];
-
-const UPSTREAMS = {
-  frontendProduct: {
-    key: "frontend-product",
-    label: "frontend/product",
-    envNames: [
-      "RAILWAY_FRONTEND_API_BASE_URL",
-      "FRONTEND_RAILWAY_API_BASE_URL",
-      "MEMEWARZONE_FRONTEND_API_BASE_URL",
-      "RAILWAY_API_BASE_URL",
-    ],
-  },
-  tokenIndexer: {
-    key: "token-indexer",
-    label: "token/indexer",
-    envNames: [
-      "RAILWAY_TOKEN_API_BASE_URL",
-      "TOKEN_RAILWAY_API_BASE_URL",
-      "RAILWAY_INDEXER_URL",
-      "RAILWAY_API_BASE_URL",
-    ],
-  },
-};
-
 const FALLBACK_STATUSES = new Set([404, 405]);
-const EMPTY_FEED_FALLBACK_PATHS = new Set(["/api/featured", "/api/war-room"]);
 
 function truthy(value) {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
-}
-
-function explicitFalsy(value) {
-  return FALSE_VALUES.has(String(value || "").trim().toLowerCase());
-}
-
-function firstConfiguredEnvValue(names) {
-  for (const name of names) {
-    const value = String(process.env[name] || "").trim();
-    if (value) return value;
-  }
-  return "";
 }
 
 function railwayProxyEnabled() {
@@ -118,25 +72,20 @@ function railwayProxyEnabled() {
 }
 
 function railwayProxyStrict() {
-  const configured = firstConfiguredEnvValue(["API_RAILWAY_PROXY_STRICT", "RAILWAY_API_PROXY_STRICT"]);
-  if (explicitFalsy(configured)) return false;
-  if (truthy(configured)) return true;
-  return railwayProxyEnabled();
+  return truthy(process.env.API_RAILWAY_PROXY_STRICT || process.env.RAILWAY_API_PROXY_STRICT);
 }
 
-function normalizeBaseUrl(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-  const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+function railwayBaseUrl() {
+  const raw = String(
+    process.env.RAILWAY_API_BASE_URL ||
+      process.env.RAILWAY_INDEXER_URL ||
+      process.env.VITE_REALTIME_API_BASE ||
+      ""
+  ).trim();
+
+  if (!raw) return "";
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   return withProtocol.replace(/\/+$/, "");
-}
-
-function railwayBaseUrl(upstream = UPSTREAMS.frontendProduct) {
-  for (const envName of upstream.envNames) {
-    const base = normalizeBaseUrl(process.env[envName]);
-    if (base) return { base, envName };
-  }
-  return { base: "", envName: "" };
 }
 
 function normalizeProxyPath(req, { prefixApiWhenMissing = false } = {}) {
@@ -158,37 +107,52 @@ function normalizeProxyPath(req, { prefixApiWhenMissing = false } = {}) {
   return path;
 }
 
-function pathMatchesPrefix(pathname, prefix) {
-  if (prefix.endsWith("/") || prefix.endsWith("-")) return pathname.startsWith(prefix);
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
-}
-
-function getPathname(path) {
-  try {
-    return new URL(path, "http://localhost").pathname;
-  } catch {
-    return String(path || "").split("?")[0] || "/";
-  }
-}
-
 function shouldProxyToRailway(path) {
-  const pathname = getPathname(path);
+  let pathname = path;
+  try {
+    pathname = new URL(path, "http://localhost").pathname;
+  } catch {
+    pathname = String(path || "").split("?")[0] || "/";
+  }
+
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
-  return RAILWAY_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(pathname, prefix));
-}
 
-function selectRailwayUpstream(path) {
-  const pathname = getPathname(path);
+  // /api/upload uses multipart/form-data + formidable. The current proxy
+  // implementation rewrites bodies as JSON (from req.body) and cannot forward
+  // the original upload stream. Always let the locally-mounted upload handler
+  // (which has direct access to Supabase keys + formidable) serve it.
+  if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
 
-  if (TOKEN_INDEXER_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(pathname, prefix))) {
-    return UPSTREAMS.tokenIndexer;
-  }
+  // === Critical bypasses for the "frontend gateway" service (memewarzonefrontend-production) ===
+  // This service owns the local handlers for drafts/Prepare, campaigns feed, auth nonces used by
+  // draft create/promotion etc., and Command Center / War Room state.
+  // Its internal RAILWAY_API_PROXY (when enabled) forwards many /api/* to the token indexer
+  // (memebattles-production). The indexer does NOT implement campaigns lists, draft routes,
+  // or the Solana-aware nonce (isSolanaChain + base58 normalize in server/http.js).
+  //
+  // These early returns force the request to local handlers on THIS service (the one with the
+  // DB tables for campaign_drafts + the updated normalize for chain 101 + base58 Phantom keys).
+  // BNB draft flows worked before because EVM paths (lowercased 0x + chain 56) were already
+  // present and accepted even in older versions of the local handlers.
+  //
+  // Solana draft flow (signSolanaDraftAction → its fetchNonce with raw base58 + chain 101,
+  // then createCampaignDraft POST with walletType:"solana", then promotion signs) exercises
+  // the new paths. Ticker checks (live in Create useEffect), bare /api/drafts, /api/drafts/:id,
+  // and /api/campaigns all need to reach the local code, not the indexer.
+  if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
+  if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
 
-  if (FRONTEND_PRODUCT_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(pathname, prefix))) {
-    return UPSTREAMS.frontendProduct;
-  }
+  // Campaigns and featured are the "frontend related" discovery feeds (Command Center, grids,
+  // War Room, homepage trending etc.). They must be served by the local api/campaigns.js handler
+  // (rich stats + DB) on this gateway, not proxied to the token indexer (which returns 404 for them
+  // by design — see apiBase.ts comments and RAILWAY_API_GATEWAY_DEPLOY.md).
+  if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
+  if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
 
-  return UPSTREAMS.frontendProduct;
+  return RAILWAY_PATH_PREFIXES.some((prefix) => {
+    if (prefix.endsWith("/")) return pathname.startsWith(prefix);
+    return pathname === prefix || pathname.startsWith(`${prefix}/`);
+  });
 }
 
 function copyRequestHeaders(req, hasBody) {
@@ -198,7 +162,6 @@ function copyRequestHeaders(req, hasBody) {
     "content-type",
     "x-diagnostics-token",
     "x-rank-events-token",
-    "x-war-missions-internal-token",
   ];
 
   for (const name of passthrough) {
@@ -215,57 +178,8 @@ function copyRequestHeaders(req, hasBody) {
   return headers;
 }
 
-function responseLabel(serviceName, path, upstream) {
-  return `[railway-proxy:${serviceName}:${upstream.key}] ${path}`;
-}
-
-function hasEmptyItemsPayload(text) {
-  try {
-    const json = JSON.parse(text);
-    if (Array.isArray(json)) return json.length === 0;
-    return Array.isArray(json?.items) && json.items.length === 0;
-  } catch {
-    return false;
-  }
-}
-
-function buildCampaignFeedFallbackPath(path) {
-  const url = new URL(path, "http://localhost");
-  const chainId = url.searchParams.get("chainId") || "97";
-  const limit = url.searchParams.get("limit") || (url.pathname === "/api/war-room" ? "250" : "20");
-  const params = new URLSearchParams({
-    chainId,
-    limit,
-    tab: "trending",
-    sort: "default",
-    status: "all",
-  });
-  return `/api/campaigns?${params.toString()}`;
-}
-
-async function maybeFetchFeedFallback({ base, path, method, headers, upstreamStatus, upstreamText }) {
-  if (method !== "GET") return null;
-  if (!EMPTY_FEED_FALLBACK_PATHS.has(getPathname(path))) return null;
-
-  const upstreamFailed = upstreamStatus >= 400;
-  const upstreamEmpty = upstreamStatus >= 200 && upstreamStatus < 300 && hasEmptyItemsPayload(upstreamText);
-  if (!upstreamFailed && !upstreamEmpty) return null;
-
-  const fallbackPath = buildCampaignFeedFallbackPath(path);
-  const fallback = await fetch(`${base}${fallbackPath}`, {
-    method: "GET",
-    headers,
-    redirect: "manual",
-  });
-  const fallbackText = await fallback.text();
-  if (fallback.status < 200 || fallback.status >= 300 || hasEmptyItemsPayload(fallbackText)) return null;
-
-  return {
-    path: fallbackPath,
-    status: fallback.status,
-    text: fallbackText,
-    contentType: fallback.headers.get("content-type") || "application/json; charset=utf-8",
-  };
+function responseLabel(serviceName, path) {
+  return `[railway-proxy:${serviceName}] ${path}`;
 }
 
 export function createRailwayProxyMiddleware(options = {}) {
@@ -278,20 +192,19 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (!railwayProxyEnabled()) return next();
 
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
-    if (!shouldProxyToRailway(path)) return next();
+    const isDevIP = isDevAllowedIP(req);
 
-    const upstreamConfig = selectRailwayUpstream(path);
-    const { base, envName } = railwayBaseUrl(upstreamConfig);
+    // For dev IPs, proxy EVERYTHING (full access to any route on the dev branch)
+    if (!isDevIP && !shouldProxyToRailway(path)) return next();
+
+    const base = railwayBaseUrl();
     if (!base) {
       res.statusCode = 503;
       res.setHeader("content-type", "application/json; charset=utf-8");
-      res.setHeader("x-mwz-api-upstream-service", upstreamConfig.key);
       res.end(JSON.stringify({
-        error: `Railway API proxy is enabled, but no ${upstreamConfig.label} Railway API base URL is configured.`,
+        error: "Railway API proxy is enabled, but no Railway API base URL is configured.",
         code: "RAILWAY_API_BASE_URL_MISSING",
-        path,
-        upstream: upstreamConfig.key,
-        expectedEnv: `Set one of: ${upstreamConfig.envNames.join(", ")}.`,
+        expectedEnv: "Set RAILWAY_API_BASE_URL or RAILWAY_INDEXER_URL.",
       }));
       return;
     }
@@ -300,59 +213,42 @@ export function createRailwayProxyMiddleware(options = {}) {
     const method = String(req.method || "GET").toUpperCase();
     const hasBody = !["GET", "HEAD"].includes(method);
     const body = hasBody ? JSON.stringify(req.body ?? {}) : undefined;
-    const requestHeaders = copyRequestHeaders(req, hasBody);
 
     try {
       const upstream = await fetch(target, {
         method,
-        headers: requestHeaders,
+        headers: copyRequestHeaders(req, hasBody),
         body,
         redirect: "manual",
       });
 
       if (!railwayProxyStrict() && FALLBACK_STATUSES.has(upstream.status)) {
-        console.warn(`${responseLabel(serviceName, path, upstreamConfig)} upstream ${upstream.status}; falling back to local handler`);
+        console.warn(`${responseLabel(serviceName, path)} upstream ${upstream.status}; falling back to local handler`);
         return next();
       }
 
       const text = await upstream.text();
-      const fallback = await maybeFetchFeedFallback({
-        base,
-        path,
-        method,
-        headers: requestHeaders,
-        upstreamStatus: upstream.status,
-        upstreamText: text,
-      });
-      const responsePath = fallback?.path || path;
-      const responseText = fallback?.text || text;
-      const contentType = fallback?.contentType || upstream.headers.get("content-type") || "application/json; charset=utf-8";
+      res.statusCode = upstream.status;
 
-      res.statusCode = fallback?.status || upstream.status;
-
+      const contentType = upstream.headers.get("content-type") || "application/json; charset=utf-8";
       res.setHeader("content-type", contentType);
       res.setHeader("x-mwz-api-upstream", "railway");
-      res.setHeader("x-mwz-api-upstream-service", upstreamConfig.key);
-      res.setHeader("x-mwz-api-upstream-env", envName);
-      res.setHeader("x-mwz-api-upstream-path", responsePath);
-      if (fallback) res.setHeader("x-mwz-api-upstream-fallback", "campaigns");
+      res.setHeader("x-mwz-api-upstream-path", path);
 
-      res.end(responseText);
+      res.end(text);
     } catch (err) {
       if (!railwayProxyStrict()) {
-        console.warn(`${responseLabel(serviceName, path, upstreamConfig)} upstream failed; falling back to local handler`, err?.message || err);
+        console.warn(`${responseLabel(serviceName, path)} upstream failed; falling back to local handler`, err?.message || err);
         return next();
       }
 
-      console.error(responseLabel(serviceName, path, upstreamConfig), err);
+      console.error(responseLabel(serviceName, path), err);
       res.statusCode = 502;
       res.setHeader("content-type", "application/json; charset=utf-8");
-      res.setHeader("x-mwz-api-upstream-service", upstreamConfig.key);
       res.end(JSON.stringify({
         error: "Railway API upstream request failed.",
         code: "RAILWAY_API_UPSTREAM_FAILED",
         path,
-        upstream: upstreamConfig.key,
         detail: err?.message || String(err),
       }));
     }

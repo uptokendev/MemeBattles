@@ -15,6 +15,7 @@
     "check:api-migration": "node scripts/check-api-migration-readiness.mjs",
     "check:api-imports": "node scripts/check-api-relative-imports.mjs",
     "check:postgrad-api-preservation": "node scripts/check-postgrad-api-preservation.mjs",
+    "check:postgrad-independent-api": "node scripts/check-postgrad-independent-api.mjs",
     "check:postgrad-routing": "node scripts/check-postgrad-routing-readiness.mjs",
     "check:postgrad-economics": "node scripts/check-postgrad-economics-readiness.mjs",
     "check:localdev-gateway": "node scripts/check-localdev-gateway-readiness.mjs",

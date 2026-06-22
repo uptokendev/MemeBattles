@@ -1,6 +1,7 @@
 import { pool } from "../../../server/db.js";
 import { normalizeAddress } from "./auth.js";
 import { ensureCurrentQuestInstance } from "./periods.js";
+import { getRecruiterMilestoneQuestTargets, getRecruiterProgressCounts } from "./referrals.js";
 
 export async function getUserById(userId) {
   const { rows } = await pool.query(
@@ -130,6 +131,32 @@ async function getCompletedQuestSlugs(userId) {
     [userId],
   );
   return rows.map((row) => row.slug).filter(Boolean);
+}
+
+export async function syncDailyWarpathQuestForUser(userId) {
+  const requiredQuestSlugs = [
+    "drop-frontline-propaganda",
+    "provide-covering-fire",
+    "relay-the-battleplan",
+    "maintain-radio-discipline",
+  ];
+  const completedQuestSlugs = new Set(await getCompletedQuestSlugs(userId));
+
+  if (!requiredQuestSlugs.every((slug) => completedQuestSlugs.has(slug))) {
+    return { eligible: false, awarded: false, reason: "requirements_incomplete" };
+  }
+
+  const result = await awardQuestForUser(userId, "complete-daily-warpath", "daily_warpath_auto_complete", {
+    source: "quests_list_auto_sync",
+    requiredQuestSlugs,
+  });
+
+  return {
+    eligible: true,
+    awarded: result.awarded,
+    reason: result.reason,
+    completionId: result.completionId,
+  };
 }
 
 function emptyBadgeSummary() {
@@ -304,8 +331,37 @@ async function hasCompletedStartHere(userId) {
   return required.every((slug) => completed.has(slug));
 }
 
+async function syncRecruiterMilestoneQuestsForUsers(recruiterUserIds) {
+  const uniqueRecruiterIds = [...new Set((recruiterUserIds || []).filter(Boolean))];
+  if (uniqueRecruiterIds.length === 0) return { recruitersSynced: 0, questsAwarded: 0 };
+
+  const targets = await getRecruiterMilestoneQuestTargets();
+  if (!targets.length) return { recruitersSynced: uniqueRecruiterIds.length, questsAwarded: 0 };
+
+  let questsAwarded = 0;
+  for (const recruiterUserId of uniqueRecruiterIds) {
+    const counts = await getRecruiterProgressCounts(recruiterUserId);
+    for (const target of targets) {
+      const currentCount = target.metric === "startHereRecruits" ? counts.startHereRecruits : counts.verifiedRecruits;
+      if (currentCount < target.target) continue;
+      const result = await awardQuestForUser(recruiterUserId, target.slug, `recruiter_milestone:${target.metric}`, {
+        progressMetric: target.metric,
+        requiredCount: target.target,
+        currentCount,
+      });
+      if (result.awarded) questsAwarded += 1;
+    }
+  }
+
+  return { recruitersSynced: uniqueRecruiterIds.length, questsAwarded };
+}
+
+export async function syncRecruiterMilestoneQuestsForUser(recruiterUserId) {
+  return syncRecruiterMilestoneQuestsForUsers([recruiterUserId]);
+}
+
 export async function maybeVerifyReferralForUser(userId) {
-  if (!(await hasCompletedStartHere(userId))) return { verified: false, recruitersSynced: 0 };
+  if (!(await hasCompletedStartHere(userId))) return { verified: false, recruitersSynced: 0, questsAwarded: 0 };
 
   await pool.query(
     `
@@ -320,5 +376,10 @@ export async function maybeVerifyReferralForUser(userId) {
     `select distinct recruiter_user_id from public.wm_referral_attributions where referred_user_id = $1 and status = 'verified'`,
     [userId],
   );
-  return { verified: rows.length > 0, recruitersSynced: rows.length };
+  const syncResult = await syncRecruiterMilestoneQuestsForUsers(rows.map((row) => row.recruiter_user_id));
+  return {
+    verified: rows.length > 0,
+    recruitersSynced: syncResult.recruitersSynced,
+    questsAwarded: syncResult.questsAwarded,
+  };
 }

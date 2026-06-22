@@ -1,6 +1,7 @@
 import { pool } from "../../server/db.js";
 import { readWarAuth, unauthorized } from "./_lib/auth.js";
 import { getUserById } from "./_lib/profile.js";
+import { checkXFollowing, getLinkedXAccount, verifyXFollowQuestForUser } from "./_lib/x-follow.js";
 
 async function requireAdmin(req, res) {
   const auth = readWarAuth(req);
@@ -167,6 +168,22 @@ export default async function wmAdminSocialRecheck(req, res) {
       result = await checkDiscordMembership(account?.provider_user_id);
       nextStatus = result.ok ? "verified" : "review";
       reason = result.ok ? "Discord membership confirmed." : result.error || "Discord membership was not confirmed.";
+    } else if (provider === "x" && completion.verification_type === "x_follow") {
+      const account = await getLinkedXAccount(completion.user_id);
+      result = await checkXFollowing(account?.provider_user_id);
+      nextStatus = result.ok ? "verified" : "review";
+      reason = result.ok ? "X follow confirmed." : result.error || "Required X follow was not confirmed.";
+      if (result.ok) {
+        const user = await getUserById(completion.user_id);
+        if (user) {
+          await verifyXFollowQuestForUser(user, "admin_social_recheck", {
+            adminRecheck: {
+              checkedBy: admin.id,
+              checkedAt: new Date().toISOString(),
+            },
+          }).catch(() => undefined);
+        }
+      }
     } else if (provider === "x") {
       const metric = metricStatus(completion, req.body?.metrics || {});
       result = { checked: true, ok: metric.ok, status: metric.ok ? "metrics_met" : "metrics_pending", error: null, metrics: metric.metrics };

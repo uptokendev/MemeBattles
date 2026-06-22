@@ -1,16 +1,21 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json } from "../../server/http.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId ?? 0) || 0;
-    const address = String(q.address ?? "").toLowerCase();
+    const raw = String(q.address ?? "").trim();
     const type = String(q.type ?? "").toLowerCase();
-    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+    const isSol = isSolanaChain(chainId);
+    const addr = normalizeAddress(raw, chainId);
+    if (!addr) return json(res, 400, { error: "Invalid address" });
+    if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
     if (type !== "followers" && type !== "following") return json(res, 400, { error: "Invalid type" });
 
+    // Use exact address match for stored normalized values (raw base58 for Solana, lower for EVM).
+    // Legacy data may have had lowers; the LEFT JOIN on user_profiles uses the stored normalized addr.
     const sql =
       type === "followers"
         ? `SELECT uf.follower_address AS addr,
@@ -18,7 +23,7 @@ export default async function handler(req, res) {
                   up.avatar_url AS "avatarUrl"
              FROM public.user_follows uf
         LEFT JOIN public.user_profiles up
-               ON up.chain_id = uf.chain_id AND lower(up.address) = uf.follower_address
+               ON up.chain_id = uf.chain_id AND up.address = uf.follower_address
             WHERE uf.chain_id = $1 AND uf.following_address = $2
          ORDER BY uf.created_at DESC
             LIMIT 200`
@@ -27,12 +32,12 @@ export default async function handler(req, res) {
                   up.avatar_url AS "avatarUrl"
              FROM public.user_follows uf
         LEFT JOIN public.user_profiles up
-               ON up.chain_id = uf.chain_id AND lower(up.address) = uf.following_address
+               ON up.chain_id = uf.chain_id AND up.address = uf.following_address
             WHERE uf.chain_id = $1 AND uf.follower_address = $2
          ORDER BY uf.created_at DESC
             LIMIT 200`;
 
-    const { rows } = await pool.query(sql, [chainId, address]);
+    const { rows } = await pool.query(sql, [chainId, addr]);
     return json(res, 200, {
       items: (rows || []).map((r) => ({
         address: r.addr,

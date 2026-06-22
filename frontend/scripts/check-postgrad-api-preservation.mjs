@@ -6,7 +6,32 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverPath = path.resolve(__dirname, "../api/server.mjs");
 const server = fs.readFileSync(serverPath, "utf8");
 
-const protectedRoutes = [
+const requiredRoutes = [
+  ["/api/upload", "upload", "app.use"],
+  ["/drafts", "drafts"],
+  ["/drafts/followed", "followedDrafts"],
+  ["/drafts/ticker-availability", "tickerAvailability"],
+  ["/drafts/:draftId/deploy", "draftDeploy"],
+  ["/drafts/:draftId/follow", "signedDraftFollow"],
+  ["/drafts/:draftId/notifications", "signedDraftNotificationSubscription"],
+  ["/drafts/:draftId/comments", "signedDraftComments"],
+  ["/drafts/:draftId", "signedDraftById"],
+  ["/prepare/:slug", "signedPrepareBySlug"],
+  ["/prepare-notifications", "prepareNotifications"],
+  ["/campaigns", "campaigns"],
+  ["/comments", "comments"],
+  ["/follows/campaign", "followsCampaign"],
+  ["/follows/user", "followsUser"],
+  ["/profile", "profile"],
+  ["/profile/portfolio", "profilePortfolio"],
+  ["/token-metadata", "tokenMetadata"],
+  ["/votes", "votes"],
+  ["/vote_counts", "voteCounts"],
+  ["/routing/status", "routingStatus"],
+  ["/routing/create-authorization", "routingCreateAuthorization"],
+  ["/routing/trade-authorization", "routingTradeAuthorization"],
+  ["/recruiters", "recruiters"],
+  ["/recruiter-signup", "recruiterSignupSubmit"],
   ["/wm-x-oauth-start", "wmXOAuthStart"],
   ["/wm-x-oauth-callback", "wmXOAuthCallback"],
   ["/social-x-callback", "wmXOAuthCallback"],
@@ -23,46 +48,41 @@ const protectedRoutes = [
   ["/wm-admin-leaderboard-snapshot", "wmAdminLeaderboardSnapshot"],
   ["/wm-admin-prizes", "wmAdminPrizes"],
   ["/wm-daily-rollover", "wmDailyRollover"],
+  ["/internal/rewards/publications", "internalRewardPublications"],
+  ["/internal/rewards/airdrops/draws", "internalAirdropDraws"],
 ];
 
-const gatewayMode =
-  server.includes("devpostgrad API gateway") &&
-  server.includes("createRailwayProxyMiddleware") &&
-  server.includes("devpostgrad does not host the live API");
+const failures = [];
 
-if (gatewayMode) {
-  const forbiddenConcreteImports = protectedRoutes.filter(([, handler]) => server.includes(handler));
-  if (forbiddenConcreteImports.length) {
-    console.error("Postgrad API preservation check failed.");
-    for (const [route, handler] of forbiddenConcreteImports) {
-      console.error(`- devpostgrad gateway must not import ${handler} for ${route}; keep concrete API handlers on dev`);
-    }
-    process.exit(1);
-  }
-
-  console.log(`Postgrad API preservation check passed in devpostgrad gateway mode for ${protectedRoutes.length} protected War Missions routes.`);
-  process.exit(0);
+if (server.includes("devpostgrad API gateway") || server.includes("devpostgrad does not host the live API")) {
+  failures.push("devpostgrad must run the concrete API server, not the old gateway/proxy-only server");
 }
 
-const missing = [];
-for (const [route, handler] of protectedRoutes) {
-  const expected = `router.all("${route}", wrap(${handler}))`;
-  if (!server.includes(expected)) {
-    missing.push(`${route} must remain wired to ${handler}`);
-  }
+if (!server.includes('app.get("/healthz"') || !server.includes('app.get("/health"')) {
+  failures.push("health endpoints /healthz and /health must remain mounted");
 }
 
-const forbiddenProxyRoutes = protectedRoutes.filter(([route]) =>
-  server.includes(`router.all("${route}", wrap(warMissionsProxy))`)
-);
+if (!server.includes('express.json({ limit: process.env.API_JSON_LIMIT || "10mb" })')) {
+  failures.push("API JSON payload limit must preserve the live 10mb default");
+}
 
-if (missing.length || forbiddenProxyRoutes.length) {
+for (const [route, handler, mount = "router.all"] of requiredRoutes) {
+  const expected = `${mount}("${route}", wrap(${handler}))`;
+  if (!server.includes(expected)) failures.push(`${route} must remain wired to ${handler}`);
+}
+
+if (!server.includes("arena\\/ops\\/health") || !server.includes("wrap(postgrad)")) {
+  failures.push("postgrad Arena/League/War Room/Sponsorship routes must be routed through postgrad handler");
+}
+
+if (server.includes("warMissionsProxy")) {
+  failures.push("War Missions routes must not be replaced by warMissionsProxy");
+}
+
+if (failures.length) {
   console.error("Postgrad API preservation check failed.");
-  for (const message of missing) console.error(`- ${message}`);
-  for (const [route] of forbiddenProxyRoutes) {
-    console.error(`- ${route} must not be replaced by warMissionsProxy without an approved migration`);
-  }
+  for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
 
-console.log(`Postgrad API preservation check passed for ${protectedRoutes.length} protected War Missions routes.`);
+console.log(`Postgrad API preservation check passed for ${requiredRoutes.length} concrete API routes.`);

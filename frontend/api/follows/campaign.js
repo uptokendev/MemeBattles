@@ -1,14 +1,18 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json, readJson } from "../../server/http.js";
 
 export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const q = getQuery(req);
       const chainId = Number(q.chainId ?? 0) || 0;
-      const user = String(q.user ?? "").toLowerCase();
-      const campaign = String(q.campaign ?? "").toLowerCase();
-      if (!isAddress(user) || !isAddress(campaign)) return json(res, 400, { error: "Invalid address" });
+      const rawUser = String(q.user ?? "").trim();
+      const rawCampaign = String(q.campaign ?? "").trim();
+      const isSol = isSolanaChain(chainId);
+      const user = normalizeAddress(rawUser, chainId);
+      const campaign = normalizeAddress(rawCampaign, chainId);
+      if (!user || !campaign) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && (!isAddress(user) || !isAddress(campaign))) return json(res, 400, { error: "Invalid address" });
 
       const { rows } = await pool.query(
         `SELECT 1 FROM public.campaign_follows
@@ -23,9 +27,13 @@ export default async function handler(req, res) {
       const body = await readJson(req);
       const chainId = Number(body.chainId ?? 0) || 0;
       const action = String(body.action ?? "").toLowerCase();
-      const user = String(body.userAddress ?? "").toLowerCase();
-      const campaign = String(body.campaignAddress ?? "").toLowerCase();
-      if (!isAddress(user) || !isAddress(campaign)) return json(res, 400, { error: "Invalid address" });
+      const rawUser = String(body.userAddress ?? "").trim();
+      const rawCampaign = String(body.campaignAddress ?? "").trim();
+      const isSol = isSolanaChain(chainId);
+      const user = normalizeAddress(rawUser, chainId);
+      const campaign = normalizeAddress(rawCampaign, chainId);
+      if (!user || !campaign) return json(res, 400, { error: "Invalid address" });
+      if (!isSol && (!isAddress(user) || !isAddress(campaign))) return json(res, 400, { error: "Invalid address" });
       if (action !== "follow" && action !== "unfollow") return json(res, 400, { error: "Invalid action" });
 
       if (action === "follow") {

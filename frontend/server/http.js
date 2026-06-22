@@ -71,3 +71,30 @@ export function getQuery(req) {
 export function isAddress(v) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(v ?? ""));
 }
+
+export function isSolanaChain(chainId) {
+  const n = Number(chainId);
+  return n === 101 || n === 102;
+}
+
+/**
+ * Check if a string looks like a Solana base58 address (32-44 chars, base58 alphabet).
+ * This is the plain JS version for the server (no TS types).
+ */
+export function isSolanaAddress(value) {
+  const s = String(value || "").trim();
+  return s.length >= 32 && s.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
+}
+
+export function normalizeAddress(value, chainId) {
+  const raw = String(value || "").trim();
+  if (isSolanaChain(chainId)) {
+    // Solana base58 pubkey - preserve exact case and format (never lowercase)
+    if (raw.length >= 32 && raw.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(raw)) {
+      return raw;
+    }
+    return "";
+  }
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
+}

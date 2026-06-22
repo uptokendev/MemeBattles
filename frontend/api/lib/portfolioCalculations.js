@@ -1,9 +1,25 @@
 /**
- * Server-side (pure JS) mirror of src/lib/profile/portfolioCalculations.ts
- * Keep math and formatting 100% in sync with the frontend version.
+ * Pure, side-effect-free portfolio metric calculation functions (Node.js version).
+ *
+ * This is the **exact server-side mirror** of the frontend implementation in
+ * src/lib/profile/portfolioCalculations.ts (Phase 2).
+ *
+ * ⚠️ CRITICAL: Keep behavior and math 100% in sync with the TypeScript source.
+ * Any modification here must be mirrored there (and vice-versa).
+ *
+ * All functions are pure (no React, no fetch, no side effects).
  * Used by the /api/profile/portfolio cached endpoint.
  */
 
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Parses a native balance string such as "1.2345 BNB" or "0.0000 BNB" into a number.
+ * Returns 0 for invalid/empty input.
+ */
 export function parseNativeBalanceBnb(nativeBalance) {
   if (!nativeBalance) return 0;
   const cleaned = String(nativeBalance).replace(/[^0-9.]/g, "");
@@ -11,6 +27,14 @@ export function parseNativeBalanceBnb(nativeBalance) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/**
+ * Calculates approximate USD value for a single token holding.
+ *
+ * Uses marketCapBnb (from DB stats) as the valuation anchor + BNB/USD price.
+ * Assumes a standard ~1B supply model common to these bonding-curve tokens.
+ *
+ * Returns 0 for invalid/zero inputs (graceful degradation).
+ */
 export function calculateHoldingValueUsd(balanceFormatted, marketCapBnb, bnbUsd) {
   const bal = Number.parseFloat(balanceFormatted || "0");
   if (!Number.isFinite(bal) || bal <= 0) return 0;
@@ -22,13 +46,18 @@ export function calculateHoldingValueUsd(balanceFormatted, marketCapBnb, bnbUsd)
 
   if (mcap <= 0) return 0;
 
-  // Same approximation used on client
+  // Standard approximation for these launchpad tokens (keep in sync with TS version)
   const estPriceBnbPerWholeToken = mcap / 1_000_000_000;
   const valueUsd = bal * estPriceBnbPerWholeToken * bnbUsd;
 
   return Number.isFinite(valueUsd) && valueUsd > 0 ? valueUsd : 0;
 }
 
+/**
+ * Given an array of holdings that already have valueUsd computed,
+ * returns the single top holding with its percentage of the total portfolio value.
+ * Returns null if no positive-value holdings.
+ */
 export function selectTopHolding(holdings) {
   if (!Array.isArray(holdings) || holdings.length === 0) return null;
 
@@ -54,28 +83,12 @@ export function selectTopHolding(holdings) {
   };
 }
 
-function formatWalletAge(firstActivityTimestamp) {
-  if (!firstActivityTimestamp) return "—";
-  const now = Math.floor(Date.now() / 1000);
-  const ageSeconds = Math.max(0, now - firstActivityTimestamp);
-
-  const days = Math.floor(ageSeconds / 86400);
-  if (days < 1) return "< 1 day";
-  if (days < 30) return `${days} days`;
-  if (days < 365) return `${Math.floor(days / 30)} months`;
-  const years = Math.floor(days / 365);
-  const remainingMonths = Math.floor((days % 365) / 30);
-  return remainingMonths > 0 ? `${years}y ${remainingMonths}m` : `${years} years`;
-}
-
-function formatWalletAgeSince(firstActivityTimestamp) {
-  if (!firstActivityTimestamp) return undefined;
-  const date = new Date(firstActivityTimestamp * 1000);
-  return date.toLocaleString(undefined, { month: "short", year: "numeric" });
-}
-
+/**
+ * Derives the four portfolio metrics.
+ * This is the single source of truth for the four cards.
+ */
 export function derivePortfolioMetrics(params) {
-  const { nativeBnb = 0, tokenHoldingsWithValues = [], bnbUsd = 0, firstActivityTimestamp } = params || {};
+  const { nativeBnb = 0, tokenHoldingsWithValues = [], bnbUsd = 0, createdAt } = params || {};
 
   const nativeUsd = (Number.isFinite(nativeBnb) ? nativeBnb : 0) *
     (Number.isFinite(bnbUsd) && bnbUsd > 0 ? bnbUsd : 0);
@@ -95,6 +108,7 @@ export function derivePortfolioMetrics(params) {
   const safeTotal = totalValueUsd > 0 ? totalValueUsd : 0;
 
   let topHolding = selectTopHolding(positiveHoldings);
+
   if (topHolding && safeTotal > 0) {
     const overallPercent = (topHolding.valueUsd / safeTotal) * 100;
     topHolding = {
@@ -104,14 +118,42 @@ export function derivePortfolioMetrics(params) {
   }
 
   const coinsCount = positiveHoldings.length;
-  const walletAge = formatWalletAge(firstActivityTimestamp);
-  const walletAgeSince = formatWalletAgeSince(firstActivityTimestamp);
+  const walletAge = formatWalletAge(createdAt);
 
   return {
     totalValueUsd: safeTotal > 0 ? safeTotal : null,
     topHolding,
     coinsCount,
     walletAge,
-    walletAgeSince,
   };
+}
+
+/**
+ * Human-readable wallet age string from the profile created_at timestamp (ISO string).
+ * Adapted from existing formatTimeAgo patterns (keep in sync).
+ */
+export function formatWalletAge(createdAt) {
+  if (!createdAt) return "new";
+
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return "new";
+
+  const now = Date.now();
+  const diffMs = Math.max(0, now - created.getTime());
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 3600) return "new";
+
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+
+  if (diffDay < 1) return `${diffHr}h`;
+  if (diffDay < 30) return `${diffDay}d`;
+  if (diffDay < 365) {
+    const mo = Math.floor(diffDay / 30);
+    return `${mo}mo`;
+  }
+  const yr = Math.floor(diffDay / 365);
+  return `${yr}y`;
 }

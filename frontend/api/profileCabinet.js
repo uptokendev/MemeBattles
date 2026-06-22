@@ -1,5 +1,5 @@
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json } from "../server/http.js";
 
 const TIER_STEPS = [
   { tier: "Bronze", minWins: 1 },
@@ -78,10 +78,19 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = Number(q.chainId);
-    const address = String(q.address ?? "").trim().toLowerCase();
+    const raw = String(q.address ?? "").trim();
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(address)) return json(res, 400, { error: "Invalid address" });
+
+    const isSol = isSolanaChain(chainId);
+    const addr = normalizeAddress(raw, chainId);
+
+    if (!addr) return json(res, 400, { error: "Invalid address" });
+    if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
+
+    const whereClause = isSol
+      ? `chain_id = $1 AND recipient_address = $2`
+      : `chain_id = $1 AND lower(recipient_address) = $2`;
 
     let rows;
     try {
@@ -97,11 +106,10 @@ export default async function handler(req, res) {
                 expires_at AS "expiresAt",
                 meta
            FROM public.league_epoch_winners
-          WHERE chain_id = $1
-            AND lower(recipient_address) = $2
+          WHERE ${whereClause}
           ORDER BY epoch_end DESC NULLS LAST, epoch_start DESC, category ASC, rank ASC
           LIMIT 500`,
-        [chainId, address]
+        [chainId, addr]
       ));
     } catch (e) {
       if (e?.code !== "42703") throw e;
@@ -117,11 +125,10 @@ export default async function handler(req, res) {
                 expires_at AS "expiresAt",
                 payload AS meta
            FROM public.league_epoch_winners
-          WHERE chain_id = $1
-            AND lower(recipient_address) = $2
+          WHERE ${whereClause}
           ORDER BY epoch_end DESC NULLS LAST, epoch_start DESC, category ASC, rank ASC
           LIMIT 500`,
-        [chainId, address]
+        [chainId, addr]
       ));
     }
 
@@ -133,7 +140,7 @@ export default async function handler(req, res) {
       epochEnd: row.epochEnd instanceof Date ? row.epochEnd.toISOString() : String(row.epochEnd),
       category: String(row.category),
       rank: Number(row.rank),
-      recipientAddress: String(row.recipientAddress).toLowerCase(),
+      recipientAddress: isSol ? String(row.recipientAddress) : String(row.recipientAddress).toLowerCase(),
       amountRaw: String(row.amountRaw ?? "0"),
       expiresAt: row.expiresAt instanceof Date ? row.expiresAt.toISOString() : row.expiresAt ? String(row.expiresAt) : null,
       isTitle: Number(row.rank) === 1,

@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as centralNormalize, json, readJson } from "../../server/http.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -6,9 +6,9 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeAddress(value, chainId) {
+  // Delegate to central for Solana raw base58 support (with chainId or heuristic)
+  return centralNormalize(value, chainId);
 }
 
 async function getPool() {
@@ -46,7 +46,8 @@ export async function prepareNotifications(req, res) {
 
   if (req.method === "GET") {
     const q = getQuery(req);
-    const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address);
+    const chainId = q.chainId ? Number(q.chainId) : null;
+    const wallet = normalizeAddress(q.wallet || q.walletAddress || q.address, chainId);
     const limit = Math.max(1, Math.min(50, Number(q.limit || 20)));
 
     if (!wallet) return json(res, 400, { error: "Wallet address required." });
@@ -64,7 +65,8 @@ export async function prepareNotifications(req, res) {
   }
 
   const body = await readJson(req);
-  const wallet = normalizeAddress(body.wallet || body.walletAddress || body.address);
+  const chainId = body.chainId ? Number(body.chainId) : null;
+  const wallet = normalizeAddress(body.wallet || body.walletAddress || body.address, chainId);
 
   if (!wallet) return json(res, 400, { error: "Wallet address required." });
 

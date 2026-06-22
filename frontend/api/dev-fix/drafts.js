@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner } from "./prepare-notify.js";
 
@@ -25,9 +25,9 @@ function methodAllowed(req, res, allowed) {
   return false;
 }
 
-function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function normalizeAddress(value, chainId) {
+  // delegate to http.js version that handles Solana vs EVM based on chain
+  return normalizeAddressBase(value, chainId);
 }
 
 function normalizeTicker(value) {
@@ -171,10 +171,12 @@ function memoryStore() {
 
 function mapDraftRow(row) {
   if (!row) return null;
+  const chainId = Number(row.chain_id ?? row.chainId ?? 97);
+  const rawCreator = String(row.creator_wallet ?? row.creatorWallet ?? "");
   return {
     id: String(row.id),
-    chainId: Number(row.chain_id ?? row.chainId ?? 97),
-    creatorWallet: String(row.creator_wallet ?? row.creatorWallet ?? "").toLowerCase(),
+    chainId,
+    creatorWallet: isSolanaChain(chainId) ? rawCreator : rawCreator.toLowerCase(),
     name: String(row.name || ""),
     ticker: normalizeTicker(row.ticker),
     description: row.description || null,
@@ -238,7 +240,9 @@ function isPublicDiscoverableDraft(draft) {
 function canViewDraft(draft, viewer) {
   if (!draft) return false;
   if (draft.visibility !== "private") return true;
-  return viewer && draft.creatorWallet.toLowerCase() === viewer.toLowerCase();
+  const c = normalizeAddress(draft.creatorWallet, draft.chainId);
+  const v = normalizeAddress(viewer, draft.chainId);
+  return !!c && !!v && c === v;
 }
 
 async function getDraftBundleById(id, viewer, { bypassVisibility = false } = {}) {
@@ -321,16 +325,26 @@ export async function drafts(req, res) {
 
   if (req.method === "GET") {
     const q = getQuery(req);
-    const owner = normalizeAddress(q.owner);
+    const ownerChain = q.chainId ? Number(q.chainId) : null;
+    const owner = normalizeAddress(q.owner, ownerChain);
     const pool = await getPool();
 
     if (pool) {
-      const result = owner
-        ? await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner])
-        : await pool.query(
-            "select * from campaign_drafts where visibility = 'public' and status = any($1::text[]) order by created_at desc limit 50",
-            [Array.from(PUBLIC_DISCOVERY_STATUSES)],
-          );
+      if (owner) {
+        const result = await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner]);
+        return json(res, 200, { items: result.rows.map(mapDraftRow) });
+      }
+      const chainId = q.chainId ? Number(q.chainId) : null;
+      const where = ["visibility = 'public'", "status = any($1::text[])"];
+      const params = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
+      if (chainId) {
+        where.push(`chain_id = $${params.length + 1}`);
+        params.push(chainId);
+      }
+      const result = await pool.query(
+        `select * from campaign_drafts where ${where.join(" and ")} order by created_at desc limit 50`,
+        params,
+      );
       return json(res, 200, { items: result.rows.map(mapDraftRow) });
     }
 
@@ -342,7 +356,8 @@ export async function drafts(req, res) {
   }
 
   const body = await readJson(req);
-  const creatorWallet = normalizeAddress(body.creatorWallet || body.walletAddress);
+  const chainId = Number(body.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);
+  const creatorWallet = normalizeAddress(body.creatorWallet || body.walletAddress, chainId);
   if (!creatorWallet) return json(res, 400, { error: "Draft requires a connected wallet." });
 
   const name = cleanText(body.name, 80);
@@ -350,7 +365,6 @@ export async function drafts(req, res) {
   if (!name) return json(res, 400, { error: "Draft name is required." });
   if (!ticker) return json(res, 400, { error: "Draft ticker is required." });
 
-  const chainId = Number(body.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);
   const visibility = VISIBILITIES.has(body.visibility) ? body.visibility : "private";
   const now = new Date().toISOString();
   const pool = await getPool();
@@ -428,7 +442,7 @@ export async function drafts(req, res) {
 export async function draftById(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const bundle = await getDraftBundleById(String(req.params?.draftId || ""), normalizeAddress(q.viewer));
+  const bundle = await getDraftBundleById(String(req.params?.draftId || ""), normalizeAddress(q.viewer, q.chainId ? Number(q.chainId) : null));
   if (!bundle) return json(res, 404, { error: "Draft not found" });
   if (bundle.forbidden) return json(res, 403, { error: "This draft is private." });
   return json(res, 200, bundle);
@@ -437,7 +451,7 @@ export async function draftById(req, res) {
 export async function prepareBySlug(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const bundle = await getDraftBundleBySlug(String(req.params?.slug || ""), normalizeAddress(q.viewer), true);
+  const bundle = await getDraftBundleBySlug(String(req.params?.slug || ""), normalizeAddress(q.viewer, q.chainId ? Number(q.chainId) : null), true);
   if (!bundle) return json(res, 404, { error: "Prepare page not found" });
   if (bundle.forbidden) return json(res, 403, { error: "This draft is private." });
   return json(res, 200, bundle);
@@ -486,7 +500,8 @@ export async function draftPromotion(req, res) {
       "insert into campaign_draft_promotion (draft_id, mission_statement, roadmap, launch_strategy, telegram_url, discord_url, x_url, website_url, docs, creator_note, banner_url, share_message, published_at, updated_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,now()) on conflict (draft_id) do update set mission_statement = excluded.mission_statement, roadmap = excluded.roadmap, launch_strategy = excluded.launch_strategy, telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, creator_note = excluded.creator_note, banner_url = excluded.banner_url, share_message = excluded.share_message, published_at = coalesce(excluded.published_at, campaign_draft_promotion.published_at), updated_at = now()",
       [id, promotion.missionStatement, JSON.stringify(promotion.roadmap), promotion.launchStrategy, promotion.telegramUrl, promotion.discordUrl, promotion.xUrl, promotion.websiteUrl, JSON.stringify(promotion.docs), promotion.creatorNote, promotion.bannerUrl, promotion.shareMessage, publish ? now : null],
     );
-    await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, visibility || null, publish]);
+    const updateVis = publish ? "public" : (visibility || null);
+    await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, updateVis, publish]);
     const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
 
     if (publish && before.status !== "promotion_published" && updated?.draft) {
@@ -597,7 +612,7 @@ export async function draftComments(req, res) {
 
   const bundle = await getDraftBundleById(id, "", { bypassVisibility: true });
   if (!bundle || bundle.forbidden) return json(res, 404, { error: "Draft not found" });
-  if (parentCommentId && wallet.toLowerCase() !== bundle.draft.creatorWallet.toLowerCase()) {
+  if (parentCommentId && normalizeAddress(wallet, bundle.draft.chainId) !== normalizeAddress(bundle.draft.creatorWallet, bundle.draft.chainId)) {
     return json(res, 403, { error: "Only the creator can reply to transmissions." });
   }
 
