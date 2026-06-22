@@ -6,6 +6,10 @@ alter table if exists public.arena_battles
   add column if not exists pot_currency text not null default 'BNB',
   add column if not exists pot_status text not null default 'pending_escrow';
 
+alter table if exists public.arena_war_pool_entries
+  add column if not exists amount_bnb numeric(38, 18) not null default 0,
+  add column if not exists platform_fee_bnb numeric(38, 18) not null default 0;
+
 create table if not exists public.war_room_external_tokens (
   id bigserial primary key,
   chain_id integer not null,
