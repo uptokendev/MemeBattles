@@ -2,7 +2,7 @@
  * Navigation and social link configuration
  */
 
-import { BookOpen, Eye, Plus, Trophy, User } from "lucide-react";
+import { BookOpen, Eye, Plus, User } from "lucide-react";
 import carouselIcon from "@/assets/menu-icons/carousel.png";
 import userIcon from "@/assets/menu-icons/user.png";
 import twitterIcon from "@/assets/social/twitter.png";
@@ -26,14 +26,13 @@ export const arenaSubNavItems: ArenaSubNavItem[] = isPostGradNavEnabled()
   ? [
       { label: "Overview", path: "/arena" },
       { label: "Battles", path: "/arena/battles" },
-      { label: "Major War League", path: "/arena/major-war-league" },
+      { label: "Leagues", path: "/arena/leagues" },
       { label: "Events", path: "/arena/events" },
     ]
   : [];
 
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
-  ...(postGradFlags.enabled && postGradFlags.league ? [{ icon: Trophy, label: "Leagues", path: "/league" }] : []),
   ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: userIcon, label: "Creator tools", path: "/command" },
