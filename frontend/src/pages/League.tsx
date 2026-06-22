@@ -110,18 +110,60 @@ function SegmentedControl<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-full border border-border/60 bg-background/45 p-1">
+    <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-md border border-border/60 bg-background/45 p-1">
       {options.map((item) => (
         <button
           key={item.value}
           type="button"
           disabled={disabled || item.disabled}
           onClick={() => onChange(item.value)}
-          className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-40 ${value === item.value ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          className={`rounded px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-40 ${value === item.value ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"}`}
         >
           {item.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function TacticalSwitch<T extends string>({
+  label,
+  value,
+  left,
+  right,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  left: { value: T; label: string };
+  right: { value: T; label: string };
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  const checked = value === right.value;
+  const activeLabel = checked ? right.label : left.label;
+
+  return (
+    <div className="rounded-md border border-border/60 bg-background/45 px-3 py-2">
+      <div className="mb-1 flex items-center justify-between gap-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+        <span>{label}</span>
+        <span className="text-accent">{activeLabel}</span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onChange(checked ? left.value : right.value)}
+        className="group flex min-h-10 w-full min-w-[190px] items-center justify-between gap-3 rounded border border-accent/35 bg-black/45 px-3 py-2 text-xs uppercase tracking-[0.18em] shadow-[inset_0_0_18px_rgba(0,0,0,0.65)] transition hover:border-accent/70 disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        <span className={checked ? "text-muted-foreground" : "text-foreground"}>{left.label}</span>
+        <span className="relative h-5 w-11 rounded-full border border-accent/45 bg-card/80 shadow-[0_0_14px_rgba(245,132,32,0.18)]">
+          <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-sm border border-white/30 bg-accent shadow-[0_0_12px_rgba(245,132,32,0.45)] transition-transform ${checked ? "translate-x-[1.55rem]" : "translate-x-1"}`} />
+        </span>
+        <span className={checked ? "text-foreground" : "text-muted-foreground"}>{right.label}</span>
+      </button>
     </div>
   );
 }
@@ -296,27 +338,42 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(245,120,32,0.18),transparent_30%),linear-gradient(180deg,rgba(10,12,16,0.98),rgba(5,6,8,1))] pt-14 text-foreground">
+    <div className="relative min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(245,120,32,0.16),transparent_28%),linear-gradient(180deg,rgba(10,12,16,0.98),rgba(5,6,8,1))] pt-14 text-foreground">
       <ContentContainer className="space-y-5 px-2 pb-10">
-        <div className="flex flex-col gap-3 pt-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <SegmentedControl<LeagueChain> value={chain} options={[{ value: "bnb", label: "BNB" }, { value: "solana", label: "Solana" }]} onChange={(next) => setChain(next)} />
-            <SegmentedControl<Period> value={period} disabled={selectedLeague.supports.length === 1} options={[{ value: "weekly", label: "Weekly", disabled: !selectedLeague.supports.includes("weekly") }, { value: "monthly", label: "Monthly", disabled: !selectedLeague.supports.includes("monthly") }]} onChange={(next) => { setPeriod(next); setEpochOffset(0); }} />
-          </div>
-          <SegmentedControl<number> value={epochOffset} options={epochOptions.map((item) => ({ value: item.offset, label: item.label }))} onChange={setEpochOffset} />
-        </div>
-
-        <section className="mwz-hud-frame p-5 md:p-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
+        <section className="mwz-hud-frame p-4">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize League Command Center</div>
-              <h1 className="mt-1 font-retro text-3xl text-foreground md:text-4xl">Six prize leagues, one payout cockpit.</h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">BNB uses the real league feed. Solana stays pending until its own standings and claim feed are live.</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="font-retro text-xl text-foreground">League operations</span>
+                <TacticalTag label={isSolana ? "Solana pending" : "BNB live feed"} tone={isSolana ? "default" : "success"} />
+                <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="default" />
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <TacticalTag label={isSolana ? "Solana pending" : "BNB live feed"} tone={isSolana ? "default" : "success"} />
-              <TacticalTag label={`${period} / ${epochOffset === 0 ? "live" : `${epochOffset} back`}`} tone="sponsored" />
-              <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="default" />
+            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
+              <TacticalSwitch<LeagueChain>
+                label="Chain"
+                value={chain}
+                left={{ value: "bnb", label: "BNB" }}
+                right={{ value: "solana", label: "Solana" }}
+                onChange={(next) => setChain(next)}
+              />
+              <TacticalSwitch<Period>
+                label="Epoch"
+                value={period}
+                left={{ value: "weekly", label: "Weekly" }}
+                right={{ value: "monthly", label: "Monthly" }}
+                disabled={selectedLeague.supports.length === 1}
+                onChange={(next) => {
+                  if (!selectedLeague.supports.includes(next)) return;
+                  setPeriod(next);
+                  setEpochOffset(0);
+                }}
+              />
+              <div className="rounded-md border border-border/60 bg-background/45 px-3 py-2">
+                <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Season</div>
+                <SegmentedControl<number> value={epochOffset} options={epochOptions.map((item) => ({ value: item.offset, label: item.label }))} onChange={setEpochOffset} />
+              </div>
             </div>
           </div>
         </section>
