@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import * as Switch from "@radix-ui/react-switch";
 import { ethers } from "ethers";
 import { Trophy, Users, Wallet, Zap } from "lucide-react";
 import { ContentContainer } from "@/components/layout/ContentContainer";
@@ -64,7 +63,7 @@ function formatUsd(value: number) {
 }
 
 function formatEpochEnd(summary?: LeagueSummaryResponse) {
-  const end = summary?.epoch?.epochEnd;
+  const end = summary?.epoch?.epochEnd || summary?.epoch?.rangeEnd;
   if (!end) return "Awaiting epoch";
   const date = new Date(end);
   if (Number.isNaN(date.getTime())) return "Awaiting epoch";
@@ -72,13 +71,13 @@ function formatEpochEnd(summary?: LeagueSummaryResponse) {
 }
 
 function getPrizeRaw(prize?: LeaguePrizeMeta) {
-  return prize?.availablePotRaw ?? prize?.potRaw ?? "0";
+  return prize?.availablePotRaw ?? prize?.potRaw ?? prize?.totalLeagueFeeRaw ?? "0";
 }
 
 function rowLabel(def: LeagueDef, row: any) {
   if (def.rowType === "wallet") return shortAddr(row?.wallet);
   if (def.rowType === "recruiter") return row?.displayName || row?.recruiterCode || shortAddr(row?.wallet) || "Recruiter";
-  return row?.name || row?.symbol || shortAddr(row?.campaign_address) || "Campaign";
+  return row?.name || row?.symbol || shortAddr(row?.campaign_address || row?.campaignAddress) || "Campaign";
 }
 
 function rowMetric(def: LeagueDef, row: any) {
@@ -99,29 +98,30 @@ function getEpochOptions(period: Period) {
   }));
 }
 
-function TacticalSwitch({
-  label,
-  leftLabel,
-  rightLabel,
-  checked,
+function SegmentedControl<T extends string>({
+  value,
+  options,
   disabled,
-  onCheckedChange,
+  onChange,
 }: {
-  label: string;
-  leftLabel: string;
-  rightLabel: string;
-  checked: boolean;
+  value: T;
+  options: { value: T; label: string; disabled?: boolean }[];
   disabled?: boolean;
-  onCheckedChange: (checked: boolean) => void;
+  onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      {label ? <div className="min-w-[4.5rem] text-[10px] uppercase tracking-[0.24em] text-accent/80">{label}</div> : null}
-      <button type="button" disabled={disabled} onClick={() => !disabled && onCheckedChange(false)} className={`font-retro text-xs uppercase tracking-[0.16em] transition ${!checked ? "text-accent" : "text-muted-foreground hover:text-foreground"}`}>{leftLabel}</button>
-      <Switch.Root checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} className="relative h-7 w-14 shrink-0 rounded-full border border-accent/30 bg-black/60 shadow-[inset_0_0_12px_rgba(0,0,0,0.75)] outline-none transition data-[state=checked]:bg-accent/35 data-[state=unchecked]:bg-card/80 disabled:cursor-not-allowed disabled:opacity-40">
-        <Switch.Thumb className="block h-6 w-6 translate-x-0.5 rounded-full border border-white/25 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.92),rgba(150,155,162,0.78)_48%,rgba(35,40,46,0.95))] shadow-[0_0_16px_rgba(245,132,32,0.25)] transition-transform data-[state=checked]:translate-x-[1.85rem]" />
-      </Switch.Root>
-      <button type="button" disabled={disabled} onClick={() => !disabled && onCheckedChange(true)} className={`font-retro text-xs uppercase tracking-[0.16em] transition ${checked ? "text-accent" : "text-muted-foreground hover:text-foreground"}`}>{rightLabel}</button>
+    <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-full border border-border/60 bg-background/45 p-1">
+      {options.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          disabled={disabled || item.disabled}
+          onClick={() => onChange(item.value)}
+          className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition disabled:cursor-not-allowed disabled:opacity-40 ${value === item.value ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -178,11 +178,14 @@ function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { le
   if (!rows.length) {
     return <div className="mwz-hud-frame p-5 text-sm text-muted-foreground"><p className="max-w-2xl">{league.emptyStateCopy}</p>{league.key === "recruiter_league" ? <RecruiterEmptyActions /> : null}</div>;
   }
+
   if (league.rowType === "recruiter") {
     return (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[940px] text-left text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground"><tr className="border-b border-border/50"><th className="py-3 pr-3">Rank</th><th className="py-3 pr-3">Recruiter</th><th className="py-3 pr-3">Wallet</th><th className="py-3 pr-3">Network</th><th className="py-3 pr-3">Volume</th><th className="py-3 pr-3">Score</th><th className="py-3 pr-3">Payout</th><th className="py-3 pr-3">Claim</th><th className="py-3">Actions</th></tr></thead>
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <tr className="border-b border-border/50"><th className="py-3 pr-3">Rank</th><th className="py-3 pr-3">Recruiter</th><th className="py-3 pr-3">Wallet</th><th className="py-3 pr-3">Network</th><th className="py-3 pr-3">Volume</th><th className="py-3 pr-3">Score</th><th className="py-3 pr-3">Payout</th><th className="py-3 pr-3">Claim</th><th className="py-3">Actions</th></tr>
+          </thead>
           <tbody>
             {(rows as RecruiterRow[]).map((row, index) => (
               <tr key={`${row.wallet ?? row.recruiterCode ?? index}`} className="border-b border-border/30 align-top">
@@ -202,12 +205,13 @@ function StandingsTable({ league, rows, status, pendingCopy, warningCopy }: { le
       </div>
     );
   }
+
   return (
     <div className="space-y-2">
       {rows.slice(0, 25).map((row: any, index) => (
-        <div key={`${league.key}-${row?.campaign_address ?? row?.wallet ?? index}`} className="mwz-hud-frame p-4">
+        <div key={`${league.key}-${row?.campaign_address ?? row?.campaignAddress ?? row?.wallet ?? index}`} className="mwz-hud-frame p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-retro text-sm text-foreground">#{index + 1}</span><span className="truncate font-semibold text-foreground">{rowLabel(league, row)}</span>{row?.symbol ? <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{row.symbol}</span> : null}</div><div className="mt-1 truncate text-xs text-muted-foreground">{row?.campaign_address || row?.wallet || "Leaderboard row"}</div></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-retro text-sm text-foreground">#{row?.rank ?? index + 1}</span><span className="truncate font-semibold text-foreground">{rowLabel(league, row)}</span>{row?.symbol ? <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{row.symbol}</span> : null}</div><div className="mt-1 truncate text-xs text-muted-foreground">{row?.campaign_address || row?.campaignAddress || row?.wallet || "Leaderboard row"}</div></div>
             <div className="text-sm font-semibold text-accent">{rowMetric(league, row)}</div>
           </div>
         </div>
@@ -232,7 +236,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const [error, setError] = useState<string | undefined>();
 
   const selectedLeague = LEAGUES.find((league) => league.key === selectedLeagueKey) ?? LEAGUES[0];
-  const epochOptions = getEpochOptions(period);
+  const epochOptions = useMemo(() => getEpochOptions(period), [period]);
 
   useEffect(() => {
     if (!selectedLeague.supports.includes(period)) {
@@ -266,17 +270,19 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const selectedCard = summary?.leagues.find((league) => league.key === selectedLeagueKey);
   const rows = useMemo(() => (isSolana ? [] : selectedCard?.rows ?? []), [isSolana, selectedCard]);
   const selectedPrize = isSolana ? undefined : selectedCard?.prize;
-  const rawPrizeBnb = isSolana ? 0 : rawToBnb(getPrizeRaw(selectedPrize));
-  const rawGeneratedUsd = isSolana ? 0 : rawPrizeBnb * (bnbUsd || 0);
-  const policy = getPayoutPolicy(period);
-  const cappedPlayerPoolUsd = isSolana ? 0 : period === "monthly" ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd) : rawGeneratedUsd;
-  const charityReserveUsd = isSolana ? 0 : period === "monthly" ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd) : 0;
+  const summaryPrize = isSolana ? undefined : summary?.prize;
+  const rawPrizeBnb = rawToBnb(getPrizeRaw(selectedPrize || summaryPrize));
+  const rawGeneratedUsd = summaryPrize?.generatedUsd ?? (rawPrizeBnb * (bnbUsd || Number(summaryPrize?.bnbUsdPrice || 0)));
+  const policy = summary?.payoutPolicy || getPayoutPolicy(period);
+  const cappedPlayerPoolUsd = summaryPrize?.playerPrizePoolUsd ?? (isSolana ? 0 : period === "monthly" ? Math.min(rawGeneratedUsd, policy.monthlyPlayerPrizeCapUsd) : rawGeneratedUsd);
+  const charityReserveUsd = summaryPrize?.charityReserveUsd ?? (isSolana ? 0 : period === "monthly" ? Math.max(0, rawGeneratedUsd - policy.monthlyPlayerPrizeCapUsd) : 0);
   const qualifiedEntrants = isSolana ? 0 : Math.max(selectedCard?.entrants ?? rows.length, rows.length);
   const computedPaidPlaces = calculatePaidPlaces(qualifiedEntrants, policy);
   const activePaidPlaces = qualifiedEntrants > 0 ? computedPaidPlaces : 0;
   const payoutCurve = activePaidPlaces > 0 ? calculatePayoutCurve(qualifiedEntrants, cappedPlayerPoolUsd, policy) : [];
   const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces);
   const selectedStatus = isSolana ? "pending" : selectedCard?.status;
+  const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
   const solanaPendingCopy = "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
 
   const handleSelectLeague = (key: LeagueKey) => {
@@ -293,22 +299,30 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
       <ContentContainer className="space-y-5 px-2 pb-10">
         <div className="flex flex-col gap-3 pt-2 md:flex-row md:flex-wrap md:items-center md:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <TacticalSwitch label="" leftLabel="BNB" rightLabel="Solana" checked={isSolana} onCheckedChange={(next) => setChain(next ? "solana" : "bnb")} />
-            <TacticalSwitch label="" leftLabel="Weekly" rightLabel="Monthly" checked={period === "monthly"} disabled={selectedLeague.supports.length === 1} onCheckedChange={(next) => {
-              const target = next ? "monthly" : "weekly";
-              if (!selectedLeague.supports.includes(target)) return;
-              setPeriod(target);
-              setEpochOffset(0);
-            }} />
+            <SegmentedControl<LeagueChain> value={chain} options={[{ value: "bnb", label: "BNB" }, { value: "solana", label: "Solana" }]} onChange={(next) => setChain(next)} />
+            <SegmentedControl<Period> value={period} disabled={selectedLeague.supports.length === 1} options={[{ value: "weekly", label: "Weekly", disabled: !selectedLeague.supports.includes("weekly") }, { value: "monthly", label: "Monthly", disabled: !selectedLeague.supports.includes("monthly") }]} onChange={(next) => { setPeriod(next); setEpochOffset(0); }} />
           </div>
-          <div className="inline-flex min-h-10 flex-wrap items-center gap-1 rounded-full border border-border/60 bg-background/45 p-1">
-            {epochOptions.map((item) => <button key={item.offset} type="button" onClick={() => setEpochOffset(item.offset)} className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${epochOffset === item.offset ? "bg-card text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}
-          </div>
+          <SegmentedControl<number> value={epochOffset} options={epochOptions.map((item) => ({ value: item.offset, label: item.label }))} onChange={setEpochOffset} />
         </div>
 
+        <section className="mwz-hud-frame p-5 md:p-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize League Command Center</div>
+              <h1 className="mt-1 font-retro text-3xl text-foreground md:text-4xl">Six prize leagues, one payout cockpit.</h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">BNB uses the real league feed. Solana stays pending until its own standings and claim feed are live.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <TacticalTag label={isSolana ? "Solana pending" : "BNB live feed"} tone={isSolana ? "default" : "success"} />
+              <TacticalTag label={`${period} / ${epochOffset === 0 ? "live" : `${epochOffset} back`}`} tone="sponsored" />
+              <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="default" />
+            </div>
+          </div>
+        </section>
+
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Raw generated prize money</div><div className="mt-2 font-retro text-xl">{isSolana ? "SOL pending" : formatBnb(rawPrizeBnb)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Solana prize feed pending." : bnbUsd ? formatUsd(rawGeneratedUsd) : "USD oracle pending"}</div></div>
-          <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div><div className="mt-2 font-retro text-xl">{period === "monthly" ? "$1.50M" : "No weekly cap"}</div><div className="mt-1 text-xs text-muted-foreground">Same payout policy for BNB and Solana; Solana waits for its own feed.</div></div>
+          <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Zap className="h-3.5 w-3.5" />Raw generated prize money</div><div className="mt-2 font-retro text-xl">{isSolana ? "SOL pending" : rawPrizeBnb > 0 ? formatBnb(rawPrizeBnb) : formatUsd(rawGeneratedUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Solana prize feed pending." : formatUsd(rawGeneratedUsd)}</div></div>
+          <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize cap</div><div className="mt-2 font-retro text-xl">{period === "monthly" ? formatUsd(policy.monthlyPlayerPrizeCapUsd) : "No weekly cap"}</div><div className="mt-1 text-xs text-muted-foreground">{period === "monthly" ? (capReached ? "Monthly cap reached." : "Monthly hard cap before charity overflow.") : "Weekly pools pay without the monthly cap."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Player prize pool</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(cappedPlayerPoolUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "No BNB-derived pool shown on Solana." : "Used for payout curve preview."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : "Overflow is not player-claimable."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Active paid places</div><div className="mt-2 font-retro text-xl">{activePaidPlaces}</div><div className="mt-1 text-xs text-muted-foreground">Max(min winners, floor(entrants x 15%)).</div></div>
