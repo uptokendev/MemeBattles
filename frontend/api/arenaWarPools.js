@@ -1,6 +1,8 @@
 import { pool } from "../server/db.js";
-import { badMethod, json, readJson } from "../server/http.js";
+import { badMethod, isAddress, json, readJson } from "../server/http.js";
 
+const MIN_BET_BNB = 0.05;
+const PLATFORM_FEE_RATE = 0.05;
 const STATES = new Set(["open", "locked", "settling", "paid"]);
 const TRANSITIONS = { open: ["locked"], locked: ["settling"], settling: ["paid"], paid: ["open"] };
 
@@ -13,18 +15,40 @@ function normalizeState(value) {
   return STATES.has(state) ? state : "open";
 }
 
-function sum(entries, sideTokenId) {
-  return entries.filter((entry) => !sideTokenId || entry.sideTokenId === sideTokenId).reduce((total, entry) => total + Number(entry.amountUsd || 0), 0);
+function normalizeAddress(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
-function routing(totalPotUsd) {
-  return { winnersUsd: Math.round(totalPotUsd * 0.85), protocolUsd: Math.round(totalPotUsd * 0.05), featuredUsd: Math.round(totalPotUsd * 0.1) };
+function toBnb(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 1e8) / 1e8 : 0;
+}
+
+function sum(entries, sideTokenId, key = "amountBnb") {
+  return entries.filter((entry) => !sideTokenId || entry.sideTokenId === sideTokenId).reduce((total, entry) => total + Number(entry[key] || 0), 0);
+}
+
+function routing(totalPotBnb) {
+  const platformFeeBnb = Math.round(totalPotBnb * PLATFORM_FEE_RATE * 1e8) / 1e8;
+  const winnersBnb = Math.max(0, Math.round((totalPotBnb - platformFeeBnb) * 1e8) / 1e8);
+  return {
+    winnersBnb,
+    platformFeeBnb,
+    platformFeeRate: PLATFORM_FEE_RATE,
+    winnersUsd: 0,
+    protocolUsd: 0,
+    featuredUsd: 0,
+  };
 }
 
 function mapEntry(row) {
+  const amountBnb = toBnb(row.amount_bnb ?? 0);
   return {
     battleId: String(row.battle_id),
     sideTokenId: String(row.side_token_id),
+    supporterAddress: normalizeAddress(row.supporter_address),
+    amountBnb,
+    platformFeeBnb: toBnb(row.platform_fee_bnb ?? amountBnb * PLATFORM_FEE_RATE),
     amountUsd: Number(row.amount_usd || 0),
     enteredAt: row.entered_at ? new Date(row.entered_at).toISOString() : new Date().toISOString(),
     payoutEligible: Boolean(row.payout_eligible),
@@ -32,20 +56,24 @@ function mapEntry(row) {
 }
 
 function poolPayload(record, entries) {
-  const totalPotUsd = sum(entries);
+  const totalPotBnb = sum(entries);
+  const totalPotUsd = sum(entries, null, "amountUsd");
   return {
     battleId: String(record.battle_id),
     state: normalizeState(record.state),
+    minBetBnb: MIN_BET_BNB,
+    platformFeeRate: PLATFORM_FEE_RATE,
+    totalPotBnb,
     totalPotUsd,
     cutoffAt: record.cutoff_at ? new Date(record.cutoff_at).toISOString() : futureIso(30),
-    routingBreakdown: routing(totalPotUsd),
+    routingBreakdown: routing(totalPotBnb),
     entries,
   };
 }
 
 async function entriesFor(battleId) {
   const result = await pool.query(
-    `select battle_id, side_token_id, amount_usd, entered_at, payout_eligible
+    `select battle_id, side_token_id, supporter_address, amount_usd, amount_bnb, platform_fee_bnb, entered_at, payout_eligible
        from public.arena_war_pool_entries
       where battle_id = $1
       order by entered_at asc, created_at asc`,
@@ -90,21 +118,26 @@ async function listPools() {
 
 function settlementSummary(poolRecord) {
   const grouped = Object.create(null);
-  for (const entry of poolRecord.entries) grouped[entry.sideTokenId] = (grouped[entry.sideTokenId] || 0) + entry.amountUsd;
-  const [winnerTokenId, winnerSideUsd = 0] = Object.entries(grouped).sort((a, b) => b[1] - a[1])[0] || [null, 0];
-  const projectedWinnerPayoutUsd = poolRecord.routingBreakdown.winnersUsd;
+  for (const entry of poolRecord.entries) grouped[entry.sideTokenId] = (grouped[entry.sideTokenId] || 0) + entry.amountBnb;
+  const [winnerTokenId, winnerSideBnb = 0] = Object.entries(grouped).sort((a, b) => b[1] - a[1])[0] || [null, 0];
+  const projectedWinnerPayoutBnb = poolRecord.routingBreakdown.winnersBnb;
   return {
     winnerTokenId,
     winnerLabel: winnerTokenId || "No winner yet",
+    totalPotBnb: poolRecord.totalPotBnb,
     totalPotUsd: poolRecord.totalPotUsd,
-    winnerSideUsd,
-    loserSideUsd: Math.max(0, poolRecord.totalPotUsd - winnerSideUsd),
-    projectedPayoutMultiple: winnerSideUsd > 0 ? projectedWinnerPayoutUsd / winnerSideUsd : 0,
-    projectedWinnerPayoutUsd,
-    projectedNetProfitUsd: Math.max(0, projectedWinnerPayoutUsd - winnerSideUsd),
+    winnerSideBnb,
+    loserSideBnb: Math.max(0, poolRecord.totalPotBnb - winnerSideBnb),
+    winnerSideUsd: 0,
+    loserSideUsd: 0,
+    projectedPayoutMultiple: winnerSideBnb > 0 ? projectedWinnerPayoutBnb / winnerSideBnb : 0,
+    projectedWinnerPayoutBnb,
+    projectedNetProfitBnb: Math.max(0, projectedWinnerPayoutBnb - winnerSideBnb),
+    projectedWinnerPayoutUsd: 0,
+    projectedNetProfitUsd: 0,
     eligibleWinningEntries: winnerTokenId ? poolRecord.entries.filter((entry) => entry.sideTokenId === winnerTokenId && entry.payoutEligible).length : 0,
     settlementStateLabel: poolRecord.state,
-    settlementStateBody: "Settlement data is sourced from postgrad storage.",
+    settlementStateBody: "Betting settlement data is sourced from postgrad storage.",
     routingBreakdown: poolRecord.routingBreakdown,
   };
 }
@@ -112,10 +145,10 @@ function settlementSummary(poolRecord) {
 async function handleSummary(_req, res) {
   try {
     const pools = await listPools();
-    return json(res, 200, { summary: { pools, totalPotUsd: pools.reduce((total, item) => total + item.totalPotUsd, 0), openPools: pools.filter((item) => item.state === "open").length, lockedPools: pools.filter((item) => item.state === "locked" || item.state === "settling").length, paidPools: pools.filter((item) => item.state === "paid").length } });
+    return json(res, 200, { summary: { pools, totalPotBnb: pools.reduce((total, item) => total + item.totalPotBnb, 0), totalPotUsd: pools.reduce((total, item) => total + item.totalPotUsd, 0), openPools: pools.filter((item) => item.state === "open").length, lockedPools: pools.filter((item) => item.state === "locked" || item.state === "settling").length, paidPools: pools.filter((item) => item.state === "paid").length } });
   } catch (error) {
     console.error("[api/arenaWarPools] summary failed", error);
-    return json(res, 200, { summary: { pools: [], totalPotUsd: 0, openPools: 0, lockedPools: 0, paidPools: 0 }, warning: "War Pool data is unavailable." });
+    return json(res, 200, { summary: { pools: [], totalPotBnb: 0, totalPotUsd: 0, openPools: 0, lockedPools: 0, paidPools: 0 }, warning: "War Pool data is unavailable." });
   }
 }
 
@@ -128,15 +161,18 @@ async function handleDetail(_req, res, battleId) {
 async function handleSupport(req, res, battleId) {
   const body = await readJson(req);
   const sideTokenId = String(body?.sideTokenId || "").trim();
-  const amountUsd = Number(body?.amountUsd || 0);
-  const supporterAddress = String(body?.supporterAddress || body?.walletAddress || "").trim().toLowerCase();
-  if (!sideTokenId || !Number.isFinite(amountUsd) || amountUsd <= 0) return json(res, 400, { ok: false, error: "sideTokenId and positive amountUsd are required" });
+  const amountBnb = toBnb(body?.amountBnb ?? body?.betBnb);
+  const supporterAddress = normalizeAddress(body?.supporterAddress || body?.walletAddress);
+  if (!sideTokenId) return json(res, 400, { ok: false, error: "sideTokenId is required" });
+  if (!isAddress(supporterAddress)) return json(res, 400, { ok: false, error: "A valid supporterAddress or walletAddress is required" });
+  if (amountBnb < MIN_BET_BNB) return json(res, 400, { ok: false, error: `amountBnb must be at least ${MIN_BET_BNB} BNB`, minBetBnb: MIN_BET_BNB });
 
   const record = await ensurePool(battleId);
   if (normalizeState(record.state) !== "open") return json(res, 409, { ok: false, error: "War Pool is not open" });
+  const platformFeeBnb = toBnb(amountBnb * PLATFORM_FEE_RATE);
   await pool.query(
-    `insert into public.arena_war_pool_entries (battle_id, side_token_id, amount_usd, supporter_address, payout_eligible) values ($1, $2, $3, $4, true)`,
-    [battleId, sideTokenId, amountUsd, supporterAddress || null],
+    `insert into public.arena_war_pool_entries (battle_id, side_token_id, amount_usd, amount_bnb, platform_fee_bnb, supporter_address, payout_eligible) values ($1, $2, 0, $3, $4, $5, true)`,
+    [battleId, sideTokenId, amountBnb, platformFeeBnb, supporterAddress],
   );
   await pool.query(`update public.arena_war_pools set updated_at = now() where battle_id = $1`, [battleId]);
   const poolRecord = await findPool(battleId);
