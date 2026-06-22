@@ -12,6 +12,9 @@ const LEAGUES = [
   { key: 'recruiter_league', title: 'Recruiter League' },
 ];
 
+const HISTORY_WEEKLY_OFFSETS = [1, 2];
+const HISTORY_MONTHLY_OFFSETS = [1];
+
 function normChain(value) {
   return String(value || 'bnb').toLowerCase() === 'solana' ? 'solana' : 'bnb';
 }
@@ -62,26 +65,30 @@ function pendingLeagues(chain) {
 function buildPendingSummary({ chain, period, epochOffset }) {
   const policy = getPayoutPolicy(period);
   const cap = getCapMeta(period, 0, policy);
+  const epoch = pendingEpoch(period, epochOffset);
+  const prize = {
+    basis: chain === 'solana' ? 'solana_pending' : 'bnb_summary_pending',
+    capReached: cap.capReached,
+    charityReserveUsd: cap.charityReserveUsd,
+    monthlyPlayerPrizeCapUsd: cap.monthlyPlayerPrizeCapUsd,
+    playerPrizePoolUsd: cap.playerPrizePoolUsd,
+    generatedUsd: cap.generatedUsd,
+    warning: chain === 'solana'
+      ? 'Solana prize feed pending.'
+      : 'BNB summary endpoint scaffolded; legacy category feeds remain the source of truth.',
+  };
 
   return {
     chain,
     period,
-    epoch: pendingEpoch(period, epochOffset),
+    epoch,
+    current: { epoch, winners: [], prize },
     payoutPolicy: policy,
-    prize: {
-      basis: chain === 'solana' ? 'solana_pending' : 'bnb_summary_pending',
-      capReached: cap.capReached,
-      charityReserveUsd: cap.charityReserveUsd,
-      monthlyPlayerPrizeCapUsd: cap.monthlyPlayerPrizeCapUsd,
-      playerPrizePoolUsd: cap.playerPrizePoolUsd,
-      generatedUsd: cap.generatedUsd,
-      warning: chain === 'solana'
-        ? 'Solana prize feed pending.'
-        : 'BNB summary endpoint scaffolded; legacy category feeds remain the source of truth.',
-    },
+    prize,
     leagues: pendingLeagues(chain),
     currentLeaders: [],
-    history: [],
+    history: { weekly: [], monthly: [] },
+    historyMeta: { weeklyOffsets: HISTORY_WEEKLY_OFFSETS, monthlyOffsets: HISTORY_MONTHLY_OFFSETS },
   };
 }
 
@@ -93,10 +100,9 @@ function firstDefined(...values) {
 }
 
 function rawToUsd(raw, bnbUsd) {
-  const rawString = String(raw ?? '0');
   let whole = 0n;
   try {
-    whole = BigInt(rawString);
+    whole = BigInt(String(raw ?? '0'));
   } catch {
     return 0;
   }
@@ -144,22 +150,12 @@ async function callLegacyLeague(req, { category, chainId, period, epochOffset, l
   });
   const url = `/api/league?${params.toString()}`;
   const { res, body } = captureJson();
-  const proxyReq = {
-    ...req,
-    method: 'GET',
-    url,
-    originalUrl: url,
-    query: undefined,
-  };
+  const proxyReq = { ...req, method: 'GET', url, originalUrl: url, query: undefined };
 
-  if (category === 'recruiter_league') {
-    await leagueRecruiter(proxyReq, res);
-  } else {
-    await league(proxyReq, res);
-  }
+  if (category === 'recruiter_league') await leagueRecruiter(proxyReq, res);
+  else await league(proxyReq, res);
 
-  const payload = body() || {};
-  return { statusCode: res.statusCode || 200, payload };
+  return { statusCode: res.statusCode || 200, payload: body() || {} };
 }
 
 function rankRows(rows, prize, policy) {
@@ -233,22 +229,28 @@ function summarizePrize(leagues, period, policy) {
   };
 }
 
+function walletFromRow(row) {
+  return firstDefined(row?.wallet, row?.walletAddress, row?.wallet_address, row?.buyer_address, row?.creator_address, row?.recipient_address, row?.address, null);
+}
+
+function winnerFromRow(row) {
+  return {
+    rank: Number(row?.rank || 1),
+    wallet: walletFromRow(row),
+    name: row?.name || row?.displayName || null,
+    symbol: row?.symbol || null,
+    campaignAddress: row?.campaign_address || row?.campaignAddress || null,
+    estimatedPayoutUsd: row?.estimatedPayoutUsd || 0,
+    payoutPercentage: row?.payoutPercentage || 0,
+    row,
+  };
+}
+
 function pickCurrentLeaders(leagues) {
   return leagues
     .map((leagueResult) => {
       const leader = Array.isArray(leagueResult.rows) ? leagueResult.rows[0] : null;
-      if (!leader) return null;
-      return {
-        league: leagueResult.key,
-        title: leagueResult.title,
-        rank: leader.rank || 1,
-        wallet: firstDefined(leader.wallet, leader.walletAddress, leader.buyer_address, leader.creator_address, leader.recipient_address),
-        campaignAddress: leader.campaign_address,
-        name: leader.name || leader.displayName || null,
-        symbol: leader.symbol || null,
-        estimatedPayoutUsd: leader.estimatedPayoutUsd || 0,
-        row: leader,
-      };
+      return leader ? { league: leagueResult.key, title: leagueResult.title, ...winnerFromRow(leader) } : null;
     })
     .filter(Boolean);
 }
@@ -258,6 +260,107 @@ function pickEpoch(leagues, period, epochOffset) {
     if (leagueResult?.epoch) return leagueResult.epoch;
   }
   return pendingEpoch(period, epochOffset);
+}
+
+function prizeSnapshot(prize) {
+  return {
+    basis: prize?.basis,
+    generatedUsd: prize?.generatedUsd || 0,
+    playerPrizePoolUsd: prize?.playerPrizePoolUsd || 0,
+    charityReserveUsd: prize?.charityReserveUsd || 0,
+    monthlyPlayerPrizeCapUsd: prize?.monthlyPlayerPrizeCapUsd || 0,
+    capApplies: Boolean(prize?.capApplies),
+    capReached: Boolean(prize?.capReached),
+    bnbUsdPrice: prize?.bnbUsdPrice || null,
+    totalLeagueFeeRaw: prize?.totalLeagueFeeRaw || '0',
+    byLeague: prize?.byLeague || {},
+    warning: prize?.warning,
+  };
+}
+
+function leagueHistorySnapshot(leagueResult) {
+  const rows = Array.isArray(leagueResult.rows) ? leagueResult.rows : [];
+  return {
+    key: leagueResult.key,
+    title: leagueResult.title,
+    status: leagueResult.status,
+    entrants: leagueResult.entrants || rows.length,
+    warning: leagueResult.warning,
+    prize: leagueResult.prize || null,
+    winners: rows.slice(0, Math.min(5, rows.length)).map(winnerFromRow),
+  };
+}
+
+function buildHistoryEntry(period, epochOffset, summary) {
+  const prize = prizeSnapshot(summary.prize);
+  return {
+    period,
+    epochOffset,
+    epoch: summary.epoch,
+    prize,
+    charity: {
+      reserveUsd: prize.charityReserveUsd || 0,
+      carriedForwardUsd: prize.charityReserveUsd || 0,
+      source: prize.capReached ? 'monthly_cap_overflow' : 'none',
+    },
+    winners: summary.currentLeaders || [],
+    leagues: (summary.leagues || []).map(leagueHistorySnapshot),
+  };
+}
+
+async function buildHistory(req, { chainId, limit }) {
+  const historyLimit = Math.max(1, Math.min(5, Number(limit) || 5));
+  const weekly = await Promise.all(
+    HISTORY_WEEKLY_OFFSETS.map(async (epochOffset) => buildHistoryEntry(
+      'weekly',
+      epochOffset,
+      await aggregateBnbSummary(req, { chain: 'bnb', chainId, period: 'weekly', epochOffset, limit: historyLimit, includeHistory: false })
+    ))
+  );
+
+  const monthly = await Promise.all(
+    HISTORY_MONTHLY_OFFSETS.map(async (epochOffset) => buildHistoryEntry(
+      'monthly',
+      epochOffset,
+      await aggregateBnbSummary(req, { chain: 'bnb', chainId, period: 'monthly', epochOffset, limit: historyLimit, includeHistory: false })
+    ))
+  );
+
+  return { weekly, monthly };
+}
+
+async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = true }) {
+  const policy = getPayoutPolicy(period);
+  const results = await Promise.all(
+    LEAGUES.map(async (leagueMeta) => {
+      try {
+        const result = await callLegacyLeague(req, { category: leagueMeta.key, chainId, period, epochOffset, limit });
+        return normalizeLeagueResult(leagueMeta, result, policy);
+      } catch (error) {
+        console.error(`[api/league/summary] ${leagueMeta.key} failed`, error);
+        return { key: leagueMeta.key, title: leagueMeta.title, status: 'error', entrants: 0, rows: [], warning: 'League aggregation failed.' };
+      }
+    })
+  );
+
+  const epoch = pickEpoch(results, period, epochOffset);
+  const prize = summarizePrize(results, period, policy);
+  const currentLeaders = pickCurrentLeaders(results);
+  const history = includeHistory ? await buildHistory(req, { chainId, limit }) : { weekly: [], monthly: [] };
+
+  return {
+    chain,
+    chainId,
+    period,
+    epoch,
+    current: { epoch, winners: currentLeaders, prize },
+    payoutPolicy: policy,
+    prize,
+    leagues: results,
+    currentLeaders,
+    history,
+    historyMeta: { weeklyOffsets: HISTORY_WEEKLY_OFFSETS, monthlyOffsets: HISTORY_MONTHLY_OFFSETS },
+  };
 }
 
 export default async function handler(req, res) {
@@ -270,42 +373,10 @@ export default async function handler(req, res) {
   const chainId = clampInt(q.chainId ?? 97, 1, 999999, 97);
   const limit = clampInt(q.limit ?? 10, 1, 50, 10);
 
-  if (chain === 'solana') {
-    return json(res, 200, buildPendingSummary({ chain, period, epochOffset }));
-  }
+  if (chain === 'solana') return json(res, 200, buildPendingSummary({ chain, period, epochOffset }));
 
   try {
-    const policy = getPayoutPolicy(period);
-    const results = await Promise.all(
-      LEAGUES.map(async (leagueMeta) => {
-        try {
-          const result = await callLegacyLeague(req, { category: leagueMeta.key, chainId, period, epochOffset, limit });
-          return normalizeLeagueResult(leagueMeta, result, policy);
-        } catch (error) {
-          console.error(`[api/league/summary] ${leagueMeta.key} failed`, error);
-          return {
-            key: leagueMeta.key,
-            title: leagueMeta.title,
-            status: 'error',
-            entrants: 0,
-            rows: [],
-            warning: 'League aggregation failed.',
-          };
-        }
-      })
-    );
-
-    return json(res, 200, {
-      chain,
-      chainId,
-      period,
-      epoch: pickEpoch(results, period, epochOffset),
-      payoutPolicy: policy,
-      prize: summarizePrize(results, period, policy),
-      leagues: results,
-      currentLeaders: pickCurrentLeaders(results),
-      history: [],
-    });
+    return json(res, 200, await aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory: true }));
   } catch (error) {
     console.error('[api/league/summary]', error);
     return json(res, 500, { error: 'Server error' });
