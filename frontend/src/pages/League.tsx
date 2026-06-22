@@ -98,7 +98,7 @@ function getEpochOptions(period: Period) {
   }));
 }
 
-function SegmentedControl<T extends string>({
+function SegmentedControl<T extends string | number>({
   value,
   options,
   disabled,
