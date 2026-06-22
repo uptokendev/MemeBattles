@@ -59,8 +59,8 @@ export const socialLinks: SocialItem[] = [
   {
     href: "https://t.me/memewarzonehq",
     ariaLabel: "Telegram",
-    color: "#0088cc",
     tooltip: "Telegram",
+    color: "#0088cc",
     svgUrl: telegramIcon,
   },
 ];
