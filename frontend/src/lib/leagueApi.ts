@@ -1,5 +1,6 @@
 import {
   LEAGUES,
+  MONTHLY_PLAYER_PRIZE_CAP_USD,
   getLimit,
   type LeagueChain,
   type LeagueDef,
@@ -32,9 +33,14 @@ export interface LeaguePrizeMeta {
   paidRaw?: string;
   availablePotRaw?: string;
   availablePayoutsRaw?: string[];
-  capReached?: boolean;
+  generatedUsd?: number;
+  playerPrizePoolUsd?: number;
   charityReserveUsd?: number;
   monthlyPlayerPrizeCapUsd?: number;
+  capApplies?: boolean;
+  capReached?: boolean;
+  bnbUsdPrice?: number | null;
+  byLeague?: Record<string, unknown>;
   warning?: string;
 }
 
@@ -120,12 +126,16 @@ function isLeagueKey(value: unknown): value is LeagueKey {
   return LEAGUES.some((league) => league.key === value);
 }
 
+function leagueTitle(key: LeagueKey) {
+  return LEAGUES.find((league) => league.key === key)?.title || key;
+}
+
 function normalizeRecruiterRow(row: any, index: number) {
   return {
     ...row,
     rank: toNumber(row?.rank, index + 1),
-    displayName: row?.displayName || row?.display_name || undefined,
-    recruiterCode: row?.recruiterCode || row?.code || undefined,
+    displayName: row?.displayName || row?.display_name || row?.name || undefined,
+    recruiterCode: row?.recruiterCode || row?.code || row?.recruiter_code || undefined,
     wallet: row?.wallet || row?.walletAddress || row?.wallet_address || undefined,
     linkedWallets: toNumber(row?.linkedWallets ?? row?.linkedWalletCount ?? row?.linked_wallet_count),
     linkedCreators: toNumber(row?.linkedCreators ?? row?.linkedCreatorsCount ?? row?.linked_creators_count),
@@ -144,20 +154,24 @@ function normalizeRows(def: LeagueDef, rows: unknown[]) {
 }
 
 function getStatus(rows: unknown[], warning?: string): LeagueStatus {
-  if (warning) return "error";
+  if (warning) return rows.length ? "ready" : "empty";
   return rows.length ? "ready" : "empty";
 }
 
 function leaderLabel(row: any) {
+  if (typeof row?.label === "string") return row.label;
   if (typeof row?.displayName === "string") return row.displayName;
   if (typeof row?.recruiterCode === "string") return row.recruiterCode;
   if (typeof row?.name === "string") return row.symbol ? `${row.name} (${row.symbol})` : row.name;
   if (typeof row?.wallet === "string") return row.wallet;
+  if (typeof row?.campaignAddress === "string") return row.campaignAddress;
   if (typeof row?.campaign_address === "string") return row.campaign_address;
   return "Awaiting leader";
 }
 
 function metricFor(def: LeagueDef, row: any) {
+  if (typeof row?.metric === "string") return row.metric;
+  if (typeof row?.estimatedPayoutUsd === "number" && row.estimatedPayoutUsd > 0) return `$${row.estimatedPayoutUsd.toLocaleString()} est. payout`;
   if (def.key === "fastest_finish") return row?.duration_seconds ? `${row.duration_seconds}s` : def.metricLabel;
   if (def.key === "biggest_hit") return row?.bnb_amount_raw ? "Largest buy" : def.metricLabel;
   if (def.key === "top_earner") return row?.profit_raw ? "Trader PnL" : def.metricLabel;
@@ -166,13 +180,65 @@ function metricFor(def: LeagueDef, row: any) {
   return def.metricLabel;
 }
 
+function normalizeLeader(raw: any, fallbackIndex: number): CurrentLeagueLeader | undefined {
+  const key = raw?.leagueKey || raw?.league || raw?.key;
+  if (!isLeagueKey(key)) return undefined;
+  const def = LEAGUES.find((league) => league.key === key)!;
+  return {
+    leagueKey: key,
+    leagueTitle: raw?.leagueTitle || raw?.title || def.title,
+    label: leaderLabel(raw) || `Winner ${fallbackIndex + 1}`,
+    metric: metricFor(def, raw),
+  };
+}
+
+function normalizeHistoryItems(history: any): LeagueWinnerHistoryItem[] {
+  if (Array.isArray(history)) return history;
+
+  const groups = [
+    ["weekly", history?.weekly],
+    ["monthly", history?.monthly],
+  ] as const;
+  const items: LeagueWinnerHistoryItem[] = [];
+
+  for (const [periodName, records] of groups) {
+    if (!Array.isArray(records)) continue;
+    for (const record of records) {
+      const epochLabel = record?.epoch?.label || record?.epoch?.rangeLabel || `${periodName} epoch ${record?.epochOffset ?? "previous"}`;
+      const winners = Array.isArray(record?.winners) ? record.winners : [];
+      if (!winners.length) {
+        items.push({
+          id: `${periodName}-${record?.epochOffset ?? items.length}-empty`,
+          label: `${periodName === "weekly" ? "Weekly" : "Monthly"} history`,
+          completedAt: epochLabel,
+          winnerLabel: record?.prize?.playerPrizePoolUsd ? `$${Number(record.prize.playerPrizePoolUsd).toLocaleString()} player pool` : "No finalized winners yet",
+        });
+        continue;
+      }
+
+      winners.slice(0, 6).forEach((winner: any, index: number) => {
+        const key = winner?.leagueKey || winner?.league || winner?.key;
+        items.push({
+          id: `${periodName}-${record?.epochOffset ?? 0}-${key || "winner"}-${index}`,
+          label: `${periodName === "weekly" ? "Weekly" : "Monthly"} #${winner?.rank ?? index + 1}`,
+          leagueKey: isLeagueKey(key) ? key : undefined,
+          completedAt: epochLabel,
+          winnerLabel: leaderLabel(winner),
+        });
+      });
+    }
+  }
+
+  return items;
+}
+
 function solanaPendingSummary(chain: LeagueChain, period: LeaguePeriod, epochOffset: number): LeagueSummaryResponse {
   return {
     chain,
     period,
     epoch: { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: "pending" },
-    payoutPolicy: { minWinners: period === "weekly" ? 3 : 5, paidFieldPct: 0.15, alpha: 0.72, monthlyPlayerPrizeCapUsd: 1_500_000 },
-    prize: { capReached: false, charityReserveUsd: 0, monthlyPlayerPrizeCapUsd: 1_500_000, warning: "Solana prize feed pending." },
+    payoutPolicy: { minWinners: period === "weekly" ? 3 : 5, paidFieldPct: 0.15, alpha: 0.72, monthlyPlayerPrizeCapUsd: MONTHLY_PLAYER_PRIZE_CAP_USD },
+    prize: { capReached: false, charityReserveUsd: 0, monthlyPlayerPrizeCapUsd: MONTHLY_PLAYER_PRIZE_CAP_USD, warning: "Solana prize feed pending." },
     leagues: LEAGUES.map((league) => ({
       key: league.key,
       title: league.title,
@@ -212,11 +278,20 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
     if (top) leaders.push({ leagueKey: def.key, leagueTitle: def.title, label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
+  const incomingLeaders = Array.isArray(payload.currentLeaders) && payload.currentLeaders.length
+    ? payload.currentLeaders
+    : Array.isArray(payload.current?.winners)
+      ? payload.current.winners
+      : [];
+  const normalizedLeaders = incomingLeaders
+    .map((leader: any, index: number) => normalizeLeader(leader, index))
+    .filter(Boolean) as CurrentLeagueLeader[];
+
   return {
     chain: payload.chain === "solana" || payload.chain === "bnb" ? payload.chain : chain,
     period: payload.period === "weekly" || payload.period === "monthly" ? payload.period : period,
-    epoch: payload.epoch || { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: chain === "solana" ? "pending" : "live" },
-    prize: payload.prize,
+    epoch: payload.epoch || payload.current?.epoch || { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: chain === "solana" ? "pending" : "live" },
+    prize: payload.prize || payload.current?.prize,
     payoutPolicy: payload.payoutPolicy,
     leagues: cards,
     selectedLeague: payload.selectedLeague && isLeagueKey(payload.selectedLeague.key)
@@ -228,8 +303,8 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
           warning: payload.selectedLeague.warning,
         }
       : undefined,
-    currentLeaders: Array.isArray(payload.currentLeaders) && payload.currentLeaders.length ? payload.currentLeaders : leaders,
-    history: Array.isArray(payload.history) ? payload.history : [],
+    currentLeaders: normalizedLeaders.length ? normalizedLeaders : leaders,
+    history: normalizeHistoryItems(payload.history),
   };
 }
 
@@ -284,7 +359,7 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
     leagues.push({ key, title: def.title, status, entrants: rows.length, rows, prize: payload.prize, warning: payload.warning });
 
     const top = rows[0] as any;
-    if (top) currentLeaders.push({ leagueKey: key, leagueTitle: def.title, label: leaderLabel(top), metric: metricFor(def, top) });
+    if (top) currentLeaders.push({ leagueKey: key, leagueTitle: leagueTitle(key), label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
   return { chain, period, epoch, prize, leagues, currentLeaders, history: [] };
