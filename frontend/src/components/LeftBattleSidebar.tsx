@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, Rocket, Swords, Target, Trophy, User } from "lucide-react";
-import { socialLinks } from "@/constants/navigation";
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, Rocket, Swords, Target, User } from "lucide-react";
+import { arenaSubNavItems, socialLinks } from "@/constants/navigation";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { cn } from "@/lib/utils";
 import { isPostGradNavEnabled } from "@/features/postgrad/config";
@@ -16,18 +16,10 @@ interface LeftBattleSidebarProps {
 
 const navItems = [
   { icon: Rocket, label: "Launchpad", path: "/" },
-  { icon: Trophy, label: "Leagues", path: "/league" },
   { icon: Swords, label: "Arena", path: "/arena", hasSubmenu: true },
   { icon: Target, label: "Trade War Room", path: "/war-room" },
   { icon: User, label: "Profile", path: "/profile" },
   { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone", external: true },
-];
-
-const arenaSubItems = [
-  { label: "Overview", path: "/arena" },
-  { label: "Battles", path: "/arena/battles" },
-  { label: "Major War League", path: "/arena/major-war-league" },
-  { label: "Events", path: "/arena/events" },
 ];
 
 export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSidebarProps) {
@@ -36,7 +28,6 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
-    if (path === "/league") return location.pathname === "/league" || location.pathname === "/leagues";
     return location.pathname.startsWith(path);
   };
 
@@ -77,7 +68,9 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
           const Icon = item.icon;
           const active = isActive(item.path);
 
-          if (item.hasSubmenu && isPostGradNavEnabled()) {
+          if (item.hasSubmenu) {
+            if (!isPostGradNavEnabled()) return null;
+
             return (
               <div key={item.label}>
                 <button
@@ -95,7 +88,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
 
                 {arenaOpen && !collapsed && (
                   <div className="ml-8 mt-1 space-y-0.5 border-l border-white/10 pl-3 text-xs">
-                    {arenaSubItems.map((sub) => (
+                    {arenaSubNavItems.map((sub) => (
                       <Link
                         key={sub.path}
                         to={sub.path}
