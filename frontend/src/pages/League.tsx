@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { Trophy, Users, Wallet, Zap } from "lucide-react";
+import { AlertTriangle, Trophy, Users, Wallet, Zap } from "lucide-react";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
@@ -283,6 +283,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const previewRanks = payoutCurve.filter((row) => row.rank === 1 || row.rank === Math.ceil(activePaidPlaces / 2) || row.rank === activePaidPlaces);
   const selectedStatus = isSolana ? "pending" : selectedCard?.status;
   const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
+  const showCapNotification = !isSolana && period === "monthly" && capReached;
   const solanaPendingCopy = "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
 
   const handleSelectLeague = (key: LeagueKey) => {
@@ -327,6 +328,28 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           <div className="mwz-hud-frame p-4"><div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Charity reserve</div><div className="mt-2 font-retro text-xl">{isSolana ? "Pending" : formatUsd(charityReserveUsd)}</div><div className="mt-1 text-xs text-muted-foreground">{isSolana ? "Available after Solana prize publication." : "Overflow is not player-claimable."}</div></div>
           <div className="mwz-hud-frame p-4"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground"><Users className="h-3.5 w-3.5" />Active paid places</div><div className="mt-2 font-retro text-xl">{activePaidPlaces}</div><div className="mt-1 text-xs text-muted-foreground">Max(min winners, floor(entrants x 15%)).</div></div>
         </section>
+
+        {showCapNotification ? (
+          <section role="status" className="mwz-hud-frame border-accent/70 bg-accent/10 p-4 shadow-[0_0_24px_rgba(245,132,32,0.12)]">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-w-0 gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-accent/50 bg-background/70 text-accent">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="font-retro text-base text-foreground">Monthly player prize cap reached</div>
+                  <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                    Player payouts are locked at {formatUsd(policy.monthlyPlayerPrizeCapUsd)}. The overflow is routed to the charity reserve and cannot be claimed by players.
+                  </p>
+                </div>
+              </div>
+              <div className="grid shrink-0 grid-cols-2 gap-2 text-right text-xs md:min-w-[260px]">
+                <div className="rounded-lg border border-border/40 bg-background/45 px-3 py-2"><div className="text-muted-foreground">Player pool</div><div className="font-retro text-foreground">{formatUsd(cappedPlayerPoolUsd)}</div></div>
+                <div className="rounded-lg border border-border/40 bg-background/45 px-3 py-2"><div className="text-muted-foreground">Reserve</div><div className="font-retro text-accent">{formatUsd(charityReserveUsd)}</div></div>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <LeagueSwitch selected={selectedLeagueKey} period={period} onSelect={handleSelectLeague} />
 
