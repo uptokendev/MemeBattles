@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { AlertTriangle, Trophy, Users, Wallet, Zap } from "lucide-react";
+import { AlertTriangle, TrendingUp, Trophy, Users, Wallet, Zap } from "lucide-react";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,13 @@ function formatUsd(value: number) {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
   return `$${value.toFixed(0)}`;
+}
+
+function formatDelta(value?: number | null, unit = "") {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "No baseline";
+  const n = Number(value);
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${unit === "%" ? n.toFixed(1) : n.toLocaleString()}${unit}`;
 }
 
 function formatEpochEnd(summary?: LeagueSummaryResponse) {
@@ -327,6 +334,11 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
   const capReached = Boolean(summaryPrize?.capReached || charityReserveUsd > 0);
   const showCapNotification = !isSolana && period === "monthly" && capReached;
   const solanaPendingCopy = "Solana league feed pending. BNB standings and prize pools are not reused for Solana. Claims open after Solana league payouts are live.";
+  const trendMetrics = summary?.trendMetrics;
+  const hallOfFame = summary?.hallOfFame;
+  const biggestPrizePool = (hallOfFame?.biggestPrizePools?.[0] as any) || null;
+  const topWinner = (hallOfFame?.mostWins?.[0] as any) || null;
+  const winnerSourceLabel = summary?.winnerSource?.finalized ? "Final winners" : "Inferred winners";
 
   const handleSelectLeague = (key: LeagueKey) => {
     const next = LEAGUES.find((league) => league.key === key);
@@ -347,8 +359,10 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className="font-retro text-xl text-foreground">League operations</span>
                 <TacticalTag label={isSolana ? "Solana pending" : "BNB live feed"} tone={isSolana ? "default" : "success"} />
+                <TacticalTag label={winnerSourceLabel} tone={summary?.winnerSource?.finalized ? "success" : "sponsored"} />
                 <TacticalTag label={`Ends ${formatEpochEnd(summary)}`} tone="default" />
               </div>
+              {summary?.seasonId ? <div className="mt-2 truncate text-xs text-muted-foreground">Season ID: {summary.seasonId}</div> : null}
             </div>
             <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
               <TacticalSwitch<LeagueChain>
@@ -427,6 +441,8 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
           </div>
 
           <aside className="space-y-4">
+            <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><TrendingUp className="h-4 w-4" />Season intel</div><div className="mt-4 grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-muted-foreground">Entrants delta</div><div className="font-retro text-foreground">{formatDelta(trendMetrics?.changeVsPreviousEpoch?.entrants)}</div><div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.entrantsGrowthPct, "%")}</div></div><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-muted-foreground">Prize delta</div><div className="font-retro text-foreground">{formatUsd(Number(trendMetrics?.changeVsPreviousEpoch?.playerPrizePoolUsd || 0))}</div><div className="mt-1 text-muted-foreground">{formatDelta(trendMetrics?.prizePoolGrowthPct, "%")}</div></div></div><div className="mt-3 text-[11px] text-muted-foreground">Basis: {trendMetrics?.basis || "waiting for previous epoch"}</div></div>
+            <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Hall of Fame</div><div className="mt-4 space-y-3 text-sm"><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Most wins</div><div className="truncate font-semibold text-foreground">{topWinner?.name || topWinner?.symbol || shortAddr(topWinner?.wallet) || "Awaiting history"}</div><div className="text-[11px] text-accent">{topWinner?.wins ? `${topWinner.wins} wins` : hallOfFame?.basis || "summary_history_scaffold"}</div></div><div className="rounded-lg border border-border/40 bg-card/55 px-3 py-2"><div className="text-[11px] text-muted-foreground">Biggest pool</div><div className="font-semibold text-foreground">{biggestPrizePool ? formatUsd(Number(biggestPrizePool.playerPrizePoolUsd || biggestPrizePool.generatedUsd || 0)) : "Awaiting history"}</div><div className="text-[11px] text-accent">{biggestPrizePool?.period || "No finalized pool yet"}</div></div></div></div>
             <div className="mwz-hud-frame p-5"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-accent/80"><Trophy className="h-4 w-4" />Current #1s</div><div className="mt-4 space-y-2">{!isSolana && summary?.currentLeaders.length ? summary.currentLeaders.map((leader) => <button key={leader.leagueKey} type="button" onClick={() => handleSelectLeague(leader.leagueKey)} className="w-full rounded-xl border border-border/40 bg-card/55 px-3 py-2 text-left transition hover:border-accent/60"><div className="text-[11px] text-muted-foreground">{leader.leagueTitle}</div><div className="truncate text-sm font-semibold">{leader.label}</div><div className="truncate text-[11px] text-accent">{leader.metric}</div></button>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana leaders pending." : "No leaders yet."}</div>}</div></div>
             <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Recent winners</div><div className="mt-4 space-y-2">{!isSolana && summary?.history.length ? summary.history.slice(0, 5).map((item) => <div key={item.id} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2"><div className="text-sm font-semibold text-foreground">{item.winnerLabel || item.label}</div><div className="mt-1 text-[11px] text-muted-foreground">{item.completedAt || "Finalized epoch"}</div></div>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana winner history pending." : "Winner history will appear once finalized league epochs are published."}</div>}</div></div>
             <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Major War League</div><div className="mt-2 font-retro text-lg">Post-grad competition lives in Arena.</div><p className="mt-2 text-sm text-muted-foreground">Prize Leagues are separate from the Major War League standings, divisions, and promotion/relegation flow.</p><Button asChild size="sm" variant="outline" className="mt-4 font-retro"><Link to="/arena/major-war-league">Open Major War League</Link></Button></div>
