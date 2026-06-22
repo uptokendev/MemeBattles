@@ -19,6 +19,16 @@ export interface LeagueEpoch {
   status: "live" | "finalized" | "pending";
 }
 
+export interface LeagueSeasonMeta {
+  seasonId: string;
+  epochId: string;
+  chain: LeagueChain;
+  chainId?: number;
+  period: LeaguePeriod;
+  epochOffset: number;
+  status?: string;
+}
+
 export interface LeaguePrizeMeta {
   basis?: string;
   period?: LeaguePeriod;
@@ -84,16 +94,43 @@ export interface LeagueDetail {
   warning?: string;
 }
 
+export interface LeagueTrendMetrics {
+  basis?: string;
+  changeVsPreviousEpoch?: { entrants?: number; playerPrizePoolUsd?: number } | null;
+  entrantsGrowthPct?: number | null;
+  prizePoolGrowthPct?: number | null;
+}
+
+export interface LeagueHallOfFame {
+  basis?: string;
+  allTimeWinners: unknown[];
+  biggestPrizePools: unknown[];
+  mostWins: unknown[];
+}
+
+export interface LeagueWinnerSource {
+  source?: string;
+  finalized?: boolean;
+  plannedSource?: string;
+  note?: string;
+}
+
 export interface LeagueSummaryResponse {
   chain: LeagueChain;
   period: LeaguePeriod;
   epoch?: LeagueEpoch;
+  season?: LeagueSeasonMeta;
+  seasonId?: string;
+  epochId?: string;
+  winnerSource?: LeagueWinnerSource;
   prize?: LeaguePrizeMeta;
   payoutPolicy?: LeaguePayoutPolicy;
   leagues: LeagueSummaryCard[];
   selectedLeague?: LeagueDetail;
   currentLeaders: CurrentLeagueLeader[];
   history: LeagueWinnerHistoryItem[];
+  trendMetrics?: LeagueTrendMetrics;
+  hallOfFame?: LeagueHallOfFame;
 }
 
 type LegacyLeagueResponse = {
@@ -128,6 +165,14 @@ function isLeagueKey(value: unknown): value is LeagueKey {
 
 function leagueTitle(key: LeagueKey) {
   return LEAGUES.find((league) => league.key === key)?.title || key;
+}
+
+function emptyHallOfFame(): LeagueHallOfFame {
+  return { basis: "frontend_empty", allTimeWinners: [], biggestPrizePools: [], mostWins: [] };
+}
+
+function emptyTrendMetrics(): LeagueTrendMetrics {
+  return { basis: "frontend_empty", changeVsPreviousEpoch: null, entrantsGrowthPct: null, prizePoolGrowthPct: null };
 }
 
 function normalizeRecruiterRow(row: any, index: number) {
@@ -204,7 +249,7 @@ function normalizeHistoryItems(history: any): LeagueWinnerHistoryItem[] {
   for (const [periodName, records] of groups) {
     if (!Array.isArray(records)) continue;
     for (const record of records) {
-      const epochLabel = record?.epoch?.label || record?.epoch?.rangeLabel || `${periodName} epoch ${record?.epochOffset ?? "previous"}`;
+      const epochLabel = record?.epoch?.label || record?.epoch?.rangeLabel || record?.seasonId || `${periodName} epoch ${record?.epochOffset ?? "previous"}`;
       const winners = Array.isArray(record?.winners) ? record.winners : [];
       if (!winners.length) {
         items.push({
@@ -233,10 +278,15 @@ function normalizeHistoryItems(history: any): LeagueWinnerHistoryItem[] {
 }
 
 function solanaPendingSummary(chain: LeagueChain, period: LeaguePeriod, epochOffset: number): LeagueSummaryResponse {
+  const seasonId = `${chain}-pending-${period}-${epochOffset}`;
   return {
     chain,
     period,
     epoch: { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: "pending" },
+    season: { seasonId, epochId: seasonId, chain, period, epochOffset, status: "pending" },
+    seasonId,
+    epochId: seasonId,
+    winnerSource: { source: "pending", finalized: false },
     payoutPolicy: { minWinners: period === "weekly" ? 3 : 5, paidFieldPct: 0.15, alpha: 0.72, monthlyPlayerPrizeCapUsd: MONTHLY_PLAYER_PRIZE_CAP_USD },
     prize: { capReached: false, charityReserveUsd: 0, monthlyPlayerPrizeCapUsd: MONTHLY_PLAYER_PRIZE_CAP_USD, warning: "Solana prize feed pending." },
     leagues: LEAGUES.map((league) => ({
@@ -249,6 +299,8 @@ function solanaPendingSummary(chain: LeagueChain, period: LeaguePeriod, epochOff
     })),
     currentLeaders: [],
     history: [],
+    trendMetrics: emptyTrendMetrics(),
+    hallOfFame: emptyHallOfFame(),
   };
 }
 
@@ -291,6 +343,10 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
     chain: payload.chain === "solana" || payload.chain === "bnb" ? payload.chain : chain,
     period: payload.period === "weekly" || payload.period === "monthly" ? payload.period : period,
     epoch: payload.epoch || payload.current?.epoch || { period, epochOffset, epochStart: null, epochEnd: null, rangeEnd: null, status: chain === "solana" ? "pending" : "live" },
+    season: payload.season,
+    seasonId: payload.seasonId || payload.season?.seasonId,
+    epochId: payload.epochId || payload.season?.epochId,
+    winnerSource: payload.winnerSource,
     prize: payload.prize || payload.current?.prize,
     payoutPolicy: payload.payoutPolicy,
     leagues: cards,
@@ -305,6 +361,8 @@ function normalizeSummaryPayload(payload: any, chain: LeagueChain, period: Leagu
       : undefined,
     currentLeaders: normalizedLeaders.length ? normalizedLeaders : leaders,
     history: normalizeHistoryItems(payload.history),
+    trendMetrics: payload.trendMetrics || emptyTrendMetrics(),
+    hallOfFame: payload.hallOfFame || emptyHallOfFame(),
   };
 }
 
@@ -362,7 +420,17 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
     if (top) currentLeaders.push({ leagueKey: key, leagueTitle: leagueTitle(key), label: leaderLabel(top), metric: metricFor(def, top) });
   }
 
-  return { chain, period, epoch, prize, leagues, currentLeaders, history: [] };
+  return {
+    chain,
+    period,
+    epoch,
+    prize,
+    leagues,
+    currentLeaders,
+    history: [],
+    trendMetrics: emptyTrendMetrics(),
+    hallOfFame: emptyHallOfFame(),
+  };
 }
 
 export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
