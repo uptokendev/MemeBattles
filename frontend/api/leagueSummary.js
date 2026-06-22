@@ -14,6 +14,7 @@ const LEAGUES = [
 
 const HISTORY_WEEKLY_OFFSETS = [1, 2];
 const HISTORY_MONTHLY_OFFSETS = [1];
+const FINALIZED_WINNER_SOURCE = 'legacy_rankings_inferred';
 
 function normChain(value) {
   return String(value || 'bnb').toLowerCase() === 'solana' ? 'solana' : 'bnb';
@@ -47,6 +48,22 @@ function pendingEpoch(period, epochOffset) {
   };
 }
 
+function buildSeasonMeta({ chain, chainId, period, epochOffset, epoch }) {
+  const epochStart = epoch?.epochStart || epoch?.rangeStart || null;
+  const epochEnd = epoch?.epochEnd || epoch?.rangeEnd || null;
+  const rangeKey = epochStart && epochEnd ? `${epochStart}_${epochEnd}` : `offset_${epochOffset}`;
+  const seasonId = `${chain}-${chainId}-${period}-${rangeKey}`;
+  return {
+    seasonId,
+    epochId: seasonId,
+    chain,
+    chainId,
+    period,
+    epochOffset,
+    status: epoch?.status || (epochOffset > 0 ? 'finalized' : 'live'),
+  };
+}
+
 function pendingLeagues(chain) {
   const warning = chain === 'solana'
     ? 'Solana league feed pending. BNB standings and prize pools are not reused for Solana.'
@@ -60,6 +77,24 @@ function pendingLeagues(chain) {
     rows: [],
     warning,
   }));
+}
+
+function emptyTrendMetrics() {
+  return {
+    basis: 'insufficient_history',
+    changeVsPreviousEpoch: null,
+    entrantsGrowthPct: null,
+    prizePoolGrowthPct: null,
+  };
+}
+
+function emptyHallOfFame() {
+  return {
+    basis: 'summary_history_scaffold',
+    allTimeWinners: [],
+    biggestPrizePools: [],
+    mostWins: [],
+  };
 }
 
 function buildPendingSummary({ chain, period, epochOffset }) {
@@ -82,6 +117,8 @@ function buildPendingSummary({ chain, period, epochOffset }) {
     chain,
     period,
     epoch,
+    season: buildSeasonMeta({ chain, chainId: chain === 'solana' ? 0 : 97, period, epochOffset, epoch }),
+    winnerSource: { source: 'pending', finalized: false },
     current: { epoch, winners: [], prize },
     payoutPolicy: policy,
     prize,
@@ -89,6 +126,8 @@ function buildPendingSummary({ chain, period, epochOffset }) {
     currentLeaders: [],
     history: { weekly: [], monthly: [] },
     historyMeta: { weeklyOffsets: HISTORY_WEEKLY_OFFSETS, monthlyOffsets: HISTORY_MONTHLY_OFFSETS },
+    trendMetrics: emptyTrendMetrics(),
+    hallOfFame: emptyHallOfFame(),
   };
 }
 
@@ -108,6 +147,17 @@ function rawToUsd(raw, bnbUsd) {
   }
   const usd = Number(whole) / 1e18 * bnbUsd;
   return Number.isFinite(usd) ? usd : 0;
+}
+
+function pctChange(current, previous) {
+  const a = Number(current) || 0;
+  const b = Number(previous) || 0;
+  if (b <= 0) return null;
+  return ((a - b) / b) * 100;
+}
+
+function sumEntrants(leagues) {
+  return (Array.isArray(leagues) ? leagues : []).reduce((sum, leagueResult) => sum + (Number(leagueResult?.entrants) || 0), 0);
 }
 
 function readBnbUsd() {
@@ -293,9 +343,12 @@ function leagueHistorySnapshot(leagueResult) {
 
 function buildHistoryEntry(period, epochOffset, summary) {
   const prize = prizeSnapshot(summary.prize);
+  const season = buildSeasonMeta({ chain: 'bnb', chainId: summary.chainId || 97, period, epochOffset, epoch: summary.epoch });
   return {
     period,
     epochOffset,
+    seasonId: season.seasonId,
+    epochId: season.epochId,
     epoch: summary.epoch,
     prize,
     charity: {
@@ -329,6 +382,71 @@ async function buildHistory(req, { chainId, limit }) {
   return { weekly, monthly };
 }
 
+function calculateTrendMetrics(currentSummary, history, period) {
+  const previous = Array.isArray(history?.[period]) ? history[period][0] : null;
+  if (!previous) return emptyTrendMetrics();
+
+  const currentEntrants = sumEntrants(currentSummary.leagues);
+  const previousEntrants = sumEntrants(previous.leagues);
+  const currentPrize = Number(currentSummary?.prize?.playerPrizePoolUsd || currentSummary?.prize?.generatedUsd || 0);
+  const previousPrize = Number(previous?.prize?.playerPrizePoolUsd || previous?.prize?.generatedUsd || 0);
+
+  return {
+    basis: `${period}_previous_epoch`,
+    changeVsPreviousEpoch: {
+      entrants: currentEntrants - previousEntrants,
+      playerPrizePoolUsd: currentPrize - previousPrize,
+    },
+    entrantsGrowthPct: pctChange(currentEntrants, previousEntrants),
+    prizePoolGrowthPct: pctChange(currentPrize, previousPrize),
+  };
+}
+
+function buildHallOfFame(history) {
+  const allHistory = [
+    ...(Array.isArray(history?.weekly) ? history.weekly : []),
+    ...(Array.isArray(history?.monthly) ? history.monthly : []),
+  ];
+  const winnerCounts = new Map();
+  const allTimeWinners = [];
+  const biggestPrizePools = [];
+
+  for (const entry of allHistory) {
+    const poolUsd = Number(entry?.prize?.playerPrizePoolUsd || entry?.prize?.generatedUsd || 0);
+    if (poolUsd > 0) {
+      biggestPrizePools.push({
+        period: entry.period,
+        seasonId: entry.seasonId,
+        epochId: entry.epochId,
+        playerPrizePoolUsd: poolUsd,
+        generatedUsd: Number(entry?.prize?.generatedUsd || 0),
+        capReached: Boolean(entry?.prize?.capReached),
+      });
+    }
+
+    for (const winner of Array.isArray(entry?.winners) ? entry.winners : []) {
+      const key = firstDefined(winner.wallet, winner.campaignAddress, winner.symbol, winner.name, 'unknown');
+      const previous = winnerCounts.get(key) || { key, wallet: winner.wallet || null, name: winner.name || null, symbol: winner.symbol || null, wins: 0, estimatedPayoutUsd: 0 };
+      previous.wins += 1;
+      previous.estimatedPayoutUsd += Number(winner.estimatedPayoutUsd || 0);
+      winnerCounts.set(key, previous);
+      allTimeWinners.push({
+        period: entry.period,
+        seasonId: entry.seasonId,
+        epochId: entry.epochId,
+        ...winner,
+      });
+    }
+  }
+
+  return {
+    basis: 'summary_history_scaffold',
+    allTimeWinners: allTimeWinners.slice(0, 25),
+    biggestPrizePools: biggestPrizePools.sort((a, b) => b.playerPrizePoolUsd - a.playerPrizePoolUsd).slice(0, 10),
+    mostWins: Array.from(winnerCounts.values()).sort((a, b) => b.wins - a.wins || b.estimatedPayoutUsd - a.estimatedPayoutUsd).slice(0, 10),
+  };
+}
+
 async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, limit, includeHistory = true }) {
   const policy = getPayoutPolicy(period);
   const results = await Promise.all(
@@ -344,15 +462,26 @@ async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, l
   );
 
   const epoch = pickEpoch(results, period, epochOffset);
+  const season = buildSeasonMeta({ chain, chainId, period, epochOffset, epoch });
   const prize = summarizePrize(results, period, policy);
   const currentLeaders = pickCurrentLeaders(results);
   const history = includeHistory ? await buildHistory(req, { chainId, limit }) : { weekly: [], monthly: [] };
+  const baseSummary = { leagues: results, prize };
 
   return {
     chain,
     chainId,
     period,
     epoch,
+    season,
+    seasonId: season.seasonId,
+    epochId: season.epochId,
+    winnerSource: {
+      source: FINALIZED_WINNER_SOURCE,
+      finalized: false,
+      plannedSource: 'league_epoch_winners',
+      note: 'Winners are inferred from legacy ranking rows until finalized league_epoch_winners data is wired.',
+    },
     current: { epoch, winners: currentLeaders, prize },
     payoutPolicy: policy,
     prize,
@@ -360,6 +489,8 @@ async function aggregateBnbSummary(req, { chain, chainId, period, epochOffset, l
     currentLeaders,
     history,
     historyMeta: { weeklyOffsets: HISTORY_WEEKLY_OFFSETS, monthlyOffsets: HISTORY_MONTHLY_OFFSETS },
+    trendMetrics: calculateTrendMetrics(baseSummary, history, period),
+    hallOfFame: buildHallOfFame(history),
   };
 }
 
