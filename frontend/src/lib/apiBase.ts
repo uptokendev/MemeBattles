@@ -6,17 +6,21 @@ import { getReadProvider } from "@/lib/readProvider";
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 
-const EXPLICIT_API_BASE = String(
+function normalizeApiBase(value: unknown): string {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^\/\//.test(raw)) return `https:${raw}`;
+  return `https://${raw}`;
+}
+
+const EXPLICIT_API_BASE = normalizeApiBase(
   import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_BASE ||
     ""
-)
-  .trim()
-  .replace(/\/$/, "");
+);
 
-const EXPLICIT_REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "")
-  .trim()
-  .replace(/\/$/, "");
+const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(import.meta.env.VITE_REALTIME_API_BASE || "");
 
 // Do not route global list endpoints (/api/campaigns, /api/featured) to the
 // realtime-indexer project: memebattles-production does not expose those routes.
