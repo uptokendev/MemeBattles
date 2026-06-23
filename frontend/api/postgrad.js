@@ -27,12 +27,54 @@ function routePath(req) {
   return String(req.path || new URL(req.url, "http://localhost").pathname);
 }
 
+function disabledReadPayload(path, flag) {
+  const base = {
+    disabled: true,
+    featureFlag: flag,
+    warning: "Postgrad API route is disabled.",
+  };
+
+  if (path === "/arena/league") return { ...base, season: null, history: [] };
+  if (path === "/arena/battles") return { ...base, liveBattles: [], openForBattleQueue: [], archivedBattles: [] };
+  if (path === "/arena/events") return { ...base, events: [], archivedEvents: [] };
+  if (path === "/arena/war-pools") {
+    return {
+      ...base,
+      summary: { pools: [], totalPotUsd: 0, openPools: 0, lockedPools: 0, paidPools: 0 },
+    };
+  }
+  if (/^\/arena\/war-pools\/[^/]+$/.test(path)) return { ...base, pool: null, settlementSummary: null };
+  if (path === "/sponsored") return { ...base, items: [], updatedAt: new Date().toISOString() };
+  if (path === "/sponsorship-applications") return { ...base, items: [], updatedAt: new Date().toISOString() };
+  if (path === "/war-room") return { ...base, rooms: [], updatedAt: new Date().toISOString() };
+  return { ...base, ok: false };
+}
+
+function isSafeDisabledRead(req, path) {
+  const method = String(req.method || "GET").toUpperCase();
+  if (method !== "GET") return false;
+  return (
+    path === "/arena/league" ||
+    path === "/arena/battles" ||
+    path === "/arena/events" ||
+    path === "/arena/war-pools" ||
+    /^\/arena\/war-pools\/[^/]+$/.test(path) ||
+    path === "/sponsored" ||
+    path === "/sponsorship-applications" ||
+    path === "/war-room"
+  );
+}
+
 export default async function handler(req, res) {
   const path = routePath(req);
   const route = ROUTES.find((candidate) => candidate.pattern.test(path));
   if (!route) return res.status(404).json({ error: `Unknown postgrad route: ${path}` });
 
   if (!enabled(route.flag)) {
+    if (isSafeDisabledRead(req, path)) {
+      return res.status(200).json(disabledReadPayload(path, route.flag));
+    }
+
     return res.status(503).json({
       ok: false,
       error: "Postgrad API route is disabled",
