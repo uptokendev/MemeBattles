@@ -1,10 +1,17 @@
 import type { LeagueCabinet, LeagueCabinetMastery, LeagueCabinetWin } from "@/lib/leagueCabinet";
 
-const rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
-const API_BASE = rawBase.replace(/\/$/, "");
+function normalizeApiBase(value: unknown): string {
+  const raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^\/\//.test(raw)) return `https:${raw}`;
+  return `https://${raw}`;
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL);
 
 function buildUrl(pathWithQuery: string): string {
-  if (API_BASE && /^https?:\/\//i.test(API_BASE)) {
+  if (API_BASE) {
     return `${API_BASE}${pathWithQuery.startsWith("/") ? pathWithQuery : `/${pathWithQuery}`}`;
   }
   return new URL(pathWithQuery, window.location.origin).toString();
