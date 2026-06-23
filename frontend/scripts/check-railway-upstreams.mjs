@@ -1,7 +1,5 @@
 import "../api/load-local-env.mjs";
 
-const DEFAULT_FRONTEND_BASE = "https://memewarzonefrontend-production.up.railway.app";
-const DEFAULT_TOKEN_BASE = "https://memebattles-production.up.railway.app";
 const DEFAULT_CHAIN_IDS = [56, 97];
 
 function normalizeUrl(raw) {
@@ -11,12 +9,19 @@ function normalizeUrl(raw) {
   return withProtocol.replace(/\/+$/, "");
 }
 
-function firstEnv(names, fallback = "") {
+function firstEnv(names) {
   for (const name of names) {
     const value = normalizeUrl(process.env[name]);
     if (value) return { name, value };
   }
-  return { name: "default", value: fallback };
+  return { name: "unset", value: "" };
+}
+
+function requireUpstream(label, upstream, envNames) {
+  if (upstream.value) return;
+  console.error(`${label} Railway base URL is required for devpostgrad smoke checks.`);
+  console.error(`Set one of: ${envNames.join(", ")}`);
+  process.exitCode = 1;
 }
 
 function parseChainIds(raw) {
@@ -70,16 +75,27 @@ function summarizeJson(text) {
   }
 }
 
-const frontend = firstEnv(
-  ["RAILWAY_FRONTEND_API_BASE_URL", "FRONTEND_RAILWAY_API_BASE_URL", "MEMEWARZONE_FRONTEND_API_BASE_URL", "RAILWAY_API_BASE_URL"],
-  DEFAULT_FRONTEND_BASE,
-);
-const token = firstEnv(
-  ["RAILWAY_TOKEN_API_BASE_URL", "TOKEN_RAILWAY_API_BASE_URL", "RAILWAY_INDEXER_URL"],
-  DEFAULT_TOKEN_BASE,
-);
+const frontendEnvNames = [
+  "RAILWAY_FRONTEND_API_BASE_URL",
+  "FRONTEND_RAILWAY_API_BASE_URL",
+  "MEMEWARZONE_FRONTEND_API_BASE_URL",
+  "VITE_API_BASE_URL",
+  "RAILWAY_API_BASE_URL",
+];
+const tokenEnvNames = [
+  "RAILWAY_TOKEN_API_BASE_URL",
+  "TOKEN_RAILWAY_API_BASE_URL",
+  "RAILWAY_INDEXER_URL",
+  "VITE_REALTIME_API_BASE",
+];
+const frontend = firstEnv(frontendEnvNames);
+const token = firstEnv(tokenEnvNames);
 const chainIds = parseChainIds(process.env.CHECK_CHAIN_IDS || process.env.VITE_ALLOWED_CHAIN_IDS);
 const draftOwner = firstRawEnv(["CHECK_DRAFT_OWNER", "DRAFT_OWNER", "WALLET_ADDRESS", "VITE_DEV_WALLET_ADDRESS"]);
+
+requireUpstream("frontend", frontend, frontendEnvNames);
+requireUpstream("token/indexer", token, tokenEnvNames);
+if (process.exitCode) process.exit(process.exitCode);
 
 const checks = [
   ["frontend", frontend, "/healthz"],
