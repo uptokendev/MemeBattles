@@ -10,10 +10,14 @@ CREATE TABLE IF NOT EXISTS public.wallet_profiles (
 );
 
 ALTER TABLE public.wallet_profiles
+  ADD COLUMN IF NOT EXISTS wallet_address TEXT,
   ADD COLUMN IF NOT EXISTS display_name TEXT,
   ADD COLUMN IF NOT EXISTS avatar_url TEXT,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS wallet_profiles_wallet_address_unique
+  ON public.wallet_profiles (wallet_address);
 
 CREATE TABLE IF NOT EXISTS public.auth_nonces (
   chain_id INTEGER NOT NULL,
@@ -28,11 +32,16 @@ CREATE TABLE IF NOT EXISTS public.auth_nonces (
 );
 
 ALTER TABLE public.auth_nonces
+  ADD COLUMN IF NOT EXISTS chain_id INTEGER,
+  ADD COLUMN IF NOT EXISTS address TEXT,
   ADD COLUMN IF NOT EXISTS nonce TEXT,
   ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS used_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS auth_nonces_chain_address_unique
+  ON public.auth_nonces (chain_id, address);
 
 CREATE TABLE IF NOT EXISTS public.recruiters (
   id BIGSERIAL PRIMARY KEY,
@@ -196,38 +205,88 @@ CREATE INDEX IF NOT EXISTS recruiter_admin_actions_recruiter_idx
 CREATE INDEX IF NOT EXISTS recruiter_admin_actions_target_wallet_idx
   ON public.recruiter_admin_actions (lower(target_wallet), created_at DESC);
 
-CREATE OR REPLACE VIEW public.wallet_attribution_states AS
-SELECT
-  p.wallet_address,
-  COALESCE(a.has_activity, FALSE) AS has_activity,
-  CASE
-    WHEN l.wallet_address IS NULL THEN 'unlinked'
-    WHEN COALESCE(a.has_activity, FALSE) THEN 'linked_locked'
-    ELSE 'linked_unlocked'
-  END AS recruiter_link_state,
-  r.id AS recruiter_id,
-  r.code AS recruiter_code,
-  r.display_name AS recruiter_display_name,
-  COALESCE(r.is_og, FALSE) AS recruiter_is_og,
-  CASE
-    WHEN s.wallet_address IS NULL THEN 'solo'
-    WHEN COALESCE(s.is_active, TRUE) THEN 'in_squad'
-    ELSE 'inactive'
-  END AS squad_state,
-  CASE WHEN COALESCE(a.has_activity, FALSE) THEN GREATEST(l.linked_at, s.joined_at) ELSE NULL END AS locked_at
-FROM public.wallet_profiles p
-LEFT JOIN public.wallet_recruiter_links l
-  ON l.wallet_address = p.wallet_address
- AND COALESCE(l.is_active, TRUE) = TRUE
-LEFT JOIN public.wallet_squad_memberships s
-  ON s.wallet_address = p.wallet_address
- AND COALESCE(s.is_active, TRUE) = TRUE
-LEFT JOIN public.recruiters r
-  ON r.id = COALESCE(l.recruiter_id, s.recruiter_id)
-LEFT JOIN (
-  SELECT wallet_address, TRUE AS has_activity
-  FROM public.wallet_recruiter_links
-  GROUP BY wallet_address
-) a ON a.wallet_address = p.wallet_address;
+DO $$
+BEGIN
+  IF to_regclass('public.wallet_attribution_states') IS NULL THEN
+    EXECUTE $view$
+      CREATE VIEW public.wallet_attribution_states AS
+      SELECT
+        p.wallet_address,
+        COALESCE(a.has_activity, FALSE) AS has_activity,
+        CASE
+          WHEN l.wallet_address IS NULL THEN 'unlinked'
+          WHEN COALESCE(a.has_activity, FALSE) THEN 'linked_locked'
+          ELSE 'linked_unlocked'
+        END AS recruiter_link_state,
+        r.id AS recruiter_id,
+        r.code AS recruiter_code,
+        r.display_name AS recruiter_display_name,
+        COALESCE(r.is_og, FALSE) AS recruiter_is_og,
+        CASE
+          WHEN s.wallet_address IS NULL THEN 'solo'
+          WHEN COALESCE(s.is_active, TRUE) THEN 'in_squad'
+          ELSE 'inactive'
+        END AS squad_state,
+        CASE WHEN COALESCE(a.has_activity, FALSE) THEN GREATEST(l.linked_at, s.joined_at) ELSE NULL END AS locked_at
+      FROM public.wallet_profiles p
+      LEFT JOIN public.wallet_recruiter_links l
+        ON l.wallet_address = p.wallet_address
+       AND COALESCE(l.is_active, TRUE) = TRUE
+      LEFT JOIN public.wallet_squad_memberships s
+        ON s.wallet_address = p.wallet_address
+       AND COALESCE(s.is_active, TRUE) = TRUE
+      LEFT JOIN public.recruiters r
+        ON r.id = COALESCE(l.recruiter_id, s.recruiter_id)
+      LEFT JOIN (
+        SELECT wallet_address, TRUE AS has_activity
+        FROM public.wallet_recruiter_links
+        GROUP BY wallet_address
+      ) a ON a.wallet_address = p.wallet_address
+    $view$;
+  ELSIF EXISTS (
+    SELECT 1
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'wallet_attribution_states'
+      AND c.relkind = 'v'
+  ) THEN
+    EXECUTE $view$
+      CREATE OR REPLACE VIEW public.wallet_attribution_states AS
+      SELECT
+        p.wallet_address,
+        COALESCE(a.has_activity, FALSE) AS has_activity,
+        CASE
+          WHEN l.wallet_address IS NULL THEN 'unlinked'
+          WHEN COALESCE(a.has_activity, FALSE) THEN 'linked_locked'
+          ELSE 'linked_unlocked'
+        END AS recruiter_link_state,
+        r.id AS recruiter_id,
+        r.code AS recruiter_code,
+        r.display_name AS recruiter_display_name,
+        COALESCE(r.is_og, FALSE) AS recruiter_is_og,
+        CASE
+          WHEN s.wallet_address IS NULL THEN 'solo'
+          WHEN COALESCE(s.is_active, TRUE) THEN 'in_squad'
+          ELSE 'inactive'
+        END AS squad_state,
+        CASE WHEN COALESCE(a.has_activity, FALSE) THEN GREATEST(l.linked_at, s.joined_at) ELSE NULL END AS locked_at
+      FROM public.wallet_profiles p
+      LEFT JOIN public.wallet_recruiter_links l
+        ON l.wallet_address = p.wallet_address
+       AND COALESCE(l.is_active, TRUE) = TRUE
+      LEFT JOIN public.wallet_squad_memberships s
+        ON s.wallet_address = p.wallet_address
+       AND COALESCE(s.is_active, TRUE) = TRUE
+      LEFT JOIN public.recruiters r
+        ON r.id = COALESCE(l.recruiter_id, s.recruiter_id)
+      LEFT JOIN (
+        SELECT wallet_address, TRUE AS has_activity
+        FROM public.wallet_recruiter_links
+        GROUP BY wallet_address
+      ) a ON a.wallet_address = p.wallet_address
+    $view$;
+  END IF;
+END $$;
 
 COMMIT;
