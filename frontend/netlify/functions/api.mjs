@@ -24,6 +24,13 @@ import leagueRoot from "../../api/leagueRoot.js";
 import profile from "../../api/profile.js";
 import profileCabinet from "../../api/profileCabinet.js";
 import rewards from "../../api/rewards.js";
+import {
+  recruiterAttribution,
+  recruiterPortal,
+  recruiterSignup,
+  squadMembers,
+  squadSummary,
+} from "../../api/recruiters.js";
 import shareCard from "../../api/shareCard.js";
 import status from "../../api/status.js";
 import upload from "../../api/upload.js";
@@ -103,6 +110,12 @@ app.all("/leaguePayouts", wrap(leaguePayouts));
 app.all("/leagueRoot", wrap(leagueRoot));
 app.all("/profile", wrap(profile));
 app.all("/profileCabinet", wrap(profileCabinet));
+app.all("/recruiter", wrap(recruiterPortal));
+app.all("/recruiter-signup", wrap(recruiterSignup));
+app.all("/recruiter-attribution", wrap(recruiterAttribution));
+app.all("/squads/members", wrap(squadMembers));
+app.all("/squads/:code/summary", wrap(squadSummary));
+app.all("/squads/:code/members", wrap(squadMembers));
 app.all("/rewards", wrap(rewards));
 app.all("/shareCard", wrap(shareCard));
 app.all("/status", wrap(status));
