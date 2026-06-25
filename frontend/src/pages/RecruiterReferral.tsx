@@ -26,6 +26,31 @@ type ReferralState = {
   expiresAt: string | null;
 };
 
+function fallbackExpiresAt(days?: unknown): string | null {
+  const parsed = Number(days);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const expiresAt = new Date(Date.now() + Math.trunc(parsed) * 24 * 60 * 60 * 1000);
+  return expiresAt.toISOString();
+}
+
+function normalizeReferralState(result: any, fallbackCode: string): ReferralState {
+  const nestedRecruiter = result?.recruiter;
+  const flatCode = result?.recruiterCode;
+  const code = String(nestedRecruiter?.code || flatCode || fallbackCode || "").trim();
+
+  return {
+    recruiter: code
+      ? {
+          code,
+          displayName: nestedRecruiter?.displayName ?? result?.recruiterDisplayName ?? null,
+          isOg: Boolean(nestedRecruiter?.isOg ?? result?.recruiterIsOg),
+          status: String(nestedRecruiter?.status || result?.recruiterStatus || "active"),
+        }
+      : null,
+    expiresAt: result?.referral?.expiresAt ?? result?.expiresAt ?? fallbackExpiresAt(result?.expiresInDays),
+  };
+}
+
 export default function RecruiterReferral() {
   const { code = "" } = useParams<{ code: string }>();
   const wallet = useWallet();
@@ -58,10 +83,7 @@ export default function RecruiterReferral() {
         ]);
 
         if (cancelled) return;
-        setState({
-          recruiter: result.recruiter ?? null,
-          expiresAt: result.referral?.expiresAt ?? null,
-        });
+        setState(normalizeReferralState(result, recruiterCode));
         setWalletState(currentWalletState);
         setReplacementSuggestions(Array.isArray(replacementData?.replacements) ? replacementData.replacements : []);
       } catch (err: any) {
