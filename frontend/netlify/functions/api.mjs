@@ -87,10 +87,12 @@ import {
   rewardsEligibility,
   rewardsHistory,
   rewardsMe,
+} from "../../api/dev-fix/stubs.js";
+import {
   squadMembers,
   squadSummary,
   squadsLeaderboard,
-} from "../../api/dev-fix/stubs.js";
+} from "../../api/dev-fix/squads.js";
 
 const app = express();
 app.disable("x-powered-by");
