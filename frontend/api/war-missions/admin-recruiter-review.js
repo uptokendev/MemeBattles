@@ -58,11 +58,13 @@ export default async function wmAdminRecruiterReview(req, res) {
     const { rows: updatedRows } = await pool.query(
       `
         update public.wm_recruiter_applications
-        set status = $2, reviewed_at = now()
+        set status = $2,
+            reviewed_by = $3,
+            reviewed_at = now()
         where id = $1
         returning *
       `,
-      [applicationId, decision],
+      [applicationId, decision, admin.username || "admin"],
     );
     const updatedApplication = updatedRows[0] || application;
 
