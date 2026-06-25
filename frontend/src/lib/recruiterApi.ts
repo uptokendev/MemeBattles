@@ -311,7 +311,12 @@ function normalizeRecruiterCode(code: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/^-|-$/g, "")
+    .slice(0, 32);
+}
+
+function normalizeSignupText(value: string, max: number): string {
+  return String(value || "").trim().slice(0, max);
 }
 
 export function buildRecruiterSignupMessage(input: {
@@ -333,14 +338,14 @@ export function buildRecruiterSignupMessage(input: {
     `ChainId: ${input.chainId ?? ""}`,
     `Nonce: ${String(input.nonce || "").trim()}`,
     "",
-    `DisplayName: ${String(input.displayName || "").trim()}`,
+    `DisplayName: ${normalizeSignupText(input.displayName, 40)}`,
     `DesiredCode: ${normalizeRecruiterCode(input.desiredCode)}`,
-    `Email: ${String(input.email || "").trim()}`,
-    `Telegram: ${String(input.telegram || "").trim()}`,
-    `Discord: ${String(input.discord || "").trim()}`,
-    `X: ${String(input.xHandle || "").trim()}`,
+    `Email: ${normalizeSignupText(input.email, 120)}`,
+    `Telegram: ${normalizeSignupText(input.telegram, 80)}`,
+    `Discord: ${normalizeSignupText(input.discord, 80)}`,
+    `X: ${normalizeSignupText(input.xHandle, 80)}`,
     "",
-    `Pitch: ${String(input.pitch || "").trim()}`,
+    `Pitch: ${normalizeSignupText(input.pitch, 1000)}`,
   ].join("\n");
 }
 
