@@ -17,6 +17,8 @@ import Create from "./pages/Create";
 import League from "./pages/League";
 import LeagueDetail from "./pages/LeagueDetail";
 import Profile from "./pages/Profile";
+import RecruiterReferral from "./pages/RecruiterReferral";
+import RecruiterSignup from "./pages/RecruiterSignup";
 import TokenDetails from "./pages/TokenDetails";
 import Playbook from "@/pages/Playbook";
 import Status from "./pages/Status";
@@ -69,10 +71,12 @@ const App = () => {
                   <Route path="/battle-leagues/:leagueKey" element={<LeagueDetail />} />
                   <Route path="/league" element={<League />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/profile/:wallet/command/recruiter" element={<Profile />} />
+                  <Route path="/recruiter/signup" element={<RecruiterSignup />} />
+                  <Route path="/r/:code" element={<RecruiterReferral />} />
                   <Route path="/token/:campaignAddress" element={<TokenDetails />} />
                   <Route path="/docs" element={<Playbook />} />
-            <Route path="/playbook" element={<Playbook />} />
-            <Route path="/docs" element={<Playbook />} />
+                  <Route path="/playbook" element={<Playbook />} />
                   <Route path="/status" element={<Status />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
