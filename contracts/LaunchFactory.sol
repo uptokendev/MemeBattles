@@ -17,10 +17,6 @@ contract LaunchFactory is Ownable {
     error NameEmpty();
     error SymbolEmpty();
     error LogoEmpty();
-    error InitBuyValue();
-    error InitBuyTooLarge();
-    error InitialBuyDisabled();
-    error RefundFail();
     error RecipientZero();
     error FeeTooHigh();
     error FeeTooLowForLeague();
@@ -81,7 +77,6 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         address lpReceiver;
-        uint256 initialBuyBnbWei; // disabled for protected launch v1
     }
 
     struct RouteAuthorization {
@@ -181,28 +176,12 @@ contract LaunchFactory is Ownable {
 
     receive() external payable {}
 
-    function quoteInitialBuyTotal(uint256 initialBuyTokens, uint256 basePriceOverride, uint256 priceSlopeOverride)
-        external
-        view
-        returns (uint256)
-    {
-        if (initialBuyTokens == 0) return 0;
-        uint256 base = basePriceOverride > 0 ? basePriceOverride : config.basePrice;
-        uint256 slope = priceSlopeOverride > 0 ? priceSlopeOverride : config.priceSlope;
-        uint256 term1 = (base * initialBuyTokens) / 1e18;
-        uint256 term2 = (slope * initialBuyTokens * initialBuyTokens) / (2 * 1e18 * 1e18);
-        uint256 costNoFee = term1 + term2;
-        uint256 fee = (costNoFee * protocolFeeBps) / 10000;
-        return costNoFee + fee;
-    }
-
-    function createCampaign(CampaignRequest calldata req) external payable returns (address campaignAddr, address tokenAddr) {
+    function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
         return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
     }
 
     function createCampaignAuthorized(CampaignRequest calldata req, RouteAuthorization calldata routeAuth)
         external
-        payable
         returns (address campaignAddr, address tokenAddr)
     {
         _verifyRouteAuthorization(msg.sender, routeAuth);
@@ -220,7 +199,6 @@ contract LaunchFactory is Ownable {
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
-        if (req.initialBuyBnbWei != 0 || msg.value != 0) revert InitialBuyDisabled();
         if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
         if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
         if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
