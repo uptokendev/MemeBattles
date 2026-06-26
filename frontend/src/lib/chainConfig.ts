@@ -1,13 +1,19 @@
 // src/lib/chainConfig.ts
-// Centralized chain + env config for MemeBattles (BSC mainnet + testnet).
+// Centralized chain + env config for MemeBattles.
+// Supports BNB Smart Chain plus Solana mainnet via supported Solana wallets.
 //
 // Design goal:
 // - Reads follow the wallet's connected chain (if allowed), otherwise fall back to default chain.
-// - No redeploy needed to switch between testnet/mainnet; only switch the wallet network.
+// - No redeploy needed to switch between BNB testnet/mainnet; only switch the wallet network.
 
-export type SupportedChainId = 56 | 97;
+export type SupportedChainId = 56 | 97 | 101;
 
-const DEFAULT_ALLOWED: SupportedChainId[] = [56, 97];
+export const BNB_CHAIN_ID: SupportedChainId = 56;
+export const BNB_TESTNET_CHAIN_ID: SupportedChainId = 97;
+export const SOLANA_CHAIN_ID: SupportedChainId = 101;
+export const SUPPORTED_CHAIN_IDS: SupportedChainId[] = [56, 97, 101];
+
+const DEFAULT_ALLOWED: SupportedChainId[] = [56, 97, 101];
 const DEFAULT_CHAIN: SupportedChainId = 56;
 
 const parseCsvNumbers = (raw?: string): number[] => {
@@ -20,8 +26,12 @@ const parseCsvNumbers = (raw?: string): number[] => {
 
 export function getAllowedChainIds(): SupportedChainId[] {
   const raw = import.meta.env.VITE_ALLOWED_CHAIN_IDS as string | undefined;
-  const parsed = parseCsvNumbers(raw) as SupportedChainId[];
+  const parsed = parseCsvNumbers(raw).filter((chainId) => isSupportedChainId(chainId)) as SupportedChainId[];
   return parsed.length ? parsed : DEFAULT_ALLOWED;
+}
+
+export function getSupportedChainIds(): SupportedChainId[] {
+  return SUPPORTED_CHAIN_IDS;
 }
 
 export function getDefaultChainId(): SupportedChainId {
@@ -29,7 +39,11 @@ export function getDefaultChainId(): SupportedChainId {
     (import.meta.env.VITE_DEFAULT_CHAIN_ID as string | undefined) ??
     (import.meta.env.VITE_TARGET_CHAIN_ID as string | undefined); // backward-compat
   const n = Number(raw);
-  return (Number.isFinite(n) ? (n as SupportedChainId) : DEFAULT_CHAIN) ?? DEFAULT_CHAIN;
+  return Number.isFinite(n) && isSupportedChainId(n) ? (n as SupportedChainId) : DEFAULT_CHAIN;
+}
+
+export function isSupportedChainId(chainId?: number | null): boolean {
+  return chainId === 56 || chainId === 97 || chainId === 101;
 }
 
 export function isAllowedChainId(chainId?: number | null): boolean {
@@ -37,33 +51,58 @@ export function isAllowedChainId(chainId?: number | null): boolean {
   return getAllowedChainIds().includes(chainId as SupportedChainId);
 }
 
+export function isSolanaChainId(chainId?: number | null): boolean {
+  return chainId === SOLANA_CHAIN_ID;
+}
+
+export function isEvmChainId(chainId?: number | null): boolean {
+  return chainId === BNB_CHAIN_ID || chainId === BNB_TESTNET_CHAIN_ID;
+}
+
 export function getActiveChainId(walletChainId?: number | null): SupportedChainId {
   if (walletChainId && isAllowedChainId(walletChainId)) return walletChainId as SupportedChainId;
   return getDefaultChainId();
+}
+
+function normalizeRpcUrl(u: string) {
+  const s = u.trim();
+  // common typo: "https//" (missing colon)
+  if (s.startsWith("https//")) return "https:" + s.slice("https".length);
+  if (s.startsWith("http//")) return "http:" + s.slice("http".length);
+  return s;
+}
+
+function firstFromCsv(raw?: string) {
+  if (!raw) return "";
+  const parts = String(raw)
+    .split(",")
+    .map((p) => normalizeRpcUrl(p))
+    .filter(Boolean);
+  return parts[0] ?? "";
+}
+
+function fromCsv(raw?: string) {
+  if (!raw) return [];
+  return String(raw)
+    .split(",")
+    .map((p) => normalizeRpcUrl(p))
+    .filter((p) => Boolean(p));
 }
 
 export function getPublicRpcUrl(chainId: SupportedChainId): string {
   // NOTE: In Vite, only VITE_* env vars are exposed to the frontend bundle.
   // We support comma-separated lists for redundancy.
 
-  const normalize = (u: string) => {
-    const s = u.trim();
-    // common typo: "https//" (missing colon)
-    if (s.startsWith("https//")) return "https:" + s.slice("https".length);
-    if (s.startsWith("http//")) return "http:" + s.slice("http".length);
-    return s;
-  };
+  if (chainId === SOLANA_CHAIN_ID) {
+    const solana =
+      (import.meta.env.VITE_SOLANA_MAINNET_RPC as string | undefined) ??
+      (import.meta.env.VITE_SOLANA_RPC as string | undefined) ??
+      (import.meta.env.VITE_PUBLIC_RPC_SOLANA as string | undefined) ??
+      (import.meta.env.VITE_PUBLIC_RPC_101 as string | undefined);
+    const solanaFirst = firstFromCsv(solana);
+    return solanaFirst || "https://api.mainnet-beta.solana.com";
+  }
 
-  const firstFromCsv = (raw?: string) => {
-    if (!raw) return "";
-    const parts = String(raw)
-      .split(",")
-      .map((p) => normalize(p))
-      .filter(Boolean);
-    return parts[0] ?? "";
-  };
-
-  // Preferred env keys (explicit per-chain)
   const explicit =
     (import.meta.env[`VITE_PUBLIC_RPC_${chainId}`] as string | undefined) ??
     (import.meta.env[`VITE_BSC_RPC_${chainId}`] as string | undefined);
@@ -71,7 +110,6 @@ export function getPublicRpcUrl(chainId: SupportedChainId): string {
   const explicitFirst = firstFromCsv(explicit);
   if (explicitFirst) return explicitFirst;
 
-  // Secondary env keys (common naming)
   if (chainId === 56) {
     const v =
       (import.meta.env.VITE_BSC_MAINNET_RPC as string | undefined) ??
@@ -81,7 +119,6 @@ export function getPublicRpcUrl(chainId: SupportedChainId): string {
     return "https://bsc-dataseed.binance.org/";
   }
 
-  // 97
   const v =
     (import.meta.env.VITE_BSC_TESTNET_RPC as string | undefined) ??
     (import.meta.env.VITE_PUBLIC_RPC_TESTNET as string | undefined);
@@ -92,20 +129,15 @@ export function getPublicRpcUrl(chainId: SupportedChainId): string {
 
 // For redundancy: get *all* configured public RPC URLs for a chain.
 export function getPublicRpcUrls(chainId: SupportedChainId): string[] {
-  const normalize = (u: string) => {
-    const s = u.trim();
-    if (s.startsWith("https//")) return "https:" + s.slice("https".length);
-    if (s.startsWith("http//")) return "http:" + s.slice("http".length);
-    return s;
-  };
-
-  const fromCsv = (raw?: string) => {
-    if (!raw) return [];
-    return String(raw)
-      .split(",")
-      .map((p) => normalize(p))
-      .filter((p) => Boolean(p));
-  };
+  if (chainId === SOLANA_CHAIN_ID) {
+    const solana =
+      (import.meta.env.VITE_SOLANA_MAINNET_RPC as string | undefined) ??
+      (import.meta.env.VITE_SOLANA_RPC as string | undefined) ??
+      (import.meta.env.VITE_PUBLIC_RPC_SOLANA as string | undefined) ??
+      (import.meta.env.VITE_PUBLIC_RPC_101 as string | undefined);
+    const list = fromCsv(solana);
+    return list.length ? list : ["https://api.mainnet-beta.solana.com"];
+  }
 
   const explicit =
     (import.meta.env[`VITE_PUBLIC_RPC_${chainId}`] as string | undefined) ??
@@ -130,6 +162,8 @@ export function getPublicRpcUrls(chainId: SupportedChainId): string[] {
 }
 
 export function getFactoryAddress(chainId: SupportedChainId): string {
+  if (isSolanaChainId(chainId)) return "";
+
   // Preferred per-chain vars
   const perChain = (import.meta.env[`VITE_FACTORY_ADDRESS_${chainId}`] as string | undefined) ?? "";
   if (perChain.trim()) return perChain.trim();
@@ -140,6 +174,8 @@ export function getFactoryAddress(chainId: SupportedChainId): string {
 }
 
 export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
+  if (isSolanaChainId(chainId)) return "";
+
   // Preferred per-chain vars
   const perChain = (import.meta.env[`VITE_VOTE_TREASURY_ADDRESS_${chainId}`] as string | undefined) ?? "";
   if (perChain.trim()) return perChain.trim();
@@ -154,6 +190,8 @@ export function getVoteTreasuryAddress(chainId: SupportedChainId): string {
  * This address is chain-specific.
  */
 export function getTreasuryVaultAddress(chainId: SupportedChainId): string {
+  if (isSolanaChainId(chainId)) return "";
+
   // Preferred per-chain vars
   const perChain = (import.meta.env[`VITE_TREASURY_VAULT_ADDRESS_${chainId}`] as string | undefined) ?? "";
   if (perChain.trim()) return perChain.trim();
@@ -164,6 +202,7 @@ export function getTreasuryVaultAddress(chainId: SupportedChainId): string {
 }
 
 export function getExplorerTxBase(chainId: SupportedChainId): string {
+  if (chainId === SOLANA_CHAIN_ID) return "https://solscan.io/tx/";
   return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
 }
 
@@ -173,6 +212,7 @@ const CHAIN_LABELS: Record<number, string> = {
   1: "Ethereum",
   56: "BNB Smart Chain",
   97: "BNB Smart Chain Testnet",
+  101: "Solana mainnet",
   137: "Polygon",
   8453: "Base",
   42161: "Arbitrum One",
@@ -185,6 +225,16 @@ export function getChainLabel(chainId?: number | null): string | null {
   return CHAIN_LABELS[chainId] || `Chain ${chainId}`;
 }
 
+export function getSupportedChainsLabel(): string {
+  return "BNB Smart Chain (56/97) or Solana mainnet via supported Solana wallets";
+}
+
+export function getUnsupportedChainMessage(walletName?: string, chainId?: number | null): string {
+  const wallet = walletName || "your wallet";
+  const chain = chainId ? `${getChainLabel(chainId) || "Chain " + chainId} (${chainId})` : "an unsupported network";
+  return `${wallet} is connected on ${chain}. MemeWarzone supports ${getSupportedChainsLabel()}.`;
+}
+
 export function getChainParams(chainId: SupportedChainId) {
   if (chainId === 56) {
     return {
@@ -195,11 +245,15 @@ export function getChainParams(chainId: SupportedChainId) {
       blockExplorerUrls: ["https://bscscan.com/"],
     };
   }
-  return {
-    chainId: "0x61",
-    chainName: "BNB Smart Chain Testnet",
-    nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-    rpcUrls: [getPublicRpcUrl(97)],
-    blockExplorerUrls: ["https://testnet.bscscan.com/"],
-  };
+  if (chainId === 97) {
+    return {
+      chainId: "0x61",
+      chainName: "BNB Smart Chain Testnet",
+      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
+      rpcUrls: [getPublicRpcUrl(97)],
+      blockExplorerUrls: ["https://testnet.bscscan.com/"],
+    };
+  }
+
+  throw new Error("Solana does not use EVM chain parameters. Use the Solana wallet adapter path.");
 }
