@@ -13,7 +13,6 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 contract LaunchFactory is Ownable {
     using ECDSA for bytes32;
 
-    // Custom errors to reduce deployed bytecode size (BSC testnet enforces the 24KB limit).
     error RouterZero();
     error NameEmpty();
     error SymbolEmpty();
@@ -43,10 +42,9 @@ contract LaunchFactory is Ownable {
     error InvalidRouteAuthorization();
     error Paused();
     error CreatePaused();
-    error CreatorRegistryZero();
-    error RiskRegistryZero();
     error CreatorNotEligible();
     error RiskNotEligible();
+    error UnknownCampaign();
 
     struct LaunchConfig {
         uint256 totalSupply;
@@ -105,7 +103,6 @@ contract LaunchFactory is Ownable {
     uint8 public finalizeRouteProfile;
     address public routeAuthority;
 
-    /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
     bool public live;
     bool public globalPaused;
     bool public createPaused;
@@ -115,7 +112,6 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
-    // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
     address public router;
@@ -124,6 +120,7 @@ contract LaunchFactory is Ownable {
     RiskRegistry public riskRegistry;
 
     CampaignInfo[] private _campaigns;
+    mapping(address => bool) public isCampaign;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -147,6 +144,7 @@ contract LaunchFactory is Ownable {
     event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
     event RequireAuthorizedTradingUpdated(bool required);
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
+    event CampaignGraduated(address indexed campaign, address indexed creator);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -162,23 +160,19 @@ contract LaunchFactory is Ownable {
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
             liquidityTokenBps: 1000,
-            basePrice: 5e13, // 0.00005 BNB
-            priceSlope: 1e9, // grows 1 gwei per token sold (scaled to 1e18)
+            basePrice: 5e13,
+            priceSlope: 1e9,
             graduationTarget: 50 ether,
-            // 80% of raised BNB (after protocol fee) goes to LP, 20% to the creator.
             liquidityBps: 8000
         });
         feeRecipient = msg.sender;
-        // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         requireAuthorizedTrading = false;
-        // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
         campaignImplementation = address(new LaunchCampaign());
     }
 
-    /// @notice Enables Live Mode permanently. Cannot be undone.
     function enableLive() external onlyOwner {
         if (live) revert AlreadyLive();
         live = true;
@@ -187,7 +181,6 @@ contract LaunchFactory is Ownable {
 
     receive() external payable {}
 
-    /// @notice Quotes the former optional initial buy path. Kept for frontend compatibility; create-time buys are disabled.
     function quoteInitialBuyTotal(uint256 initialBuyTokens, uint256 basePriceOverride, uint256 priceSlopeOverride)
         external
         view
@@ -196,8 +189,6 @@ contract LaunchFactory is Ownable {
         if (initialBuyTokens == 0) return 0;
         uint256 base = basePriceOverride > 0 ? basePriceOverride : config.basePrice;
         uint256 slope = priceSlopeOverride > 0 ? priceSlopeOverride : config.priceSlope;
-
-        // Matches LaunchCampaign._area() for sold == 0
         uint256 term1 = (base * initialBuyTokens) / 1e18;
         uint256 term2 = (slope * initialBuyTokens * initialBuyTokens) / (2 * 1e18 * 1e18);
         uint256 costNoFee = term1 + term2;
@@ -230,7 +221,6 @@ contract LaunchFactory is Ownable {
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
         if (req.initialBuyBnbWei != 0 || msg.value != 0) revert InitialBuyDisabled();
-
         if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
         if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
         if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
@@ -256,8 +246,6 @@ contract LaunchFactory is Ownable {
             leagueFeeBps: LEAGUE_FEE_BPS,
             leagueReceiver: leagueReceiver,
             router: router,
-            // Force LP to be burned for every campaign.
-            // We intentionally ignore any user-provided lpReceiver.
             lpReceiver: DEAD,
             feeRecipient: feeRecipient,
             creator: msg.sender,
@@ -275,6 +263,7 @@ contract LaunchFactory is Ownable {
         LaunchCampaign(payable(clone)).initialize(params);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
+        isCampaign[campaignAddr] = true;
         string memory metadataURI = "";
 
         if (address(creatorRegistry) != address(0)) {
@@ -297,16 +286,15 @@ contract LaunchFactory is Ownable {
             })
         );
 
-        emit CampaignCreated(
-            _campaigns.length - 1,
-            campaignAddr,
-            tokenAddr,
-            msg.sender,
-            req.name,
-            req.symbol,
-            req.logoURI,
-            metadataURI
-        );
+        emit CampaignCreated(_campaigns.length - 1, campaignAddr, tokenAddr, msg.sender, req.name, req.symbol, req.logoURI, metadataURI);
+    }
+
+    function notifyCampaignGraduated(address campaignCreator) external {
+        if (!isCampaign[msg.sender]) revert UnknownCampaign();
+        if (address(creatorRegistry) != address(0)) {
+            creatorRegistry.recordGraduation(campaignCreator);
+        }
+        emit CampaignGraduated(msg.sender, campaignCreator);
     }
 
     function setConfig(LaunchConfig calldata newConfig) external onlyOwner whenMutable {
@@ -335,9 +323,7 @@ contract LaunchFactory is Ownable {
     }
 
     function setRouteProfiles(uint8 newTradeRouteProfile, uint8 newFinalizeRouteProfile) external onlyOwner whenMutable {
-        if (!_isValidRouteProfile(newTradeRouteProfile) || !_isValidRouteProfile(newFinalizeRouteProfile)) {
-            revert InvalidRouteProfile();
-        }
+        if (!_isValidRouteProfile(newTradeRouteProfile) || !_isValidRouteProfile(newFinalizeRouteProfile)) revert InvalidRouteProfile();
         tradeRouteProfile = newTradeRouteProfile;
         finalizeRouteProfile = newFinalizeRouteProfile;
         emit RouteProfilesUpdated(newTradeRouteProfile, newFinalizeRouteProfile);
@@ -374,6 +360,10 @@ contract LaunchFactory is Ownable {
         emit CampaignPauseUpdated(campaign, paused, buysPaused, sellsPaused, graduationPaused);
     }
 
+    function setCampaignRequireAuthorizedTrading(address campaign, bool required) external onlyOwner {
+        LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
+    }
+
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
     }
@@ -394,10 +384,7 @@ contract LaunchFactory is Ownable {
         address authority = routeAuthority;
         if (authority == address(0)) revert RouteAuthorityZero();
         if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
-        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) {
-            revert InvalidRouteProfile();
-        }
-
+        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) revert InvalidRouteProfile();
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
             keccak256(
                 abi.encodePacked(
@@ -411,10 +398,7 @@ contract LaunchFactory is Ownable {
                 )
             )
         );
-
-        if (digest.recover(routeAuth.signature) != authority) {
-            revert InvalidRouteAuthorization();
-        }
+        if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
     }
 
     function getCampaign(uint256 id) external view returns (CampaignInfo memory) {
@@ -424,25 +408,16 @@ contract LaunchFactory is Ownable {
 
     function getCampaignPage(uint256 offset, uint256 limit) external view returns (CampaignInfo[] memory page) {
         if (!(_campaigns.length == 0 || offset < _campaigns.length)) revert Offset();
-        if (_campaigns.length == 0 || limit == 0) {
-            return new CampaignInfo[](0);
-        }
+        if (_campaigns.length == 0 || limit == 0) return new CampaignInfo[](0);
         uint256 end = offset + limit;
-        if (end > _campaigns.length) {
-            end = _campaigns.length;
-        }
+        if (end > _campaigns.length) end = _campaigns.length;
         uint256 size = end > offset ? end - offset : 0;
         page = new CampaignInfo[](size);
-        for (uint256 i = 0; i < size; i++) {
-            page[i] = _campaigns[offset + i];
-        }
+        for (uint256 i = 0; i < size; i++) page[i] = _campaigns[offset + i];
     }
 
     function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
-        return
-            profile == ROUTE_PROFILE_STANDARD_LINKED ||
-            profile == ROUTE_PROFILE_STANDARD_UNLINKED ||
-            profile == ROUTE_PROFILE_OG_LINKED;
+        return profile == ROUTE_PROFILE_STANDARD_LINKED || profile == ROUTE_PROFILE_STANDARD_UNLINKED || profile == ROUTE_PROFILE_OG_LINKED;
     }
 
     function _validateConfig(LaunchConfig memory newConfig) internal pure {
