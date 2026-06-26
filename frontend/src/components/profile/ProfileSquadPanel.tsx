@@ -58,14 +58,15 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
           fetchSquadMembers({ walletAddress: account, limit: 1 }).catch(() => ({ items: [] })),
         ]);
 
-        const recruiterCode = attributionState?.recruiterCode ?? null;
+        const firstMember = Array.isArray(squadMembers?.items) ? squadMembers.items[0] ?? null : null;
+        const recruiterCode = attributionState?.recruiterCode || firstMember?.recruiterCode || null;
         const squadSummary = recruiterCode ? await fetchSquadSummary(recruiterCode).catch(() => null) : null;
 
         if (cancelled) return;
         setSummary(walletSummary);
         setAttribution(attributionState);
         setSquad(squadSummary);
-        setMember(Array.isArray(squadMembers?.items) ? squadMembers.items[0] ?? null : null);
+        setMember(firstMember);
       } catch (err: any) {
         if (!cancelled) setError(String(err?.message || err || "Failed to load squad state"));
       } finally {
@@ -161,6 +162,12 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
                 <p className="mt-2 font-retro text-lg text-foreground">{attribution?.squadState ?? "unknown"}</p>
               </div>
             </div>
+
+            {member ? (
+              <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+                Squad member row found: {member.memberRole || "member"} under recruiter {member.recruiterDisplayName || member.recruiterCode || "unknown"}.
+              </div>
+            ) : null}
 
             {attribution?.squadState?.includes("solo") ? (
               <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
