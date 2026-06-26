@@ -26,6 +26,12 @@ function normalizeCode(value) {
     .slice(0, 12);
 }
 
+function normalizeSquadRole(value) {
+  const role = String(value || "").trim().toLowerCase();
+  if (role === "creator" || role === "trader" || role === "both") return role;
+  return "legacy";
+}
+
 function normalizeImageUrl(value) {
   const raw = String(value || "").trim().slice(0, 1000);
   if (!raw) return "";
@@ -168,7 +174,7 @@ async function getSquadRows(recruiterId) {
   const { rows } = await pool.query(
     `select s.wallet_address,
             s.recruiter_id,
-            coalesce(nullif(s.member_role, ''), 'member') as role,
+            s.member_role as role,
             coalesce(nullif(s.link_source, ''), 'recruiter') as source,
             coalesce(s.joined_at, s.created_at) as bound_at
        from public.wallet_squad_memberships s
@@ -177,7 +183,7 @@ async function getSquadRows(recruiterId) {
       limit 250`,
     [recruiterId],
   );
-  return rows;
+  return rows.map((row) => ({ ...row, role: normalizeSquadRole(row.role) }));
 }
 
 function summarizeSquad(rows) {
@@ -185,26 +191,29 @@ function summarizeSquad(rows) {
     acc.total += 1;
     if (row.role === "creator") acc.creators += 1;
     else if (row.role === "trader") acc.traders += 1;
-    else acc.unknown += 1;
+    else if (row.role === "both") acc.both += 1;
+    else acc.legacyUnknown += 1;
     return acc;
-  }, { total: 0, creators: 0, traders: 0, unknown: 0 });
+  }, { total: 0, creators: 0, traders: 0, both: 0, legacyUnknown: 0, unknown: 0 });
 }
 
 async function portalResponse(recruiter) {
   const rows = await getSquadRows(recruiter.id);
   const imageUrl = recruiter.squad_image_url || null;
+  const counts = summarizeSquad(rows);
+  counts.unknown = counts.legacyUnknown;
   return {
     ok: true,
     recruiter: recruiterShape(recruiter),
     squad: {
       imageUrl,
       image_url: imageUrl,
-      counts: summarizeSquad(rows),
+      counts,
       rows: rows.map((row) => ({
         wallet_address: row.wallet_address,
         recruiter_id: Number(row.recruiter_id),
         recruiter_code: recruiter.code,
-        role: row.role || "member",
+        role: row.role,
         source: row.source || "recruiter",
         bound_at: row.bound_at,
       })),
