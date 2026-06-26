@@ -1,5 +1,7 @@
 import { apiFetch } from "@/lib/apiBase";
 
+export type SquadMemberRole = "creator" | "trader" | "both" | "legacy";
+
 export type RecruiterPortalRecruiter = {
   id: number;
   name: string;
@@ -18,7 +20,7 @@ export type RecruiterPortalSquadRow = {
   wallet_address: string;
   recruiter_id: number;
   recruiter_code: string;
-  role: string;
+  role: SquadMemberRole | string;
   source: string;
   bound_at: string;
 };
@@ -32,7 +34,9 @@ export type RecruiterPortalData = {
       total: number;
       creators: number;
       traders: number;
-      unknown: number;
+      both: number;
+      legacyUnknown: number;
+      unknown?: number;
     };
     rows: RecruiterPortalSquadRow[];
   };
@@ -84,6 +88,20 @@ async function parseJson(res: Response) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
   return json as any;
+}
+
+export function normalizeSquadRole(role?: string | null): SquadMemberRole {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "creator" || normalized === "trader" || normalized === "both") return normalized;
+  return "legacy";
+}
+
+export function getSquadRoleLabel(role?: string | null): string {
+  const normalized = normalizeSquadRole(role);
+  if (normalized === "creator") return "Creator";
+  if (normalized === "trader") return "Trader";
+  if (normalized === "both") return "Both";
+  return "Legacy";
 }
 
 export function getPortalSquadImageUrl(portal?: RecruiterPortalData | null): string {
