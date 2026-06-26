@@ -30,7 +30,11 @@ function normalizeText(value, max = 280) {
 
 function normalizeMemberRole(value) {
   const raw = String(value || "").trim().toLowerCase();
-  return raw === "creator" || raw === "trader" ? raw : "";
+  return raw === "creator" || raw === "trader" || raw === "both" ? raw : "";
+}
+
+function isLegacyMemberRole(value) {
+  return !normalizeMemberRole(value);
 }
 
 function schemaMissing(error) {
@@ -75,6 +79,8 @@ function recruiterSummaryShape(recruiter, extra = {}) {
     linkedWalletCount: Number(extra.linkedWalletCount || 0),
     linkedCreatorsCount: Number(extra.linkedCreatorsCount || 0),
     linkedTradersCount: Number(extra.linkedTradersCount || 0),
+    linkedBothCount: Number(extra.linkedBothCount || 0),
+    linkedLegacyUnknownCount: Number(extra.linkedLegacyUnknownCount || 0),
     activeSquadMemberCount: Number(extra.activeSquadMemberCount || 0),
     referredEventCount: Number(extra.referredEventCount || 0),
     referredVolumeRaw: String(extra.referredVolumeRaw || "0"),
@@ -187,7 +193,9 @@ async function getRecruiterStats(recruiterId) {
     pool.query(
       `select count(*)::int as active_squad_member_count,
               count(*) filter (where member_role = 'creator')::int as linked_creators_count,
-              count(*) filter (where member_role = 'trader')::int as linked_traders_count
+              count(*) filter (where member_role = 'trader')::int as linked_traders_count,
+              count(*) filter (where member_role = 'both')::int as linked_both_count,
+              count(*) filter (where member_role is null or member_role not in ('creator', 'trader', 'both'))::int as linked_legacy_unknown_count
          from public.wallet_squad_memberships
         where recruiter_id = $1 and is_active = true`,
       [recruiterId],
@@ -199,6 +207,8 @@ async function getRecruiterStats(recruiterId) {
     activeSquadMemberCount: squadRows[0]?.active_squad_member_count || 0,
     linkedCreatorsCount: squadRows[0]?.linked_creators_count || 0,
     linkedTradersCount: squadRows[0]?.linked_traders_count || 0,
+    linkedBothCount: squadRows[0]?.linked_both_count || 0,
+    linkedLegacyUnknownCount: squadRows[0]?.linked_legacy_unknown_count || 0,
     latestLinkedActivityAt: linkRows[0]?.latest_linked_activity_at || null,
   };
 }
@@ -297,10 +307,10 @@ export async function attributionWalletConnect(req, res) {
 
   try {
     const body = await readJson(req);
-    const walletAddress = normalizeAddress(body.walletAddress);
+    const walletAddress = normalizeAddress(body.walletAddress || body.wallet);
     const sessionToken = String(body.sessionToken || "").trim();
     const clientFingerprint = String(body.clientFingerprint || "").trim();
-    const memberRole = normalizeMemberRole(body.memberRole);
+    const memberRole = normalizeMemberRole(body.memberRole || body.role);
 
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
 
@@ -330,11 +340,8 @@ export async function attributionWalletConnect(req, res) {
       existingState?.recruiter_link_state === "linked_locked"
     ) {
       const existingMembership = await findActiveSquadMembership(walletAddress).catch(() => null);
-      if (
-        memberRole &&
-        existingMembership?.recruiter_id &&
-        String(existingMembership.member_role || "member") === "member"
-      ) {
+      const canCleanLegacyRole = Boolean(memberRole && existingMembership?.recruiter_id && isLegacyMemberRole(existingMembership.member_role));
+      if (canCleanLegacyRole) {
         await pool.query(
           `update public.wallet_squad_memberships
               set member_role = $1,
@@ -350,7 +357,7 @@ export async function attributionWalletConnect(req, res) {
         linked: Boolean(updatedState?.recruiter_id),
         locked: Boolean(updatedState?.has_activity || updatedState?.locked_at),
         state: publicState({ walletAddress, state: updatedState }),
-        reason: memberRole && existingMembership?.member_role === "member"
+        reason: canCleanLegacyRole
           ? "Existing squad membership role was updated."
           : "Existing canonical wallet attribution is already linked or locked.",
       });
@@ -377,7 +384,7 @@ export async function attributionWalletConnect(req, res) {
           displayName: recruiter.display_name,
           isOg: Boolean(recruiter.is_og),
         },
-        reason: "Choose whether this wallet joins as a creator or trader before locking recruiter attribution.",
+        reason: "Choose whether this wallet joins as a creator, trader, or both before locking recruiter attribution.",
       });
     }
 
@@ -426,7 +433,7 @@ export async function attributionWalletConnect(req, res) {
     console.error("[api/attribution wallet-connect]", error);
     if (schemaMissing(error)) {
       const body = await readJson(req).catch(() => ({}));
-      const walletAddress = normalizeAddress(body.walletAddress);
+      const walletAddress = normalizeAddress(body.walletAddress || body.wallet);
       return json(res, 200, {
         linked: false,
         state: publicState({ walletAddress }),
@@ -522,6 +529,8 @@ export async function recruiters(req, res) {
               count(distinct s.wallet_address)::int as active_squad_member_count,
               count(distinct s.wallet_address) filter (where s.member_role = 'creator')::int as linked_creators_count,
               count(distinct s.wallet_address) filter (where s.member_role = 'trader')::int as linked_traders_count,
+              count(distinct s.wallet_address) filter (where s.member_role = 'both')::int as linked_both_count,
+              count(distinct s.wallet_address) filter (where s.member_role is null or s.member_role not in ('creator', 'trader', 'both'))::int as linked_legacy_unknown_count,
               max(l.linked_at) as latest_linked_activity_at
          from public.recruiters r
          left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true
@@ -538,6 +547,8 @@ export async function recruiters(req, res) {
         linkedWalletCount: r.linked_wallet_count,
         linkedCreatorsCount: r.linked_creators_count,
         linkedTradersCount: r.linked_traders_count,
+        linkedBothCount: r.linked_both_count,
+        linkedLegacyUnknownCount: r.linked_legacy_unknown_count,
         activeSquadMemberCount: r.active_squad_member_count,
         latestLinkedActivityAt: r.latest_linked_activity_at,
       })),
