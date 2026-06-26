@@ -1,5 +1,5 @@
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, json } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, json } from "../../server/http.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -15,6 +15,11 @@ function normalizeCode(value) {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 32);
+}
+
+function normalizeAddress(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return isAddress(raw) ? raw : "";
 }
 
 function parseLimit(value, fallback = 50, max = 250) {
@@ -66,11 +71,12 @@ async function findRecruiterByCode(code) {
   return rows[0] || null;
 }
 
-async function loadSquadRows({ recruiterId, recruiterCode, limit = 250 }) {
+async function loadSquadRows({ recruiterId, recruiterCode, walletAddress, limit = 250 }) {
   const { rows } = await pool.query(
     `select s.wallet_address,
             s.recruiter_id,
             r.code as recruiter_code,
+            r.display_name as recruiter_display_name,
             coalesce(nullif(s.member_role, ''), 'member') as member_role,
             coalesce(nullif(s.link_source, ''), 'recruiter') as source,
             coalesce(s.joined_at, s.created_at) as created_at,
@@ -80,9 +86,10 @@ async function loadSquadRows({ recruiterId, recruiterCode, limit = 250 }) {
        join public.recruiters r on r.id = s.recruiter_id
       where ($1::bigint is null or s.recruiter_id = $1::bigint)
         and ($2::text is null or lower(r.code) = lower($2::text))
+        and ($3::text is null or s.wallet_address = lower($3::text))
       order by coalesce(s.joined_at, s.created_at) desc nulls last
-      limit $3`,
-    [recruiterId || null, recruiterCode || null, limit],
+      limit $4`,
+    [recruiterId || null, recruiterCode || null, walletAddress || null, limit],
   );
   return rows;
 }
@@ -115,8 +122,9 @@ export async function squadMembers(req, res) {
   try {
     const q = getQuery(req);
     const recruiterCode = normalizeCode(q.recruiterCode || req.params?.code);
+    const walletAddress = normalizeAddress(q.walletAddress);
     const limit = parseLimit(q.limit, 50, 250);
-    const rows = await loadSquadRows({ recruiterId: null, recruiterCode: recruiterCode || null, limit });
+    const rows = await loadSquadRows({ recruiterId: null, recruiterCode: recruiterCode || null, walletAddress: walletAddress || null, limit });
 
     return json(res, 200, {
       items: rows.map((row) => ({
@@ -124,14 +132,21 @@ export async function squadMembers(req, res) {
         walletAddress: row.wallet_address,
         recruiterId: Number(row.recruiter_id),
         recruiterCode: row.recruiter_code,
+        recruiterDisplayName: row.recruiter_display_name || null,
         memberRole: row.member_role,
         linkStatus: row.is_active ? "active" : "inactive",
         source: row.source || null,
+        isEligible: row.is_active && (row.member_role === "creator" || row.member_role === "trader"),
+        reasonCodes: row.is_active ? [] : ["inactive_squad_link"],
+        rawScore: "0",
+        estimatedPayoutAmount: "0",
+        memberCapAmount: "0",
+        memberCapApplied: false,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null,
       })),
       recruiterCode: recruiterCode || null,
-      walletAddress: q.walletAddress || null,
+      walletAddress: walletAddress || q.walletAddress || null,
       epochId: q.epochId ? Number(q.epochId) : null,
       limit,
       materializedAt: new Date().toISOString(),
