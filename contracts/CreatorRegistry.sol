@@ -49,7 +49,6 @@ contract CreatorRegistry is Ownable {
     error CreatorManualReview();
     error CreatorCooldown();
     error CreatorLiveLimit();
-    error LiveCountUnderflow();
 
     modifier onlyLaunchRecorder() {
         if (!launchRecorder[msg.sender]) revert NotLaunchRecorder();
@@ -100,8 +99,9 @@ contract CreatorRegistry is Ownable {
     function recordGraduation(address creator) external onlyLaunchRecorder {
         if (creator == address(0)) revert CreatorZero();
         CreatorProfile storage profile = _profiles[creator];
-        if (profile.liveBondingCount == 0) revert LiveCountUnderflow();
-        profile.liveBondingCount -= 1;
+        if (profile.liveBondingCount > 0) {
+            profile.liveBondingCount -= 1;
+        }
         emit CreatorGraduationRecorded(creator, profile.liveBondingCount);
     }
 
@@ -136,9 +136,7 @@ contract CreatorRegistry is Ownable {
         if (profile.restricted) revert CreatorRestricted();
         if (profile.manualReviewRequired) revert CreatorManualReview();
         if (profile.liveBondingCount >= rules.maxLiveBonding) revert CreatorLiveLimit();
-        if (profile.lastLaunchTimestamp != 0 && block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds) {
-            revert CreatorCooldown();
-        }
+        if (profile.lastLaunchTimestamp != 0 && block.timestamp < profile.lastLaunchTimestamp + rules.cooldownSeconds) revert CreatorCooldown();
     }
 
     function _effectiveTier(CreatorTier tier) internal pure returns (CreatorTier) {
