@@ -12,6 +12,7 @@ import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from
 import { useEffect, useState, type CSSProperties } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { SolanaWalletProvider } from "@/contexts/SolanaWalletContext";
 import Showcase from "./pages/Showcase";
 import Arena from "./pages/Arena";
 import ArenaBattles from "./pages/ArenaBattles";
@@ -246,17 +247,19 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
-          <div className={`transition-all duration-700 ${showContent ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
-            <BrowserRouter>
-              <InternalLinkInterceptor />
-              <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-            </BrowserRouter>
-          </div>
-        </TooltipProvider>
+        <SolanaWalletProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
+            <div className={`transition-all duration-700 ${showContent ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}>
+              <BrowserRouter>
+                <InternalLinkInterceptor />
+                <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
+              </BrowserRouter>
+            </div>
+          </TooltipProvider>
+        </SolanaWalletProvider>
       </WalletProvider>
     </QueryClientProvider>
   );
