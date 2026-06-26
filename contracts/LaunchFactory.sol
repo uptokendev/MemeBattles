@@ -6,19 +6,17 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {LaunchCampaign} from "./LaunchCampaign.sol";
+import {CreatorRegistry} from "./CreatorRegistry.sol";
+import {RiskRegistry} from "./RiskRegistry.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
     using ECDSA for bytes32;
 
-    // Custom errors to reduce deployed bytecode size (BSC testnet enforces the 24KB limit).
     error RouterZero();
     error NameEmpty();
     error SymbolEmpty();
     error LogoEmpty();
-    error InitBuyValue();
-    error InitBuyTooLarge();
-    error RefundFail();
     error RecipientZero();
     error FeeTooHigh();
     error FeeTooLowForLeague();
@@ -38,6 +36,12 @@ contract LaunchFactory is Ownable {
     error RouteAuthorityZero();
     error RouteAuthorizationExpired();
     error InvalidRouteAuthorization();
+    error Paused();
+    error CreatePaused();
+    error CreatorNotEligible();
+    error RiskNotEligible();
+    error UnknownCampaign();
+
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -73,7 +77,6 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         address lpReceiver;
-        uint256 initialBuyBnbWei; // optional: buy tokens for the creator using exact BNB in the create tx
     }
 
     struct RouteAuthorization {
@@ -84,7 +87,6 @@ contract LaunchFactory is Ownable {
     }
 
     uint256 private constant MAX_BPS = 10_000;
-    uint256 private constant MAX_CREATOR_INIT_BUY = 1 ether;
     uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
     uint8 public constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
     uint8 public constant ROUTE_PROFILE_OG_LINKED = 2;
@@ -96,19 +98,24 @@ contract LaunchFactory is Ownable {
     uint8 public finalizeRouteProfile;
     address public routeAuthority;
 
-    /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
     bool public live;
+    bool public globalPaused;
+    bool public createPaused;
+    bool public requireAuthorizedTrading;
+
     uint256 public constant LEAGUE_FEE_BPS = 75;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
-    // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
     address public router;
     address public campaignImplementation;
+    CreatorRegistry public creatorRegistry;
+    RiskRegistry public riskRegistry;
 
     CampaignInfo[] private _campaigns;
+    mapping(address => bool) public isCampaign;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -127,7 +134,12 @@ contract LaunchFactory is Ownable {
     event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
     event RouteAuthorityUpdated(address indexed newAuthority);
     event LiveEnabled(uint64 at);
-
+    event GlobalPauseUpdated(bool paused);
+    event CreatePauseUpdated(bool paused);
+    event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
+    event RequireAuthorizedTradingUpdated(bool required);
+    event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
+    event CampaignGraduated(address indexed campaign, address indexed creator);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -143,61 +155,33 @@ contract LaunchFactory is Ownable {
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
             liquidityTokenBps: 1000,
-            basePrice: 5e13, // 0.00005 BNB
-            priceSlope: 1e9, // grows 1 gwei per token sold (scaled to 1e18)
+            basePrice: 5e13,
+            priceSlope: 1e9,
             graduationTarget: 50 ether,
-            // 80% of raised BNB (after protocol fee) goes to LP, 20% to the creator.
             liquidityBps: 8000
         });
         feeRecipient = msg.sender;
-        // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
-        // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
+        requireAuthorizedTrading = false;
         campaignImplementation = address(new LaunchCampaign());
     }
 
-    /// @notice Enables Live Mode permanently. Cannot be undone.
     function enableLive() external onlyOwner {
         if (live) revert AlreadyLive();
         live = true;
         emit LiveEnabled(uint64(block.timestamp));
     }
 
-
     receive() external payable {}
 
-    /// @notice Quotes the BNB value required to perform the optional initial buy during createCampaign.
-    /// @dev Assumes sold == 0 for the newly created campaign.
-    function quoteInitialBuyTotal(
-        uint256 initialBuyTokens,
-        uint256 basePriceOverride,
-        uint256 priceSlopeOverride
-    ) external view returns (uint256) {
-        if (initialBuyTokens == 0) return 0;
-        uint256 base = basePriceOverride > 0 ? basePriceOverride : config.basePrice;
-        uint256 slope = priceSlopeOverride > 0 ? priceSlopeOverride : config.priceSlope;
-
-        // Matches LaunchCampaign._area() for sold == 0
-        uint256 term1 = (base * initialBuyTokens) / 1e18;
-        uint256 term2 = (slope * initialBuyTokens * initialBuyTokens) / (2 * 1e18 * 1e18);
-        uint256 costNoFee = term1 + term2;
-        uint256 fee = (costNoFee * protocolFeeBps) / 10000;
-        return costNoFee + fee;
-    }
-
-    function createCampaign(CampaignRequest calldata req)
-        external
-        payable
-        returns (address campaignAddr, address tokenAddr)
-    {
+    function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
         return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
     }
 
     function createCampaignAuthorized(CampaignRequest calldata req, RouteAuthorization calldata routeAuth)
         external
-        payable
         returns (address campaignAddr, address tokenAddr)
     {
         _verifyRouteAuthorization(msg.sender, routeAuth);
@@ -208,17 +192,19 @@ contract LaunchFactory is Ownable {
         CampaignRequest calldata req,
         uint8 campaignTradeRouteProfile,
         uint8 campaignFinalizeRouteProfile
-    ) internal returns (address campaignAddr, address tokenAddr)
-    {
+    ) internal returns (address campaignAddr, address tokenAddr) {
         if (!live) revert NotLive();
+        if (globalPaused) revert Paused();
+        if (createPaused) revert CreatePaused();
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
+        if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
+        if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
+        if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
 
-if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
-if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
-if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
-
+        (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
+        _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
@@ -232,20 +218,21 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             liquidityTokenBps: config.liquidityTokenBps,
             basePrice: req.basePrice == 0 ? config.basePrice : req.basePrice,
             priceSlope: req.priceSlope == 0 ? config.priceSlope : req.priceSlope,
-            graduationTarget: req.graduationTarget == 0
-                ? config.graduationTarget
-                : req.graduationTarget,
+            graduationTarget: req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget,
             liquidityBps: config.liquidityBps,
             protocolFeeBps: protocolFeeBps,
             leagueFeeBps: LEAGUE_FEE_BPS,
             leagueReceiver: leagueReceiver,
             router: router,
-            // Force LP to be burned for every campaign.
-            // We intentionally ignore any user-provided lpReceiver.
             lpReceiver: DEAD,
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this),
+            creatorRegistry: address(creatorRegistry),
+            riskRegistry: address(riskRegistry),
+            creatorBuyLockUntil: creatorBuyLockUntil,
+            creatorBuyCapWei: creatorBuyCapWei,
+            requireAuthorizedTrading: requireAuthorizedTrading,
             tradeRouteProfile: campaignTradeRouteProfile,
             finalizeRouteProfile: campaignFinalizeRouteProfile
         });
@@ -254,7 +241,12 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         LaunchCampaign(payable(clone)).initialize(params);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
+        isCampaign[campaignAddr] = true;
         string memory metadataURI = "";
+
+        if (address(creatorRegistry) != address(0)) {
+            creatorRegistry.recordLaunch(msg.sender);
+        }
 
         _campaigns.push(
             CampaignInfo({
@@ -272,34 +264,15 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             })
         );
 
-        // Optional initial buy for the creator, executed within the same transaction.
-        // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
-        uint256 spent = 0;
-        if (req.initialBuyBnbWei > 0) {
-    if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
-    if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
+        emit CampaignCreated(_campaigns.length - 1, campaignAddr, tokenAddr, msg.sender, req.name, req.symbol, req.logoURI, metadataURI);
+    }
 
-    (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
-        msg.sender,
-        0
-    );
-    spent = totalSpent;
-}
-        if (msg.value > spent) {
-            (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
-            if (!ok) revert RefundFail();
+    function notifyCampaignGraduated(address campaignCreator) external {
+        if (!isCampaign[msg.sender]) revert UnknownCampaign();
+        if (address(creatorRegistry) != address(0)) {
+            creatorRegistry.recordGraduation(campaignCreator);
         }
-
-        emit CampaignCreated(
-            _campaigns.length - 1,
-            campaignAddr,
-            tokenAddr,
-            msg.sender,
-            req.name,
-            req.symbol,
-            req.logoURI,
-            metadataURI
-        );
+        emit CampaignGraduated(msg.sender, campaignCreator);
     }
 
     function setConfig(LaunchConfig calldata newConfig) external onlyOwner whenMutable {
@@ -328,9 +301,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
     }
 
     function setRouteProfiles(uint8 newTradeRouteProfile, uint8 newFinalizeRouteProfile) external onlyOwner whenMutable {
-        if (!_isValidRouteProfile(newTradeRouteProfile) || !_isValidRouteProfile(newFinalizeRouteProfile)) {
-            revert InvalidRouteProfile();
-        }
+        if (!_isValidRouteProfile(newTradeRouteProfile) || !_isValidRouteProfile(newFinalizeRouteProfile)) revert InvalidRouteProfile();
         tradeRouteProfile = newTradeRouteProfile;
         finalizeRouteProfile = newFinalizeRouteProfile;
         emit RouteProfilesUpdated(newTradeRouteProfile, newFinalizeRouteProfile);
@@ -341,18 +312,57 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         emit RouteAuthorityUpdated(newAuthority);
     }
 
+    function setRegistries(address newCreatorRegistry, address newRiskRegistry) external onlyOwner {
+        creatorRegistry = CreatorRegistry(newCreatorRegistry);
+        riskRegistry = RiskRegistry(newRiskRegistry);
+        emit RegistriesUpdated(newCreatorRegistry, newRiskRegistry);
+    }
+
+    function setGlobalPaused(bool paused) external onlyOwner {
+        globalPaused = paused;
+        emit GlobalPauseUpdated(paused);
+    }
+
+    function setCreatePaused(bool paused) external onlyOwner {
+        createPaused = paused;
+        emit CreatePauseUpdated(paused);
+    }
+
+    function setRequireAuthorizedTrading(bool required) external onlyOwner {
+        requireAuthorizedTrading = required;
+        emit RequireAuthorizedTradingUpdated(required);
+    }
+
+    function setCampaignPauses(address campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused) external onlyOwner {
+        LaunchCampaign(payable(campaign)).setPauseState(paused, buysPaused, sellsPaused, graduationPaused);
+        emit CampaignPauseUpdated(campaign, paused, buysPaused, sellsPaused, graduationPaused);
+    }
+
+    function setCampaignRequireAuthorizedTrading(address campaign, bool required) external onlyOwner {
+        LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
+    }
+
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
+    }
+
+    function _enforceCreatorEligibility(address creator) internal view returns (uint256 lockUntil, uint256 buyCapWei, uint256 maxClusterWallets) {
+        if (address(creatorRegistry) == address(0)) return (0, 0, 0);
+        if (!creatorRegistry.canLaunch(creator)) revert CreatorNotEligible();
+        CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
+        return (block.timestamp + rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
+    }
+
+    function _enforceRiskLaunch(address creator, uint256 maxClusterWallets) internal view {
+        if (address(riskRegistry) == address(0)) return;
+        if (!riskRegistry.canCreatorLaunch(creator, maxClusterWallets)) revert RiskNotEligible();
     }
 
     function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal view {
         address authority = routeAuthority;
         if (authority == address(0)) revert RouteAuthorityZero();
         if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
-        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) {
-            revert InvalidRouteProfile();
-        }
-
+        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) revert InvalidRouteProfile();
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
             keccak256(
                 abi.encodePacked(
@@ -366,10 +376,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
                 )
             )
         );
-
-        if (digest.recover(routeAuth.signature) != authority) {
-            revert InvalidRouteAuthorization();
-        }
+        if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
     }
 
     function getCampaign(uint256 id) external view returns (CampaignInfo memory) {
@@ -377,31 +384,18 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         return _campaigns[id];
     }
 
-    function getCampaignPage(uint256 offset, uint256 limit)
-        external
-        view
-        returns (CampaignInfo[] memory page)
-    {
+    function getCampaignPage(uint256 offset, uint256 limit) external view returns (CampaignInfo[] memory page) {
         if (!(_campaigns.length == 0 || offset < _campaigns.length)) revert Offset();
-        if (_campaigns.length == 0 || limit == 0) {
-            return new CampaignInfo[](0);
-        }
+        if (_campaigns.length == 0 || limit == 0) return new CampaignInfo[](0);
         uint256 end = offset + limit;
-        if (end > _campaigns.length) {
-            end = _campaigns.length;
-        }
+        if (end > _campaigns.length) end = _campaigns.length;
         uint256 size = end > offset ? end - offset : 0;
         page = new CampaignInfo[](size);
-        for (uint256 i = 0; i < size; i++) {
-            page[i] = _campaigns[offset + i];
-        }
+        for (uint256 i = 0; i < size; i++) page[i] = _campaigns[offset + i];
     }
 
     function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
-        return
-            profile == ROUTE_PROFILE_STANDARD_LINKED ||
-            profile == ROUTE_PROFILE_STANDARD_UNLINKED ||
-            profile == ROUTE_PROFILE_OG_LINKED;
+        return profile == ROUTE_PROFILE_STANDARD_LINKED || profile == ROUTE_PROFILE_STANDARD_UNLINKED || profile == ROUTE_PROFILE_OG_LINKED;
     }
 
     function _validateConfig(LaunchConfig memory newConfig) internal pure {
