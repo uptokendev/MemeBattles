@@ -120,7 +120,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _;
     }
 
-    // ---- Phase 2 cheap counters (no backend / no log scanning) ----
     uint256 public totalBuyVolumeWei;
     uint256 public totalSellVolumeWei;
     uint256 public buyersCount;
@@ -144,8 +143,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     bool private _initialized;
 
-    /// @dev The implementation contract is deployed once and locked in its constructor.
-    ///      Clones start uninitialized and must call initialize() exactly once.
     constructor() Ownable(address(1)) {
         _initialized = true;
     }
@@ -221,79 +218,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         emit RequireAuthorizedTradingUpdated(required);
     }
 
-    function _fee(uint256 amountWei) internal view returns (uint256) {
-        if (protocolFeeBps == 0) return 0;
-        return (amountWei * protocolFeeBps) / MAX_BPS;
-    }
-
-    function _feeSplit(uint256 amountWei)
-        internal
-        view
-        returns (uint256 totalFeeWei, uint256 protocolNetFeeWei, uint256 leagueFeeWei)
-    {
-        totalFeeWei = _fee(amountWei);
-        if (totalFeeWei == 0) return (0, 0, 0);
-        leagueFeeWei = (amountWei * leagueFeeBps) / MAX_BPS;
-        if (leagueReceiver == address(0) || leagueFeeWei == 0) return (totalFeeWei, totalFeeWei, 0);
-        if (leagueFeeWei > totalFeeWei) leagueFeeWei = totalFeeWei;
-        protocolNetFeeWei = totalFeeWei - leagueFeeWei;
-    }
-
-    function _useUnifiedRewardRouter() internal view returns (bool) {
-        address receiver = feeRecipient;
-        if (receiver == address(0) || receiver != leagueReceiver) return false;
-        uint256 size;
-        assembly { size := extcodesize(receiver) }
-        return size > 0;
-    }
-
-    function _routeFeeOrSendLegacy(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount) internal {
-        _routeFeeOrSendLegacyWithProfile(feeAmount, routeKind, feeBaseAmount, _routeProfileForKind(routeKind));
-    }
-
-    function _routeFeeOrSendLegacyWithProfile(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount, uint8 routeProfile) internal {
-        if (feeAmount == 0) return;
-        if (_useUnifiedRewardRouter()) {
-            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile);
-            return;
-        }
-        if (routeKind == ROUTE_KIND_FINALIZE) {
-            if (feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), feeAmount);
-            return;
-        }
-        (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(feeBaseAmount);
-        if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-        if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-    }
-
-    function _routeProfileForKind(uint8 routeKind) internal view returns (uint8) {
-        if (routeKind == ROUTE_KIND_FINALIZE) return finalizeRouteProfile;
-        return tradeRouteProfile;
-    }
-
-    function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
-        return profile == ROUTE_PROFILE_STANDARD_LINKED || profile == ROUTE_PROFILE_STANDARD_UNLINKED || profile == ROUTE_PROFILE_OG_LINKED;
-    }
-
-    function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal view {
-        require(deadline >= block.timestamp, "route auth expired");
-        require(_isValidRouteProfile(routeProfile), "trade route profile");
-        address authority = IRouteAuthoritySource(factory).routeAuthority();
-        require(authority != address(0), "route auth unavailable");
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
-            keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
-        );
-        require(digest.recover(signature) == authority, "bad route auth");
-    }
-
-    function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
-        return _area(sold + amountOut) - _area(sold);
-    }
-
-    function _quoteSellNoFee(uint256 amountIn) internal view returns (uint256) {
-        return _area(sold) - _area(sold - amountIn);
-    }
-
     function quoteBuyExactTokens(uint256 amountOut) public view returns (uint256) {
         require(amountOut > 0, "zero amount");
         require(sold + amountOut <= curveSupply, "sold out");
@@ -302,10 +226,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function quoteBuyExactBnb(uint256 totalInWei) public view returns (uint256 tokensOut, uint256 totalCostWei, uint256 feeWei) {
-        if (totalInWei == 0) return (0, 0, 0);
-        if (launched) return (0, 0, 0);
+        if (totalInWei == 0 || launched) return (0, 0, 0);
         uint256 remaining = curveSupply - sold;
         if (remaining == 0) return (0, 0, 0);
+
         uint256 lo = 0;
         uint256 hi = remaining;
         while (lo < hi) {
@@ -316,6 +240,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             if (total <= totalInWei) lo = mid;
             else hi = mid - 1;
         }
+
         if (lo == 0) return (0, 0, 0);
         uint256 costNoFeeFinal = _quoteBuyNoFee(lo);
         feeWei = _fee(costNoFeeFinal);
@@ -340,12 +265,13 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         return _buyExactTokens(msg.sender, amountOut, maxCost, false, 0);
     }
 
-    function buyExactTokensAuthorized(uint256 amountOut, uint256 maxCost, uint8 routeProfile, uint64 routeDeadline, bytes calldata routeSignature)
-        external
-        payable
-        nonReentrant
-        returns (uint256 cost)
-    {
+    function buyExactTokensAuthorized(
+        uint256 amountOut,
+        uint256 maxCost,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external payable nonReentrant returns (uint256 cost) {
         _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
         return _buyExactTokens(msg.sender, amountOut, maxCost, true, routeProfile);
     }
@@ -355,24 +281,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         return _buyExactBnb(msg.sender, minTokensOut, false, 0);
     }
 
-    function buyExactBnbAuthorized(uint256 minTokensOut, uint8 routeProfile, uint64 routeDeadline, bytes calldata routeSignature)
-        external
-        payable
-        nonReentrant
-        returns (uint256 tokensOut, uint256 totalSpent)
-    {
+    function buyExactBnbAuthorized(
+        uint256 minTokensOut,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external payable nonReentrant returns (uint256 tokensOut, uint256 totalSpent) {
         _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
         return _buyExactBnb(msg.sender, minTokensOut, true, routeProfile);
-    }
-
-    function buyExactTokensFor(address recipient, uint256 amountOut, uint256 maxCost) external payable onlyFactory nonReentrant returns (uint256 total) {
-        require(recipient != address(0), "zero recipient");
-        return _buyExactTokens(recipient, amountOut, maxCost, false, 0);
-    }
-
-    function buyExactBnbFor(address recipient, uint256 minTokensOut) external payable onlyFactory nonReentrant returns (uint256 tokensOut, uint256 totalSpent) {
-        require(recipient != address(0), "zero recipient");
-        return _buyExactBnb(recipient, minTokensOut, false, 0);
     }
 
     function sellExactTokens(uint256 amountIn, uint256 minPayout) external nonReentrant returns (uint256 payout) {
@@ -380,13 +296,33 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         return _sellExactTokens(msg.sender, amountIn, minPayout, false, 0);
     }
 
-    function sellExactTokensAuthorized(uint256 amountIn, uint256 minPayout, uint8 routeProfile, uint64 routeDeadline, bytes calldata routeSignature)
-        external
-        nonReentrant
-        returns (uint256 payout)
-    {
+    function sellExactTokensAuthorized(
+        uint256 amountIn,
+        uint256 minPayout,
+        uint8 routeProfile,
+        uint64 routeDeadline,
+        bytes calldata routeSignature
+    ) external nonReentrant returns (uint256 payout) {
         _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
         return _sellExactTokens(msg.sender, amountIn, minPayout, true, routeProfile);
+    }
+
+    function claimPendingNative() external nonReentrant returns (uint256 amount) {
+        amount = pendingNative[msg.sender];
+        require(amount > 0, "no pending");
+        pendingNative[msg.sender] = 0;
+        pendingNativeTotal -= amount;
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        if (!ok) {
+            pendingNative[msg.sender] = amount;
+            pendingNativeTotal += amount;
+            revert("claim failed");
+        }
+        emit NativeClaimed(msg.sender, amount);
+    }
+
+    function finalize(uint256 minTokens, uint256 minBnb) external onlyOwner nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
+        return _finalize(minTokens, minBnb, msg.sender);
     }
 
     function _buyExactTokens(address buyer, uint256 amountOut, uint256 maxCost, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 cost) {
@@ -470,9 +406,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _assertWalletCanTrade(buyer);
         if (buyer == creator) {
             require(block.timestamp >= creatorBuyLockUntil, "creator buy locked");
-            if (creatorBuyCapWei > 0) {
-                require(creatorBoughtWei + costNoFee <= creatorBuyCapWei, "creator buy cap");
-            }
+            if (creatorBuyCapWei > 0) require(creatorBoughtWei + costNoFee <= creatorBuyCapWei, "creator buy cap");
             creatorBoughtWei += costNoFee;
         }
     }
@@ -493,29 +427,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _autoFinalizeIfEligible(address caller) internal {
-        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) {
-            _finalize(0, 0, caller);
-        }
-    }
-
-    function claimPendingNative() external nonReentrant returns (uint256 amount) {
-        amount = pendingNative[msg.sender];
-        require(amount > 0, "no pending");
-        pendingNative[msg.sender] = 0;
-        pendingNativeTotal -= amount;
-        (bool ok, ) = payable(msg.sender).call{value: amount}("");
-        if (!ok) {
-            pendingNative[msg.sender] = amount;
-            pendingNativeTotal += amount;
-            revert("claim failed");
-        }
-        emit NativeClaimed(msg.sender, amount);
-    }
-
-    /// @notice Creator-controlled manual finalize (emergency/backstop only).
-    /// @dev Normal flow auto-finalizes inside the completion buy transaction.
-    function finalize(uint256 minTokens, uint256 minBnb) external onlyOwner nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
-        return _finalize(minTokens, minBnb, msg.sender);
+        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) _finalize(0, 0, caller);
     }
 
     function _finalize(uint256 minTokens, uint256 minBnb, address caller) internal returns (uint256 usedTokens, uint256 usedBnb) {
@@ -528,9 +440,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
         uint256 balanceBefore = _availableNativeBalance();
         uint256 protocolFee = (balanceBefore * protocolFeeBps) / MAX_BPS;
-        if (protocolFee > 0 && feeRecipient != address(0)) {
-            _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, balanceBefore);
-        }
+        if (protocolFee > 0 && feeRecipient != address(0)) _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, balanceBefore);
 
         uint256 remainingAfterFee = _availableNativeBalance();
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
@@ -556,17 +466,87 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         token.enableTrading();
 
-        if (factory != address(0)) {
-            ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator);
-        }
-
+        if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator);
         emit CampaignFinalized(caller, usedTokens, usedBnb, protocolFee, creatorPayout);
+    }
+
+    function _fee(uint256 amountWei) internal view returns (uint256) {
+        if (protocolFeeBps == 0) return 0;
+        return (amountWei * protocolFeeBps) / MAX_BPS;
+    }
+
+    function _feeSplit(uint256 amountWei) internal view returns (uint256 totalFeeWei, uint256 protocolNetFeeWei, uint256 leagueFeeWei) {
+        totalFeeWei = _fee(amountWei);
+        if (totalFeeWei == 0) return (0, 0, 0);
+        leagueFeeWei = (amountWei * leagueFeeBps) / MAX_BPS;
+        if (leagueReceiver == address(0) || leagueFeeWei == 0) return (totalFeeWei, totalFeeWei, 0);
+        if (leagueFeeWei > totalFeeWei) leagueFeeWei = totalFeeWei;
+        protocolNetFeeWei = totalFeeWei - leagueFeeWei;
+    }
+
+    function _useUnifiedRewardRouter() internal view returns (bool) {
+        address receiver = feeRecipient;
+        if (receiver == address(0) || receiver != leagueReceiver) return false;
+        uint256 size;
+        assembly {
+            size := extcodesize(receiver)
+        }
+        return size > 0;
+    }
+
+    function _routeFeeOrSendLegacy(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount) internal {
+        _routeFeeOrSendLegacyWithProfile(feeAmount, routeKind, feeBaseAmount, _routeProfileForKind(routeKind));
+    }
+
+    function _routeFeeOrSendLegacyWithProfile(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount, uint8 routeProfile) internal {
+        if (feeAmount == 0) return;
+        if (_useUnifiedRewardRouter()) {
+            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile);
+            return;
+        }
+        if (routeKind == ROUTE_KIND_FINALIZE) {
+            if (feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), feeAmount);
+            return;
+        }
+        (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(feeBaseAmount);
+        if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
+        if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
+    }
+
+    function _routeProfileForKind(uint8 routeKind) internal view returns (uint8) {
+        if (routeKind == ROUTE_KIND_FINALIZE) return finalizeRouteProfile;
+        return tradeRouteProfile;
+    }
+
+    function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal view {
+        require(deadline >= block.timestamp, "route auth expired");
+        require(_isValidRouteProfile(routeProfile), "trade route profile");
+        address authority = IRouteAuthoritySource(factory).routeAuthority();
+        require(authority != address(0), "route auth unavailable");
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
+        );
+        require(digest.recover(signature) == authority, "bad route auth");
+    }
+
+    function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
+        return _area(sold + amountOut) - _area(sold);
+    }
+
+    function _quoteSellNoFee(uint256 amountIn) internal view returns (uint256) {
+        return _area(sold) - _area(sold - amountIn);
+    }
+
+    function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
+        return profile == ROUTE_PROFILE_STANDARD_LINKED || profile == ROUTE_PROFILE_STANDARD_UNLINKED || profile == ROUTE_PROFILE_OG_LINKED;
     }
 
     function _area(uint256 x) internal view returns (uint256) {
         uint256 linear = Math.mulDiv(x, basePrice, WAD);
         uint256 square;
-        unchecked { square = x * x; }
+        unchecked {
+            square = x * x;
+        }
         uint256 slopeTerm = Math.mulDiv(priceSlope, square, 2 * WAD * WAD);
         return linear + slopeTerm;
     }
