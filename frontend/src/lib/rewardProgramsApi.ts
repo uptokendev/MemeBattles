@@ -82,6 +82,9 @@ export type SquadMemberItem = {
   recruiterId: number;
   recruiterCode: string | null;
   recruiterDisplayName: string | null;
+  memberRole?: "creator" | "trader" | "both" | "legacy" | "unknown" | string | null;
+  joinedAt?: string | null;
+  source?: string | null;
   isEligible: boolean;
   reasonCodes: string[];
   rawScore: string;

@@ -5,7 +5,7 @@ const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
 const MEMBER_ROLE_KEY = "mwz:recruiter:memberRole";
 
-export type RecruiterMemberRole = "creator" | "trader";
+export type RecruiterMemberRole = "creator" | "trader" | "both";
 
 type StoredRecruiterSession = {
   sessionToken: string;
@@ -26,7 +26,7 @@ function ensureStorageValue(key: string): string {
 
 function normalizeMemberRole(value?: string | null): RecruiterMemberRole | null {
   const role = String(value || "").trim().toLowerCase();
-  return role === "creator" || role === "trader" ? role : null;
+  return role === "creator" || role === "trader" || role === "both" ? role : null;
 }
 
 export function setRecruiterReferralMemberRole(role: RecruiterMemberRole) {
@@ -100,6 +100,7 @@ export async function syncWalletRecruiterAttribution(walletAddress: string, memb
     sessionToken: session.sessionToken,
     clientFingerprint: session.clientFingerprint,
     memberRole: role,
+    role,
   });
   if (result?.linked && role) clearRecruiterReferralMemberRole();
   return result;
@@ -141,6 +142,7 @@ export type RecruiterSummary = {
   linkedWalletCount: number;
   linkedCreatorsCount: number;
   linkedTradersCount: number;
+  linkedBothCount?: number;
   activeSquadMemberCount: number;
   referredEventCount: number;
   referredVolumeRaw: string;

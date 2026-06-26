@@ -3,6 +3,7 @@ import { pool } from "../db.js";
 
 export type RecruiterStatus = "active" | "inactive" | "closed" | "suspended";
 export type LinkSource = "referral_cookie" | "manual" | "admin_override" | "migration";
+export type MemberRole = "creator" | "trader" | "both";
 
 export type WalletAttributionState = {
   walletAddress: string;
@@ -93,6 +94,12 @@ function normalizeCode(value: unknown): string {
   const code = String(value ?? "").trim();
   if (!code) throw new Error("Recruiter code is required");
   return code;
+}
+
+function normalizeMemberRole(value: unknown): MemberRole | null {
+  const role = String(value ?? "").trim().toLowerCase();
+  if (role === "creator" || role === "trader" || role === "both") return role;
+  return null;
 }
 
 function toIso(value: unknown): string | null {
@@ -393,11 +400,13 @@ async function linkWalletToRecruiterDb(
     recruiterId: number;
     linkSource: LinkSource;
     linkedAt: Date;
+    memberRole?: MemberRole | string | null;
     bypassLock?: boolean;
     detachReason?: string;
   }
 ): Promise<LinkWalletToRecruiterResult> {
   const walletAddress = normalizeAddress(input.walletAddress);
+  const memberRole = normalizeMemberRole(input.memberRole);
   await ensureRecruiterIsLinkableDb(db, input.recruiterId);
   await ensureWalletProfileDb(db, walletAddress, input.linkedAt);
 
@@ -469,9 +478,9 @@ async function linkWalletToRecruiterDb(
 
   await db.query(
     `insert into public.wallet_squad_memberships(
-        wallet_address, recruiter_id, joined_at, left_at, leave_reason, is_active, created_at, updated_at
-     ) values ($1, $2, $3, null, null, true, now(), now())`,
-    [walletAddress, input.recruiterId, input.linkedAt]
+        wallet_address, recruiter_id, member_role, joined_at, left_at, leave_reason, is_active, created_at, updated_at
+     ) values ($1, $2, $3, $4, null, null, true, now(), now())`,
+    [walletAddress, input.recruiterId, memberRole, input.linkedAt]
   );
 
   return {
@@ -486,6 +495,7 @@ export async function linkWalletToRecruiter(input: {
   recruiterId: number;
   linkSource: LinkSource;
   linkedAt?: Date;
+  memberRole?: MemberRole | string | null;
 }): Promise<LinkWalletToRecruiterResult> {
   return withTransaction((db) =>
     linkWalletToRecruiterDb(db, {
@@ -535,6 +545,7 @@ export async function linkWalletOnConnect(input: {
   sessionToken?: string | null;
   clientFingerprint?: string | null;
   linkedAt?: Date;
+  memberRole?: MemberRole | string | null;
 }): Promise<LinkWalletToRecruiterResult> {
   return withTransaction(async (db) => {
     const linkedAt = input.linkedAt ?? new Date();
@@ -578,6 +589,7 @@ export async function linkWalletOnConnect(input: {
       recruiterId: asNumber(window.recruiter_id),
       linkSource: "referral_cookie",
       linkedAt,
+      memberRole: input.memberRole,
     });
   });
 }

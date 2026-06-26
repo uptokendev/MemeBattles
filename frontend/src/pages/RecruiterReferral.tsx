@@ -25,6 +25,16 @@ type ReferralState = {
   expiresAt: string | null;
 };
 
+const ROLE_OPTIONS: Array<{ value: RecruiterMemberRole; label: string; description: string }> = [
+  { value: "creator", label: "Creator", description: "I launch or manage projects" },
+  { value: "trader", label: "Trader", description: "I trade and participate" },
+  { value: "both", label: "Both", description: "I do both" },
+];
+
+function roleLabel(role: RecruiterMemberRole | null) {
+  return ROLE_OPTIONS.find((option) => option.value === role)?.label || "role";
+}
+
 export default function RecruiterReferral() {
   const { code = "" } = useParams<{ code: string }>();
   const wallet = useWallet();
@@ -91,8 +101,8 @@ export default function RecruiterReferral() {
         const nextWalletState = await fetchWalletAttributionState(wallet.account).catch(() => null);
         if (cancelled) return;
         setWalletState(nextWalletState);
-        if (result?.linked) setRoleMessage(`Wallet linked as ${memberRole}. Your squad connection is active.`);
-        else if (result?.needsRoleSelection) setRoleMessage("Choose creator or trader first, then connect again.");
+        if (result?.linked) setRoleMessage(`Wallet linked as ${roleLabel(memberRole)}. Your squad connection is active.`);
+        else if (result?.needsRoleSelection) setRoleMessage("Choose Creator, Trader, or Both first, then connect again.");
         else if (result?.blocked) setRoleMessage(result.reason || "This wallet cannot be linked as a squad member.");
         else setRoleMessage(result?.reason || "Wallet connected. Recruiter attribution is being checked.");
       } catch (err: any) {
@@ -128,8 +138,8 @@ export default function RecruiterReferral() {
     setMemberRole(role);
     setRecruiterReferralMemberRole(role);
     setRoleMessage(wallet.account
-      ? `Selected ${role}. Syncing this wallet to the recruiter squad...`
-      : `Selected ${role}. Now connect the wallet you want to add to this recruiter's squad.`);
+      ? `Selected ${roleLabel(role)}. Syncing this wallet to the recruiter squad...`
+      : `Selected ${roleLabel(role)}. Now connect the wallet you want to add to this recruiter's squad.`);
 
     if (!wallet.account) return;
     lastSyncedKey.current = "";
@@ -137,7 +147,7 @@ export default function RecruiterReferral() {
 
   const openWalletModal = async () => {
     if (!memberRole) {
-      setRoleMessage("Choose creator or trader first. Then connect the wallet for that role.");
+      setRoleMessage("Choose Creator, Trader, or Both first. Then connect the wallet for that role.");
       return;
     }
 
@@ -159,8 +169,8 @@ export default function RecruiterReferral() {
             {loading ? "Saving your recruiter invite..." : "Join this recruiter's squad"}
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
-            Step 1: choose whether this wallet joins as a creator or trader. Step 2: connect the wallet.
-            After connection, MemeWarzone locks the wallet to this recruiter squad when the referral window is valid.
+            Choose whether this wallet joins as a Creator, Trader, or Both, then connect the wallet.
+            MemeWarzone locks the wallet to this recruiter squad when the referral window is valid.
           </p>
         </div>
       </Card>
@@ -188,27 +198,23 @@ export default function RecruiterReferral() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
-                <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">1. Choose role</p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Pick how this wallet should count inside the squad.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <Button
-                    type="button"
-                    variant={memberRole === "creator" ? "default" : "outline"}
-                    onClick={() => void chooseRole("creator")}
-                    disabled={syncingRole}
-                  >
-                    Creator
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={memberRole === "trader" ? "default" : "outline"}
-                    onClick={() => void chooseRole("trader")}
-                    disabled={syncingRole}
-                  >
-                    Trader
-                  </Button>
+                <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">1. What are you joining as?</p>
+                <div className="mt-4 grid gap-3">
+                  {ROLE_OPTIONS.map((option) => (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant={memberRole === option.value ? "default" : "outline"}
+                      onClick={() => void chooseRole(option.value)}
+                      disabled={syncingRole}
+                      className="h-auto justify-start py-3 text-left"
+                    >
+                      <span className="flex flex-col items-start gap-1">
+                        <span>{option.label}</span>
+                        <span className="text-xs font-normal opacity-75">{option.description}</span>
+                      </span>
+                    </Button>
+                  ))}
                 </div>
               </div>
 
@@ -223,7 +229,7 @@ export default function RecruiterReferral() {
                   onClick={() => void openWalletModal()}
                   disabled={syncingRole || !memberRole}
                 >
-                  {wallet.isConnected ? "Wallet connected" : memberRole ? `Connect wallet as ${memberRole}` : "Choose role first"}
+                  {wallet.isConnected ? "Wallet connected" : memberRole ? `Connect wallet as ${roleLabel(memberRole)}` : "Choose role first"}
                 </Button>
                 {wallet.account ? <p className="mt-3 font-mono text-xs text-orange-50/80">{wallet.account}</p> : null}
               </div>
