@@ -6,6 +6,8 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {LaunchCampaign} from "./LaunchCampaign.sol";
+import {CreatorRegistry} from "./CreatorRegistry.sol";
+import {RiskRegistry} from "./RiskRegistry.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
@@ -18,6 +20,7 @@ contract LaunchFactory is Ownable {
     error LogoEmpty();
     error InitBuyValue();
     error InitBuyTooLarge();
+    error InitialBuyDisabled();
     error RefundFail();
     error RecipientZero();
     error FeeTooHigh();
@@ -38,6 +41,13 @@ contract LaunchFactory is Ownable {
     error RouteAuthorityZero();
     error RouteAuthorizationExpired();
     error InvalidRouteAuthorization();
+    error Paused();
+    error CreatePaused();
+    error CreatorRegistryZero();
+    error RiskRegistryZero();
+    error CreatorNotEligible();
+    error RiskNotEligible();
+
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -73,7 +83,7 @@ contract LaunchFactory is Ownable {
         uint256 priceSlope;
         uint256 graduationTarget;
         address lpReceiver;
-        uint256 initialBuyBnbWei; // optional: buy tokens for the creator using exact BNB in the create tx
+        uint256 initialBuyBnbWei; // disabled for protected launch v1
     }
 
     struct RouteAuthorization {
@@ -84,7 +94,6 @@ contract LaunchFactory is Ownable {
     }
 
     uint256 private constant MAX_BPS = 10_000;
-    uint256 private constant MAX_CREATOR_INIT_BUY = 1 ether;
     uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
     uint8 public constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
     uint8 public constant ROUTE_PROFILE_OG_LINKED = 2;
@@ -98,6 +107,10 @@ contract LaunchFactory is Ownable {
 
     /// @notice One-way latch. Default is Prepare Mode (live = false). Once enabled, it can never be disabled.
     bool public live;
+    bool public globalPaused;
+    bool public createPaused;
+    bool public requireAuthorizedTrading;
+
     uint256 public constant LEAGUE_FEE_BPS = 75;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
@@ -107,6 +120,8 @@ contract LaunchFactory is Ownable {
     address public immutable leagueReceiver;
     address public router;
     address public campaignImplementation;
+    CreatorRegistry public creatorRegistry;
+    RiskRegistry public riskRegistry;
 
     CampaignInfo[] private _campaigns;
 
@@ -127,7 +142,11 @@ contract LaunchFactory is Ownable {
     event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
     event RouteAuthorityUpdated(address indexed newAuthority);
     event LiveEnabled(uint64 at);
-
+    event GlobalPauseUpdated(bool paused);
+    event CreatePauseUpdated(bool paused);
+    event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
+    event RequireAuthorizedTradingUpdated(bool required);
+    event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -154,6 +173,7 @@ contract LaunchFactory is Ownable {
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
+        requireAuthorizedTrading = false;
         // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
         campaignImplementation = address(new LaunchCampaign());
     }
@@ -165,16 +185,14 @@ contract LaunchFactory is Ownable {
         emit LiveEnabled(uint64(block.timestamp));
     }
 
-
     receive() external payable {}
 
-    /// @notice Quotes the BNB value required to perform the optional initial buy during createCampaign.
-    /// @dev Assumes sold == 0 for the newly created campaign.
-    function quoteInitialBuyTotal(
-        uint256 initialBuyTokens,
-        uint256 basePriceOverride,
-        uint256 priceSlopeOverride
-    ) external view returns (uint256) {
+    /// @notice Quotes the former optional initial buy path. Kept for frontend compatibility; create-time buys are disabled.
+    function quoteInitialBuyTotal(uint256 initialBuyTokens, uint256 basePriceOverride, uint256 priceSlopeOverride)
+        external
+        view
+        returns (uint256)
+    {
         if (initialBuyTokens == 0) return 0;
         uint256 base = basePriceOverride > 0 ? basePriceOverride : config.basePrice;
         uint256 slope = priceSlopeOverride > 0 ? priceSlopeOverride : config.priceSlope;
@@ -187,11 +205,7 @@ contract LaunchFactory is Ownable {
         return costNoFee + fee;
     }
 
-    function createCampaign(CampaignRequest calldata req)
-        external
-        payable
-        returns (address campaignAddr, address tokenAddr)
-    {
+    function createCampaign(CampaignRequest calldata req) external payable returns (address campaignAddr, address tokenAddr) {
         return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
     }
 
@@ -208,17 +222,21 @@ contract LaunchFactory is Ownable {
         CampaignRequest calldata req,
         uint8 campaignTradeRouteProfile,
         uint8 campaignFinalizeRouteProfile
-    ) internal returns (address campaignAddr, address tokenAddr)
-    {
+    ) internal returns (address campaignAddr, address tokenAddr) {
         if (!live) revert NotLive();
+        if (globalPaused) revert Paused();
+        if (createPaused) revert CreatePaused();
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
+        if (req.initialBuyBnbWei != 0 || msg.value != 0) revert InitialBuyDisabled();
 
-if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
-if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
-if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+        if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
+        if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
+        if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
 
+        (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
+        _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
@@ -232,9 +250,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             liquidityTokenBps: config.liquidityTokenBps,
             basePrice: req.basePrice == 0 ? config.basePrice : req.basePrice,
             priceSlope: req.priceSlope == 0 ? config.priceSlope : req.priceSlope,
-            graduationTarget: req.graduationTarget == 0
-                ? config.graduationTarget
-                : req.graduationTarget,
+            graduationTarget: req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget,
             liquidityBps: config.liquidityBps,
             protocolFeeBps: protocolFeeBps,
             leagueFeeBps: LEAGUE_FEE_BPS,
@@ -246,6 +262,11 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this),
+            creatorRegistry: address(creatorRegistry),
+            riskRegistry: address(riskRegistry),
+            creatorBuyLockUntil: creatorBuyLockUntil,
+            creatorBuyCapWei: creatorBuyCapWei,
+            requireAuthorizedTrading: requireAuthorizedTrading,
             tradeRouteProfile: campaignTradeRouteProfile,
             finalizeRouteProfile: campaignFinalizeRouteProfile
         });
@@ -255,6 +276,10 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
         string memory metadataURI = "";
+
+        if (address(creatorRegistry) != address(0)) {
+            creatorRegistry.recordLaunch(msg.sender);
+        }
 
         _campaigns.push(
             CampaignInfo({
@@ -271,24 +296,6 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
                 createdAt: uint64(block.timestamp)
             })
         );
-
-        // Optional initial buy for the creator, executed within the same transaction.
-        // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
-        uint256 spent = 0;
-        if (req.initialBuyBnbWei > 0) {
-    if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
-    if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
-
-    (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
-        msg.sender,
-        0
-    );
-    spent = totalSpent;
-}
-        if (msg.value > spent) {
-            (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
-            if (!ok) revert RefundFail();
-        }
 
         emit CampaignCreated(
             _campaigns.length - 1,
@@ -341,8 +348,46 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         emit RouteAuthorityUpdated(newAuthority);
     }
 
+    function setRegistries(address newCreatorRegistry, address newRiskRegistry) external onlyOwner {
+        creatorRegistry = CreatorRegistry(newCreatorRegistry);
+        riskRegistry = RiskRegistry(newRiskRegistry);
+        emit RegistriesUpdated(newCreatorRegistry, newRiskRegistry);
+    }
+
+    function setGlobalPaused(bool paused) external onlyOwner {
+        globalPaused = paused;
+        emit GlobalPauseUpdated(paused);
+    }
+
+    function setCreatePaused(bool paused) external onlyOwner {
+        createPaused = paused;
+        emit CreatePauseUpdated(paused);
+    }
+
+    function setRequireAuthorizedTrading(bool required) external onlyOwner {
+        requireAuthorizedTrading = required;
+        emit RequireAuthorizedTradingUpdated(required);
+    }
+
+    function setCampaignPauses(address campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused) external onlyOwner {
+        LaunchCampaign(payable(campaign)).setPauseState(paused, buysPaused, sellsPaused, graduationPaused);
+        emit CampaignPauseUpdated(campaign, paused, buysPaused, sellsPaused, graduationPaused);
+    }
+
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
+    }
+
+    function _enforceCreatorEligibility(address creator) internal view returns (uint256 lockUntil, uint256 buyCapWei, uint256 maxClusterWallets) {
+        if (address(creatorRegistry) == address(0)) return (0, 0, 0);
+        if (!creatorRegistry.canLaunch(creator)) revert CreatorNotEligible();
+        CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
+        return (block.timestamp + rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
+    }
+
+    function _enforceRiskLaunch(address creator, uint256 maxClusterWallets) internal view {
+        if (address(riskRegistry) == address(0)) return;
+        if (!riskRegistry.canCreatorLaunch(creator, maxClusterWallets)) revert RiskNotEligible();
     }
 
     function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal view {
@@ -377,11 +422,7 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         return _campaigns[id];
     }
 
-    function getCampaignPage(uint256 offset, uint256 limit)
-        external
-        view
-        returns (CampaignInfo[] memory page)
-    {
+    function getCampaignPage(uint256 offset, uint256 limit) external view returns (CampaignInfo[] memory page) {
         if (!(_campaigns.length == 0 || offset < _campaigns.length)) revert Offset();
         if (_campaigns.length == 0 || limit == 0) {
             return new CampaignInfo[](0);
