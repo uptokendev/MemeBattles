@@ -243,49 +243,8 @@ BEGIN
         GROUP BY wallet_address
       ) a ON a.wallet_address = p.wallet_address
     $view$;
-  ELSIF EXISTS (
-    SELECT 1
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public'
-      AND c.relname = 'wallet_attribution_states'
-      AND c.relkind = 'v'
-  ) THEN
-    EXECUTE $view$
-      CREATE OR REPLACE VIEW public.wallet_attribution_states AS
-      SELECT
-        p.wallet_address,
-        COALESCE(a.has_activity, FALSE) AS has_activity,
-        CASE
-          WHEN l.wallet_address IS NULL THEN 'unlinked'
-          WHEN COALESCE(a.has_activity, FALSE) THEN 'linked_locked'
-          ELSE 'linked_unlocked'
-        END AS recruiter_link_state,
-        r.id AS recruiter_id,
-        r.code AS recruiter_code,
-        r.display_name AS recruiter_display_name,
-        COALESCE(r.is_og, FALSE) AS recruiter_is_og,
-        CASE
-          WHEN s.wallet_address IS NULL THEN 'solo'
-          WHEN COALESCE(s.is_active, TRUE) THEN 'in_squad'
-          ELSE 'inactive'
-        END AS squad_state,
-        CASE WHEN COALESCE(a.has_activity, FALSE) THEN GREATEST(l.linked_at, s.joined_at) ELSE NULL END AS locked_at
-      FROM public.wallet_profiles p
-      LEFT JOIN public.wallet_recruiter_links l
-        ON l.wallet_address = p.wallet_address
-       AND COALESCE(l.is_active, TRUE) = TRUE
-      LEFT JOIN public.wallet_squad_memberships s
-        ON s.wallet_address = p.wallet_address
-       AND COALESCE(s.is_active, TRUE) = TRUE
-      LEFT JOIN public.recruiters r
-        ON r.id = COALESCE(l.recruiter_id, s.recruiter_id)
-      LEFT JOIN (
-        SELECT wallet_address, TRUE AS has_activity
-        FROM public.wallet_recruiter_links
-        GROUP BY wallet_address
-      ) a ON a.wallet_address = p.wallet_address
-    $view$;
+  ELSE
+    RAISE NOTICE 'wallet_attribution_states already exists; leaving existing relation unchanged to avoid dropping view columns.';
   END IF;
 END $$;
 
