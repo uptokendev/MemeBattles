@@ -1,8 +1,17 @@
-import type { CreateTokenInput, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeInput, TxResult } from "@/lib/launchpadAdapter";
+import type { CreateTokenInput, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeEligibilityInput, TradeInput, TxResult } from "@/lib/launchpadAdapter";
 import type { LaunchpadPreflight } from "@/lib/recruiterApi";
 
 function notReady(): never {
   throw new Error("Solana launchpad program transactions are not available yet. Solana wallet connection is supported; protocol actions require the Anchor program build.");
+}
+
+function protocolPending(wallet: string): LaunchpadPreflight {
+  return {
+    allowed: false,
+    reasons: ["Solana program launch eligibility is waiting on the Anchor program and indexer."],
+    warnings: [`Wallet ${wallet} can connect, but Solana protocol actions are not enabled yet.`],
+    schemaReady: false,
+  };
 }
 
 export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
@@ -30,12 +39,11 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
     },
 
     async getLaunchEligibility(wallet: string): Promise<LaunchpadPreflight> {
-      return {
-        allowed: false,
-        reasons: ["Solana program launch eligibility is waiting on the Anchor program and indexer."],
-        warnings: [`Wallet ${wallet} can connect, but Solana protocol actions are not enabled yet.`],
-        schemaReady: false,
-      };
+      return protocolPending(wallet);
+    },
+
+    async getTradeEligibility(input: TradeEligibilityInput): Promise<LaunchpadPreflight> {
+      return protocolPending(input.wallet);
     },
 
     async getQuote(_input: QuoteInput): Promise<QuoteResult> {
