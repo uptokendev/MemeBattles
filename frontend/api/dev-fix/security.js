@@ -394,6 +394,50 @@ async function queueContractSyncJob({ chain, action, target }) {
   );
 }
 
+async function readContractSyncJobs(chain) {
+  const normalizedChain = String(chain || "").trim().toLowerCase();
+  const chainFilter = normalizedChain === "bnb" || normalizedChain === "solana" ? normalizedChain : "";
+  const { rows } = await pool.query(
+    `select id,
+            chain,
+            job_type,
+            target,
+            status,
+            tx_hash,
+            error,
+            created_at,
+            updated_at
+       from public.contract_sync_jobs
+      where ($1 = '' or chain = $1)
+      order by created_at desc
+      limit 100`,
+    [chainFilter],
+  );
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    chain: String(row.chain),
+    jobType: row.job_type || "sync",
+    target: row.target || "",
+    status: row.status || "queued",
+    txHash: row.tx_hash || null,
+    error: row.error || null,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  }));
+}
+
+async function securityContractSyncJobs(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  try {
+    const jobs = await readContractSyncJobs(getQuery(req).chain);
+    return json(res, 200, jobs);
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("[security] contract sync jobs failed", error);
+    return json(res, 200, []);
+  }
+}
+
 export async function evaluateCreatePreflight({ walletAddress }) {
   const wallet = normalizeWallet(walletAddress);
   if (!wallet) return { allowed: false, reasons: ["Invalid or missing wallet address."], warnings: [], schemaReady: true };
@@ -781,9 +825,10 @@ export async function securityWalletRestrict(req, res) {
 }
 
 export async function securityContractAction(req, res) {
+  const rawAction = String(req.params?.action || "contract_action");
+  if (req.method === "GET" && rawAction === "sync-jobs") return securityContractSyncJobs(req, res);
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
-  const rawAction = String(req.params?.action || "contract_action");
   const isSolana = String(req.originalUrl || req.url || "").includes("/security/solana/");
   const chain = isSolana ? "solana" : "bnb";
   const action = `${chain}_${rawAction}`;
