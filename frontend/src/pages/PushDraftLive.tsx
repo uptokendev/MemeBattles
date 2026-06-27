@@ -8,7 +8,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { fetchLaunchpadCreatePreflight, type LaunchpadPreflight } from "@/lib/recruiterApi";
+import { fetchLaunchpadCreateEligibility, type LaunchpadPreflight } from "@/lib/recruiterApi";
 import { resolveImageUri } from "@/lib/media";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -123,7 +123,7 @@ export default function PushDraftLive() {
     setPreflightLoading(true);
     setPreflightError(null);
 
-    fetchLaunchpadCreatePreflight(wallet.account, wallet.chainId)
+    fetchLaunchpadCreateEligibility(wallet.account, wallet.chainId)
       .then((result) => {
         if (!cancelled) setPreflight(result);
       })
