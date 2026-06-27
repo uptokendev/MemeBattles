@@ -1,12 +1,17 @@
-import type { CampaignInfo, CampaignMetrics, useLaunchpad } from "@/lib/launchpadClient";
+import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
 import type { CreateTokenInput, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeInput, TxResult } from "@/lib/launchpadAdapter";
 import { fetchLaunchpadCreatePreflight } from "@/lib/recruiterApi";
 import { apiFetch } from "@/lib/apiBase";
 
-export type BnbLaunchpadClient = Pick<
-  ReturnType<typeof useLaunchpad>,
-  "activeChainId" | "createCampaign" | "buyTokens" | "sellTokens" | "finalizeCampaign" | "fetchCampaigns" | "fetchCampaignMetrics"
->;
+export type BnbLaunchpadClient = {
+  activeChainId: number;
+  createCampaign(input: CreateTokenInput): Promise<unknown>;
+  buyTokens(campaignAddress: string, amountWei: bigint, maxCostWei: bigint): Promise<unknown>;
+  sellTokens(campaignAddress: string, amountWei: bigint, minAmountWei: bigint): Promise<unknown>;
+  finalizeCampaign(campaignAddress: string, minTokens: bigint, minBnb: bigint): Promise<unknown>;
+  fetchCampaigns(): Promise<CampaignInfo[]>;
+  fetchCampaignMetrics(campaignAddress: string): Promise<CampaignMetrics | null>;
+};
 
 function normalizeReceipt(receipt: unknown): TxResult {
   const anyReceipt = receipt as any;
@@ -25,7 +30,7 @@ async function fetchCreatorProfile(wallet: string) {
   return json?.profile ?? null;
 }
 
-export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient, walletAddress?: string | null): LaunchpadAdapter {
+export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient): LaunchpadAdapter {
   return {
     chain: "bnb",
 
@@ -48,7 +53,8 @@ export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient, walletAddr
 
     async getTokenState(tokenId: string): Promise<TokenState> {
       const campaigns = await client.fetchCampaigns();
-      const campaign = campaigns.find((item: CampaignInfo) => item.campaign.toLowerCase() === tokenId.toLowerCase() || item.token.toLowerCase() === tokenId.toLowerCase()) || null;
+      const normalizedTokenId = tokenId.toLowerCase();
+      const campaign = campaigns.find((item: CampaignInfo) => item.campaign.toLowerCase() === normalizedTokenId || item.token.toLowerCase() === normalizedTokenId) || null;
       const metrics: CampaignMetrics | null = campaign ? await client.fetchCampaignMetrics(campaign.campaign) : await client.fetchCampaignMetrics(tokenId);
       return { campaign, metrics };
     },
