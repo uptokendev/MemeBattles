@@ -73,7 +73,7 @@ describe("Phase 1 security layer", function () {
   it("enforces creator buy cap after the lock expires", async () => {
     const { factory, creator } = await deployCoreFixture();
     await deployRegistries(factory);
-    const { campaign } = await createCampaign(factory, creator);
+    const { campaign } = await createCampaign(factory, creator, { basePrice: ethers.parseEther("0.001") });
 
     await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
     await ethers.provider.send("evm_mine", []);
