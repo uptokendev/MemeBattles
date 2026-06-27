@@ -142,6 +142,7 @@ import {
   securityStatus,
   securityWalletRestrict,
 } from "./dev-fix/security.js";
+import securityRecruiterPayouts from "./dev-fix/security-recruiter-payouts.js";
 import {
   airdropWinners,
   internalAirdropDrawRun,
@@ -377,6 +378,7 @@ router.all("/security/clusters", wrap(securityClusters));
 router.all("/security/manual-review", wrap(securityManualReview));
 router.all("/security/mass-deployers", wrap(securityMassDeployers));
 router.all("/security/audit-log", wrap(securityAuditLog));
+router.all("/security/recruiter-payouts", wrap(securityRecruiterPayouts));
 router.all("/security/creator/:wallet/profile", wrap(securityCreatorProfile));
 router.all("/security/creator/:wallet/launch-eligibility", wrap(securityCreatorLaunchEligibility));
 router.all("/security/creator/:wallet/tier", wrap(securityCreatorTier));
