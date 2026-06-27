@@ -8,6 +8,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { useLaunchpad } from "@/lib/launchpadClient";
+import { fetchLaunchpadCreatePreflight, type LaunchpadPreflight } from "@/lib/recruiterApi";
 import { resolveImageUri } from "@/lib/media";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -20,6 +21,67 @@ function canPushLive(status?: string) {
   return status === "promotion_published" || status === "ready_to_launch" || status === "scheduled";
 }
 
+function formatDateTime(value?: unknown) {
+  if (!value) return "None";
+  const date = new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : "None";
+}
+
+function SafetyRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-success/10 py-2 last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="max-w-[62%] truncate text-right text-success/85">{value}</span>
+    </div>
+  );
+}
+
+function CreatorSafetyPanel({ loading, preflight, error }: { loading: boolean; preflight: LaunchpadPreflight | null; error: string | null }) {
+  const creator = preflight?.creator as any;
+  const rules = preflight?.rules as any;
+  const cluster = preflight?.cluster as any;
+
+  return (
+    <div className="mwz-card p-4 text-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Creator safety</div>
+          <div className="mt-1 text-base font-semibold text-success">
+            {loading ? "Checking launch eligibility..." : preflight?.allowed ? "Eligible to launch" : "Launch blocked"}
+          </div>
+        </div>
+        <div className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${preflight?.allowed ? "border-success/40 text-success" : "border-orange-400/50 text-orange-300"}`}>
+          {preflight?.schemaReady === false ? "Schema pending" : preflight?.allowed ? "Clear" : "Review"}
+        </div>
+      </div>
+
+      {error ? <p className="mb-3 text-orange-300">{error}</p> : null}
+
+      <div className="space-y-0">
+        <SafetyRow label="Tier" value={String(creator?.tier || preflight?.tier || "New")} />
+        <SafetyRow label="Live bonding coins" value={`${Number(creator?.liveBondingCount || 0)} / ${Number(rules?.maxLiveBonding || 3)}`} />
+        <SafetyRow label="Cooldown ends" value={formatDateTime(creator?.cooldownEndsAt)} />
+        <SafetyRow label="Creator buy lock ends" value={formatDateTime(creator?.creatorBuyLockEndsAt)} />
+        <SafetyRow label="Creator buy cap" value={`${Number(creator?.creatorBuyCapBnb || rules?.creatorBuyCapBnb || 0)} BNB`} />
+        <SafetyRow label="Cluster wallets" value={`${Number(creator?.clusterWallets || cluster?.wallets || 0)} / ${Number(rules?.maxClusterWallets || 3)}`} />
+        <SafetyRow label="Manual review" value={creator?.manualReviewRequired ? "Required" : "Not required"} />
+      </div>
+
+      {preflight?.reasons?.length ? (
+        <div className="mt-4 rounded-lg border border-orange-400/40 bg-orange-950/20 p-3 text-orange-200">
+          {preflight.reasons.map((reason) => <div key={reason}>- {reason}</div>)}
+        </div>
+      ) : null}
+
+      {preflight?.warnings?.length ? (
+        <div className="mt-4 rounded-lg border border-success/20 bg-black/40 p-3 text-success/75">
+          {preflight.warnings.map((warning) => <div key={warning}>- {warning}</div>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function PushDraftLive() {
   const { draftId = "" } = useParams();
   const navigate = useNavigate();
@@ -28,6 +90,9 @@ export default function PushDraftLive() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
+  const [preflight, setPreflight] = useState<LaunchpadPreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +109,38 @@ export default function PushDraftLive() {
       cancelled = true;
     };
   }, [draftId, wallet.account]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!wallet.account) {
+      setPreflight(null);
+      setPreflightError(null);
+      setPreflightLoading(false);
+      return;
+    }
+
+    setPreflightLoading(true);
+    setPreflightError(null);
+
+    fetchLaunchpadCreatePreflight(wallet.account, wallet.chainId)
+      .then((result) => {
+        if (!cancelled) setPreflight(result);
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setPreflight(null);
+          setPreflightError(err?.message || "Could not check creator launch eligibility.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setPreflightLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.account, wallet.chainId]);
 
   const draft = bundle?.draft;
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
@@ -63,6 +160,11 @@ export default function PushDraftLive() {
 
     if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
       toast.error("Only the draft owner wallet can push this draft live.");
+      return;
+    }
+
+    if (preflight && !preflight.allowed) {
+      toast.error(preflight.reasons?.[0] || "Creator is not eligible to launch yet.");
       return;
     }
 
@@ -208,6 +310,8 @@ export default function PushDraftLive() {
               </p>
             </div>
 
+            <CreatorSafetyPanel loading={preflightLoading} preflight={preflight} error={preflightError} />
+
             <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
               Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment.
             </div>
@@ -220,7 +324,7 @@ export default function PushDraftLive() {
 
             <Button
               onClick={pushLive}
-              disabled={pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status)}
+              disabled={pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status) || Boolean(preflight && !preflight.allowed)}
               className="mwz-button mwz-button-orange h-12 w-full justify-center font-retro"
             >
               <Rocket className="mr-2 h-4 w-4" />
