@@ -162,6 +162,74 @@ create table if not exists public.social_fingerprints (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.recruiter_accounts (
+  recruiter_id uuid primary key default gen_random_uuid(),
+  signup_wallet text,
+  code text unique,
+  display_name text,
+  total_estimated_usd numeric(20, 2) not null default 0,
+  status text not null default 'active' check (status in ('active', 'paused', 'restricted')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.recruiter_payout_wallets (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid not null references public.recruiter_accounts (recruiter_id) on delete cascade,
+  chain text not null check (chain in ('bnb', 'solana')),
+  wallet_address text not null,
+  verified_at timestamptz,
+  verification_message text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (recruiter_id, chain, wallet_address)
+);
+
+create table if not exists public.recruiter_fee_events (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid references public.recruiter_accounts (recruiter_id) on delete set null,
+  trader_wallet text,
+  source_chain text not null check (source_chain in ('bnb', 'solana')),
+  fee_token text not null check (fee_token in ('BNB', 'SOL')),
+  raw_fee_amount numeric(78, 0) not null default 0,
+  recruiter_share_raw numeric(78, 0) not null default 0,
+  tx_hash text not null,
+  finality_status text not null default 'pending' check (finality_status in ('pending', 'confirmed', 'failed')),
+  claim_status text not null default 'pending' check (claim_status in ('pending', 'claimable', 'claimed', 'failed')),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source_chain, tx_hash, recruiter_id)
+);
+
+create table if not exists public.recruiter_reward_ledger (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid not null references public.recruiter_accounts (recruiter_id) on delete cascade,
+  chain text not null check (chain in ('bnb', 'solana')),
+  token text not null check (token in ('BNB', 'SOL')),
+  amount_raw numeric(78, 0) not null default 0,
+  status text not null default 'pending' check (status in ('pending', 'pending_finality', 'claimable', 'created', 'submitted', 'confirmed', 'claimed', 'failed', 'retriable')),
+  source_event_id uuid references public.recruiter_fee_events (id) on delete set null,
+  claim_id uuid,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.recruiter_reward_claims (
+  id uuid primary key default gen_random_uuid(),
+  recruiter_id uuid not null references public.recruiter_accounts (recruiter_id) on delete cascade,
+  chain text not null check (chain in ('bnb', 'solana')),
+  token text not null check (token in ('BNB', 'SOL')),
+  amount_raw numeric(78, 0) not null default 0,
+  payout_wallet text not null,
+  status text not null default 'created' check (status in ('created', 'submitted', 'confirmed', 'failed', 'retriable')),
+  tx_hash text,
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists idx_creator_profiles_cluster_id on public.creator_profiles (cluster_id);
 create index if not exists idx_creator_profiles_restricted on public.creator_profiles (restricted) where restricted = true;
 create index if not exists idx_creator_profiles_manual_review on public.creator_profiles (manual_review_required) where manual_review_required = true;
@@ -175,3 +243,8 @@ create index if not exists idx_campaign_security_states_creator on public.campai
 create index if not exists idx_mass_deployer_flags_wallet on public.mass_deployer_flags (wallet_address);
 create index if not exists idx_metadata_fingerprints_fingerprint on public.metadata_fingerprints (fingerprint);
 create index if not exists idx_social_fingerprints_fingerprint on public.social_fingerprints (fingerprint);
+create index if not exists idx_recruiter_accounts_code on public.recruiter_accounts (code);
+create index if not exists idx_recruiter_payout_wallets_recruiter_chain on public.recruiter_payout_wallets (recruiter_id, chain);
+create index if not exists idx_recruiter_fee_events_recruiter_chain on public.recruiter_fee_events (recruiter_id, source_chain, claim_status);
+create index if not exists idx_recruiter_reward_ledger_recruiter_chain_status on public.recruiter_reward_ledger (recruiter_id, chain, status);
+create index if not exists idx_recruiter_reward_claims_recruiter_chain_status on public.recruiter_reward_claims (recruiter_id, chain, status);
