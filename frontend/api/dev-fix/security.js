@@ -588,6 +588,16 @@ export async function securityCreatorRestrict(req, res) {
        on conflict (creator_wallet) do update set restricted = excluded.restricted, updated_at = now()`,
       [wallet, restricted],
     );
+    if (restricted) {
+      await pool.query(
+        `update public.manual_review_queue
+            set status = 'restricted',
+                updated_at = now()
+          where creator_wallet = $1
+            and status = 'open'`,
+        [wallet],
+      );
+    }
     await recordSecurityAction({ req, action: "set_creator_restricted", target: wallet, newValue: String(restricted), reason: body.reason });
     return json(res, 200, { ok: true, wallet, restricted });
   } catch (error) {
@@ -614,6 +624,15 @@ export async function securityCreatorManualReview(req, res) {
         `insert into public.manual_review_queue (creator_wallet, reason, priority, status)
          values ($1, $2, $3, 'open')`,
         [wallet, String(body.reason || "Manual review required"), String(body.priority || "medium")],
+      );
+    } else {
+      await pool.query(
+        `update public.manual_review_queue
+            set status = 'approved',
+                updated_at = now()
+          where creator_wallet = $1
+            and status = 'open'`,
+        [wallet],
       );
     }
     await recordSecurityAction({ req, action: "set_creator_manual_review", target: wallet, newValue: String(required), reason: body.reason });
