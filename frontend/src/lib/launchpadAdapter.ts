@@ -28,6 +28,12 @@ export type TradeInput = {
   minAmountWei?: bigint;
 };
 
+export type TradeEligibilityInput = {
+  wallet: string;
+  tokenId: string;
+  side: "buy" | "sell";
+};
+
 export type TokenState = {
   campaign: CampaignInfo | null;
   metrics: CampaignMetrics | null;
@@ -69,6 +75,7 @@ export interface LaunchpadAdapter {
   getTokenState(tokenId: string): Promise<TokenState>;
   getCreatorProfile(wallet: string): Promise<CreatorProfile | null>;
   getLaunchEligibility(wallet: string): Promise<EligibilityResult>;
+  getTradeEligibility(input: TradeEligibilityInput): Promise<EligibilityResult>;
   getQuote(input: QuoteInput): Promise<QuoteResult>;
   graduate(tokenId: string): Promise<TxResult>;
 }
