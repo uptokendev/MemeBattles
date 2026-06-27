@@ -5,7 +5,13 @@ import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
 import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
-import { fetchCampaignCreateAuthorization, fetchCampaignTradeAuthorization } from "@/lib/recruiterApi";
+import {
+  fetchCampaignCreateAuthorization,
+  fetchCampaignTradeAuthorization,
+  fetchLaunchpadBuyPreflight,
+  fetchLaunchpadCreatePreflight,
+  fetchLaunchpadSellPreflight,
+} from "@/lib/recruiterApi";
 import { getReadProvider } from "@/lib/readProvider";
 import { apiFetch } from "@/lib/apiBase";
 import { resolveImageUri } from "@/lib/media";
@@ -407,11 +413,9 @@ export function useLaunchpad() {
     name: string;
     symbol: string;
     logoURI: string;
-    metadataURI?: string;
     xAccount: string;
     website: string;
     extraLink: string;
-    initialBuyBnb?: string;
     basePriceWei?: bigint;
     priceSlopeWei?: bigint;
     graduationTargetWei?: bigint;
@@ -421,6 +425,7 @@ export function useLaunchpad() {
     if (!writer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
 
+    await fetchLaunchpadCreatePreflight(wallet.account, activeChainId);
     const authResponse = await fetchCampaignCreateAuthorization(wallet.account, activeChainId);
     const auth = authResponse.authorization;
 
@@ -456,6 +461,7 @@ export function useLaunchpad() {
     if (!wallet.account) throw new Error("Wallet not connected");
 
     const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
+    await fetchLaunchpadBuyPreflight(wallet.account, campaignAddress, activeChainId);
     const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
     const auth = authResponse.authorization;
 
@@ -477,6 +483,7 @@ export function useLaunchpad() {
     if (!wallet.account) throw new Error("Wallet not connected");
 
     const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
+    await fetchLaunchpadSellPreflight(wallet.account, campaignAddress, activeChainId);
     const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
     const auth = authResponse.authorization;
 
