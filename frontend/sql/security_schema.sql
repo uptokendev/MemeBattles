@@ -1,6 +1,8 @@
 -- MemeWarzone pre-grad security engine schema
 -- Run this against the devpostgrad Supabase/Postgres database before enabling admin writes.
 
+create extension if not exists pgcrypto;
+
 create table if not exists public.creator_profiles (
   creator_wallet text primary key,
   tier text not null default 'New' check (tier in ('New', 'Trusted', 'Proven')),
