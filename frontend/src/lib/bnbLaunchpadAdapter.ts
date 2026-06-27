@@ -1,0 +1,76 @@
+import type { CampaignInfo, CampaignMetrics, useLaunchpad } from "@/lib/launchpadClient";
+import type { CreateTokenInput, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeInput, TxResult } from "@/lib/launchpadAdapter";
+import { fetchLaunchpadCreatePreflight } from "@/lib/recruiterApi";
+import { apiFetch } from "@/lib/apiBase";
+
+export type BnbLaunchpadClient = Pick<
+  ReturnType<typeof useLaunchpad>,
+  "activeChainId" | "createCampaign" | "buyTokens" | "sellTokens" | "finalizeCampaign" | "fetchCampaigns" | "fetchCampaignMetrics"
+>;
+
+function normalizeReceipt(receipt: unknown): TxResult {
+  const anyReceipt = receipt as any;
+  return {
+    hash: anyReceipt?.hash || anyReceipt?.transactionHash,
+    transactionHash: anyReceipt?.transactionHash || anyReceipt?.hash,
+    receipt,
+    raw: receipt,
+  };
+}
+
+async function fetchCreatorProfile(wallet: string) {
+  const res = await apiFetch(`/api/security/creator/${encodeURIComponent(wallet)}/profile`, { cache: "no-store" as RequestCache });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(String(json?.error || `Request failed (${res.status})`));
+  return json?.profile ?? null;
+}
+
+export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient, walletAddress?: string | null): LaunchpadAdapter {
+  return {
+    chain: "bnb",
+
+    async createToken(input: CreateTokenInput) {
+      const receipt = await client.createCampaign(input);
+      return normalizeReceipt(receipt);
+    },
+
+    async buy(input: TradeInput) {
+      if (input.maxCostWei == null) throw new Error("BNB buy requires maxCostWei.");
+      const receipt = await client.buyTokens(input.tokenId, input.amountWei, input.maxCostWei);
+      return normalizeReceipt(receipt);
+    },
+
+    async sell(input: TradeInput) {
+      if (input.minAmountWei == null) throw new Error("BNB sell requires minAmountWei.");
+      const receipt = await client.sellTokens(input.tokenId, input.amountWei, input.minAmountWei);
+      return normalizeReceipt(receipt);
+    },
+
+    async getTokenState(tokenId: string): Promise<TokenState> {
+      const campaigns = await client.fetchCampaigns();
+      const campaign = campaigns.find((item: CampaignInfo) => item.campaign.toLowerCase() === tokenId.toLowerCase() || item.token.toLowerCase() === tokenId.toLowerCase()) || null;
+      const metrics: CampaignMetrics | null = campaign ? await client.fetchCampaignMetrics(campaign.campaign) : await client.fetchCampaignMetrics(tokenId);
+      return { campaign, metrics };
+    },
+
+    getCreatorProfile: fetchCreatorProfile,
+
+    async getLaunchEligibility(wallet: string) {
+      return fetchLaunchpadCreatePreflight(wallet, client.activeChainId);
+    },
+
+    async getQuote(input: QuoteInput): Promise<QuoteResult> {
+      const metrics = await client.fetchCampaignMetrics(input.tokenId);
+      if (!metrics) return { amountWei: input.amountWei, warnings: ["Quote unavailable until campaign metrics load."] };
+      const valueWei = (metrics.currentPrice * input.amountWei) / 10n ** 18n;
+      return input.side === "buy"
+        ? { amountWei: input.amountWei, estimatedCostWei: valueWei, warnings: [] }
+        : { amountWei: input.amountWei, estimatedReturnWei: valueWei, warnings: [] };
+    },
+
+    async graduate(tokenId: string) {
+      const receipt = await client.finalizeCampaign(tokenId, 0n, 0n);
+      return normalizeReceipt(receipt);
+    },
+  };
+}
