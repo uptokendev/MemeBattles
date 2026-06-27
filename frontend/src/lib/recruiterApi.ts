@@ -96,8 +96,21 @@ async function postJson(path: string, body: any) {
   );
 }
 
-function assertPreflightAllowed(json: any): LaunchpadPreflight {
+async function postPreflight(path: string, body: any): Promise<LaunchpadPreflight> {
+  const res = await apiFetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
   const preflight = (json?.preflight ?? json) as LaunchpadPreflight;
+  if (!preflight || typeof preflight.allowed !== "boolean") {
+    throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
+  }
+  return preflight;
+}
+
+function assertPreflightAllowed(preflight: LaunchpadPreflight): LaunchpadPreflight {
   if (!preflight?.allowed) {
     throw new Error(preflight?.reasons?.[0] || "Launchpad security preflight blocked this action.");
   }
@@ -127,11 +140,14 @@ export async function syncWalletRecruiterAttribution(walletAddress: string, memb
   return result;
 }
 
-export async function fetchLaunchpadCreatePreflight(walletAddress: string, walletChainId?: number | null): Promise<LaunchpadPreflight> {
+export async function fetchLaunchpadCreateEligibility(walletAddress: string, walletChainId?: number | null): Promise<LaunchpadPreflight> {
   const chainId = getActiveChainId(walletChainId);
   const factoryAddress = getFactoryAddress(chainId);
-  const json = await postJson("/api/launchpad/preflight-create", { walletAddress, chainId, factoryAddress });
-  return assertPreflightAllowed(json);
+  return postPreflight("/api/launchpad/preflight-create", { walletAddress, chainId, factoryAddress });
+}
+
+export async function fetchLaunchpadCreatePreflight(walletAddress: string, walletChainId?: number | null): Promise<LaunchpadPreflight> {
+  return assertPreflightAllowed(await fetchLaunchpadCreateEligibility(walletAddress, walletChainId));
 }
 
 export async function fetchLaunchpadBuyPreflight(
@@ -140,8 +156,8 @@ export async function fetchLaunchpadBuyPreflight(
   walletChainId?: number | null,
 ): Promise<LaunchpadPreflight> {
   const chainId = getActiveChainId(walletChainId);
-  const json = await postJson("/api/launchpad/preflight-buy", { walletAddress, campaignAddress, chainId });
-  return assertPreflightAllowed(json);
+  const preflight = await postPreflight("/api/launchpad/preflight-buy", { walletAddress, campaignAddress, chainId });
+  return assertPreflightAllowed(preflight);
 }
 
 export async function fetchLaunchpadSellPreflight(
@@ -150,8 +166,8 @@ export async function fetchLaunchpadSellPreflight(
   walletChainId?: number | null,
 ): Promise<LaunchpadPreflight> {
   const chainId = getActiveChainId(walletChainId);
-  const json = await postJson("/api/launchpad/preflight-sell", { walletAddress, campaignAddress, chainId });
-  return assertPreflightAllowed(json);
+  const preflight = await postPreflight("/api/launchpad/preflight-sell", { walletAddress, campaignAddress, chainId });
+  return assertPreflightAllowed(preflight);
 }
 
 export async function fetchCampaignCreateAuthorization(walletAddress: string, walletChainId?: number | null) {
