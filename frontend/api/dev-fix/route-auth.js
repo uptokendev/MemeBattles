@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
+import { evaluateCreatePreflight, evaluateTradePreflight } from "./security.js";
 import {
   getRouteDecision,
   ROUTE_PROFILE_NAMES,
@@ -204,6 +205,7 @@ export async function routingStatus(req, res) {
 
   const walletAddress = normalizeAddress(q.walletAddress);
   const routeDecision = walletAddress ? await getRouteDecision(walletAddress) : null;
+  const createPreflight = walletAddress ? await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress }) : null;
 
   return json(res, 200, {
     ok: readyForCoreFlow,
@@ -224,11 +226,13 @@ export async function routingStatus(req, res) {
       routeProfileNames: ROUTE_PROFILE_NAMES,
     },
     routeDecision: routeDecision?.decision || null,
+    createPreflight,
     ttlSeconds: parsePositiveInt(process.env.ROUTE_AUTH_TTL_SECONDS, 10 * 60),
     closeout: {
       requiresSignerConfigured: true,
       requiresOnchainMatch: true,
       requiresCreateAndTradeAuthorization200: true,
+      requiresSecurityPreflightAllowed: true,
     },
   });
 }
@@ -247,6 +251,15 @@ export async function routingCreateAuthorization(req, res) {
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
   if (!factoryAddress) return json(res, 400, { error: "Invalid or missing factoryAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
+
+  const createPreflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress });
+  if (!createPreflight.allowed) {
+    return json(res, 403, {
+      error: createPreflight.reasons?.[0] || "Creator is not eligible to launch.",
+      code: "CREATE_PREFLIGHT_BLOCKED",
+      preflight: createPreflight,
+    });
+  }
 
   const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
@@ -272,7 +285,7 @@ export async function routingCreateAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/create-authorization" },
+    metadata: { endpoint: "/api/routing/create-authorization", preflight: createPreflight },
   });
 
   return json(res, 200, {
@@ -284,6 +297,7 @@ export async function routingCreateAuthorization(req, res) {
     },
     routeAuthority: signer.address,
     decision,
+    preflight: createPreflight,
   });
 }
 
@@ -301,6 +315,15 @@ export async function routingTradeAuthorization(req, res) {
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
   if (!campaignAddress) return json(res, 400, { error: "Invalid or missing campaignAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
+
+  const tradePreflight = await evaluateTradePreflight({ walletAddress, campaignAddress, chainId });
+  if (!tradePreflight.allowed) {
+    return json(res, 403, {
+      error: tradePreflight.reasons?.[0] || "Wallet is not eligible to trade.",
+      code: "TRADE_PREFLIGHT_BLOCKED",
+      preflight: tradePreflight,
+    });
+  }
 
   const { routeProfileId, decision } = await getRouteDecision(walletAddress);
   const deadline = getAuthDeadline();
@@ -324,7 +347,7 @@ export async function routingTradeAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/trade-authorization" },
+    metadata: { endpoint: "/api/routing/trade-authorization", preflight: tradePreflight },
   });
 
   return json(res, 200, {
@@ -335,5 +358,6 @@ export async function routingTradeAuthorization(req, res) {
     },
     routeAuthority: signer.address,
     decision,
+    preflight: tradePreflight,
   });
 }
