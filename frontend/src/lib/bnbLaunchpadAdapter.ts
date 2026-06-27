@@ -1,5 +1,5 @@
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
-import type { CreateTokenInput, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeInput, TxResult } from "@/lib/launchpadAdapter";
+import type { CreateTokenInput, EligibilityResult, LaunchpadAdapter, QuoteInput, QuoteResult, TokenState, TradeEligibilityInput, TradeInput, TxResult } from "@/lib/launchpadAdapter";
 import { fetchLaunchpadCreatePreflight } from "@/lib/recruiterApi";
 import { apiFetch } from "@/lib/apiBase";
 
@@ -28,6 +28,23 @@ async function fetchCreatorProfile(wallet: string) {
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new Error(String(json?.error || `Request failed (${res.status})`));
   return json?.profile ?? null;
+}
+
+async function fetchTradeEligibility(input: TradeEligibilityInput, chainId: number): Promise<EligibilityResult> {
+  const path = input.side === "buy" ? "/api/launchpad/preflight-buy" : "/api/launchpad/preflight-sell";
+  const res = await apiFetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      walletAddress: input.wallet,
+      campaignAddress: input.tokenId,
+      chainId,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  const preflight = json?.preflight ?? json;
+  if (preflight && typeof preflight.allowed === "boolean") return preflight as EligibilityResult;
+  throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
 }
 
 export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient): LaunchpadAdapter {
@@ -63,6 +80,10 @@ export function createBnbLaunchpadAdapter(client: BnbLaunchpadClient): Launchpad
 
     async getLaunchEligibility(wallet: string) {
       return fetchLaunchpadCreatePreflight(wallet, client.activeChainId);
+    },
+
+    async getTradeEligibility(input: TradeEligibilityInput) {
+      return fetchTradeEligibility(input, client.activeChainId);
     },
 
     async getQuote(input: QuoteInput): Promise<QuoteResult> {
