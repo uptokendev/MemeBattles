@@ -7,6 +7,13 @@ const TIER_RULES = {
   Proven: { maxLiveBonding: 10, cooldownHours: 24, creatorBuyLockHours: 1, creatorBuyCapBnb: 3, maxClusterWallets: 10 },
 };
 
+const CAMPAIGN_PAUSE_FIELDS = {
+  paused: "paused",
+  buyPaused: "buy_paused",
+  sellPaused: "sell_paused",
+  graduationPaused: "graduation_paused",
+};
+
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
   badMethod(res);
@@ -57,6 +64,20 @@ function isFuture(value) {
   if (!value) return false;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime()) && date.getTime() > Date.now();
+}
+
+function readJsonObject(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function latestPaused(rows) {
+  const payload = readJsonObject(rows?.[0]?.new_value);
+  return parseBool(payload.paused);
 }
 
 function defaultCreator(walletAddress) {
@@ -306,6 +327,73 @@ async function readCampaignSecurity(campaignAddress) {
   }
 }
 
+async function readSecurityControlStatus() {
+  const [factoryResult, solanaResult, campaignResult, syncResult] = await Promise.all([
+    pool.query(
+      `select new_value
+         from public.security_actions
+        where action in ('bnb_pause-factory', 'pause-factory')
+        order by created_at desc
+        limit 1`,
+    ),
+    pool.query(
+      `select new_value
+         from public.security_actions
+        where action in ('solana_pause-global', 'pause-global')
+        order by created_at desc
+        limit 1`,
+    ),
+    pool.query(
+      `select coalesce(bool_or(paused), false) as global_paused,
+              coalesce(bool_or(buy_paused), false) as buy_paused,
+              coalesce(bool_or(sell_paused), false) as sell_paused,
+              coalesce(bool_or(graduation_paused), false) as graduation_paused
+         from public.campaign_security_states`,
+    ),
+    pool.query(
+      `select chain,
+              count(*) filter (where status in ('queued', 'running'))::int as pending
+         from public.contract_sync_jobs
+        group by chain`,
+    ),
+  ]);
+
+  const campaign = campaignResult.rows[0] || {};
+  const sync = new Map(syncResult.rows.map((row) => [String(row.chain), Number(row.pending || 0)]));
+  return {
+    bnbFactoryPaused: latestPaused(factoryResult.rows),
+    solanaGlobalPaused: latestPaused(solanaResult.rows),
+    campaignPaused: Boolean(campaign.global_paused),
+    buysPaused: Boolean(campaign.buy_paused),
+    sellsPaused: Boolean(campaign.sell_paused),
+    graduationPaused: Boolean(campaign.graduation_paused),
+    bnbContractSync: (sync.get("bnb") || 0) > 0 ? "pending" : "synced",
+    solanaProgramSync: (sync.get("solana") || 0) > 0 ? "pending" : "synced",
+  };
+}
+
+async function updateCampaignPauseState(body) {
+  const campaign = normalizeWallet(body.campaign);
+  const field = String(body.field || "").trim();
+  const column = CAMPAIGN_PAUSE_FIELDS[field];
+  if (!campaign || !column) return;
+
+  await pool.query(
+    `insert into public.campaign_security_states (campaign_address, ${column}, updated_at)
+     values ($1, $2, now())
+     on conflict (campaign_address) do update set ${column} = excluded.${column}, updated_at = now()`,
+    [campaign, parseBool(body.paused)],
+  );
+}
+
+async function queueContractSyncJob({ chain, action, target }) {
+  await pool.query(
+    `insert into public.contract_sync_jobs (chain, job_type, target, status)
+     values ($1, $2, $3, 'queued')`,
+    [chain, action, String(target || action)],
+  );
+}
+
 export async function evaluateCreatePreflight({ walletAddress }) {
   const wallet = normalizeWallet(walletAddress);
   if (!wallet) return { allowed: false, reasons: ["Invalid or missing wallet address."], warnings: [], schemaReady: true };
@@ -387,12 +475,13 @@ export async function securityCreatorLaunchEligibility(req, res) {
 export async function securityStatus(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   try {
-    const [{ rows: reviews }, { rows: creators }, { rows: wallets }, { rows: clusters }, { rows: mass }] = await Promise.all([
+    const [{ rows: reviews }, { rows: creators }, { rows: wallets }, { rows: clusters }, { rows: mass }, controls] = await Promise.all([
       pool.query("select count(*)::int as count from public.manual_review_queue where status = 'open'"),
       pool.query("select count(*)::int as count from public.creator_profiles where restricted = true"),
       pool.query("select count(*)::int as count from public.wallet_risk_profiles where restricted = true"),
       pool.query("select count(*)::int as count from public.wallet_clusters where risk_level in ('medium','high') or restricted = true"),
       pool.query("select count(*)::int as count from public.mass_deployer_flags where action in ('manual_review','restricted')"),
+      readSecurityControlStatus(),
     ]);
 
     return json(res, 200, {
@@ -402,11 +491,17 @@ export async function securityStatus(req, res) {
       restrictedWallets: Number(wallets[0]?.count || 0),
       suspiciousClusters: Number(clusters[0]?.count || 0),
       massDeployerAlerts: Number(mass[0]?.count || 0),
-      bnbContractSync: "unknown",
-      solanaProgramSync: "unknown",
+      bnbContractSync: controls.bnbContractSync,
+      solanaProgramSync: controls.solanaProgramSync,
       backendSignerStatus: "unknown",
       routeAuthorityStatus: "unknown",
-      paused: { global: false, create: false, buys: false, sells: false, graduation: false },
+      paused: {
+        global: controls.bnbFactoryPaused || controls.campaignPaused || controls.solanaGlobalPaused,
+        create: controls.bnbFactoryPaused,
+        buys: controls.buysPaused,
+        sells: controls.sellsPaused,
+        graduation: controls.graduationPaused,
+      },
     });
   } catch (error) {
     if (!schemaMissing(error)) console.error("[security] status failed", error);
@@ -688,9 +783,16 @@ export async function securityWalletRestrict(req, res) {
 export async function securityContractAction(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
-  const action = String(req.params?.action || "contract_action");
-  const target = body.wallet || body.target || body.campaign || action;
+  const rawAction = String(req.params?.action || "contract_action");
+  const isSolana = String(req.originalUrl || req.url || "").includes("/security/solana/");
+  const chain = isSolana ? "solana" : "bnb";
+  const action = `${chain}_${rawAction}`;
+  const target = body.wallet || body.target || body.campaign || rawAction;
   try {
+    if (!isSolana && rawAction === "pause-campaign") {
+      await updateCampaignPauseState(body);
+    }
+    await queueContractSyncJob({ chain, action: rawAction, target });
     await recordSecurityAction({ req, action, target, newValue: JSON.stringify(body), reason: body.reason });
     return json(res, 200, { ok: true, queued: true, action, target });
   } catch (error) {
