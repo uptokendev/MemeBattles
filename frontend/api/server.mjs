@@ -124,6 +124,25 @@ import {
 } from "./dev-fix/recruiter-portal.js";
 import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "./dev-fix/route-auth.js";
 import {
+  launchpadPreflightBuy,
+  launchpadPreflightCreate,
+  launchpadPreflightSell,
+  securityAuditLog,
+  securityClusters,
+  securityClusterRestrict,
+  securityContractAction,
+  securityCreatorLaunchEligibility,
+  securityCreatorManualReview,
+  securityCreatorProfile,
+  securityCreators,
+  securityCreatorRestrict,
+  securityCreatorTier,
+  securityManualReview,
+  securityMassDeployers,
+  securityStatus,
+  securityWalletRestrict,
+} from "./dev-fix/security.js";
+import {
   airdropWinners,
   internalAirdropDrawRun,
   internalAirdropDraws,
@@ -349,6 +368,24 @@ router.all("/routing/trade-authorization", wrap(routingTradeAuthorization));
 router.all("/recruiter-routing/status", wrap(routingStatus));
 router.all("/recruiter-routing/create-authorization", wrap(routingCreateAuthorization));
 router.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorization));
+router.all("/launchpad/preflight-create", wrap(launchpadPreflightCreate));
+router.all("/launchpad/preflight-buy", wrap(launchpadPreflightBuy));
+router.all("/launchpad/preflight-sell", wrap(launchpadPreflightSell));
+router.all("/security/status", wrap(securityStatus));
+router.all("/security/creators", wrap(securityCreators));
+router.all("/security/clusters", wrap(securityClusters));
+router.all("/security/manual-review", wrap(securityManualReview));
+router.all("/security/mass-deployers", wrap(securityMassDeployers));
+router.all("/security/audit-log", wrap(securityAuditLog));
+router.all("/security/creator/:wallet/profile", wrap(securityCreatorProfile));
+router.all("/security/creator/:wallet/launch-eligibility", wrap(securityCreatorLaunchEligibility));
+router.all("/security/creator/:wallet/tier", wrap(securityCreatorTier));
+router.all("/security/creator/:wallet/restrict", wrap(securityCreatorRestrict));
+router.all("/security/creator/:wallet/manual-review", wrap(securityCreatorManualReview));
+router.all("/security/cluster/:clusterId/restrict", wrap(securityClusterRestrict));
+router.all("/security/wallet/:wallet/restrict", wrap(securityWalletRestrict));
+router.all("/security/contracts/:action", wrap(securityContractAction));
+router.all("/security/solana/:action", wrap(securityContractAction));
 router.all("/recruiter-auth-nonce", wrap(recruiterAuthNonce));
 router.all("/recruiter-auth-verify", wrap(recruiterAuthVerify));
 router.all("/recruiter-portal", wrap(recruiterPortal));
