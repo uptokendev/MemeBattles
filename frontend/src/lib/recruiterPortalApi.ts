@@ -43,6 +43,44 @@ export type RecruiterAuthNonceResponse = {
   message: string;
 };
 
+export type RecruiterPayoutBalance = {
+  chain: "bnb" | "solana";
+  token: "BNB" | "SOL";
+  claimableRaw: string;
+  pendingRaw: string;
+  payoutWallet: string | null;
+  status: "missing_payout_wallet" | "claimable" | "pending_finality" | string;
+};
+
+export type RecruiterNativeClaim = {
+  id: string;
+  chain: "bnb" | "solana";
+  token: "BNB" | "SOL";
+  amountRaw: string;
+  payoutWallet: string;
+  status: string;
+  txHash?: string | null;
+  error?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type RecruiterNativePayouts = {
+  recruiterId: string;
+  code: string | null;
+  displayName: string | null;
+  totalEstimatedUsd: number;
+  balances: RecruiterPayoutBalance[];
+  claims: RecruiterNativeClaim[];
+};
+
+export type RecruiterPayoutWalletChallenge = {
+  error?: string;
+  code?: string;
+  nonce: string;
+  message: string;
+};
+
 const PORTAL_CREDENTIALS: RequestCredentials = "include";
 const PORTAL_TOKEN_KEY = "mwz:recruiterPortal:sessionToken";
 
@@ -80,6 +118,17 @@ function portalHeaders(extra?: HeadersInit): HeadersInit {
 
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
+  if (!res.ok || (json as any)?.ok === false) {
+    throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
+  }
+  return json as any;
+}
+
+async function parseJsonAllowingChallenge(res: Response) {
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 400 && json?.message && json?.nonce && /missing signature/i.test(String(json?.error || ""))) {
+    return json as RecruiterPayoutWalletChallenge;
+  }
   if (!res.ok || (json as any)?.ok === false) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
@@ -149,6 +198,48 @@ export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise
   });
   const json = await parseJson(res);
   return { squad_image_url: String(json?.squad_image_url || json?.squadImageUrl || imageUrl) };
+}
+
+export async function fetchRecruiterNativePayouts(): Promise<RecruiterNativePayouts | null> {
+  const res = await apiFetch("/api/recruiters/me/payouts", {
+    credentials: PORTAL_CREDENTIALS,
+    cache: "no-store",
+    headers: portalHeaders(),
+  });
+  if (res.status === 401) return null;
+  return parseJson(res) as Promise<RecruiterNativePayouts>;
+}
+
+export async function requestRecruiterPayoutWalletChallenge(chain: "bnb" | "solana", walletAddress: string): Promise<RecruiterPayoutWalletChallenge> {
+  const res = await apiFetch("/api/recruiters/me/wallets/link", {
+    method: "POST",
+    credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ chain, walletAddress }),
+  });
+  const json = await parseJsonAllowingChallenge(res);
+  if (!json?.message || !json?.nonce) throw new Error("Payout wallet challenge missing from response.");
+  return { nonce: String(json.nonce), message: String(json.message), error: json.error, code: json.code };
+}
+
+export async function verifyRecruiterPayoutWallet(chain: "bnb" | "solana", walletAddress: string, nonce: string, signature: string) {
+  const res = await apiFetch("/api/recruiters/me/wallets/link", {
+    method: "POST",
+    credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ chain, walletAddress, nonce, signature }),
+  });
+  return parseJson(res);
+}
+
+export async function createRecruiterNativeClaim(chain: "bnb" | "solana") {
+  const res = await apiFetch("/api/recruiters/me/claims", {
+    method: "POST",
+    credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ chain }),
+  });
+  return parseJson(res);
 }
 
 export async function logoutRecruiterPortal() {
