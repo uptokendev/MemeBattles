@@ -64,12 +64,32 @@ function claimShape(row) {
   };
 }
 
-async function auditAction({ action, target, oldValue = "", newValue = "", reason = "", txHash = null }) {
-  await pool.query(
-    `insert into public.security_actions (admin_email, action, target, old_value, new_value, reason, tx_hash, source_system)
-     values ($1, $2, $3, $4, $5, $6, $7, 'web-dashboard')`,
-    [process.env.SECURITY_ADMIN_EMAIL || "ops@memewar.zone", action, target, oldValue, newValue, reason, txHash],
-  );
+function reconciliationShape(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    status: row.status,
+    checkedBy: row.checked_by,
+    reason: row.reason || "",
+    summary: row.summary || {},
+    anomalies: Array.isArray(row.anomalies) ? row.anomalies : [],
+    createdAt: row.created_at || null,
+  };
+}
+
+async function loadLatestReconciliation() {
+  try {
+    const { rows } = await pool.query(
+      `select id, status, checked_by, summary, anomalies, reason, created_at
+         from public.recruiter_payout_reconciliation_runs
+        order by created_at desc
+        limit 1`,
+    );
+    return reconciliationShape(rows[0]);
+  } catch (error) {
+    if (schemaMissing(error)) return null;
+    throw error;
+  }
 }
 
 async function loadPayoutState() {
@@ -154,16 +174,98 @@ async function loadPayoutState() {
     return { ...recruiter, balances: [...recruiter.balances, ...missing] };
   });
 
-  return { recruiters: items };
+  return { recruiters: items, reconciliation: await loadLatestReconciliation() };
 }
 
-async function updateClaim(req, res) {
-  const body = await readJson(req);
+async function runReconciliation(req, res, body) {
+  const reason = String(body.reason || "Payout reconciliation drill").trim();
+  const checkedBy = process.env.SECURITY_ADMIN_EMAIL || "ops@memewar.zone";
+
+  const summaryResult = await pool.query(
+    `select
+       count(*)::int as ledger_entries,
+       coalesce(sum(amount_raw) filter (where status in ('claimable', 'retriable') and claim_id is null), 0)::text as claimable_raw,
+       coalesce(sum(amount_raw) filter (where status in ('pending', 'pending_finality')), 0)::text as pending_raw,
+       coalesce(sum(amount_raw) filter (where status in ('created', 'submitted')), 0)::text as locked_raw,
+       count(*) filter (where status in ('created', 'submitted') and claim_id is null)::int as locked_without_claim,
+       count(*) filter (where status = 'claimed' and claim_id is null)::int as claimed_without_claim
+     from public.recruiter_reward_ledger`,
+  );
+
+  const claimSummary = await pool.query(
+    `select
+       count(*)::int as claims,
+       count(*) filter (where status = 'created')::int as created,
+       count(*) filter (where status = 'submitted')::int as submitted,
+       count(*) filter (where status = 'confirmed')::int as confirmed,
+       count(*) filter (where status = 'failed')::int as failed,
+       count(*) filter (where status = 'retriable')::int as retriable,
+       count(*) filter (where status = 'submitted' and (tx_hash is null or tx_hash = ''))::int as submitted_without_tx
+     from public.recruiter_reward_claims`,
+  );
+
+  const orphanLedger = await pool.query(
+    `select l.id::text as ledger_id, l.recruiter_id::text as recruiter_id, l.chain, l.token, l.status, l.claim_id::text as claim_id
+       from public.recruiter_reward_ledger l
+       left join public.recruiter_reward_claims c on c.id = l.claim_id
+      where l.claim_id is not null and c.id is null
+      limit 25`,
+  );
+
+  const claimMismatch = await pool.query(
+    `with ledger_totals as (
+       select claim_id, coalesce(sum(amount_raw), 0)::numeric(78,0) as ledger_amount
+         from public.recruiter_reward_ledger
+        where claim_id is not null
+        group by claim_id
+     )
+     select c.id::text as claim_id, c.recruiter_id::text as recruiter_id, c.chain, c.token, c.amount_raw::text as claim_amount, coalesce(l.ledger_amount, 0)::text as ledger_amount
+       from public.recruiter_reward_claims c
+       left join ledger_totals l on l.claim_id = c.id
+      where c.status in ('created', 'submitted', 'confirmed') and coalesce(l.ledger_amount, 0) <> c.amount_raw
+      limit 25`,
+  );
+
+  const anomalies = [
+    ...orphanLedger.rows.map((row) => ({ type: "orphan_ledger_claim", ...row })),
+    ...claimMismatch.rows.map((row) => ({ type: "claim_amount_mismatch", ...row })),
+  ];
+  const ledgerSummary = summaryResult.rows[0] || {};
+  const claimState = claimSummary.rows[0] || {};
+  if (Number(ledgerSummary.locked_without_claim || 0) > 0) anomalies.push({ type: "locked_without_claim", count: Number(ledgerSummary.locked_without_claim || 0) });
+  if (Number(ledgerSummary.claimed_without_claim || 0) > 0) anomalies.push({ type: "claimed_without_claim", count: Number(ledgerSummary.claimed_without_claim || 0) });
+  if (Number(claimState.submitted_without_tx || 0) > 0) anomalies.push({ type: "submitted_without_tx", count: Number(claimState.submitted_without_tx || 0) });
+
+  const summary = {
+    ledger: ledgerSummary,
+    claims: claimState,
+    anomalyCount: anomalies.length,
+  };
+  const status = anomalies.length > 0 ? "warning" : "completed";
+
+  const inserted = await pool.query(
+    `insert into public.recruiter_payout_reconciliation_runs (status, checked_by, summary, anomalies, reason)
+     values ($1, $2, $3::jsonb, $4::jsonb, $5)
+     returning id, status, checked_by, summary, anomalies, reason, created_at`,
+    [status, checkedBy, JSON.stringify(summary), JSON.stringify(anomalies), reason],
+  );
+
+  await pool.query(
+    `insert into public.security_actions (admin_email, action, target, old_value, new_value, reason, tx_hash, source_system)
+     values ($1, 'recruiter-payout-reconciliation', 'recruiter-payouts', '', $2, $3, null, 'web-dashboard')`,
+    [checkedBy, status, reason],
+  );
+
+  return json(res, 200, { ok: true, reconciliation: reconciliationShape(inserted.rows[0]) });
+}
+
+async function updateClaim(req, res, body) {
   const action = String(body.action || "").trim();
   const claimId = String(body.claimId || "").trim();
   const reason = String(body.reason || "").trim();
   const txHash = String(body.txHash || "").trim() || null;
   const errorMessage = String(body.error || "").trim() || null;
+  if (action === "run-reconciliation") return runReconciliation(req, res, body);
   if (!claimId) return json(res, 400, { error: "Missing claimId" });
   if (!reason) return json(res, 400, { error: "Reason is required for payout claim admin actions." });
 
@@ -245,10 +347,13 @@ export default async function securityRecruiterPayouts(req, res) {
   if (!methodAllowed(req, res, ["GET", "POST"])) return;
 
   try {
-    if (req.method === "POST") return updateClaim(req, res);
+    if (req.method === "POST") {
+      const body = await readJson(req);
+      return updateClaim(req, res, body);
+    }
     return json(res, 200, await loadPayoutState());
   } catch (error) {
     if (!schemaMissing(error)) console.error("[security] recruiter payouts failed", error);
-    return json(res, 200, { recruiters: [], schemaReady: false });
+    return json(res, 200, { recruiters: [], reconciliation: null, schemaReady: false });
   }
 }
