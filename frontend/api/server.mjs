@@ -143,6 +143,7 @@ import {
   securityWalletRestrict,
 } from "./dev-fix/security.js";
 import securityRecruiterPayouts from "./dev-fix/security-recruiter-payouts.js";
+import securityStatusLive from "./dev-fix/security-status-live.js";
 import {
   airdropWinners,
   internalAirdropDrawRun,
@@ -372,7 +373,7 @@ router.all("/recruiter-routing/trade-authorization", wrap(routingTradeAuthorizat
 router.all("/launchpad/preflight-create", wrap(launchpadPreflightCreate));
 router.all("/launchpad/preflight-buy", wrap(launchpadPreflightBuy));
 router.all("/launchpad/preflight-sell", wrap(launchpadPreflightSell));
-router.all("/security/status", wrap(securityStatus));
+router.all("/security/status", wrap(securityStatusLive));
 router.all("/security/creators", wrap(securityCreators));
 router.all("/security/clusters", wrap(securityClusters));
 router.all("/security/manual-review", wrap(securityManualReview));
