@@ -5,6 +5,7 @@ import { Clock3, History, Hourglass, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
+import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import {
   fetchWalletRewardClaims,
@@ -139,11 +140,13 @@ export default function CommandCenterClaims() {
         description="One hub for recruiter rewards, squad rewards, Warzone Airdrops, League rewards, pending balances, claim history, and expiring rewards."
       />
 
+      <RecruiterNativePayoutsPanel />
+
       <div className="grid gap-4 md:grid-cols-3">
         <CommandCenterCard title="Claimable now" description="Rewards ready for user-initiated claim.">
           <div className="font-retro text-3xl text-foreground">{formatBnb(summary?.totalClaimableAmount)} BNB</div>
           <p className="mt-3 text-sm text-muted-foreground">
-            Claimable rewards will appear here when they are ready to collect.
+            Legacy BNB reward totals remain here while native recruiter payout balances are separated above.
           </p>
         </CommandCenterCard>
         <CommandCenterCard title="Claimed lifetime" description="Previously claimed rewards across programs.">
