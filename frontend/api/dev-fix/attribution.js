@@ -127,7 +127,7 @@ async function findRecruiterByWallet(walletAddress) {
   const { rows } = await pool.query(
     `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
        from public.recruiters
-      where wallet_address = lower($1)
+      where lower(wallet_address) = lower($1)
       limit 1`,
     [walletAddress],
   );
@@ -138,7 +138,7 @@ async function findWalletAttributionState(walletAddress) {
   const { rows } = await pool.query(
     `select *
        from public.wallet_attribution_states
-      where wallet_address = lower($1)
+      where lower(wallet_address) = lower($1)
       limit 1`,
     [walletAddress],
   );
@@ -149,7 +149,7 @@ async function findActiveSquadMembership(walletAddress) {
   const { rows } = await pool.query(
     `select wallet_address, recruiter_id, member_role, link_source, joined_at, is_active
        from public.wallet_squad_memberships
-      where wallet_address = lower($1) and is_active = true
+      where lower(wallet_address) = lower($1) and is_active = true
       limit 1`,
     [walletAddress],
   );
@@ -166,7 +166,7 @@ async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress
         and (
           ($1::text is not null and w.session_token = $1::text)
           or ($2::text is not null and w.client_fingerprint = $2::text)
-          or ($3::text is not null and w.wallet_address = $3::text)
+          or ($3::text is not null and lower(w.wallet_address) = lower($3::text))
         )
       order by w.captured_at desc, w.id desc
       limit 1`,
@@ -219,7 +219,7 @@ async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
   const { rows } = await pool.query(
     `select nonce, expires_at, used_at
        from public.auth_nonces
-      where chain_id = $1 and address = $2
+      where chain_id = $1 and lower(address) = lower($2)
       limit 1`,
     [chainId, walletAddress],
   );
@@ -231,7 +231,7 @@ async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
   if (!exp || Date.now() > exp) throw new Error("Nonce expired. Request a new signup nonce and try again.");
 
   await pool.query(
-    `update public.auth_nonces set used_at = now() where chain_id = $1 and address = $2`,
+    `update public.auth_nonces set used_at = now() where chain_id = $1 and lower(address) = lower($2)`,
     [chainId, walletAddress],
   );
 }
@@ -325,8 +325,7 @@ export async function attributionWalletConnect(req, res) {
 
     const existingState = await findWalletAttributionState(walletAddress);
     if (
-      existingState?.recruiter_id ||
-      existingState?.has_activity ||
+      existingState?.recruiter_link_state === "linked_unlocked" ||
       existingState?.recruiter_link_state === "linked_locked"
     ) {
       const existingMembership = await findActiveSquadMembership(walletAddress).catch(() => null);
@@ -340,7 +339,7 @@ export async function attributionWalletConnect(req, res) {
               set member_role = $1,
                   link_source = coalesce(nullif(link_source, ''), 'referral_cookie'),
                   updated_at = now()
-            where wallet_address = $2 and is_active = true`,
+            where lower(wallet_address) = lower($2) and is_active = true`,
           [memberRole, walletAddress],
         );
       }
