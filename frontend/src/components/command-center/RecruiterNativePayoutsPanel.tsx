@@ -56,6 +56,17 @@ function balanceSort(balance: RecruiterPayoutBalance) {
   return balance.chain === "bnb" ? 0 : 1;
 }
 
+function payoutErrorCopy(message: string) {
+  const raw = String(message || "");
+  if (/application not found/i.test(raw)) {
+    return "This wallet is not signed in as an approved recruiter yet. Use the Recruiter section to sign in with an approved recruiter wallet. QA seed data is visible in the admin dashboard, not in this personal recruiter panel unless you are signed in as that seeded recruiter.";
+  }
+  if (/unauthorized|not authenticated|session/i.test(raw)) {
+    return "Sign in to recruiter tools first, then return here to view native payouts.";
+  }
+  return raw || "Could not load recruiter native payouts.";
+}
+
 export function RecruiterNativePayoutsPanel() {
   const wallet = useWallet();
   const [state, setState] = useState<RecruiterNativePayouts | null>(null);
@@ -70,7 +81,8 @@ export function RecruiterNativePayoutsPanel() {
       const next = await fetchRecruiterNativePayouts();
       setState(next);
     } catch (err: any) {
-      setError(String(err?.message || err || "Could not load recruiter native payouts."));
+      setState(null);
+      setError(payoutErrorCopy(String(err?.message || err || "")));
     } finally {
       setLoading(false);
     }
@@ -95,7 +107,7 @@ export function RecruiterNativePayoutsPanel() {
       toast.success("BNB payout wallet verified");
       await load();
     } catch (err: any) {
-      toast.error(String(err?.message || "Could not verify BNB payout wallet."));
+      toast.error(payoutErrorCopy(String(err?.message || "Could not verify BNB payout wallet.")));
     } finally {
       setPendingAction(null);
     }
@@ -108,7 +120,7 @@ export function RecruiterNativePayoutsPanel() {
       toast.success(String(result?.message || `${chainLabel(chain)} claim created`));
       await load();
     } catch (err: any) {
-      toast.error(String(err?.message || `Could not create ${chainLabel(chain)} claim.`));
+      toast.error(payoutErrorCopy(String(err?.message || `Could not create ${chainLabel(chain)} claim.`)));
     } finally {
       setPendingAction(null);
     }
@@ -130,7 +142,7 @@ export function RecruiterNativePayoutsPanel() {
         </Button>
       </div>
 
-      {error ? <div className="mb-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{error}</div> : null}
+      {error ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">{error}</div> : null}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {balances.map((balance) => {
