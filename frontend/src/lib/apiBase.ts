@@ -15,14 +15,22 @@ function normalizeApiBase(value: unknown): string {
 }
 
 const EXPLICIT_API_BASE = normalizeApiBase(
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_FRONTEND_API_BASE ||
+    import.meta.env.VITE_RAILWAY_FRONTEND_API_BASE ||
+    import.meta.env.RAILWAY_FRONTEND_API_BASE_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_BASE ||
     import.meta.env.VITE_RAILWAY_API_BASE ||
-    import.meta.env.RAILWAY_TOKEN_API_BASE_URL ||
     ""
 );
 
-const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(import.meta.env.VITE_REALTIME_API_BASE || "");
+const EXPLICIT_REALTIME_API_BASE = normalizeApiBase(
+  import.meta.env.VITE_TOKEN_API_BASE ||
+    import.meta.env.VITE_RAILWAY_TOKEN_API_BASE ||
+    import.meta.env.RAILWAY_TOKEN_API_BASE_URL ||
+    import.meta.env.VITE_REALTIME_API_BASE ||
+    ""
+);
 
 // Do not route global list endpoints (/api/campaigns, /api/featured) to the
 // realtime-indexer project: memebattles-production does not expose those routes.
