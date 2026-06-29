@@ -441,10 +441,6 @@ export async function fetchRecruiterSignupStatus(walletAddress: string): Promise
     const apiRecruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
     if (json?.isRecruiter && apiRecruiter) return promoteKnownRecruiter(apiRecruiter)!;
 
-    const fallbackRecruiter = await fetchRecruiterSummaryByWalletFallback(normalized);
-    const promoted = promoteKnownRecruiter(fallbackRecruiter);
-    if (promoted) return promoted;
-
     return {
       walletAddress: normalized,
       isRecruiter: false,
@@ -546,5 +542,5 @@ export async function requestRecruiterSignupNonce(
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  return postJson("/api/recruiter-signup/submit", payload);
+  return postJson("/api/recruiter-signup", payload);
 }
