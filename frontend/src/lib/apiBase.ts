@@ -17,6 +17,8 @@ function normalizeApiBase(value: unknown): string {
 const EXPLICIT_API_BASE = normalizeApiBase(
   import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_BASE ||
+    import.meta.env.VITE_RAILWAY_API_BASE ||
+    import.meta.env.RAILWAY_TOKEN_API_BASE_URL ||
     ""
 );
 
