@@ -92,6 +92,10 @@ function getPortalSessionToken(): string {
   }
 }
 
+export function hasRecruiterPortalSession(): boolean {
+  return Boolean(getPortalSessionToken());
+}
+
 function setPortalSessionToken(token: string) {
   try {
     if (token) window.localStorage.setItem(PORTAL_TOKEN_KEY, token);
@@ -152,7 +156,10 @@ export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null
     headers: portalHeaders(),
   });
 
-  if (res.status === 401) return null;
+  if (res.status === 401) {
+    clearPortalSessionToken();
+    return null;
+  }
   const json = await parseJson(res);
   return json as RecruiterPortalData;
 }
@@ -244,9 +251,9 @@ export async function createRecruiterNativeClaim(chain: "bnb" | "solana") {
 
 export async function logoutRecruiterPortal() {
   clearPortalSessionToken();
-  await apiFetch("/api/recruiter-logout", {
+  const res = await apiFetch("/api/recruiter-logout", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders(),
-  }).catch(() => undefined);
+  });
+  return parseJson(res).catch(() => ({ ok: true }));
 }
