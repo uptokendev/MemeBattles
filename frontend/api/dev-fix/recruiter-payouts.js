@@ -240,8 +240,14 @@ export async function recruiterMeClaims(req, res) {
       await client.query("rollback");
       return json(res, 400, { error: `Verify a ${token} payout wallet before claiming ${token} rewards.`, code: "MISSING_PAYOUT_WALLET" });
     }
-    const totalResult = await client.query(`select coalesce(sum(amount_raw), 0)::numeric(78,0)::text as amount_raw from public.recruiter_reward_ledger where recruiter_id = $1 and chain = $2 and token = $3 and status = 'claimable' and claim_id is null for update`, [account.recruiter_id, chain, token]);
-    const amountRaw = rawAmount(totalResult.rows[0]?.amount_raw);
+    const ledgerResult = await client.query(
+      `select id, amount_raw::text as amount_raw
+         from public.recruiter_reward_ledger
+        where recruiter_id = $1 and chain = $2 and token = $3 and status = 'claimable' and claim_id is null
+        for update`,
+      [account.recruiter_id, chain, token],
+    );
+    const amountRaw = ledgerResult.rows.reduce((sum, row) => sum + BigInt(rawAmount(row.amount_raw)), 0n).toString();
     if (BigInt(amountRaw || "0") <= 0n) {
       await client.query("rollback");
       return json(res, 400, { error: `No claimable ${token} rewards yet.`, code: "NO_CLAIMABLE_REWARDS" });
