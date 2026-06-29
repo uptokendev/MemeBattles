@@ -65,10 +65,31 @@ function balanceSort(balance: RecruiterPayoutBalance) {
   return balance.chain === "bnb" ? 0 : 1;
 }
 
+function randomNonce() {
+  try {
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  }
+}
+
+function buildPayoutWalletMessage(input: { recruiterId: string; chain: NativeChain; walletAddress: string; nonce: string }) {
+  return [
+    "MemeWarzone Recruiter Payout Wallet",
+    "Action: LINK_PAYOUT_WALLET",
+    `RecruiterId: ${input.recruiterId}`,
+    `Chain: ${input.chain}`,
+    `Wallet: ${input.walletAddress}`,
+    `Nonce: ${input.nonce}`,
+  ].join("\n");
+}
+
 function payoutErrorCopy(message: string) {
   const raw = String(message || "");
   if (/unsupported action/i.test(raw)) {
-    return "The Railway API is still running the old recruiter portal code. Redeploy the frontend API service, then refresh and try again.";
+    return "The payout request reached a recruiter portal that does not support this action. Confirm the Network request uses memebattles-frontend-7dcf and pull the latest devpostgrad frontend bundle.";
   }
   if (/application not found/i.test(raw)) {
     return "This wallet is not signed in as an approved recruiter yet. Use the recruiter sign-in button in this panel first.";
@@ -99,9 +120,11 @@ export function RecruiterNativePayoutsPanel() {
       const sol = next?.balances?.find((item) => item.chain === "solana")?.payoutWallet || solanaWallet.solanaAccount || "";
       setBnbWallet((current) => current || bnb);
       setSolWallet((current) => current || sol);
+      return next;
     } catch (err: any) {
       setState(null);
       setError(payoutErrorCopy(String(err?.message || err || "")));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -181,9 +204,14 @@ export function RecruiterNativePayoutsPanel() {
       }
       if (!publicKey) throw new Error("Connect or enter a Solana payout wallet first.");
 
-      const challenge = await requestRecruiterPayoutWalletChallenge("solana", publicKey);
-      const signed = await signSolanaMessage(challenge.message, publicKey);
-      await verifyRecruiterPayoutWallet("solana", signed.walletAddress, challenge.nonce, signed.signature);
+      const latest = state?.recruiterId ? state : await load();
+      const recruiterId = String(latest?.recruiterId || "").trim();
+      if (!recruiterId) throw new Error("Sign in recruiter first so the payout challenge can include your recruiter id.");
+
+      const nonce = randomNonce();
+      const message = buildPayoutWalletMessage({ recruiterId, chain: "solana", walletAddress: publicKey, nonce });
+      const signed = await signSolanaMessage(message, publicKey);
+      await verifyRecruiterPayoutWallet("solana", signed.walletAddress, nonce, signed.signature);
       toast.success("Solana payout wallet verified");
       await load();
     } catch (err: any) {
