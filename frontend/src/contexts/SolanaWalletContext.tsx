@@ -11,13 +11,19 @@ import {
   type DetectedSolanaWallet,
 } from "@/lib/solanaWallet";
 
+type SolanaConnectResult = {
+  publicKey: string;
+  walletId: string;
+  walletName: string;
+};
+
 type SolanaWalletContextType = {
   solanaAccount: string;
   solanaWalletName: string;
   isSolanaConnected: boolean;
   connectingSolana: boolean;
   availableSolanaWallets: DetectedSolanaWallet[];
-  connectSolana: (walletId?: string) => Promise<void>;
+  connectSolana: (walletId?: string) => Promise<SolanaConnectResult>;
   disconnectSolana: () => Promise<void>;
 };
 
@@ -44,6 +50,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       setSolanaAccount(result.publicKey);
       setSolanaWalletName(result.walletName);
       sync();
+      return result;
     } finally {
       setConnectingSolana(false);
     }
