@@ -330,10 +330,21 @@ export async function fetchRecruiterSummary(code: string): Promise<RecruiterSumm
 }
 
 export async function fetchRecruiterSummaryByWallet(walletAddress: string): Promise<RecruiterSummary> {
-  const json = await getJson(`/api/recruiters/wallet/${encodeURIComponent(walletAddress)}/summary`);
+  const normalized = normalizeWalletAddress(walletAddress);
+  const json = await getJson(`/api/recruiters/wallet/${encodeURIComponent(normalized)}/summary`);
   const recruiter = unwrapRecruiterSummary(json);
   if (!recruiter || (json?.exists === false)) throw new Error("Recruiter not found");
   return recruiter;
+}
+
+async function fetchRecruiterSummaryByWalletFallback(walletAddress: string): Promise<RecruiterSummary | null> {
+  const normalized = normalizeWalletAddress(walletAddress);
+
+  const direct = await fetchRecruiterSummaryByWallet(normalized).catch(() => null);
+  if (direct) return direct;
+
+  const recruiters = await fetchRecruiterLeaderboard(250, "all").catch(() => []);
+  return recruiters.find((item) => normalizeWalletAddress(item.walletAddress) === normalized) || null;
 }
 
 export async function fetchRecruiterReplacements(code: string, limit = 5) {
@@ -412,25 +423,40 @@ export function buildRecruiterSignupMessage(input: {
 export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
   const normalized = normalizeWalletAddress(walletAddress);
 
+  const promoteKnownRecruiter = (recruiter: RecruiterSummary | null): RecruiterSignupStatus | null => {
+    if (!recruiter) return null;
+    return {
+      walletAddress: normalized,
+      isRecruiter: true,
+      recruiter,
+      canStartSignup: false,
+      signupApiAvailable: true,
+    };
+  };
+
   const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
 
   if (res.ok) {
     const json = await parseJson(res);
-    const isRecruiter = Boolean(json?.isRecruiter);
-    let recruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
+    const apiRecruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
+    if (json?.isRecruiter && apiRecruiter) return promoteKnownRecruiter(apiRecruiter)!;
 
-    if (isRecruiter && !recruiter) {
-      recruiter = await fetchRecruiterSummaryByWallet(normalized).catch(() => null);
-    }
+    const fallbackRecruiter = await fetchRecruiterSummaryByWalletFallback(normalized);
+    const promoted = promoteKnownRecruiter(fallbackRecruiter);
+    if (promoted) return promoted;
 
     return {
       walletAddress: normalized,
-      isRecruiter,
-      recruiter,
-      canStartSignup: Boolean(json?.canStartSignup ?? !isRecruiter),
+      isRecruiter: false,
+      recruiter: null,
+      canStartSignup: Boolean(json?.canStartSignup ?? true),
       signupApiAvailable: true,
     };
   }
+
+  const fallbackRecruiter = await fetchRecruiterSummaryByWalletFallback(normalized);
+  const promoted = promoteKnownRecruiter(fallbackRecruiter);
+  if (promoted) return promoted;
 
   if (res.status === 404) {
     return {
@@ -520,9 +546,5 @@ export async function requestRecruiterSignupNonce(
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  return postJson("/api/recruiter-signup", {
-    ...payload,
-    walletAddress: normalizeWalletAddress(payload.walletAddress),
-    desiredCode: normalizeRecruiterCode(payload.desiredCode),
-  });
+  return postJson("/api/recruiter-signup/submit", payload);
 }
