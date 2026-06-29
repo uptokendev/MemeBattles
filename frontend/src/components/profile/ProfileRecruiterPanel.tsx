@@ -6,11 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import {
-  fetchRecruiterSummaryByWallet,
+  fetchRecruiterSignupStatus,
   fetchWalletAttributionState,
-  fetchWalletRewardClaims,
-  fetchWalletRewardHistory,
-  fetchWalletRewardSummary,
   type RecruiterSummary,
   type WalletAttributionPublicState,
   type WalletRewardSummary,
@@ -60,6 +57,19 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "Not yet" : date.toLocaleString();
 }
 
+function emptyRewardSummary(address: string): WalletRewardSummary {
+  return {
+    walletAddress: address,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
+  };
+}
+
 export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: ProfileRecruiterPanelProps) {
   const [recruiter, setRecruiter] = useState<RecruiterSummary | null>(null);
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
@@ -84,23 +94,16 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     setError(null);
     void (async () => {
       try {
-        const [recruiterSummary, walletSummary, historyItems, claimItems, attributionState] = await Promise.all([
-          fetchRecruiterSummaryByWallet(account).catch((err: any) => {
-            const message = String(err?.message || "");
-            if (message.includes("404") || message.toLowerCase().includes("not found")) return null;
-            throw err;
-          }),
-          fetchWalletRewardSummary(account).catch(() => null),
-          fetchWalletRewardHistory(account, 10, "recruiter").catch(() => []),
-          fetchWalletRewardClaims(account, 10, "recruiter").catch(() => []),
+        const [signupStatus, attributionState] = await Promise.all([
+          fetchRecruiterSignupStatus(account).catch(() => null),
           fetchWalletAttributionState(account).catch(() => null),
         ]);
 
         if (cancelled) return;
-        setRecruiter(recruiterSummary);
-        setSummary(walletSummary);
-        setHistory(Array.isArray(historyItems) ? historyItems : []);
-        setClaims(Array.isArray(claimItems) ? claimItems : []);
+        setRecruiter(signupStatus?.isRecruiter ? signupStatus.recruiter : null);
+        setSummary(emptyRewardSummary(account));
+        setHistory([]);
+        setClaims([]);
         setAttribution(attributionState);
       } catch (err: any) {
         if (!cancelled) setError(String(err?.message || err || "Failed to load recruiter state"));
