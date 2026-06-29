@@ -1,11 +1,14 @@
 import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../../server/http.js";
 
 const COOKIE_NAME = "mwz_recruiter_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NONCE_CHAIN_ID = 0;
+const CHAINS = { bnb: { token: "BNB" }, solana: { token: "SOL" } };
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -19,11 +22,7 @@ function normalizeAddress(value) {
 }
 
 function normalizeCode(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "")
-    .slice(0, 12);
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g, "").slice(0, 12);
 }
 
 function normalizeImageUrl(value) {
@@ -54,8 +53,7 @@ function encodeSession(data) {
 function decodeSession(token) {
   const raw = String(token || "").trim();
   const [payload, sig] = raw.split(".");
-  if (!payload || !sig) return null;
-  if (signPayload(payload) !== sig) return null;
+  if (!payload || !sig || signPayload(payload) !== sig) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!data?.recruiterId || !data?.walletAddress || !data?.exp) return null;
@@ -68,35 +66,29 @@ function decodeSession(token) {
 
 function readCookie(req, name) {
   const header = String(req.headers?.cookie || "");
-  const parts = header.split(";").map((part) => part.trim()).filter(Boolean);
-  for (const part of parts) {
+  for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index < 0) continue;
-    const key = part.slice(0, index).trim();
-    if (key === name) return decodeURIComponent(part.slice(index + 1));
+    if (part.slice(0, index).trim() === name) return decodeURIComponent(part.slice(index + 1));
   }
   return "";
 }
 
 function readBearerToken(req) {
   const header = String(req.headers?.authorization || req.headers?.Authorization || "").trim();
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || "";
+  return header.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
 }
 
 function isSecureRequest(req) {
   const proto = String(req.headers?.["x-forwarded-proto"] || req.protocol || "").toLowerCase();
   const host = String(req.headers?.host || "").toLowerCase();
-  return proto === "https" || host.endsWith(".memewar.zone") || host.endsWith(".netlify.app");
+  return proto === "https" || host.endsWith(".memewar.zone") || host.endsWith(".netlify.app") || host.endsWith(".railway.app");
 }
 
 function cookieAttributes(req, maxAgeSeconds) {
   const attrs = ["Path=/", "HttpOnly", `Max-Age=${maxAgeSeconds}`];
-  if (isSecureRequest(req)) {
-    attrs.push("SameSite=None", "Secure");
-  } else {
-    attrs.push("SameSite=Lax");
-  }
+  if (isSecureRequest(req)) attrs.push("SameSite=None", "Secure");
+  else attrs.push("SameSite=Lax");
   return attrs.join("; ");
 }
 
@@ -109,12 +101,46 @@ function clearSessionCookie(req, res) {
 }
 
 function buildAuthMessage({ walletAddress, nonce }) {
-  return [
-    "MemeWarzone Recruiter Portal",
-    "Action: RECRUITER_PORTAL_LOGIN",
-    `Wallet: ${walletAddress}`,
-    `Nonce: ${nonce}`,
-  ].join("\n");
+  return ["MemeWarzone Recruiter Portal", "Action: RECRUITER_PORTAL_LOGIN", `Wallet: ${walletAddress}`, `Nonce: ${nonce}`].join("\n");
+}
+
+function buildPayoutWalletMessage({ recruiterId, chain, walletAddress, nonce }) {
+  return ["MemeWarzone Recruiter Payout Wallet", "Action: LINK_PAYOUT_WALLET", `RecruiterId: ${recruiterId}`, `Chain: ${chain}`, `Wallet: ${walletAddress}`, `Nonce: ${nonce}`].join("\n");
+}
+
+function base58Decode(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return Buffer.alloc(0);
+
+  let n = 0n;
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(index);
+  }
+
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
+
+  let leadingZeros = 0;
+  for (const char of raw) {
+    if (char !== "1") break;
+    leadingZeros += 1;
+  }
+  if (leadingZeros) out = Buffer.concat([Buffer.alloc(leadingZeros), out]);
+  return out;
+}
+
+function verifySolanaSignature({ walletAddress, message, signature }) {
+  const publicKeyBytes = base58Decode(walletAddress);
+  if (publicKeyBytes.length !== 32) return false;
+
+  const signatureBytes = Buffer.from(String(signature || ""), "base64");
+  if (signatureBytes.length !== 64) return false;
+
+  const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
+  return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
 }
 
 function recruiterShape(row) {
@@ -131,6 +157,36 @@ function recruiterShape(row) {
     created_at: row.created_at || null,
     approved_at: row.updated_at || row.created_at || null,
   };
+}
+
+function normalizeChain(value) {
+  const chain = String(value || "").trim().toLowerCase();
+  return chain === "bnb" || chain === "solana" ? chain : "";
+}
+
+function normalizePayoutWallet(chain, value) {
+  const raw = String(value || "").trim();
+  if (chain === "bnb") return isAddress(raw.toLowerCase()) ? raw.toLowerCase() : "";
+  if (chain === "solana") return isSolanaAddress(raw) ? raw : "";
+  return "";
+}
+
+function rawAmount(value) {
+  if (value == null) return "0";
+  return String(value).replace(/\.0+$/, "");
+}
+
+function balanceStatus({ claimableRaw, pendingRaw, payoutWallet }) {
+  const claimable = BigInt(claimableRaw || "0");
+  const pending = BigInt(pendingRaw || "0");
+  if (!payoutWallet && (claimable > 0n || pending > 0n)) return "missing_payout_wallet";
+  if (claimable > 0n) return "claimable";
+  if (pending > 0n) return "pending_finality";
+  return payoutWallet ? "pending_finality" : "missing_payout_wallet";
+}
+
+function emptyBalance(chain, payoutWallet = null) {
+  return { chain, token: CHAINS[chain].token, claimableRaw: "0", pendingRaw: "0", payoutWallet, status: payoutWallet ? "pending_finality" : "missing_payout_wallet" };
 }
 
 async function findRecruiterByWallet(walletAddress) {
@@ -166,11 +222,7 @@ async function getSessionRecruiter(req) {
 
 async function getSquadRows(recruiterId) {
   const { rows } = await pool.query(
-    `select s.wallet_address,
-            s.recruiter_id,
-            coalesce(nullif(s.member_role, ''), 'member') as role,
-            coalesce(nullif(s.link_source, ''), 'recruiter') as source,
-            coalesce(s.joined_at, s.created_at) as bound_at
+    `select s.wallet_address, s.recruiter_id, coalesce(nullif(s.member_role, ''), 'member') as role, coalesce(nullif(s.link_source, ''), 'recruiter') as source, coalesce(s.joined_at, s.created_at) as bound_at
        from public.wallet_squad_memberships s
       where s.recruiter_id = $1 and s.is_active = true
       order by coalesce(s.joined_at, s.created_at) desc
@@ -200,16 +252,76 @@ async function portalResponse(recruiter) {
       imageUrl,
       image_url: imageUrl,
       counts: summarizeSquad(rows),
-      rows: rows.map((row) => ({
-        wallet_address: row.wallet_address,
-        recruiter_id: Number(row.recruiter_id),
-        recruiter_code: recruiter.code,
-        role: row.role || "member",
-        source: row.source || "recruiter",
-        bound_at: row.bound_at,
-      })),
+      rows: rows.map((row) => ({ wallet_address: row.wallet_address, recruiter_id: Number(row.recruiter_id), recruiter_code: recruiter.code, role: row.role || "member", source: row.source || "recruiter", bound_at: row.bound_at })),
     },
   };
+}
+
+async function ensureRecruiterAccount(recruiter) {
+  const wallet = String(recruiter.wallet_address || "").toLowerCase();
+  const code = recruiter.code || null;
+  const displayName = recruiter.display_name || code || null;
+  const { rows } = await pool.query(
+    `insert into public.recruiter_accounts (signup_wallet, code, display_name, status, updated_at)
+     values ($1, $2, $3, 'active', now())
+     on conflict (code) do update set signup_wallet = coalesce(public.recruiter_accounts.signup_wallet, excluded.signup_wallet), display_name = coalesce(excluded.display_name, public.recruiter_accounts.display_name), updated_at = now()
+     returning recruiter_id, signup_wallet, code, display_name, total_estimated_usd, status`,
+    [wallet, code, displayName],
+  );
+  return rows[0];
+}
+
+async function getBalances(recruiterId) {
+  const { rows } = await pool.query(
+    `with ledger as (
+       select chain, token,
+              coalesce(sum(amount_raw) filter (where status = 'claimable' and claim_id is null), 0)::numeric(78,0) as claimable_raw,
+              coalesce(sum(amount_raw) filter (where status in ('pending', 'pending_finality')), 0)::numeric(78,0) as pending_raw
+         from public.recruiter_reward_ledger
+        where recruiter_id = $1
+        group by chain, token
+     ), wallets as (
+       select chain, max(wallet_address) filter (where verified_at is not null) as payout_wallet
+         from public.recruiter_payout_wallets
+        where recruiter_id = $1
+        group by chain
+     )
+     select coalesce(l.chain, w.chain) as chain,
+            coalesce(l.token, case when coalesce(l.chain, w.chain) = 'solana' then 'SOL' else 'BNB' end) as token,
+            coalesce(l.claimable_raw, 0)::text as claimable_raw,
+            coalesce(l.pending_raw, 0)::text as pending_raw,
+            w.payout_wallet
+       from ledger l full join wallets w on w.chain = l.chain`,
+    [recruiterId],
+  );
+  const byChain = new Map();
+  for (const row of rows) {
+    const chain = normalizeChain(row.chain);
+    if (!chain) continue;
+    const claimableRaw = rawAmount(row.claimable_raw);
+    const pendingRaw = rawAmount(row.pending_raw);
+    const payoutWallet = row.payout_wallet || null;
+    byChain.set(chain, { chain, token: row.token || CHAINS[chain].token, claimableRaw, pendingRaw, payoutWallet, status: balanceStatus({ claimableRaw, pendingRaw, payoutWallet }) });
+  }
+  for (const chain of Object.keys(CHAINS)) if (!byChain.has(chain)) byChain.set(chain, emptyBalance(chain));
+  return Array.from(byChain.values());
+}
+
+async function getClaims(recruiterId) {
+  const { rows } = await pool.query(
+    `select id, chain, token, amount_raw::text as amount_raw, payout_wallet, status, tx_hash, error, created_at, updated_at
+       from public.recruiter_reward_claims
+      where recruiter_id = $1
+      order by created_at desc
+      limit 50`,
+    [recruiterId],
+  );
+  return rows.map((row) => ({ id: String(row.id), chain: row.chain, token: row.token, amountRaw: rawAmount(row.amount_raw), payoutWallet: row.payout_wallet, status: row.status, txHash: row.tx_hash || null, error: row.error || null, createdAt: row.created_at, updatedAt: row.updated_at }));
+}
+
+async function payoutResponse(recruiter) {
+  const account = await ensureRecruiterAccount(recruiter);
+  return { recruiterId: String(account.recruiter_id), code: account.code || recruiter.code || null, displayName: account.display_name || recruiter.display_name || null, totalEstimatedUsd: Number(account.total_estimated_usd || 0), balances: await getBalances(account.recruiter_id), claims: await getClaims(account.recruiter_id) };
 }
 
 async function saveNonce(walletAddress, nonce) {
@@ -225,13 +337,7 @@ async function saveNonce(walletAddress, nonce) {
 }
 
 async function consumeNonce(walletAddress, nonce) {
-  const { rows } = await pool.query(
-    `select nonce, expires_at, used_at
-       from public.auth_nonces
-      where chain_id = $1 and address = $2
-      limit 1`,
-    [NONCE_CHAIN_ID, walletAddress],
-  );
+  const { rows } = await pool.query(`select nonce, expires_at, used_at from public.auth_nonces where chain_id = $1 and address = $2 limit 1`, [NONCE_CHAIN_ID, walletAddress]);
   const row = rows[0];
   if (!row) throw new Error("Nonce not found. Request a new recruiter login challenge.");
   if (row.used_at) throw new Error("Nonce already used. Request a new recruiter login challenge.");
@@ -267,25 +373,14 @@ export async function recruiterAuthVerify(req, res) {
     const signature = String(body.signature || "").trim();
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing address" });
     if (!signature) return json(res, 400, { error: "Missing signature" });
-
-    const { rows } = await pool.query(
-      `select nonce
-         from public.auth_nonces
-        where chain_id = $1 and address = $2 and used_at is null
-        order by expires_at desc
-        limit 1`,
-      [NONCE_CHAIN_ID, walletAddress],
-    );
+    const { rows } = await pool.query(`select nonce from public.auth_nonces where chain_id = $1 and address = $2 and used_at is null order by expires_at desc limit 1`, [NONCE_CHAIN_ID, walletAddress]);
     const nonce = rows[0]?.nonce;
     if (!nonce) return json(res, 401, { error: "Nonce not found. Request a new recruiter login challenge." });
-
     const recovered = ethers.verifyMessage(buildAuthMessage({ walletAddress, nonce }), signature).toLowerCase();
     if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
     await consumeNonce(walletAddress, nonce);
-
     const recruiter = await findRecruiterByWallet(walletAddress);
     if (!recruiter) return json(res, 403, { error: "This wallet is not an approved recruiter." });
-
     const token = encodeSession({ recruiterId: Number(recruiter.id), walletAddress, exp: Date.now() + SESSION_TTL_MS });
     setSessionCookie(req, res, token);
     return json(res, 200, { ok: true, recruiter: recruiterShape(recruiter), sessionToken: token });
@@ -303,40 +398,101 @@ export async function recruiterPortal(req, res) {
   try {
     const recruiter = await getSessionRecruiter(req);
     if (!recruiter) return json(res, 401, { error: "Connect your approved recruiter wallet to access the portal." });
-    if (!["active", "approved"].includes(String(recruiter.status || "").toLowerCase())) {
-      return json(res, 403, { error: "Recruiter access is only available for active recruiters." });
-    }
+    if (!["active", "approved"].includes(String(recruiter.status || "").toLowerCase())) return json(res, 403, { error: "Recruiter access is only available for active recruiters." });
 
-    if (req.method === "GET") return json(res, 200, await portalResponse(recruiter));
+    if (req.method === "GET") {
+      const q = getQuery(req);
+      if (String(q.action || "") === "payouts") return json(res, 200, await payoutResponse(recruiter));
+      return json(res, 200, await portalResponse(recruiter));
+    }
 
     const body = await readJson(req);
     const action = String(body.action || "").trim();
+
     if (action === "setCode") {
       const code = normalizeCode(body.code);
       if (code.length < 4) return json(res, 400, { error: "Code must be at least 4 characters." });
       if (code.length > 12) return json(res, 400, { error: "Code must be 12 characters or less." });
       const existing = await pool.query(`select id from public.recruiters where lower(code) = lower($1) limit 1`, [code]);
       if (existing.rows[0] && Number(existing.rows[0].id) !== Number(recruiter.id)) return json(res, 409, { error: "That code is already taken." });
-      const { rows } = await pool.query(
-        `update public.recruiters set code = lower($1), updated_at = now() where id = $2 returning id, wallet_address, code, display_name, is_og, status, closed_at, metadata, squad_image_url, created_at, updated_at`,
-        [code, recruiter.id],
-      );
+      const { rows } = await pool.query(`update public.recruiters set code = lower($1), updated_at = now() where id = $2 returning code`, [code, recruiter.id]);
       return json(res, 200, { ok: true, recruiter_code: rows[0]?.code || code });
     }
 
     if (action === "setSquadImage") {
       const imageUrl = normalizeImageUrl(body.imageUrl);
-      const { rows } = await pool.query(
-        `update public.recruiters set squad_image_url = nullif($1, ''), updated_at = now() where id = $2 returning squad_image_url`,
-        [imageUrl, recruiter.id],
-      );
+      const { rows } = await pool.query(`update public.recruiters set squad_image_url = nullif($1, ''), updated_at = now() where id = $2 returning squad_image_url`, [imageUrl, recruiter.id]);
       return json(res, 200, { ok: true, squad_image_url: rows[0]?.squad_image_url || "" });
+    }
+
+    if (action === "linkPayoutWallet") {
+      const account = await ensureRecruiterAccount(recruiter);
+      const chain = normalizeChain(body.chain);
+      const walletAddress = normalizePayoutWallet(chain, body.walletAddress);
+      const signature = String(body.signature || "").trim();
+      const nonce = String(body.nonce || crypto.randomBytes(12).toString("hex")).trim();
+      if (!chain) return json(res, 400, { error: "Invalid chain. Use bnb or solana." });
+      if (!walletAddress) return json(res, 400, { error: `Invalid ${chain} payout wallet.` });
+      const message = buildPayoutWalletMessage({ recruiterId: String(account.recruiter_id), chain, walletAddress, nonce });
+      if (!signature) return json(res, 400, { error: "Missing signature", message, nonce });
+
+      if (chain === "bnb") {
+        const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+        if (recovered !== walletAddress.toLowerCase()) return json(res, 401, { error: "Invalid payout wallet signature", message, nonce });
+      } else if (!verifySolanaSignature({ walletAddress, message, signature })) {
+        return json(res, 401, { error: "Invalid Solana payout wallet signature", message, nonce });
+      }
+
+      await pool.query(
+        `insert into public.recruiter_payout_wallets (recruiter_id, chain, wallet_address, verified_at, verification_message, updated_at)
+         values ($1, $2, $3, now(), $4, now())
+         on conflict (recruiter_id, chain, wallet_address)
+         do update set verified_at = now(), verification_message = excluded.verification_message, updated_at = now()`,
+        [account.recruiter_id, chain, walletAddress, message],
+      );
+      return json(res, 200, { ok: true, chain, walletAddress, message, balances: await getBalances(account.recruiter_id) });
+    }
+
+    if (action === "createClaim") {
+      const account = await ensureRecruiterAccount(recruiter);
+      const chain = normalizeChain(body.chain);
+      if (!chain) return json(res, 400, { error: "Invalid chain. Use bnb or solana." });
+      const token = CHAINS[chain].token;
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const walletResult = await client.query(`select wallet_address from public.recruiter_payout_wallets where recruiter_id = $1 and chain = $2 and verified_at is not null order by verified_at desc limit 1`, [account.recruiter_id, chain]);
+        const payoutWallet = walletResult.rows[0]?.wallet_address || "";
+        if (!payoutWallet) {
+          await client.query("rollback");
+          return json(res, 400, { error: `Verify a ${token} payout wallet before claiming ${token} rewards.`, code: "MISSING_PAYOUT_WALLET" });
+        }
+        const ledgerResult = await client.query(
+          `select id, amount_raw::text as amount_raw from public.recruiter_reward_ledger where recruiter_id = $1 and chain = $2 and token = $3 and status = 'claimable' and claim_id is null for update`,
+          [account.recruiter_id, chain, token],
+        );
+        const amountRaw = ledgerResult.rows.reduce((sum, row) => sum + BigInt(rawAmount(row.amount_raw)), 0n).toString();
+        if (BigInt(amountRaw || "0") <= 0n) {
+          await client.query("rollback");
+          return json(res, 400, { error: `No claimable ${token} rewards yet.`, code: "NO_CLAIMABLE_REWARDS" });
+        }
+        const claimResult = await client.query(`insert into public.recruiter_reward_claims (recruiter_id, chain, token, amount_raw, payout_wallet, status) values ($1, $2, $3, $4::numeric(78,0), $5, 'created') returning id, created_at`, [account.recruiter_id, chain, token, amountRaw, payoutWallet]);
+        const claim = claimResult.rows[0];
+        await client.query(`update public.recruiter_reward_ledger set status = 'created', claim_id = $4, updated_at = now() where recruiter_id = $1 and chain = $2 and token = $3 and status = 'claimable' and claim_id is null`, [account.recruiter_id, chain, token, claim.id]);
+        await client.query("commit");
+        return json(res, 200, { ok: true, claim: { id: String(claim.id), chain, token, amountRaw, payoutWallet, status: "created", txHash: null, createdAt: claim.created_at }, message: `${token} claim created. On-chain payout submission is pending vault integration.` });
+      } catch (error) {
+        await client.query("rollback").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     return json(res, 400, { error: "Unsupported action." });
   } catch (error) {
     console.error("[api/recruiter portal]", error);
-    if (schemaMissing(error)) return json(res, 503, { error: "Recruiter portal schema has not been applied yet." });
+    if (schemaMissing(error)) return json(res, 503, { error: "Recruiter payout schema has not been applied yet.", code: "PAYOUT_SCHEMA_MISSING" });
     return json(res, 500, { error: error instanceof Error ? error.message : "Server error" });
   }
 }
