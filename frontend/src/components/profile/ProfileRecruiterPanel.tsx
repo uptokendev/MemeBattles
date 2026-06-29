@@ -5,6 +5,7 @@ import { ArrowRight, Clock3, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
+import { RecruiterPayoutPanel } from "@/components/command-center/RecruiterPayoutPanel";
 import {
   fetchRecruiterSignupStatus,
   fetchWalletAttributionState,
@@ -204,6 +205,8 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
               <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(recruiter.totalEarnedRaw)} BNB</p>
             </Card>
           </div>
+
+          <RecruiterPayoutPanel />
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <Card className="border-border/60 bg-card/65 p-6">
