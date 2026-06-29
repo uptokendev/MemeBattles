@@ -7,6 +7,8 @@ const COOKIE_NAME = "mwz_recruiter_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NONCE_CHAIN_ID = 0;
 const CHAINS = { bnb: { token: "BNB" }, solana: { token: "SOL" } };
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -104,6 +106,41 @@ function buildAuthMessage({ walletAddress, nonce }) {
 
 function buildPayoutWalletMessage({ recruiterId, chain, walletAddress, nonce }) {
   return ["MemeWarzone Recruiter Payout Wallet", "Action: LINK_PAYOUT_WALLET", `RecruiterId: ${recruiterId}`, `Chain: ${chain}`, `Wallet: ${walletAddress}`, `Nonce: ${nonce}`].join("\n");
+}
+
+function base58Decode(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return Buffer.alloc(0);
+
+  let n = 0n;
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(index);
+  }
+
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
+
+  let leadingZeros = 0;
+  for (const char of raw) {
+    if (char !== "1") break;
+    leadingZeros += 1;
+  }
+  if (leadingZeros) out = Buffer.concat([Buffer.alloc(leadingZeros), out]);
+  return out;
+}
+
+function verifySolanaSignature({ walletAddress, message, signature }) {
+  const publicKeyBytes = base58Decode(walletAddress);
+  if (publicKeyBytes.length !== 32) return false;
+
+  const signatureBytes = Buffer.from(String(signature || ""), "base64");
+  if (signatureBytes.length !== 64) return false;
+
+  const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
+  return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
 }
 
 function recruiterShape(row) {
@@ -397,13 +434,15 @@ export async function recruiterPortal(req, res) {
       if (!chain) return json(res, 400, { error: "Invalid chain. Use bnb or solana." });
       if (!walletAddress) return json(res, 400, { error: `Invalid ${chain} payout wallet.` });
       const message = buildPayoutWalletMessage({ recruiterId: String(account.recruiter_id), chain, walletAddress, nonce });
+      if (!signature) return json(res, 400, { error: "Missing signature", message, nonce });
+
       if (chain === "bnb") {
-        if (!signature) return json(res, 400, { error: "Missing signature", message, nonce });
         const recovered = ethers.verifyMessage(message, signature).toLowerCase();
         if (recovered !== walletAddress.toLowerCase()) return json(res, 401, { error: "Invalid payout wallet signature", message, nonce });
-      } else {
-        return json(res, 501, { error: "Solana payout wallet verification is waiting on the Solana signing verification layer.", code: "SOLANA_PAYOUT_VERIFICATION_PENDING", message, nonce });
+      } else if (!verifySolanaSignature({ walletAddress, message, signature })) {
+        return json(res, 401, { error: "Invalid Solana payout wallet signature", message, nonce });
       }
+
       await pool.query(
         `insert into public.recruiter_payout_wallets (recruiter_id, chain, wallet_address, verified_at, verification_message, updated_at)
          values ($1, $2, $3, now(), $4, now())
