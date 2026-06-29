@@ -11,13 +11,20 @@ import { signSolanaMessage } from "@/lib/solanaWallet";
 import {
   createRecruiterNativeClaim,
   fetchRecruiterNativePayouts,
+  requestRecruiterAuthNonce,
   requestRecruiterPayoutWalletChallenge,
+  verifyRecruiterAuth,
   verifyRecruiterPayoutWallet,
   type RecruiterNativePayouts,
   type RecruiterPayoutBalance,
 } from "@/lib/recruiterPortalApi";
 
 type NativeChain = "bnb" | "solana";
+
+const EMPTY_BALANCES: RecruiterPayoutBalance[] = [
+  { chain: "bnb", token: "BNB", claimableRaw: "0", pendingRaw: "0", payoutWallet: null, status: "missing_payout_wallet" },
+  { chain: "solana", token: "SOL", claimableRaw: "0", pendingRaw: "0", payoutWallet: null, status: "missing_payout_wallet" },
+];
 
 function shortAddress(value?: string | null) {
   const raw = String(value || "");
@@ -60,8 +67,11 @@ function balanceSort(balance: RecruiterPayoutBalance) {
 
 function payoutErrorCopy(message: string) {
   const raw = String(message || "");
+  if (/unsupported action/i.test(raw)) {
+    return "The Railway API is still running the old recruiter portal code. Redeploy the frontend API service, then refresh and try again.";
+  }
   if (/application not found/i.test(raw)) {
-    return "This wallet is not signed in as an approved recruiter yet. Use the Recruiter section to sign in with an approved recruiter wallet. QA seed data is visible in the admin dashboard, not in this personal recruiter panel unless you are signed in as that seeded recruiter.";
+    return "This wallet is not signed in as an approved recruiter yet. Use the recruiter sign-in button in this panel first.";
   }
   if (/unauthorized|not authenticated|session/i.test(raw)) {
     return "Sign in to recruiter tools first, then return here to view native payouts.";
@@ -76,6 +86,8 @@ export function RecruiterNativePayoutsPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [bnbWallet, setBnbWallet] = useState("");
+  const [solWallet, setSolWallet] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,48 +95,91 @@ export function RecruiterNativePayoutsPanel() {
     try {
       const next = await fetchRecruiterNativePayouts();
       setState(next);
+      const bnb = next?.balances?.find((item) => item.chain === "bnb")?.payoutWallet || wallet.account || "";
+      const sol = next?.balances?.find((item) => item.chain === "solana")?.payoutWallet || solanaWallet.solanaAccount || "";
+      setBnbWallet((current) => current || bnb);
+      setSolWallet((current) => current || sol);
     } catch (err: any) {
       setState(null);
       setError(payoutErrorCopy(String(err?.message || err || "")));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [wallet.account, solanaWallet.solanaAccount]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const balances = useMemo(() => [...(state?.balances || [])].sort((a, b) => balanceSort(a) - balanceSort(b)), [state?.balances]);
+  useEffect(() => {
+    if (wallet.account) setBnbWallet((current) => current || wallet.account || "");
+  }, [wallet.account]);
+
+  useEffect(() => {
+    if (solanaWallet.solanaAccount) setSolWallet((current) => current || solanaWallet.solanaAccount || "");
+  }, [solanaWallet.solanaAccount]);
+
+  const balances = useMemo(() => {
+    const items = state?.balances?.length ? state.balances : EMPTY_BALANCES;
+    return [...items].sort((a, b) => balanceSort(a) - balanceSort(b));
+  }, [state?.balances]);
+
+  const signInRecruiter = async () => {
+    if (!wallet.account || !wallet.signer) {
+      toast.error("Connect your approved recruiter wallet in MetaMask first.");
+      return;
+    }
+    setPendingAction("signin");
+    setError(null);
+    try {
+      const challenge = await requestRecruiterAuthNonce(wallet.account);
+      const signature = await wallet.signer.signMessage(challenge.message);
+      await verifyRecruiterAuth(wallet.account, signature);
+      toast.success("Recruiter tools signed in");
+      await load();
+    } catch (err: any) {
+      const message = payoutErrorCopy(String(err?.message || "Could not sign in to recruiter tools."));
+      setError(message);
+      toast.error(message);
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   const linkBnbWallet = async () => {
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the BNB payout wallet first.");
+    const payoutWallet = bnbWallet.trim() || wallet.account || "";
+    if (!payoutWallet || !wallet.signer) {
+      toast.error("Connect or enter the BNB payout wallet first.");
       return;
     }
     setPendingAction("link-bnb");
+    setError(null);
     try {
-      const challenge = await requestRecruiterPayoutWalletChallenge("bnb", wallet.account);
+      const challenge = await requestRecruiterPayoutWalletChallenge("bnb", payoutWallet);
       const signature = await wallet.signer.signMessage(challenge.message);
-      await verifyRecruiterPayoutWallet("bnb", wallet.account, challenge.nonce, signature);
+      await verifyRecruiterPayoutWallet("bnb", payoutWallet, challenge.nonce, signature);
       toast.success("BNB payout wallet verified");
       await load();
     } catch (err: any) {
-      toast.error(payoutErrorCopy(String(err?.message || "Could not verify BNB payout wallet.")));
+      const message = payoutErrorCopy(String(err?.message || "Could not verify BNB payout wallet."));
+      setError(message);
+      toast.error(message);
     } finally {
       setPendingAction(null);
     }
   };
 
   const linkSolanaWallet = async () => {
-    let publicKey = solanaWallet.solanaAccount;
+    let publicKey = solWallet.trim() || solanaWallet.solanaAccount;
     setPendingAction("link-solana");
+    setError(null);
     try {
       if (!publicKey) {
         const connected = await solanaWallet.connectSolana();
         publicKey = connected.publicKey;
+        setSolWallet(publicKey);
       }
-      if (!publicKey) throw new Error("Connect a Solana payout wallet first.");
+      if (!publicKey) throw new Error("Connect or enter a Solana payout wallet first.");
 
       const challenge = await requestRecruiterPayoutWalletChallenge("solana", publicKey);
       const signed = await signSolanaMessage(challenge.message, publicKey);
@@ -132,7 +187,9 @@ export function RecruiterNativePayoutsPanel() {
       toast.success("Solana payout wallet verified");
       await load();
     } catch (err: any) {
-      toast.error(payoutErrorCopy(String(err?.message || "Could not verify Solana payout wallet.")));
+      const message = payoutErrorCopy(String(err?.message || "Could not verify Solana payout wallet."));
+      setError(message);
+      toast.error(message);
     } finally {
       setPendingAction(null);
     }
@@ -140,12 +197,15 @@ export function RecruiterNativePayoutsPanel() {
 
   const createClaim = async (chain: NativeChain) => {
     setPendingAction(`claim-${chain}`);
+    setError(null);
     try {
       const result = await createRecruiterNativeClaim(chain);
       toast.success(String(result?.message || `${chainLabel(chain)} claim created`));
       await load();
     } catch (err: any) {
-      toast.error(payoutErrorCopy(String(err?.message || `Could not create ${chainLabel(chain)} claim.`)));
+      const message = payoutErrorCopy(String(err?.message || `Could not create ${chainLabel(chain)} claim.`));
+      setError(message);
+      toast.error(message);
     } finally {
       setPendingAction(null);
     }
@@ -164,10 +224,17 @@ export function RecruiterNativePayoutsPanel() {
             BNB connected: {shortAddress(wallet.account)} · SOL connected: {shortAddress(solanaWallet.solanaAccount)}
           </div>
         </div>
-        <Button onClick={load} disabled={loading} variant="outline" className="font-retro">
-          <RefreshCw className="mr-2 h-4 w-4" />
-          {loading ? "Refreshing..." : "Refresh"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {!state?.code ? (
+            <Button onClick={signInRecruiter} disabled={pendingAction === "signin"} className="font-retro">
+              {pendingAction === "signin" ? "Signing..." : "Sign in recruiter"}
+            </Button>
+          ) : null}
+          <Button onClick={load} disabled={loading} variant="outline" className="font-retro">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
       </div>
 
       {error ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">{error}</div> : null}
@@ -175,6 +242,9 @@ export function RecruiterNativePayoutsPanel() {
       <div className="grid gap-3 lg:grid-cols-2">
         {balances.map((balance) => {
           const chain = balance.chain as NativeChain;
+          const isBnb = chain === "bnb";
+          const inputValue = isBnb ? bnbWallet : solWallet;
+          const setInputValue = isBnb ? setBnbWallet : setSolWallet;
           const claimable = BigInt(balance.claimableRaw || "0");
           const canClaim = claimable > 0n && Boolean(balance.payoutWallet);
           return (
@@ -203,13 +273,25 @@ export function RecruiterNativePayoutsPanel() {
               <div className="mt-3 rounded-xl border border-border/40 bg-card/25 p-3 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                   {balance.payoutWallet ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <ShieldAlert className="h-4 w-4 text-amber-200" />}
-                  Payout wallet
+                  Verified payout wallet
                 </div>
                 <div className="mt-2 font-mono text-sm text-foreground">{shortAddress(balance.payoutWallet)}</div>
               </div>
 
+              <div className="mt-4 space-y-2">
+                <label className="font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                  {balance.token} payout wallet
+                </label>
+                <input
+                  value={inputValue}
+                  onChange={(event) => setInputValue(event.target.value)}
+                  placeholder={isBnb ? "0x..." : "Solana wallet address"}
+                  className="min-h-10 w-full rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60"
+                />
+              </div>
+
               <div className="mt-4 flex flex-wrap gap-2">
-                {chain === "bnb" ? (
+                {isBnb ? (
                   <Button onClick={linkBnbWallet} disabled={pendingAction === "link-bnb"} variant="outline" className="font-retro">
                     {pendingAction === "link-bnb" ? "Waiting..." : balance.payoutWallet ? "Update BNB wallet" : "Verify BNB wallet"}
                   </Button>
