@@ -121,10 +121,9 @@ export function RecruiterNativePayoutsPanel() {
     setPendingAction("link-solana");
     try {
       if (!publicKey) {
-        await solanaWallet.connectSolana();
-        publicKey = solanaWallet.solanaAccount;
+        const connected = await solanaWallet.connectSolana();
+        publicKey = connected.publicKey;
       }
-      if (!publicKey) publicKey = localStorage.getItem("mwz:solana_wallet") || "";
       if (!publicKey) throw new Error("Connect a Solana payout wallet first.");
 
       const challenge = await requestRecruiterPayoutWalletChallenge("solana", publicKey);
@@ -159,8 +158,11 @@ export function RecruiterNativePayoutsPanel() {
       action={<WalletCards className="h-5 w-5 text-accent" />}
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-muted-foreground">
-          {state?.code ? `Recruiter code: ${state.code}` : "Sign in to recruiter tools to view native payouts."}
+        <div className="space-y-1 text-sm text-muted-foreground">
+          <div>{state?.code ? `Recruiter code: ${state.code}` : "Sign in to recruiter tools to view native payouts."}</div>
+          <div className="font-mono text-xs">
+            BNB connected: {shortAddress(wallet.account)} · SOL connected: {shortAddress(solanaWallet.solanaAccount)}
+          </div>
         </div>
         <Button onClick={load} disabled={loading} variant="outline" className="font-retro">
           <RefreshCw className="mr-2 h-4 w-4" />
