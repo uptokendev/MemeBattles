@@ -150,6 +150,8 @@ export function getPortalSquadImageUrl(portal?: RecruiterPortalData | null): str
 }
 
 export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null> {
+  if (!hasRecruiterPortalSession()) return null;
+
   const res = await apiFetch("/api/recruiter-portal", {
     credentials: PORTAL_CREDENTIALS,
     cache: "no-store",
@@ -208,12 +210,17 @@ export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise
 }
 
 export async function fetchRecruiterNativePayouts(): Promise<RecruiterNativePayouts | null> {
+  if (!hasRecruiterPortalSession()) return null;
+
   const res = await apiFetch("/api/recruiters/me/payouts", {
     credentials: PORTAL_CREDENTIALS,
     cache: "no-store",
     headers: portalHeaders(),
   });
-  if (res.status === 401) return null;
+  if (res.status === 401) {
+    clearPortalSessionToken();
+    return null;
+  }
   return parseJson(res) as Promise<RecruiterNativePayouts>;
 }
 
