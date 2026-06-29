@@ -18,6 +18,7 @@ function isLocalUrl(value) {
 const railwayApiBase = normalizeUrl(
   process.env.VITE_RAILWAY_API_BASE ||
     process.env.RAILWAY_API_BASE_URL ||
+    process.env.RAILWAY_TOKEN_API_BASE_URL ||
     process.env.VITE_API_BASE_URL ||
     process.env.VITE_API_BASE ||
     process.env.VITE_DEV_API_PROXY_TARGET ||
@@ -28,7 +29,7 @@ if (!railwayApiBase) {
   console.error("\n[dev:railway] Missing Railway API URL.");
   console.error("Set one of these in frontend/.env.local:");
   console.error("  VITE_RAILWAY_API_BASE=https://your-railway-api.up.railway.app");
-  console.error("  or RAILWAY_API_BASE_URL=https://your-railway-api.up.railway.app\n");
+  console.error("  or RAILWAY_TOKEN_API_BASE_URL=https://your-railway-api.up.railway.app\n");
   process.exit(1);
 }
 
@@ -59,6 +60,7 @@ async function checkApi() {
 if (!(await checkApi())) process.exit(1);
 
 console.log(`[dev:railway] Web: http://127.0.0.1:${vitePort}`);
+console.log(`[dev:railway] browser API base -> ${railwayApiBase}`);
 console.log(`[dev:railway] proxy /api -> ${railwayApiBase}`);
 
 const command = isWindows ? "cmd.exe" : "vite";
@@ -70,6 +72,9 @@ const child = spawn(command, args, {
     ...process.env,
     VITE_PORT: vitePort,
     VITE_DEV_API_PROXY_TARGET: railwayApiBase,
+    VITE_RAILWAY_API_BASE: railwayApiBase,
+    VITE_API_BASE_URL: railwayApiBase,
+    VITE_API_BASE: railwayApiBase,
     VITE_REALTIME_API_BASE: normalizeUrl(process.env.VITE_REALTIME_API_BASE || railwayApiBase),
   },
 });
