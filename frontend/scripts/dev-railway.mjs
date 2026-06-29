@@ -15,53 +15,71 @@ function isLocalUrl(value) {
   return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(value);
 }
 
-const railwayApiBase = normalizeUrl(
-  process.env.VITE_RAILWAY_API_BASE ||
-    process.env.RAILWAY_API_BASE_URL ||
-    process.env.RAILWAY_TOKEN_API_BASE_URL ||
+const frontendApiBase = normalizeUrl(
+  process.env.VITE_FRONTEND_API_BASE ||
+    process.env.VITE_RAILWAY_FRONTEND_API_BASE ||
+    process.env.RAILWAY_FRONTEND_API_BASE_URL ||
     process.env.VITE_API_BASE_URL ||
     process.env.VITE_API_BASE ||
-    process.env.VITE_DEV_API_PROXY_TARGET ||
+    process.env.VITE_RAILWAY_API_BASE ||
     "",
 );
 
-if (!railwayApiBase) {
-  console.error("\n[dev:railway] Missing Railway API URL.");
-  console.error("Set one of these in frontend/.env.local:");
-  console.error("  VITE_RAILWAY_API_BASE=https://your-railway-api.up.railway.app");
-  console.error("  or RAILWAY_TOKEN_API_BASE_URL=https://your-railway-api.up.railway.app\n");
+const tokenApiBase = normalizeUrl(
+  process.env.VITE_TOKEN_API_BASE ||
+    process.env.VITE_RAILWAY_TOKEN_API_BASE ||
+    process.env.RAILWAY_TOKEN_API_BASE_URL ||
+    process.env.VITE_REALTIME_API_BASE ||
+    process.env.VITE_RAILWAY_API_BASE ||
+    frontendApiBase ||
+    "",
+);
+
+if (!frontendApiBase) {
+  console.error("\n[dev:railway] Missing frontend Railway API URL.");
+  console.error("Set this in frontend/.env.local:");
+  console.error("  RAILWAY_FRONTEND_API_BASE_URL=https://memewarzonefrontend-production.up.railway.app\n");
   process.exit(1);
 }
 
-if (isLocalUrl(railwayApiBase)) {
-  console.error("\n[dev:railway] Refusing local API target because this mode must mimic Netlify/Railway.");
-  console.error(`[dev:railway] Current target: ${railwayApiBase}`);
-  console.error("Use npm run dev:hybrid for local API, or set VITE_RAILWAY_API_BASE to Railway.\n");
+if (!tokenApiBase) {
+  console.error("\n[dev:railway] Missing token/indexer Railway API URL.");
+  console.error("Set this in frontend/.env.local:");
+  console.error("  RAILWAY_TOKEN_API_BASE_URL=https://memebattles-production.up.railway.app\n");
   process.exit(1);
 }
 
-async function checkApi() {
-  const healthUrl = `${railwayApiBase}/healthz`;
+if (isLocalUrl(frontendApiBase) || isLocalUrl(tokenApiBase)) {
+  console.error("\n[dev:railway] Refusing local API target because this mode must mimic Railway.");
+  console.error(`[dev:railway] Frontend API target: ${frontendApiBase}`);
+  console.error(`[dev:railway] Token API target: ${tokenApiBase}`);
+  console.error("Use npm run dev:hybrid for local API.\n");
+  process.exit(1);
+}
+
+async function checkApi(label, base, path = "/") {
+  const url = `${base}${path}`;
   try {
-    const res = await fetch(healthUrl, { cache: "no-store" });
-    if (res.ok) {
-      console.log(`[dev:railway] Railway API OK: ${healthUrl}`);
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok || res.status === 404) {
+      console.log(`[dev:railway] ${label} reachable: ${base}`);
       return true;
     }
-    console.error(`[dev:railway] Railway API health returned ${res.status}: ${healthUrl}`);
+    console.error(`[dev:railway] ${label} returned ${res.status}: ${url}`);
     return false;
   } catch (error) {
-    console.error(`[dev:railway] Railway API is not reachable: ${healthUrl}`);
+    console.error(`[dev:railway] ${label} is not reachable: ${url}`);
     console.error(error?.message || error);
     return false;
   }
 }
 
-if (!(await checkApi())) process.exit(1);
+if (!(await checkApi("Frontend Railway", frontendApiBase, "/"))) process.exit(1);
+if (!(await checkApi("Token Railway", tokenApiBase, "/healthz"))) process.exit(1);
 
 console.log(`[dev:railway] Web: http://127.0.0.1:${vitePort}`);
-console.log(`[dev:railway] browser API base -> ${railwayApiBase}`);
-console.log(`[dev:railway] proxy /api -> ${railwayApiBase}`);
+console.log(`[dev:railway] app/frontend API -> ${frontendApiBase}`);
+console.log(`[dev:railway] token/indexer API -> ${tokenApiBase}`);
 
 const command = isWindows ? "cmd.exe" : "vite";
 const args = isWindows ? ["/d", "/s", "/c", "vite"] : [];
@@ -71,11 +89,14 @@ const child = spawn(command, args, {
   env: {
     ...process.env,
     VITE_PORT: vitePort,
-    VITE_DEV_API_PROXY_TARGET: railwayApiBase,
-    VITE_RAILWAY_API_BASE: railwayApiBase,
-    VITE_API_BASE_URL: railwayApiBase,
-    VITE_API_BASE: railwayApiBase,
-    VITE_REALTIME_API_BASE: normalizeUrl(process.env.VITE_REALTIME_API_BASE || railwayApiBase),
+    VITE_DEV_API_PROXY_TARGET: frontendApiBase,
+    VITE_FRONTEND_API_BASE: frontendApiBase,
+    VITE_RAILWAY_FRONTEND_API_BASE: frontendApiBase,
+    VITE_API_BASE_URL: frontendApiBase,
+    VITE_API_BASE: frontendApiBase,
+    VITE_TOKEN_API_BASE: tokenApiBase,
+    VITE_RAILWAY_TOKEN_API_BASE: tokenApiBase,
+    VITE_REALTIME_API_BASE: tokenApiBase,
   },
 });
 
