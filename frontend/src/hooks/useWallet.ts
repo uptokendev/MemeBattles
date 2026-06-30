@@ -2,6 +2,7 @@ import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { syncWalletRecruiterAttribution } from "@/lib/recruiterApi";
+import { isAllowedChainId, isSupportedChainId } from "@/lib/chainConfig";
 
 export type WalletType =
   | "metamask"
@@ -11,6 +12,7 @@ export type WalletType =
   | "trust"
   | "cryptocom"
   | "okx"
+  | "phantom"
   | "rainbow"
   | "brave"
   | "frame"
@@ -79,6 +81,8 @@ export type WalletHook = {
   disconnect: () => Promise<void>;
   detectWallets: () => DetectedWallet[];
   isConnected: boolean;
+  /** True only when an EVM wallet is connected AND on a supported chain (56). False when on wrong chain. */
+  isOnSupportedChain: boolean;
 };
 
 declare global {
@@ -136,18 +140,6 @@ function hasAny(value: string, needles: string[]) {
   return needles.some((needle) => value.includes(needle));
 }
 
-function isPhantomEvmProvider(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
-  const meta = getMeta(provider, info);
-  return Boolean(provider.isPhantom) || hasAny(meta.nameLower, ["phantom"]) || hasAny(meta.rdnsLower, ["phantom"]);
-}
-
-function isPhantomDetectedWallet(wallet: DetectedWallet) {
-  const id = String(wallet.id || "").toLowerCase();
-  const name = String(wallet.name || "").toLowerCase();
-  const rdns = String(wallet.rdns || "").toLowerCase();
-  return id.includes("phantom") || name.includes("phantom") || rdns.includes("phantom") || Boolean(wallet.provider.isPhantom);
-}
-
 function walletBrand(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
   const meta = getMeta(provider, info);
   const name = meta.nameLower;
@@ -159,6 +151,12 @@ function walletBrand(provider: Eip1193Provider, info?: Partial<Eip6963ProviderIn
   if (flag("isCoinbaseWallet") || hasAny(name, ["coinbase"]) || hasAny(rdns, ["coinbase"])) return { id: "coinbase" as WalletType, name: meta.name || "Coinbase Wallet", description: "Coinbase self-custody wallet.", score: 94 };
   if (flag("isTrust") || flag("isTrustWallet") || hasAny(name, ["trust"]) || hasAny(rdns, ["trust"])) return { id: "trust" as WalletType, name: meta.name || "Trust Wallet", description: "Mobile-first EVM wallet.", score: 92 };
   if (flag("isOkxWallet") || flag("isOKExWallet") || hasAny(name, ["okx", "okex"]) || hasAny(rdns, ["okx", "okex"])) return { id: "okx" as WalletType, name: meta.name || "OKX Wallet", description: "Multi-chain EVM wallet.", score: 88 };
+  if (flag("isPhantom") || hasAny(name, ["phantom"]) || hasAny(rdns, ["phantom"])) {
+    // Phantom appears in EVM detected list (so users see it), but we guard connect/hydrate
+    // to recommend the dedicated Solana button and avoid triggering Phantom's "Unsupported network"
+    // when its EVM provider is on a non-BNB or Solana-focused network.
+    return { id: "phantom" as WalletType, name: meta.name || "Phantom", description: "Multi-chain wallet (use a Solana wallet row for Solana 101; EVM only for BNB 56).", score: 70 };
+  }
   if (flag("isBraveWallet") || hasAny(name, ["brave"]) || hasAny(rdns, ["brave"])) return { id: "brave" as WalletType, name: meta.name || "Brave Wallet", description: "Built-in Brave wallet.", score: 82 };
   if (flag("isMetaMask") || flag("_metamask") || hasAny(name, ["metamask"]) || hasAny(rdns, ["metamask"])) return { id: "metamask" as WalletType, name: meta.name || "MetaMask", description: "Injected EVM browser wallet.", score: 90 };
 
@@ -178,7 +176,16 @@ function dedupeProviders(candidates: Array<Eip1193Provider | null | undefined>) 
 
 function legacyProviders() {
   if (typeof window === "undefined") return [];
-  return dedupeProviders([...(Array.isArray(window.ethereum?.providers) ? window.ethereum.providers : []), window.ethereum, window.BinanceChain, window.binanceChain]);
+  const candidates = dedupeProviders([
+    ...(Array.isArray(window.ethereum?.providers) ? window.ethereum.providers : []),
+    window.ethereum,
+    window.BinanceChain,
+    window.binanceChain,
+  ]);
+  // NEVER include Phantom in EVM detected list. Phantom must ONLY be used via the dedicated
+  // Solana button (window.solana) for Solana chain 101. Including it in EVM causes auto-connect
+  // to its EVM side (often ETH address) and "Unsupported network" errors from Phantom.
+  return candidates.filter((p) => !(p as any)?.isPhantom);
 }
 
 function startEip6963Discovery() {
@@ -186,7 +193,6 @@ function startEip6963Discovery() {
   window.addEventListener("eip6963:announceProvider", (event) => {
     const detail = event.detail;
     if (!detail?.provider || typeof detail.provider.request !== "function") return;
-    if (isPhantomEvmProvider(detail.provider, detail.info)) return;
     const meta = getMeta(detail.provider, detail.info);
     const key = detail.info?.uuid || meta.rdns || meta.name || String(EIP6963_WALLETS.size + 1);
     EIP6963_WALLETS.set(key, detail);
@@ -198,7 +204,7 @@ function startEip6963Discovery() {
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
   startEip6963Discovery();
-
+  
   if (eip6963RequestInFlight) return;
   eip6963RequestInFlight = true;
 
@@ -222,17 +228,22 @@ function detectedWallet(provider: Eip1193Provider, source: "eip6963" | "legacy",
 function detectedSnapshot(): DetectedWallet[] {
   if (typeof window === "undefined") return [];
   const wallets = [
-    ...[...EIP6963_WALLETS.values()].filter((detail) => !isPhantomEvmProvider(detail.provider, detail.info)).map((detail) => detectedWallet(detail.provider, "eip6963", detail.info)),
-    ...legacyProviders().filter((provider) => !isPhantomEvmProvider(provider)).map((provider) => detectedWallet(provider, "legacy")),
+    ...[...EIP6963_WALLETS.values()].map((detail) => detectedWallet(detail.provider, "eip6963", detail.info)),
+    ...legacyProviders().map((provider) => detectedWallet(provider, "legacy")),
   ];
 
   const seenProviders = new Set<Eip1193Provider>();
+  const seenKeys = new Set<string>(); // dedup by rdns/name to reduce duplicates like multiple MetaMask announcements
   const seenIds = new Map<string, number>();
   return wallets
     .filter((wallet) => {
-      if (isPhantomDetectedWallet(wallet)) return false;
+      // Exclude Phantom providers from EVM detection (see legacyProviders comment).
+      if ((wallet.provider as any)?.isPhantom) return false;
       if (seenProviders.has(wallet.provider)) return false;
+      const key = wallet.rdns || wallet.name || wallet.id;
+      if (seenKeys.has(key)) return false;
       seenProviders.add(wallet.provider);
+      seenKeys.add(key);
       return true;
     })
     .map((wallet) => {
@@ -243,10 +254,25 @@ function detectedSnapshot(): DetectedWallet[] {
     .sort((a, b) => b.sortScore - a.sortScore || a.name.localeCompare(b.name));
 }
 
+function walletSnapshotKey(wallet: DetectedWallet) {
+  return [
+    wallet.id,
+    wallet.name,
+    wallet.rdns,
+    wallet.icon || "",
+    wallet.source,
+    String(wallet.sortScore),
+  ].join("|");
+}
+
+function sameWalletSnapshot(previous: DetectedWallet[], next: DetectedWallet[]) {
+  if (previous.length !== next.length) return false;
+  return previous.every((wallet, index) => wallet.provider === next[index]?.provider && walletSnapshotKey(wallet) === walletSnapshotKey(next[index]));
+}
+
 function findWallet(walletId: WalletType | null | undefined) {
   const wallets = detectedSnapshot();
-  if (!walletId) return null;
-  if (String(walletId).toLowerCase().includes("phantom")) return null;
+  if (!walletId) return wallets[0] || null;
   return wallets.find((wallet) => wallet.id === walletId) || wallets.find((wallet) => wallet.id.startsWith(`${walletId}-`)) || wallets.find((wallet) => walletBrand(wallet.provider).id === walletId) || null;
 }
 
@@ -304,6 +330,59 @@ function isRejected(error: unknown) {
   return error.code === 4001 || message.includes("user rejected") || message.includes("user denied");
 }
 
+/**
+ * Enforce that ONLY BNB Smart Chain mainnet (56) EVM connections are allowed.
+ * No Ethereum, no testnet (97), no other chains. 
+ * Attempts to switch the wallet to BNB mainnet 56 when needed (during explicit connect).
+ * On auto-hydrate or background changes to bad chain (e.g. Phantom EVM on ETH or testnet),
+ * we drop the connection and clear persistence to prevent loops.
+ * Solana is handled exclusively via the dedicated Solana wallet rows (always chain 101).
+ */
+async function ensureBnbChainOnly(provider: Eip1193Provider): Promise<number> {
+  // Read current chain
+  let cid: number | undefined;
+  try {
+    const bp = new BrowserProvider(provider);
+    const net = await bp.getNetwork();
+    cid = Number(net.chainId);
+  } catch {
+    try {
+      const raw = await provider.request({ method: "eth_chainId" });
+      cid = parseInt(String(raw), 16);
+    } catch {}
+  }
+
+  if (isAllowedChainId(cid)) return cid as number;
+
+  // Not allowed (e.g. Ethereum from Phantom EVM, testnet, or other). Force switch to BNB mainnet 56 only.
+  const target = 56;
+  const targetHex = "0x" + target.toString(16);
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: targetHex }],
+    });
+    // Re-read after switch
+    const bp2 = new BrowserProvider(provider);
+    const net2 = await bp2.getNetwork();
+    const cid2 = Number(net2.chainId);
+    if (isAllowedChainId(cid2)) return cid2;
+    throw new Error("Switch did not land on allowed chain.");
+  } catch (err: any) {
+    const msg = (err?.message || "").toLowerCase();
+    const code = err?.code;
+    if (code === 4902 || msg.includes("unrecognized") || msg.includes("not added")) {
+      // Chain not in wallet; user must add BNB manually or we could add it, but for now guide them.
+    }
+    throw new Error(
+      `Only BNB Smart Chain mainnet (56) is supported for EVM. ` +
+        `No Ethereum, no testnets. ` +
+        `For Solana use the dedicated "Phantom" button in the connect modal (it uses mainnet 101). ` +
+        `Switch your EVM wallet (including Phantom EVM mode) to BNB mainnet (ID 56) and try again.`
+    );
+  }
+}
+
 export function useWallet(): WalletHook {
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<JsonRpcSigner | null>(null);
@@ -317,6 +396,12 @@ export function useWallet(): WalletHook {
   const cleanupRef = useRef<(() => void) | null>(null);
   const hydrateInFlightRef = useRef(false);
   const accountRef = useRef<string>("");
+  const connectedEvmRef = useRef<{ provider: Eip1193Provider | null; account: string }>({ provider: null, account: "" });
+
+  const setDetectedWalletSnapshot = useCallback((next = detectedSnapshot()) => {
+    setDetectedWallets((previous) => (sameWalletSnapshot(previous, next) ? previous : next));
+    return next;
+  }, []);
 
   const syncRecruiterAttribution = useCallback(async (walletAddress: string) => {
     if (!walletAddress) return;
@@ -330,13 +415,14 @@ export function useWallet(): WalletHook {
   const detectWallets = useCallback(() => {
     requestEip6963Providers();
     const wallets = detectedSnapshot();
-    setDetectedWallets(wallets);
+    setDetectedWalletSnapshot(wallets);
     return wallets;
-  }, []);
+  }, [setDetectedWalletSnapshot]);
 
   const resetWalletState = useCallback((clearSelectedWallet = false) => {
     eip1193Ref.current = null;
     accountRef.current = "";
+    connectedEvmRef.current = { provider: null, account: "" };
     setAccount("");
     setSigner(null);
     setProvider(null);
@@ -346,7 +432,6 @@ export function useWallet(): WalletHook {
   }, []);
 
   const applyProviderState = useCallback(async (selectedProvider: Eip1193Provider, chosen: string, selectedWalletId?: WalletType) => {
-    if (isPhantomEvmProvider(selectedProvider)) throw new Error("Phantom EVM is disabled in MemeWarzone. Use Phantom only from the Solana wallet section.");
     eip1193Ref.current = selectedProvider;
     accountRef.current = chosen;
     const browserProvider = new BrowserProvider(selectedProvider);
@@ -356,25 +441,27 @@ export function useWallet(): WalletHook {
     const nextSigner = await browserProvider.getSigner(chosen);
     setSigner(nextSigner);
     const network = await browserProvider.getNetwork();
-    setChainId(Number(network.chainId));
+    const cid = Number(network.chainId);
+    if (!isAllowedChainId(cid)) {
+      // Final safety: never surface a non-BNB EVM connection.
+      throw new Error("Unsupported chain in provider state.");
+    }
+    setChainId(cid);
     if (typeof window !== "undefined" && selectedWalletId) {
       window.localStorage.setItem(SELECTED_WALLET_KEY, selectedWalletId);
       window.localStorage.removeItem(DISCONNECTED_KEY);
       window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
     }
+    connectedEvmRef.current = { provider: selectedProvider, account: chosen };
   }, [syncRecruiterAttribution]);
 
   const bindListeners = useCallback((selectedProvider: Eip1193Provider) => {
     cleanupRef.current?.();
     cleanupRef.current = null;
-    if (!selectedProvider.on || isPhantomEvmProvider(selectedProvider)) return;
+    if (!selectedProvider.on) return;
 
     const rebuild = async () => {
       try {
-        if (isPhantomEvmProvider(selectedProvider)) {
-          resetWalletState(true);
-          return;
-        }
         const chosen = await chooseAccount(selectedProvider, normalizeAccounts(await selectedProvider.request({ method: "eth_accounts" })));
         if (!chosen) {
           resetWalletState(false);
@@ -384,6 +471,13 @@ export function useWallet(): WalletHook {
           eip1193Ref.current === selectedProvider &&
           chosen.toLowerCase() === accountRef.current.toLowerCase()
         ) {
+          return;
+        }
+        // If chain changed to non-BNB (e.g. user switched to ETH in Phantom), drop the EVM connection.
+        try {
+          await ensureBnbChainOnly(selectedProvider);
+        } catch {
+          resetWalletState(false);
           return;
         }
         await applyProviderState(selectedProvider, chosen);
@@ -408,14 +502,22 @@ export function useWallet(): WalletHook {
         return;
       }
       try {
+        await ensureBnbChainOnly(selectedProvider);
         await applyProviderState(selectedProvider, chosen);
       } catch {
         setSigner(null);
+        resetWalletState(false);
       }
     };
 
     const onChainChanged = async (nextChainId: unknown) => {
-      setChainId(parseChainId(nextChainId));
+      const c = parseChainId(nextChainId);
+      if (c && !isAllowedChainId(c)) {
+        // User (or wallet) switched to Ethereum or unsupported chain. Drop EVM state.
+        resetWalletState(false);
+        return;
+      }
+      setChainId(c);
       await rebuild();
     };
 
@@ -441,35 +543,58 @@ export function useWallet(): WalletHook {
     try {
       requestEip6963Providers();
       const storedType = window.localStorage.getItem(SELECTED_WALLET_KEY) as WalletType | null;
-      if (!storedType || String(storedType).toLowerCase().includes("phantom")) {
-        if (String(storedType || "").toLowerCase().includes("phantom")) window.localStorage.removeItem(SELECTED_WALLET_KEY);
+      const selectedWallet = findWallet(storedType) || findWallet(null);
+      if (!selectedWallet?.provider) return;
+      // Phantom must never be auto-hydrated or used via the EVM path (filtered from detection too).
+      // Dedicated Solana button only.
+      if ((selectedWallet.provider as any)?.isPhantom || (selectedWallet.id || "").toLowerCase().includes("phantom")) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(SELECTED_WALLET_KEY);
+          window.localStorage.setItem(DISCONNECTED_KEY, "1");
+        }
         return;
       }
-      const selectedWallet = findWallet(storedType);
-      if (!selectedWallet?.provider || isPhantomDetectedWallet(selectedWallet)) return;
       const chosen = await chooseAccount(selectedWallet.provider, normalizeAccounts(await selectedWallet.provider.request({ method: "eth_accounts" })));
       if (!chosen) return;
+      const connected = connectedEvmRef.current;
+      if (
+        connected.provider === selectedWallet.provider &&
+        connected.account.toLowerCase() === chosen.toLowerCase()
+      ) {
+        return;
+      }
+      // Do not auto-hydrate if on Ethereum or other unsupported chain.
+      // Clear persistence so we don't loop trying to reconnect bad wallets.
+      try {
+        await ensureBnbChainOnly(selectedWallet.provider);
+      } catch {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(SELECTED_WALLET_KEY);
+          window.localStorage.setItem(DISCONNECTED_KEY, "1");
+        }
+        return;
+      }
       bindListeners(selectedWallet.provider);
       await applyProviderState(selectedWallet.provider, chosen, selectedWallet.id);
     } catch {
       // Hydration must never prompt or throw.
     } finally {
       hydrateInFlightRef.current = false;
-      setDetectedWallets(detectedSnapshot());
+      setDetectedWalletSnapshot();
     }
-  }, [applyProviderState, bindListeners]);
+  }, [applyProviderState, bindListeners, setDetectedWalletSnapshot]);
 
   useEffect(() => {
     startEip6963Discovery();
     const onDiscovery = () => {
-      setDetectedWallets(detectedSnapshot());
+      setDetectedWalletSnapshot();
       void hydrateSelectedProvider();
     };
     EIP6963_SUBSCRIBERS.add(onDiscovery);
 
     const timers = [0, 250, 800, 1600].map((delay) => window.setTimeout(() => {
       requestEip6963Providers();
-      setDetectedWallets(detectedSnapshot());
+      setDetectedWalletSnapshot();
       void hydrateSelectedProvider();
     }, delay));
 
@@ -479,7 +604,7 @@ export function useWallet(): WalletHook {
       cleanupRef.current?.();
       cleanupRef.current = null;
     };
-  }, [hydrateSelectedProvider]);
+  }, [hydrateSelectedProvider, setDetectedWalletSnapshot]);
 
   const connect = useCallback(async (wallet?: WalletType) => {
     if (typeof window === "undefined") throw new Error("No browser environment detected.");
@@ -492,7 +617,13 @@ export function useWallet(): WalletHook {
     const selectedWallet = findWallet(wallet);
     const selectedProvider = selectedWallet?.provider;
     if (!selectedWallet || !selectedProvider) throw new Error("Wallet not detected. Install an EVM wallet or open MemeWarzone inside your wallet browser.");
-    if (isPhantomDetectedWallet(selectedWallet) || isPhantomEvmProvider(selectedProvider)) throw new Error("Phantom must connect through the Solana wallet section. Phantom EVM is disabled for MemeWarzone.");
+
+    // Block Phantom here — it must use the dedicated Solana button (handleSolanaConnect in ConnectWalletButton)
+    // to avoid Phantom showing "This website is trying to use a network that Phantom does not currently support."
+    // We also filter isPhantom from all EVM detection (detectedSnapshot, legacyProviders) so Phantom never appears as EVM option.
+    if ((selectedProvider as any)?.isPhantom || (selectedWallet.id || "").toLowerCase().includes("phantom")) {
+      throw new Error("Phantom is not supported for EVM connections. Use a Solana wallet row for correct Solana (101) connect.");
+    }
 
     setConnecting(true);
     setConnectingWalletId(selectedWallet.id);
@@ -504,6 +635,8 @@ export function useWallet(): WalletHook {
       }
       const chosen = await chooseAccount(selectedProvider, normalizeAccounts(await selectedProvider.request({ method: "eth_requestAccounts" })));
       if (!chosen) throw new Error("No wallet account returned.");
+      // CRITICAL: block Ethereum / non-BNB. Switch if possible (user interaction expected here).
+      await ensureBnbChainOnly(selectedProvider);
       bindListeners(selectedProvider);
       await applyProviderState(selectedProvider, chosen, selectedWallet.id);
     } catch (error) {
@@ -511,9 +644,9 @@ export function useWallet(): WalletHook {
     } finally {
       setConnecting(false);
       setConnectingWalletId(null);
-      setDetectedWallets(detectedSnapshot());
+      setDetectedWalletSnapshot();
     }
-  }, [applyProviderState, bindListeners]);
+  }, [applyProviderState, bindListeners, setDetectedWalletSnapshot]);
 
   const disconnect = useCallback(async () => {
     cleanupRef.current?.();
@@ -524,6 +657,8 @@ export function useWallet(): WalletHook {
       window.localStorage.removeItem(LEGACY_CONNECTED_KEY);
     }
   }, [resetWalletState]);
+
+  const isOnSupportedChain = Boolean(account && signer && isSupportedChainId(chainId));
 
   return useMemo(() => ({
     provider,
@@ -538,5 +673,6 @@ export function useWallet(): WalletHook {
     disconnect,
     detectWallets,
     isConnected: Boolean(account && signer),
-  }), [provider, signer, account, chainId, connecting, connectingWalletId, detectedWallets, connect, disconnect, detectWallets]);
+    isOnSupportedChain,
+  }), [provider, signer, account, chainId, connecting, connectingWalletId, detectedWallets, connect, disconnect, detectWallets, isOnSupportedChain]);
 }
