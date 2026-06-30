@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { cn } from "@/lib/utils";
 
@@ -30,25 +30,28 @@ function formatUptime(now: number, launch: number): string {
 
 function useSystemUptime(): string {
   const [uptime, setUptime] = useState(() => formatUptime(Date.now(), getLaunchMs()));
+  const intervalRef = useRef<number | null>(null);
+
   useEffect(() => {
     const launch = getLaunchMs();
     const tick = () => setUptime(formatUptime(Date.now(), launch));
     tick();
-    // Align the first interval to the next minute boundary so the M digit
-    // changes when the wall clock minute rolls over.
+
     const msToNextMinute = 60_000 - (Date.now() % 60_000);
-    const initial = window.setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       tick();
-      const id = window.setInterval(tick, 60_000);
-      // Smuggle the interval id out so the outer cleanup can clear it.
-      (initial as unknown as { _intervalId?: number })._intervalId = id;
+      intervalRef.current = window.setInterval(tick, 60_000);
     }, msToNextMinute);
+
     return () => {
-      const id = (initial as unknown as { _intervalId?: number })._intervalId;
-      if (id) window.clearInterval(id);
-      window.clearTimeout(initial);
+      if (intervalRef.current != null) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      window.clearTimeout(timeoutId);
     };
   }, []);
+
   return uptime;
 }
 
@@ -75,18 +78,8 @@ export function HeaderBand({ className, showTicker = true }: HeaderBandProps) {
         </div>
 
         <div className="mwz-tactical-hero__center">
-          <img
-            src="/assets/hero/orange_hud_true_transparent.png"
-            alt=""
-            className="mwz-tactical-hero__crosshair"
-            draggable={false}
-          />
-          <img
-            src="/assets/hero/logo.png"
-            alt="MemeWarzone"
-            className="mwz-tactical-hero__logo"
-            draggable={false}
-          />
+          <img src="/assets/hero/orange_hud_true_transparent.png" alt="" className="mwz-tactical-hero__crosshair" draggable={false} />
+          <img src="/assets/hero/logo.png" alt="MemeWarzone" className="mwz-tactical-hero__logo" draggable={false} />
         </div>
 
         <div className="mwz-tactical-hero__wave" aria-hidden="true" />
