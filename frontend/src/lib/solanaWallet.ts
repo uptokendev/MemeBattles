@@ -8,7 +8,6 @@ export const SOLANA_WALLET_EVENT = "memewarzone:solana-wallet-changed";
 
 export type SolanaProvider = {
   isPhantom?: boolean;
-  isSolflare?: boolean;
   publicKey?: { toString: () => string } | null;
   connect?: (args?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey?: { toString: () => string } }>;
   disconnect?: () => Promise<void>;
@@ -33,7 +32,11 @@ function getWindowAny() {
   return typeof window === "undefined" ? {} : (window as any);
 }
 
-function addWallet(wallets: DetectedSolanaWallet[], seen: Set<SolanaProvider>, wallet: DetectedSolanaWallet | null) {
+function addWallet(
+  wallets: DetectedSolanaWallet[],
+  seen: Set<SolanaProvider>,
+  wallet: DetectedSolanaWallet | null,
+) {
   if (!wallet?.provider || seen.has(wallet.provider)) return;
   if (wallets.some((item) => item.id === wallet.id)) return;
   if (typeof wallet.provider.connect !== "function") return;
@@ -46,19 +49,57 @@ export function detectSolanaWallets(): DetectedSolanaWallet[] {
   const wallets: DetectedSolanaWallet[] = [];
   const seen = new Set<SolanaProvider>();
 
-  addWallet(wallets, seen, w.phantom?.solana ? { id: "phantom", name: "Phantom", icon: "PH", provider: w.phantom.solana } : null);
-  addWallet(wallets, seen, w.solana?.isPhantom ? { id: "phantom", name: "Phantom", icon: "PH", provider: w.solana } : null);
-  addWallet(wallets, seen, w.solflare ? { id: "solflare", name: "Solflare", icon: "SF", provider: w.solflare } : null);
-  addWallet(wallets, seen, w.solana?.isSolflare ? { id: "solflare", name: "Solflare", icon: "SF", provider: w.solana } : null);
-  addWallet(wallets, seen, w.backpack?.solana ? { id: "backpack", name: "Backpack", icon: "BP", provider: w.backpack.solana } : null);
-  addWallet(wallets, seen, w.glowSolana ? { id: "glow", name: "Glow", icon: "GL", provider: w.glowSolana } : null);
+  addWallet(wallets, seen, w.solana?.isPhantom ? {
+  id: "phantom",
+  name: "Phantom",
+  icon: "👻",
+  provider: w.solana,
+} : null);
+
+addWallet(wallets, seen, w.phantom?.solana ? {
+  id: "phantom",
+  name: "Phantom",
+  icon: "👻",
+  provider: w.phantom.solana,
+} : null);
+
+  addWallet(wallets, seen, w.solflare ? {
+    id: "solflare",
+    name: "Solflare",
+    icon: "☀️",
+    provider: w.solflare,
+  } : null);
+
+  addWallet(wallets, seen, w.solana?.isSolflare ? {
+    id: "solflare",
+    name: "Solflare",
+    icon: "SOL",
+    provider: w.solana,
+  } : null);
+
+  addWallet(wallets, seen, w.backpack?.solana ? {
+    id: "backpack",
+    name: "Backpack",
+    icon: "🎒",
+    provider: w.backpack.solana,
+  } : null);
+
+  addWallet(wallets, seen, w.glowSolana ? {
+    id: "glow",
+    name: "Glow",
+    icon: "✨",
+    provider: w.glowSolana,
+  } : null);
 
   return wallets;
 }
 
 export function getSolanaProvider(walletId?: string | null): SolanaProvider | null {
   const wallets = detectSolanaWallets();
-  if (walletId) return wallets.find((wallet) => wallet.id === walletId || wallet.name === walletId)?.provider || null;
+
+  if (walletId) {
+    return wallets.find((wallet) => wallet.id === walletId || wallet.name === walletId)?.provider || null;
+  }
 
   const storedId = getStoredSolanaWalletId();
   if (storedId) {
@@ -71,6 +112,7 @@ export function getSolanaProvider(walletId?: string | null): SolanaProvider | nu
 
 function notifySolanaWalletChanged(publicKey: string, wallet?: DetectedSolanaWallet | null) {
   if (typeof window === "undefined") return;
+
   try {
     if (publicKey) {
       window.localStorage.setItem(SOLANA_WALLET_STORAGE_KEY, publicKey);
@@ -81,7 +123,14 @@ function notifySolanaWalletChanged(publicKey: string, wallet?: DetectedSolanaWal
       window.localStorage.removeItem(SOLANA_WALLET_NAME_STORAGE_KEY);
       window.localStorage.removeItem(SOLANA_WALLET_ID_STORAGE_KEY);
     }
-    window.dispatchEvent(new CustomEvent(SOLANA_WALLET_EVENT, { detail: { publicKey, walletId: wallet?.id || "", walletName: wallet?.name || "" } }));
+
+    window.dispatchEvent(new CustomEvent(SOLANA_WALLET_EVENT, {
+      detail: {
+        publicKey,
+        walletId: wallet?.id || "",
+        walletName: wallet?.name || "",
+      },
+    }));
   } catch {
     // Ignore storage/event failures.
   }
@@ -89,16 +138,22 @@ function notifySolanaWalletChanged(publicKey: string, wallet?: DetectedSolanaWal
 
 export function getStoredSolanaWallet(): string {
   if (typeof window === "undefined") return "";
-  const storedId = getStoredSolanaWalletId();
-  const provider = getSolanaProvider(storedId || null);
+
+  const provider = getSolanaProvider();
   const liveKey = normalizePublicKey(provider?.publicKey?.toString?.() || "");
-  return liveKey;
+  if (liveKey) return liveKey;
+
+  try {
+    return normalizePublicKey(window.localStorage.getItem(SOLANA_WALLET_STORAGE_KEY) || "");
+  } catch {
+    return "";
+  }
 }
 
 export function getStoredSolanaWalletName(): string {
   if (typeof window === "undefined") return "";
   try {
-    return getStoredSolanaWallet() ? window.localStorage.getItem(SOLANA_WALLET_NAME_STORAGE_KEY) || "" : "";
+    return window.localStorage.getItem(SOLANA_WALLET_NAME_STORAGE_KEY) || "";
   } catch {
     return "";
   }
@@ -118,54 +173,91 @@ export function refreshSolanaWalletFromProvider(walletId?: string | null): strin
   const selected =
     (walletId ? wallets.find((wallet) => wallet.id === walletId || wallet.name === walletId) : null) ||
     wallets.find((wallet) => wallet.id === getStoredSolanaWalletId()) ||
-    null;
+    wallets[0];
 
   const publicKey = normalizePublicKey(selected?.provider?.publicKey?.toString?.() || "");
-  notifySolanaWalletChanged(publicKey, selected || null);
+  if (publicKey) notifySolanaWalletChanged(publicKey, selected);
   return publicKey;
 }
-
 const attachedSolanaProviders = new WeakSet<object>();
 
 export function ensureSolanaListeners(): void {
   const wallets = detectSolanaWallets();
+
   wallets.forEach((wallet) => {
     const provider = wallet.provider;
     if (!provider || typeof provider !== "object") return;
     if (attachedSolanaProviders.has(provider as object)) return;
+
     attachedSolanaProviders.add(provider as object);
 
     const sync = (clearIfEmpty = false) => {
       const key = normalizePublicKey(provider.publicKey?.toString?.() || "");
-      if (key || clearIfEmpty) notifySolanaWalletChanged(key, wallet);
+      if (key || clearIfEmpty) {
+        notifySolanaWalletChanged(key, wallet);
+      }
     };
 
     try { provider.on?.("connect", () => sync(true)); } catch {}
     try { provider.on?.("disconnect", () => notifySolanaWalletChanged("")); } catch {}
     try { provider.on?.("accountChanged", () => sync(true)); } catch {}
+
+    // Read an existing publicKey only. Never do a trusted-only connect here
+    // because some injected wallets may open or focus on reload.
     sync(false);
   });
 }
 
-export async function connectSolanaWallet(walletId?: string): Promise<{ publicKey: string; walletId: string; walletName: string }> {
+export async function connectSolanaWallet(
+  walletId?: string,
+): Promise<{ publicKey: string; walletId: string; walletName: string }> {
   const wallets = detectSolanaWallets();
-  const wallet = wallets.find((item) => item.id === walletId || item.name === walletId) || null;
-  if (!wallet?.provider?.connect) throw new Error("No supported Solana wallet detected. Install or unlock Phantom, Solflare, Backpack, or Glow.");
+  const wallet =
+    wallets.find((item) => item.id === walletId || item.name === walletId) ||
+    wallets[0];
+
+  if (!wallet?.provider?.connect) {
+    throw new Error("No supported Solana wallet detected. Install Phantom, Solflare, Backpack, or Glow.");
+  }
 
   let result: { publicKey?: { toString: () => string } } | undefined;
-  result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
 
-  const publicKey = normalizePublicKey(result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "");
+  if (wallet.id === "phantom") {
+    // Restore the old Phantom behavior that worked before:
+    // clear stale Phantom session first, then force a user-facing connect prompt.
+    try {
+      await wallet.provider.disconnect?.();
+    } catch {
+      // ignore Phantom disconnect errors
+    }
+
+    result = await wallet.provider.connect({ onlyIfTrusted: false } as any);
+  } else {
+    // Other Solana wallets, like Solflare, work better with plain connect().
+    result = await wallet.provider.connect();
+  }
+  const publicKey = normalizePublicKey(
+    result?.publicKey?.toString() || wallet.provider.publicKey?.toString?.() || "",
+  );
+
   if (!publicKey) throw new Error("No Solana public key returned.");
 
   notifySolanaWalletChanged(publicKey, wallet);
-  return { publicKey, walletId: wallet.id, walletName: wallet.name };
+
+  return {
+    publicKey,
+    walletId: wallet.id,
+    walletName: wallet.name,
+  };
 }
 
 export async function disconnectSolanaWallet(): Promise<void> {
-  const wallets = detectSolanaWallets();
-  await Promise.allSettled(wallets.map((wallet) => wallet.provider.disconnect?.()));
-  notifySolanaWalletChanged("");
+  const provider = getSolanaProvider();
+  try {
+    await provider?.disconnect?.();
+  } finally {
+    notifySolanaWalletChanged("");
+  }
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -202,7 +294,11 @@ async function fetchNonce(chainId: number, walletAddress: string) {
   const qs = new URLSearchParams({ chainId: String(chainId), address: walletAddress });
   const res = await apiFetch(`/api/auth/nonce?${qs.toString()}`, { cache: "no-store" });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok || !json?.nonce) throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+
+  if (!res.ok || !json?.nonce) {
+    throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+  }
+
   return String(json.nonce);
 }
 
@@ -212,16 +308,31 @@ export async function signSolanaDraftAction(input: {
   action: DraftAuthAction;
   draftId?: string | null;
 }): Promise<DraftActionAuth & { walletType: "solana" }> {
-  const walletAddress = normalizePublicKey(input.walletAddress || getStoredSolanaWallet());
+  const provider = getSolanaProvider();
+
+  if (!provider?.signMessage) {
+    throw new Error("This Solana wallet does not support message signing.");
+  }
+
+  const walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || getStoredSolanaWallet());
   if (!walletAddress) throw new Error("Solana wallet not connected.");
 
   const nonce = await fetchNonce(input.chainId, walletAddress);
-  const lines = ["MemeWarzone Prepare Mode", `Action: ${input.action}`, `Wallet: ${walletAddress}`, `Chain ID: ${Number(input.chainId)}`];
+
+  const lines = [
+    "MemeWarzone Prepare Mode",
+    `Action: ${input.action}`,
+    `Wallet: ${walletAddress}`,
+    `Chain ID: ${Number(input.chainId)}`,
+  ];
+
   if (input.draftId) lines.push(`Draft ID: ${input.draftId}`);
   lines.push(`Nonce: ${nonce}`);
 
   const message = lines.join("\n");
-  const { signature } = await signSolanaMessage(message, walletAddress);
+  const encoded = new TextEncoder().encode(message);
+  const signed = await provider.signMessage(encoded, "utf8");
+  const signature = signed instanceof Uint8Array ? signed : signed.signature;
 
   return {
     action: input.action,
@@ -231,7 +342,7 @@ export async function signSolanaDraftAction(input: {
     draftId: input.draftId || null,
     nonce,
     message,
-    signature,
+    signature: bytesToBase64(signature),
   };
 }
 
