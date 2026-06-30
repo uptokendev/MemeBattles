@@ -11,7 +11,6 @@ export type WalletType =
   | "trust"
   | "cryptocom"
   | "okx"
-  | "phantom"
   | "rainbow"
   | "brave"
   | "frame"
@@ -137,6 +136,18 @@ function hasAny(value: string, needles: string[]) {
   return needles.some((needle) => value.includes(needle));
 }
 
+function isPhantomEvmProvider(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
+  const meta = getMeta(provider, info);
+  return Boolean(provider.isPhantom) || hasAny(meta.nameLower, ["phantom"]) || hasAny(meta.rdnsLower, ["phantom"]);
+}
+
+function isPhantomDetectedWallet(wallet: DetectedWallet) {
+  const id = String(wallet.id || "").toLowerCase();
+  const name = String(wallet.name || "").toLowerCase();
+  const rdns = String(wallet.rdns || "").toLowerCase();
+  return id.includes("phantom") || name.includes("phantom") || rdns.includes("phantom") || Boolean(wallet.provider.isPhantom);
+}
+
 function walletBrand(provider: Eip1193Provider, info?: Partial<Eip6963ProviderInfo>) {
   const meta = getMeta(provider, info);
   const name = meta.nameLower;
@@ -148,7 +159,6 @@ function walletBrand(provider: Eip1193Provider, info?: Partial<Eip6963ProviderIn
   if (flag("isCoinbaseWallet") || hasAny(name, ["coinbase"]) || hasAny(rdns, ["coinbase"])) return { id: "coinbase" as WalletType, name: meta.name || "Coinbase Wallet", description: "Coinbase self-custody wallet.", score: 94 };
   if (flag("isTrust") || flag("isTrustWallet") || hasAny(name, ["trust"]) || hasAny(rdns, ["trust"])) return { id: "trust" as WalletType, name: meta.name || "Trust Wallet", description: "Mobile-first EVM wallet.", score: 92 };
   if (flag("isOkxWallet") || flag("isOKExWallet") || hasAny(name, ["okx", "okex"]) || hasAny(rdns, ["okx", "okex"])) return { id: "okx" as WalletType, name: meta.name || "OKX Wallet", description: "Multi-chain EVM wallet.", score: 88 };
-  if (flag("isPhantom") || hasAny(name, ["phantom"]) || hasAny(rdns, ["phantom"])) return { id: "phantom" as WalletType, name: meta.name || "Phantom", description: "Multi-chain wallet.", score: 86 };
   if (flag("isBraveWallet") || hasAny(name, ["brave"]) || hasAny(rdns, ["brave"])) return { id: "brave" as WalletType, name: meta.name || "Brave Wallet", description: "Built-in Brave wallet.", score: 82 };
   if (flag("isMetaMask") || flag("_metamask") || hasAny(name, ["metamask"]) || hasAny(rdns, ["metamask"])) return { id: "metamask" as WalletType, name: meta.name || "MetaMask", description: "Injected EVM browser wallet.", score: 90 };
 
@@ -176,6 +186,7 @@ function startEip6963Discovery() {
   window.addEventListener("eip6963:announceProvider", (event) => {
     const detail = event.detail;
     if (!detail?.provider || typeof detail.provider.request !== "function") return;
+    if (isPhantomEvmProvider(detail.provider, detail.info)) return;
     const meta = getMeta(detail.provider, detail.info);
     const key = detail.info?.uuid || meta.rdns || meta.name || String(EIP6963_WALLETS.size + 1);
     EIP6963_WALLETS.set(key, detail);
@@ -187,7 +198,7 @@ function startEip6963Discovery() {
 function requestEip6963Providers() {
   if (typeof window === "undefined") return;
   startEip6963Discovery();
-  
+
   if (eip6963RequestInFlight) return;
   eip6963RequestInFlight = true;
 
@@ -211,14 +222,15 @@ function detectedWallet(provider: Eip1193Provider, source: "eip6963" | "legacy",
 function detectedSnapshot(): DetectedWallet[] {
   if (typeof window === "undefined") return [];
   const wallets = [
-    ...[...EIP6963_WALLETS.values()].map((detail) => detectedWallet(detail.provider, "eip6963", detail.info)),
-    ...legacyProviders().map((provider) => detectedWallet(provider, "legacy")),
+    ...[...EIP6963_WALLETS.values()].filter((detail) => !isPhantomEvmProvider(detail.provider, detail.info)).map((detail) => detectedWallet(detail.provider, "eip6963", detail.info)),
+    ...legacyProviders().filter((provider) => !isPhantomEvmProvider(provider)).map((provider) => detectedWallet(provider, "legacy")),
   ];
 
   const seenProviders = new Set<Eip1193Provider>();
   const seenIds = new Map<string, number>();
   return wallets
     .filter((wallet) => {
+      if (isPhantomDetectedWallet(wallet)) return false;
       if (seenProviders.has(wallet.provider)) return false;
       seenProviders.add(wallet.provider);
       return true;
@@ -233,7 +245,8 @@ function detectedSnapshot(): DetectedWallet[] {
 
 function findWallet(walletId: WalletType | null | undefined) {
   const wallets = detectedSnapshot();
-  if (!walletId) return wallets[0] || null;
+  if (!walletId) return null;
+  if (String(walletId).toLowerCase().includes("phantom")) return null;
   return wallets.find((wallet) => wallet.id === walletId) || wallets.find((wallet) => wallet.id.startsWith(`${walletId}-`)) || wallets.find((wallet) => walletBrand(wallet.provider).id === walletId) || null;
 }
 
@@ -333,6 +346,7 @@ export function useWallet(): WalletHook {
   }, []);
 
   const applyProviderState = useCallback(async (selectedProvider: Eip1193Provider, chosen: string, selectedWalletId?: WalletType) => {
+    if (isPhantomEvmProvider(selectedProvider)) throw new Error("Phantom EVM is disabled in MemeWarzone. Use Phantom only from the Solana wallet section.");
     eip1193Ref.current = selectedProvider;
     accountRef.current = chosen;
     const browserProvider = new BrowserProvider(selectedProvider);
@@ -353,10 +367,14 @@ export function useWallet(): WalletHook {
   const bindListeners = useCallback((selectedProvider: Eip1193Provider) => {
     cleanupRef.current?.();
     cleanupRef.current = null;
-    if (!selectedProvider.on) return;
+    if (!selectedProvider.on || isPhantomEvmProvider(selectedProvider)) return;
 
     const rebuild = async () => {
       try {
+        if (isPhantomEvmProvider(selectedProvider)) {
+          resetWalletState(true);
+          return;
+        }
         const chosen = await chooseAccount(selectedProvider, normalizeAccounts(await selectedProvider.request({ method: "eth_accounts" })));
         if (!chosen) {
           resetWalletState(false);
@@ -423,8 +441,12 @@ export function useWallet(): WalletHook {
     try {
       requestEip6963Providers();
       const storedType = window.localStorage.getItem(SELECTED_WALLET_KEY) as WalletType | null;
-      const selectedWallet = findWallet(storedType) || findWallet(null);
-      if (!selectedWallet?.provider) return;
+      if (!storedType || String(storedType).toLowerCase().includes("phantom")) {
+        if (String(storedType || "").toLowerCase().includes("phantom")) window.localStorage.removeItem(SELECTED_WALLET_KEY);
+        return;
+      }
+      const selectedWallet = findWallet(storedType);
+      if (!selectedWallet?.provider || isPhantomDetectedWallet(selectedWallet)) return;
       const chosen = await chooseAccount(selectedWallet.provider, normalizeAccounts(await selectedWallet.provider.request({ method: "eth_accounts" })));
       if (!chosen) return;
       bindListeners(selectedWallet.provider);
@@ -470,6 +492,7 @@ export function useWallet(): WalletHook {
     const selectedWallet = findWallet(wallet);
     const selectedProvider = selectedWallet?.provider;
     if (!selectedWallet || !selectedProvider) throw new Error("Wallet not detected. Install an EVM wallet or open MemeWarzone inside your wallet browser.");
+    if (isPhantomDetectedWallet(selectedWallet) || isPhantomEvmProvider(selectedProvider)) throw new Error("Phantom must connect through the Solana wallet section. Phantom EVM is disabled for MemeWarzone.");
 
     setConnecting(true);
     setConnectingWalletId(selectedWallet.id);
