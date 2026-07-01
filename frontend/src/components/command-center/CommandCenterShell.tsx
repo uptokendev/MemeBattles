@@ -3,12 +3,17 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { CommandCenterLayout } from "@/components/command-center/CommandCenterLayout";
 
 function normalizeWallet(value?: string | null): string | null {
-  const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  const v = String(value ?? "").trim();
+  if (!v) return null;
+  // EVM address (0x + 40 hex chars)
+  if (/^0x[a-fA-F0-9]{40}$/.test(v)) return v.toLowerCase();
+  // Solana address (base58, 32-44 chars, no 0x prefix)
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)) return v;
+  return null;
 }
 
 function openWalletModal(wallet: any) {
@@ -71,9 +76,12 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
   const { wallet: walletParam } = useParams<{ wallet?: string }>();
   const location = useLocation();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const anyWallet: any = wallet as any;
 
-  const connectedWallet = normalizeWallet(wallet.account);
+  const connectedWallet = isSolanaConnected && solanaAccount
+    ? normalizeWallet(solanaAccount)
+    : normalizeWallet(wallet.account);
   const requestedWallet = normalizeWallet(walletParam);
 
   if (!requestedWallet) return <Navigate to="/profile" replace />;

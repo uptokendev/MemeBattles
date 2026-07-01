@@ -16,6 +16,7 @@ import { isPostGradNavEnabled, postGradFlags } from "@/features/postgrad/config"
 import { ArenaDesktopNav } from "@/components/postgrad/ArenaDesktopNav";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -67,6 +68,9 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const navigate = useNavigate();
   const location = useLocation();
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
+  const account = isSolanaConnected ? (solanaAccount || wallet.account) : wallet.account;
+  const connected = wallet.isConnected || isSolanaConnected;
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -134,7 +138,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [notificationOpen, disconnectOpen]);
 
-  const shortAddress = wallet.account && wallet.account.length > 8 ? `${wallet.account.slice(0, 4)}...${wallet.account.slice(-4)}` : wallet.account;
+  const shortAddress = account && account.length > 8 ? `${account.slice(0, 4)}...${account.slice(-4)}` : account;
   const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
@@ -300,7 +304,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
               <span className="sm:hidden">Create</span>
             </Button>
 
-            {wallet.isConnected && (
+            {connected && (
               <div className="relative" data-topbar-popover>
                 <Button
                   ref={bellRef}
@@ -372,7 +376,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                 ref={walletRef}
                 className={topbarButtonClass}
                 onClick={() => {
-                  if (!wallet.isConnected) {
+                  if (!connected) {
                     openWalletModal();
                     return;
                   }
@@ -380,8 +384,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                   setDisconnectOpen((prev) => !prev);
                 }}
               >
-                <span className="hidden sm:inline">{wallet.isConnected ? shortAddress : "Connect Wallet"}</span>
-                <span className="sm:hidden">{wallet.isConnected ? "Wallet" : "Connect"}</span>
+                <span className="hidden sm:inline">{connected ? shortAddress : "Connect Wallet"}</span>
+                <span className="sm:hidden">{connected ? "Wallet" : "Connect"}</span>
               </Button>
 
               {disconnectOpen && popoverAnchor && createPortal(
@@ -397,7 +401,11 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                     type="button"
                     onClick={async () => {
                       try {
-                        await wallet.disconnect();
+                        if (isSolanaConnected) {
+                          await disconnectSolana();
+                        } else {
+                          await wallet.disconnect();
+                        }
                       } finally {
                         setDisconnectOpen(false);
                       }
