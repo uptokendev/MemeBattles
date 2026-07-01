@@ -64,8 +64,14 @@ function normalizeArchivedBattleList(value: unknown): ArchivedBattleEntry[] {
   return value.filter((entry) => isBattle((entry as any)?.battle) && typeof (entry as any)?.archivedAt === "string") as ArchivedBattleEntry[];
 }
 
+function isSolanaIdentity(value: string) {
+  return value.length >= 32 && value.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(value);
+}
+
 function normalizeIdentity(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "").trim();
+  if (isSolanaIdentity(raw)) return raw;
+  return raw.toLowerCase();
 }
 
 function isHexIdentity(value: string) {
@@ -91,9 +97,9 @@ function normalizeCreatorBattleStatuses(value: unknown): CreatorBattleStatus[] {
     .map((entry: any) => {
       const currentState = CREATOR_BATTLE_STATES.has(String(entry?.currentState)) ? String(entry.currentState) : "unavailable";
       return {
-        tokenId: String(entry?.tokenId ?? entry?.campaignAddress ?? "").toLowerCase(),
-        campaignAddress: String(entry?.campaignAddress ?? entry?.tokenId ?? "").toLowerCase(),
-        tokenAddress: entry?.tokenAddress ? String(entry.tokenAddress).toLowerCase() : null,
+        tokenId: normalizeIdentity(entry?.tokenId ?? entry?.campaignAddress ?? ""),
+        campaignAddress: normalizeIdentity(entry?.campaignAddress ?? entry?.tokenId ?? ""),
+        tokenAddress: entry?.tokenAddress ? normalizeIdentity(entry.tokenAddress) : null,
         tokenName: String(entry?.tokenName ?? entry?.name ?? entry?.symbol ?? "Unknown token"),
         symbol: String(entry?.symbol ?? ""),
         eligibility: Boolean(entry?.eligibility),
