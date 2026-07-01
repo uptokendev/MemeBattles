@@ -1,9 +1,9 @@
 import { Navigate, useParams } from "react-router-dom";
+import { normalizeAddress } from "@/lib/address";
 
 function normalizeWallet(value?: string | null): string | null {
-  const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  const normalized = normalizeAddress(value);
+  return normalized || null;
 }
 
 export function ProfileWalletFallbackRedirect() {
