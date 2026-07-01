@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../../server/http.js";
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -10,8 +10,10 @@ function methodAllowed(req, res, allowed) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
 }
 
 function normalizeCode(value) {
@@ -664,6 +666,9 @@ export async function recruiterSignupSubmit(req, res) {
     if (!body.acceptTerms) return json(res, 400, { error: "Recruiter terms must be accepted" });
     if (!nonce) return json(res, 400, { error: "Nonce missing" });
     if (!signature) return json(res, 400, { error: "Signature missing" });
+    if (isSolanaAddress(walletAddress)) {
+      return json(res, 400, { error: "Solana recruiter signup signature verification is not available on this endpoint yet." });
+    }
 
     const existingWallet = await findRecruiterByWallet(walletAddress);
     if (existingWallet) return json(res, 409, { error: "This wallet is already a recruiter" });
