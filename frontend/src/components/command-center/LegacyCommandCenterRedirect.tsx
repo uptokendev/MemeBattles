@@ -1,11 +1,12 @@
 import { Navigate } from "react-router-dom";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { normalizeAddress } from "@/lib/address";
 
 function normalizeWallet(value?: string | null): string | null {
-  const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  const normalized = normalizeAddress(value);
+  return normalized || null;
 }
 
 type CommandCenterSection =
@@ -24,10 +25,15 @@ type LegacyCommandCenterRedirectProps = {
 };
 
 export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedirectProps) {
-  const wallet = useWallet();
-  const anyWallet: any = wallet as any;
-  const isConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? wallet.account);
-  const accountWallet = isConnected ? normalizeWallet(wallet.account) : null;
+  const evmWallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const anyWallet: any = evmWallet as any;
+  const isEvmConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account);
+  const accountWallet = isSolanaConnected && solanaAccount
+    ? normalizeWallet(solanaAccount)
+    : isEvmConnected
+      ? normalizeWallet(evmWallet.account)
+      : null;
 
   if (!accountWallet) {
     return <Navigate to="/profile" replace />;
