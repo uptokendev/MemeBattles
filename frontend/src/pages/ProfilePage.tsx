@@ -2,18 +2,17 @@ import { useMemo } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import PublicProfile from "./PublicProfile";
+import { normalizeAddress, addressesMatch } from "@/lib/address";
 
 function normalizeWallet(value?: string | null): string | null {
-  const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
+  const normalized = normalizeAddress(value);
+  return normalized || null;
 }
 
 function sameWallet(a?: string | null, b?: string | null): boolean {
-  const aa = normalizeWallet(a);
-  const bb = normalizeWallet(b);
-  return Boolean(aa && bb && aa === bb);
+  return addressesMatch(a, b);
 }
 
 function openWalletModal(wallet: any) {
@@ -63,11 +62,16 @@ function InvalidPublicProfile({ identifier }: { identifier: string }) {
 export default function ProfilePage() {
   const { identifier } = useParams<{ identifier?: string }>();
   const [searchParams] = useSearchParams();
-  const wallet = useWallet();
-  const anyWallet: any = wallet as any;
+  const evmWallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const anyWallet: any = evmWallet as any;
 
-  const isConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? wallet.account);
-  const account = isConnected ? wallet.account ?? null : null;
+  const isEvmConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account);
+  const account = isSolanaConnected && solanaAccount
+    ? solanaAccount
+    : isEvmConnected
+      ? evmWallet.account ?? null
+      : null;
   const accountWallet = normalizeWallet(account);
 
   const legacyAddress = searchParams.get("address");
