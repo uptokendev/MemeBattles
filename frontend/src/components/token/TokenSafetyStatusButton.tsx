@@ -11,6 +11,22 @@ type TokenSafetyStatusButtonProps = {
   chainId?: number | string | null;
 };
 
+declare global {
+  interface Window {
+    __mwzTokenSafetyState?: {
+      chain?: string;
+      blocked: boolean;
+      warning: boolean;
+      buyAllowed: boolean;
+      sellAllowed: boolean;
+      reasons: string[];
+      warnings: string[];
+      campaignAddress: string;
+      updatedAt: number;
+    };
+  }
+}
+
 function uniq(values: string[]) {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
 }
@@ -88,6 +104,12 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     };
   }, [adapter, walletAddress, campaign]);
 
+  useEffect(() => {
+    const openSafety = () => setOpen(true);
+    window.addEventListener("mwz:openTokenSafety", openSafety as EventListener);
+    return () => window.removeEventListener("mwz:openTokenSafety", openSafety as EventListener);
+  }, []);
+
   const blocks = useMemo(() => uniq([
     ...(buyPreflight?.reasons || []),
     ...(sellPreflight?.reasons || []),
@@ -109,6 +131,23 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   const blocked = Boolean(status?.protocolLive === false || blocks.length || buyTone === "blocked" || sellTone === "blocked");
   const warning = Boolean(!blocked && (warnings.length || buyTone === "warning" || sellTone === "warning"));
   const state: "ok" | "warning" | "blocked" | "checking" = loading && !status ? "checking" : blocked ? "blocked" : warning ? "warning" : "ok";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const detail = {
+      chain: status?.chain || adapter.chain,
+      blocked,
+      warning,
+      buyAllowed: Boolean(buyPreflight?.allowed),
+      sellAllowed: Boolean(sellPreflight?.allowed),
+      reasons: blocks,
+      warnings,
+      campaignAddress: campaign,
+      updatedAt: Date.now(),
+    };
+    window.__mwzTokenSafetyState = detail;
+    window.dispatchEvent(new CustomEvent("mwz:tokenSafetyChanged", { detail }));
+  }, [adapter.chain, blocked, warning, buyPreflight?.allowed, sellPreflight?.allowed, blocks, warnings, campaign, status?.chain]);
 
   const buttonClass = state === "ok"
     ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/30"
