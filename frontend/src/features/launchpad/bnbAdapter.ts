@@ -12,8 +12,9 @@ async function readJson<T>(path: string, fallback: T, init?: RequestInit): Promi
         ...(init?.headers || {}),
       },
     });
-    if (!response.ok) return fallback;
-    return (await response.json()) as T;
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === "object") return payload as T;
+    return fallback;
   } catch {
     return fallback;
   }
