@@ -2,6 +2,8 @@ import { apiFetch } from "@/lib/apiBase";
 import type { LaunchpadAdapter, LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
 import { normalizeEvmAddress } from "@/features/launchpad/adapters";
 
+const CAMPAIGN_ONLY_WALLET = "0x0000000000000000000000000000000000000001";
+
 async function readJson<T>(path: string, fallback: T, init?: RequestInit): Promise<T> {
   try {
     const response = await apiFetch(path, {
@@ -28,45 +30,21 @@ async function postJson<T>(path: string, body: Record<string, unknown>, fallback
   });
 }
 
-function normalizePreflight(payload: any, side: TradeSide): LaunchpadTradePreflight {
+function normalizePreflight(payload: any, side: TradeSide, options?: { campaignOnly?: boolean }): LaunchpadTradePreflight {
   const preflight = payload?.preflight && typeof payload.preflight === "object" ? payload.preflight : payload;
+  const warnings = Array.isArray(preflight?.warnings) ? preflight.warnings.map(String) : [];
+  if (options?.campaignOnly) warnings.push("Wallet-specific checks will run after a BNB wallet is connected.");
   return {
     allowed: Boolean(preflight?.allowed),
     chain: "bnb",
     side,
     reasons: Array.isArray(preflight?.reasons) ? preflight.reasons.map(String) : [],
-    warnings: Array.isArray(preflight?.warnings) ? preflight.warnings.map(String) : [],
+    warnings,
     schemaReady: preflight?.schemaReady,
     campaign: preflight?.campaign || null,
-    walletRisk: preflight?.walletRisk || null,
-    cluster: preflight?.cluster || null,
+    walletRisk: options?.campaignOnly ? null : preflight?.walletRisk || null,
+    cluster: options?.campaignOnly ? null : preflight?.cluster || null,
     lookupErrors: Array.isArray(preflight?.lookupErrors) ? preflight.lookupErrors.map(String) : [],
-  };
-}
-
-function campaignOnlyPreflight(side: TradeSide, campaignAddress?: string | null): LaunchpadTradePreflight {
-  const campaign = normalizeEvmAddress(campaignAddress);
-  if (!campaign) {
-    return {
-      allowed: false,
-      chain: "bnb",
-      side,
-      reasons: ["Token campaign address is missing or invalid."],
-      warnings: [],
-    };
-  }
-
-  return {
-    allowed: true,
-    chain: "bnb",
-    side,
-    reasons: [],
-    warnings: ["Wallet-specific checks will run after a BNB wallet is connected."],
-    schemaReady: true,
-    campaign: { campaignAddress: campaign },
-    walletRisk: null,
-    cluster: null,
-    lookupErrors: [],
   };
 }
 
@@ -121,11 +99,14 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
         };
       }
 
-      if (!wallet) return campaignOnlyPreflight(side, campaign);
-
       const endpoint = side === "buy" ? "/api/launchpad/preflight-buy" : "/api/launchpad/preflight-sell";
-      const payload = await postJson<any>(endpoint, { walletAddress: wallet, campaignAddress: campaign }, { preflight: null });
-      return normalizePreflight(payload, side);
+      const campaignOnly = !wallet;
+      const payload = await postJson<any>(
+        endpoint,
+        { walletAddress: wallet || CAMPAIGN_ONLY_WALLET, campaignAddress: campaign },
+        { preflight: null },
+      );
+      return normalizePreflight(payload, side, { campaignOnly });
     },
   };
 }
