@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 
 import { TokenSafetyStatusButton } from "@/components/token/TokenSafetyStatusButton";
+import { TokenTradeSafetyPanel } from "@/components/token/TokenTradeSafetyPanel";
 import { useWallet } from "@/contexts/WalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
 
@@ -21,6 +22,33 @@ function findTokenHeaderActionRow(): HTMLElement | null {
   return null;
 }
 
+function findTradeTabsRoot(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const buttons = Array.from(document.querySelectorAll("button"));
+  const buyTab = buttons.find((button) => String(button.textContent || "").trim().toLowerCase() === "buy");
+  const sellTab = buttons.find((button) => String(button.textContent || "").trim().toLowerCase() === "sell");
+  if (!buyTab || !sellTab) return null;
+  const shared = buyTab.closest("div")?.parentElement as HTMLElement | null;
+  return shared || null;
+}
+
+function ensureTradeSafetyMount(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const existing = document.getElementById("mwz-token-trade-safety-mount");
+  if (existing) return existing;
+
+  const root = findTradeTabsRoot();
+  const parent = root?.parentElement;
+  if (!root || !parent) return null;
+
+  const mount = document.createElement("div");
+  mount.id = "mwz-token-trade-safety-mount";
+  mount.setAttribute("data-token-safety", "trade-panel");
+  mount.className = "mb-3";
+  parent.insertBefore(mount, root);
+  return mount;
+}
+
 function isTokenTradeButton(target: EventTarget | null): HTMLButtonElement | null {
   const button = target instanceof Element ? target.closest("button") as HTMLButtonElement | null : null;
   if (!button) return null;
@@ -36,9 +64,13 @@ export function TokenSafetyRouteOverlay() {
   const wallet = useWallet();
   const chainId = getActiveChainId(wallet.chainId);
   const [headerRow, setHeaderRow] = useState<HTMLElement | null>(null);
+  const [tradeSafetyMount, setTradeSafetyMount] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    const updateTarget = () => setHeaderRow(findTokenHeaderActionRow());
+    const updateTarget = () => {
+      setHeaderRow(findTokenHeaderActionRow());
+      setTradeSafetyMount(ensureTradeSafetyMount());
+    };
     updateTarget();
 
     if (typeof document === "undefined") return;
@@ -78,6 +110,13 @@ export function TokenSafetyRouteOverlay() {
     return () => document.removeEventListener("click", onClick, true);
   }, [campaignAddress]);
 
+  useEffect(() => {
+    return () => {
+      const mount = document.getElementById("mwz-token-trade-safety-mount");
+      mount?.remove();
+    };
+  }, [campaignAddress]);
+
   if (!campaignAddress) return null;
 
   const button = (
@@ -86,13 +125,16 @@ export function TokenSafetyRouteOverlay() {
     </div>
   );
 
-  if (headerRow) return createPortal(button, headerRow);
-
   return (
-    <div className="pointer-events-none fixed right-4 top-[5.4rem] z-50 hidden xl:block">
-      <div className="pointer-events-auto">
-        {button}
-      </div>
-    </div>
+    <>
+      {headerRow ? createPortal(button, headerRow) : (
+        <div className="pointer-events-none fixed right-4 top-[5.4rem] z-50 hidden xl:block">
+          <div className="pointer-events-auto">
+            {button}
+          </div>
+        </div>
+      )}
+      {tradeSafetyMount ? createPortal(<TokenTradeSafetyPanel />, tradeSafetyMount) : null}
+    </>
   );
 }
