@@ -12,6 +12,8 @@ type TokenSafetyStatusButtonProps = {
   chainId?: number | string | null;
 };
 
+const SAFETY_WARM_REFRESH_MS = 12_000;
+
 declare global {
   interface Window {
     __mwzTokenSafetyState?: {
@@ -64,6 +66,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   const wallet = useWallet();
   const adapter = useLaunchpadAdapter({ chainId });
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const refreshInFlightRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -80,8 +83,10 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     setAnchor({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    if (!options?.silent) setLoading(true);
     try {
       const nextStatus = await adapter.getStatus();
       setStatus(nextStatus);
@@ -92,7 +97,8 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
       setBuyPreflight(nextBuy);
       setSellPreflight(nextSell);
     } finally {
-      setLoading(false);
+      refreshInFlightRef.current = false;
+      if (!options?.silent) setLoading(false);
     }
   }, [adapter, walletAddress, campaign]);
 
@@ -119,6 +125,15 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
       cancelled = true;
     };
   }, [adapter, walletAddress, campaign]);
+
+  useEffect(() => {
+    if (!campaign) return;
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void refresh({ silent: true });
+    }, SAFETY_WARM_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [campaign, refresh]);
 
   useEffect(() => {
     const openSafety = () => {
