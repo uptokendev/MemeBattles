@@ -33,7 +33,7 @@ async function postJson<T>(path: string, body: Record<string, unknown>, fallback
 function normalizePreflight(payload: any, side: TradeSide, options?: { campaignOnly?: boolean }): LaunchpadTradePreflight {
   const preflight = payload?.preflight && typeof payload.preflight === "object" ? payload.preflight : payload;
   const warnings = Array.isArray(preflight?.warnings) ? preflight.warnings.map(String) : [];
-  if (options?.campaignOnly) warnings.push("Wallet-specific checks will run after a BNB wallet is connected.");
+  if (options?.campaignOnly) warnings.push("Connect a BNB wallet to add wallet-specific risk checks.");
   return {
     allowed: Boolean(preflight?.allowed),
     chain: "bnb",
@@ -60,12 +60,12 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
 
       const paused = security?.paused || {};
       const warnings: string[] = [];
-      if (paused.global) warnings.push("BNB launchpad is globally paused.");
+      if (paused.global) warnings.push("BNB launchpad is currently paused by security controls.");
       if (paused.create) warnings.push("New BNB campaign creation is paused.");
       if (paused.buys) warnings.push("One or more BNB campaign buy paths are paused.");
       if (paused.sells) warnings.push("One or more BNB campaign sell paths are paused.");
-      if (security?.bnbContractSync === "pending") warnings.push("BNB security contract sync has pending jobs.");
-      if (security?.schemaReady === false) warnings.push("Security schema is not fully installed.");
+      if (security?.bnbContractSync === "pending") warnings.push("Security updates are syncing to contracts.");
+      if (security?.schemaReady === false) warnings.push("Security checks are running in limited mode.");
 
       const routeReady = Boolean(
         routing?.ready ??
@@ -74,13 +74,11 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
         routing?.routeAuthorityAddress
       );
 
-      if (!routeReady) warnings.push("Route authorization readiness is unknown. Direct on-chain protection may reject unsigned routes.");
-
       return {
         chain: "bnb",
         protocolLive: true,
         label: "BNB launchpad",
-        message: "BNB safety is campaign-level first. Wallet-specific restrictions are added after a BNB wallet is connected.",
+        message: "Campaign safety checks are active. Wallet-specific checks are added after a BNB wallet is connected.",
         routeAuthorizationReady: routeReady,
         warnings,
       };
