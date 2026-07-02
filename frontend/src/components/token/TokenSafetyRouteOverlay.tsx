@@ -6,6 +6,8 @@ import { TokenSafetyStatusButton } from "@/components/token/TokenSafetyStatusBut
 import { useWallet } from "@/contexts/WalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
 
+const SAFETY_STATE_MAX_AGE_MS = 15_000;
+
 function findTokenHeaderActionRow(): HTMLElement | null {
   if (typeof document === "undefined") return null;
 
@@ -29,6 +31,14 @@ function isTokenTradeButton(target: EventTarget | null): HTMLButtonElement | nul
   const text = String(button.textContent || "").trim().toLowerCase();
   if (text === "buy" || text === "sell") return button;
   return null;
+}
+
+function blockAndOpenSafety(event: MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
+  window.dispatchEvent(new CustomEvent("mwz:refreshTokenSafety"));
 }
 
 export function TokenSafetyRouteOverlay() {
@@ -59,19 +69,21 @@ export function TokenSafetyRouteOverlay() {
       const button = isTokenTradeButton(event.target);
       if (!button) return;
 
+      const text = String(button.textContent || "").trim().toLowerCase();
       const safety = window.__mwzTokenSafetyState;
       const safetyCampaign = String(safety?.campaignAddress || "").toLowerCase();
       const routeCampaign = String(campaignAddress || "").toLowerCase();
-      if (!safety || safetyCampaign !== routeCampaign) return;
+      const stale = !safety?.updatedAt || Date.now() - Number(safety.updatedAt) > SAFETY_STATE_MAX_AGE_MS;
 
-      const text = String(button.textContent || "").trim().toLowerCase();
+      if (!safety || safetyCampaign !== routeCampaign || stale) {
+        blockAndOpenSafety(event);
+        return;
+      }
+
       const sideBlocked = text === "buy" ? !safety.buyAllowed : text === "sell" ? !safety.sellAllowed : false;
       if (!safety.blocked && !sideBlocked) return;
 
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
+      blockAndOpenSafety(event);
     };
 
     document.addEventListener("click", onClick, true);
