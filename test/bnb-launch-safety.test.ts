@@ -1,8 +1,6 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 
-const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
-
 async function increaseTime(seconds: number) {
   await network.provider.send("evm_increaseTime", [seconds]);
   await network.provider.send("evm_mine");
@@ -76,7 +74,7 @@ describe("BNB launch safety simulations", function () {
   });
 
   it("enforces creator manual review, cooldown, live count, and cluster launch limits", async function () {
-    const { owner, creator, factory, creatorRegistry, riskRegistry } = await deploySafetyFixture();
+    const { owner, creator, attacker, factory, creatorRegistry, riskRegistry } = await deploySafetyFixture();
 
     await creatorRegistry.setManualReviewRequired(creator.address, true);
     await expect(factory.connect(creator).createCampaign(campaignRequest())).to.be.revertedWithCustomError(factory, "CreatorNotEligible");
@@ -89,12 +87,14 @@ describe("BNB launch safety simulations", function () {
     );
 
     await creatorRegistry.setLaunchRecorder(owner.address, true);
-    const liveLimitCreator = ethers.Wallet.createRandom().address;
     for (let i = 0; i < 3; i += 1) {
-      await creatorRegistry.recordLaunch(liveLimitCreator);
+      await creatorRegistry.recordLaunch(attacker.address);
       if (i < 2) await increaseTime(24 * 60 * 60 + 1);
     }
-    expect(await creatorRegistry.canLaunch(liveLimitCreator)).to.equal(false);
+    await expect(factory.connect(attacker).createCampaign(campaignRequest({ symbol: "LIVE" }))).to.be.revertedWithCustomError(
+      factory,
+      "CreatorNotEligible"
+    );
 
     const clusterId = ethers.keccak256(ethers.toUtf8Bytes("cluster-above-new-creator-limit"));
     await riskRegistry.setWalletCluster(creator.address, clusterId);
@@ -158,7 +158,8 @@ describe("BNB launch safety simulations", function () {
 
   it("accepts only the configured route authority for create route authorization", async function () {
     const { creator, routeAuthority, attacker, factory } = await deploySafetyFixture();
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const deadline = BigInt((latestBlock?.timestamp ?? 0) + 3600);
     const tradeProfile = 2;
     const finalizeProfile = 2;
 
