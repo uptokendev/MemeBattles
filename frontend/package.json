@@ -24,6 +24,7 @@
     "check:railway-upstreams": "node scripts/check-railway-upstreams.mjs",
     "check:featured-feed": "node scripts/check-featured-feed.mjs",
     "check:security-schema": "node --import ./api/load-local-env.mjs scripts/check-security-schema.mjs",
+    "check:security-api": "node scripts/check-security-api-smoke.mjs",
     "worker:contract-sync": "node --import ./api/load-local-env.mjs scripts/run-contract-sync-worker.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
