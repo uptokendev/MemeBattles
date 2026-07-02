@@ -64,6 +64,7 @@ function openTokenSafetyDropdown() {
   try {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
+      window.dispatchEvent(new CustomEvent("mwz:refreshTokenSafety"));
     }
   } catch {
     // ignore
