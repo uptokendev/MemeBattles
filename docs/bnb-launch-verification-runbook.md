@@ -117,6 +117,24 @@ The page must load the same security API surfaces checked by the smoke gate and 
 
 For staging evidence, queue one reversible action from the page, confirm it appears in `/api/security/contracts/sync-jobs?chain=bnb`, run the worker, then confirm the job becomes `confirmed` with a transaction hash.
 
+## Frontend Safety Adapter Gate
+
+Open a live bonding token page and verify the route-level trading safety panel renders on desktop:
+
+```text
+/token/<campaign-address>
+```
+
+The panel must use the launchpad adapter layer and show:
+
+- BNB launchpad status and route-authorization readiness
+- buy and sell preflight states from `/api/launchpad/preflight-buy` and `/api/launchpad/preflight-sell`
+- campaign pause, buy-pause, sell-pause, graduation-pause, creator lock, wallet risk, and cluster warnings when present
+- blocked reasons for restricted wallets, restricted clusters, paused campaigns, missing wallet connection, or missing campaign address
+- an honest Solana placeholder that blocks protocol actions until the Solana program adapter is actually live
+
+Do not expose Solana create/trade buttons as real protocol actions until the Solana adapter is backed by deployed programs, tests, route authorization, and smoke evidence.
+
 ## Contract Sync Worker Gate
 
 Dashboard/API contract actions write queued rows to `public.contract_sync_jobs`. Run the BNB worker to execute those queued jobs on-chain and write the resulting `tx_hash` plus final status back to the database:
@@ -169,10 +187,11 @@ Before sign-off, run these actions against the target environment and capture tr
 - Require authorized trading and prove direct buy/sell fails
 - Run the read-only security API smoke check
 - Open Command Center Security Ops and verify status, queues, controls, and audit data render
+- Open a token page and verify the frontend trading safety panel renders correct buy/sell preflight state
 - Run mutating security smoke checks in staging and verify sync jobs are queued
 - Queue one reversible action from Security Ops and verify the sync job appears
 - Pause and unpause a campaign for buys and sells
 - Run the BNB contract sync worker and verify queued jobs become confirmed with tx hashes
 - Verify frontend ABI files are regenerated after the final compile
 
-Public launch remains blocked until the local contract gate, route authority gate, security schema gate, security API smoke gate, Command Center Security Ops gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
+Public launch remains blocked until the local contract gate, route authority gate, security schema gate, security API smoke gate, Command Center Security Ops gate, Frontend Safety Adapter gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
