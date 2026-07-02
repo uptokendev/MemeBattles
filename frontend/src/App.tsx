@@ -51,6 +51,7 @@ import { RankPromotionListener } from "@/components/rank/RankPromotionListener";
 import { LiveStreamOverlay } from "@/components/live/LiveStreamOverlay";
 import { Footer } from "@/components/layout/Footer";
 import { ScreenFrame } from "@/components/layout/ScreenFrame";
+import { TokenSafetyRouteOverlay } from "@/components/token/TokenSafetyRouteOverlay";
 import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay";
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
@@ -224,7 +225,7 @@ function AppShellLayout({
           <Route path="/squad-dashboard" element={<LegacyCommandCenterRedirect section="squad" />} />
           <Route path="/ops/rewards" element={<RewardOps />} />
           <Route path="/r/:code" element={<RecruiterReferral />} />
-          <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /></>} />
+          <Route path="/token/:campaignAddress" element={<><TokenDetails /><TokenSocialLinksOverlay /><TokenSafetyRouteOverlay /></>} />
           <Route path="/playbook" element={<Playbook />} />
           <Route path="/docs" element={<Playbook />} />
           <Route path="/status" element={<Status />} />
