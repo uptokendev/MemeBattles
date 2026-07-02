@@ -69,6 +69,35 @@ function metadataPayload(req, row) {
   };
 }
 
+function emptyMetadataPayload(req, chainId, address) {
+  return {
+    name: "",
+    symbol: "",
+    description: "",
+    image: null,
+    image_url: null,
+    external_url: campaignUrl(req, chainId, address, address),
+    animation_url: null,
+    attributes: [
+      { trait_type: "Launchpad", value: "MemeWarzone" },
+      { trait_type: "Chain ID", value: chainId },
+      { trait_type: "Campaign", value: address },
+    ],
+    properties: {
+      launchpad: "MemeWarzone",
+      chainId,
+      campaignAddress: address,
+      tokenAddress: null,
+      creatorAddress: null,
+      website: null,
+      x: null,
+      telegram: null,
+      discord: null,
+      source: "empty-fallback",
+    },
+  };
+}
+
 async function findRegistryMetadata({ chainId, address }) {
   try {
     const registry = await pool.query(
@@ -152,9 +181,9 @@ export default async function handler(req, res) {
     if (!address) return json(res, 400, { error: "Invalid or missing token/campaign address" });
 
     const row = await findMetadata({ chainId, address });
-    if (!row) return json(res, 404, { error: "Token metadata not found" });
-
     res.setHeader("cache-control", "public, max-age=60, s-maxage=300");
+    if (!row) return json(res, 200, emptyMetadataPayload(req, chainId, address));
+
     return json(res, 200, metadataPayload(req, row));
   } catch (error) {
     console.error("[api/token-metadata]", error);
