@@ -40,6 +40,8 @@ type ArenaBattleFeedPayload = {
   archivedBattles?: ArchivedBattleEntry[];
 };
 
+const SOLANA_CHAIN_ID = 101;
+
 const CREATOR_BATTLE_STATES = new Set([
   "eligible",
   "open_for_battle",
@@ -150,6 +152,9 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
   const allowMockFallback = postGradFlags.mocks;
   const normalizedCreatorAddress = normalizeIdentity(creatorAddress);
   const normalizedChainId = Number(chainId) || 97;
+  const canLoadCreatorStatuses = Boolean(
+    normalizedCreatorAddress && (!isSolanaIdentity(normalizedCreatorAddress) || normalizedChainId === SOLANA_CHAIN_ID)
+  );
   const [apiPayload, setApiPayload] = useState<ArenaBattleFeedPayload | null>(null);
   const [creatorStatuses, setCreatorStatuses] = useState<CreatorBattleStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,7 +162,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
   const refreshFeed = async () => {
     const [battlePayload, creatorPayload] = await Promise.all([
       loadBattleFeed().catch(() => null),
-      normalizedCreatorAddress ? loadCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId).catch(() => null) : Promise.resolve(null),
+      canLoadCreatorStatuses ? loadCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId).catch(() => null) : Promise.resolve(null),
     ]);
 
     setApiPayload(battlePayload);
@@ -174,7 +179,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
         if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] API feed unavailable", error);
         return null;
       }),
-      normalizedCreatorAddress
+      canLoadCreatorStatuses
         ? loadCreatorBattleStatuses(normalizedCreatorAddress, normalizedChainId, controller.signal).catch((error) => {
             if (!controller.signal.aborted) console.warn("[useArenaBattleFeed] creator status unavailable", error);
             return null;
@@ -194,7 +199,7 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
       cancelled = true;
       controller.abort();
     };
-  }, [normalizedCreatorAddress, normalizedChainId, runtime.tick]);
+  }, [normalizedCreatorAddress, normalizedChainId, canLoadCreatorStatuses, runtime.tick]);
 
   const liveBattles = apiPayload?.liveBattles ?? (allowMockFallback ? runtime.liveBattles : []);
   const openForBattleQueue = apiPayload?.openForBattleQueue ?? (allowMockFallback ? runtime.openForBattleQueue : []);
@@ -225,6 +230,8 @@ export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: num
 
   const openCreatorCoinForBattle = async (tokenId: string, initialPotBnb?: number) => {
     try {
+      const normalized = normalizeIdentity(tokenId);
+      if (isSolanaIdentity(normalized) && normalizedChainId !== SOLANA_CHAIN_ID) return false;
       const opened = await openPostGradBattle({ tokenId, chainId: normalizedChainId, initialPotBnb });
       if (opened) {
         await refreshFeed();
