@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck, X, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,9 @@ function StatusIcon({ state }: { state: "ok" | "warning" | "blocked" | "checking
 export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafetyStatusButtonProps) {
   const wallet = useWallet();
   const adapter = useLaunchpadAdapter({ chainId });
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<LaunchpadAdapterStatus | null>(null);
   const [buyPreflight, setBuyPreflight] = useState<LaunchpadTradePreflight | null>(null);
@@ -63,6 +66,12 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
 
   const walletAddress = String(wallet.account || "").trim();
   const campaign = String(campaignAddress || "").trim();
+
+  const updateAnchor = () => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect || typeof window === "undefined") return;
+    setAnchor({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -105,10 +114,24 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   }, [adapter, walletAddress, campaign]);
 
   useEffect(() => {
-    const openSafety = () => setOpen(true);
+    const openSafety = () => {
+      updateAnchor();
+      setOpen(true);
+    };
     window.addEventListener("mwz:openTokenSafety", openSafety as EventListener);
     return () => window.removeEventListener("mwz:openTokenSafety", openSafety as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updateAnchor();
+    window.addEventListener("resize", updateAnchor);
+    window.addEventListener("scroll", updateAnchor, true);
+    return () => {
+      window.removeEventListener("resize", updateAnchor);
+      window.removeEventListener("scroll", updateAnchor, true);
+    };
+  }, [open]);
 
   const blocks = useMemo(() => uniq([
     ...(buyPreflight?.reasons || []),
@@ -157,74 +180,85 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
         ? "border-rose-400/50 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30"
         : "border-border/50 bg-card/50 text-muted-foreground";
 
+  const popover = open && anchor ? createPortal(
+    <div
+      data-token-safety
+      className="w-[min(92vw,25rem)] rounded-2xl border border-border/60 bg-black/90 p-3 text-sm text-foreground shadow-2xl backdrop-blur-md"
+      style={{ position: "fixed", top: anchor.top, right: anchor.right, zIndex: 90 }}
+    >
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="inline-flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <ShieldCheck className="h-4 w-4 text-accent" />
+            Trading safety · {status?.chain || adapter.chain}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{status?.message || "Checking launchpad safety state..."}</p>
+        </div>
+        <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-border/50 p-1 text-muted-foreground hover:text-foreground">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl border border-border/50 bg-card/30 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-retro uppercase tracking-[0.12em]">Buy</span>
+            <span className={buyPreflight?.allowed ? "text-emerald-200" : "text-rose-200"}>{buyPreflight?.allowed ? "OK" : "Blocked"}</span>
+          </div>
+        </div>
+        <div className="rounded-xl border border-border/50 bg-card/30 p-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-retro uppercase tracking-[0.12em]">Sell</span>
+            <span className={sellPreflight?.allowed ? "text-emerald-200" : "text-rose-200"}>{sellPreflight?.allowed ? "OK" : "Blocked"}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2 text-xs">
+        <div className="rounded-xl border border-border/50 bg-card/25 p-2 text-muted-foreground">
+          Route auth: {status?.routeAuthorizationReady ? "ready" : "unknown"}
+          {walletAddress ? "" : " · No wallet connected"}
+          {walletRisk?.riskLevel ? ` · Wallet risk: ${walletRisk.riskLevel}` : ""}
+          {cluster?.id ? ` · Cluster: ${cluster.id}` : ""}
+        </div>
+        {status?.protocolLive === false ? <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">{status.label} is not live for trading.</div> : null}
+        {blocks.slice(0, 4).map((reason) => <div key={reason} className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">{reason}</div>)}
+        {warnings.slice(0, 4).map((item) => <div key={item} className="rounded-xl border border-orange-400/30 bg-orange-500/10 p-2 text-orange-100">{item}</div>)}
+        {campaignState ? (
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/50 bg-card/25 p-2 text-muted-foreground">
+            <div>Campaign: {campaignState.paused ? "paused" : "live"}</div>
+            <div>Buy: {campaignState.buyPaused ? "paused" : "live"}</div>
+            <div>Sell: {campaignState.sellPaused ? "paused" : "live"}</div>
+            <div>Graduation: {campaignState.graduationPaused ? "paused" : "live"}</div>
+            {campaignState.creatorBuyLockUntil ? <div className="col-span-2">Creator lock until {formatDateTime(campaignState.creatorBuyLockUntil)}</div> : null}
+          </div>
+        ) : null}
+      </div>
+
+      <Button type="button" variant="outline" size="sm" className="mt-3 h-8 w-full font-retro text-xs" disabled={loading} onClick={() => void refresh()}>
+        <RefreshCw className={`mr-2 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        Refresh safety
+      </Button>
+    </div>,
+    document.body,
+  ) : null;
+
   return (
-    <div className="relative z-50">
+    <div className="relative z-50" data-token-safety>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          updateAnchor();
+          setOpen((value) => !value);
+        }}
         className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 font-retro text-[10px] uppercase tracking-[0.14em] shadow-lg backdrop-blur-md transition ${buttonClass}`}
         title="Trading safety status"
       >
         <StatusIcon state={state} />
         Safety
       </button>
-
-      {open ? (
-        <div className="absolute right-0 top-10 w-[min(92vw,25rem)] rounded-2xl border border-border/60 bg-black/90 p-3 text-sm text-foreground shadow-2xl backdrop-blur-md">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <div className="inline-flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-accent" />
-                Trading safety · {status?.chain || adapter.chain}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{status?.message || "Checking launchpad safety state..."}</p>
-            </div>
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-border/50 p-1 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-xl border border-border/50 bg-card/30 p-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-retro uppercase tracking-[0.12em]">Buy</span>
-                <span className={buyPreflight?.allowed ? "text-emerald-200" : "text-rose-200"}>{buyPreflight?.allowed ? "OK" : "Blocked"}</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-border/50 bg-card/30 p-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-retro uppercase tracking-[0.12em]">Sell</span>
-                <span className={sellPreflight?.allowed ? "text-emerald-200" : "text-rose-200"}>{sellPreflight?.allowed ? "OK" : "Blocked"}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 space-y-2 text-xs">
-            <div className="rounded-xl border border-border/50 bg-card/25 p-2 text-muted-foreground">
-              Route auth: {status?.routeAuthorizationReady ? "ready" : "unknown"}
-              {walletRisk?.riskLevel ? ` · Wallet risk: ${walletRisk.riskLevel}` : ""}
-              {cluster?.id ? ` · Cluster: ${cluster.id}` : ""}
-            </div>
-            {status?.protocolLive === false ? <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">{status.label} is not live for trading.</div> : null}
-            {blocks.slice(0, 4).map((reason) => <div key={reason} className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">{reason}</div>)}
-            {warnings.slice(0, 4).map((item) => <div key={item} className="rounded-xl border border-orange-400/30 bg-orange-500/10 p-2 text-orange-100">{item}</div>)}
-            {campaignState ? (
-              <div className="grid grid-cols-2 gap-2 rounded-xl border border-border/50 bg-card/25 p-2 text-muted-foreground">
-                <div>Campaign: {campaignState.paused ? "paused" : "live"}</div>
-                <div>Buy: {campaignState.buyPaused ? "paused" : "live"}</div>
-                <div>Sell: {campaignState.sellPaused ? "paused" : "live"}</div>
-                <div>Graduation: {campaignState.graduationPaused ? "paused" : "live"}</div>
-                {campaignState.creatorBuyLockUntil ? <div className="col-span-2">Creator lock until {formatDateTime(campaignState.creatorBuyLockUntil)}</div> : null}
-              </div>
-            ) : null}
-          </div>
-
-          <Button type="button" variant="outline" size="sm" className="mt-3 h-8 w-full font-retro text-xs" disabled={loading} onClick={() => void refresh()}>
-            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh safety
-          </Button>
-        </div>
-      ) : null}
+      {popover}
     </div>
   );
 }
