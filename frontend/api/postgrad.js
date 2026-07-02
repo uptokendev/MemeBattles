@@ -36,6 +36,7 @@ function disabledReadPayload(path, flag) {
 
   if (path === "/arena/league") return { ...base, season: null, history: [] };
   if (path === "/arena/battles") return { ...base, liveBattles: [], openForBattleQueue: [], archivedBattles: [] };
+  if (path === "/arena/battles/creator-status") return { ...base, items: [], statuses: [], updatedAt: new Date().toISOString() };
   if (path === "/arena/events") return { ...base, events: [], archivedEvents: [] };
   if (path === "/arena/war-pools") {
     return {
@@ -56,6 +57,7 @@ function isSafeDisabledRead(req, path) {
   return (
     path === "/arena/league" ||
     path === "/arena/battles" ||
+    path === "/arena/battles/creator-status" ||
     path === "/arena/events" ||
     path === "/arena/war-pools" ||
     /^\/arena\/war-pools\/[^/]+$/.test(path) ||
