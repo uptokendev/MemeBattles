@@ -44,6 +44,32 @@ function normalizePreflight(payload: any, side: TradeSide): LaunchpadTradePrefli
   };
 }
 
+function campaignOnlyPreflight(side: TradeSide, campaignAddress?: string | null): LaunchpadTradePreflight {
+  const campaign = normalizeEvmAddress(campaignAddress);
+  if (!campaign) {
+    return {
+      allowed: false,
+      chain: "bnb",
+      side,
+      reasons: ["Token campaign address is missing or invalid."],
+      warnings: [],
+    };
+  }
+
+  return {
+    allowed: true,
+    chain: "bnb",
+    side,
+    reasons: [],
+    warnings: ["Wallet-specific checks will run after a BNB wallet is connected."],
+    schemaReady: true,
+    campaign: { campaignAddress: campaign },
+    walletRisk: null,
+    cluster: null,
+    lookupErrors: [],
+  };
+}
+
 export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
   return {
     chain: "bnb",
@@ -76,7 +102,7 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
         chain: "bnb",
         protocolLive: true,
         label: "BNB launchpad",
-        message: "BNB bonding trades use MemeWarzone launchpad preflight and route authorization checks before execution.",
+        message: "BNB safety is campaign-level first. Wallet-specific restrictions are added after a BNB wallet is connected.",
         routeAuthorizationReady: routeReady,
         warnings,
       };
@@ -85,15 +111,6 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
     async preflightTrade({ side, walletAddress, campaignAddress }): Promise<LaunchpadTradePreflight> {
       const wallet = normalizeEvmAddress(walletAddress);
       const campaign = normalizeEvmAddress(campaignAddress);
-      if (!wallet) {
-        return {
-          allowed: false,
-          chain: "bnb",
-          side,
-          reasons: ["Connect a valid EVM wallet to run the trade safety check."],
-          warnings: [],
-        };
-      }
       if (!campaign) {
         return {
           allowed: false,
@@ -103,6 +120,8 @@ export function createBnbLaunchpadAdapter(): LaunchpadAdapter {
           warnings: [],
         };
       }
+
+      if (!wallet) return campaignOnlyPreflight(side, campaign);
 
       const endpoint = side === "buy" ? "/api/launchpad/preflight-buy" : "/api/launchpad/preflight-sell";
       const payload = await postJson<any>(endpoint, { walletAddress: wallet, campaignAddress: campaign }, { preflight: null });
