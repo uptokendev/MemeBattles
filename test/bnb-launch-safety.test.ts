@@ -149,7 +149,8 @@ describe("BNB launch safety simulations", function () {
     await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.be.revertedWith("sells paused");
 
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, false, false);
-    await expect(campaign.connect(creator).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWith(
+    const creatorLockedCost = await campaign.quoteBuyExactTokens(amountOut);
+    await expect(campaign.connect(creator).buyExactTokens(amountOut, creatorLockedCost, { value: creatorLockedCost })).to.be.revertedWith(
       "creator buy locked"
     );
 
