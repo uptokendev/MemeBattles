@@ -45,7 +45,7 @@ function isLikelyDevOrStagingHost(): boolean {
   );
 }
 
-function shouldDefaultFeaturedToTestnet(): boolean {
+function shouldDefaultDevFeedsToTestnet(): boolean {
   if (envFalse("VITE_ENABLE_TESTNET_FEATURED_FEED")) return false;
   if (envTrue("VITE_ENABLE_TESTNET_FEATURED_FEED")) return true;
   if (envTrue("VITE_DEVPOSTGRAD_MODE")) return true;
@@ -64,32 +64,33 @@ function rememberFeaturedChain(chainId: SupportedChainId): SupportedChainId {
   return chainId;
 }
 
-function resolveFeedChainId(envNames: string[], walletChainId?: number | null): SupportedChainId {
+function resolveFeedChainId(envNames: string[], walletChainId?: number | null, options?: { devTestnetFallback?: boolean }): SupportedChainId {
   const configured = readConfiguredChainId(envNames);
   if (configured) return configured;
+  if (options?.devTestnetFallback && shouldDefaultDevFeedsToTestnet()) return BNB_TESTNET_CHAIN_ID;
   return getActiveChainId(walletChainId);
 }
 
 export function getCampaignFeedChainId(walletChainId?: number | null): SupportedChainId {
-  return resolveFeedChainId(["VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId);
+  return resolveFeedChainId(["VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId, { devTestnetFallback: true });
 }
 
 export function getDraftDiscoveryChainId(walletChainId?: number | null): SupportedChainId {
-  return resolveFeedChainId(["VITE_DRAFT_FEED_CHAIN_ID", "VITE_DRAFT_DISCOVERY_CHAIN_ID"], walletChainId);
+  return resolveFeedChainId(["VITE_DRAFT_FEED_CHAIN_ID", "VITE_DRAFT_DISCOVERY_CHAIN_ID"], walletChainId, { devTestnetFallback: true });
 }
 
 export function getWarRoomFeedChainId(walletChainId?: number | null): SupportedChainId {
-  return resolveFeedChainId(["VITE_WAR_ROOM_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId);
+  return resolveFeedChainId(["VITE_WAR_ROOM_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId, { devTestnetFallback: true });
 }
 
 export function getTickerFeedChainId(walletChainId?: number | null): SupportedChainId {
-  return resolveFeedChainId(["VITE_TICKER_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId);
+  return resolveFeedChainId(["VITE_TICKER_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], walletChainId, { devTestnetFallback: true });
 }
 
 export function getFeaturedFeedChainId(walletChainId?: number | null): SupportedChainId {
   const configured = readConfiguredChainId(["VITE_FEATURED_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"]);
   if (configured) return rememberFeaturedChain(configured);
-  if (shouldDefaultFeaturedToTestnet()) return rememberFeaturedChain(BNB_TESTNET_CHAIN_ID);
+  if (shouldDefaultDevFeedsToTestnet()) return rememberFeaturedChain(BNB_TESTNET_CHAIN_ID);
   return rememberFeaturedChain(getActiveChainId(walletChainId));
 }
 
