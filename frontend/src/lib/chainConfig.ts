@@ -229,6 +229,36 @@ export function getExplorerTxBase(chainId: SupportedChainId): string {
   return chainId === 97 ? "https://testnet.bscscan.com/tx/" : "https://bscscan.com/tx/";
 }
 
+export function getChainParams(chainId: SupportedChainId) {
+  if (chainId === BNB_CHAIN_ID) {
+    return {
+      chainId: "0x38",
+      chainName: "BNB Smart Chain",
+      nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+      rpcUrls: getPublicRpcUrls(BNB_CHAIN_ID),
+      blockExplorerUrls: ["https://bscscan.com/"],
+    };
+  }
+
+  if (chainId === BNB_TESTNET_CHAIN_ID) {
+    return {
+      chainId: "0x61",
+      chainName: "BNB Smart Chain Testnet",
+      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
+      rpcUrls: getPublicRpcUrls(BNB_TESTNET_CHAIN_ID),
+      blockExplorerUrls: ["https://testnet.bscscan.com/"],
+    };
+  }
+
+  return {
+    chainId: "0x65",
+    chainName: "Solana mainnet",
+    nativeCurrency: { name: "SOL", symbol: "SOL", decimals: 9 },
+    rpcUrls: getPublicRpcUrls(SOLANA_CHAIN_ID),
+    blockExplorerUrls: ["https://solscan.io/"],
+  };
+}
+
 // Common chains the wallet may be connected to but the app doesn't support.
 // Used purely for human-readable labels on settings/diagnostic screens.
 const CHAIN_LABELS: Record<number, string> = {
