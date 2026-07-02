@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Clock, RefreshCw, Route, ShieldAlert, ShieldCheck, XCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
