@@ -53,6 +53,13 @@ function StatusIcon({ state }: { state: "ok" | "warning" | "blocked" | "checking
   return <RefreshCw className="h-3.5 w-3.5 animate-spin" />;
 }
 
+function safetySummary(state: "ok" | "warning" | "blocked" | "checking", walletAddress: string) {
+  if (state === "blocked") return "Trading is currently blocked by campaign safety controls.";
+  if (state === "warning") return walletAddress ? "Trading is available with warnings." : "Campaign checks are clear. Connect BNB for wallet-specific checks.";
+  if (state === "ok") return walletAddress ? "Campaign and wallet safety checks are clear." : "Campaign safety checks are clear. Connect BNB for wallet-specific checks.";
+  return "Checking campaign safety...";
+}
+
 export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafetyStatusButtonProps) {
   const wallet = useWallet();
   const adapter = useLaunchpadAdapter({ chainId });
@@ -190,9 +197,9 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
         <div>
           <div className="inline-flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             <ShieldCheck className="h-4 w-4 text-accent" />
-            Trading safety · {status?.chain || adapter.chain}
+            Campaign safety · {status?.chain || adapter.chain}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{status?.message || "Checking launchpad safety state..."}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{safetySummary(state, walletAddress)}</p>
         </div>
         <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-border/50 p-1 text-muted-foreground hover:text-foreground">
           <X className="h-3.5 w-3.5" />
@@ -216,9 +223,8 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
 
       <div className="mt-3 space-y-2 text-xs">
         <div className="rounded-xl border border-border/50 bg-card/25 p-2 text-muted-foreground">
-          Route auth: {status?.routeAuthorizationReady ? "ready" : "unknown"}
-          {walletAddress ? "" : " · No wallet connected"}
-          {walletRisk?.riskLevel ? ` · Wallet risk: ${walletRisk.riskLevel}` : ""}
+          Backend route check: {status?.routeAuthorizationReady ? "ready" : "pending"}
+          {walletAddress ? (walletRisk?.riskLevel ? ` · Wallet risk: ${walletRisk.riskLevel}` : " · Wallet risk: clear") : " · Wallet checks: connect BNB"}
           {cluster?.id ? ` · Cluster: ${cluster.id}` : ""}
         </div>
         {status?.protocolLive === false ? <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-2 text-rose-100">{status.label} is not live for trading.</div> : null}
