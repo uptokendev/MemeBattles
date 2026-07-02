@@ -97,6 +97,26 @@ SECURITY_SMOKE_MUTATE=1 API_BASE_URL=https://your-api.example.com npm run check:
 
 Only use mutating smoke checks against a staging or drill environment, because they create security audit records and contract sync jobs.
 
+## Command Center Security Ops Gate
+
+Open the authenticated creator Command Center and verify the new Security Ops section is reachable:
+
+```text
+/profile/<connected-wallet>/command/security
+```
+
+The page must load the same security API surfaces checked by the smoke gate and must show:
+
+- global risk posture and pause state
+- BNB contract sync status and queued/failed jobs
+- emergency BNB factory pause/unpause controls
+- campaign pause controls for full, buy, sell, and graduation pauses
+- creator tier, manual-review, creator restriction, and wallet restriction controls
+- cluster restriction controls
+- manual review queue, mass deployer alerts, audit log, and watched creators
+
+For staging evidence, queue one reversible action from the page, confirm it appears in `/api/security/contracts/sync-jobs?chain=bnb`, run the worker, then confirm the job becomes `confirmed` with a transaction hash.
+
 ## Contract Sync Worker Gate
 
 Dashboard/API contract actions write queued rows to `public.contract_sync_jobs`. Run the BNB worker to execute those queued jobs on-chain and write the resulting `tx_hash` plus final status back to the database:
@@ -148,9 +168,11 @@ Before sign-off, run these actions against the target environment and capture tr
 - Block a restricted wallet from buying
 - Require authorized trading and prove direct buy/sell fails
 - Run the read-only security API smoke check
+- Open Command Center Security Ops and verify status, queues, controls, and audit data render
 - Run mutating security smoke checks in staging and verify sync jobs are queued
+- Queue one reversible action from Security Ops and verify the sync job appears
 - Pause and unpause a campaign for buys and sells
 - Run the BNB contract sync worker and verify queued jobs become confirmed with tx hashes
 - Verify frontend ABI files are regenerated after the final compile
 
-Public launch remains blocked until the local contract gate, route authority gate, security schema gate, security API smoke gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
+Public launch remains blocked until the local contract gate, route authority gate, security schema gate, security API smoke gate, Command Center Security Ops gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
