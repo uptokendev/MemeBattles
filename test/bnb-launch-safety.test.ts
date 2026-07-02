@@ -33,6 +33,10 @@ async function deploySafetyFixture() {
   const creatorRegistry = await CreatorRegistry.deploy();
   const riskRegistry = await RiskRegistry.deploy();
 
+  await factory.waitForDeployment();
+  await creatorRegistry.waitForDeployment();
+  await riskRegistry.waitForDeployment();
+
   await creatorRegistry.setLaunchRecorder(await factory.getAddress(), true);
   await factory.setRegistries(await creatorRegistry.getAddress(), await riskRegistry.getAddress());
   await factory.setRouteAuthority(routeAuthority.address);
@@ -64,6 +68,7 @@ describe("BNB launch safety simulations", function () {
     const [owner, creator, leagueReceiver] = await ethers.getSigners();
     const Factory = await ethers.getContractFactory("LaunchFactory");
     const factory = await Factory.deploy(owner.address, leagueReceiver.address);
+    await factory.waitForDeployment();
 
     await expect(factory.connect(creator).createCampaign(campaignRequest())).to.be.revertedWithCustomError(factory, "NotLive");
 
