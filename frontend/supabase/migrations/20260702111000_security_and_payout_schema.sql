@@ -230,46 +230,35 @@ create index if not exists recruiter_payout_wallets_lookup_idx on public.recruit
 create index if not exists recruiter_reward_ledger_balance_idx on public.recruiter_reward_ledger(recruiter_id, chain, token, status, claim_id);
 create index if not exists recruiter_reward_claims_status_idx on public.recruiter_reward_claims(status, created_at desc);
 
-create trigger creator_profiles_updated_at
-before update on public.creator_profiles
-for each row execute function public.set_updated_at();
+drop trigger if exists creator_profiles_updated_at on public.creator_profiles;
+create trigger creator_profiles_updated_at before update on public.creator_profiles for each row execute function public.set_updated_at();
 
-create trigger wallet_clusters_updated_at
-before update on public.wallet_clusters
-for each row execute function public.set_updated_at();
+drop trigger if exists wallet_clusters_updated_at on public.wallet_clusters;
+create trigger wallet_clusters_updated_at before update on public.wallet_clusters for each row execute function public.set_updated_at();
 
-create trigger wallet_risk_profiles_updated_at
-before update on public.wallet_risk_profiles
-for each row execute function public.set_updated_at();
+drop trigger if exists wallet_risk_profiles_updated_at on public.wallet_risk_profiles;
+create trigger wallet_risk_profiles_updated_at before update on public.wallet_risk_profiles for each row execute function public.set_updated_at();
 
-create trigger manual_review_queue_updated_at
-before update on public.manual_review_queue
-for each row execute function public.set_updated_at();
+drop trigger if exists manual_review_queue_updated_at on public.manual_review_queue;
+create trigger manual_review_queue_updated_at before update on public.manual_review_queue for each row execute function public.set_updated_at();
 
-create trigger contract_sync_jobs_updated_at
-before update on public.contract_sync_jobs
-for each row execute function public.set_updated_at();
+drop trigger if exists contract_sync_jobs_updated_at on public.contract_sync_jobs;
+create trigger contract_sync_jobs_updated_at before update on public.contract_sync_jobs for each row execute function public.set_updated_at();
 
-create trigger campaign_security_states_updated_at
-before update on public.campaign_security_states
-for each row execute function public.set_updated_at();
+drop trigger if exists campaign_security_states_updated_at on public.campaign_security_states;
+create trigger campaign_security_states_updated_at before update on public.campaign_security_states for each row execute function public.set_updated_at();
 
-create trigger mass_deployer_flags_updated_at
-before update on public.mass_deployer_flags
-for each row execute function public.set_updated_at();
+drop trigger if exists mass_deployer_flags_updated_at on public.mass_deployer_flags;
+create trigger mass_deployer_flags_updated_at before update on public.mass_deployer_flags for each row execute function public.set_updated_at();
 
-create trigger recruiter_accounts_updated_at
-before update on public.recruiter_accounts
-for each row execute function public.set_updated_at();
+drop trigger if exists recruiter_accounts_updated_at on public.recruiter_accounts;
+create trigger recruiter_accounts_updated_at before update on public.recruiter_accounts for each row execute function public.set_updated_at();
 
-create trigger recruiter_payout_wallets_updated_at
-before update on public.recruiter_payout_wallets
-for each row execute function public.set_updated_at();
+drop trigger if exists recruiter_payout_wallets_updated_at on public.recruiter_payout_wallets;
+create trigger recruiter_payout_wallets_updated_at before update on public.recruiter_payout_wallets for each row execute function public.set_updated_at();
 
-create trigger recruiter_reward_ledger_updated_at
-before update on public.recruiter_reward_ledger
-for each row execute function public.set_updated_at();
+drop trigger if exists recruiter_reward_ledger_updated_at on public.recruiter_reward_ledger;
+create trigger recruiter_reward_ledger_updated_at before update on public.recruiter_reward_ledger for each row execute function public.set_updated_at();
 
-create trigger recruiter_reward_claims_updated_at
-before update on public.recruiter_reward_claims
-for each row execute function public.set_updated_at();
+drop trigger if exists recruiter_reward_claims_updated_at on public.recruiter_reward_claims;
+create trigger recruiter_reward_claims_updated_at before update on public.recruiter_reward_claims for each row execute function public.set_updated_at();
