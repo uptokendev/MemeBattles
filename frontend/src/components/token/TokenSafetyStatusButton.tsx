@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck, X, XCircle } from "lucide-react";
 
@@ -74,13 +74,13 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   const walletAddress = String(wallet.account || "").trim();
   const campaign = String(campaignAddress || "").trim();
 
-  const updateAnchor = () => {
+  const updateAnchor = useCallback(() => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (!rect || typeof window === "undefined") return;
     setAnchor({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
-  };
+  }, []);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const nextStatus = await adapter.getStatus();
@@ -94,7 +94,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     } finally {
       setLoading(false);
     }
-  };
+  }, [adapter, walletAddress, campaign]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,7 +127,17 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
     };
     window.addEventListener("mwz:openTokenSafety", openSafety as EventListener);
     return () => window.removeEventListener("mwz:openTokenSafety", openSafety as EventListener);
-  }, []);
+  }, [updateAnchor]);
+
+  useEffect(() => {
+    const refreshSafety = () => {
+      updateAnchor();
+      setOpen(true);
+      void refresh();
+    };
+    window.addEventListener("mwz:refreshTokenSafety", refreshSafety as EventListener);
+    return () => window.removeEventListener("mwz:refreshTokenSafety", refreshSafety as EventListener);
+  }, [refresh, updateAnchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -138,7 +148,7 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
       window.removeEventListener("resize", updateAnchor);
       window.removeEventListener("scroll", updateAnchor, true);
     };
-  }, [open]);
+  }, [open, updateAnchor]);
 
   const blocks = useMemo(() => uniq([
     ...(buyPreflight?.reasons || []),
