@@ -24,6 +24,8 @@ function findTokenHeaderActionRow(): HTMLElement | null {
 function isTokenTradeButton(target: EventTarget | null): HTMLButtonElement | null {
   const button = target instanceof Element ? target.closest("button") as HTMLButtonElement | null : null;
   if (!button) return null;
+  if (button.closest("[data-token-safety]")) return null;
+  if (button.getAttribute("title") === "Trading safety status") return null;
   const text = String(button.textContent || "").trim().toLowerCase();
   if (text === "buy" || text === "sell") return button;
   return null;
@@ -79,7 +81,7 @@ export function TokenSafetyRouteOverlay() {
   if (!campaignAddress) return null;
 
   const button = (
-    <div className="ml-auto shrink-0">
+    <div className="ml-auto shrink-0" data-token-safety>
       <TokenSafetyStatusButton campaignAddress={campaignAddress} chainId={chainId} />
     </div>
   );
