@@ -1,6 +1,7 @@
 import { getActiveChainId, getDefaultChainId, isAllowedChainId, type SupportedChainId } from "@/lib/chainConfig";
 
 const BNB_TESTNET_CHAIN_ID: SupportedChainId = 97;
+const LAST_FEATURED_CHAIN_KEY = "mwz:last_featured_chain_id";
 
 function readEnv(name: string): string {
   const env = import.meta.env as Record<string, string | boolean | undefined>;
@@ -11,6 +12,14 @@ function readEnvChainId(name: string): SupportedChainId | null {
   const raw = readEnv(name);
   const chainId = Number(raw);
   return Number.isFinite(chainId) && isAllowedChainId(chainId) ? (chainId as SupportedChainId) : null;
+}
+
+function readConfiguredChainId(envNames: string[]): SupportedChainId | null {
+  for (const envName of envNames) {
+    const configured = readEnvChainId(envName);
+    if (configured) return configured;
+  }
+  return null;
 }
 
 function envTrue(name: string): boolean {
@@ -44,12 +53,20 @@ function shouldDefaultFeaturedToTestnet(): boolean {
   return false;
 }
 
-function resolveFeedChainId(envNames: string[], walletChainId?: number | null): SupportedChainId {
-  for (const envName of envNames) {
-    const configured = readEnvChainId(envName);
-    if (configured) return configured;
+function rememberFeaturedChain(chainId: SupportedChainId): SupportedChainId {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LAST_FEATURED_CHAIN_KEY, String(chainId));
+    } catch {
+      // ignore storage failures
+    }
   }
+  return chainId;
+}
 
+function resolveFeedChainId(envNames: string[], walletChainId?: number | null): SupportedChainId {
+  const configured = readConfiguredChainId(envNames);
+  if (configured) return configured;
   return getActiveChainId(walletChainId);
 }
 
@@ -70,10 +87,10 @@ export function getTickerFeedChainId(walletChainId?: number | null): SupportedCh
 }
 
 export function getFeaturedFeedChainId(walletChainId?: number | null): SupportedChainId {
-  const configured = resolveFeedChainId(["VITE_FEATURED_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"], null);
-  if (configured !== getActiveChainId(null)) return configured;
-  if (shouldDefaultFeaturedToTestnet()) return BNB_TESTNET_CHAIN_ID;
-  return getActiveChainId(walletChainId);
+  const configured = readConfiguredChainId(["VITE_FEATURED_FEED_CHAIN_ID", "VITE_CAMPAIGN_FEED_CHAIN_ID", "VITE_LOCALDEV_CAMPAIGN_CHAIN_ID"]);
+  if (configured) return rememberFeaturedChain(configured);
+  if (shouldDefaultFeaturedToTestnet()) return rememberFeaturedChain(BNB_TESTNET_CHAIN_ID);
+  return rememberFeaturedChain(getActiveChainId(walletChainId));
 }
 
 export function getCreateDeployChainId(walletChainId?: number | null): SupportedChainId {
