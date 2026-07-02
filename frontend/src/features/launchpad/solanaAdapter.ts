@@ -1,4 +1,4 @@
-import type { LaunchpadAdapter, LaunchpadAdapterStatus, LaunchpadTradePreflight, TradeSide } from "@/features/launchpad/adapters";
+import type { LaunchpadAdapter, LaunchpadAdapterStatus, LaunchpadTradePreflight } from "@/features/launchpad/adapters";
 
 const SOLANA_NOT_LIVE_REASONS = [
   "Solana launchpad protocol actions are not live yet.",
@@ -20,7 +20,7 @@ export function createSolanaLaunchpadAdapter(): LaunchpadAdapter {
       };
     },
 
-    async preflightTrade({ side }: { side: TradeSide }): Promise<LaunchpadTradePreflight> {
+    async preflightTrade({ side }): Promise<LaunchpadTradePreflight> {
       return {
         allowed: false,
         chain: "solana",
