@@ -373,7 +373,7 @@ async function readSecurityControlStatus() {
 }
 
 async function updateCampaignPauseState(body) {
-  const campaign = normalizeWallet(body.campaign);
+  const campaign = normalizeWallet(body.campaign || body.campaignAddress);
   const field = String(body.field || "").trim();
   const column = CAMPAIGN_PAUSE_FIELDS[field];
   if (!campaign || !column) return;
@@ -386,11 +386,11 @@ async function updateCampaignPauseState(body) {
   );
 }
 
-async function queueContractSyncJob({ chain, action, target }) {
+async function queueContractSyncJob({ chain, action, target, payload = {} }) {
   await pool.query(
-    `insert into public.contract_sync_jobs (chain, job_type, target, status)
-     values ($1, $2, $3, 'queued')`,
-    [chain, action, String(target || action)],
+    `insert into public.contract_sync_jobs (chain, job_type, target, status, payload)
+     values ($1, $2, $3, 'queued', $4::jsonb)`,
+    [chain, action, String(target || action), JSON.stringify(payload || {})],
   );
 }
 
@@ -405,6 +405,7 @@ async function readContractSyncJobs(chain) {
             status,
             tx_hash,
             error,
+            payload,
             created_at,
             updated_at
        from public.contract_sync_jobs
@@ -422,6 +423,7 @@ async function readContractSyncJobs(chain) {
     status: row.status || "queued",
     txHash: row.tx_hash || null,
     error: row.error || null,
+    payload: row.payload || {},
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   }));
@@ -706,8 +708,9 @@ export async function securityCreatorTier(req, res) {
        on conflict (creator_wallet) do update set tier = excluded.tier, updated_at = now()`,
       [wallet, tier],
     );
+    await queueContractSyncJob({ chain: "bnb", action: "set-creator-tier", target: wallet, payload: { walletAddress: wallet, tier } });
     await recordSecurityAction({ req, action: "set_creator_tier", target: wallet, newValue: tier, reason: body.reason });
-    return json(res, 200, { ok: true, wallet, tier });
+    return json(res, 200, { ok: true, wallet, tier, queued: true });
   } catch (error) {
     if (schemaMissing(error)) return schemaMissingAction(res);
     throw error;
@@ -737,8 +740,9 @@ export async function securityCreatorRestrict(req, res) {
         [wallet],
       );
     }
+    await queueContractSyncJob({ chain: "bnb", action: "set-creator-restricted", target: wallet, payload: { walletAddress: wallet, restricted } });
     await recordSecurityAction({ req, action: "set_creator_restricted", target: wallet, newValue: String(restricted), reason: body.reason });
-    return json(res, 200, { ok: true, wallet, restricted });
+    return json(res, 200, { ok: true, wallet, restricted, queued: true });
   } catch (error) {
     if (schemaMissing(error)) return schemaMissingAction(res);
     throw error;
@@ -774,8 +778,9 @@ export async function securityCreatorManualReview(req, res) {
         [wallet],
       );
     }
+    await queueContractSyncJob({ chain: "bnb", action: "set-creator-manual-review", target: wallet, payload: { walletAddress: wallet, required } });
     await recordSecurityAction({ req, action: "set_creator_manual_review", target: wallet, newValue: String(required), reason: body.reason });
-    return json(res, 200, { ok: true, wallet, required });
+    return json(res, 200, { ok: true, wallet, required, queued: true });
   } catch (error) {
     if (schemaMissing(error)) return schemaMissingAction(res);
     throw error;
@@ -795,8 +800,9 @@ export async function securityClusterRestrict(req, res) {
        on conflict (cluster_id) do update set restricted = excluded.restricted, updated_at = now()`,
       [clusterId, restricted],
     );
+    await queueContractSyncJob({ chain: "bnb", action: "set-cluster-restricted", target: clusterId, payload: { clusterId, restricted } });
     await recordSecurityAction({ req, action: "set_cluster_restricted", target: clusterId, newValue: String(restricted), reason: body.reason });
-    return json(res, 200, { ok: true, clusterId, restricted });
+    return json(res, 200, { ok: true, clusterId, restricted, queued: true });
   } catch (error) {
     if (schemaMissing(error)) return schemaMissingAction(res);
     throw error;
@@ -816,8 +822,9 @@ export async function securityWalletRestrict(req, res) {
        on conflict (wallet_address) do update set restricted = excluded.restricted, updated_at = now()`,
       [wallet, restricted],
     );
+    await queueContractSyncJob({ chain: "bnb", action: "set-wallet-restricted", target: wallet, payload: { walletAddress: wallet, restricted } });
     await recordSecurityAction({ req, action: "set_wallet_restricted", target: wallet, newValue: String(restricted), reason: body.reason });
-    return json(res, 200, { ok: true, wallet, restricted });
+    return json(res, 200, { ok: true, wallet, restricted, queued: true });
   } catch (error) {
     if (schemaMissing(error)) return schemaMissingAction(res);
     throw error;
@@ -832,12 +839,12 @@ export async function securityContractAction(req, res) {
   const isSolana = String(req.originalUrl || req.url || "").includes("/security/solana/");
   const chain = isSolana ? "solana" : "bnb";
   const action = `${chain}_${rawAction}`;
-  const target = body.wallet || body.target || body.campaign || rawAction;
+  const target = body.wallet || body.walletAddress || body.target || body.campaign || body.campaignAddress || body.clusterId || rawAction;
   try {
     if (!isSolana && rawAction === "pause-campaign") {
       await updateCampaignPauseState(body);
     }
-    await queueContractSyncJob({ chain, action: rawAction, target });
+    await queueContractSyncJob({ chain, action: rawAction, target, payload: body });
     await recordSecurityAction({ req, action, target, newValue: JSON.stringify(body), reason: body.reason });
     return json(res, 200, { ok: true, queued: true, action, target });
   } catch (error) {
