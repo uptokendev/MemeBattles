@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useWallet } from "@/contexts/WalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useEditableProfile } from "@/hooks/profile/useEditableProfile";
 import { useProfileFollows } from "@/hooks/profile/useProfileFollows";
@@ -66,15 +67,23 @@ export function CommandCenterDataProvider({
   children: ReactNode;
 }) {
   const wallet = useWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const anyWallet: any = wallet as any;
+  const hasSolanaWallet = Boolean(isSolanaConnected && solanaAccount);
+
   // `walletChainId` is what the wallet reports (could be unsupported, e.g. ETH=1
   // for an ETH-mainnet wallet). `chainId` is the active app chain — mapped to a
   // supported value so signed messages and reads never carry an unsupported id.
-  const walletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
-  const chainId: number | undefined = walletChainId
-    ? getActiveChainId(walletChainId)
-    : undefined;
-  const account = wallet.account || walletAddress;
+  // Solana wallets do not report an EVM-style chainId, so force the app's Solana
+  // chain id when the connected owner wallet is Solana.
+  const evmWalletChainId: number | undefined = anyWallet?.chainId ?? anyWallet?.network?.chainId;
+  const walletChainId: number | undefined = hasSolanaWallet ? SOLANA_CHAIN_ID : evmWalletChainId;
+  const chainId: number | undefined = hasSolanaWallet
+    ? SOLANA_CHAIN_ID
+    : evmWalletChainId
+      ? getActiveChainId(evmWalletChainId)
+      : undefined;
+  const account = hasSolanaWallet ? solanaAccount : wallet.account || walletAddress;
   const { fetchCampaigns, fetchCampaignSummary } = useLaunchpad();
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [loadingAttribution, setLoadingAttribution] = useState(false);
