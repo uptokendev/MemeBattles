@@ -6,6 +6,8 @@
     "compile": "hardhat compile",
     "sync:frontend-abis": "node scripts/sync-frontend-abis.cjs",
     "compile:frontend-abis": "hardhat compile && node scripts/sync-frontend-abis.cjs",
+    "verify:route-authority": "hardhat run scripts/verify-route-authority.cjs",
+    "verify:route-authority:bsc-testnet": "hardhat run scripts/verify-route-authority.cjs --network bscTestnet",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "gas": "REPORT_GAS=true hardhat test"
