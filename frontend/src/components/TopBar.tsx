@@ -69,7 +69,8 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const location = useLocation();
   const wallet = useWallet();
   const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
-  const account = isSolanaConnected ? (solanaAccount || wallet.account) : wallet.account;
+  const preferEvmWallet = wallet.isConnected && /^\/token\/0x[a-fA-F0-9]{40}/.test(location.pathname);
+  const account = preferEvmWallet ? wallet.account : isSolanaConnected ? (solanaAccount || wallet.account) : wallet.account;
   const connected = wallet.isConnected || isSolanaConnected;
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
@@ -401,11 +402,10 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                     type="button"
                     onClick={async () => {
                       try {
-                        if (isSolanaConnected) {
-                          await disconnectSolana();
-                        } else {
-                          await wallet.disconnect();
-                        }
+                        await Promise.all([
+                          wallet.isConnected ? wallet.disconnect() : Promise.resolve(),
+                          isSolanaConnected ? disconnectSolana() : Promise.resolve(),
+                        ]);
                       } finally {
                         setDisconnectOpen(false);
                       }
