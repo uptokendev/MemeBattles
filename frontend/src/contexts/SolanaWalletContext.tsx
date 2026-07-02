@@ -6,7 +6,6 @@ import {
   ensureSolanaListeners,
   getStoredSolanaWallet,
   getStoredSolanaWalletName,
-  refreshSolanaWalletFromProvider,
   SOLANA_WALLET_EVENT,
   type DetectedSolanaWallet,
 } from "@/lib/solanaWallet";
@@ -36,7 +35,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [availableSolanaWallets, setAvailableSolanaWallets] = useState<DetectedSolanaWallet[]>([]);
 
   const sync = useCallback(() => {
-    ensureSolanaListeners();
+    ensureSolanaListeners({ readExistingAccount: false });
     setAvailableSolanaWallets(detectSolanaWallets());
     setSolanaAccount(getStoredSolanaWallet());
     setSolanaWalletName(getStoredSolanaWalletName());
@@ -66,10 +65,9 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     sync();
 
-    const timers = [0, 80, 250, 800, 1600].map((delay) =>
+    const timers = [80, 250, 800, 1600].map((delay) =>
       window.setTimeout(() => {
-        refreshSolanaWalletFromProvider();
-        sync();
+        setAvailableSolanaWallets(detectSolanaWallets());
       }, delay)
     );
 
