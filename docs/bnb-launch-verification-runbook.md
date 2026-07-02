@@ -72,6 +72,31 @@ npm run check:security-schema
 
 This must pass before dashboard actions, preflight decisions, route authorization logs, contract sync jobs, or payout reconciliation are treated as launch evidence.
 
+## Security API Smoke Gate
+
+Run the read-only security smoke check against the deployed API or a local API server:
+
+```bash
+cd frontend
+API_BASE_URL=https://your-api.example.com npm run check:security-api
+```
+
+The smoke check verifies JSON responses and expected status codes for:
+
+- `/api/security/status`
+- creator, cluster, manual review, mass deployer, audit log, and sync-job reads
+- launch create/buy/sell preflights
+- routing status plus create/trade authorization readiness
+
+To include queue-writing admin checks, explicitly opt in:
+
+```bash
+cd frontend
+SECURITY_SMOKE_MUTATE=1 API_BASE_URL=https://your-api.example.com npm run check:security-api
+```
+
+Only use mutating smoke checks against a staging or drill environment, because they create security audit records and contract sync jobs.
+
 ## Contract Sync Worker Gate
 
 Dashboard/API contract actions write queued rows to `public.contract_sync_jobs`. Run the BNB worker to execute those queued jobs on-chain and write the resulting `tx_hash` plus final status back to the database:
@@ -122,8 +147,10 @@ Before sign-off, run these actions against the target environment and capture tr
 - Block a creator in an oversized cluster
 - Block a restricted wallet from buying
 - Require authorized trading and prove direct buy/sell fails
+- Run the read-only security API smoke check
+- Run mutating security smoke checks in staging and verify sync jobs are queued
 - Pause and unpause a campaign for buys and sells
 - Run the BNB contract sync worker and verify queued jobs become confirmed with tx hashes
 - Verify frontend ABI files are regenerated after the final compile
 
-Public launch remains blocked until the local contract gate, route authority gate, security schema gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
+Public launch remains blocked until the local contract gate, route authority gate, security schema gate, security API smoke gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
