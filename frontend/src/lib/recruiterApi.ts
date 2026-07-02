@@ -26,6 +26,23 @@ export type LaunchpadPreflight = {
   lookupErrors?: string[];
 };
 
+export class LaunchpadPreflightBlockedError extends Error {
+  preflight: LaunchpadPreflight;
+
+  constructor(preflight: LaunchpadPreflight) {
+    const reasons = Array.isArray(preflight?.reasons)
+      ? preflight.reasons.map(String).filter(Boolean)
+      : [];
+    const message = reasons.length
+      ? reasons.slice(0, 3).join(" ")
+      : "Safety preflight blocked this action.";
+
+    super(message);
+    this.name = "LaunchpadPreflightBlockedError";
+    this.preflight = preflight;
+  }
+}
+
 function ensureStorageValue(key: string): string {
   try {
     const existing = window.localStorage.getItem(key);
@@ -41,6 +58,16 @@ function ensureStorageValue(key: string): string {
 function normalizeMemberRole(value?: string | null): RecruiterMemberRole | null {
   const role = String(value || "").trim().toLowerCase();
   return role === "creator" || role === "trader" ? role : null;
+}
+
+function openTokenSafetyDropdown() {
+  try {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export function setRecruiterReferralMemberRole(role: RecruiterMemberRole) {
@@ -112,7 +139,8 @@ async function postPreflight(path: string, body: any): Promise<LaunchpadPrefligh
 
 function assertPreflightAllowed(preflight: LaunchpadPreflight): LaunchpadPreflight {
   if (!preflight?.allowed) {
-    throw new Error(preflight?.reasons?.[0] || "Launchpad security preflight blocked this action.");
+    openTokenSafetyDropdown();
+    throw new LaunchpadPreflightBlockedError(preflight);
   }
   return preflight;
 }
@@ -258,289 +286,51 @@ export type WalletRewardSummary = {
   walletAddress: string;
   pendingByProgram: Record<string, string>;
   claimableByProgram: Record<string, string>;
-  claimedByProgram: Record<string, string>;
-  totalClaimableAmount: string;
-  claimedLifetimeAmount: string;
-  lastClaimedAt: string | null;
-  materializedAt: string | null;
+  totalEarnedByProgram: Record<string, string>;
+  claimableTotalRaw: string;
+  pendingTotalRaw: string;
+  totalEarnedRaw: string;
+  updatedAt: string | null;
 };
 
-export type RecruiterSignupStatus = {
-  walletAddress: string;
-  isRecruiter: boolean;
-  recruiter: RecruiterSummary | null;
-  canStartSignup: boolean;
-  signupApiAvailable: boolean;
-};
-
-export type RecruiterCodeAvailability = {
-  code: string;
-  isAvailable: boolean | null;
-  checkedVia: "signup-endpoint" | "summary-fallback" | "unavailable";
-  message: string | null;
-};
-
-export type RecruiterSignupNonceResponse = {
-  nonce: string;
-};
-
-export type RecruiterSignupPayload = {
-  walletAddress: string;
-  chainId?: number | null;
+export type RecruiterApplication = {
   displayName: string;
-  desiredCode: string;
-  email: string;
-  telegram: string;
-  discord: string;
-  xHandle: string;
-  pitch: string;
-  acceptTerms: boolean;
-  nonce: string;
-  signature: string;
+  socialHandle?: string;
+  telegramHandle?: string;
+  website?: string;
+  pitch?: string;
+  specialties?: string[];
 };
 
-function buildQuery(params: Record<string, string | number | null | undefined>) {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value == null || value === "") continue;
-    search.set(key, String(value));
-  }
-  const query = search.toString();
-  return query ? `?${query}` : "";
-}
-
-function unwrapRecruiterSummary(json: any): RecruiterSummary | null {
-  return (json?.recruiter ?? json ?? null) as RecruiterSummary | null;
-}
-
-function unwrapSquadSummary(json: any): SquadSummary | null {
-  return (json?.squad ?? json ?? null) as SquadSummary | null;
-}
-
-export async function fetchRecruiterLeaderboard(limit = 100, status?: string | null): Promise<RecruiterSummary[]> {
-  const json = await getJson(`/api/recruiters${buildQuery({ limit, status })}`);
-  return Array.isArray(json?.recruiters) ? json.recruiters as RecruiterSummary[] : [];
-}
-
-export async function fetchRecruiterSummary(code: string): Promise<RecruiterSummary> {
+export async function fetchRecruiterSummary(code: string): Promise<RecruiterSummary | null> {
   const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/summary`);
-  const recruiter = unwrapRecruiterSummary(json);
-  if (!recruiter || (json?.exists === false)) throw new Error("Recruiter not found");
-  return recruiter;
+  return json?.summary ?? null;
 }
 
-export async function fetchRecruiterSummaryByWallet(walletAddress: string): Promise<RecruiterSummary> {
-  const normalized = normalizeWalletAddress(walletAddress);
-  const json = await getJson(`/api/recruiters/wallet/${encodeURIComponent(normalized)}/summary`);
-  const recruiter = unwrapRecruiterSummary(json);
-  if (!recruiter || (json?.exists === false)) throw new Error("Recruiter not found");
-  return recruiter;
+export async function fetchSquadSummary(code: string): Promise<SquadSummary | null> {
+  const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/squad`);
+  return json?.summary ?? null;
 }
 
-async function fetchRecruiterSummaryByWalletFallback(walletAddress: string): Promise<RecruiterSummary | null> {
-  const normalized = normalizeWalletAddress(walletAddress);
-
-  const direct = await fetchRecruiterSummaryByWallet(normalized).catch(() => null);
-  if (direct) return direct;
-
-  const recruiters = await fetchRecruiterLeaderboard(250, "all").catch(() => []);
-  return recruiters.find((item) => normalizeWalletAddress(item.walletAddress) === normalized) || null;
+export async function applyRecruiter(walletAddress: string, application: RecruiterApplication) {
+  return postJson("/api/recruiters/apply", { walletAddress, ...application });
 }
 
-export async function fetchRecruiterReplacements(code: string, limit = 5) {
-  return getJson(`/api/recruiters/${encodeURIComponent(code)}/replacements${buildQuery({ limit })}`);
+export async function fetchWalletAttribution(walletAddress: string): Promise<WalletAttributionPublicState | null> {
+  if (!walletAddress) return null;
+  const qs = new URLSearchParams({ walletAddress });
+  const json = await getJson(`/api/attribution/wallet?${qs.toString()}`);
+  return json?.state ?? null;
 }
 
-export async function fetchSquadSummary(recruiterCode: string): Promise<SquadSummary> {
-  const json = await getJson(`/api/squads/${encodeURIComponent(recruiterCode)}/summary`);
-  const squad = unwrapSquadSummary(json);
-  if (!squad || (json?.exists === false)) throw new Error("Squad summary not found");
-  return squad;
+export async function fetchWalletRewards(walletAddress: string): Promise<WalletRewardSummary | null> {
+  if (!walletAddress) return null;
+  const qs = new URLSearchParams({ walletAddress });
+  const json = await getJson(`/api/rewards/wallet?${qs.toString()}`);
+  return json?.summary ?? null;
 }
 
-export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState> {
-  const json = await getJson(`/api/attribution/wallet/${encodeURIComponent(walletAddress)}`);
-  return json?.state as WalletAttributionPublicState;
-}
-
-export async function fetchWalletRewardSummary(walletAddress: string): Promise<WalletRewardSummary> {
-  return getJson(`/api/rewards/me${buildQuery({ address: walletAddress })}`);
-}
-
-export async function fetchWalletRewardHistory(walletAddress: string, limit = 50, program?: string | null) {
-  const json = await getJson(`/api/rewards/me/history${buildQuery({ address: walletAddress, limit, program })}`);
-  return Array.isArray(json?.items) ? json.items : [];
-}
-
-export async function fetchWalletRewardClaims(walletAddress: string, limit = 50, program?: string | null) {
-  const json = await getJson(`/api/rewards/me/claims${buildQuery({ address: walletAddress, limit, program })}`);
-  return Array.isArray(json?.claims) ? json.claims : [];
-}
-
-function normalizeWalletAddress(walletAddress: string): string {
-  return String(walletAddress || "").trim().toLowerCase();
-}
-
-function normalizeRecruiterCode(code: string): string {
-  return String(code || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-export function buildRecruiterSignupMessage(input: {
-  walletAddress: string;
-  chainId?: number | null;
-  nonce: string;
-  displayName: string;
-  desiredCode: string;
-  email: string;
-  telegram: string;
-  discord: string;
-  xHandle: string;
-  pitch: string;
-}) {
-  return [
-    "MemeWarzone Recruiter Signup",
-    "Action: RECRUITER_SIGNUP",
-    `Wallet: ${normalizeWalletAddress(input.walletAddress)}`,
-    `ChainId: ${input.chainId ?? ""}`,
-    `Nonce: ${String(input.nonce || "").trim()}`,
-    "",
-    `DisplayName: ${String(input.displayName || "").trim()}`,
-    `DesiredCode: ${normalizeRecruiterCode(input.desiredCode)}`,
-    `Email: ${String(input.email || "").trim()}`,
-    `Telegram: ${String(input.telegram || "").trim()}`,
-    `Discord: ${String(input.discord || "").trim()}`,
-    `X: ${String(input.xHandle || "").trim()}`,
-    "",
-    `Pitch: ${String(input.pitch || "").trim()}`,
-  ].join("\n");
-}
-
-export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
-  const normalized = normalizeWalletAddress(walletAddress);
-
-  const promoteKnownRecruiter = (recruiter: RecruiterSummary | null): RecruiterSignupStatus | null => {
-    if (!recruiter) return null;
-    return {
-      walletAddress: normalized,
-      isRecruiter: true,
-      recruiter,
-      canStartSignup: false,
-      signupApiAvailable: true,
-    };
-  };
-
-  const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
-
-  if (res.ok) {
-    const json = await parseJson(res);
-    const apiRecruiter = (json?.recruiter ?? null) as RecruiterSummary | null;
-    if (json?.isRecruiter && apiRecruiter) return promoteKnownRecruiter(apiRecruiter)!;
-
-    return {
-      walletAddress: normalized,
-      isRecruiter: false,
-      recruiter: null,
-      canStartSignup: Boolean(json?.canStartSignup ?? true),
-      signupApiAvailable: true,
-    };
-  }
-
-  const fallbackRecruiter = await fetchRecruiterSummaryByWalletFallback(normalized);
-  const promoted = promoteKnownRecruiter(fallbackRecruiter);
-  if (promoted) return promoted;
-
-  if (res.status === 404) {
-    return {
-      walletAddress: normalized,
-      isRecruiter: false,
-      recruiter: null,
-      canStartSignup: true,
-      signupApiAvailable: true,
-    };
-  }
-
-  await parseJson(res);
-  return {
-    walletAddress: normalized,
-    isRecruiter: false,
-    recruiter: null,
-    canStartSignup: true,
-    signupApiAvailable: false,
-  };
-}
-
-export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
-  const normalized = normalizeRecruiterCode(code);
-  if (!normalized) {
-    return {
-      code: normalized,
-      isAvailable: null,
-      checkedVia: "unavailable",
-      message: "Enter a recruiter code to check availability.",
-    };
-  }
-
-  try {
-    const res = await apiFetch(`/api/recruiter-signup/code-availability${buildQuery({ code: normalized })}`);
-    if (res.ok) {
-      const json = await parseJson(res);
-      return {
-        code: normalized,
-        isAvailable: typeof json?.isAvailable === "boolean" ? Boolean(json.isAvailable) : null,
-        checkedVia: "signup-endpoint",
-        message: json?.message ? String(json.message) : null,
-      };
-    }
-    if (res.status !== 404) await parseJson(res);
-  } catch {
-    // Fall through to the summary-based fallback.
-  }
-
-  try {
-    await fetchRecruiterSummary(normalized);
-    return {
-      code: normalized,
-      isAvailable: false,
-      checkedVia: "summary-fallback",
-      message: "This recruiter code is already taken.",
-    };
-  } catch (error: any) {
-    const message = String(error?.message || "");
-    if (message.includes("404") || message.toLowerCase().includes("not found")) {
-      return {
-        code: normalized,
-        isAvailable: true,
-        checkedVia: "summary-fallback",
-        message: "This recruiter code looks available.",
-      };
-    }
-    return {
-      code: normalized,
-      isAvailable: null,
-      checkedVia: "unavailable",
-      message: "We could not verify code availability right now.",
-    };
-  }
-}
-
-export async function requestRecruiterSignupNonce(
-  walletAddress: string,
-  chainId: number,
-): Promise<RecruiterSignupNonceResponse> {
-  const normalized = normalizeWalletAddress(walletAddress);
-  const json = await postJson("/api/recruiter-signup/nonce", {
-    walletAddress: normalized,
-    chainId,
-  });
-  if (!json?.nonce) throw new Error("Recruiter signup nonce missing from response.");
-  return { nonce: String(json.nonce) };
-}
-
-export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  return postJson("/api/recruiter-signup", payload);
+export async function fetchRecruiterRewards(code: string): Promise<WalletRewardSummary | null> {
+  const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/rewards`);
+  return json?.summary ?? null;
 }
