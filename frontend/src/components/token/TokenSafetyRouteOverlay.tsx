@@ -21,6 +21,14 @@ function findTokenHeaderActionRow(): HTMLElement | null {
   return null;
 }
 
+function isTokenTradeButton(target: EventTarget | null): HTMLButtonElement | null {
+  const button = target instanceof Element ? target.closest("button") as HTMLButtonElement | null : null;
+  if (!button) return null;
+  const text = String(button.textContent || "").trim().toLowerCase();
+  if (text === "buy" || text === "sell") return button;
+  return null;
+}
+
 export function TokenSafetyRouteOverlay() {
   const { campaignAddress = "" } = useParams();
   const wallet = useWallet();
@@ -40,6 +48,32 @@ export function TokenSafetyRouteOverlay() {
       observer.disconnect();
       window.clearInterval(timer);
     };
+  }, [campaignAddress]);
+
+  useEffect(() => {
+    if (!campaignAddress || typeof window === "undefined") return;
+
+    const onClick = (event: MouseEvent) => {
+      const button = isTokenTradeButton(event.target);
+      if (!button) return;
+
+      const safety = window.__mwzTokenSafetyState;
+      const safetyCampaign = String(safety?.campaignAddress || "").toLowerCase();
+      const routeCampaign = String(campaignAddress || "").toLowerCase();
+      if (!safety || safetyCampaign !== routeCampaign) return;
+
+      const text = String(button.textContent || "").trim().toLowerCase();
+      const sideBlocked = text === "buy" ? !safety.buyAllowed : text === "sell" ? !safety.sellAllowed : false;
+      if (!safety.blocked && !sideBlocked) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      window.dispatchEvent(new CustomEvent("mwz:openTokenSafety"));
+    };
+
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
   }, [campaignAddress]);
 
   if (!campaignAddress) return null;
