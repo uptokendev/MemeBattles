@@ -3,7 +3,8 @@
 // Supports BNB Smart Chain plus Solana mainnet via supported Solana wallets.
 //
 // Design goal:
-// - Reads follow the wallet's connected chain (if allowed), otherwise fall back to default chain.
+// - Reads follow explicit route/feed chain context first, then the wallet's connected chain,
+//   otherwise fall back to default chain.
 // - No redeploy needed to switch between BNB testnet/mainnet; only switch the wallet network.
 
 export type SupportedChainId = 56 | 97 | 101;
@@ -15,6 +16,7 @@ export const SUPPORTED_CHAIN_IDS: SupportedChainId[] = [56, 97, 101];
 
 const DEFAULT_ALLOWED: SupportedChainId[] = [56, 97, 101];
 const DEFAULT_CHAIN: SupportedChainId = 56;
+const LAST_FEATURED_CHAIN_KEY = "mwz:last_featured_chain_id";
 
 const parseCsvNumbers = (raw?: string): number[] => {
   if (!raw) return [];
@@ -59,7 +61,28 @@ export function isEvmChainId(chainId?: number | null): boolean {
   return chainId === BNB_CHAIN_ID || chainId === BNB_TESTNET_CHAIN_ID;
 }
 
+function readBrowserChainContext(): SupportedChainId | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const url = new URL(window.location.href);
+    const queryChainId = Number(url.searchParams.get("chainId") || "");
+    if (isAllowedChainId(queryChainId)) return queryChainId as SupportedChainId;
+
+    if (/^\/token\/0x[a-fA-F0-9]{40}/.test(url.pathname)) {
+      const stored = Number(window.localStorage.getItem(LAST_FEATURED_CHAIN_KEY) || "");
+      if (isAllowedChainId(stored)) return stored as SupportedChainId;
+    }
+  } catch {
+    // ignore route-context failures
+  }
+
+  return null;
+}
+
 export function getActiveChainId(walletChainId?: number | null): SupportedChainId {
+  const routeChainId = readBrowserChainContext();
+  if (routeChainId) return routeChainId;
   if (walletChainId && isAllowedChainId(walletChainId)) return walletChainId as SupportedChainId;
   return getDefaultChainId();
 }
@@ -220,40 +243,10 @@ const CHAIN_LABELS: Record<number, string> = {
   43114: "Avalanche C-Chain",
 };
 
-export function getChainLabel(chainId?: number | null): string | null {
-  if (!chainId) return null;
-  return CHAIN_LABELS[chainId] || `Chain ${chainId}`;
-}
-
-export function getSupportedChainsLabel(): string {
-  return "BNB Smart Chain (56/97) or Solana mainnet via supported Solana wallets";
-}
-
-export function getUnsupportedChainMessage(walletName?: string, chainId?: number | null): string {
-  const wallet = walletName || "your wallet";
-  const chain = chainId ? `${getChainLabel(chainId) || "Chain " + chainId} (${chainId})` : "an unsupported network";
-  return `${wallet} is connected on ${chain}. MemeWarzone supports ${getSupportedChainsLabel()}.`;
-}
-
-export function getChainParams(chainId: SupportedChainId) {
-  if (chainId === 56) {
-    return {
-      chainId: "0x38",
-      chainName: "BNB Smart Chain",
-      nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-      rpcUrls: [getPublicRpcUrl(56)],
-      blockExplorerUrls: ["https://bscscan.com/"],
-    };
-  }
-  if (chainId === 97) {
-    return {
-      chainId: "0x61",
-      chainName: "BNB Smart Chain Testnet",
-      nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-      rpcUrls: [getPublicRpcUrl(97)],
-      blockExplorerUrls: ["https://testnet.bscscan.com/"],
-    };
-  }
-
-  throw new Error("Solana does not use EVM chain parameters. Use the Solana wallet adapter path.");
+export function getChainLabel(chainId?: number | null): string {
+  if (!chainId) return "Unknown";
+  if (chainId === 56) return "BNB";
+  if (chainId === 97) return "BNB Testnet";
+  if (chainId === 101) return "Solana";
+  return CHAIN_LABELS[chainId] ?? `Chain ${chainId}`;
 }
