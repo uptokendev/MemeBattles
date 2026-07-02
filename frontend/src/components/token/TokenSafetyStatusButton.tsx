@@ -136,6 +136,23 @@ export function TokenSafetyStatusButton({ campaignAddress, chainId }: TokenSafet
   }, [campaign, refresh]);
 
   useEffect(() => {
+    if (!campaign) return;
+
+    const refreshVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void refresh({ silent: true });
+    };
+
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+
+    return () => {
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [campaign, refresh]);
+
+  useEffect(() => {
     const openSafety = () => {
       updateAnchor();
       setOpen(true);
