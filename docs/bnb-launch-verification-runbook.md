@@ -12,6 +12,14 @@ Set these before target-chain verification:
 - `ROUTE_AUTHORITY_ADDRESS` or `ROUTE_AUTHORITY_PRIVATE_KEY`
 - `BSCSCAN_API_KEY` when contract verification is part of the deployment pass
 
+For the API-side security schema and contract sync worker, also set these in the `frontend` runtime environment:
+
+- `DATABASE_URL`
+- `CONTRACT_SYNC_PRIVATE_KEY` or `BNB_CONTRACT_SYNC_PRIVATE_KEY`
+- `CONTRACT_SYNC_RPC_URL` or `BSC_RPC_HTTP_97` / `BSC_RPC_HTTP_56`
+- `FACTORY_ADDRESS`, `CREATOR_REGISTRY_ADDRESS`, and `RISK_REGISTRY_ADDRESS`
+- `CONTRACT_SYNC_CHAIN_ID`, when not using BSC testnet chain `97`
+
 Keep production values in the deployment secret store, not in committed files.
 
 ## Local Contract Gate
@@ -53,6 +61,36 @@ npm run verify:route-authority:bsc-testnet
 
 A mismatch blocks public launch because create/trade route signatures would be accepted by the backend but rejected on-chain, or the reverse.
 
+## Security Schema Gate
+
+After applying `frontend/supabase/migrations/20260702111000_security_and_payout_schema.sql`, verify the API sees every launch-critical security and payout table:
+
+```bash
+cd frontend
+npm run check:security-schema
+```
+
+This must pass before dashboard actions, preflight decisions, route authorization logs, contract sync jobs, or payout reconciliation are treated as launch evidence.
+
+## Contract Sync Worker Gate
+
+Dashboard/API contract actions write queued rows to `public.contract_sync_jobs`. Run the BNB worker to execute those queued jobs on-chain and write the resulting `tx_hash` plus final status back to the database:
+
+```bash
+cd frontend
+npm run worker:contract-sync
+```
+
+The worker currently supports BNB jobs for:
+
+- factory global/create pause changes
+- campaign pause, buy-pause, sell-pause, and graduation-pause changes
+- creator tier, restriction, and manual-review state sync
+- wallet risk/restriction and wallet-cluster sync
+- cluster risk/restriction sync
+
+For launch evidence, queue one representative job for each operator flow, run the worker, then confirm each row is `confirmed` with a `tx_hash` in `/api/security/contracts/sync-jobs?chain=bnb`.
+
 ## Deployment Configuration Evidence
 
 Record these addresses for the launch packet:
@@ -85,6 +123,7 @@ Before sign-off, run these actions against the target environment and capture tr
 - Block a restricted wallet from buying
 - Require authorized trading and prove direct buy/sell fails
 - Pause and unpause a campaign for buys and sells
+- Run the BNB contract sync worker and verify queued jobs become confirmed with tx hashes
 - Verify frontend ABI files are regenerated after the final compile
 
-Public launch remains blocked until the local contract gate, route authority gate, deployment configuration evidence, and operator drill checklist all pass.
+Public launch remains blocked until the local contract gate, route authority gate, security schema gate, contract sync worker gate, deployment configuration evidence, and operator drill checklist all pass.
