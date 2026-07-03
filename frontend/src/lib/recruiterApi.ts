@@ -307,7 +307,32 @@ export async function fetchRecruiterSummary(code: string): Promise<RecruiterSumm
   const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/summary`);
   return json?.summary ?? null;
 }
+export async function fetchRecruiterSummaryByWallet(walletAddress: string): Promise<RecruiterSummary | null> {
+  if (!walletAddress) return null;
 
+  try {
+    const json = await getJson(`/api/recruiters/wallet/${encodeURIComponent(walletAddress)}/summary`);
+    return json?.summary ?? json ?? null;
+  } catch (error: any) {
+    if (String(error?.message || "").includes("Recruiter not found")) return null;
+    throw error;
+  }
+}
+export async function fetchRecruiterLeaderboard(
+  limit = 100,
+  status: "active" | "inactive" | "closed" | "all" = "active",
+): Promise<RecruiterSummary[]> {
+  const qs = new URLSearchParams({
+    limit: String(limit),
+    status,
+  });
+
+  const json = await getJson(`/api/recruiters?${qs.toString()}`);
+  return Array.isArray(json?.recruiters) ? json.recruiters : [];
+}
+export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState | null> {
+  return fetchWalletAttribution(walletAddress);
+}
 export async function fetchSquadSummary(code: string): Promise<SquadSummary | null> {
   const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/squad`);
   return json?.summary ?? null;
