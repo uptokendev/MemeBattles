@@ -71,6 +71,26 @@ function openTokenSafetyDropdown() {
   }
 }
 
+function buildQuery(params: Record<string, string | number | null | undefined>): string {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "") continue;
+    qs.set(key, String(value));
+  }
+  const query = qs.toString();
+  return query ? `?${query}` : "";
+}
+
+function normalizeRecruiterCode(value: string): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 32);
+}
+
 export function setRecruiterReferralMemberRole(role: RecruiterMemberRole) {
   try {
     window.localStorage.setItem(MEMBER_ROLE_KEY, role);
@@ -292,6 +312,11 @@ export type WalletRewardSummary = {
   pendingTotalRaw: string;
   totalEarnedRaw: string;
   updatedAt: string | null;
+  claimedByProgram?: Record<string, string>;
+  totalClaimableAmount?: string;
+  claimedLifetimeAmount?: string;
+  lastClaimedAt?: string | null;
+  materializedAt?: string | null;
 };
 
 export type RecruiterApplication = {
@@ -303,10 +328,47 @@ export type RecruiterApplication = {
   specialties?: string[];
 };
 
+export type RecruiterSignupStatus = {
+  walletAddress: string;
+  isRecruiter: boolean;
+  recruiter: RecruiterSummary | null;
+  canStartSignup: boolean;
+  signupApiAvailable: boolean;
+  warning?: string;
+};
+
+export type RecruiterCodeAvailability = {
+  code: string;
+  isAvailable: boolean | null;
+  checkedVia: string;
+  message: string;
+};
+
+export type RecruiterSignupNonce = {
+  nonce: string;
+  expiresAt: string;
+};
+
+export type RecruiterSignupPayload = {
+  walletAddress: string;
+  chainId: number;
+  displayName: string;
+  desiredCode: string;
+  email: string;
+  telegram?: string;
+  discord?: string;
+  xHandle?: string;
+  pitch: string;
+  acceptTerms: boolean;
+  nonce: string;
+  signature: string;
+};
+
 export async function fetchRecruiterSummary(code: string): Promise<RecruiterSummary | null> {
   const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/summary`);
-  return json?.summary ?? null;
+  return json?.summary ?? json ?? null;
 }
+
 export async function fetchRecruiterSummaryByWallet(walletAddress: string): Promise<RecruiterSummary | null> {
   if (!walletAddress) return null;
 
@@ -318,42 +380,106 @@ export async function fetchRecruiterSummaryByWallet(walletAddress: string): Prom
     throw error;
   }
 }
+
 export async function fetchRecruiterLeaderboard(
   limit = 100,
   status: "active" | "inactive" | "closed" | "all" = "active",
 ): Promise<RecruiterSummary[]> {
-  const qs = new URLSearchParams({
-    limit: String(limit),
-    status,
-  });
-
-  const json = await getJson(`/api/recruiters?${qs.toString()}`);
+  const json = await getJson(`/api/recruiters${buildQuery({ limit, status })}`);
   return Array.isArray(json?.recruiters) ? json.recruiters : [];
 }
-export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState | null> {
-  return fetchWalletAttribution(walletAddress);
+
+export async function fetchRecruiterReplacements(code: string, limit = 4): Promise<{ replacements: RecruiterSummary[] }> {
+  const currentCode = String(code || "").trim().toLowerCase();
+  const recruiters = await fetchRecruiterLeaderboard(Math.max(limit + 1, limit), "active");
+  return {
+    replacements: recruiters
+      .filter((recruiter) => String(recruiter.code || "").trim().toLowerCase() !== currentCode)
+      .slice(0, limit),
+  };
 }
+
 export async function fetchSquadSummary(code: string): Promise<SquadSummary | null> {
   const json = await getJson(`/api/recruiters/${encodeURIComponent(code)}/squad`);
-  return json?.summary ?? null;
+  return json?.summary ?? json ?? null;
 }
 
 export async function applyRecruiter(walletAddress: string, application: RecruiterApplication) {
   return postJson("/api/recruiters/apply", { walletAddress, ...application });
 }
 
+export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
+  const json = await getJson(`/api/recruiters/signup/status${buildQuery({ walletAddress })}`);
+  return {
+    walletAddress: json?.walletAddress ?? walletAddress,
+    isRecruiter: Boolean(json?.isRecruiter),
+    recruiter: json?.recruiter ?? null,
+    canStartSignup: Boolean(json?.canStartSignup ?? !json?.isRecruiter),
+    signupApiAvailable: Boolean(json?.signupApiAvailable ?? true),
+    warning: json?.warning,
+  };
+}
+
+export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
+  return getJson(`/api/recruiters/signup/code-availability${buildQuery({ code })}`);
+}
+
+export async function requestRecruiterSignupNonce(walletAddress: string, chainId: number): Promise<RecruiterSignupNonce> {
+  return postJson("/api/recruiters/signup/nonce", { walletAddress, chainId });
+}
+
+export function buildRecruiterSignupMessage({
+  walletAddress,
+  chainId,
+  nonce,
+  displayName,
+  desiredCode,
+  email,
+  telegram,
+  discord,
+  xHandle,
+  pitch,
+}: Omit<RecruiterSignupPayload, "acceptTerms" | "signature">): string {
+  return [
+    "MemeWarzone Recruiter Signup",
+    "Action: RECRUITER_SIGNUP",
+    `Wallet: ${String(walletAddress || "").trim()}`,
+    `ChainId: ${chainId ?? ""}`,
+    `Nonce: ${String(nonce || "").trim()}`,
+    "",
+    `DisplayName: ${String(displayName || "").trim().slice(0, 40)}`,
+    `DesiredCode: ${normalizeRecruiterCode(desiredCode)}`,
+    `Email: ${String(email || "").trim().slice(0, 120)}`,
+    `Telegram: ${String(telegram || "").trim().slice(0, 80)}`,
+    `Discord: ${String(discord || "").trim().slice(0, 80)}`,
+    `X: ${String(xHandle || "").trim().slice(0, 80)}`,
+    "",
+    `Pitch: ${String(pitch || "").trim().slice(0, 1000)}`,
+  ].join("\n");
+}
+
+export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
+  return postJson("/api/recruiters/signup", payload);
+}
+
 export async function fetchWalletAttribution(walletAddress: string): Promise<WalletAttributionPublicState | null> {
   if (!walletAddress) return null;
-  const qs = new URLSearchParams({ walletAddress });
-  const json = await getJson(`/api/attribution/wallet?${qs.toString()}`);
+  const json = await getJson(`/api/attribution/wallet/${encodeURIComponent(walletAddress)}`);
   return json?.state ?? null;
+}
+
+export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState | null> {
+  return fetchWalletAttribution(walletAddress);
 }
 
 export async function fetchWalletRewards(walletAddress: string): Promise<WalletRewardSummary | null> {
   if (!walletAddress) return null;
-  const qs = new URLSearchParams({ walletAddress });
-  const json = await getJson(`/api/rewards/wallet?${qs.toString()}`);
+  const json = await getJson(`/api/rewards/wallet${buildQuery({ walletAddress })}`);
   return json?.summary ?? null;
+}
+
+export async function fetchWalletRewardSummary(walletAddress: string): Promise<WalletRewardSummary | null> {
+  return fetchWalletRewards(walletAddress);
 }
 
 export async function fetchRecruiterRewards(code: string): Promise<WalletRewardSummary | null> {
