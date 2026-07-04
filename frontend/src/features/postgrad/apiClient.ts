@@ -3,6 +3,7 @@ import { apiFetch } from "@/lib/apiBase";
 type JsonObject = Record<string, any>;
 
 export type PostGradWarRoomMode = "trending" | "new" | "graduated" | "draft";
+export type PostGradLeagueAction = "advance-week" | "rebalance-divisions" | "cycle-season-state";
 
 export type PostGradCampaignFeedParams = {
   chainId?: number | string | null;
@@ -19,7 +20,7 @@ export type PostGradFeaturedFeedParams = {
 
 export type PostGradWarRoomCampaignFeedParams = {
   chainId?: number | string | null;
-  limit?: number;
+  limit: number;
   mode: PostGradWarRoomMode;
   search?: string;
   signal?: AbortSignal;
@@ -99,6 +100,10 @@ export async function fetchPostGradEventDetails(eventId: string, signal?: AbortS
 
 export async function fetchPostGradLeagueFeed(signal?: AbortSignal) {
   return fetchJson("/api/arena/league", { cache: "no-store", signal });
+}
+
+export async function mutatePostGradLeague(action: PostGradLeagueAction) {
+  return mutateJson("/api/arena/league/mutate", { action });
 }
 
 export async function fetchPostGradWarPool(battleId: string, signal?: AbortSignal) {
