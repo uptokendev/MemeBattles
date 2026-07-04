@@ -224,7 +224,7 @@ pub mod meme_warzone_launchpad {
         let campaign_key = ctx.accounts.campaign_state.key();
         let campaign_authority = ctx.accounts.campaign_state.to_account_info();
         let campaign = &mut ctx.accounts.campaign_state;
-        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign_key)?;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, ctx.accounts.fee_vault.key(), campaign_key)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.buy_paused, LaunchpadError::BuysPaused);
@@ -284,7 +284,7 @@ pub mod meme_warzone_launchpad {
         let config = &ctx.accounts.global_config;
         let campaign_key = ctx.accounts.campaign_state.key();
         let campaign = &mut ctx.accounts.campaign_state;
-        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign_key)?;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, ctx.accounts.fee_vault.key(), campaign_key)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.sell_paused, LaunchpadError::SellsPaused);
@@ -336,7 +336,7 @@ pub mod meme_warzone_launchpad {
     pub fn graduate(ctx: Context<Graduate>) -> Result<()> {
         let config = &ctx.accounts.global_config;
         let campaign = &mut ctx.accounts.campaign_state;
-        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign.key())?;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, ctx.accounts.fee_vault.key(), campaign.key())?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.graduation_paused, LaunchpadError::GraduationPaused);
@@ -468,11 +468,12 @@ pub fn require_fee_share_config() -> Result<()> {
 }
 
 pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
-    amount
+    let fee = amount
         .checked_mul(u64::from(fee_bps))
         .ok_or(LaunchpadError::MathOverflow)?
         .checked_div(BPS_DENOMINATOR)
-        .ok_or(LaunchpadError::MathOverflow)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    Ok(fee)
 }
 
 pub fn split_trade_fee(total_fee: u64) -> Result<FeeSplit> {
@@ -565,8 +566,8 @@ pub fn quote_sell_refund(campaign: &CampaignState, token_amount: u64) -> Result<
     checked_linear_curve_cost(campaign.base_price_lamports, campaign.price_slope_lamports, post_sell_supply, token_amount)
 }
 
-pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault, campaign_key: Pubkey) -> Result<()> {
-    require_keys_eq!(campaign.fee_vault, fee_vault.key(), LaunchpadError::InvalidFeeVault);
+pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault, fee_vault_key: Pubkey, campaign_key: Pubkey) -> Result<()> {
+    require_keys_eq!(campaign.fee_vault, fee_vault_key, LaunchpadError::InvalidFeeVault);
     require_keys_eq!(campaign.mint, fee_vault.mint, LaunchpadError::InvalidFeeVault);
     require_keys_eq!(campaign_key, fee_vault.campaign_state, LaunchpadError::InvalidFeeVault);
     Ok(())
