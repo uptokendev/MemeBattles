@@ -81,6 +81,29 @@ function buildQuery(params: Record<string, string | number | null | undefined>):
   return query ? `?${query}` : "";
 }
 
+function isMissingEndpointError(error: unknown): boolean {
+  const message = String((error as any)?.message || error || "").toLowerCase();
+  return message.includes("request failed (404)") || message.includes("unknown route") || message.includes("not found");
+}
+
+function emptyWalletRewardSummary(walletAddress: string): WalletRewardSummary {
+  return {
+    walletAddress,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    totalEarnedByProgram: {},
+    claimableTotalRaw: "0",
+    pendingTotalRaw: "0",
+    totalEarnedRaw: "0",
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
+    updatedAt: null,
+  };
+}
+
 function normalizeRecruiterCode(value: string): string {
   return String(value || "")
     .trim()
@@ -409,15 +432,28 @@ export async function applyRecruiter(walletAddress: string, application: Recruit
 }
 
 export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
-  const json = await getJson(`/api/recruiters/signup/status${buildQuery({ walletAddress })}`);
-  return {
-    walletAddress: json?.walletAddress ?? walletAddress,
-    isRecruiter: Boolean(json?.isRecruiter),
-    recruiter: json?.recruiter ?? null,
-    canStartSignup: Boolean(json?.canStartSignup ?? !json?.isRecruiter),
-    signupApiAvailable: Boolean(json?.signupApiAvailable ?? true),
-    warning: json?.warning,
-  };
+  try {
+    const json = await getJson(`/api/recruiters/signup/status${buildQuery({ walletAddress })}`);
+    return {
+      walletAddress: json?.walletAddress ?? walletAddress,
+      isRecruiter: Boolean(json?.isRecruiter),
+      recruiter: json?.recruiter ?? null,
+      canStartSignup: Boolean(json?.canStartSignup ?? !json?.isRecruiter),
+      signupApiAvailable: Boolean(json?.signupApiAvailable ?? true),
+      warning: json?.warning,
+    };
+  } catch (error) {
+    if (!isMissingEndpointError(error)) throw error;
+    const recruiter = await fetchRecruiterSummaryByWallet(walletAddress).catch(() => null);
+    return {
+      walletAddress,
+      isRecruiter: Boolean(recruiter),
+      recruiter,
+      canStartSignup: !recruiter,
+      signupApiAvailable: false,
+      warning: recruiter ? undefined : "Recruiter signup is opening soon.",
+    };
+  }
 }
 
 export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
@@ -474,8 +510,13 @@ export async function fetchWalletAttributionState(walletAddress: string): Promis
 
 export async function fetchWalletRewards(walletAddress: string): Promise<WalletRewardSummary | null> {
   if (!walletAddress) return null;
-  const json = await getJson(`/api/rewards/wallet${buildQuery({ walletAddress })}`);
-  return json?.summary ?? null;
+  try {
+    const json = await getJson(`/api/rewards/wallet${buildQuery({ walletAddress })}`);
+    return json?.summary ?? emptyWalletRewardSummary(walletAddress);
+  } catch (error) {
+    if (isMissingEndpointError(error)) return emptyWalletRewardSummary(walletAddress);
+    throw error;
+  }
 }
 
 export async function fetchWalletRewardSummary(walletAddress: string): Promise<WalletRewardSummary | null> {
