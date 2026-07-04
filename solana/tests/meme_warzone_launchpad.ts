@@ -36,7 +36,7 @@ describe("meme_warzone_launchpad", () => {
   const creatorTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, creator.publicKey);
 
   before(async () => {
-    for (const wallet of [creator.publicKey, buyer.publicKey]) {
+    for (const wallet of [creator.publicKey, buyer.publicKey, recruiter.publicKey, squadTreasury.publicKey]) {
       const sig = await provider.connection.requestAirdrop(wallet, 2 * anchor.web3.LAMPORTS_PER_SOL);
       await provider.connection.confirmTransaction(sig, "confirmed");
     }
