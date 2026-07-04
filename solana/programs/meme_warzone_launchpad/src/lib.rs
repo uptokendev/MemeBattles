@@ -208,6 +208,7 @@ pub mod meme_warzone_launchpad {
     pub fn buy(ctx: Context<Trade>, lamports_in: u64) -> Result<()> {
         let config = &ctx.accounts.global_config;
         let campaign_key = ctx.accounts.campaign_state.key();
+        let campaign_authority = ctx.accounts.campaign_state.to_account_info();
         let campaign = &mut ctx.accounts.campaign_state;
         require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign_key)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
@@ -248,7 +249,7 @@ pub mod meme_warzone_launchpad {
                 MintTo {
                     mint: ctx.accounts.mint.to_account_info(),
                     to: ctx.accounts.trader_token_account.to_account_info(),
-                    authority: ctx.accounts.campaign_state.to_account_info(),
+                    authority: campaign_authority,
                 },
                 &[signer_seeds],
             ),
@@ -435,7 +436,7 @@ pub struct InitializeGlobalConfig<'info> {
 #[derive(Accounts)]
 pub struct SetGlobalPause<'info> {
     pub authority: Signer<'info>,
-    #[account(mut, seeds = [b"global"], bump = global_config.bump)]
+    #[account(seeds = [b"global"], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
 }
 
