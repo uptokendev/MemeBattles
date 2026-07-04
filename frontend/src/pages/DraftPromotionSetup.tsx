@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Archive, Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   archiveCampaignDraft,
   fetchCampaignDraft,
@@ -15,7 +16,8 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
+import { getActiveChainId, getChainLabel, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { normalizeSocialUrl } from "@/lib/socialLinks";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -38,6 +40,19 @@ function joinLines(items?: string[]) {
 
 function shortDraftId(value: string) {
   return value ? `#${value.slice(0, 8)}` : "#DRAFT";
+}
+
+function shortWallet(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Not connected";
+  return `${raw.slice(0, 5)}...${raw.slice(-4)}`;
+}
+
+function sameWallet(a?: string | null, b?: string | null, solana = false) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  return solana ? left === right : left.toLowerCase() === right.toLowerCase();
 }
 
 function canPushLiveStatus(status: string) {
@@ -70,7 +85,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldLabel({ children }: { children: ReactNode }) {
   return <label className="mb-1 block font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{children}</label>;
 }
 
@@ -78,6 +93,7 @@ export default function DraftPromotionSetup() {
   const { draftId = "" } = useParams();
   const navigate = useNavigate();
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,6 +109,35 @@ export default function DraftPromotionSetup() {
   const [creatorNote, setCreatorNote] = useState("");
   const [visibility, setVisibility] = useState<DraftVisibility>("private");
 
+  const draft = bundle?.draft;
+  const pop = bundle?.popularity;
+  const isSolanaDraft = isSolanaChainId(Number(draft?.chainId));
+  const ownerWallet = isSolanaDraft ? solanaWallet.solanaAccount : wallet.account;
+  const ownerConnected = sameWallet(draft?.creatorWallet, ownerWallet, isSolanaDraft);
+  const logoUrl = draft?.logoUrl || cachedLogoUrl;
+
+  const signOwnerAction = async (action: "read_draft" | "save_promotion" | "publish_promotion" | "archive_draft") => {
+    if (isSolanaDraft || (!draft && solanaWallet.solanaAccount && !wallet.account)) {
+      const walletAddress = solanaWallet.solanaAccount;
+      if (!walletAddress) throw new Error("Connect the draft owner Solana wallet first.");
+      return signSolanaDraftAction({
+        walletAddress,
+        chainId: draft?.chainId || SOLANA_CHAIN_ID,
+        action,
+        draftId,
+      });
+    }
+
+    if (!wallet.account || !wallet.signer) throw new Error("Connect the draft owner BNB wallet first.");
+    return signDraftAction({
+      signer: wallet.signer,
+      walletAddress: wallet.account,
+      chainId: draft?.chainId || getActiveChainId(wallet.chainId),
+      action,
+      draftId,
+    });
+  };
+
   useEffect(() => {
     setCachedLogoUrl(getCachedLogo(draftId));
   }, [draftId]);
@@ -103,24 +148,23 @@ export default function DraftPromotionSetup() {
 
     const loadDraft = async () => {
       try {
-        const first = await fetchCampaignDraft(draftId, null).catch((err: any) => {
+        const viewer = wallet.account || solanaWallet.solanaAccount || null;
+        const first = await fetchCampaignDraft(draftId, viewer).catch((err: any) => {
           if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
           throw err;
         });
 
         if (first) return first;
 
-        if (!wallet.account || !wallet.signer) {
-          throw new Error("Connect the draft owner wallet to open this private draft.");
-        }
-
-        const readAuth = await signDraftAction({
-          signer: wallet.signer,
-          walletAddress: wallet.account,
-          chainId: getActiveChainId(wallet.chainId),
-          action: "read_draft",
-          draftId,
-        });
+        const readAuth = solanaWallet.solanaAccount && !wallet.account
+          ? await signSolanaDraftAction({ walletAddress: solanaWallet.solanaAccount, chainId: SOLANA_CHAIN_ID, action: "read_draft", draftId })
+          : await signDraftAction({
+              signer: wallet.signer,
+              walletAddress: wallet.account || "",
+              chainId: getActiveChainId(wallet.chainId),
+              action: "read_draft",
+              draftId,
+            });
 
         return fetchCampaignDraftWithAuth(draftId, readAuth);
       } catch (err: any) {
@@ -153,11 +197,7 @@ export default function DraftPromotionSetup() {
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account, wallet.signer, wallet.chainId]);
-
-  const draft = bundle?.draft;
-  const pop = bundle?.popularity;
-  const logoUrl = draft?.logoUrl || cachedLogoUrl;
+  }, [draftId, wallet.account, wallet.signer, wallet.chainId, solanaWallet.solanaAccount]);
 
   const readiness = useMemo(() => {
     const checks = [
@@ -176,14 +216,8 @@ export default function DraftPromotionSetup() {
     const nextVisibility: DraftVisibility = preview && visibility === "private" ? "unlisted" : visibility;
 
     if (!draft) return null;
-
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet before saving.");
-      return null;
-    }
-
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
-      toast.error("Only the draft owner wallet can edit this promotion page.");
+    if (!ownerConnected) {
+      toast.error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before saving.`);
       return null;
     }
 
@@ -195,14 +229,7 @@ export default function DraftPromotionSetup() {
 
     setSaving(true);
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: publish ? "publish_promotion" : "save_promotion",
-        draftId,
-      });
-
+      const auth = await signOwnerAction(publish ? "publish_promotion" : "save_promotion");
       const updated = await saveDraftPromotion(draftId, {
         auth,
         missionStatement,
@@ -247,13 +274,8 @@ export default function DraftPromotionSetup() {
   const archiveCurrentDraft = async () => {
     if (!draft) return;
 
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet before archiving.");
-      return;
-    }
-
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
-      toast.error("Only the draft owner wallet can archive this draft.");
+    if (!ownerConnected) {
+      toast.error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before archiving.`);
       return;
     }
 
@@ -267,13 +289,7 @@ export default function DraftPromotionSetup() {
 
     setSaving(true);
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: "archive_draft",
-        draftId,
-      });
+      const auth = await signOwnerAction("archive_draft");
       await archiveCampaignDraft(draftId, auth);
       toast.success("Draft archived.");
       navigate("/profile?tab=drafts");
@@ -312,11 +328,11 @@ export default function DraftPromotionSetup() {
           <div className="flex min-h-14 flex-col gap-3 border-b border-border/70 bg-black/70 px-4 py-3 backdrop-blur md:flex-row md:items-center md:justify-between md:px-5">
             <div className="flex items-center gap-3">
               <Button asChild variant="ghost" className="mwz-button h-8 px-3 text-xs">
-                <Link to="/create">← Back</Link>
+                <Link to="/create">Back</Link>
               </Button>
               <div>
                 <div className="text-xs uppercase tracking-[0.22em] text-orange-300">// Prepare setup</div>
-                <div className="font-retro text-sm uppercase tracking-[0.12em] text-muted-foreground">${draft.ticker} · Draft {shortDraftId(draft.id)}</div>
+                <div className="font-retro text-sm uppercase tracking-[0.12em] text-muted-foreground">${draft.ticker} · {getChainLabel(Number(draft.chainId))} · Draft {shortDraftId(draft.id)}</div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -344,12 +360,12 @@ export default function DraftPromotionSetup() {
                     <Input value={`$${draft.ticker}`} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-mono text-sm uppercase tracking-[0.18em] text-orange-300" />
                   </div>
                   <div>
-                    <FieldLabel>Description</FieldLabel>
-                    <Input value={draft.description || ""} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-retro text-sm text-muted-foreground" />
+                    <FieldLabel>Owner</FieldLabel>
+                    <Input value={shortWallet(draft.creatorWallet)} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-mono text-sm text-muted-foreground" />
                   </div>
                 </div>
               </div>
-              {!draft.logoUrl && cachedLogoUrl && <p className="mt-2 text-xs text-orange-300">Image is shown from local upload cache while the saved draft image URL catches up.</p>}
+              {!ownerConnected && <p className="mt-2 text-xs text-orange-300">Connect {shortWallet(draft.creatorWallet)} with a {isSolanaDraft ? "Solana" : "BNB"} wallet to save or publish this draft.</p>}
             </section>
 
             <section className="grid min-h-0 gap-3 md:grid-cols-2">
@@ -385,34 +401,16 @@ export default function DraftPromotionSetup() {
                   </div>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                  <div>
-                    <FieldLabel>Website</FieldLabel>
-                    <Input value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputClass} placeholder="https://memewar.zone" />
-                  </div>
-                  <div>
-                    <FieldLabel>X (formally Twitter)</FieldLabel>
-                    <Input value={xUrl} onChange={(e) => setXUrl(e.target.value)} className={inputClass} placeholder="@memewarzone or URL" />
-                  </div>
-                  <div>
-                    <FieldLabel>Telegram</FieldLabel>
-                    <Input value={telegramUrl} onChange={(e) => setTelegramUrl(e.target.value)} className={inputClass} placeholder="@memewarzone or URL" />
-                  </div>
-                  <div>
-                    <FieldLabel>Discord</FieldLabel>
-                    <Input value={discordUrl} onChange={(e) => setDiscordUrl(e.target.value)} className={inputClass} placeholder="Discord invite URL" />
-                  </div>
+                  <div><FieldLabel>Website</FieldLabel><Input value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} className={inputClass} placeholder="https://memewar.zone" /></div>
+                  <div><FieldLabel>X (formally Twitter)</FieldLabel><Input value={xUrl} onChange={(e) => setXUrl(e.target.value)} className={inputClass} placeholder="@memewarzone or URL" /></div>
+                  <div><FieldLabel>Telegram</FieldLabel><Input value={telegramUrl} onChange={(e) => setTelegramUrl(e.target.value)} className={inputClass} placeholder="@memewarzone or URL" /></div>
+                  <div><FieldLabel>Discord</FieldLabel><Input value={discordUrl} onChange={(e) => setDiscordUrl(e.target.value)} className={inputClass} placeholder="Discord invite URL" /></div>
                 </div>
               </div>
 
               <div className="mwz-card grid gap-3 p-3 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2">
-                <div className="min-h-0">
-                  <FieldLabel>Other / Docs</FieldLabel>
-                  <Textarea value={docsText} onChange={(e) => setDocsText(e.target.value)} className={`${textareaClass} min-h-24 lg:min-h-[6.25rem]`} placeholder={"https://docs.example.com\nhttps://whitepaper.example.com"} />
-                </div>
-                <div className="min-h-0">
-                  <FieldLabel>Creator Note</FieldLabel>
-                  <Textarea value={creatorNote} onChange={(e) => setCreatorNote(e.target.value)} className={`${textareaClass} min-h-24 lg:min-h-[6.25rem]`} placeholder="Creator note shown in the dossier." />
-                </div>
+                <div className="min-h-0"><FieldLabel>Other / Docs</FieldLabel><Textarea value={docsText} onChange={(e) => setDocsText(e.target.value)} className={`${textareaClass} min-h-24 lg:min-h-[6.25rem]`} placeholder={"https://docs.example.com\nhttps://whitepaper.example.com"} /></div>
+                <div className="min-h-0"><FieldLabel>Creator Note</FieldLabel><Textarea value={creatorNote} onChange={(e) => setCreatorNote(e.target.value)} className={`${textareaClass} min-h-24 lg:min-h-[6.25rem]`} placeholder="Creator note shown in the dossier." /></div>
               </div>
             </section>
 
@@ -451,7 +449,10 @@ export default function DraftPromotionSetup() {
           </div>
 
           <div className="mwz-card mb-3 border-orange-400/50 bg-[radial-gradient(circle_at_30%_0%,rgba(255,153,0,0.18),rgba(2,17,4,0.92))] p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Readiness</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Readiness</div>
+              <div className="rounded-full border border-border/50 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{getChainLabel(Number(draft.chainId))}</div>
+            </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="font-retro text-5xl leading-none text-orange-300">{readiness}</span>
               <span className="font-mono text-sm text-muted-foreground">/ 100</span>
@@ -460,15 +461,14 @@ export default function DraftPromotionSetup() {
               <div className="h-full bg-gradient-to-r from-orange-500 to-green-400" style={{ width: `${readiness}%` }} />
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">Image, mission, launch plan, one comms channel, and visibility.</p>
-            <Button onClick={() => save({ publish: true })} disabled={saving} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
+            {isSolanaDraft ? <p className="mt-2 text-xs leading-5 text-sky-200">Solana promotion setup uses Solana wallet signatures. Push Live unlocks after the Solana protocol adapter is connected.</p> : null}
+            <Button onClick={() => save({ publish: true })} disabled={saving || !ownerConnected} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
             {canPushLive && (
               DRAFT_PUSH_LIVE_ENABLED ? (
-                <Button asChild className="mwz-button mwz-button-orange mt-2 h-10 w-full justify-center font-retro">
-                  <Link to={`/drafts/${draft.id}/push-live`}>
-                    <Rocket className="mr-2 h-4 w-4" /> Push Live
-                  </Link>
+                <Button asChild={!isSolanaDraft} disabled={isSolanaDraft} className="mwz-button mwz-button-orange mt-2 h-10 w-full justify-center font-retro">
+                  {isSolanaDraft ? <span><Rocket className="mr-2 h-4 w-4" /> Solana Protocol Pending</span> : <Link to={`/drafts/${draft.id}/push-live`}><Rocket className="mr-2 h-4 w-4" /> Push Live</Link>}
                 </Button>
               ) : (
                 <Button disabled variant="outline" className="mwz-button mt-2 h-10 w-full justify-center font-retro opacity-70">
@@ -477,12 +477,8 @@ export default function DraftPromotionSetup() {
               )
             )}
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs">
-                <Save className="mr-2 h-4 w-4" /> Save
-              </Button>
-              <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs">
-                <Eye className="mr-2 h-4 w-4" /> Preview
-              </Button>
+              <Button onClick={() => save()} disabled={saving || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Save className="mr-2 h-4 w-4" /> Save</Button>
+              <Button onClick={() => save({ preview: true })} disabled={saving || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Eye className="mr-2 h-4 w-4" /> Preview</Button>
             </div>
           </div>
 
@@ -494,9 +490,7 @@ export default function DraftPromotionSetup() {
           </div>
 
           <div className="mwz-card mb-3 p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 text-orange-300" /> Fixed setup sections
-            </div>
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground"><ShieldCheck className="h-4 w-4 text-orange-300" /> Fixed setup sections</div>
             {["Identity", "Mission", "Strategy", "Comms", "Docs + Note"].map((name, index) => (
               <div key={name} className="flex items-center gap-3 border-b border-border/40 py-1.5 last:border-b-0">
                 <LockKeyhole className="h-3.5 w-3.5 text-orange-300" />
@@ -509,17 +503,9 @@ export default function DraftPromotionSetup() {
           <div className="mwz-card p-3">
             <div className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">// Actions</div>
             <div className="grid gap-2">
-              <Button onClick={copyLink} variant="outline" className="mwz-button h-9 w-full justify-center font-retro text-xs">
-                <Flame className="mr-2 h-4 w-4" /> Copy link
-              </Button>
-              <Button
-                onClick={archiveCurrentDraft}
-                disabled={saving || draft.status === "deployed" || draft.status === "archived"}
-                variant="outline"
-                className="mwz-button h-9 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200"
-              >
-                <Archive className="mr-2 h-4 w-4" />
-                {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
+              <Button onClick={copyLink} variant="outline" className="mwz-button h-9 w-full justify-center font-retro text-xs"><Flame className="mr-2 h-4 w-4" /> Copy link</Button>
+              <Button onClick={archiveCurrentDraft} disabled={saving || !ownerConnected || draft.status === "deployed" || draft.status === "archived"} variant="outline" className="mwz-button h-9 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200">
+                <Archive className="mr-2 h-4 w-4" /> {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
               </Button>
             </div>
           </div>
