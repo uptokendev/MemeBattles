@@ -14,6 +14,14 @@ interface LeftBattleSidebarProps {
   onToggleCollapse: () => void;
 }
 
+type SidebarNavItem = {
+  icon: typeof Rocket;
+  label: string;
+  path: string;
+  external?: boolean;
+  hasSubmenu?: boolean;
+};
+
 const arenaSubItems = [
   { label: "Overview", path: "/arena" },
   { label: "Battles", path: "/arena/battles" },
@@ -26,7 +34,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
   const [arenaOpen, setArenaOpen] = useState(false);
   const showArenaNav = isPostGradNavEnabled();
 
-  const navItems = useMemo(
+  const navItems = useMemo<SidebarNavItem[]>(
     () => [
       { icon: Rocket, label: "Launchpad", path: "/" },
       ...(postGradFlags.enabled && postGradFlags.league ? [{ icon: Trophy, label: "Leagues", path: "/league" }] : []),
