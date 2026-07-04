@@ -10,13 +10,23 @@ export type LaunchpadSafetyCheck = {
   detail: string;
 };
 
+export type LaunchpadProtocolMilestone = {
+  id: string;
+  label: string;
+  state: "ready" | "in_progress" | "pending" | "blocked";
+  detail: string;
+};
+
 export type LaunchpadSafetyStatus = {
   adapterId: "bnb" | "solana";
   chainId: SupportedChainId;
+  chainLabel: string;
   protocolStatus: LaunchpadProtocolStatus;
   title: string;
   description: string;
+  primaryActionLabel: string;
   checks: LaunchpadSafetyCheck[];
+  milestones?: LaunchpadProtocolMilestone[];
 };
 
 export type CampaignInfo = {
