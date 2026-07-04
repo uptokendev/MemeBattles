@@ -4,7 +4,8 @@ import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
-import { getActiveChainId, getFactoryAddress, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { getActiveChainId, getFactoryAddress, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import {
   fetchCampaignCreateAuthorization,
   fetchCampaignTradeAuthorization,
@@ -196,9 +197,15 @@ function emitTxConfirmed(detail: any) {
 
 export function useLaunchpad(): LaunchpadAdapter {
   const wallet = useWallet() as any;
+  const solanaWallet = useSolanaWallet();
   const { provider: walletProvider, signer, chainId: walletChainId } = wallet;
+  const { solanaAccount, solanaWalletName, isSolanaConnected } = solanaWallet;
 
-  const activeChainId = useMemo<SupportedChainId>(() => getActiveChainId(walletChainId), [walletChainId]);
+  const preferSolanaLaunchpad = Boolean(isSolanaConnected && solanaAccount && !wallet.isConnected);
+  const activeChainId = useMemo<SupportedChainId>(
+    () => (preferSolanaLaunchpad ? SOLANA_CHAIN_ID : getActiveChainId(walletChainId)),
+    [preferSolanaLaunchpad, walletChainId],
+  );
   const factoryAddress = useMemo(() => getFactoryAddress(activeChainId), [activeChainId]);
   const readProvider = useMemo(() => getReadProvider(activeChainId), [activeChainId]);
 
@@ -512,7 +519,9 @@ export function useLaunchpad(): LaunchpadAdapter {
   const solanaAdapter = useMemo<LaunchpadAdapter>(() => createSolanaLaunchpadAdapter({
     fetchCampaigns,
     walletProvider,
-  }), [fetchCampaigns, walletProvider]);
+    hasSolanaWallet: Boolean(solanaAccount),
+    solanaWalletName,
+  }), [fetchCampaigns, walletProvider, solanaAccount, solanaWalletName]);
 
   return isSolanaChainId(activeChainId) ? solanaAdapter : bnbAdapter;
 }
