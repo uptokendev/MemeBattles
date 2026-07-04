@@ -4,7 +4,7 @@ import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
-import { getActiveChainId, getFactoryAddress, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId, getFactoryAddress, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
 import {
   fetchCampaignCreateAuthorization,
   fetchCampaignTradeAuthorization,
@@ -15,6 +15,32 @@ import {
 import { getReadProvider } from "@/lib/readProvider";
 import { apiFetch } from "@/lib/apiBase";
 import { resolveImageUri } from "@/lib/media";
+import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
+import { createSolanaLaunchpadAdapter } from "@/lib/launchpad/adapters/solanaLaunchpadAdapter";
+import type {
+  CampaignActivity,
+  CampaignCardStats,
+  CampaignInfo,
+  CampaignMetrics,
+  CampaignSummary,
+  CreateCampaignParams,
+  FetchCampaignPageOptions,
+  LaunchpadAdapter,
+} from "@/lib/launchpad/adapters/types";
+
+export type {
+  CampaignActivity,
+  CampaignCardStats,
+  CampaignInfo,
+  CampaignMetrics,
+  CampaignSummary,
+  CreateCampaignParams,
+  FetchCampaignPageOptions,
+  LaunchpadAdapter,
+  LaunchpadProtocolStatus,
+  LaunchpadSafetyCheck,
+  LaunchpadSafetyStatus,
+} from "@/lib/launchpad/adapters/types";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 
@@ -33,66 +59,6 @@ const LEGACY_FACTORY_ABI = [
   "function campaignsCount() view returns (uint256)",
   "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
 ] as const;
-
-export type CampaignInfo = {
-  id: number;
-  campaign: string;
-  token: string;
-  creator: string;
-  name: string;
-  symbol: string;
-  logoURI: string;
-  metadataURI?: string;
-  xAccount: string;
-  website: string;
-  extraLink: string;
-  createdAt?: number;
-  holders?: string;
-  volume?: string;
-  marketCap?: string;
-  timeAgo?: string;
-  telegram?: string;
-  discord?: string;
-  dexPairAddress?: string;
-  dexScreenerUrl?: string;
-};
-
-export type CampaignMetrics = {
-  sold: bigint;
-  curveSupply: bigint;
-  liquiditySupply: bigint;
-  creatorReserve: bigint;
-  currentPrice: bigint;
-  basePrice: bigint;
-  priceSlope: bigint;
-  graduationTarget: bigint;
-  liquidityBps: bigint;
-  protocolFeeBps: bigint;
-  launched?: boolean;
-  finalizedAt?: bigint;
-};
-
-export type CampaignActivity = {
-  buyers: number;
-  sellers: number;
-  buyVolumeWei: bigint;
-  sellVolumeWei: bigint;
-  fromBlock: number;
-  toBlock: number;
-};
-
-export type CampaignCardStats = {
-  holders: string;
-  volume: string;
-  marketCap: string;
-  marketCapBnb?: number;
-};
-
-export type CampaignSummary = {
-  campaign: CampaignInfo;
-  metrics: CampaignMetrics | null;
-  stats: CampaignCardStats;
-};
 
 function normalizeAddress(value: unknown): string {
   const raw = String(value ?? "").trim();
@@ -228,7 +194,7 @@ function emitTxConfirmed(detail: any) {
   }
 }
 
-export function useLaunchpad() {
+export function useLaunchpad(): LaunchpadAdapter {
   const wallet = useWallet() as any;
   const { provider: walletProvider, signer, chainId: walletChainId } = wallet;
 
@@ -258,7 +224,7 @@ export function useLaunchpad() {
     return Number(total ?? 0n);
   }, [getFactoryRead]);
 
-  const fetchCampaignPage = useCallback(async (offset: number, limit: number, opts?: { newestFirst?: boolean }): Promise<CampaignInfo[]> => {
+  const fetchCampaignPage = useCallback(async (offset: number, limit: number, opts?: FetchCampaignPageOptions): Promise<CampaignInfo[]> => {
     const factory = getFactoryRead();
     if (!factory || !factoryAddress) return [];
 
@@ -296,7 +262,7 @@ export function useLaunchpad() {
   const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
     const chainId = Number(activeChainId || 56);
     const db = await fetchDbCampaigns(chainId);
-    if (!ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) return db;
+    if (isSolanaChainId(activeChainId) || !ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) return db;
 
     try {
       const total = await fetchCampaignsCount();
@@ -409,18 +375,7 @@ export function useLaunchpad() {
     return summary.stats;
   }, [fetchCampaignSummary]);
 
-  const createCampaign = useCallback(async (params: {
-    name: string;
-    symbol: string;
-    logoURI: string;
-    xAccount: string;
-    website: string;
-    extraLink: string;
-    basePriceWei?: bigint;
-    priceSlopeWei?: bigint;
-    graduationTargetWei?: bigint;
-    lpReceiver?: string;
-  }) => {
+  const createCampaign = useCallback(async (params: CreateCampaignParams) => {
     const writer = getFactoryWrite();
     if (!writer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
@@ -509,7 +464,16 @@ export function useLaunchpad() {
     return receipt;
   }, [signer, activeChainId, readProvider]);
 
-  return useMemo(() => ({
+  const getSafetyStatus = useCallback(() => getBnbLaunchpadSafetyStatus({
+    chainId: activeChainId,
+    factoryAddress,
+    hasSigner: Boolean(signer),
+    hasAccount: Boolean(wallet.account),
+  }), [activeChainId, factoryAddress, signer, wallet.account]);
+
+  const bnbAdapter = useMemo<LaunchpadAdapter>(() => ({
+    adapterId: "bnb",
+    protocolStatus: factoryAddress ? "ready" : "unavailable",
     fetchCampaignsCount,
     fetchCampaignPage,
     fetchCampaigns,
@@ -522,10 +486,12 @@ export function useLaunchpad() {
     buyTokens,
     sellTokens,
     finalizeCampaign,
+    getSafetyStatus,
     walletProvider,
     activeChainId,
     factoryAddress,
   }), [
+    factoryAddress,
     fetchCampaignsCount,
     fetchCampaignPage,
     fetchCampaigns,
@@ -538,8 +504,15 @@ export function useLaunchpad() {
     buyTokens,
     sellTokens,
     finalizeCampaign,
+    getSafetyStatus,
     walletProvider,
     activeChainId,
-    factoryAddress,
   ]);
+
+  const solanaAdapter = useMemo<LaunchpadAdapter>(() => createSolanaLaunchpadAdapter({
+    fetchCampaigns,
+    walletProvider,
+  }), [fetchCampaigns, walletProvider]);
+
+  return isSolanaChainId(activeChainId) ? solanaAdapter : bnbAdapter;
 }
