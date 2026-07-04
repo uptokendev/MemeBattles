@@ -5,6 +5,7 @@ import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { startSolanaIndexerLoop } from "./solanaIndexer.js";
 import { registerSolanaOpsRoutes } from "./solanaOpsRoutes.js";
+import { registerRewardOpsRoutes } from "./rewardOpsRoutes.js";
 import {
   createSolanaWalletVerificationChallenge,
   listSolanaPayoutIntents,
@@ -367,6 +368,7 @@ express.application.listen = function patchedListen(this: any, ...args: any[]) {
     originalGet.call(this, "/internal/solana/payout-intents", solanaPayoutIntents);
     originalPost.call(this, "/internal/solana/payout-intents/:payoutIntentId/status", solanaPayoutIntentStatus);
     registerSolanaOpsRoutes(this);
+    registerRewardOpsRoutes(this);
   }
   return originalListen.apply(this, args);
 } as any;
