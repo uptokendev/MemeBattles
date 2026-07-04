@@ -30,6 +30,8 @@ const LEGACY_FACTORY_ABI = [
   "function getCampaignPage(uint256 offset,uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
 ] as const;
 
+const UNREACHABLE_FEATURED_IMAGE_HOSTS = new Set(["jlbdueorprgnfkcpnkfq.supabase.co"]);
+
 type FeaturedItemApi = {
   chainId: number;
   campaignAddress: string;
@@ -78,6 +80,17 @@ function shortAddr(addr?: string) {
 
 function isEvmAddress(addr?: string | null) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(addr ?? "").trim());
+}
+
+function resolveFeaturedImageUri(rawLogo?: string | null) {
+  const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
+  try {
+    const url = new URL(resolved, typeof window !== "undefined" ? window.location.origin : "http://local");
+    if (UNREACHABLE_FEATURED_IMAGE_HOSTS.has(url.hostname)) return "/placeholder.svg";
+  } catch {
+    return "/placeholder.svg";
+  }
+  return resolved;
 }
 
 function normalizeFeaturedItem(raw: any): FeaturedItemApi | null {
@@ -336,7 +349,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       const mcapBnb = Number((patch as { marketcapBnb?: string | number }).marketcapBnb ?? it.marketcapBnb ?? NaN);
       const mcapUsdLabel = Number.isFinite(mcapBnb) && bnbUsd ? formatCompactUsd(mcapBnb * bnbUsd) : null;
       const rawLogo = it.logoUri || logoCache[addr] || null;
-      const resolved = resolveImageUri(rawLogo) || "/placeholder.svg";
+      const resolved = resolveFeaturedImageUri(rawLogo);
       const creatorAddr = String(it.creatorAddress ?? "");
       const creatorKey = creatorAddr ? creatorAddr.trim().toLowerCase() : "";
       const profile = creatorKey ? profilesByAddr[creatorKey] ?? null : null;
