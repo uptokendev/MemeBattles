@@ -2,10 +2,22 @@ import express from "express";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { ablyRest, tokenChannel, warroomChannel } from "./ably.js";
 import { pool } from "./db.js";
+import { ENV } from "./env.js";
 import { startSolanaIndexerLoop } from "./solanaIndexer.js";
+import {
+  createSolanaWalletVerificationChallenge,
+  listSolanaPayoutIntents,
+  listSolanaRecruiterClaimableSettlements,
+  listSolanaRewardClaims,
+  recordSolanaRewardClaim,
+  updateSolanaPayoutIntentStatus,
+  verifySolanaWalletChallenge,
+  type SolanaPayoutStatus,
+} from "./rewards/solanaPayoutRails.js";
 
 const SOLANA_CHAIN_ID = 101;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const SOLANA_PATCHED_ROUTES = Symbol.for("memewarzone.solanaPayoutRoutesRegistered");
 
 function isSolanaChain(chainId: number) {
   return chainId === SOLANA_CHAIN_ID;
@@ -22,8 +34,13 @@ function outputAddress(value: unknown, chainId: number) {
   return isSolanaChain(chainId) ? raw : raw.toLowerCase();
 }
 
+function isSolanaAddress(value: unknown) {
+  const raw = String(value || "").trim();
+  return raw.length >= 32 && raw.length <= 44 && SOLANA_ADDRESS_RE.test(raw);
+}
+
 function isCampaignAddress(value: string, chainId: number) {
-  if (isSolanaChain(chainId)) return value.length >= 32 && value.length <= 44 && SOLANA_ADDRESS_RE.test(value);
+  if (isSolanaChain(chainId)) return isSolanaAddress(value);
   return /^0x[a-f0-9]{40}$/.test(value);
 }
 
@@ -34,6 +51,25 @@ function toInt(value: unknown, fallback: number) {
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function readBearerToken(req: Request): string {
+  const authHeader = String(req.headers.authorization || "").trim();
+  if (authHeader.toLowerCase().startsWith("bearer ")) return authHeader.slice(7).trim();
+  return String(req.headers["x-rank-events-token"] || "").trim();
+}
+
+function requireInternalAuth(req: Request, res: Response): boolean {
+  const expected = String(ENV.RANK_EVENTS_TOKEN || "").trim();
+  if (!expected) {
+    res.status(503).json({ ok: false, error: "Internal endpoints are disabled: RANK_EVENTS_TOKEN missing" });
+    return false;
+  }
+  if (readBearerToken(req) !== expected) {
+    res.status(401).json({ ok: false, error: "Unauthorized" });
+    return false;
+  }
+  return true;
 }
 
 const wrap = (fn: (req: Request, res: Response, next: NextFunction) => Promise<any>): RequestHandler => {
@@ -184,6 +220,103 @@ const patchedCampaigns = wrap(async (req, res) => {
   }
 });
 
+const patchedSolanaClaimRecord = wrap(async (req, res, next) => {
+  const chainId = Number(req.body?.chainId || 0);
+  if (chainId !== SOLANA_CHAIN_ID && !isSolanaAddress(req.body?.walletAddress ?? req.body?.wallet)) return next();
+  if (!requireInternalAuth(req, res)) return;
+
+  const result = await recordSolanaRewardClaim({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    epochId: Number(req.body?.epochId || 0),
+    program: String(req.body?.program || "") as any,
+    payoutSignature: req.body?.payoutSignature ?? req.body?.claimTxHash ?? null,
+    claimedAt: req.body?.claimedAt ? new Date(String(req.body.claimedAt)) : undefined,
+    metadata: req.body?.metadata ?? null,
+    requireVerifiedWallet: req.body?.requireVerifiedWallet !== false,
+  });
+  res.json({ ok: true, ...result });
+});
+
+const patchedSolanaClaims = wrap(async (req, res, next) => {
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  if (chainId !== SOLANA_CHAIN_ID && !isSolanaAddress(walletAddress)) return next();
+  if (!requireInternalAuth(req, res)) return;
+
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const programRaw = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const claims = await listSolanaRewardClaims({
+    epochId,
+    walletAddress,
+    program: programRaw as any,
+    limit,
+  });
+  res.json({ ok: true, claims });
+});
+
+const patchedSolanaClaimableSettlements = wrap(async (req, res, next) => {
+  const chainId = req.query.chainId != null && String(req.query.chainId).trim() !== "" ? Number(req.query.chainId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  if (chainId !== SOLANA_CHAIN_ID && !isSolanaAddress(walletAddress)) return next();
+  if (!requireInternalAuth(req, res)) return;
+
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const recruiterId = req.query.recruiterId != null && String(req.query.recruiterId).trim() !== "" ? Number(req.query.recruiterId) : null;
+  const recruiterCode = req.query.recruiterCode ? String(req.query.recruiterCode) : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const items = await listSolanaRecruiterClaimableSettlements({
+    epochId,
+    recruiterId,
+    recruiterCode,
+    walletAddress,
+    limit,
+  });
+  res.json({ ok: true, items });
+});
+
+const solanaWalletChallenge = wrap(async (req, res) => {
+  const challenge = await createSolanaWalletVerificationChallenge({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    ttlSeconds: req.body?.ttlSeconds != null ? Number(req.body.ttlSeconds) : undefined,
+  });
+  res.json({ ok: true, challenge });
+});
+
+const solanaWalletVerify = wrap(async (req, res) => {
+  const verification = await verifySolanaWalletChallenge({
+    walletAddress: req.body?.walletAddress ?? req.body?.wallet,
+    signature: req.body?.signature,
+    nonce: req.body?.nonce ?? null,
+  });
+  res.json({ ok: true, verification });
+});
+
+const solanaPayoutIntents = wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
+  const walletAddress = req.query.walletAddress ? String(req.query.walletAddress) : null;
+  const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
+  const status = req.query.status != null && String(req.query.status).trim() !== "" ? String(req.query.status).trim() : null;
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const items = await listSolanaPayoutIntents({ epochId, walletAddress, program: program as any, status: status as any, limit });
+  res.json({ ok: true, items });
+});
+
+const solanaPayoutIntentStatus = wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+  const payoutIntentId = Number(req.params.payoutIntentId || 0);
+  const status = String(req.body?.status || "").trim() as SolanaPayoutStatus;
+  const intent = await updateSolanaPayoutIntentStatus({
+    payoutIntentId,
+    status,
+    payoutSignature: req.body?.payoutSignature ?? null,
+    errorMessage: req.body?.errorMessage ?? null,
+    metadata: req.body?.metadata ?? null,
+  });
+  res.json({ ok: true, intent });
+});
+
 // Express' application.get has overloaded signatures. Capturing it without an
 // explicit type lets TypeScript infer an ambiguous overload union, which breaks
 // the .call() sites below during Railway builds.
@@ -191,6 +324,15 @@ const originalGet = express.application.get as unknown as (
   this: typeof express.application,
   path: any,
   ...handlers: any[]
+) => any;
+const originalPost = express.application.post as unknown as (
+  this: typeof express.application,
+  path: any,
+  ...handlers: any[]
+) => any;
+const originalListen = express.application.listen as unknown as (
+  this: typeof express.application,
+  ...args: any[]
 ) => any;
 
 express.application.get = function patchedGet(this: any, path: any, ...handlers: any[]) {
@@ -200,7 +342,31 @@ express.application.get = function patchedGet(this: any, path: any, ...handlers:
   if (path === "/api/campaigns") {
     return originalGet.call(this, path, patchedCampaigns);
   }
+  if (path === "/internal/rewards/claims") {
+    return originalGet.call(this, path, patchedSolanaClaims, ...handlers);
+  }
+  if (path === "/internal/recruiters/claimable-settlements") {
+    return originalGet.call(this, path, patchedSolanaClaimableSettlements, ...handlers);
+  }
   return originalGet.call(this, path, ...handlers);
+} as any;
+
+express.application.post = function patchedPost(this: any, path: any, ...handlers: any[]) {
+  if (path === "/internal/rewards/claims/record") {
+    return originalPost.call(this, path, patchedSolanaClaimRecord, ...handlers);
+  }
+  return originalPost.call(this, path, ...handlers);
+} as any;
+
+express.application.listen = function patchedListen(this: any, ...args: any[]) {
+  if (!this[SOLANA_PATCHED_ROUTES]) {
+    this[SOLANA_PATCHED_ROUTES] = true;
+    originalPost.call(this, "/api/solana/wallet-verification/challenge", solanaWalletChallenge);
+    originalPost.call(this, "/api/solana/wallet-verification/verify", solanaWalletVerify);
+    originalGet.call(this, "/internal/solana/payout-intents", solanaPayoutIntents);
+    originalPost.call(this, "/internal/solana/payout-intents/:payoutIntentId/status", solanaPayoutIntentStatus);
+  }
+  return originalListen.apply(this, args);
 } as any;
 
 startSolanaIndexerLoop();
