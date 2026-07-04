@@ -1,17 +1,29 @@
 import express from "express";
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { ablyRest, tokenChannel } from "./ably.js";
+import { ablyRest, tokenChannel, warroomChannel } from "./ably.js";
 import { pool } from "./db.js";
+import { startSolanaIndexerLoop } from "./solanaIndexer.js";
 
-function warroomChannel(chainId: number, campaign: string) {
-  return `warroom:${chainId}:${campaign.toLowerCase()}`;
+const SOLANA_CHAIN_ID = 101;
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+
+function isSolanaChain(chainId: number) {
+  return chainId === SOLANA_CHAIN_ID;
 }
 
-function normalizeCampaign(value: unknown) {
-  return String(value || "").trim().toLowerCase();
+function normalizeCampaign(value: unknown, chainId: number) {
+  const raw = String(value || "").trim();
+  return isSolanaChain(chainId) ? raw : raw.toLowerCase();
 }
 
-function isCampaignAddress(value: string) {
+function outputAddress(value: unknown, chainId: number) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return isSolanaChain(chainId) ? raw : raw.toLowerCase();
+}
+
+function isCampaignAddress(value: string, chainId: number) {
+  if (isSolanaChain(chainId)) return value.length >= 32 && value.length <= 44 && SOLANA_ADDRESS_RE.test(value);
   return /^0x[a-f0-9]{40}$/.test(value);
 }
 
@@ -33,7 +45,7 @@ const patchedAblyToken = wrap(async (req, res) => {
   const scope = String(req.query.scope || "token").toLowerCase();
 
   if (scope === "live") {
-    // Live launch-party / AMA chat channel — bilateral pub/sub + presence + history.
+    // Live launch-party / AMA chat channel - bilateral pub/sub + presence + history.
     // Channel slug restricted to live:<safe-slug> per spec Section 6.1.
     const liveChannel = String(req.query.channel || "").toLowerCase();
     if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
@@ -66,8 +78,8 @@ const patchedAblyToken = wrap(async (req, res) => {
     return res.json(tokenRequest);
   }
 
-  const campaign = normalizeCampaign(req.query.campaign);
-  if (!isCampaignAddress(campaign)) {
+  const campaign = normalizeCampaign(req.query.campaign, chainId);
+  if (!isCampaignAddress(campaign, chainId)) {
     return res.status(400).json({ error: "Invalid campaign address" });
   }
 
@@ -129,25 +141,28 @@ const patchedCampaigns = wrap(async (req, res) => {
       [chainId, search, cursor, limit],
     );
 
-    const items = result.rows.map((row: any) => ({
-      chainId: Number(row.chain_id),
-      campaignAddress: String(row.campaign_address || "").toLowerCase(),
-      tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
-      creatorAddress: row.creator_address ? String(row.creator_address).toLowerCase() : null,
-      name: row.name ?? null,
-      symbol: row.symbol ?? null,
-      logoUri: row.logo_uri ?? null,
-      createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
-      graduatedAtChain: row.graduated_at_chain ? String(row.graduated_at_chain) : null,
-      isDexTrading: Boolean(row.graduated_at_chain),
-      isActive: Boolean(row.is_active),
-      status: row.graduated_at_chain ? "graduated" : row.is_active ? "live" : "ended",
-      marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
-      lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
-      vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
-      votes24h: Number(row.votes_24h || 0),
-      votesAllTime: Number(row.votes_all_time || 0),
-    }));
+    const items = result.rows.map((row: any) => {
+      const rowChainId = Number(row.chain_id);
+      return {
+        chainId: rowChainId,
+        campaignAddress: outputAddress(row.campaign_address, rowChainId),
+        tokenAddress: row.token_address ? outputAddress(row.token_address, rowChainId) : null,
+        creatorAddress: row.creator_address ? outputAddress(row.creator_address, rowChainId) : null,
+        name: row.name ?? null,
+        symbol: row.symbol ?? null,
+        logoUri: row.logo_uri ?? null,
+        createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
+        graduatedAtChain: row.graduated_at_chain ? String(row.graduated_at_chain) : null,
+        isDexTrading: Boolean(row.graduated_at_chain),
+        isActive: Boolean(row.is_active),
+        status: row.graduated_at_chain ? "graduated" : row.is_active ? "live" : "ended",
+        marketcapBnb: row.marketcap_bnb != null ? String(row.marketcap_bnb) : null,
+        lastPriceBnb: row.last_price_bnb != null ? String(row.last_price_bnb) : null,
+        vol24hBnb: row.vol_24h_bnb != null ? String(row.vol_24h_bnb) : null,
+        votes24h: Number(row.votes_24h || 0),
+        votesAllTime: Number(row.votes_all_time || 0),
+      };
+    });
 
     return res.json({
       items,
@@ -187,3 +202,5 @@ express.application.get = function patchedGet(this: any, path: any, ...handlers:
   }
   return originalGet.call(this, path, ...handlers);
 } as any;
+
+startSolanaIndexerLoop();
