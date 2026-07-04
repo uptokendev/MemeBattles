@@ -1,6 +1,15 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
+import {
+  createAssociatedTokenAccountInstruction,
+  createInitializeMintInstruction,
+  getAccount,
+  getAssociatedTokenAddressSync,
+  getMint,
+  MINT_SIZE,
+  TOKEN_PROGRAM_ID,
+} from "@solana/spl-token";
 import { expect } from "chai";
 
 describe("meme_warzone_launchpad", () => {
@@ -21,12 +30,31 @@ describe("meme_warzone_launchpad", () => {
   const [zeroClusterProfile] = PublicKey.findProgramAddressSync([Buffer.from("cluster"), zeroClusterId], program.programId);
   const [campaignState] = PublicKey.findProgramAddressSync([Buffer.from("campaign"), mint.publicKey.toBuffer()], program.programId);
   const [feeVault] = PublicKey.findProgramAddressSync([Buffer.from("fee_vault"), mint.publicKey.toBuffer()], program.programId);
+  const buyerTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, buyer.publicKey);
+  const creatorTokenAccount = getAssociatedTokenAddressSync(mint.publicKey, creator.publicKey);
 
   before(async () => {
     for (const wallet of [creator.publicKey, buyer.publicKey]) {
       const sig = await provider.connection.requestAirdrop(wallet, 2 * anchor.web3.LAMPORTS_PER_SOL);
       await provider.connection.confirmTransaction(sig, "confirmed");
     }
+
+    const mintRent = await provider.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+    await provider.sendAndConfirm(
+      new anchor.web3.Transaction().add(
+        SystemProgram.createAccount({
+          fromPubkey: admin.publicKey,
+          newAccountPubkey: mint.publicKey,
+          lamports: mintRent,
+          space: MINT_SIZE,
+          programId: TOKEN_PROGRAM_ID,
+        }),
+        createInitializeMintInstruction(mint.publicKey, 0, campaignState, null, TOKEN_PROGRAM_ID),
+        createAssociatedTokenAccountInstruction(admin.publicKey, buyerTokenAccount, buyer.publicKey, mint.publicKey),
+        createAssociatedTokenAccountInstruction(admin.publicKey, creatorTokenAccount, creator.publicKey, mint.publicKey),
+      ),
+      [mint],
+    );
   });
 
   it("initializes global config, creator profile, risk profiles, and cluster profile", async () => {
@@ -91,7 +119,7 @@ describe("meme_warzone_launchpad", () => {
     expect(profile.liveBondingCount).to.eq(0);
   });
 
-  it("creates a campaign with tier rules and initializes the fee vault", async () => {
+  it("creates a campaign with tier rules, a valid SPL mint, and initializes the fee vault", async () => {
     await program.methods
       .createCampaign({
         graduationTargetLamports: new anchor.BN(1_000_000),
@@ -116,17 +144,20 @@ describe("meme_warzone_launchpad", () => {
     const campaign = await program.account.campaignState.fetch(campaignState);
     const vault = await program.account.feeVault.fetch(feeVault);
     const profile = await program.account.creatorProfile.fetch(creatorProfile);
+    const mintState = await getMint(provider.connection, mint.publicKey);
     expect(campaign.creator.toBase58()).to.eq(creator.publicKey.toBase58());
     expect(campaign.mint.toBase58()).to.eq(mint.publicKey.toBase58());
     expect(campaign.feeVault.toBase58()).to.eq(feeVault.toBase58());
     expect(campaign.creatorBuyCapLamports.toNumber()).to.eq(250_000_000);
+    expect(mintState.mintAuthority?.toBase58()).to.eq(campaignState.toBase58());
+    expect(mintState.freezeAuthority).to.eq(null);
     expect(vault.campaignState.toBase58()).to.eq(campaignState.toBase58());
     expect(vault.solVaultLamports.toNumber()).to.eq(0);
     expect(profile.liveBondingCount).to.eq(1);
     expect(profile.totalLaunches.toNumber()).to.eq(1);
   });
 
-  it("moves SOL into the fee vault and records protocol fees on buy", async () => {
+  it("moves SOL into the fee vault, mints campaign tokens, and records protocol fees on buy", async () => {
     await program.methods
       .buy(new anchor.BN(10_000))
       .accounts({
@@ -134,7 +165,10 @@ describe("meme_warzone_launchpad", () => {
         globalConfig,
         campaignState,
         feeVault,
+        mint: mint.publicKey,
+        traderTokenAccount: buyerTokenAccount,
         riskProfile: buyerRiskProfile,
+        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
       .signers([buyer])
@@ -142,10 +176,43 @@ describe("meme_warzone_launchpad", () => {
 
     const campaign = await program.account.campaignState.fetch(campaignState);
     const vault = await program.account.feeVault.fetch(feeVault);
+    const buyerTokens = await getAccount(provider.connection, buyerTokenAccount);
+    const mintState = await getMint(provider.connection, mint.publicKey);
     expect(campaign.grossBuyLamports.toNumber()).to.eq(10_000);
     expect(campaign.soldAmount.toNumber()).to.eq(99);
     expect(vault.protocolFeeLamports.toNumber()).to.eq(50);
     expect(vault.solVaultLamports.toNumber()).to.eq(9_950);
+    expect(Number(buyerTokens.amount)).to.eq(99);
+    expect(Number(mintState.supply)).to.eq(99);
+  });
+
+  it("burns campaign tokens and releases SOL from the fee vault on sell", async () => {
+    await program.methods
+      .sell(new anchor.BN(25))
+      .accounts({
+        trader: buyer.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+        mint: mint.publicKey,
+        traderTokenAccount: buyerTokenAccount,
+        riskProfile: buyerRiskProfile,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([buyer])
+      .rpc();
+
+    const campaign = await program.account.campaignState.fetch(campaignState);
+    const vault = await program.account.feeVault.fetch(feeVault);
+    const buyerTokens = await getAccount(provider.connection, buyerTokenAccount);
+    const mintState = await getMint(provider.connection, mint.publicKey);
+    expect(campaign.soldAmount.toNumber()).to.eq(74);
+    expect(campaign.grossSellLamports.toNumber()).to.eq(2_500);
+    expect(vault.protocolFeeLamports.toNumber()).to.eq(62);
+    expect(vault.solVaultLamports.toNumber()).to.eq(7_450);
+    expect(Number(buyerTokens.amount)).to.eq(74);
+    expect(Number(mintState.supply)).to.eq(74);
   });
 
   it("blocks creator buys during the tier lock", async () => {
@@ -157,7 +224,10 @@ describe("meme_warzone_launchpad", () => {
           globalConfig,
           campaignState,
           feeVault,
+          mint: mint.publicKey,
+          traderTokenAccount: creatorTokenAccount,
           riskProfile: creatorRiskProfile,
+          tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
         })
         .signers([creator])
