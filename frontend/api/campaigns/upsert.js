@@ -1,28 +1,27 @@
 import { pool } from "../../server/db.js";
-import { badMethod, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, json, normalizeAddress, readJson } from "../../server/http.js";
 
 function cleanText(value, max = 280) {
   return String(value ?? "").trim().slice(0, max);
 }
 
-function cleanAddress(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+function cleanAddress(value, chainId) {
+  return normalizeAddress(value, chainId);
 }
 
 function metadataUrlFromRequest(req, chainId, tokenAddress, campaignAddress) {
   const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim() || "https";
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
-  const address = cleanAddress(tokenAddress) || cleanAddress(campaignAddress);
+  const address = cleanAddress(tokenAddress, chainId) || cleanAddress(campaignAddress, chainId);
   if (!host || !address) return "";
   return `${proto}://${host}/api/token-metadata/${chainId}/${address}`;
 }
 
 async function mirrorTokenMetadata(req, body) {
   const chainId = Number(body.chainId);
-  const campaignAddress = cleanAddress(body.campaignAddress);
-  const tokenAddress = cleanAddress(body.tokenAddress);
-  const creatorAddress = cleanAddress(body.creatorAddress);
+  const campaignAddress = cleanAddress(body.campaignAddress, chainId);
+  const tokenAddress = cleanAddress(body.tokenAddress, chainId);
+  const creatorAddress = cleanAddress(body.creatorAddress, chainId);
   const name = cleanText(body.name, 64);
   const symbol = cleanText(body.symbol, 16);
   const description = cleanText(body.description, 1000) || null;
@@ -49,8 +48,8 @@ async function mirrorTokenMetadata(req, body) {
          from public.token_metadata_registry
         where chain_id = $1
           and (
-            ($2::text is not null and lower(campaign_address) = $2::text)
-            or ($3::text is not null and lower(token_address) = $3::text)
+            ($2::text is not null and campaign_address = $2::text)
+            or ($3::text is not null and token_address = $3::text)
           )
         order by id asc
         limit 1`,
@@ -152,16 +151,16 @@ export default async function handler(req, res) {
   try {
     const b = await readJson(req);
     const chainId = Number(b.chainId);
-    const campaignAddress = cleanAddress(b.campaignAddress);
-    const tokenAddress = cleanAddress(b.tokenAddress);
-    const creatorAddress = cleanAddress(b.creatorAddress);
+    const campaignAddress = cleanAddress(b.campaignAddress, chainId);
+    const tokenAddress = cleanAddress(b.tokenAddress, chainId);
+    const creatorAddress = cleanAddress(b.creatorAddress, chainId);
     const name = cleanText(b.name, 64);
     const symbol = cleanText(b.symbol, 16);
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (!isAddress(campaignAddress)) return json(res, 400, { error: "Invalid campaignAddress" });
-    if (!isAddress(tokenAddress)) return json(res, 400, { error: "Invalid tokenAddress" });
-    if (!isAddress(creatorAddress)) return json(res, 400, { error: "Invalid creatorAddress" });
+    if (!campaignAddress) return json(res, 400, { error: "Invalid campaignAddress" });
+    if (!tokenAddress) return json(res, 400, { error: "Invalid tokenAddress" });
+    if (!creatorAddress) return json(res, 400, { error: "Invalid creatorAddress" });
 
     await pool.query(
       `INSERT INTO campaigns (chain_id, campaign_address, token_address, creator_address, name, symbol)
