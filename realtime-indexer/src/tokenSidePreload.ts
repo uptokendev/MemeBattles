@@ -19,6 +19,7 @@ import {
 
 const SOLANA_CHAIN_ID = 101;
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA_PATCHED_ROUTES = Symbol.for("memewarzone.solanaPayoutRoutesRegistered");
 
 function isSolanaChain(chainId: number) {
@@ -34,6 +35,14 @@ function outputAddress(value: unknown, chainId: number) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   return isSolanaChain(chainId) ? raw : raw.toLowerCase();
+}
+
+function normalizeWallet(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (EVM_ADDRESS_RE.test(raw)) return raw.toLowerCase();
+  if (isSolanaAddress(raw)) return raw;
+  return raw;
 }
 
 function isSolanaAddress(value: unknown) {
@@ -78,19 +87,83 @@ const wrap = (fn: (req: Request, res: Response, next: NextFunction) => Promise<a
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+async function safeQuery(sql: string, params: any[] = []) {
+  try {
+    return await pool.query(sql, params);
+  } catch (error) {
+    console.warn("[tokenSidePreload] optional query failed", error);
+    return { rows: [] as any[] };
+  }
+}
+
+function emptyWalletRewardSummary(walletAddress: string) {
+  return {
+    walletAddress,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    totalEarnedByProgram: {},
+    claimableTotalRaw: "0",
+    pendingTotalRaw: "0",
+    totalEarnedRaw: "0",
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
+    updatedAt: null,
+  };
+}
+
+function normalizeRecruiterSummary(row: any) {
+  if (!row) return null;
+  return {
+    recruiterId: Number(row.recruiter_id ?? row.id ?? 0),
+    walletAddress: normalizeWallet(row.wallet_address ?? row.walletAddress),
+    code: String(row.code ?? row.recruiter_code ?? ""),
+    displayName: row.display_name ?? row.displayName ?? null,
+    isOg: Boolean(row.is_og ?? row.isOg ?? false),
+    status: String(row.status ?? "active"),
+    closedAt: row.closed_at ?? row.closedAt ?? null,
+    linkedWalletCount: Number(row.linked_wallet_count ?? row.linkedWalletCount ?? 0),
+    linkedCreatorsCount: Number(row.linked_creators_count ?? row.linkedCreatorsCount ?? 0),
+    linkedTradersCount: Number(row.linked_traders_count ?? row.linkedTradersCount ?? 0),
+    activeSquadMemberCount: Number(row.active_squad_member_count ?? row.activeSquadMemberCount ?? 0),
+    referredEventCount: Number(row.referred_event_count ?? row.referredEventCount ?? 0),
+    referredVolumeRaw: String(row.referred_volume_raw ?? row.referredVolumeRaw ?? "0"),
+    recruiterRouteAmountRaw: String(row.recruiter_route_amount_raw ?? row.recruiterRouteAmountRaw ?? "0"),
+    lastReferredEventAt: row.last_referred_event_at ?? row.lastReferredEventAt ?? null,
+    latestLinkedActivityAt: row.latest_linked_activity_at ?? row.latestLinkedActivityAt ?? null,
+    pendingEarningsRaw: String(row.pending_earnings_raw ?? row.pendingEarningsRaw ?? "0"),
+    claimableEarningsRaw: String(row.claimable_earnings_raw ?? row.claimableEarningsRaw ?? "0"),
+    totalEarnedRaw: String(row.total_earned_raw ?? row.totalEarnedRaw ?? "0"),
+    claimedLifetimeRaw: String(row.claimed_lifetime_raw ?? row.claimedLifetimeRaw ?? "0"),
+    lastClaimedAt: row.last_claimed_at ?? row.lastClaimedAt ?? null,
+    weightedScore: Number(row.weighted_score ?? row.weightedScore ?? 0),
+    createdAt: row.created_at ?? row.createdAt ?? null,
+    updatedAt: row.updated_at ?? row.updatedAt ?? null,
+    materializedAt: row.materialized_at ?? row.materializedAt ?? null,
+  };
+}
+
+async function findRecruiterByWallet(walletAddress: string) {
+  const normalized = normalizeWallet(walletAddress);
+  if (!normalized) return null;
+  const result = await safeQuery(
+    `select * from public.recruiters where lower(wallet_address::text) = lower($1) order by updated_at desc nulls last, created_at desc nulls last limit 1`,
+    [normalized],
+  );
+  return normalizeRecruiterSummary(result.rows?.[0]);
+}
+
 const patchedAblyToken = wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
   const scope = String(req.query.scope || "token").toLowerCase();
 
   if (scope === "live") {
-    // Live launch-party / AMA chat channel - bilateral pub/sub + presence + history.
-    // Channel slug restricted to live:<safe-slug> per spec Section 6.1.
     const liveChannel = String(req.query.channel || "").toLowerCase();
     if (!/^live:[a-z0-9._-]+$/.test(liveChannel)) {
       return res.status(400).json({ error: "Invalid live channel name" });
     }
-    // Bind the token to the caller's clientId so Ably presence counts each
-    // wallet uniquely. Falls back to "public" if absent (history-only consumer).
     const liveClientId = String(req.query.clientId || "public");
     const tokenRequest = await ablyRest.auth.createTokenRequest({
       clientId: liveClientId,
@@ -222,6 +295,35 @@ const patchedCampaigns = wrap(async (req, res) => {
   }
 });
 
+const walletRewardSummary = wrap(async (req, res) => {
+  const walletAddress = normalizeWallet(req.query.walletAddress || req.query.wallet || req.params.walletAddress);
+  if (!walletAddress) return res.status(400).json({ ok: false, error: "walletAddress is required" });
+  res.json({ ok: true, summary: emptyWalletRewardSummary(walletAddress) });
+});
+
+const recruiterSignupStatus = wrap(async (req, res) => {
+  const walletAddress = normalizeWallet(req.query.walletAddress || req.query.wallet || req.params.walletAddress);
+  if (!walletAddress) return res.status(400).json({ ok: false, error: "walletAddress is required" });
+  const recruiter = await findRecruiterByWallet(walletAddress);
+  res.json({
+    ok: true,
+    walletAddress,
+    isRecruiter: Boolean(recruiter),
+    recruiter,
+    canStartSignup: !recruiter,
+    signupApiAvailable: false,
+    warning: recruiter ? undefined : "Recruiter signup is opening soon.",
+  });
+});
+
+const recruiterWalletSummary = wrap(async (req, res) => {
+  const walletAddress = normalizeWallet(req.params.walletAddress || req.query.walletAddress);
+  if (!walletAddress) return res.status(400).json({ ok: false, error: "walletAddress is required" });
+  const recruiter = await findRecruiterByWallet(walletAddress);
+  if (!recruiter) return res.status(404).json({ ok: false, error: "Recruiter not found" });
+  res.json({ ok: true, summary: recruiter });
+});
+
 const patchedSolanaClaimRecord = wrap(async (req, res, next) => {
   const chainId = Number(req.body?.chainId || 0);
   if (chainId !== SOLANA_CHAIN_ID && !isSolanaAddress(req.body?.walletAddress ?? req.body?.wallet)) return next();
@@ -319,9 +421,6 @@ const solanaPayoutIntentStatus = wrap(async (req, res) => {
   res.json({ ok: true, intent });
 });
 
-// Express' application.get has overloaded signatures. Capturing it without an
-// explicit type lets TypeScript infer an ambiguous overload union, which breaks
-// the .call() sites below during Railway builds.
 const originalGet = express.application.get as unknown as (
   this: typeof express.application,
   path: any,
@@ -365,6 +464,9 @@ express.application.listen = function patchedListen(this: any, ...args: any[]) {
     this[SOLANA_PATCHED_ROUTES] = true;
     originalPost.call(this, "/api/solana/wallet-verification/challenge", solanaWalletChallenge);
     originalPost.call(this, "/api/solana/wallet-verification/verify", solanaWalletVerify);
+    originalGet.call(this, "/api/rewards/wallet", walletRewardSummary);
+    originalGet.call(this, "/api/recruiters/signup/status", recruiterSignupStatus);
+    originalGet.call(this, "/api/recruiters/wallet/:walletAddress/summary", recruiterWalletSummary);
     originalGet.call(this, "/internal/solana/payout-intents", solanaPayoutIntents);
     originalPost.call(this, "/internal/solana/payout-intents/:payoutIntentId/status", solanaPayoutIntentStatus);
     registerSolanaOpsRoutes(this);
