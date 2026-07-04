@@ -124,7 +124,7 @@ describe("meme_warzone_launchpad", () => {
   it("creates a campaign with tier rules, fee recipients, a valid SPL mint, and initializes the fee vault", async () => {
     await program.methods
       .createCampaign({
-        graduationTargetLamports: new anchor.BN(1_000_000),
+        graduationTargetLamports: new anchor.BN(48),
         creatorBuyCapLamports: new anchor.BN(250_000_000),
         basePriceLamports: new anchor.BN(100),
         priceSlopeLamports: new anchor.BN(1),
@@ -155,11 +155,13 @@ describe("meme_warzone_launchpad", () => {
     expect(campaign.mint.toBase58()).to.eq(mint.publicKey.toBase58());
     expect(campaign.feeVault.toBase58()).to.eq(feeVault.toBase58());
     expect(campaign.creatorBuyCapLamports.toNumber()).to.eq(250_000_000);
+    expect(campaign.graduationTargetLamports.toNumber()).to.eq(48);
     expect(campaign.priceSlopeLamports.toNumber()).to.eq(1);
     expect(mintState.mintAuthority?.toBase58()).to.eq(campaignState.toBase58());
     expect(mintState.freezeAuthority).to.eq(null);
     expect(vault.campaignState.toBase58()).to.eq(campaignState.toBase58());
     expect(vault.solVaultLamports.toNumber()).to.eq(0);
+    expect(vault.graduationLiquidityLamports.toNumber()).to.eq(0);
     expect(profile.liveBondingCount).to.eq(1);
     expect(profile.totalLaunches.toNumber()).to.eq(1);
   });
@@ -300,6 +302,52 @@ describe("meme_warzone_launchpad", () => {
       expect.fail("creator buy should have been locked");
     } catch (error: any) {
       expect(String(error?.error?.errorCode?.code || error?.message)).to.contain("CreatorBuyLocked");
+    }
+  });
+
+  it("graduates and moves remaining curve reserve into the liquidity bucket", async () => {
+    await program.methods
+      .graduate()
+      .accounts({
+        caller: buyer.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+        creatorProfile,
+      })
+      .signers([buyer])
+      .rpc();
+
+    const campaign = await program.account.campaignState.fetch(campaignState);
+    const vault = await program.account.feeVault.fetch(feeVault);
+    const profile = await program.account.creatorProfile.fetch(creatorProfile);
+    expect(campaign.graduated).to.eq(true);
+    expect(vault.solVaultLamports.toNumber()).to.eq(0);
+    expect(vault.graduationLiquidityLamports.toNumber()).to.eq(5_950);
+    expect(profile.liveBondingCount).to.eq(0);
+    expect(profile.successfulGraduations.toNumber()).to.eq(1);
+  });
+
+  it("blocks sells after graduation", async () => {
+    try {
+      await program.methods
+        .sell(new anchor.BN(1))
+        .accounts({
+          trader: buyer.publicKey,
+          globalConfig,
+          campaignState,
+          feeVault,
+          mint: mint.publicKey,
+          traderTokenAccount: buyerTokenAccount,
+          riskProfile: buyerRiskProfile,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([buyer])
+        .rpc();
+      expect.fail("sell should have been blocked after graduation");
+    } catch (error: any) {
+      expect(String(error?.error?.errorCode?.code || error?.message)).to.contain("AlreadyGraduated");
     }
   });
 });
