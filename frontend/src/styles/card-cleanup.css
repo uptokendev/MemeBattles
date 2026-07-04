@@ -81,8 +81,8 @@
   z-index: 1;
 }
 
-/* Static cards must stay calm on hover. Only real clickable campaign/draft
-   cards are allowed to brighten; broad hover rules made dashboards feel noisy. */
+/* Static cards must stay calm on hover. Clickable card surfaces are allowed to
+   brighten below, but passive dashboard/profile cards should not light up. */
 :where(
   .mwz-hud-frame,
   .mwz-panel,
@@ -102,6 +102,11 @@
 }
 
 :where(
+  a,
+  button,
+  [role="button"],
+  [tabindex="0"],
+  .cursor-pointer,
   .campaign-card,
   .draft-card,
   .mwz-campaign-card,
@@ -109,7 +114,17 @@
   [data-card-kind="campaign"],
   [data-card-kind="draft"],
   [data-addr][role="button"]
-):hover {
+):where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .holo-card,
+  [class*="bg-card/"],
+  [class*="bg-background/"][class*="border"],
+  [class*="border-border"],
+  [class*="border-accent"]
+):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
   border-color: var(--mwz-flat-card-border-strong) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
@@ -167,6 +182,11 @@
 }
 
 .mwz-app-shell main :where(
+  a,
+  button,
+  [role="button"],
+  [tabindex="0"],
+  .cursor-pointer,
   .campaign-card,
   .draft-card,
   .mwz-campaign-card,
@@ -174,7 +194,17 @@
   [data-card-kind="campaign"],
   [data-card-kind="draft"],
   [data-addr][role="button"]
-):hover {
+):where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .holo-card,
+  [class*="bg-card/"],
+  [class*="bg-background/"][class*="border"],
+  [class*="border-border"],
+  [class*="border-accent"]
+):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
   border-color: var(--mwz-flat-card-border-strong) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
