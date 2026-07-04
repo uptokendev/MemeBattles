@@ -193,6 +193,7 @@ pub mod meme_warzone_launchpad {
         vault.campaign_state = campaign_key;
         vault.mint = ctx.accounts.mint.key();
         vault.sol_vault_lamports = 0;
+        vault.graduation_liquidity_lamports = 0;
         vault.protocol_fee_lamports = 0;
         vault.creator_fee_lamports = 0;
         vault.recruiter_fee_lamports = 0;
@@ -335,18 +336,29 @@ pub mod meme_warzone_launchpad {
     pub fn graduate(ctx: Context<Graduate>) -> Result<()> {
         let config = &ctx.accounts.global_config;
         let campaign = &mut ctx.accounts.campaign_state;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign.key())?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.graduation_paused, LaunchpadError::GraduationPaused);
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
         require!(campaign.sold_amount >= campaign.graduation_target_lamports, LaunchpadError::GraduationThreshold);
+
+        let vault = &mut ctx.accounts.fee_vault;
+        let liquidity_lamports = vault.sol_vault_lamports;
+        require!(liquidity_lamports > 0, LaunchpadError::InsufficientVaultBalance);
+        vault.graduation_liquidity_lamports = vault
+            .graduation_liquidity_lamports
+            .checked_add(liquidity_lamports)
+            .ok_or(LaunchpadError::MathOverflow)?;
+        vault.sol_vault_lamports = 0;
         campaign.graduated = true;
+
         let creator = &mut ctx.accounts.creator_profile;
         if creator.live_bonding_count > 0 {
             creator.live_bonding_count -= 1;
         }
         creator.successful_graduations = creator.successful_graduations.checked_add(1).ok_or(LaunchpadError::MathOverflow)?;
-        emit!(Graduated { campaign: campaign.key(), creator: campaign.creator, mint: campaign.mint });
+        emit!(Graduated { campaign: campaign.key(), creator: campaign.creator, mint: campaign.mint, liquidity_lamports });
         Ok(())
     }
 
@@ -689,6 +701,8 @@ pub struct Graduate<'info> {
     pub global_config: Account<'info, GlobalConfig>,
     #[account(mut)]
     pub campaign_state: Account<'info, CampaignState>,
+    #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump, has_one = campaign_state)]
+    pub fee_vault: Account<'info, FeeVault>,
     #[account(mut, seeds = [b"creator", campaign_state.creator.as_ref()], bump = creator_profile.bump)]
     pub creator_profile: Account<'info, CreatorProfile>,
 }
@@ -765,13 +779,14 @@ pub struct FeeVault {
     pub campaign_state: Pubkey,
     pub mint: Pubkey,
     pub sol_vault_lamports: u64,
+    pub graduation_liquidity_lamports: u64,
     pub protocol_fee_lamports: u64,
     pub creator_fee_lamports: u64,
     pub recruiter_fee_lamports: u64,
     pub squad_fee_lamports: u64,
     pub bump: u8,
 }
-impl FeeVault { pub const SPACE: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1; }
+impl FeeVault { pub const SPACE: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1; }
 
 #[account]
 pub struct RiskProfile {
@@ -819,7 +834,7 @@ pub struct Bought { pub campaign: Pubkey, pub buyer: Pubkey, pub lamports_in: u6
 #[event]
 pub struct Sold { pub campaign: Pubkey, pub seller: Pubkey, pub token_amount: u64, pub gross_refund_lamports: u64, pub protocol_fee_lamports: u64 }
 #[event]
-pub struct Graduated { pub campaign: Pubkey, pub creator: Pubkey, pub mint: Pubkey }
+pub struct Graduated { pub campaign: Pubkey, pub creator: Pubkey, pub mint: Pubkey, pub liquidity_lamports: u64 }
 #[event]
 pub struct RewardsClaimed { pub campaign: Pubkey, pub claimant: Pubkey, pub reward_kind: u8, pub lamports: u64 }
 
