@@ -7,11 +7,13 @@ import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
 import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { apiFetch } from "@/lib/apiBase";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, getChainLabel, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -73,6 +75,7 @@ const Create = () => {
   } = useTokenForm();
 
   const wallet = useWallet();
+  const solanaWallet = useSolanaWallet();
   const launchpad = useLaunchpad();
   const navigate = useNavigate();
   const [isDrafting, setIsDrafting] = useState(false);
@@ -81,14 +84,15 @@ const Create = () => {
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
-  // Reject unsupported chains (e.g. Ethereum mainnet=1). getActiveChainId returns
-  // the wallet's chain only if it's in the allowed list [56, 97, 101]; otherwise
-  // falls back to VITE_DEFAULT_CHAIN_ID (or 56 if unset).
-  const chainId = getActiveChainId(wallet.chainId);
+  const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
+  const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
+  const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
+  const creatorChainLabel = isSolanaCreator ? "Solana" : getChainLabel(chainId);
+  const creatorWalletLabel = creatorWallet ? `${creatorWallet.slice(0, 4)}...${creatorWallet.slice(-4)}` : "No wallet";
   const launchpadSafetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
   const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
   const deployModeDescription = isSolanaProtocolPending
-    ? "Solana wallet context is connected, but Solana launch protocol is pending. BNB launch remains the only live launch route."
+    ? "Solana drafts are signed and saved through your Solana wallet. Direct Solana deploy, buy, sell, and finalize stay locked until the on-chain launch program is deployed."
     : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.";
   const deployButtonLabel = isSolanaProtocolPending ? "Solana Protocol Pending" : "Locked in Prepare Mode";
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
@@ -191,8 +195,13 @@ const Create = () => {
       return false;
     }
 
-    if (!wallet.isConnected || !wallet.account) {
-      toast.error("Please connect your wallet first");
+    if (!creatorWallet) {
+      toast.error("Please connect your BNB or Solana wallet first");
+      return false;
+    }
+
+    if (!isSolanaCreator && !wallet.signer) {
+      toast.error("Wallet signer unavailable. Reconnect your BNB wallet and try again.");
       return false;
     }
 
@@ -200,9 +209,9 @@ const Create = () => {
   };
 
   const uploadLogo = async () => {
-    if (!formData.image || !wallet.account) throw new Error("Missing logo or wallet");
-    const chainIdForUpload = String(getActiveChainId(wallet.chainId));
-    const address = wallet.account.toLowerCase();
+    if (!formData.image || !creatorWallet) throw new Error("Missing logo or wallet");
+    const chainIdForUpload = String(chainId);
+    const address = isSolanaCreator ? creatorWallet : creatorWallet.toLowerCase();
     const qs = new URLSearchParams({ kind: "logo", chainId: chainIdForUpload, address }).toString();
     const fd = new FormData();
     fd.append("file", formData.image);
@@ -222,23 +231,36 @@ const Create = () => {
     return json.url;
   };
 
+  const createDraftAuth = async (draftId?: string) => {
+    if (isSolanaCreator) {
+      return signSolanaDraftAction({
+        walletAddress: creatorWallet,
+        chainId,
+        action: draftId ? "save_promotion" : "create_draft",
+        draftId,
+      });
+    }
+
+    return signDraftAction({
+      signer: wallet.signer,
+      walletAddress: creatorWallet,
+      chainId,
+      action: draftId ? "save_promotion" : "create_draft",
+      draftId,
+    });
+  };
+
   const handleCreateDraft = async () => {
     if (!validateCoreForm()) return;
     setIsDrafting(true);
 
     try {
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account!,
-        chainId,
-        action: "create_draft",
-      });
-
+      const auth = await createDraftAuth();
       const logoUrl = await uploadLogo();
       const draft = await createCampaignDraft({
         auth,
         chainId,
-        creatorWallet: wallet.account!,
+        creatorWallet,
         name: formData.name,
         ticker: normalizedTicker,
         description: formData.description || null,
@@ -253,13 +275,7 @@ const Create = () => {
       } as any);
 
       try {
-        const promotionAuth = await signDraftAction({
-          signer: wallet.signer,
-          walletAddress: wallet.account!,
-          chainId,
-          action: "save_promotion" as any,
-          draftId: draft.id,
-        } as any);
+        const promotionAuth = await createDraftAuth(draft.id);
 
         await saveDraftPromotion(draft.id, {
           auth: promotionAuth,
@@ -276,7 +292,7 @@ const Create = () => {
 
       clearJustCreatedDraftCache(draft.id);
       cacheDraftLogo(draft.id, logoUrl);
-      toast.success("Draft saved. No gas spent.");
+      toast.success(isSolanaCreator ? "Solana draft signed and saved. No gas spent." : "Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);
     } catch (error: any) {
       console.error(error);
@@ -288,7 +304,7 @@ const Create = () => {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast.error(isSolanaProtocolPending ? "Solana launch protocol is pending. Use BNB for live launch actions." : "Deploy Mode is locked during Prepare Mode. Save a draft instead.");
+    toast.error(isSolanaProtocolPending ? "Solana launch protocol is pending. Save a signed Solana draft for now." : "Deploy Mode is locked during Prepare Mode. Save a draft instead.");
   };
 
   const isProjectDisabled = formData.category === "project";
@@ -305,7 +321,7 @@ const Create = () => {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-muted-foreground md:max-w-md">
             <span className="font-retro uppercase tracking-[0.14em] text-accent">Prepare Mode:</span>{" "}
-            Drafts and promotion pages are open now. Direct deploy unlocks at live launch.
+            {isSolanaCreator ? "Solana wallet drafts are open now. On-chain Solana launch follows the program deployment." : "Drafts and promotion pages are open now. BNB launch remains the live on-chain route."}
           </div>
           <Button asChild size="sm" className="mwz-button mwz-button-orange shrink-0 font-retro">
             <Link to="/playbook">
@@ -317,7 +333,7 @@ const Create = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="mwz-card grid flex-1 gap-3 overflow-visible p-3 md:min-h-0 md:grid-cols-[0.9fr_1.25fr_0.85fr] md:overflow-hidden md:p-4 lg:grid-cols-[0.86fr_1.28fr_0.86fr]">
-        <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-retro text-xs uppercase tracking-[0.16em] text-muted-foreground">Logo</p>
@@ -330,12 +346,12 @@ const Create = () => {
 
           <div className="flex items-center gap-4 md:flex-col md:items-stretch">
             {!formData.imagePreview ? (
-              <label htmlFor="image-upload" className="flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-border bg-background/50 transition-colors hover:border-accent md:h-48 md:w-full lg:h-56">
+              <label htmlFor="image-upload" className="flex h-28 w-28 shrink-0 cursor-pointer items-center justify-center rounded-xl border-2 border-dashed border-border bg-background/50 transition-colors hover:border-accent md:h-48 md:w-full lg:h-56">
                 <ImageIcon className="h-10 w-10 text-muted-foreground md:h-14 md:w-14" />
               </label>
             ) : (
               <div className="relative h-28 w-28 shrink-0 md:h-48 md:w-full lg:h-56">
-                <img src={formData.imagePreview} alt="Token preview" className="h-full w-full rounded-2xl border-2 border-border object-cover" />
+                <img src={formData.imagePreview} alt="Token preview" className="h-full w-full rounded-xl border-2 border-border object-cover" />
                 <button type="button" onClick={handleRemoveImage} className="absolute -right-2 -top-2 rounded-full bg-accent p-1 transition-colors hover:bg-accent/90">
                   <X className="h-4 w-4 text-accent-foreground" />
                 </button>
@@ -348,13 +364,19 @@ const Create = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
-            <div className="mb-1 font-retro text-foreground">Launch path</div>
-            Draft Mode opens promotion setup first. Deploy Mode launches directly on-chain once the live window opens.
+          <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+            <div className="mb-1 font-retro text-foreground">Active wallet</div>
+            <div className="flex items-center justify-between gap-3">
+              <span>{creatorChainLabel}</span>
+              <span className="font-retro text-accent">{creatorWalletLabel}</span>
+            </div>
+            <div className="mt-2 text-[0.68rem] uppercase tracking-[0.12em] text-muted-foreground">
+              {isSolanaCreator ? "Solana signed draft lane" : "BNB launch lane"}
+            </div>
           </div>
         </section>
 
-        <section className="space-y-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
@@ -394,7 +416,7 @@ const Create = () => {
             <Textarea value={formData.description} onChange={(e) => setDescription(e.target.value)} placeholder="Description" className="min-h-20 resize-none rounded-lg border-border bg-background/50 font-retro text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[6.5rem] lg:min-h-[7rem]" maxLength={TOKEN_VALIDATION_LIMITS.DESCRIPTION_MAX_LENGTH} disabled={isProjectDisabled} />
           </div>
 
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
+          <div className="rounded-xl border border-border/50 bg-background/25 p-3">
             {!formData.showSocialLinks ? (
               <button type="button" onClick={() => setShowSocialLinks(true)} className="font-retro text-sm text-accent transition-colors hover:text-accent/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={isProjectDisabled}>
                 Add Social Links
@@ -418,21 +440,21 @@ const Create = () => {
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-3">
+        <section className="flex flex-col gap-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+          <div className="rounded-xl border border-border/50 bg-background/25 p-3">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{isSolanaCreator ? "Sign with your Solana wallet, reserve the ticker, and open the promotion setup page. No SOL is spent in Prepare Mode." : "Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare."}</p>
             </div>
             <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
               <FileText className="mr-2 h-5 w-5" />
-              {isDrafting ? "Saving Draft..." : "Save Draft"}
+              {isDrafting ? "Saving Draft..." : isSolanaCreator ? "Sign Solana Draft" : "Save Draft"}
             </Button>
           </div>
 
           <LaunchpadSafetyStatus status={launchpadSafetyStatus} />
 
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
+          <div className="rounded-xl border border-border/50 bg-background/25 p-3 opacity-80">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
               <p className="mt-1 text-xs text-muted-foreground">{deployModeDescription}</p>
@@ -443,7 +465,7 @@ const Create = () => {
             </Button>
           </div>
 
-          <div className="mt-auto rounded-2xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+          <div className="mt-auto rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
             <div className="mb-1 font-retro text-foreground">Official links</div>
             Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
           </div>
