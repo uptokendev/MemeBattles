@@ -16,6 +16,14 @@ export const ENV = {
   FACTORY_ADDRESS_97: process.env.FACTORY_ADDRESS_97 || "",
   FACTORY_ADDRESS_56: process.env.FACTORY_ADDRESS_56 || "",
 
+  SOLANA_RPC_HTTP: process.env.SOLANA_RPC_HTTP || "",
+  SOLANA_LAUNCHPAD_PROGRAM_ID: process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || "",
+  SOLANA_START_SLOT: Number(process.env.SOLANA_START_SLOT || 0),
+  SOLANA_LOOKBACK_SLOTS: Number(process.env.SOLANA_LOOKBACK_SLOTS || 50_000),
+  SOLANA_SIGNATURE_LIMIT: Number(process.env.SOLANA_SIGNATURE_LIMIT || 500),
+  SOLANA_SIGNATURE_PAGE_LIMIT: Number(process.env.SOLANA_SIGNATURE_PAGE_LIMIT || 5),
+  SOLANA_INDEXER_INTERVAL_MS: Number(process.env.SOLANA_INDEXER_INTERVAL_MS || 10_000),
+
   // UPVoteTreasury addresses (optional; if not set, vote indexing is disabled for that chain)
   VOTE_TREASURY_ADDRESS_97: process.env.VOTE_TREASURY_ADDRESS_97 || "",
   VOTE_TREASURY_ADDRESS_56: process.env.VOTE_TREASURY_ADDRESS_56 || "",
