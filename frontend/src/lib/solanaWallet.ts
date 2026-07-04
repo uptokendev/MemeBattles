@@ -13,6 +13,8 @@ export type SolanaProvider = {
   connect?: (args?: { onlyIfTrusted?: boolean }) => Promise<{ publicKey?: { toString: () => string } }>;
   disconnect?: () => Promise<void>;
   signMessage?: (message: Uint8Array, encoding?: "utf8") => Promise<{ signature: Uint8Array } | Uint8Array>;
+  signTransaction?: (transaction: unknown) => Promise<any>;
+  signAndSendTransaction?: (transaction: unknown) => Promise<{ signature?: string } | string>;
   on?: (eventName: string, listener: (...args: unknown[]) => void) => void;
   removeListener?: (eventName: string, listener: (...args: unknown[]) => void) => void;
   [key: string]: unknown;
