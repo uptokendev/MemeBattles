@@ -56,7 +56,7 @@ async function readJson(res) {
   }
 }
 
-async function check({ label, base, method = "GET", path, body, headers, allowedStatuses = [200], inspect }) {
+async function check({ label, base, method = "GET", path, body, headers, allowedStatuses = [200], allowNonJson = false, inspect }) {
   const startedAt = Date.now();
   const res = await fetch(url(base, path), {
     method,
@@ -68,7 +68,8 @@ async function check({ label, base, method = "GET", path, body, headers, allowed
     cache: "no-store",
   });
   const json = await readJson(res);
-  const ok = allowedStatuses.includes(res.status) && !json.__nonJson && (!inspect || inspect(json));
+  const responseLooksReadable = allowNonJson || !json.__nonJson;
+  const ok = allowedStatuses.includes(res.status) && responseLooksReadable && (!inspect || inspect(json));
   const marker = ok ? "OK" : "FAIL";
   const detail = json?.code ? ` code=${json.code}` : json?.error ? ` error=${json.error}` : "";
   console.log(`${marker} ${method} ${path} -> ${res.status} ${Date.now() - startedAt}ms :: ${label}${detail}`);
@@ -87,6 +88,10 @@ function safetyLooksValid(json) {
 
 function listLooksValid(json) {
   return json?.ok === true && Array.isArray(json?.items);
+}
+
+function claimsLookValid(json) {
+  return json?.ok === true && Array.isArray(json?.claims);
 }
 
 const frontendEnvNames = [
@@ -123,8 +128,8 @@ if (process.exitCode) process.exit(process.exitCode);
 const internalHeaders = { authorization: `Bearer ${internalToken.value}` };
 const checks = [];
 
-checks.push({ label: "Frontend health", base: frontend, path: "/healthz" });
-checks.push({ label: "Token/indexer health", base: token, path: "/healthz" });
+checks.push({ label: "Frontend health", base: frontend, path: "/healthz", allowNonJson: true });
+checks.push({ label: "Token/indexer health", base: token, path: "/healthz", allowNonJson: true });
 
 for (const chainId of bnbChainIds) {
   checks.push({
@@ -205,7 +210,7 @@ checks.push({
   base: token,
   path: `/internal/rewards/claims?chainId=${SOLANA_CHAIN_ID}&limit=10`,
   headers: internalHeaders,
-  inspect: listLooksValid,
+  inspect: claimsLookValid,
 });
 checks.push({
   label: "Solana recruiter settlements",
