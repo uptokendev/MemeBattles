@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { FileText, Gift, Home, Menu, Settings, Shield, ShieldAlert, Swords, Trophy, Users, X } from "lucide-react";
+import { FileText, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
 
 const menuItems = [
   { label: "Overview", path: "", icon: Home, end: true },
   { label: "Drafts", path: "coins", icon: FileText },
-  { label: "Security Ops", path: "security", icon: ShieldAlert },
-  { label: "Arena Ops", path: "arena-ops", icon: Swords },
   { label: "Recruiter", path: "recruiter", icon: Shield },
   { label: "Squad", path: "squad", icon: Users },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
