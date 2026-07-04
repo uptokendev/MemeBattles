@@ -526,6 +526,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     walletProvider,
     hasSolanaWallet: Boolean(solanaAccount),
     solanaWalletName,
+    solanaAccount,
   }), [fetchCampaigns, walletProvider, solanaAccount, solanaWalletName]);
 
   return isSolanaChainId(activeChainId) ? solanaAdapter : bnbAdapter;
