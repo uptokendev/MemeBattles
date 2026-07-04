@@ -696,5 +696,5 @@ export function createSolanaLaunchpadAdapter(params: {
     walletProvider: params.walletProvider,
     activeChainId: SOLANA_CHAIN_ID,
     factoryAddress: getSolanaProgramId(),
-  } as LaunchpadAdapter);
+  } as LaunchpadAdapter;
 }
