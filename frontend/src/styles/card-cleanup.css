@@ -81,6 +81,8 @@
   z-index: 1;
 }
 
+/* Static cards must stay calm on hover. Only real clickable campaign/draft
+   cards are allowed to brighten; broad hover rules made dashboards feel noisy. */
 :where(
   .mwz-hud-frame,
   .mwz-panel,
@@ -91,6 +93,23 @@
   .mwz-command-metric,
   .holo-card
 ):not(.mwz-app-shell):hover {
+  border-color: var(--mwz-flat-card-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 44%),
+    var(--mwz-flat-card-bg) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+:where(
+  .campaign-card,
+  .draft-card,
+  .mwz-campaign-card,
+  .mwz-draft-card,
+  [data-card-kind="campaign"],
+  [data-card-kind="draft"],
+  [data-addr][role="button"]
+):hover {
   border-color: var(--mwz-flat-card-border-strong) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
@@ -139,6 +158,23 @@
   [class*="border-border"],
   [class*="border-accent"]
 ):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
+  border-color: var(--mwz-flat-card-border) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
+    var(--mwz-flat-card-bg) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.mwz-app-shell main :where(
+  .campaign-card,
+  .draft-card,
+  .mwz-campaign-card,
+  .mwz-draft-card,
+  [data-card-kind="campaign"],
+  [data-card-kind="draft"],
+  [data-addr][role="button"]
+):hover {
   border-color: var(--mwz-flat-card-border-strong) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
