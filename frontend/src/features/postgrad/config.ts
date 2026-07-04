@@ -11,14 +11,18 @@ const isLocalDev = import.meta.env.DEV === true;
 // immediately testable with `npm run dev` when no local .env override exists.
 const postGradEnabled = readFlag(import.meta.env.VITE_ENABLE_POSTGRAD, isLocalDev);
 
+// The first launch is the launchpad plus Trade War Room. Arena surfaces stay
+// hidden by default until the Arena rollout is explicitly enabled.
+const arenaEnabled = postGradEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_ARENA, false);
+
 export const postGradFlags = {
   enabled: postGradEnabled,
-  arena: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_ARENA, postGradEnabled),
+  arena: arenaEnabled,
   warRoom: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_WAR_ROOM, postGradEnabled),
-  battle: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_BATTLE, postGradEnabled),
-  events: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_EVENTS, postGradEnabled),
-  league: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_LEAGUE, postGradEnabled),
-  tournament: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_TOURNAMENT, postGradEnabled),
+  battle: arenaEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_BATTLE, arenaEnabled),
+  events: arenaEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_EVENTS, arenaEnabled),
+  league: arenaEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_LEAGUE, arenaEnabled),
+  tournament: arenaEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_TOURNAMENT, arenaEnabled),
   // Mock-only UX should be explicit opt-in so the branch defaults to the real
   // post-grad route structure, API adapters, and honest empty states.
   mocks: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, false),
