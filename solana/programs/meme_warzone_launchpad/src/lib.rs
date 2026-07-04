@@ -353,7 +353,7 @@ pub mod meme_warzone_launchpad {
     pub fn claim_creator_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.creator, LaunchpadError::Unauthorized);
         let amount = ctx.accounts.fee_vault.creator_fee_lamports;
-        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_CREATOR)?;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount)?;
         ctx.accounts.fee_vault.creator_fee_lamports = 0;
         emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_CREATOR, lamports: amount });
         Ok(())
@@ -362,7 +362,7 @@ pub mod meme_warzone_launchpad {
     pub fn claim_recruiter_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.recruiter, LaunchpadError::Unauthorized);
         let amount = ctx.accounts.fee_vault.recruiter_fee_lamports;
-        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_RECRUITER)?;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount)?;
         ctx.accounts.fee_vault.recruiter_fee_lamports = 0;
         emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_RECRUITER, lamports: amount });
         Ok(())
@@ -371,7 +371,7 @@ pub mod meme_warzone_launchpad {
     pub fn claim_squad_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.squad_treasury, LaunchpadError::Unauthorized);
         let amount = ctx.accounts.fee_vault.squad_fee_lamports;
-        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_SQUAD)?;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount)?;
         ctx.accounts.fee_vault.squad_fee_lamports = 0;
         emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_SQUAD, lamports: amount });
         Ok(())
@@ -380,7 +380,7 @@ pub mod meme_warzone_launchpad {
     pub fn claim_protocol_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
         require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.global_config.fee_authority, LaunchpadError::Unauthorized);
         let amount = ctx.accounts.fee_vault.protocol_fee_lamports;
-        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_PROTOCOL)?;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount)?;
         ctx.accounts.fee_vault.protocol_fee_lamports = 0;
         emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_PROTOCOL, lamports: amount });
         Ok(())
@@ -482,7 +482,7 @@ pub fn add_fee_split(vault: &mut FeeVault, split: FeeSplit) -> Result<()> {
     Ok(())
 }
 
-pub fn claim_reward(vault: &mut Account<FeeVault>, claimant_info: AccountInfo, amount: u64, _reward_kind: u8) -> Result<()> {
+pub fn claim_reward<'info>(vault: &mut Account<'info, FeeVault>, claimant_info: AccountInfo<'info>, amount: u64) -> Result<()> {
     require!(amount > 0, LaunchpadError::NoRewardsToClaim);
     let vault_info = vault.to_account_info();
     **vault_info.try_borrow_mut_lamports()? = vault_info
@@ -663,7 +663,7 @@ pub struct ClaimRewards<'info> {
     #[account(seeds = [b"global"], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     pub campaign_state: Account<'info, CampaignState>,
-    #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump)]
+    #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump, has_one = campaign_state)]
     pub fee_vault: Account<'info, FeeVault>,
 }
 
