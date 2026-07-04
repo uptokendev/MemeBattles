@@ -31,12 +31,12 @@ Implemented scaffold:
 - Claim instructions for protocol, creator, recruiter, and squad rewards
 - Checked linear bonding-curve quote math for buy and sell flows
 - Curve reserve accounting fields
-- Graduation state accounting
-- Anchor test scaffold for create, curve-priced buy minting/accounting, curve-priced sell burning/accounting, fee claims, and creator buy lock
+- Graduation liquidity accounting bucket
+- Graduation state accounting and post-graduation trade locks
+- Anchor test scaffold for create, curve-priced buy minting/accounting, curve-priced sell burning/accounting, fee claims, graduation liquidity, and creator buy lock
 
 Not yet implemented in this scaffold:
 
-- Graduation liquidity flow
 - Backend indexer
 - Frontend SolanaLaunchpadAdapter transaction builder
 - Devnet deploy address and generated IDL wiring
@@ -68,7 +68,7 @@ This folder advances Phase 6:
 - TASK-S-008 Implement create_campaign scaffold
 - TASK-S-009 Implement buy scaffold with SOL vault transfer and token minting
 - TASK-S-010 Implement sell scaffold with token burn and vault refund accounting
-- TASK-S-011 Implement graduate scaffold
+- TASK-S-011 Implement graduate scaffold with graduation liquidity accounting
 - TASK-S-012 Implement pause instructions
 - TASK-S-013 Implement tier/risk admin instructions
 - TASK-S-014 Add initial Anchor tests
@@ -76,9 +76,10 @@ This folder advances Phase 6:
 - TASK-S-016 Split trade fees into protocol, creator, recruiter, and squad reward buckets
 - TASK-S-017 Add reward claim instructions for fee recipients
 - TASK-S-018 Replace scaffold spot quote with checked linear bonding-curve math
+- TASK-S-019 Lock post-graduation trade paths in tests
 
 Next slices:
 
-1. Implement graduation liquidity movement and post-graduation locks.
-2. Generate IDL and wire the frontend Solana transaction builder.
-3. Add the backend indexer path for Solana launchpad events.
+1. Generate IDL and wire the frontend Solana transaction builder.
+2. Add the backend indexer path for Solana launchpad events.
+3. Replace the placeholder program id after the first devnet deploy.
