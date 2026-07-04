@@ -247,7 +247,7 @@ const App = () => {
             <Sonner />
             {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
             {showContent && (
-              <BrowserRouter>
+              <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
                 <InternalLinkInterceptor />
                 <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               </BrowserRouter>
