@@ -44,6 +44,7 @@ export type {
 } from "@/lib/launchpad/adapters/types";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 
 function envEnabled(value: unknown): boolean {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
@@ -66,6 +67,18 @@ function normalizeAddress(value: unknown): string {
   return ethers.isAddress(raw) ? raw.toLowerCase() : "";
 }
 
+function isSolanaAddress(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  return raw.length >= 32 && raw.length <= 44 && SOLANA_ADDRESS_RE.test(raw);
+}
+
+function normalizeChainAddress(value: unknown, chainId: number): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (isSolanaChainId(chainId)) return isSolanaAddress(raw) ? raw : "";
+  return ethers.isAddress(raw) ? raw.toLowerCase() : "";
+}
+
 function normalizeLogoUri(value: unknown): string {
   const raw = String(value ?? "").trim();
   const resolved = resolveImageUri(raw);
@@ -81,9 +94,10 @@ function toUnixSeconds(value: unknown): number | undefined {
 }
 
 function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): string {
-  const address = String(tokenOrCampaignAddress || "").trim().toLowerCase();
-  if (address && ethers.isAddress(address)) return `/api/token-metadata/${chainId}/${address}`;
-  return "";
+  const raw = String(tokenOrCampaignAddress || "").trim();
+  if (!raw) return "";
+  const address = normalizeChainAddress(raw, chainId);
+  return address ? `/api/token-metadata/${chainId}/${address}` : "";
 }
 
 function formatBnbFromWei(wei: bigint): string {
@@ -99,11 +113,11 @@ function formatBnbFromWei(wei: bigint): string {
 }
 
 function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | null {
-  const campaign = normalizeAddress(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign);
+  const campaign = normalizeChainAddress(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign, chainId);
   if (!campaign) return null;
 
-  const token = normalizeAddress(item?.tokenAddress ?? item?.token_address ?? item?.token);
-  const creator = normalizeAddress(item?.creatorAddress ?? item?.creator_address ?? item?.creator);
+  const token = normalizeChainAddress(item?.tokenAddress ?? item?.token_address ?? item?.token, chainId);
+  const creator = normalizeChainAddress(item?.creatorAddress ?? item?.creator_address ?? item?.creator, chainId);
 
   return {
     id: 100000 + idx,
