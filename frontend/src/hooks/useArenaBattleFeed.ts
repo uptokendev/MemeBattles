@@ -6,7 +6,6 @@ import {
   fetchPostGradBattleFeed,
   fetchPostGradCreatorBattleStatuses,
   openPostGradBattle,
-  transitionPostGradBattle,
 } from "@/features/postgrad/apiClient";
 import {
   useMockBattleDetails,
@@ -31,7 +30,6 @@ export type CreatorBattleStatus = {
   unavailableReason?: string | null;
 };
 
-type BattleTransitionState = Battle["state"];
 type ArchivedBattleEntry = ReturnType<typeof useMockBattleLists>["archivedBattles"][number];
 
 type ArenaBattleFeedPayload = {
@@ -142,10 +140,10 @@ async function loadBattleDetails(battleId: string, signal?: AbortSignal): Promis
 }
 
 /**
- * Adapter boundary for the Arena battle surfaces.
+ * Adapter boundary for Arena battle surfaces.
  *
- * It attempts the API-shaped battle feed first and only falls back to the QA
- * runtime when mock mode is explicitly enabled.
+ * User-facing code may read battle state and open owned coins for battle.
+ * Platform/operator transitions are intentionally excluded from the launchpad bundle.
  */
 export function useArenaBattleFeed(creatorAddress?: string | null, chainId?: number | null) {
   const runtime = useMockBattleLists();
@@ -301,24 +299,9 @@ export function useArenaBattleDetails(battleId?: string) {
     };
   }, [battleId]);
 
-  const transitionBattle = async (battleIdToUpdate: string, state: BattleTransitionState) => {
-    try {
-      const updated = await transitionPostGradBattle(battleIdToUpdate, state);
-      if (updated) {
-        const freshBattle = await loadBattleDetails(battleIdToUpdate).catch(() => null);
-        setApiBattle(freshBattle);
-        return true;
-      }
-    } catch (error) {
-      console.warn("[useArenaBattleDetails] API transition unavailable", error);
-    }
-    return allowMockFallback ? runtime.transitionMockBattle(battleIdToUpdate, state) : false;
-  };
-
   return {
     source: apiBattle ? "api" as ArenaBattleFeedSource : allowMockFallback ? "qa-runtime" as ArenaBattleFeedSource : "empty" as ArenaBattleFeedSource,
     loading,
     battle: apiBattle ?? (allowMockFallback ? runtime.battle : null),
-    transitionBattle,
   };
 }
