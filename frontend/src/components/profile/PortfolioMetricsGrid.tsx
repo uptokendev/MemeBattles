@@ -49,8 +49,8 @@ export function PortfolioMetricCard({
   return (
     <div
       className={[
-        "rounded-2xl border border-border/50 bg-card/35 p-4 font-retro",
-        isProminent ? "ring-1 ring-accent/30" : "",
+        "mwz-command-metric p-4 font-retro",
+        isProminent ? "mwz-command-metric-prominent" : "",
         className,
       ]
         .filter(Boolean)
@@ -84,21 +84,8 @@ export function PortfolioMetricCard({
  * Responsive 4-card grid displaying the portfolio metrics:
  * TOTAL VALUE • TOP HOLDING • COINS • WALLET AGE
  *
- * Follows the exact dark HUD aesthetic used by CommandCenterCard and profile surfaces
- * (rounded-2xl, border-border/50, bg-card/35, font-retro, accent highlights on primary metrics).
- *
- * Usage example:
- * ```tsx
- * import { PortfolioMetricsGrid } from "@/components/profile/PortfolioMetricsGrid";
- * import type { PortfolioMetrics } from "@/lib/profile/portfolioCalculations";
- *
- * <PortfolioMetricsGrid
- *   metrics={portfolioMetrics}
- *   loading={loadingPortfolioMetrics}
- *   variant="command-center"
- *   onRefresh={isOwnProfile ? handleForceRefresh : undefined}
- * />
- * ```
+ * Follows the command-center flat HUD aesthetic: thin border, tight spacing,
+ * low chrome, and only the most important metrics accented.
  */
 export function PortfolioMetricsGrid({
   metrics,
@@ -133,6 +120,7 @@ export function PortfolioMetricsGrid({
 
   const containerClasses = [
     "grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4",
+    variant === "public" ? "mwz-public-metrics-grid" : "",
     className,
   ]
     .filter(Boolean)
