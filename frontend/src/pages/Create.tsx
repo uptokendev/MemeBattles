@@ -7,10 +7,12 @@ import { z } from "zod";
 import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
+import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
 import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId } from "@/lib/chainConfig";
+import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -71,6 +73,7 @@ const Create = () => {
   } = useTokenForm();
 
   const wallet = useWallet();
+  const launchpad = useLaunchpad();
   const navigate = useNavigate();
   const [isDrafting, setIsDrafting] = useState(false);
   const [checkingTicker, setCheckingTicker] = useState(false);
@@ -79,9 +82,15 @@ const Create = () => {
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
   // Reject unsupported chains (e.g. Ethereum mainnet=1). getActiveChainId returns
-  // the wallet's chain only if it's in the allowed list [56, 97]; otherwise
-  // falls back to VITE_DEFAULT_CHAIN_ID (or 97 if unset).
+  // the wallet's chain only if it's in the allowed list [56, 97, 101]; otherwise
+  // falls back to VITE_DEFAULT_CHAIN_ID (or 56 if unset).
   const chainId = getActiveChainId(wallet.chainId);
+  const launchpadSafetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
+  const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
+  const deployModeDescription = isSolanaProtocolPending
+    ? "Solana wallet context is connected, but Solana launch protocol is pending. BNB launch remains the only live launch route."
+    : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.";
+  const deployButtonLabel = isSolanaProtocolPending ? "Solana Protocol Pending" : "Locked in Prepare Mode";
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
 
@@ -279,7 +288,7 @@ const Create = () => {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast.error("Deploy Mode is locked during Prepare Mode. Save a draft instead.");
+    toast.error(isSolanaProtocolPending ? "Solana launch protocol is pending. Use BNB for live launch actions." : "Deploy Mode is locked during Prepare Mode. Save a draft instead.");
   };
 
   const isProjectDisabled = formData.category === "project";
@@ -421,14 +430,16 @@ const Create = () => {
             </Button>
           </div>
 
+          <LaunchpadSafetyStatus status={launchpadSafetyStatus} />
+
           <div className="rounded-2xl border border-border/50 bg-background/25 p-3 opacity-80">
             <div className="mb-3">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.</p>
+              <p className="mt-1 text-xs text-muted-foreground">{deployModeDescription}</p>
             </div>
             <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
               <Rocket className="mr-2 h-5 w-5" />
-              Locked in Prepare Mode
+              {deployButtonLabel}
             </Button>
           </div>
 
