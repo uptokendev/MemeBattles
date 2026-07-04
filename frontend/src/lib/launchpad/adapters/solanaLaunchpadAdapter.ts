@@ -12,7 +12,7 @@ import type {
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 
 export const SOLANA_LAUNCHPAD_ADAPTER_ID = "solana" as const;
-const PROTOCOL_PENDING_MESSAGE = "Solana launch protocol is pending. BNB launch remains available; Solana create, buy, sell, and finalize actions are not live yet.";
+const PROTOCOL_PENDING_MESSAGE = "Solana on-chain launch actions need the deployed Anchor program ID, generated IDL, transaction builder, and indexer before create, buy, sell, and finalize can run safely.";
 
 export function createSolanaProtocolPendingError(): Error {
   return new Error(PROTOCOL_PENDING_MESSAGE);
@@ -30,13 +30,13 @@ export function getSolanaLaunchpadSafetyStatus(params: {
     protocolStatus: "protocol_pending",
     title: "Solana Prepare Mode ready",
     primaryActionLabel: "Solana Protocol Pending",
-    description: "Solana wallets can create signed Prepare Mode drafts for investor demos. Direct create, buy, sell, and finalize remain blocked until the Solana launch program is implemented and verified.",
+    description: "Solana wallet signing and Prepare Mode drafts are ready for demos. Direct create, buy, sell, and finalize stay blocked until the Solana launch program is deployed and the adapter has a real transaction builder.",
     checks: [
       {
         id: "routeAuth",
-        label: "Route authorization",
-        state: "pending",
-        detail: "Draft auth is wired; live Solana trade route authorization is the next protocol task.",
+        label: "Draft authorization",
+        state: "ready",
+        detail: "Nonce-backed Solana draft signatures are wired for create, edit, publish, and archive actions.",
       },
       {
         id: "signer",
@@ -45,10 +45,10 @@ export function getSolanaLaunchpadSafetyStatus(params: {
         detail: signerReady ? `${params.solanaWalletName || "Solana wallet"} connected for signed drafts.` : "Connect Phantom, Solflare, Backpack, or Glow to sign Solana drafts.",
       },
       {
-        id: "factory",
+        id: "program",
         label: "Launch program",
-        state: "blocked",
-        detail: "No Solana launch program/factory is configured for direct deploy yet.",
+        state: "in_progress",
+        detail: "Anchor scaffold exists under solana/programs/meme_warzone_launchpad; deployment address, IDL, SPL vaults, and transaction builders are still required.",
       },
       {
         id: "protocol",
@@ -68,19 +68,19 @@ export function getSolanaLaunchpadSafetyStatus(params: {
         id: "drafts",
         label: "Signed drafts",
         state: "ready",
-        detail: "Solana creators can sign Prepare Mode drafts with nonce-backed auth.",
+        detail: "Solana creators can create, edit, publish, preview, and archive Prepare Mode drafts with wallet auth.",
       },
       {
         id: "program",
-        label: "Launch program",
+        label: "Anchor program",
         state: "in_progress",
-        detail: "Next build lane: Solana campaign program, mint model, treasury routes, and launch authorization.",
+        detail: "Program scaffold includes safety/risk PDAs and instruction shells; SPL token economics and deploy configuration remain next.",
       },
       {
         id: "trading",
         label: "Buy/sell/finalize",
         state: "pending",
-        detail: "Trading and finalize stay disabled until the Solana program and security smoke checks are complete.",
+        detail: "Trading and finalize stay disabled until devnet program tests, IDL generation, and frontend transaction builders are complete.",
       },
     ],
   };
