@@ -1,0 +1,117 @@
+import type { SupportedChainId } from "@/lib/chainConfig";
+
+export type LaunchpadProtocolStatus = "ready" | "protocol_pending" | "unavailable";
+
+export type LaunchpadSafetyCheck = {
+  id: "routeAuth" | "signer" | "factory" | "protocol";
+  label: string;
+  state: "ready" | "pending" | "blocked";
+  detail: string;
+};
+
+export type LaunchpadSafetyStatus = {
+  adapterId: "bnb" | "solana";
+  chainId: SupportedChainId;
+  protocolStatus: LaunchpadProtocolStatus;
+  title: string;
+  description: string;
+  checks: LaunchpadSafetyCheck[];
+};
+
+export type CampaignInfo = {
+  id: number;
+  campaign: string;
+  token: string;
+  creator: string;
+  name: string;
+  symbol: string;
+  logoURI: string;
+  metadataURI?: string;
+  xAccount: string;
+  website: string;
+  extraLink: string;
+  createdAt?: number;
+  holders?: string;
+  volume?: string;
+  marketCap?: string;
+  timeAgo?: string;
+  telegram?: string;
+  discord?: string;
+  dexPairAddress?: string;
+  dexScreenerUrl?: string;
+};
+
+export type CampaignMetrics = {
+  sold: bigint;
+  curveSupply: bigint;
+  liquiditySupply: bigint;
+  creatorReserve: bigint;
+  currentPrice: bigint;
+  basePrice: bigint;
+  priceSlope: bigint;
+  graduationTarget: bigint;
+  liquidityBps: bigint;
+  protocolFeeBps: bigint;
+  launched?: boolean;
+  finalizedAt?: bigint;
+};
+
+export type CampaignActivity = {
+  buyers: number;
+  sellers: number;
+  buyVolumeWei: bigint;
+  sellVolumeWei: bigint;
+  fromBlock: number;
+  toBlock: number;
+};
+
+export type CampaignCardStats = {
+  holders: string;
+  volume: string;
+  marketCap: string;
+  marketCapBnb?: number;
+};
+
+export type CampaignSummary = {
+  campaign: CampaignInfo;
+  metrics: CampaignMetrics | null;
+  stats: CampaignCardStats;
+};
+
+export type CreateCampaignParams = {
+  name: string;
+  symbol: string;
+  logoURI: string;
+  xAccount: string;
+  website: string;
+  extraLink: string;
+  basePriceWei?: bigint;
+  priceSlopeWei?: bigint;
+  graduationTargetWei?: bigint;
+  lpReceiver?: string;
+};
+
+export type FetchCampaignPageOptions = {
+  newestFirst?: boolean;
+};
+
+export type LaunchpadAdapter = {
+  adapterId: "bnb" | "solana";
+  protocolStatus: LaunchpadProtocolStatus;
+  fetchCampaignsCount: () => Promise<number>;
+  fetchCampaignPage: (offset: number, limit: number, opts?: FetchCampaignPageOptions) => Promise<CampaignInfo[]>;
+  fetchCampaigns: () => Promise<CampaignInfo[]>;
+  fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>;
+  fetchCampaignMetrics: (campaignAddress: string) => Promise<CampaignMetrics | null>;
+  fetchCampaignCardStats: (campaign: CampaignInfo) => Promise<CampaignCardStats>;
+  fetchCampaignActivity: (campaignAddress: string) => Promise<CampaignActivity | null>;
+  fetchCampaignSummary: (campaign: CampaignInfo) => Promise<CampaignSummary>;
+  createCampaign: (params: CreateCampaignParams) => Promise<unknown>;
+  buyTokens: (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => Promise<unknown>;
+  sellTokens: (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => Promise<unknown>;
+  finalizeCampaign: (campaignAddress: string, minTokens: bigint, minBnb: bigint) => Promise<unknown>;
+  getSafetyStatus: () => LaunchpadSafetyStatus;
+  walletProvider: unknown;
+  activeChainId: SupportedChainId;
+  factoryAddress: string;
+};
