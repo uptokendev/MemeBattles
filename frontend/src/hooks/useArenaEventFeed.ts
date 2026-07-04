@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import type { EventCardContract, TournamentBracketStage } from "@/features/postgrad/contracts";
 import { postGradFlags } from "@/features/postgrad/config";
 import {
-  advancePostGradTournamentBracket,
   fetchPostGradEventDetails,
   fetchPostGradEventFeed,
-  transitionPostGradEvent,
 } from "@/features/postgrad/apiClient";
 import { useMockEvents, useMockEventDetails } from "@/hooks/useMockEventRuntime";
 
@@ -18,8 +16,6 @@ export type ArenaEventSummary = EventCardContract & {
 export type ArenaArchivedEvent = ArenaEventSummary & {
   completedAt: string;
 };
-
-type EventStatus = ArenaEventSummary["status"];
 
 type ArenaEventFeedPayload = {
   events: ArenaEventSummary[];
@@ -87,8 +83,8 @@ async function loadEventDetails(eventId: string, signal?: AbortSignal): Promise<
 /**
  * Adapter boundary for Arena event surfaces.
  *
- * It attempts the API-shaped event feed first and only falls back to the QA
- * runtime when mock mode is explicitly enabled.
+ * User-facing code may read events only. Platform/operator event transitions
+ * and bracket advancement belong exclusively in web-dashboard.
  */
 export function useArenaEventFeed() {
   const runtime = useMockEvents();
@@ -124,39 +120,11 @@ export function useArenaEventFeed() {
     };
   }, [runtime.events.length, runtime.archivedEvents.length]);
 
-  const transitionEvent = async (eventId: string, status: EventStatus) => {
-    try {
-      const transitioned = await transitionPostGradEvent(eventId, status);
-      if (transitioned) {
-        await refreshFeed();
-        return true;
-      }
-    } catch (error) {
-      console.warn("[useArenaEventFeed] API transition unavailable", error);
-    }
-    return allowMockFallback ? runtime.transitionMockEvent(eventId, status) : false;
-  };
-
-  const advanceTournamentBracket = async (eventId: string) => {
-    try {
-      const advanced = await advancePostGradTournamentBracket(eventId);
-      if (advanced) {
-        await refreshFeed();
-        return true;
-      }
-    } catch (error) {
-      console.warn("[useArenaEventFeed] API bracket advance unavailable", error);
-    }
-    return allowMockFallback ? runtime.advanceTournamentBracket(eventId) : false;
-  };
-
   return {
     source: apiPayload ? "api" as ArenaEventFeedSource : allowMockFallback ? "qa-runtime" as ArenaEventFeedSource : "empty" as ArenaEventFeedSource,
     loading,
     events: apiPayload?.events ?? (allowMockFallback ? runtime.events : []),
     archivedEvents: apiPayload?.archivedEvents ?? (allowMockFallback ? runtime.archivedEvents : []),
-    transitionEvent,
-    advanceTournamentBracket,
     refreshFeed,
   };
 }
@@ -202,38 +170,10 @@ export function useArenaEventDetails(eventId?: string) {
     };
   }, [eventId]);
 
-  const transitionEvent = async (eventIdToUpdate: string, status: EventStatus) => {
-    try {
-      const transitioned = await transitionPostGradEvent(eventIdToUpdate, status);
-      if (transitioned) {
-        await refreshEvent(eventIdToUpdate);
-        return true;
-      }
-    } catch (error) {
-      console.warn("[useArenaEventDetails] API transition unavailable", error);
-    }
-    return allowMockFallback ? runtime.transitionMockEvent(eventIdToUpdate, status) : false;
-  };
-
-  const advanceTournamentBracket = async (eventIdToUpdate: string) => {
-    try {
-      const advanced = await advancePostGradTournamentBracket(eventIdToUpdate);
-      if (advanced) {
-        await refreshEvent(eventIdToUpdate);
-        return true;
-      }
-    } catch (error) {
-      console.warn("[useArenaEventDetails] API bracket advance unavailable", error);
-    }
-    return allowMockFallback ? runtime.advanceTournamentBracket(eventIdToUpdate) : false;
-  };
-
   return {
     source: apiEvent ? "api" as ArenaEventFeedSource : allowMockFallback ? "qa-runtime" as ArenaEventFeedSource : "empty" as ArenaEventFeedSource,
     loading,
     event: apiEvent ?? (allowMockFallback ? runtime.event : null),
-    transitionEvent,
-    advanceTournamentBracket,
     refreshEvent,
   };
 }
