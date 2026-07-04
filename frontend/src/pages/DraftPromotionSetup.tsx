@@ -148,7 +148,7 @@ export default function DraftPromotionSetup() {
 
     const loadDraft = async () => {
       try {
-        const viewer = wallet.account || solanaWallet.solanaAccount || null;
+        const viewer = solanaWallet.solanaAccount || wallet.account || null;
         const first = await fetchCampaignDraft(draftId, viewer).catch((err: any) => {
           if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
           throw err;
@@ -156,7 +156,7 @@ export default function DraftPromotionSetup() {
 
         if (first) return first;
 
-        const readAuth = solanaWallet.solanaAccount && !wallet.account
+        const readAuth = solanaWallet.solanaAccount
           ? await signSolanaDraftAction({ walletAddress: solanaWallet.solanaAccount, chainId: SOLANA_CHAIN_ID, action: "read_draft", draftId })
           : await signDraftAction({
               signer: wallet.signer,
