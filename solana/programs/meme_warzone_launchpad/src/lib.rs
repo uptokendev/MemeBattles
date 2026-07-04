@@ -10,12 +10,15 @@ pub const TIER_PROVEN: u8 = 3;
 pub const RISK_LOW: u8 = 0;
 pub const RISK_MEDIUM: u8 = 1;
 pub const RISK_HIGH: u8 = 2;
+pub const BPS_DENOMINATOR: u64 = 10_000;
 
 #[program]
 pub mod meme_warzone_launchpad {
     use super::*;
 
     pub fn initialize_global_config(ctx: Context<InitializeGlobalConfig>, args: InitializeGlobalConfigArgs) -> Result<()> {
+        require_bps(args.trade_fee_bps)?;
+        require_bps(args.graduation_fee_bps)?;
         let config = &mut ctx.accounts.global_config;
         config.admin = ctx.accounts.admin.key();
         config.pauser = args.pauser;
@@ -123,6 +126,7 @@ pub mod meme_warzone_launchpad {
         require!(!config.create_paused, LaunchpadError::CreatePaused);
         require!(args.graduation_target_lamports > 0, LaunchpadError::InvalidAmount);
         require!(args.creator_buy_cap_lamports > 0, LaunchpadError::InvalidAmount);
+        require!(args.base_price_lamports > 0, LaunchpadError::InvalidAmount);
 
         let now = Clock::get()?.unix_timestamp;
         let creator = &mut ctx.accounts.creator_profile;
@@ -145,15 +149,21 @@ pub mod meme_warzone_launchpad {
             require!(ctx.accounts.cluster_profile.wallet_count <= rules.max_cluster_wallets, LaunchpadError::ClusterLimit);
         }
 
+        let campaign_key = ctx.accounts.campaign_state.key();
         let campaign = &mut ctx.accounts.campaign_state;
         campaign.creator = ctx.accounts.creator.key();
         campaign.mint = ctx.accounts.mint.key();
+        campaign.fee_vault = ctx.accounts.fee_vault.key();
         campaign.launch_timestamp = now;
         campaign.creator_buy_lock_until = now + rules.creator_buy_lock_seconds;
         campaign.creator_buy_cap_lamports = args.creator_buy_cap_lamports;
         campaign.creator_bought_lamports = 0;
         campaign.sold_amount = 0;
+        campaign.gross_buy_lamports = 0;
+        campaign.gross_sell_lamports = 0;
         campaign.graduation_target_lamports = args.graduation_target_lamports;
+        campaign.base_price_lamports = args.base_price_lamports;
+        campaign.price_slope_lamports = args.price_slope_lamports;
         campaign.graduated = false;
         campaign.paused = false;
         campaign.buy_paused = false;
@@ -161,10 +171,20 @@ pub mod meme_warzone_launchpad {
         campaign.graduation_paused = false;
         campaign.bump = ctx.bumps.campaign_state;
 
+        let vault = &mut ctx.accounts.fee_vault;
+        vault.campaign_state = campaign_key;
+        vault.mint = ctx.accounts.mint.key();
+        vault.sol_vault_lamports = 0;
+        vault.protocol_fee_lamports = 0;
+        vault.creator_fee_lamports = 0;
+        vault.recruiter_fee_lamports = 0;
+        vault.squad_fee_lamports = 0;
+        vault.bump = ctx.bumps.fee_vault;
+
         creator.live_bonding_count = creator.live_bonding_count.checked_add(1).ok_or(LaunchpadError::MathOverflow)?;
         creator.total_launches = creator.total_launches.checked_add(1).ok_or(LaunchpadError::MathOverflow)?;
         creator.last_launch_timestamp = now;
-        emit!(CampaignCreated { creator: campaign.creator, mint: campaign.mint, campaign: campaign.key() });
+        emit!(CampaignCreated { creator: campaign.creator, mint: campaign.mint, campaign: campaign.key(), fee_vault: campaign.fee_vault });
         Ok(())
     }
 
@@ -183,6 +203,7 @@ pub mod meme_warzone_launchpad {
     pub fn buy(ctx: Context<Trade>, lamports_in: u64) -> Result<()> {
         let config = &ctx.accounts.global_config;
         let campaign = &mut ctx.accounts.campaign_state;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.buy_paused, LaunchpadError::BuysPaused);
@@ -199,23 +220,66 @@ pub mod meme_warzone_launchpad {
             campaign.creator_bought_lamports = next_creator_bought;
         }
 
-        // Scaffold only: token minting, bonding curve pricing, and vault transfers are added in the protocol integration slice.
-        campaign.sold_amount = campaign.sold_amount.checked_add(lamports_in).ok_or(LaunchpadError::MathOverflow)?;
-        emit!(Bought { campaign: campaign.key(), buyer, lamports_in });
+        let protocol_fee = calculate_fee(lamports_in, config.trade_fee_bps)?;
+        let net_curve_lamports = lamports_in.checked_sub(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        let tokens_out = quote_buy_tokens(campaign, net_curve_lamports)?;
+
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.trader.to_account_info(),
+                    to: ctx.accounts.fee_vault.to_account_info(),
+                },
+            ),
+            lamports_in,
+        )?;
+
+        let vault = &mut ctx.accounts.fee_vault;
+        vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        vault.sol_vault_lamports = vault.sol_vault_lamports.checked_add(net_curve_lamports).ok_or(LaunchpadError::MathOverflow)?;
+        campaign.gross_buy_lamports = campaign.gross_buy_lamports.checked_add(lamports_in).ok_or(LaunchpadError::MathOverflow)?;
+        campaign.sold_amount = campaign.sold_amount.checked_add(tokens_out).ok_or(LaunchpadError::MathOverflow)?;
+        emit!(Bought { campaign: campaign.key(), buyer, lamports_in, protocol_fee_lamports: protocol_fee, tokens_out });
         Ok(())
     }
 
     pub fn sell(ctx: Context<Trade>, token_amount: u64) -> Result<()> {
         let config = &ctx.accounts.global_config;
         let campaign = &mut ctx.accounts.campaign_state;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.sell_paused, LaunchpadError::SellsPaused);
         require!(!campaign.graduated, LaunchpadError::AlreadyGraduated);
         require!(token_amount > 0, LaunchpadError::InvalidAmount);
         require!(!ctx.accounts.risk_profile.restricted, LaunchpadError::WalletRestricted);
+        require!(campaign.sold_amount >= token_amount, LaunchpadError::InsufficientSoldAmount);
+
+        let gross_refund = quote_sell_refund(campaign, token_amount)?;
+        let protocol_fee = calculate_fee(gross_refund, config.trade_fee_bps)?;
+        let refund_to_trader = gross_refund.checked_sub(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        require!(ctx.accounts.fee_vault.sol_vault_lamports >= gross_refund, LaunchpadError::InsufficientVaultBalance);
+
+        {
+            let vault_info = ctx.accounts.fee_vault.to_account_info();
+            let trader_info = ctx.accounts.trader.to_account_info();
+            **vault_info.try_borrow_mut_lamports()? = vault_info
+                .lamports()
+                .checked_sub(refund_to_trader)
+                .ok_or(LaunchpadError::MathOverflow)?;
+            **trader_info.try_borrow_mut_lamports()? = trader_info
+                .lamports()
+                .checked_add(refund_to_trader)
+                .ok_or(LaunchpadError::MathOverflow)?;
+        }
+
+        let vault = &mut ctx.accounts.fee_vault;
+        vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        vault.sol_vault_lamports = vault.sol_vault_lamports.checked_sub(gross_refund).ok_or(LaunchpadError::MathOverflow)?;
         campaign.sold_amount = campaign.sold_amount.checked_sub(token_amount).ok_or(LaunchpadError::MathOverflow)?;
-        emit!(Sold { campaign: campaign.key(), seller: ctx.accounts.trader.key(), token_amount });
+        campaign.gross_sell_lamports = campaign.gross_sell_lamports.checked_add(gross_refund).ok_or(LaunchpadError::MathOverflow)?;
+        emit!(Sold { campaign: campaign.key(), seller: ctx.accounts.trader.key(), token_amount, gross_refund_lamports: gross_refund, protocol_fee_lamports: protocol_fee });
         Ok(())
     }
 
@@ -256,6 +320,8 @@ pub struct InitializeGlobalConfigArgs {
 pub struct CreateCampaignArgs {
     pub graduation_target_lamports: u64,
     pub creator_buy_cap_lamports: u64,
+    pub base_price_lamports: u64,
+    pub price_slope_lamports: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -281,6 +347,46 @@ pub fn require_valid_tier(tier: u8) -> Result<()> {
 
 pub fn require_valid_risk(risk_level: u8) -> Result<()> {
     require!(risk_level <= RISK_HIGH, LaunchpadError::InvalidRiskLevel);
+    Ok(())
+}
+
+pub fn require_bps(bps: u16) -> Result<()> {
+    require!(u64::from(bps) <= BPS_DENOMINATOR, LaunchpadError::InvalidBps);
+    Ok(())
+}
+
+pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
+    amount
+        .checked_mul(u64::from(fee_bps))
+        .ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(BPS_DENOMINATOR)
+        .ok_or(LaunchpadError::MathOverflow.into())
+}
+
+pub fn quote_buy_tokens(campaign: &CampaignState, net_lamports: u64) -> Result<u64> {
+    let price = campaign
+        .base_price_lamports
+        .checked_add(campaign.sold_amount.checked_mul(campaign.price_slope_lamports).ok_or(LaunchpadError::MathOverflow)?)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(price > 0, LaunchpadError::InvalidAmount);
+    let tokens = net_lamports.checked_div(price).ok_or(LaunchpadError::MathOverflow)?;
+    require!(tokens > 0, LaunchpadError::InvalidAmount);
+    Ok(tokens)
+}
+
+pub fn quote_sell_refund(campaign: &CampaignState, token_amount: u64) -> Result<u64> {
+    let post_sell_supply = campaign.sold_amount.checked_sub(token_amount).ok_or(LaunchpadError::MathOverflow)?;
+    let price = campaign
+        .base_price_lamports
+        .checked_add(post_sell_supply.checked_mul(campaign.price_slope_lamports).ok_or(LaunchpadError::MathOverflow)?)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    token_amount.checked_mul(price).ok_or(LaunchpadError::MathOverflow.into())
+}
+
+pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault) -> Result<()> {
+    require_keys_eq!(campaign.fee_vault, fee_vault.key(), LaunchpadError::InvalidFeeVault);
+    require_keys_eq!(campaign.mint, fee_vault.mint, LaunchpadError::InvalidFeeVault);
+    require_keys_eq!(campaign.key(), fee_vault.campaign_state, LaunchpadError::InvalidFeeVault);
     Ok(())
 }
 
@@ -372,6 +478,8 @@ pub struct CreateCampaign<'info> {
     pub mint: UncheckedAccount<'info>,
     #[account(init, payer = creator, space = 8 + CampaignState::SPACE, seeds = [b"campaign", mint.key().as_ref()], bump)]
     pub campaign_state: Account<'info, CampaignState>,
+    #[account(init, payer = creator, space = 8 + FeeVault::SPACE, seeds = [b"fee_vault", mint.key().as_ref()], bump)]
+    pub fee_vault: Account<'info, FeeVault>,
     pub system_program: Program<'info, System>,
 }
 
@@ -386,13 +494,17 @@ pub struct PauseCampaign<'info> {
 
 #[derive(Accounts)]
 pub struct Trade<'info> {
+    #[account(mut)]
     pub trader: Signer<'info>,
     #[account(seeds = [b"global"], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     #[account(mut)]
     pub campaign_state: Account<'info, CampaignState>,
+    #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump)]
+    pub fee_vault: Account<'info, FeeVault>,
     #[account(seeds = [b"risk", trader.key().as_ref()], bump = risk_profile.bump)]
     pub risk_profile: Account<'info, RiskProfile>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -445,12 +557,17 @@ impl CreatorProfile { pub const SPACE: usize = 32 + 1 + 8 + 2 + 8 + 8 + 8 + 1 + 
 pub struct CampaignState {
     pub creator: Pubkey,
     pub mint: Pubkey,
+    pub fee_vault: Pubkey,
     pub launch_timestamp: i64,
     pub creator_buy_lock_until: i64,
     pub creator_buy_cap_lamports: u64,
     pub creator_bought_lamports: u64,
     pub sold_amount: u64,
+    pub gross_buy_lamports: u64,
+    pub gross_sell_lamports: u64,
     pub graduation_target_lamports: u64,
+    pub base_price_lamports: u64,
+    pub price_slope_lamports: u64,
     pub graduated: bool,
     pub paused: bool,
     pub buy_paused: bool,
@@ -458,7 +575,20 @@ pub struct CampaignState {
     pub graduation_paused: bool,
     pub bump: u8,
 }
-impl CampaignState { pub const SPACE: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1 + 1 + 1; }
+impl CampaignState { pub const SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1 + 1 + 1; }
+
+#[account]
+pub struct FeeVault {
+    pub campaign_state: Pubkey,
+    pub mint: Pubkey,
+    pub sol_vault_lamports: u64,
+    pub protocol_fee_lamports: u64,
+    pub creator_fee_lamports: u64,
+    pub recruiter_fee_lamports: u64,
+    pub squad_fee_lamports: u64,
+    pub bump: u8,
+}
+impl FeeVault { pub const SPACE: usize = 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1; }
 
 #[account]
 pub struct RiskProfile {
@@ -498,13 +628,13 @@ pub struct ClusterProfileInitialized { pub cluster_id: [u8; 32] }
 #[event]
 pub struct ClusterRiskUpdated { pub cluster_id: [u8; 32], pub wallet_count: u16, pub risk_level: u8, pub restricted: bool }
 #[event]
-pub struct CampaignCreated { pub creator: Pubkey, pub mint: Pubkey, pub campaign: Pubkey }
+pub struct CampaignCreated { pub creator: Pubkey, pub mint: Pubkey, pub campaign: Pubkey, pub fee_vault: Pubkey }
 #[event]
 pub struct CampaignPauseUpdated { pub campaign: Pubkey, pub paused: bool, pub buy_paused: bool, pub sell_paused: bool, pub graduation_paused: bool }
 #[event]
-pub struct Bought { pub campaign: Pubkey, pub buyer: Pubkey, pub lamports_in: u64 }
+pub struct Bought { pub campaign: Pubkey, pub buyer: Pubkey, pub lamports_in: u64, pub protocol_fee_lamports: u64, pub tokens_out: u64 }
 #[event]
-pub struct Sold { pub campaign: Pubkey, pub seller: Pubkey, pub token_amount: u64 }
+pub struct Sold { pub campaign: Pubkey, pub seller: Pubkey, pub token_amount: u64, pub gross_refund_lamports: u64, pub protocol_fee_lamports: u64 }
 #[event]
 pub struct Graduated { pub campaign: Pubkey, pub creator: Pubkey, pub mint: Pubkey }
 
@@ -516,6 +646,8 @@ pub enum LaunchpadError {
     InvalidTier,
     #[msg("Invalid risk level")]
     InvalidRiskLevel,
+    #[msg("Invalid basis points")]
+    InvalidBps,
     #[msg("Global launchpad is paused")]
     GlobalPaused,
     #[msg("Campaign creation is paused")]
@@ -554,6 +686,12 @@ pub enum LaunchpadError {
     AlreadyGraduated,
     #[msg("Graduation threshold not reached")]
     GraduationThreshold,
+    #[msg("Insufficient sold amount")]
+    InsufficientSoldAmount,
+    #[msg("Insufficient vault balance")]
+    InsufficientVaultBalance,
+    #[msg("Invalid fee vault")]
+    InvalidFeeVault,
     #[msg("Math overflow or underflow")]
     MathOverflow,
 }
