@@ -3,12 +3,17 @@ import { ENV } from "./env.js";
 
 export const ablyRest = new Ably.Rest({ key: ENV.ABLY_API_KEY });
 
+function channelAddress(chainId: number, value: string) {
+  const raw = String(value || "").trim();
+  return chainId === 101 ? raw : raw.toLowerCase();
+}
+
 export function tokenChannel(chainId: number, campaignAddress: string) {
-  return `token:${chainId}:${campaignAddress.toLowerCase()}`;
+  return `token:${chainId}:${channelAddress(chainId, campaignAddress)}`;
 }
 
 export function warroomChannel(chainId: number, campaignAddress: string) {
-  return `warroom:${chainId}:${campaignAddress.toLowerCase()}`;
+  return `warroom:${chainId}:${channelAddress(chainId, campaignAddress)}`;
 }
 
 export function leagueChannel(chainId: number) {
