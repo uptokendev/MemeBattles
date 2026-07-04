@@ -4,9 +4,12 @@ import { Rocket, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { getChainLabel, isSolanaChainId } from "@/lib/chainConfig";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { fetchLaunchpadCreateEligibility, type LaunchpadPreflight } from "@/lib/recruiterApi";
 import { resolveImageUri } from "@/lib/media";
@@ -25,6 +28,19 @@ function formatDateTime(value?: unknown) {
   if (!value) return "None";
   const date = new Date(String(value));
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : "None";
+}
+
+function shortWallet(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Not connected";
+  return `${raw.slice(0, 5)}...${raw.slice(-4)}`;
+}
+
+function sameWallet(a?: string | null, b?: string | null, solana = false) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left || !right) return false;
+  return solana ? left === right : left.toLowerCase() === right.toLowerCase();
 }
 
 function SafetyRow({ label, value }: { label: string; value: string | number }) {
@@ -86,7 +102,9 @@ export default function PushDraftLive() {
   const { draftId = "" } = useParams();
   const navigate = useNavigate();
   const wallet = useWallet();
-  const { createCampaign, fetchCampaigns } = useLaunchpad();
+  const solanaWallet = useSolanaWallet();
+  const launchpad = useLaunchpad();
+  const { createCampaign, fetchCampaigns } = launchpad;
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
@@ -94,10 +112,12 @@ export default function PushDraftLive() {
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
 
+  const viewerWallet = wallet.account || solanaWallet.solanaAccount || null;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchCampaignDraft(draftId, wallet.account)
+    fetchCampaignDraft(draftId, viewerWallet)
       .then((data) => {
         if (!cancelled) setBundle(data);
       })
@@ -108,10 +128,25 @@ export default function PushDraftLive() {
     return () => {
       cancelled = true;
     };
-  }, [draftId, wallet.account]);
+  }, [draftId, viewerWallet]);
+
+  const draft = bundle?.draft;
+  const draftIsSolana = isSolanaChainId(Number(draft?.chainId));
+  const ownerWallet = draftIsSolana ? solanaWallet.solanaAccount : wallet.account;
+  const ownerConnected = sameWallet(draft?.creatorWallet, ownerWallet, draftIsSolana);
+  const safetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
+  const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
+  const chainLabel = draft ? getChainLabel(Number(draft.chainId)) : "Unknown";
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!draft || draftIsSolana) {
+      setPreflight(null);
+      setPreflightError(draftIsSolana ? "Solana on-chain Push Live is waiting on the Solana launch program and transaction builder." : null);
+      setPreflightLoading(false);
+      return;
+    }
 
     if (!wallet.account) {
       setPreflight(null);
@@ -140,13 +175,15 @@ export default function PushDraftLive() {
     return () => {
       cancelled = true;
     };
-  }, [wallet.account, wallet.chainId]);
-
-  const draft = bundle?.draft;
-  const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
+  }, [draft, draftIsSolana, wallet.account, wallet.chainId]);
 
   const pushLive = async () => {
     if (!draft) return;
+
+    if (draftIsSolana) {
+      toast.error("Solana Push Live needs the Solana launch program, IDL, and transaction builder before it can deploy on-chain.");
+      return;
+    }
 
     if (!DRAFT_PUSH_LIVE_ENABLED) {
       toast.error("Push Live is locked until the platform launch switch is enabled.");
@@ -158,7 +195,7 @@ export default function PushDraftLive() {
       return;
     }
 
-    if (draft.creatorWallet.toLowerCase() !== wallet.account.toLowerCase()) {
+    if (!ownerConnected) {
       toast.error("Only the draft owner wallet can push this draft live.");
       return;
     }
@@ -265,15 +302,19 @@ export default function PushDraftLive() {
     );
   }
 
+  const pushBlocked = draftIsSolana || pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status) || Boolean(preflight && !preflight.allowed);
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="mwz-card p-5 md:p-7">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">Prepare Mode</div>
             <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">Push Draft Live</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              This converts the published promotion draft into a normal live on-chain campaign, then marks the draft as deployed. Initial buys are disabled by design.
+              {draftIsSolana
+                ? "This Solana draft is ready for promotion and protocol review. On-chain Push Live unlocks after the Solana program, IDL, and transaction builder are deployed."
+                : "This converts the published promotion draft into a normal live on-chain BNB campaign, then marks the draft as deployed. Initial buys are disabled by design."}
             </p>
           </div>
           <Button asChild variant="outline" className="mwz-button h-10 font-retro text-xs">
@@ -281,24 +322,31 @@ export default function PushDraftLive() {
           </Button>
         </div>
 
-        {!DRAFT_PUSH_LIVE_ENABLED ? (
+        {!DRAFT_PUSH_LIVE_ENABLED && !draftIsSolana ? (
           <div className="mwz-card mb-6 border-orange-400/50 bg-black/60 p-4 text-sm leading-6 text-orange-300">
             Push Live is currently locked. The deploy flow will unlock when the platform launch switch is enabled.
           </div>
         ) : null}
 
-        <div className="grid gap-6 md:grid-cols-[220px_1fr]">
+        {draftIsSolana ? (
+          <div className="mwz-card mb-6 border-sky-400/40 bg-sky-950/15 p-4 text-sm leading-6 text-sky-200">
+            Solana wallet: {shortWallet(solanaWallet.solanaAccount)}. Draft owner: {shortWallet(draft.creatorWallet)}. This lane supports signed Prepare Mode now; live Solana deployment remains blocked until the Anchor program is connected.
+          </div>
+        ) : null}
+
+        <div className="grid gap-6 lg:grid-cols-[240px_1fr_360px]">
           <div className="mwz-card overflow-hidden border-success/35 bg-black/70">
             <div className="relative aspect-square border-b border-success/25 bg-black">
               <img src={logoURI || "/placeholder.svg"} alt={draft.name} className="h-full w-full object-cover" />
               <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
-                <ShieldCheck className="h-3 w-3" /> Ready
+                <ShieldCheck className="h-3 w-3" /> {chainLabel}
               </div>
             </div>
             <div className="p-3 text-success">
               <div className="mwz-section-title truncate text-lg">{draft.name}</div>
               <div className="mt-1 text-sm text-success/70">${draft.ticker}</div>
               <div className="mt-3 text-xs text-muted-foreground">Status: {draft.status.replace(/_/g, " ")}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Owner: {shortWallet(draft.creatorWallet)}</div>
             </div>
           </div>
 
@@ -310,10 +358,18 @@ export default function PushDraftLive() {
               </p>
             </div>
 
-            <CreatorSafetyPanel loading={preflightLoading} preflight={preflight} error={preflightError} />
+            {draftIsSolana ? (
+              <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
+                Solana Push Live will require a generated transaction from the Solana adapter, the deployed program ID, token mint/vault accounts, and backend indexing. This screen now blocks safely instead of sending creators into the BNB deploy path.
+              </div>
+            ) : (
+              <CreatorSafetyPanel loading={preflightLoading} preflight={preflight} error={preflightError} />
+            )}
 
             <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
-              Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment.
+              {draftIsSolana
+                ? "Use this page in demos to show the Solana draft is staged and correctly gated before protocol launch."
+                : "Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment."}
             </div>
 
             {!canPushLive(draft.status) ? (
@@ -324,13 +380,15 @@ export default function PushDraftLive() {
 
             <Button
               onClick={pushLive}
-              disabled={pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status) || Boolean(preflight && !preflight.allowed)}
+              disabled={pushBlocked}
               className="mwz-button mwz-button-orange h-12 w-full justify-center font-retro"
             >
               <Rocket className="mr-2 h-4 w-4" />
-              {pushing ? "Pushing Live..." : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
+              {pushing ? "Pushing Live..." : draftIsSolana ? "Solana Protocol Pending" : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
             </Button>
           </div>
+
+          <LaunchpadSafetyStatus status={safetyStatus} />
         </div>
       </div>
     </div>
