@@ -5,6 +5,7 @@ import { badMethod, getQuery, json } from "../server/http.js";
 // Campaigns can override this, but until we persist per-campaign targets in DB,
 // we treat this as the system default for progress/ETA on the homepage.
 const DEFAULT_GRAD_TARGET_BNB = 50;
+const SOLANA_CHAIN_IDS = new Set([101, 102]);
 
 function toInt(v, fallback) {
   const n = Number(v);
@@ -47,15 +48,22 @@ function normalizeStatus(v) {
   return s === "live" || s === "graduated" || s === "ended" ? s : "all";
 }
 
+function normalizeOutputAddress(value, chainId) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return SOLANA_CHAIN_IDS.has(Number(chainId)) ? raw : raw.toLowerCase();
+}
+
 function mapCampaignRow(row, gradTargetBnb) {
-  const campaignAddress = String(row.campaign_address ?? "").toLowerCase();
+  const chainId = Number(row.chain_id);
+  const campaignAddress = normalizeOutputAddress(row.campaign_address, chainId);
   const graduatedAt = row.graduated_at_chain ? String(row.graduated_at_chain) : null;
 
   return {
-    chainId: Number(row.chain_id),
+    chainId,
     campaignAddress,
-    tokenAddress: row.token_address ? String(row.token_address).toLowerCase() : null,
-    creatorAddress: row.creator_address ? String(row.creator_address).toLowerCase() : null,
+    tokenAddress: row.token_address ? normalizeOutputAddress(row.token_address, chainId) : null,
+    creatorAddress: row.creator_address ? normalizeOutputAddress(row.creator_address, chainId) : null,
     name: row.name ?? null,
     symbol: row.symbol ?? null,
     logoUri: row.logo_uri ?? null,
