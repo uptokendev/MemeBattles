@@ -284,15 +284,17 @@ export async function signSolanaDraftAction(input: {
   const walletAddress = normalizePublicKey(input.walletAddress || provider.publicKey?.toString?.() || getStoredSolanaWallet());
   if (!walletAddress) throw new Error("Solana wallet not connected.");
 
-  const nonce = await fetchNonce(input.chainId, walletAddress);
+  const chainId = Number(input.chainId);
+  const draftId = input.draftId || null;
+  const nonce = await fetchNonce(chainId, walletAddress);
   const lines = [
     "MemeWarzone Prepare Mode",
     `Action: ${input.action}`,
     `Wallet: ${walletAddress}`,
-    `Chain ID: ${Number(input.chainId)}`,
+    `Chain ID: ${chainId}`,
   ];
 
-  if (input.draftId) lines.push(`Draft ID: ${input.draftId}`);
+  if (draftId) lines.push(`Draft ID: ${draftId}`);
   lines.push(`Nonce: ${nonce}`);
 
   const message = lines.join("\n");
@@ -302,5 +304,14 @@ export async function signSolanaDraftAction(input: {
   if (!signature?.length) throw new Error("Solana wallet did not return a signature.");
 
   notifySolanaWalletChanged(walletAddress, detectSolanaWallets().find((wallet) => wallet.provider === provider) || null);
-  return { walletType: "solana", walletAddress, signature: bytesToBase64(signature), message };
+  return {
+    walletType: "solana",
+    action: input.action,
+    walletAddress,
+    chainId,
+    draftId,
+    nonce,
+    message,
+    signature: bytesToBase64(signature),
+  };
 }
