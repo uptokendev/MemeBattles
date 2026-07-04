@@ -2,12 +2,11 @@
   Site-wide card cleanup
 
   The only sliced frame that should remain is the outer application frame
-  rendered by .mwz-app-shell::before/::after. Everything inside the main content
-  area should use the calmer flat panel language: thin rectangular borders,
-  restrained backgrounds, and no repeated cut-corner shells.
+  rendered by .mwz-app-shell::before/::after. Every repeated panel, card, HUD
+  frame, menu, and utility surface inside the frontend should use flat borders.
 */
 
-.mwz-app-shell main :where(
+:where(
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card,
@@ -15,25 +14,23 @@
   .mwz-command-card,
   .mwz-command-header,
   .mwz-command-metric,
-  .holo-card,
-  [class*="bg-card/"],
-  [class*="bg-background/"][class*="border"]
-) {
+  .holo-card
+):not(.mwz-app-shell) {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   clip-path: none !important;
   border-radius: 0 !important;
-  border-color: rgba(120, 112, 92, 0.32) !important;
+  border: 1px solid rgba(120, 112, 92, 0.32) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
     rgba(3, 5, 5, 0.36) !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
-  transform: none;
+  transform: none !important;
 }
 
-.mwz-app-shell main :where(
+:where(
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card,
@@ -42,8 +39,8 @@
   .mwz-command-header,
   .mwz-command-metric,
   .holo-card
-)::before,
-.mwz-app-shell main :where(
+):not(.mwz-app-shell)::before,
+:where(
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card,
@@ -52,7 +49,7 @@
   .mwz-command-header,
   .mwz-command-metric,
   .holo-card
-)::after {
+):not(.mwz-app-shell)::after {
   content: none !important;
   display: none !important;
   background: none !important;
@@ -61,7 +58,7 @@
   clip-path: none !important;
 }
 
-.mwz-app-shell main :where(
+:where(
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card,
@@ -70,12 +67,12 @@
   .mwz-command-header,
   .mwz-command-metric,
   .holo-card
-) > * {
+):not(.mwz-app-shell) > * {
   position: relative;
   z-index: 1;
 }
 
-.mwz-app-shell main :where(
+:where(
   .mwz-hud-frame,
   .mwz-panel,
   .mwz-card,
@@ -83,7 +80,35 @@
   .mwz-command-card,
   .mwz-command-header,
   .mwz-command-metric,
-  .holo-card,
+  .holo-card
+):not(.mwz-app-shell):hover {
+  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 44%),
+    rgba(7, 9, 9, 0.48) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Tailwind-made card surfaces that do not use the MWZ classes still get the
+   same flat treatment, but this is scoped to the content shell so tiny topbar
+   controls keep their button styling. */
+.mwz-app-shell main :where(
+  [class*="bg-card/"],
+  [class*="bg-background/"][class*="border"]
+) {
+  clip-path: none !important;
+  border-radius: 0 !important;
+  border-color: rgba(120, 112, 92, 0.32) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
+    rgba(3, 5, 5, 0.36) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  transform: none !important;
+}
+
+.mwz-app-shell main :where(
   [class*="bg-card/"],
   [class*="bg-background/"][class*="border"]
 ):hover {
@@ -95,7 +120,9 @@
   transform: none !important;
 }
 
-.mwz-app-shell main .mwz-command-sidebar {
+/* The command menu can keep the subtle glow the user called out, while still
+   staying rectangular and flat instead of using the old sliced card frame. */
+.mwz-command-sidebar {
   border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
   background:
     radial-gradient(360px 280px at 12% 8%, rgba(var(--mwz-orange-rgb), 0.18), transparent 58%),
@@ -132,8 +159,6 @@
   box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.06) !important;
 }
 
-/* Keep form inputs and small image/avatar containers from inheriting oversized
-   legacy card depth when they happen to use card-colored utility classes. */
 .mwz-app-shell main :where(input, textarea, select, img) {
   box-shadow: none !important;
 }
