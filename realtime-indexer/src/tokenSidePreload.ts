@@ -4,6 +4,7 @@ import { ablyRest, tokenChannel, warroomChannel } from "./ably.js";
 import { pool } from "./db.js";
 import { ENV } from "./env.js";
 import { startSolanaIndexerLoop } from "./solanaIndexer.js";
+import { registerSolanaOpsRoutes } from "./solanaOpsRoutes.js";
 import {
   createSolanaWalletVerificationChallenge,
   listSolanaPayoutIntents,
@@ -365,6 +366,7 @@ express.application.listen = function patchedListen(this: any, ...args: any[]) {
     originalPost.call(this, "/api/solana/wallet-verification/verify", solanaWalletVerify);
     originalGet.call(this, "/internal/solana/payout-intents", solanaPayoutIntents);
     originalPost.call(this, "/internal/solana/payout-intents/:payoutIntentId/status", solanaPayoutIntentStatus);
+    registerSolanaOpsRoutes(this);
   }
   return originalListen.apply(this, args);
 } as any;
