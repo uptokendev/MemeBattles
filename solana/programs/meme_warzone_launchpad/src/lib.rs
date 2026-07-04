@@ -496,24 +496,61 @@ pub fn claim_reward<'info>(vault: &mut Account<'info, FeeVault>, claimant_info: 
     Ok(())
 }
 
-pub fn quote_buy_tokens(campaign: &CampaignState, net_lamports: u64) -> Result<u64> {
-    let price = campaign
-        .base_price_lamports
-        .checked_add(campaign.sold_amount.checked_mul(campaign.price_slope_lamports).ok_or(LaunchpadError::MathOverflow)?)
+pub fn checked_linear_curve_cost(base_price_lamports: u64, price_slope_lamports: u64, start_supply: u64, token_amount: u64) -> Result<u64> {
+    if token_amount == 0 {
+        return Ok(0);
+    }
+
+    let token_count = u128::from(token_amount);
+    let base_cost = token_count
+        .checked_mul(u128::from(base_price_lamports))
         .ok_or(LaunchpadError::MathOverflow)?;
-    require!(price > 0, LaunchpadError::InvalidAmount);
-    let tokens = net_lamports.checked_div(price).ok_or(LaunchpadError::MathOverflow)?;
-    require!(tokens > 0, LaunchpadError::InvalidAmount);
-    Ok(tokens)
+    let supply_cost = token_count
+        .checked_mul(u128::from(start_supply))
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let step_sum = token_count
+        .checked_mul(token_count.checked_sub(1).ok_or(LaunchpadError::MathOverflow)?)
+        .ok_or(LaunchpadError::MathOverflow)?
+        .checked_div(2)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let slope_units = supply_cost.checked_add(step_sum).ok_or(LaunchpadError::MathOverflow)?;
+    let slope_cost = slope_units
+        .checked_mul(u128::from(price_slope_lamports))
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let total = base_cost.checked_add(slope_cost).ok_or(LaunchpadError::MathOverflow)?;
+    require!(total <= u128::from(u64::MAX), LaunchpadError::MathOverflow);
+    Ok(total as u64)
+}
+
+pub fn quote_buy_tokens(campaign: &CampaignState, net_lamports: u64) -> Result<u64> {
+    require!(net_lamports > 0, LaunchpadError::InvalidAmount);
+    require!(campaign.base_price_lamports > 0, LaunchpadError::InvalidAmount);
+
+    let max_tokens_by_base = net_lamports
+        .checked_div(campaign.base_price_lamports)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(max_tokens_by_base > 0, LaunchpadError::InvalidAmount);
+
+    let mut low = 0_u64;
+    let mut high = max_tokens_by_base;
+    while low < high {
+        let mid = low
+            .checked_add(high.checked_sub(low).ok_or(LaunchpadError::MathOverflow)?.checked_add(1).ok_or(LaunchpadError::MathOverflow)?.checked_div(2).ok_or(LaunchpadError::MathOverflow)?)
+            .ok_or(LaunchpadError::MathOverflow)?;
+        match checked_linear_curve_cost(campaign.base_price_lamports, campaign.price_slope_lamports, campaign.sold_amount, mid) {
+            Ok(cost) if cost <= net_lamports => low = mid,
+            _ => high = mid.checked_sub(1).ok_or(LaunchpadError::MathOverflow)?,
+        }
+    }
+
+    require!(low > 0, LaunchpadError::InvalidAmount);
+    Ok(low)
 }
 
 pub fn quote_sell_refund(campaign: &CampaignState, token_amount: u64) -> Result<u64> {
+    require!(token_amount > 0, LaunchpadError::InvalidAmount);
     let post_sell_supply = campaign.sold_amount.checked_sub(token_amount).ok_or(LaunchpadError::MathOverflow)?;
-    let price = campaign
-        .base_price_lamports
-        .checked_add(post_sell_supply.checked_mul(campaign.price_slope_lamports).ok_or(LaunchpadError::MathOverflow)?)
-        .ok_or(LaunchpadError::MathOverflow)?;
-    token_amount.checked_mul(price).ok_or(LaunchpadError::MathOverflow)
+    checked_linear_curve_cost(campaign.base_price_lamports, campaign.price_slope_lamports, post_sell_supply, token_amount)
 }
 
 pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault, campaign_key: Pubkey) -> Result<()> {
