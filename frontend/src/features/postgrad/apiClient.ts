@@ -1,10 +1,8 @@
 import { apiFetch } from "@/lib/apiBase";
-import type { Battle, EventStatus, WarPool } from "@/features/postgrad/contracts";
 
 type JsonObject = Record<string, any>;
 
 export type PostGradWarRoomMode = "trending" | "new" | "graduated" | "draft";
-export type PostGradLeagueAction = "advance-week" | "rebalance-divisions" | "cycle-season-state";
 
 export type PostGradCampaignFeedParams = {
   chainId?: number | string | null;
@@ -89,10 +87,6 @@ export async function openPostGradBattle(input: OpenPostGradBattleInput) {
   return mutateJson("/api/arena/battles/open", payload);
 }
 
-export async function transitionPostGradBattle(battleId: string, state: Battle["state"]) {
-  return mutateJson(`/api/arena/battles/${encodeURIComponent(battleId)}/transition`, { state });
-}
-
 export async function fetchPostGradEventFeed(signal?: AbortSignal) {
   return fetchJson("/api/arena/events", { cache: "no-store", signal });
 }
@@ -101,20 +95,8 @@ export async function fetchPostGradEventDetails(eventId: string, signal?: AbortS
   return fetchJson(`/api/arena/events/${encodeURIComponent(eventId)}`, { cache: "no-store", signal });
 }
 
-export async function transitionPostGradEvent(eventId: string, status: EventStatus) {
-  return mutateJson(`/api/arena/events/${encodeURIComponent(eventId)}/transition`, { status });
-}
-
-export async function advancePostGradTournamentBracket(eventId: string) {
-  return mutateJson(`/api/arena/events/${encodeURIComponent(eventId)}/advance-bracket`);
-}
-
 export async function fetchPostGradLeagueFeed(signal?: AbortSignal) {
   return fetchJson("/api/arena/league", { cache: "no-store", signal });
-}
-
-export async function mutatePostGradLeague(action: PostGradLeagueAction) {
-  return mutateJson(`/api/arena/league/${action}`);
 }
 
 export async function fetchPostGradWarPool(battleId: string, signal?: AbortSignal) {
@@ -127,14 +109,6 @@ export async function fetchPostGradWarPoolSummary(signal?: AbortSignal) {
 
 export async function supportPostGradWarPool(battleId: string, sideTokenId: string, amountUsd: number) {
   return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/support`, { sideTokenId, amountUsd });
-}
-
-export async function transitionPostGradWarPool(battleId: string, state: WarPool["state"]) {
-  return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, { state });
-}
-
-export async function fetchPostGradArenaOpsHealth(signal?: AbortSignal) {
-  return fetchJson("/api/arena/ops/health", { cache: "no-store", signal });
 }
 
 export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, signal }: PostGradSponsoredFeedParams) {
