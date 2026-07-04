@@ -27,15 +27,15 @@ Implemented scaffold:
 - SOL fee vault transfer on buy
 - SPL token mint CPI on buy
 - SPL token burn CPI on sell
-- Protocol fee accounting on buy/sell
+- Fee split accounting for protocol, creator, recruiter, and squad buckets
+- Claim instructions for protocol, creator, recruiter, and squad rewards
 - Curve reserve accounting fields
 - Graduation state accounting
-- Anchor test scaffold for create, buy minting/accounting, sell burning/accounting, and creator buy lock
+- Anchor test scaffold for create, buy minting/accounting, sell burning/accounting, fee claims, and creator buy lock
 
 Not yet implemented in this scaffold:
 
 - Final bonding curve pricing model beyond the current checked scaffold quote
-- League/creator/recruiter/squad vault distribution claims
 - Graduation liquidity flow
 - Backend indexer
 - Frontend SolanaLaunchpadAdapter transaction builder
@@ -73,10 +73,12 @@ This folder advances Phase 6:
 - TASK-S-013 Implement tier/risk admin instructions
 - TASK-S-014 Add initial Anchor tests
 - TASK-S-015 Validate SPL mint and associated token accounts with `anchor-spl`
+- TASK-S-016 Split trade fees into protocol, creator, recruiter, and squad reward buckets
+- TASK-S-017 Add reward claim instructions for fee recipients
 
 Next slices:
 
 1. Replace the scaffold quote with the final bonding curve math.
-2. Add fee distribution claim instructions for creator, recruiter, squad, and protocol authorities.
+2. Implement graduation liquidity movement and post-graduation locks.
 3. Generate IDL and wire the frontend Solana transaction builder.
 4. Add the backend indexer path for Solana launchpad events.
