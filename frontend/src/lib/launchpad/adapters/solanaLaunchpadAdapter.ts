@@ -18,37 +18,69 @@ export function createSolanaProtocolPendingError(): Error {
   return new Error(PROTOCOL_PENDING_MESSAGE);
 }
 
-export function getSolanaLaunchpadSafetyStatus(): LaunchpadSafetyStatus {
+export function getSolanaLaunchpadSafetyStatus(params: {
+  hasSolanaWallet?: boolean;
+  solanaWalletName?: string;
+} = {}): LaunchpadSafetyStatus {
+  const signerReady = Boolean(params.hasSolanaWallet);
   return {
     adapterId: SOLANA_LAUNCHPAD_ADAPTER_ID,
     chainId: SOLANA_CHAIN_ID,
+    chainLabel: "Solana Mainnet",
     protocolStatus: "protocol_pending",
-    title: "Solana protocol pending",
-    description: "Solana wallet support can connect for account context, but launch protocol actions are intentionally blocked until the Solana contracts/programs are implemented and verified.",
+    title: "Solana Prepare Mode ready",
+    primaryActionLabel: "Solana Protocol Pending",
+    description: "Solana wallets can create signed Prepare Mode drafts for investor demos. Direct create, buy, sell, and finalize remain blocked until the Solana launch program is implemented and verified.",
     checks: [
       {
         id: "routeAuth",
         label: "Route authorization",
-        state: "blocked",
-        detail: "Solana launch route authorization is not enabled yet.",
+        state: "pending",
+        detail: "Draft auth is wired; live Solana trade route authorization is the next protocol task.",
       },
       {
         id: "signer",
         label: "Wallet signer",
-        state: "pending",
-        detail: "Solana wallet connection is allowed, but launch signing is disabled for now.",
+        state: signerReady ? "ready" : "pending",
+        detail: signerReady ? `${params.solanaWalletName || "Solana wallet"} connected for signed drafts.` : "Connect Phantom, Solflare, Backpack, or Glow to sign Solana drafts.",
       },
       {
         id: "factory",
-        label: "LaunchFactory",
+        label: "Launch program",
         state: "blocked",
-        detail: "No Solana launch program/factory is configured yet.",
+        detail: "No Solana launch program/factory is configured for direct deploy yet.",
       },
       {
         id: "protocol",
         label: "Protocol adapter",
         state: "blocked",
         detail: PROTOCOL_PENDING_MESSAGE,
+      },
+    ],
+    milestones: [
+      {
+        id: "wallets",
+        label: "Wallet connect",
+        state: "ready",
+        detail: "Solana wallet detection and manual connection are available in the launch flow.",
+      },
+      {
+        id: "drafts",
+        label: "Signed drafts",
+        state: "ready",
+        detail: "Solana creators can sign Prepare Mode drafts with nonce-backed auth.",
+      },
+      {
+        id: "program",
+        label: "Launch program",
+        state: "in_progress",
+        detail: "Next build lane: Solana campaign program, mint model, treasury routes, and launch authorization.",
+      },
+      {
+        id: "trading",
+        label: "Buy/sell/finalize",
+        state: "pending",
+        detail: "Trading and finalize stay disabled until the Solana program and security smoke checks are complete.",
       },
     ],
   };
@@ -63,6 +95,8 @@ const emptyStats: CampaignCardStats = {
 export function createSolanaLaunchpadAdapter(params: {
   fetchCampaigns: () => Promise<CampaignInfo[]>;
   walletProvider: unknown;
+  hasSolanaWallet?: boolean;
+  solanaWalletName?: string;
 }): LaunchpadAdapter {
   const pending = () => Promise.reject(createSolanaProtocolPendingError());
 
@@ -81,7 +115,10 @@ export function createSolanaLaunchpadAdapter(params: {
     buyTokens: (_campaignAddress: string, _amountWei: bigint, _maxCostWei: bigint) => pending(),
     sellTokens: (_campaignAddress: string, _amountWei: bigint, _minAmountWei: bigint) => pending(),
     finalizeCampaign: (_campaignAddress: string, _minTokens: bigint, _minBnb: bigint) => pending(),
-    getSafetyStatus: getSolanaLaunchpadSafetyStatus,
+    getSafetyStatus: () => getSolanaLaunchpadSafetyStatus({
+      hasSolanaWallet: params.hasSolanaWallet,
+      solanaWalletName: params.solanaWalletName,
+    }),
     walletProvider: params.walletProvider,
     activeChainId: SOLANA_CHAIN_ID,
     factoryAddress: "",
