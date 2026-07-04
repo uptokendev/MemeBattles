@@ -246,8 +246,16 @@ export function useLaunchpad(): LaunchpadAdapter {
   const fetchCampaignsCount = useCallback(async (): Promise<number> => {
     const factory = getFactoryRead();
     if (!factory) return 0;
-    const total: bigint = await factory.campaignsCount();
-    return Number(total ?? 0n);
+    try {
+      const total: bigint = await factory.campaignsCount();
+      return Number(total ?? 0n);
+    } catch (error) {
+      if (isDecodeResultError(error)) {
+        console.warn("[launchpadClient] campaignsCount unavailable for configured factory; using DB campaign feed", error);
+        return 0;
+      }
+      throw error;
+    }
   }, [getFactoryRead]);
 
   const fetchCampaignPage = useCallback(async (offset: number, limit: number, opts?: FetchCampaignPageOptions): Promise<CampaignInfo[]> => {
