@@ -40,6 +40,8 @@ const REALTIME_INDEXER_API_PREFIXES = [
   "/api/league",
   "/api/leaguePayouts",
   "/api/leagueRoot",
+  "/api/recruiters",
+  "/api/rewards",
   "/api/token/",
   "/api/token-metadata",
   "/api/votes",
@@ -90,6 +92,33 @@ function getChainIdFromApiPath(path: string): number {
   }
 }
 
+function getMethod(init?: RequestInit): string {
+  return String(init?.method || "GET").trim().toUpperCase();
+}
+
+function normalizeWallet(value?: string | null): string {
+  const raw = String(value || "").trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(raw) ? raw : "";
+}
+
+function emptyWalletRewardSummary(walletAddress: string) {
+  return {
+    walletAddress,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    totalEarnedByProgram: {},
+    claimableTotalRaw: "0",
+    pendingTotalRaw: "0",
+    totalEarnedRaw: "0",
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
+    updatedAt: null,
+  };
+}
+
 async function safeString(fn: () => Promise<unknown>, fallback = ""): Promise<string> {
   try {
     const value = await fn();
@@ -118,14 +147,70 @@ async function safeBigInt(fn: () => Promise<unknown>, fallback = 0n): Promise<bi
   }
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200, fallback = "client-compatibility"): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "x-mwz-client-fallback": "token-details-contract",
+      "x-mwz-client-fallback": fallback,
     },
   });
+}
+
+function buildPublicCompatibilityFallback(path: string, init?: RequestInit): Response | null {
+  if (getMethod(init) !== "GET") return null;
+
+  let url: URL;
+  try {
+    url = new URL(path, "http://local");
+  } catch {
+    return null;
+  }
+
+  if (url.pathname === "/api/recruiters/signup/status") {
+    const walletAddress = normalizeWallet(url.searchParams.get("walletAddress"));
+    return jsonResponse({
+      walletAddress,
+      isRecruiter: false,
+      recruiter: null,
+      canStartSignup: true,
+      signupApiAvailable: false,
+      warning: "Recruiter signup is opening soon.",
+    });
+  }
+
+  const recruiterWalletMatch = url.pathname.match(/^\/api\/recruiters\/wallet\/(0x[a-fA-F0-9]{40})\/summary$/);
+  if (recruiterWalletMatch) {
+    return jsonResponse({ summary: null });
+  }
+
+  if (url.pathname === "/api/rewards/wallet") {
+    const walletAddress = normalizeWallet(url.searchParams.get("walletAddress"));
+    return jsonResponse({ summary: emptyWalletRewardSummary(walletAddress) });
+  }
+
+  const tokenMetadataMatch = url.pathname.match(/^\/api\/token-metadata\/(\d+)\/(0x[a-fA-F0-9]{40})$/);
+  if (tokenMetadataMatch) {
+    const [, chainId, tokenAddress] = tokenMetadataMatch;
+    return jsonResponse(
+      {
+        chainId: Number(chainId),
+        tokenAddress: tokenAddress.toLowerCase(),
+        metadata: null,
+        tokenMetadata: null,
+        website: null,
+        xAccount: null,
+        xUrl: null,
+        telegram: null,
+        discord: null,
+        source: "client-compatibility",
+      },
+      200,
+      "token-metadata-compatibility",
+    );
+  }
+
+  return null;
 }
 
 async function buildTokenDetailsCampaignFallback(path: string): Promise<Response | null> {
@@ -170,37 +255,41 @@ async function buildTokenDetailsCampaignFallback(path: string): Promise<Response
 
     const progressPct = curveSupply > 0n ? Number((sold * 10_000n) / curveSupply) / 100 : null;
 
-    return jsonResponse({
-      items: [
-        {
-          chainId,
-          campaignAddress,
-          tokenAddress,
-          creatorAddress: /^0x[a-fA-F0-9]{40}$/.test(creatorAddress) ? creatorAddress.toLowerCase() : null,
-          name,
-          symbol,
-          logoUri,
-          logoURI: logoUri,
-          website,
-          xAccount,
-          xUrl: xAccount,
-          extraLink,
-          isDexTrading: launched,
-          isActive: !launched,
-          status: launched ? "graduated" : "live",
-          progressPct,
-          votes24h: 0,
-          votesAllTime: 0,
-          raisedTotalBnb: "0",
-          raised10mBnb: "0",
-          source: "token-details-contract-fallback",
-        },
-      ],
-      nextCursor: null,
-      pageSize: 1,
-      updatedAt: new Date().toISOString(),
-      warning: "Campaign feed fallback hydrated this token directly from the campaign contract.",
-    });
+    return jsonResponse(
+      {
+        items: [
+          {
+            chainId,
+            campaignAddress,
+            tokenAddress,
+            creatorAddress: /^0x[a-fA-F0-9]{40}$/.test(creatorAddress) ? creatorAddress.toLowerCase() : null,
+            name,
+            symbol,
+            logoUri,
+            logoURI: logoUri,
+            website,
+            xAccount,
+            xUrl: xAccount,
+            extraLink,
+            isDexTrading: launched,
+            isActive: !launched,
+            status: launched ? "graduated" : "live",
+            progressPct,
+            votes24h: 0,
+            votesAllTime: 0,
+            raisedTotalBnb: "0",
+            raised10mBnb: "0",
+            source: "token-details-contract-fallback",
+          },
+        ],
+        nextCursor: null,
+        pageSize: 1,
+        updatedAt: new Date().toISOString(),
+        warning: "Campaign feed fallback hydrated this token directly from the campaign contract.",
+      },
+      200,
+      "token-details-contract",
+    );
   } catch (error) {
     console.warn("[apiBase] TokenDetails contract fallback failed", error);
     return null;
@@ -219,6 +308,9 @@ export function apiUrl(path: string): string {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const compatibilityFallback = buildPublicCompatibilityFallback(path, init);
+  if (compatibilityFallback) return compatibilityFallback;
+
   const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
   if (preemptiveFallback) return preemptiveFallback;
 
