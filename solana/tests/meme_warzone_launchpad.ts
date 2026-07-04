@@ -20,6 +20,8 @@ describe("meme_warzone_launchpad", () => {
   const admin = provider.wallet as anchor.Wallet;
   const creator = Keypair.generate();
   const buyer = Keypair.generate();
+  const recruiter = Keypair.generate();
+  const squadTreasury = Keypair.generate();
   const mint = Keypair.generate();
   const zeroClusterId = Buffer.alloc(32);
 
@@ -119,13 +121,15 @@ describe("meme_warzone_launchpad", () => {
     expect(profile.liveBondingCount).to.eq(0);
   });
 
-  it("creates a campaign with tier rules, a valid SPL mint, and initializes the fee vault", async () => {
+  it("creates a campaign with tier rules, fee recipients, a valid SPL mint, and initializes the fee vault", async () => {
     await program.methods
       .createCampaign({
         graduationTargetLamports: new anchor.BN(1_000_000),
         creatorBuyCapLamports: new anchor.BN(250_000_000),
         basePriceLamports: new anchor.BN(100),
         priceSlopeLamports: new anchor.BN(0),
+        recruiter: recruiter.publicKey,
+        squadTreasury: squadTreasury.publicKey,
       })
       .accounts({
         creator: creator.publicKey,
@@ -146,6 +150,8 @@ describe("meme_warzone_launchpad", () => {
     const profile = await program.account.creatorProfile.fetch(creatorProfile);
     const mintState = await getMint(provider.connection, mint.publicKey);
     expect(campaign.creator.toBase58()).to.eq(creator.publicKey.toBase58());
+    expect(campaign.recruiter.toBase58()).to.eq(recruiter.publicKey.toBase58());
+    expect(campaign.squadTreasury.toBase58()).to.eq(squadTreasury.publicKey.toBase58());
     expect(campaign.mint.toBase58()).to.eq(mint.publicKey.toBase58());
     expect(campaign.feeVault.toBase58()).to.eq(feeVault.toBase58());
     expect(campaign.creatorBuyCapLamports.toNumber()).to.eq(250_000_000);
@@ -157,7 +163,7 @@ describe("meme_warzone_launchpad", () => {
     expect(profile.totalLaunches.toNumber()).to.eq(1);
   });
 
-  it("moves SOL into the fee vault, mints campaign tokens, and records protocol fees on buy", async () => {
+  it("moves SOL into the fee vault, mints campaign tokens, and splits fees on buy", async () => {
     await program.methods
       .buy(new anchor.BN(10_000))
       .accounts({
@@ -180,13 +186,16 @@ describe("meme_warzone_launchpad", () => {
     const mintState = await getMint(provider.connection, mint.publicKey);
     expect(campaign.grossBuyLamports.toNumber()).to.eq(10_000);
     expect(campaign.soldAmount.toNumber()).to.eq(99);
-    expect(vault.protocolFeeLamports.toNumber()).to.eq(50);
+    expect(vault.protocolFeeLamports.toNumber()).to.eq(20);
+    expect(vault.creatorFeeLamports.toNumber()).to.eq(20);
+    expect(vault.recruiterFeeLamports.toNumber()).to.eq(5);
+    expect(vault.squadFeeLamports.toNumber()).to.eq(5);
     expect(vault.solVaultLamports.toNumber()).to.eq(9_950);
     expect(Number(buyerTokens.amount)).to.eq(99);
     expect(Number(mintState.supply)).to.eq(99);
   });
 
-  it("burns campaign tokens and releases SOL from the fee vault on sell", async () => {
+  it("burns campaign tokens, releases SOL from the fee vault, and splits sell fees", async () => {
     await program.methods
       .sell(new anchor.BN(25))
       .accounts({
@@ -209,10 +218,65 @@ describe("meme_warzone_launchpad", () => {
     const mintState = await getMint(provider.connection, mint.publicKey);
     expect(campaign.soldAmount.toNumber()).to.eq(74);
     expect(campaign.grossSellLamports.toNumber()).to.eq(2_500);
-    expect(vault.protocolFeeLamports.toNumber()).to.eq(62);
+    expect(vault.protocolFeeLamports.toNumber()).to.eq(26);
+    expect(vault.creatorFeeLamports.toNumber()).to.eq(24);
+    expect(vault.recruiterFeeLamports.toNumber()).to.eq(6);
+    expect(vault.squadFeeLamports.toNumber()).to.eq(6);
     expect(vault.solVaultLamports.toNumber()).to.eq(7_450);
     expect(Number(buyerTokens.amount)).to.eq(74);
     expect(Number(mintState.supply)).to.eq(74);
+  });
+
+  it("lets every entitled recipient claim their fee bucket", async () => {
+    await program.methods
+      .claimCreatorRewards()
+      .accounts({
+        claimant: creator.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+      })
+      .signers([creator])
+      .rpc();
+
+    await program.methods
+      .claimRecruiterRewards()
+      .accounts({
+        claimant: recruiter.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+      })
+      .signers([recruiter])
+      .rpc();
+
+    await program.methods
+      .claimSquadRewards()
+      .accounts({
+        claimant: squadTreasury.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+      })
+      .signers([squadTreasury])
+      .rpc();
+
+    await program.methods
+      .claimProtocolRewards()
+      .accounts({
+        claimant: admin.publicKey,
+        globalConfig,
+        campaignState,
+        feeVault,
+      })
+      .rpc();
+
+    const vault = await program.account.feeVault.fetch(feeVault);
+    expect(vault.protocolFeeLamports.toNumber()).to.eq(0);
+    expect(vault.creatorFeeLamports.toNumber()).to.eq(0);
+    expect(vault.recruiterFeeLamports.toNumber()).to.eq(0);
+    expect(vault.squadFeeLamports.toNumber()).to.eq(0);
+    expect(vault.solVaultLamports.toNumber()).to.eq(7_450);
   });
 
   it("blocks creator buys during the tier lock", async () => {
