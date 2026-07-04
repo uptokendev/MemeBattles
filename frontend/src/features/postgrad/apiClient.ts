@@ -37,6 +37,8 @@ export type OpenPostGradBattleInput = {
   initialPotBnb?: number;
 };
 
+export type PostGradWarPoolState = "open" | "locked" | "settling" | "paid";
+
 async function readJson(response: Response): Promise<JsonObject | null> {
   return response.json().catch(() => null) as Promise<JsonObject | null>;
 }
@@ -109,6 +111,10 @@ export async function fetchPostGradWarPoolSummary(signal?: AbortSignal) {
 
 export async function supportPostGradWarPool(battleId: string, sideTokenId: string, amountUsd: number) {
   return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/support`, { sideTokenId, amountUsd });
+}
+
+export async function transitionPostGradWarPool(battleId: string, state: PostGradWarPoolState) {
+  return mutateJson(`/api/arena/war-pools/${encodeURIComponent(battleId)}/transition`, { state });
 }
 
 export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, signal }: PostGradSponsoredFeedParams) {
