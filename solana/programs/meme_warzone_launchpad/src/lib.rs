@@ -202,8 +202,9 @@ pub mod meme_warzone_launchpad {
 
     pub fn buy(ctx: Context<Trade>, lamports_in: u64) -> Result<()> {
         let config = &ctx.accounts.global_config;
+        let campaign_key = ctx.accounts.campaign_state.key();
         let campaign = &mut ctx.accounts.campaign_state;
-        require_trade_accounts(campaign, &ctx.accounts.fee_vault)?;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign_key)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.buy_paused, LaunchpadError::BuysPaused);
@@ -246,8 +247,9 @@ pub mod meme_warzone_launchpad {
 
     pub fn sell(ctx: Context<Trade>, token_amount: u64) -> Result<()> {
         let config = &ctx.accounts.global_config;
+        let campaign_key = ctx.accounts.campaign_state.key();
         let campaign = &mut ctx.accounts.campaign_state;
-        require_trade_accounts(campaign, &ctx.accounts.fee_vault)?;
+        require_trade_accounts(campaign, &ctx.accounts.fee_vault, campaign_key)?;
         require!(!config.global_paused, LaunchpadError::GlobalPaused);
         require!(!campaign.paused, LaunchpadError::CampaignPaused);
         require!(!campaign.sell_paused, LaunchpadError::SellsPaused);
@@ -360,7 +362,7 @@ pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
         .checked_mul(u64::from(fee_bps))
         .ok_or(LaunchpadError::MathOverflow)?
         .checked_div(BPS_DENOMINATOR)
-        .ok_or(LaunchpadError::MathOverflow.into())
+        .ok_or(LaunchpadError::MathOverflow)
 }
 
 pub fn quote_buy_tokens(campaign: &CampaignState, net_lamports: u64) -> Result<u64> {
@@ -380,13 +382,13 @@ pub fn quote_sell_refund(campaign: &CampaignState, token_amount: u64) -> Result<
         .base_price_lamports
         .checked_add(post_sell_supply.checked_mul(campaign.price_slope_lamports).ok_or(LaunchpadError::MathOverflow)?)
         .ok_or(LaunchpadError::MathOverflow)?;
-    token_amount.checked_mul(price).ok_or(LaunchpadError::MathOverflow.into())
+    token_amount.checked_mul(price).ok_or(LaunchpadError::MathOverflow)
 }
 
-pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault) -> Result<()> {
+pub fn require_trade_accounts(campaign: &CampaignState, fee_vault: &FeeVault, campaign_key: Pubkey) -> Result<()> {
     require_keys_eq!(campaign.fee_vault, fee_vault.key(), LaunchpadError::InvalidFeeVault);
     require_keys_eq!(campaign.mint, fee_vault.mint, LaunchpadError::InvalidFeeVault);
-    require_keys_eq!(campaign.key(), fee_vault.campaign_state, LaunchpadError::InvalidFeeVault);
+    require_keys_eq!(campaign_key, fee_vault.campaign_state, LaunchpadError::InvalidFeeVault);
     Ok(())
 }
 
