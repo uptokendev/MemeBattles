@@ -14,7 +14,7 @@ export function CommandCenterPageHeader({
   children,
 }: CommandCenterPageHeaderProps) {
   return (
-    <div className="mb-4 rounded-3xl border border-border/50 bg-card/30 p-4 shadow-xl backdrop-blur-md md:p-6">
+    <div className="mwz-command-header mb-4 p-4 md:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="mb-2 font-retro text-[10px] uppercase tracking-[0.2em] text-accent">
