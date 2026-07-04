@@ -1,172 +1,101 @@
 /*
-  Generic card cleanup
+  Site-wide card cleanup
 
-  Shared cards should use the same cut-corner shell as the in-product HUD cards:
-  orange edge segments, darker cut corners, and a flatter gray body. Avoid the
-  older textured or illustrated card fill on ordinary utility panels.
+  The only sliced frame that should remain is the outer application frame
+  rendered by .mwz-app-shell::before/::after. Everything inside the main content
+  area should use the calmer flat panel language: thin rectangular borders,
+  restrained backgrounds, and no repeated cut-corner shells.
 */
 
-.mwz-card {
-  --mwz-card-clean-cut: var(--mwz-cut, 18px);
-  border: 1px solid rgba(255, 153, 0, 0.38) !important;
-  background: rgba(24, 25, 25, 0.96) !important;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 153, 0, 0.05),
-    var(--mwz-panel-shadow) !important;
-  clip-path: polygon(
-    0 var(--mwz-card-clean-cut),
-    var(--mwz-card-clean-cut) 0,
-    calc(100% - var(--mwz-card-clean-cut)) 0,
-    100% var(--mwz-card-clean-cut),
-    100% calc(100% - var(--mwz-card-clean-cut)),
-    calc(100% - var(--mwz-card-clean-cut)) 100%,
-    var(--mwz-card-clean-cut) 100%,
-    0 calc(100% - var(--mwz-card-clean-cut))
-  ) !important;
-}
-
-.mwz-card::before {
-  content: '' !important;
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 0 !important;
-  pointer-events: none !important;
-  background:
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px top / calc(100% - 40px) 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px bottom / calc(100% - 40px) 1px no-repeat !important;
-  opacity: 0.94 !important;
-}
-
-.mwz-card::after {
-  content: '' !important;
-  position: absolute !important;
-  inset: 8px !important;
-  z-index: 0 !important;
-  pointer-events: none !important;
-  clip-path: polygon(
-    calc(var(--mwz-card-clean-cut) - 8px) 0,
-    calc(100% - (var(--mwz-card-clean-cut) - 8px)) 0,
-    100% calc(var(--mwz-card-clean-cut) - 8px),
-    100% calc(100% - (var(--mwz-card-clean-cut) - 8px)),
-    calc(100% - (var(--mwz-card-clean-cut) - 8px)) 100%,
-    calc(var(--mwz-card-clean-cut) - 8px) 100%,
-    0 calc(100% - (var(--mwz-card-clean-cut) - 8px)),
-    0 calc(var(--mwz-card-clean-cut) - 8px)
-  ) !important;
-  border: 1px solid rgba(255, 255, 255, 0.04) !important;
-  background: rgba(56, 58, 58, 0.54) !important;
-  opacity: 1 !important;
-  mix-blend-mode: normal;
-}
-
-.mwz-launchpad-page .mwz-card {
-  --mwz-card-clean-cut: var(--mwz-card-cut, 18px);
-  background: rgba(24, 25, 25, 0.96) !important;
-}
-
-.mwz-launchpad-page .mwz-card::before {
-  inset: 0 !important;
-  background:
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right top / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) left bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 20px 1px no-repeat,
-    linear-gradient(var(--mwz-orange-deep), var(--mwz-orange-deep)) right bottom / 1px 20px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px top / calc(100% - 40px) 1px no-repeat,
-    linear-gradient(var(--mwz-orange), var(--mwz-orange)) left 20px bottom / calc(100% - 40px) 1px no-repeat !important;
-  opacity: 0.94 !important;
-}
-
-/* Optional modifier if you prefer a named class over arbitrary variant */
-.mwz-card.no-inner-border,
-.mwz-launchpad-page .mwz-card.no-inner-border {
-  /* Force solid gray background all the way to the edges of the outer border image.
-     This shows through the transparent parts of the launchpad frame (border-image).
-     We keep the outer border image / clip-path / ::before frame intact. */
-  background: #383a3a !important;
-  background-color: #383a3a !important;
-}
-
-/* Ensure no dark inner layer leaks black on the sides */
-.mwz-card.no-inner-border::after,
-.mwz-launchpad-page .mwz-card.no-inner-border::after {
-  border-color: transparent !important;
-  background: transparent !important;
-}
-
-/*
-  Flat card system
-
-  New utility surfaces use the thinner rectangular treatment from the Command
-  Center content panels. This avoids the chunky clipped frame repeating down
-  long pages while preserving one ambient glow on the command menu.
-*/
-.mwz-flat-card,
-.mwz-command-card,
-.mwz-command-header,
-.mwz-command-metric,
-.mwz-command-sidebar {
+.mwz-app-shell main :where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .mwz-command-card,
+  .mwz-command-header,
+  .mwz-command-metric,
+  .holo-card,
+  [class*="bg-card/"],
+  [class*="bg-background/"][class*="border"]
+) {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   clip-path: none !important;
   border-radius: 0 !important;
-  border: 1px solid rgba(120, 112, 92, 0.32) !important;
-  background: rgba(5, 7, 7, 0.38) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-}
-
-.mwz-flat-card::before,
-.mwz-flat-card::after,
-.mwz-command-card::before,
-.mwz-command-card::after,
-.mwz-command-header::before,
-.mwz-command-header::after,
-.mwz-command-metric::before,
-.mwz-command-metric::after,
-.mwz-command-sidebar::before,
-.mwz-command-sidebar::after {
-  content: none !important;
-}
-
-.mwz-command-card,
-.mwz-command-header,
-.mwz-command-metric {
+  border-color: rgba(120, 112, 92, 0.32) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
     rgba(3, 5, 5, 0.36) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  transform: none;
 }
 
-.mwz-command-header {
-  border-color: rgba(120, 112, 92, 0.36) !important;
+.mwz-app-shell main :where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .mwz-command-card,
+  .mwz-command-header,
+  .mwz-command-metric,
+  .holo-card
+)::before,
+.mwz-app-shell main :where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .mwz-command-card,
+  .mwz-command-header,
+  .mwz-command-metric,
+  .holo-card
+)::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  clip-path: none !important;
 }
 
-.mwz-command-card:hover,
-.mwz-command-metric:hover,
-.mwz-flat-card:hover {
+.mwz-app-shell main :where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .mwz-command-card,
+  .mwz-command-header,
+  .mwz-command-metric,
+  .holo-card
+) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mwz-app-shell main :where(
+  .mwz-hud-frame,
+  .mwz-panel,
+  .mwz-card,
+  .mwz-flat-card,
+  .mwz-command-card,
+  .mwz-command-header,
+  .mwz-command-metric,
+  .holo-card,
+  [class*="bg-card/"],
+  [class*="bg-background/"][class*="border"]
+):hover {
   border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 44%),
     rgba(7, 9, 9, 0.48) !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-.mwz-command-metric-prominent {
-  border-color: rgba(var(--mwz-orange-rgb), 0.38) !important;
-}
-
-.mwz-command-sidebar {
+.mwz-app-shell main .mwz-command-sidebar {
   border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
   background:
     radial-gradient(360px 280px at 12% 8%, rgba(var(--mwz-orange-rgb), 0.18), transparent 58%),
@@ -196,8 +125,15 @@
   background: rgba(255, 255, 255, 0.026) !important;
 }
 
-.mwz-command-nav-item-active {
+.mwz-command-nav-item-active,
+.mwz-command-metric-prominent {
   border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
   background: rgba(var(--mwz-orange-rgb), 0.075) !important;
   box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.06) !important;
+}
+
+/* Keep form inputs and small image/avatar containers from inheriting oversized
+   legacy card depth when they happen to use card-colored utility classes. */
+.mwz-app-shell main :where(input, textarea, select, img) {
+  box-shadow: none !important;
 }
