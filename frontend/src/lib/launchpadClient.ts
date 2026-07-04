@@ -5,7 +5,7 @@ import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId, getFactoryAddress, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { BNB_CHAIN_ID, getActiveChainId, getFactoryAddress, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import {
   fetchCampaignCreateAuthorization,
   fetchCampaignTradeAuthorization,
@@ -206,8 +206,13 @@ export function useLaunchpad(): LaunchpadAdapter {
     () => (preferSolanaLaunchpad ? SOLANA_CHAIN_ID : getActiveChainId(walletChainId)),
     [preferSolanaLaunchpad, walletChainId],
   );
-  const factoryAddress = useMemo(() => getFactoryAddress(activeChainId), [activeChainId]);
-  const readProvider = useMemo(() => getReadProvider(activeChainId), [activeChainId]);
+  const evmFallbackChainId = useMemo<SupportedChainId>(() => {
+    const fallback = getActiveChainId(walletChainId);
+    return isSolanaChainId(fallback) ? BNB_CHAIN_ID : fallback;
+  }, [walletChainId]);
+  const evmReadChainId = isSolanaChainId(activeChainId) ? evmFallbackChainId : activeChainId;
+  const factoryAddress = useMemo(() => getFactoryAddress(evmReadChainId), [evmReadChainId]);
+  const readProvider = useMemo(() => getReadProvider(evmReadChainId), [evmReadChainId]);
 
   const getFactoryRead = useCallback(() => {
     if (!factoryAddress) return null;
