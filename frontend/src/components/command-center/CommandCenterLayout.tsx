@@ -14,7 +14,7 @@ type CommandCenterLayoutProps = {
 export function CommandCenterLayout({ walletAddress, basePath, children }: CommandCenterLayoutProps) {
   return (
     <CommandCenterDataProvider walletAddress={walletAddress}>
-      <ContentContainer className="mwz-command-center-layout space-y-4 pb-8 pt-20 md:pt-24 lg:pt-28">
+      <ContentContainer className="mwz-command-center-layout space-y-4 pb-8 pt-28 md:pt-32 lg:pt-36">
         <CommandCenterHero walletAddress={walletAddress} />
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
           <CommandCenterSidebar basePath={basePath} />
