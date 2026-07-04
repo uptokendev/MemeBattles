@@ -44,8 +44,6 @@ function getCommandSection(pathname: string): string {
     "followers",
     "following",
     "coins",
-    "arena-ops",
-    "security",
   ]);
   return allowed.has(suffix) ? `/${suffix}` : "";
 }
