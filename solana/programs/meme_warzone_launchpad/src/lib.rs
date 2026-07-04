@@ -13,6 +13,14 @@ pub const RISK_LOW: u8 = 0;
 pub const RISK_MEDIUM: u8 = 1;
 pub const RISK_HIGH: u8 = 2;
 pub const BPS_DENOMINATOR: u64 = 10_000;
+pub const PROTOCOL_FEE_SHARE_BPS: u16 = 4_000;
+pub const CREATOR_FEE_SHARE_BPS: u16 = 4_000;
+pub const RECRUITER_FEE_SHARE_BPS: u16 = 1_000;
+pub const SQUAD_FEE_SHARE_BPS: u16 = 1_000;
+pub const REWARD_CREATOR: u8 = 1;
+pub const REWARD_RECRUITER: u8 = 2;
+pub const REWARD_SQUAD: u8 = 3;
+pub const REWARD_PROTOCOL: u8 = 4;
 
 #[program]
 pub mod meme_warzone_launchpad {
@@ -21,6 +29,7 @@ pub mod meme_warzone_launchpad {
     pub fn initialize_global_config(ctx: Context<InitializeGlobalConfig>, args: InitializeGlobalConfigArgs) -> Result<()> {
         require_bps(args.trade_fee_bps)?;
         require_bps(args.graduation_fee_bps)?;
+        require_fee_share_config()?;
         let config = &mut ctx.accounts.global_config;
         config.admin = ctx.accounts.admin.key();
         config.pauser = args.pauser;
@@ -129,6 +138,8 @@ pub mod meme_warzone_launchpad {
         require!(args.graduation_target_lamports > 0, LaunchpadError::InvalidAmount);
         require!(args.creator_buy_cap_lamports > 0, LaunchpadError::InvalidAmount);
         require!(args.base_price_lamports > 0, LaunchpadError::InvalidAmount);
+        require!(args.recruiter != Pubkey::default(), LaunchpadError::InvalidRecipient);
+        require!(args.squad_treasury != Pubkey::default(), LaunchpadError::InvalidRecipient);
 
         let campaign_key = ctx.accounts.campaign_state.key();
         require!(ctx.accounts.mint.mint_authority == COption::Some(campaign_key), LaunchpadError::InvalidMintAuthority);
@@ -157,6 +168,8 @@ pub mod meme_warzone_launchpad {
 
         let campaign = &mut ctx.accounts.campaign_state;
         campaign.creator = ctx.accounts.creator.key();
+        campaign.recruiter = args.recruiter;
+        campaign.squad_treasury = args.squad_treasury;
         campaign.mint = ctx.accounts.mint.key();
         campaign.fee_vault = ctx.accounts.fee_vault.key();
         campaign.launch_timestamp = now;
@@ -227,8 +240,8 @@ pub mod meme_warzone_launchpad {
             campaign.creator_bought_lamports = next_creator_bought;
         }
 
-        let protocol_fee = calculate_fee(lamports_in, config.trade_fee_bps)?;
-        let net_curve_lamports = lamports_in.checked_sub(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        let total_trade_fee = calculate_fee(lamports_in, config.trade_fee_bps)?;
+        let net_curve_lamports = lamports_in.checked_sub(total_trade_fee).ok_or(LaunchpadError::MathOverflow)?;
         let tokens_out = quote_buy_tokens(campaign, net_curve_lamports)?;
 
         anchor_lang::system_program::transfer(
@@ -256,12 +269,13 @@ pub mod meme_warzone_launchpad {
             tokens_out,
         )?;
 
+        let fee_split = split_trade_fee(total_trade_fee)?;
         let vault = &mut ctx.accounts.fee_vault;
-        vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        add_fee_split(vault, fee_split)?;
         vault.sol_vault_lamports = vault.sol_vault_lamports.checked_add(net_curve_lamports).ok_or(LaunchpadError::MathOverflow)?;
         campaign.gross_buy_lamports = campaign.gross_buy_lamports.checked_add(lamports_in).ok_or(LaunchpadError::MathOverflow)?;
         campaign.sold_amount = campaign.sold_amount.checked_add(tokens_out).ok_or(LaunchpadError::MathOverflow)?;
-        emit!(Bought { campaign: campaign.key(), buyer, lamports_in, protocol_fee_lamports: protocol_fee, tokens_out });
+        emit!(Bought { campaign: campaign.key(), buyer, lamports_in, protocol_fee_lamports: total_trade_fee, tokens_out });
         Ok(())
     }
 
@@ -291,8 +305,8 @@ pub mod meme_warzone_launchpad {
         )?;
 
         let gross_refund = quote_sell_refund(campaign, token_amount)?;
-        let protocol_fee = calculate_fee(gross_refund, config.trade_fee_bps)?;
-        let refund_to_trader = gross_refund.checked_sub(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        let total_trade_fee = calculate_fee(gross_refund, config.trade_fee_bps)?;
+        let refund_to_trader = gross_refund.checked_sub(total_trade_fee).ok_or(LaunchpadError::MathOverflow)?;
         require!(ctx.accounts.fee_vault.sol_vault_lamports >= gross_refund, LaunchpadError::InsufficientVaultBalance);
 
         {
@@ -308,12 +322,13 @@ pub mod meme_warzone_launchpad {
                 .ok_or(LaunchpadError::MathOverflow)?;
         }
 
+        let fee_split = split_trade_fee(total_trade_fee)?;
         let vault = &mut ctx.accounts.fee_vault;
-        vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
+        add_fee_split(vault, fee_split)?;
         vault.sol_vault_lamports = vault.sol_vault_lamports.checked_sub(gross_refund).ok_or(LaunchpadError::MathOverflow)?;
         campaign.sold_amount = campaign.sold_amount.checked_sub(token_amount).ok_or(LaunchpadError::MathOverflow)?;
         campaign.gross_sell_lamports = campaign.gross_sell_lamports.checked_add(gross_refund).ok_or(LaunchpadError::MathOverflow)?;
-        emit!(Sold { campaign: campaign.key(), seller: ctx.accounts.trader.key(), token_amount, gross_refund_lamports: gross_refund, protocol_fee_lamports: protocol_fee });
+        emit!(Sold { campaign: campaign.key(), seller: ctx.accounts.trader.key(), token_amount, gross_refund_lamports: gross_refund, protocol_fee_lamports: total_trade_fee });
         Ok(())
     }
 
@@ -335,9 +350,41 @@ pub mod meme_warzone_launchpad {
         Ok(())
     }
 
-    pub fn claim_creator_rewards(_ctx: Context<ClaimRewards>) -> Result<()> { Ok(()) }
-    pub fn claim_recruiter_rewards(_ctx: Context<ClaimRewards>) -> Result<()> { Ok(()) }
-    pub fn claim_squad_rewards(_ctx: Context<ClaimRewards>) -> Result<()> { Ok(()) }
+    pub fn claim_creator_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.creator, LaunchpadError::Unauthorized);
+        let amount = ctx.accounts.fee_vault.creator_fee_lamports;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_CREATOR)?;
+        ctx.accounts.fee_vault.creator_fee_lamports = 0;
+        emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_CREATOR, lamports: amount });
+        Ok(())
+    }
+
+    pub fn claim_recruiter_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.recruiter, LaunchpadError::Unauthorized);
+        let amount = ctx.accounts.fee_vault.recruiter_fee_lamports;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_RECRUITER)?;
+        ctx.accounts.fee_vault.recruiter_fee_lamports = 0;
+        emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_RECRUITER, lamports: amount });
+        Ok(())
+    }
+
+    pub fn claim_squad_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.campaign_state.squad_treasury, LaunchpadError::Unauthorized);
+        let amount = ctx.accounts.fee_vault.squad_fee_lamports;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_SQUAD)?;
+        ctx.accounts.fee_vault.squad_fee_lamports = 0;
+        emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_SQUAD, lamports: amount });
+        Ok(())
+    }
+
+    pub fn claim_protocol_rewards(ctx: Context<ClaimRewards>) -> Result<()> {
+        require_keys_eq!(ctx.accounts.claimant.key(), ctx.accounts.global_config.fee_authority, LaunchpadError::Unauthorized);
+        let amount = ctx.accounts.fee_vault.protocol_fee_lamports;
+        claim_reward(&mut ctx.accounts.fee_vault, ctx.accounts.claimant.to_account_info(), amount, REWARD_PROTOCOL)?;
+        ctx.accounts.fee_vault.protocol_fee_lamports = 0;
+        emit!(RewardsClaimed { campaign: ctx.accounts.campaign_state.key(), claimant: ctx.accounts.claimant.key(), reward_kind: REWARD_PROTOCOL, lamports: amount });
+        Ok(())
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -356,6 +403,8 @@ pub struct CreateCampaignArgs {
     pub creator_buy_cap_lamports: u64,
     pub base_price_lamports: u64,
     pub price_slope_lamports: u64,
+    pub recruiter: Pubkey,
+    pub squad_treasury: Pubkey,
 }
 
 #[derive(Clone, Copy)]
@@ -364,6 +413,14 @@ pub struct TierRules {
     pub cooldown_seconds: i64,
     pub creator_buy_lock_seconds: i64,
     pub max_cluster_wallets: u16,
+}
+
+#[derive(Clone, Copy)]
+pub struct FeeSplit {
+    pub protocol: u64,
+    pub creator: u64,
+    pub recruiter: u64,
+    pub squad: u64,
 }
 
 pub fn rules_for_tier(tier: u8) -> Result<TierRules> {
@@ -389,12 +446,54 @@ pub fn require_bps(bps: u16) -> Result<()> {
     Ok(())
 }
 
+pub fn require_fee_share_config() -> Result<()> {
+    let configured_total = u64::from(PROTOCOL_FEE_SHARE_BPS)
+        .checked_add(u64::from(CREATOR_FEE_SHARE_BPS)).ok_or(LaunchpadError::MathOverflow)?
+        .checked_add(u64::from(RECRUITER_FEE_SHARE_BPS)).ok_or(LaunchpadError::MathOverflow)?
+        .checked_add(u64::from(SQUAD_FEE_SHARE_BPS)).ok_or(LaunchpadError::MathOverflow)?;
+    require!(configured_total == BPS_DENOMINATOR, LaunchpadError::InvalidBps);
+    Ok(())
+}
+
 pub fn calculate_fee(amount: u64, fee_bps: u16) -> Result<u64> {
     amount
         .checked_mul(u64::from(fee_bps))
         .ok_or(LaunchpadError::MathOverflow)?
         .checked_div(BPS_DENOMINATOR)
         .ok_or(LaunchpadError::MathOverflow)
+}
+
+pub fn split_trade_fee(total_fee: u64) -> Result<FeeSplit> {
+    let creator = calculate_fee(total_fee, CREATOR_FEE_SHARE_BPS)?;
+    let recruiter = calculate_fee(total_fee, RECRUITER_FEE_SHARE_BPS)?;
+    let squad = calculate_fee(total_fee, SQUAD_FEE_SHARE_BPS)?;
+    let allocated = creator
+        .checked_add(recruiter).ok_or(LaunchpadError::MathOverflow)?
+        .checked_add(squad).ok_or(LaunchpadError::MathOverflow)?;
+    let protocol = total_fee.checked_sub(allocated).ok_or(LaunchpadError::MathOverflow)?;
+    Ok(FeeSplit { protocol, creator, recruiter, squad })
+}
+
+pub fn add_fee_split(vault: &mut FeeVault, split: FeeSplit) -> Result<()> {
+    vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(split.protocol).ok_or(LaunchpadError::MathOverflow)?;
+    vault.creator_fee_lamports = vault.creator_fee_lamports.checked_add(split.creator).ok_or(LaunchpadError::MathOverflow)?;
+    vault.recruiter_fee_lamports = vault.recruiter_fee_lamports.checked_add(split.recruiter).ok_or(LaunchpadError::MathOverflow)?;
+    vault.squad_fee_lamports = vault.squad_fee_lamports.checked_add(split.squad).ok_or(LaunchpadError::MathOverflow)?;
+    Ok(())
+}
+
+pub fn claim_reward(vault: &mut Account<FeeVault>, claimant_info: AccountInfo, amount: u64, _reward_kind: u8) -> Result<()> {
+    require!(amount > 0, LaunchpadError::NoRewardsToClaim);
+    let vault_info = vault.to_account_info();
+    **vault_info.try_borrow_mut_lamports()? = vault_info
+        .lamports()
+        .checked_sub(amount)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    **claimant_info.try_borrow_mut_lamports()? = claimant_info
+        .lamports()
+        .checked_add(amount)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    Ok(())
 }
 
 pub fn quote_buy_tokens(campaign: &CampaignState, net_lamports: u64) -> Result<u64> {
@@ -559,7 +658,13 @@ pub struct Graduate<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimRewards<'info> {
+    #[account(mut)]
     pub claimant: Signer<'info>,
+    #[account(seeds = [b"global"], bump = global_config.bump)]
+    pub global_config: Account<'info, GlobalConfig>,
+    pub campaign_state: Account<'info, CampaignState>,
+    #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump)]
+    pub fee_vault: Account<'info, FeeVault>,
 }
 
 #[account]
@@ -595,6 +700,8 @@ impl CreatorProfile { pub const SPACE: usize = 32 + 1 + 8 + 2 + 8 + 8 + 8 + 1 + 
 #[account]
 pub struct CampaignState {
     pub creator: Pubkey,
+    pub recruiter: Pubkey,
+    pub squad_treasury: Pubkey,
     pub mint: Pubkey,
     pub fee_vault: Pubkey,
     pub launch_timestamp: i64,
@@ -614,7 +721,7 @@ pub struct CampaignState {
     pub graduation_paused: bool,
     pub bump: u8,
 }
-impl CampaignState { pub const SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1 + 1 + 1; }
+impl CampaignState { pub const SPACE: usize = 32 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1 + 1 + 1; }
 
 #[account]
 pub struct FeeVault {
@@ -676,6 +783,8 @@ pub struct Bought { pub campaign: Pubkey, pub buyer: Pubkey, pub lamports_in: u6
 pub struct Sold { pub campaign: Pubkey, pub seller: Pubkey, pub token_amount: u64, pub gross_refund_lamports: u64, pub protocol_fee_lamports: u64 }
 #[event]
 pub struct Graduated { pub campaign: Pubkey, pub creator: Pubkey, pub mint: Pubkey }
+#[event]
+pub struct RewardsClaimed { pub campaign: Pubkey, pub claimant: Pubkey, pub reward_kind: u8, pub lamports: u64 }
 
 #[error_code]
 pub enum LaunchpadError {
@@ -721,6 +830,8 @@ pub enum LaunchpadError {
     CreatorBuyCap,
     #[msg("Invalid mint authority")]
     InvalidMintAuthority,
+    #[msg("Invalid recipient")]
+    InvalidRecipient,
     #[msg("Invalid amount")]
     InvalidAmount,
     #[msg("Campaign already graduated")]
@@ -733,6 +844,8 @@ pub enum LaunchpadError {
     InsufficientVaultBalance,
     #[msg("Invalid fee vault")]
     InvalidFeeVault,
+    #[msg("No rewards to claim")]
+    NoRewardsToClaim,
     #[msg("Math overflow or underflow")]
     MathOverflow,
 }
