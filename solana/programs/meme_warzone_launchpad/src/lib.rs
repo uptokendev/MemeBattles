@@ -1,4 +1,6 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::program_option::COption;
+use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount};
 
 // Placeholder program id for scaffold/dev. Replace after the first Anchor deploy.
 declare_id!("11111111111111111111111111111111");
@@ -128,6 +130,10 @@ pub mod meme_warzone_launchpad {
         require!(args.creator_buy_cap_lamports > 0, LaunchpadError::InvalidAmount);
         require!(args.base_price_lamports > 0, LaunchpadError::InvalidAmount);
 
+        let campaign_key = ctx.accounts.campaign_state.key();
+        require!(ctx.accounts.mint.mint_authority == COption::Some(campaign_key), LaunchpadError::InvalidMintAuthority);
+        require!(ctx.accounts.mint.freeze_authority == COption::None, LaunchpadError::InvalidMintAuthority);
+
         let now = Clock::get()?.unix_timestamp;
         let creator = &mut ctx.accounts.creator_profile;
         require_keys_eq!(creator.creator_wallet, ctx.accounts.creator.key(), LaunchpadError::InvalidCreatorProfile);
@@ -149,7 +155,6 @@ pub mod meme_warzone_launchpad {
             require!(ctx.accounts.cluster_profile.wallet_count <= rules.max_cluster_wallets, LaunchpadError::ClusterLimit);
         }
 
-        let campaign_key = ctx.accounts.campaign_state.key();
         let campaign = &mut ctx.accounts.campaign_state;
         campaign.creator = ctx.accounts.creator.key();
         campaign.mint = ctx.accounts.mint.key();
@@ -236,6 +241,20 @@ pub mod meme_warzone_launchpad {
             lamports_in,
         )?;
 
+        let signer_seeds: &[&[u8]] = &[b"campaign", campaign.mint.as_ref(), &[campaign.bump]];
+        token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                MintTo {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.trader_token_account.to_account_info(),
+                    authority: ctx.accounts.campaign_state.to_account_info(),
+                },
+                &[signer_seeds],
+            ),
+            tokens_out,
+        )?;
+
         let vault = &mut ctx.accounts.fee_vault;
         vault.protocol_fee_lamports = vault.protocol_fee_lamports.checked_add(protocol_fee).ok_or(LaunchpadError::MathOverflow)?;
         vault.sol_vault_lamports = vault.sol_vault_lamports.checked_add(net_curve_lamports).ok_or(LaunchpadError::MathOverflow)?;
@@ -257,6 +276,18 @@ pub mod meme_warzone_launchpad {
         require!(token_amount > 0, LaunchpadError::InvalidAmount);
         require!(!ctx.accounts.risk_profile.restricted, LaunchpadError::WalletRestricted);
         require!(campaign.sold_amount >= token_amount, LaunchpadError::InsufficientSoldAmount);
+
+        token::burn(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Burn {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    from: ctx.accounts.trader_token_account.to_account_info(),
+                    authority: ctx.accounts.trader.to_account_info(),
+                },
+            ),
+            token_amount,
+        )?;
 
         let gross_refund = quote_sell_refund(campaign, token_amount)?;
         let protocol_fee = calculate_fee(gross_refund, config.trade_fee_bps)?;
@@ -476,8 +507,8 @@ pub struct CreateCampaign<'info> {
     #[account(seeds = [b"risk", creator.key().as_ref()], bump = risk_profile.bump)]
     pub risk_profile: Account<'info, RiskProfile>,
     pub cluster_profile: Account<'info, ClusterProfile>,
-    /// CHECK: Mint validation is added in the SPL-token integration slice.
-    pub mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
     #[account(init, payer = creator, space = 8 + CampaignState::SPACE, seeds = [b"campaign", mint.key().as_ref()], bump)]
     pub campaign_state: Account<'info, CampaignState>,
     #[account(init, payer = creator, space = 8 + FeeVault::SPACE, seeds = [b"fee_vault", mint.key().as_ref()], bump)]
@@ -502,10 +533,15 @@ pub struct Trade<'info> {
     pub global_config: Account<'info, GlobalConfig>,
     #[account(mut)]
     pub campaign_state: Account<'info, CampaignState>,
+    #[account(mut, address = campaign_state.mint)]
+    pub mint: Account<'info, Mint>,
     #[account(mut, seeds = [b"fee_vault", campaign_state.mint.as_ref()], bump = fee_vault.bump)]
     pub fee_vault: Account<'info, FeeVault>,
+    #[account(mut, token::mint = mint, token::authority = trader)]
+    pub trader_token_account: Account<'info, TokenAccount>,
     #[account(seeds = [b"risk", trader.key().as_ref()], bump = risk_profile.bump)]
     pub risk_profile: Account<'info, RiskProfile>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
@@ -682,6 +718,8 @@ pub enum LaunchpadError {
     CreatorBuyLocked,
     #[msg("Creator buy cap exceeded")]
     CreatorBuyCap,
+    #[msg("Invalid mint authority")]
+    InvalidMintAuthority,
     #[msg("Invalid amount")]
     InvalidAmount,
     #[msg("Campaign already graduated")]
