@@ -104,3 +104,100 @@
   border-color: transparent !important;
   background: transparent !important;
 }
+
+/*
+  Flat card system
+
+  New utility surfaces use the thinner rectangular treatment from the Command
+  Center content panels. This avoids the chunky clipped frame repeating down
+  long pages while preserving one ambient glow on the command menu.
+*/
+.mwz-flat-card,
+.mwz-command-card,
+.mwz-command-header,
+.mwz-command-metric,
+.mwz-command-sidebar {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  clip-path: none !important;
+  border-radius: 0 !important;
+  border: 1px solid rgba(120, 112, 92, 0.32) !important;
+  background: rgba(5, 7, 7, 0.38) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.mwz-flat-card::before,
+.mwz-flat-card::after,
+.mwz-command-card::before,
+.mwz-command-card::after,
+.mwz-command-header::before,
+.mwz-command-header::after,
+.mwz-command-metric::before,
+.mwz-command-metric::after,
+.mwz-command-sidebar::before,
+.mwz-command-sidebar::after {
+  content: none !important;
+}
+
+.mwz-command-card,
+.mwz-command-header,
+.mwz-command-metric {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
+    rgba(3, 5, 5, 0.36) !important;
+}
+
+.mwz-command-header {
+  border-color: rgba(120, 112, 92, 0.36) !important;
+}
+
+.mwz-command-card:hover,
+.mwz-command-metric:hover,
+.mwz-flat-card:hover {
+  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 44%),
+    rgba(7, 9, 9, 0.48) !important;
+}
+
+.mwz-command-metric-prominent {
+  border-color: rgba(var(--mwz-orange-rgb), 0.38) !important;
+}
+
+.mwz-command-sidebar {
+  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  background:
+    radial-gradient(360px 280px at 12% 8%, rgba(var(--mwz-orange-rgb), 0.18), transparent 58%),
+    linear-gradient(180deg, rgba(24, 25, 25, 0.62), rgba(5, 7, 7, 0.7)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 18px 42px rgba(0, 0, 0, 0.24) !important;
+}
+
+.mwz-command-menu-toggle,
+.mwz-command-nav-item {
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.mwz-command-menu-toggle {
+  border: 1px solid rgba(120, 112, 92, 0.28) !important;
+}
+
+.mwz-command-nav-item {
+  border-color: transparent !important;
+}
+
+.mwz-command-nav-item:hover {
+  border-color: rgba(120, 112, 92, 0.34) !important;
+  background: rgba(255, 255, 255, 0.026) !important;
+}
+
+.mwz-command-nav-item-active {
+  border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
+  background: rgba(var(--mwz-orange-rgb), 0.075) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.06) !important;
+}
