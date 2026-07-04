@@ -6,6 +6,13 @@
   frame, menu, and utility surface inside the frontend should use flat borders.
 */
 
+:root {
+  --mwz-flat-card-border: rgba(178, 174, 160, 0.34);
+  --mwz-flat-card-border-strong: rgba(204, 197, 176, 0.46);
+  --mwz-flat-card-bg: rgba(4, 6, 6, 0.44);
+  --mwz-flat-card-bg-hover: rgba(8, 10, 10, 0.56);
+}
+
 :where(
   .mwz-hud-frame,
   .mwz-panel,
@@ -21,10 +28,12 @@
   overflow: hidden;
   clip-path: none !important;
   border-radius: 0 !important;
-  border: 1px solid rgba(120, 112, 92, 0.32) !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--mwz-flat-card-border) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
-    rgba(3, 5, 5, 0.36) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 44%),
+    var(--mwz-flat-card-bg) !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   transform: none !important;
@@ -82,48 +91,67 @@
   .mwz-command-metric,
   .holo-card
 ):not(.mwz-app-shell):hover {
-  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  border-color: var(--mwz-flat-card-border-strong) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 44%),
-    rgba(7, 9, 9, 0.48) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
+    var(--mwz-flat-card-bg-hover) !important;
   box-shadow: none !important;
   transform: none !important;
 }
 
 /* Tailwind-made card surfaces that do not use the MWZ classes still get the
-   same flat treatment, but this is scoped to the content shell so tiny topbar
-   controls keep their button styling. */
+   same flat treatment. Force border width/style too, because many cards only
+   had a border color utility and vanished after the old frame was removed. */
 .mwz-app-shell main :where(
+  section,
+  article,
+  div,
+  a,
+  button
+):where(
   [class*="bg-card/"],
-  [class*="bg-background/"][class*="border"]
-) {
+  [class*="bg-background/"][class*="border"],
+  [class*="border-border"],
+  [class*="border-accent"]
+):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip) {
   clip-path: none !important;
   border-radius: 0 !important;
-  border-color: rgba(120, 112, 92, 0.32) !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--mwz-flat-card-border) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 44%),
-    rgba(3, 5, 5, 0.36) !important;
+    var(--mwz-flat-card-bg) !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
   transform: none !important;
 }
 
 .mwz-app-shell main :where(
+  section,
+  article,
+  div,
+  a,
+  button
+):where(
   [class*="bg-card/"],
-  [class*="bg-background/"][class*="border"]
-):hover {
-  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  [class*="bg-background/"][class*="border"],
+  [class*="border-border"],
+  [class*="border-accent"]
+):not(.mwz-button):not(.mwz-nav-link):not(.mwz-chip):hover {
+  border-color: var(--mwz-flat-card-border-strong) !important;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 44%),
-    rgba(7, 9, 9, 0.48) !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 44%),
+    var(--mwz-flat-card-bg-hover) !important;
   box-shadow: none !important;
   transform: none !important;
 }
 
-/* The command menu can keep the subtle glow the user called out, while still
-   staying rectangular and flat instead of using the old sliced card frame. */
+/* Keep the command menu glow, but still with a clear light-gray/amber border. */
 .mwz-command-sidebar {
-  border-color: rgba(var(--mwz-orange-rgb), 0.42) !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: rgba(218, 202, 172, 0.44) !important;
   background:
     radial-gradient(360px 280px at 12% 8%, rgba(var(--mwz-orange-rgb), 0.18), transparent 58%),
     linear-gradient(180deg, rgba(24, 25, 25, 0.62), rgba(5, 7, 7, 0.7)) !important;
@@ -140,7 +168,9 @@
 }
 
 .mwz-command-menu-toggle {
-  border: 1px solid rgba(120, 112, 92, 0.28) !important;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--mwz-flat-card-border) !important;
 }
 
 .mwz-command-nav-item {
@@ -148,12 +178,14 @@
 }
 
 .mwz-command-nav-item:hover {
-  border-color: rgba(120, 112, 92, 0.34) !important;
+  border-color: var(--mwz-flat-card-border) !important;
   background: rgba(255, 255, 255, 0.026) !important;
 }
 
 .mwz-command-nav-item-active,
 .mwz-command-metric-prominent {
+  border-width: 1px !important;
+  border-style: solid !important;
   border-color: rgba(var(--mwz-orange-rgb), 0.62) !important;
   background: rgba(var(--mwz-orange-rgb), 0.075) !important;
   box-shadow: inset 0 0 0 1px rgba(var(--mwz-orange-rgb), 0.06) !important;
