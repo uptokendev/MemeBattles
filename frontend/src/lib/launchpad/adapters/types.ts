@@ -1,6 +1,7 @@
 import type { SupportedChainId } from "@/lib/chainConfig";
 
 export type LaunchpadProtocolStatus = "ready" | "protocol_pending" | "unavailable";
+export type LaunchpadTxReceipt = any;
 
 export type LaunchpadSafetyCheck = {
   id: "routeAuth" | "signer" | "factory" | "protocol";
@@ -106,10 +107,10 @@ export type LaunchpadAdapter = {
   fetchCampaignCardStats: (campaign: CampaignInfo) => Promise<CampaignCardStats>;
   fetchCampaignActivity: (campaignAddress: string) => Promise<CampaignActivity | null>;
   fetchCampaignSummary: (campaign: CampaignInfo) => Promise<CampaignSummary>;
-  createCampaign: (params: CreateCampaignParams) => Promise<unknown>;
-  buyTokens: (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => Promise<unknown>;
-  sellTokens: (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => Promise<unknown>;
-  finalizeCampaign: (campaignAddress: string, minTokens: bigint, minBnb: bigint) => Promise<unknown>;
+  createCampaign: (params: CreateCampaignParams) => Promise<LaunchpadTxReceipt>;
+  buyTokens: (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => Promise<LaunchpadTxReceipt>;
+  sellTokens: (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => Promise<LaunchpadTxReceipt>;
+  finalizeCampaign: (campaignAddress: string, minTokens: bigint, minBnb: bigint) => Promise<LaunchpadTxReceipt>;
   getSafetyStatus: () => LaunchpadSafetyStatus;
   walletProvider: unknown;
   activeChainId: SupportedChainId;
