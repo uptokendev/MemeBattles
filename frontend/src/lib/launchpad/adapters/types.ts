@@ -121,6 +121,10 @@ export type LaunchpadAdapter = {
   buyTokens: (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => Promise<LaunchpadTxReceipt>;
   sellTokens: (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => Promise<LaunchpadTxReceipt>;
   finalizeCampaign: (campaignAddress: string, minTokens: bigint, minBnb: bigint) => Promise<LaunchpadTxReceipt>;
+  claimCreatorRewards?: (campaignAddress: string) => Promise<LaunchpadTxReceipt>;
+  claimRecruiterRewards?: (campaignAddress: string) => Promise<LaunchpadTxReceipt>;
+  claimSquadRewards?: (campaignAddress: string) => Promise<LaunchpadTxReceipt>;
+  claimProtocolRewards?: (campaignAddress: string) => Promise<LaunchpadTxReceipt>;
   getSafetyStatus: () => LaunchpadSafetyStatus;
   walletProvider: unknown;
   activeChainId: SupportedChainId;
