@@ -54,42 +54,46 @@ function mapFactoryCampaign(raw: any, id: number) {
 }
 
 async function fetchCreatedCampaignsOnChain(chainId: number | undefined, creator: string): Promise<any[]> {
-  const activeChainId = getActiveChainId(Number(chainId ?? 97));
-  const factoryAddress = getFactoryAddress(activeChainId);
-  if (!factoryAddress) return [];
+  try {
+    const activeChainId = getActiveChainId(Number(chainId ?? 97));
+    const factoryAddress = getFactoryAddress(activeChainId);
+    if (!factoryAddress) return [];
 
-  const provider = getReadProvider(activeChainId);
-  const factory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
+    const provider = getReadProvider(activeChainId);
+    const factory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
 
-  const totalRaw: bigint = await factory.campaignsCount();
-  const total = Number(totalRaw ?? 0n);
-  if (!Number.isFinite(total) || total <= 0) return [];
+    const totalRaw: bigint = await factory.campaignsCount();
+    const total = Number(totalRaw ?? 0n);
+    if (!Number.isFinite(total) || total <= 0) return [];
 
-  const pageSize = 50;
-  const maxPages = 10; // enough for the latest 500 launches without hammering public RPC
-  const out: any[] = [];
+    const pageSize = 50;
+    const maxPages = 10; // enough for the latest 500 launches without hammering public RPC
+    const out: any[] = [];
 
-  for (let page = 0; page < maxPages; page++) {
-    const endExclusive = total - page * pageSize;
-    if (endExclusive <= 0) break;
+    for (let page = 0; page < maxPages; page++) {
+      const endExclusive = total - page * pageSize;
+      if (endExclusive <= 0) break;
 
-    const offset = Math.max(0, endExclusive - pageSize);
-    const limit = endExclusive - offset;
-    const rows = await factory.getCampaignPage(offset, limit);
+      const offset = Math.max(0, endExclusive - pageSize);
+      const limit = endExclusive - offset;
+      const rows = await factory.getCampaignPage(offset, limit);
 
-    const mapped = Array.from(rows ?? [])
-      .map((row: any, idx: number) => mapFactoryCampaign(row, offset + idx))
-      .reverse();
+      const mapped = Array.from(rows ?? [])
+        .map((row: any, idx: number) => mapFactoryCampaign(row, offset + idx))
+        .reverse();
 
-    for (const item of mapped) {
-      if (normalizeAddress(item.creator) === creator) out.push(item);
+      for (const item of mapped) {
+        if (normalizeAddress(item.creator) === creator) out.push(item);
+      }
+
+      // Stop early once we have enough for the Command Center card grid.
+      if (out.length >= 100) break;
     }
 
-    // Stop early once we have enough for the Command Center card grid.
-    if (out.length >= 100) break;
+    return out;
+  } catch {
+    return [];
   }
-
-  return out;
 }
 
 export function useCreatedCampaigns({
