@@ -18,9 +18,7 @@ export function CommandCenterCard({
   className = "",
 }: CommandCenterCardProps) {
   return (
-    <section
-      className={`rounded-2xl border border-border/50 bg-card/35 p-4 shadow-xl backdrop-blur-md md:p-5 ${className}`}
-    >
+    <section className={`mwz-command-card p-4 md:p-5 ${className}`}>
       {(eyebrow || title || description || action) && (
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
