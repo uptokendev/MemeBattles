@@ -1,4 +1,4 @@
-import type express from "express";
+import type { Express } from "express";
 import { pool } from "./db.js";
 
 type QueryResult = { rows: any[] };
@@ -158,7 +158,7 @@ async function recordRewardAction(actionType: string, body: any) {
   return result.rows?.[0] ? normalizeAction(result.rows[0]) : null;
 }
 
-export function registerRewardOpsRoutes(app: express.Express) {
+export function registerRewardOpsRoutes(app: Express) {
   app.get("/api/security/rewards/ops", async (_req, res, next) => {
     try {
       const [publications, draws, alerts, actions, routing, claimVault] = await Promise.all([
