@@ -182,7 +182,15 @@ function LeagueSwitch({ selected, period, onSelect }: { selected: LeagueKey; per
         const active = league.key === selected;
         const validPeriod = league.supports.includes(period);
         return (
-          <button key={league.key} type="button" onClick={() => onSelect(league.key)} className={["mwz-hud-frame min-h-[118px] p-4 text-left transition hover:border-accent/60", active ? "border-accent/70 bg-accent/10" : "bg-card/70"].join(" ")}>
+          <button
+            key={league.key}
+            type="button"
+            onClick={() => onSelect(league.key)}
+            className={[
+              "mwz-hud-frame min-h-[118px] border border-accent/25 p-4 text-left transition hover:border-accent/85 hover:bg-accent/10 hover:shadow-[0_0_22px_rgba(245,132,32,0.16)]",
+              active ? "border-accent/90 bg-accent/12 shadow-[0_0_24px_rgba(245,132,32,0.2)]" : "bg-card/70",
+            ].join(" ")}
+          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-retro text-sm text-foreground">{league.title}</div>
@@ -435,7 +443,7 @@ export default function League({ chainId = 97 }: { chainId?: number }) {
             </section>
 
             <section className="grid gap-5 lg:grid-cols-2">
-              <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize breakdown</div><h3 className="mt-1 font-retro text-xl">Poker-style payout depth</h3><div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Minimum winners</span><span>{policy.minWinners}</span></div><div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Paid field</span><span>{Math.round(policy.paidFieldPct * 100)}%</span></div><div className="flex justify-between gap-3 border-b border-border/40 pb-2"><span className="text-muted-foreground">Curve alpha</span><span>{policy.alpha}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Future option</span><span>20% paid field ready</span></div></div></div>
+              <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Prize breakdown</div><h3 className="mt-1 font-retro text-xl">Poker-style payout depth</h3><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between gap-3"><span className="text-muted-foreground">Minimum winners</span><span>{policy.minWinners}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Paid field</span><span>{Math.round(policy.paidFieldPct * 100)}%</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Curve alpha</span><span>{policy.alpha}</span></div><div className="flex justify-between gap-3"><span className="text-muted-foreground">Future option</span><span>20% paid field ready</span></div></div></div>
               <div className="mwz-hud-frame p-5"><div className="text-[10px] uppercase tracking-[0.28em] text-accent/80">Payout curve preview</div><h3 className="mt-1 font-retro text-xl">Top / mid / min paid</h3><div className="mt-4 space-y-3">{previewRanks.length ? previewRanks.map((row) => <div key={row.rank} className="rounded-xl border border-border/40 bg-card/55 px-3 py-2"><div className="flex items-center justify-between gap-3"><span className="font-retro text-sm">Rank #{row.rank}</span><span className="text-sm font-semibold">{formatUsd(row.payoutUsd)}</span></div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-background/70"><div className="h-full bg-accent" style={{ width: `${Math.max(4, row.percentage * 100)}%` }} /></div></div>) : <div className="text-sm text-muted-foreground">{isSolana ? "Solana payout curve appears after Solana prize data is published." : "Preview appears when qualified entrants and prize data are available."}</div>}</div></div>
             </section>
           </div>
