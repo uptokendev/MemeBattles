@@ -3,7 +3,13 @@ import { UpvoteDialog } from "@/components/token/UpvoteDialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/contexts/WalletContext";
-import { followCampaign, unfollowCampaign, isFollowingCampaign } from "@/lib/followApi";
+import {
+  chainAddressCompatibilityMessage,
+  followCampaign,
+  isChainAddressCompatible,
+  isFollowingCampaign,
+  unfollowCampaign,
+} from "@/lib/followApi";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { resolveImageUri } from "@/lib/media";
@@ -57,7 +63,7 @@ export function CampaignCard({
   const { toast } = useToast();
   const [followBusy, setFollowBusy] = useState(false);
   const [followed, setFollowed] = useState(false);
-  const addr = String(vm.campaignAddress ?? "").toLowerCase();
+  const addr = String(vm.campaignAddress ?? "").trim();
   const creatorAddr = String(vm.creator ?? "").trim();
   const canOpenProfile = creatorAddr.length > 0;
   const progress = Math.max(0, Math.min(100, Number(vm.progressPct ?? 0)));
@@ -73,6 +79,10 @@ export function CampaignCard({
     (async () => {
       try {
         if (!wallet.account) {
+          if (alive) setFollowed(false);
+          return;
+        }
+        if (!isChainAddressCompatible(chainIdForStorage, wallet.account, addr)) {
           if (alive) setFollowed(false);
           return;
         }
@@ -99,6 +109,14 @@ export function CampaignCard({
       } catch {
         // non-fatal
       }
+      return;
+    }
+
+    if (!isChainAddressCompatible(chainIdForStorage, wallet.account, addr)) {
+      toast({
+        title: "Follow unavailable",
+        description: chainAddressCompatibilityMessage(chainIdForStorage),
+      });
       return;
     }
 
