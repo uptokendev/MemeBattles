@@ -103,7 +103,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   return (
     <div className="border-b border-white/8 last:border-b-0">
       <div className={isDraft
-        ? "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
+        ? "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
         : "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"}
       >
         <button
@@ -196,16 +196,18 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-2 lg:contents">
-          {!isDraft && tokenRoute ? (
-            <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-[11px] lg:hidden">
-              <Link to={tokenRoute}>Token details</Link>
+        {!isDraft ? (
+          <div className="flex items-center justify-between gap-2 lg:contents">
+            {tokenRoute ? (
+              <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-[11px] lg:hidden">
+                <Link to={tokenRoute}>Token details</Link>
+              </Button>
+            ) : <div />}
+            <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:ml-0 lg:justify-self-end">
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
-          ) : <div />}
-          <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:ml-0 lg:justify-self-end">
-            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </div>
+          </div>
+        ) : null}
       </div>
 
       {expanded ? (
