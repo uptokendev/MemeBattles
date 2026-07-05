@@ -1,33 +1,83 @@
-import { Gift, Trophy } from "lucide-react";
+import { Gift, Trophy, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
-import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 
-const rewardCards = [
+type RewardCardState = "claimable" | "pending" | "ineligible" | "locked" | "empty";
+
+type RewardCardConfig = {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  buttonLabel: string;
+  amountLabel: string;
+  state: RewardCardState;
+};
+
+const rewardCards: RewardCardConfig[] = [
   {
     title: "League Rewards",
     description: "Rewards earned from weekly or monthly league placements will appear here.",
     icon: Trophy,
     buttonLabel: "Claim League Rewards",
+    amountLabel: "0",
+    state: "empty",
   },
   {
     title: "Airdrop Rewards",
     description: "Airdrop rewards connected to this wallet will appear here.",
     icon: Gift,
     buttonLabel: "Claim Airdrop Rewards",
+    amountLabel: "0",
+    state: "empty",
   },
 ];
+
+function getRewardStateCopy(state: RewardCardState) {
+  switch (state) {
+    case "claimable":
+      return {
+        label: "Ready",
+        amountCaption: "Available to claim",
+        disabled: false,
+      };
+    case "pending":
+      return {
+        label: "Pending",
+        amountCaption: "Processing soon",
+        disabled: true,
+      };
+    case "ineligible":
+      return {
+        label: "Not eligible",
+        amountCaption: "Nothing available",
+        disabled: true,
+      };
+    case "locked":
+      return {
+        label: "Locked",
+        amountCaption: "Unlock required",
+        disabled: true,
+      };
+    case "empty":
+    default:
+      return {
+        label: "No rewards yet",
+        amountCaption: "Available to claim",
+        disabled: true,
+      };
+  }
+}
 
 export default function CommandCenterClaims() {
   return (
     <div className="space-y-4">
-      
-      <CommandCenterCard title="Your Rewards" >
+      <CommandCenterCard title="Your Rewards">
         <div className="grid gap-3 md:grid-cols-2">
           {rewardCards.map((card) => {
             const Icon = card.icon;
+            const stateCopy = getRewardStateCopy(card.state);
             return (
               <div key={card.title} className="rounded-2xl border border-border/50 bg-background/25 p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -39,16 +89,16 @@ export default function CommandCenterClaims() {
                     <p className="mt-2 text-sm text-muted-foreground">{card.description}</p>
                   </div>
                   <span className="rounded-full border border-border/40 bg-card/25 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                    No rewards yet
+                    {stateCopy.label}
                   </span>
                 </div>
 
                 <div className="mt-5 flex items-end justify-between gap-3">
                   <div>
-                    <div className="font-retro text-2xl text-foreground">0</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Available to claim</div>
+                    <div className="font-retro text-2xl text-foreground">{card.amountLabel}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{stateCopy.amountCaption}</div>
                   </div>
-                  <Button disabled className="font-retro">
+                  <Button disabled={stateCopy.disabled} className="font-retro">
                     {card.buttonLabel}
                   </Button>
                 </div>
