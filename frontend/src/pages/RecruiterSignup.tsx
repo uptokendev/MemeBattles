@@ -43,6 +43,8 @@ const initialForm: SignupFormState = {
   acceptTerms: false,
 };
 
+const pageShellClass = "mx-auto flex max-w-4xl flex-col gap-6 px-4 pt-24 pb-8 md:pt-28";
+
 export default function RecruiterSignup() {
   const navigate = useNavigate();
   const wallet = useWallet();
@@ -206,7 +208,7 @@ export default function RecruiterSignup() {
 
   if (!wallet.isConnected || !account) {
     return (
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 py-8">
+      <div className={pageShellClass}>
         <Card className="border-border/60 bg-card/65 p-6">
           <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recruiter signup</p>
           <h1 className="mt-2 font-retro text-3xl text-foreground">Connect your wallet to register as a recruiter.</h1>
@@ -226,7 +228,7 @@ export default function RecruiterSignup() {
 
   if (loadingStatus) {
     return (
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 py-8">
+      <div className={pageShellClass}>
         <Card className="border-border/60 bg-card/65 px-6 py-12 text-center text-sm text-muted-foreground">
           Checking recruiter signup status...
         </Card>
@@ -236,7 +238,7 @@ export default function RecruiterSignup() {
 
   if (signupStatus?.isRecruiter && signupStatus.recruiter) {
     return (
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 py-8">
+      <div className={pageShellClass}>
         <Card className="border-border/60 bg-card/65 p-6">
           <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recruiter signup</p>
           <h1 className="mt-2 font-retro text-3xl text-foreground">This wallet is already a recruiter.</h1>
@@ -258,7 +260,7 @@ export default function RecruiterSignup() {
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 py-8">
+    <div className={pageShellClass}>
       <Card className="overflow-hidden border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(240,106,26,0.16),transparent_36%),linear-gradient(180deg,rgba(18,22,28,0.94),rgba(9,12,16,0.98))] p-6 md:p-8">
         <div className="max-w-3xl space-y-4">
           <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Recruiter signup</p>
@@ -297,7 +299,7 @@ export default function RecruiterSignup() {
                 value={form.desiredCode}
                 onChange={(event) => updateField("desiredCode", event.target.value)}
                 placeholder="alpha-squad"
-                maxLength={32}
+                maxLength={24}
               />
               <div className="flex items-center gap-2 text-xs">
                 {checkingCode ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
@@ -312,7 +314,7 @@ export default function RecruiterSignup() {
                     {codeAvailability.message || "Code unavailable"}
                   </span>
                 ) : (
-                  <span className="text-muted-foreground">{codeAvailability?.message || "Lowercase letters, numbers, dashes, and underscores work best."}</span>
+                  <span className="text-muted-foreground">{codeAvailability?.message || "Use 3-24 lowercase letters, numbers, dashes, or underscores."}</span>
                 )}
               </div>
             </div>
