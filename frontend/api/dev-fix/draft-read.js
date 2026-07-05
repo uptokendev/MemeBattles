@@ -94,19 +94,44 @@ function mapPromotionRow(row, draftId) {
 function popularityFromMetrics(metrics, extras = {}) {
   const m = { ...ZERO, ...(metrics || {}) };
   const views = Number(m.views || 0);
-  const follows = Number(m.follows || 0);
-  const comments = Number(m.comments || 0);
+  const follows = Number(extras.follows ?? m.follows ?? 0);
+  const comments = Number(extras.comments ?? m.comments ?? 0);
   const reactions = Number(m.reactions || 0);
   const shares = Number(m.shares || 0);
   const signedActions = Number(m.signedActions ?? m.signed_actions ?? 0);
-  // armedCount is the canonical "armed recruits" number — counted from the
-  // notification subscriptions table, not the legacy signed_actions metric
-  // (which only increments on comments).
+  // armedCount is the canonical opt-in number — counted from notification subscriptions.
   const armedCount = Number(extras.armedCount ?? 0);
   const rankingScore = follows * 10 + comments * 5 + reactions * 3 + shares * 4 + signedActions * 7 + Math.min(views, 2500) * 0.35;
   const popularityPercentage = Math.max(0, Math.min(100, Math.round((rankingScore / 2200) * 100)));
   const heatLabel = popularityPercentage >= 90 ? "On Fire" : popularityPercentage >= 70 ? "Hot" : popularityPercentage >= 35 ? "Warming" : "Cold";
   return { views, follows, comments, reactions, shares, signedActions, armedCount, popularityPercentage, heatLabel, rankingScore: Math.round(rankingScore) };
+}
+
+async function getDraftEngagementCounts(pool, draft) {
+  const [followRes, armedCountRes, nonCreatorCommentRes] = await Promise.all([
+    pool
+      .query("select count(*)::int as count from public.campaign_draft_follows where draft_id = $1", [draft.id])
+      .catch(() => ({ rows: [{ count: 0 }] })),
+    pool
+      .query("select count(*)::int as count from public.campaign_draft_notification_subscriptions where draft_id = $1", [draft.id])
+      .catch(() => ({ rows: [{ count: 0 }] })),
+    pool
+      .query(
+        `select count(*)::int as count
+           from public.campaign_draft_comments
+          where draft_id = $1
+            and moderation_status = 'visible'
+            and lower(wallet_address) <> lower($2)`,
+        [draft.id, draft.creatorWallet],
+      )
+      .catch(() => ({ rows: [{ count: 0 }] })),
+  ]);
+
+  return {
+    follows: Number(followRes.rows[0]?.count || 0),
+    armedCount: Number(armedCountRes.rows[0]?.count || 0),
+    comments: Number(nonCreatorCommentRes.rows[0]?.count || 0),
+  };
 }
 
 export async function signedDraftById(req, res) {
@@ -157,11 +182,12 @@ export async function signedDraftById(req, res) {
 
   const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
   const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
+  const engagementCounts = await getDraftEngagementCounts(pool, draft);
 
   return json(res, 200, {
     draft,
     promotion: mapPromotionRow(promoRes.rows[0], draft.id),
-    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO),
+    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO, engagementCounts),
   });
 }
 
@@ -227,13 +253,7 @@ export async function signedPrepareBySlug(req, res) {
 
   const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
   const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
-  const armedCountRes = await pool
-    .query(
-      "select count(*)::int as count from public.campaign_draft_notification_subscriptions where draft_id = $1",
-      [draft.id],
-    )
-    .catch(() => ({ rows: [{ count: 0 }] }));
-  const armedCount = Number(armedCountRes.rows[0]?.count || 0);
+  const engagementCounts = await getDraftEngagementCounts(pool, draft);
 
   // Per-viewer engagement state (viewer already computed above with draft.chainId for Solana correctness).
   // Lets the frontend hydrate the Prepare page CTAs (Arm / Follow) into their post-click visual
@@ -262,7 +282,7 @@ export async function signedPrepareBySlug(req, res) {
   return json(res, 200, {
     draft,
     promotion: mapPromotionRow(promoRes.rows[0], draft.id),
-    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO, { armedCount }),
+    popularity: popularityFromMetrics(metricsRes.rows[0] || ZERO, engagementCounts),
     viewer: {
       wallet: viewer || null,
       isFollowing: viewerFollowing,
