@@ -8,6 +8,19 @@ async function parseJson(res: Response) {
   return json as any;
 }
 
+async function getJsonWithFallback(paths: string[]) {
+  let lastError: unknown = null;
+  for (const path of paths) {
+    try {
+      const res = await fetch(buildRealtimeApiUrl(path));
+      return await parseJson(res);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Request failed");
+}
+
 function buildQuery(params: Record<string, string | number | null | undefined>) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -156,8 +169,11 @@ export async function fetchWalletRewardEligibility(walletAddress: string, limit 
 }
 
 export async function fetchAirdropCurrent(chainId?: number | null): Promise<AirdropCurrent | null> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/current${buildQuery({ chainId })}`));
-  const json = await parseJson(res);
+  const query = buildQuery({ chainId });
+  const json = await getJsonWithFallback([
+    `/api/airdrops/current${query}`,
+    `/api/internal/rewards/ops/epoch-status${query}`,
+  ]);
   return json?.current ?? null;
 }
 
@@ -168,13 +184,12 @@ export async function fetchAirdropWinners(params: {
   walletAddress?: string | null;
   limit?: number;
 } = {}): Promise<AirdropWinner[]> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/previous-winners${buildQuery(params)}`));
-  const json = await parseJson(res);
-  if (Array.isArray(json?.items)) return json.items as AirdropWinner[];
-
-  const fallback = await fetch(buildRealtimeApiUrl(`/api/airdrops/winners${buildQuery(params)}`));
-  const fallbackJson = await parseJson(fallback);
-  return Array.isArray(fallbackJson?.items) ? fallbackJson.items as AirdropWinner[] : [];
+  const query = buildQuery(params);
+  const json = await getJsonWithFallback([
+    `/api/airdrops/previous-winners${query}`,
+    `/api/airdrops/winners${query}`,
+  ]);
+  return Array.isArray(json?.items) ? json.items as AirdropWinner[] : [];
 }
 
 export async function fetchRewardsMe(params: { address: string; chainId?: number | null; limit?: number }): Promise<RewardsMe> {
