@@ -497,14 +497,14 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                 <div
                   key={c.addr}
                   data-addr={c.addr}
-                  className="mwz-hud-frame group flex h-[150px] w-full snap-start overflow-hidden rounded-none border border-success/25 bg-black/70 transition hover:border-orange-400/70 hover:shadow-[0_0_18px_rgba(240,106,26,0.18)]"
+                  className="mwz-hud-frame group flex h-[150px] w-full snap-start overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
                   role="button"
                   tabIndex={0}
                   onClick={() => navigate(`/token/${c.addr}?chainId=${c.chainId}`)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}?chainId=${c.chainId}`); }}
                 >
-                  <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-success/25 bg-black">
-                    <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
+                  <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
+                    <div className="absolute inset-0 mwz-stat-grid opacity-20 z-10 pointer-events-none" />
                     <img
                       src={c.image}
                       alt={c.name}
@@ -513,12 +513,12 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                       onError={(e) => { const img = e.currentTarget; if (!img.dataset.fallback) { img.dataset.fallback = "1"; img.src = "/placeholder.svg"; } }}
                     />
                     <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.04),transparent_38%,rgba(0,0,0,0.82))]" />
-                    <div className="absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center border border-success/60 bg-black/75 px-1.5 text-xs font-bold text-success shadow-[0_0_10px_rgba(57,255,79,0.16)]">#{c.idx}</div>
+                    <div className="absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center border border-orange-400/70 bg-black/75 px-1.5 text-xs font-bold text-orange-300 shadow-[0_0_10px_rgba(240,106,26,0.24)]">#{c.idx}</div>
                     <div className="absolute inset-x-2 bottom-2 z-30 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-9 w-9 bg-black/75", followedMap[c.addr] && "mwz-button-active")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
-                        <Star className={cn("h-4.5 w-4.5", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/85")} />
+                      <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-9 w-9 border-orange-400/40 bg-black/75 text-orange-300 hover:border-orange-400/80 hover:text-orange-200", followedMap[c.addr] && "mwz-button-active border-orange-400/80")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
+                        <Star className={cn("h-4 w-4", followedMap[c.addr] ? "fill-current text-orange-400" : "text-orange-300")} />
                       </Button>
-                      <UpvoteDialog campaignAddress={c.addr} chainId={c.chainId} className="mwz-button mwz-button-active h-9 min-w-0 flex-1 px-2 text-[11px]" buttonVariant="ghost" buttonSize="sm" />
+                      <UpvoteDialog campaignAddress={c.addr} chainId={c.chainId} className="mwz-button mwz-button-active h-9 min-w-0 flex-1 border-orange-400/50 px-2 text-[11px] text-orange-100 hover:border-orange-400/80" buttonVariant="ghost" buttonSize="sm" />
                     </div>
                   </div>
 
@@ -526,18 +526,18 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                     <div className="min-w-0">
                       <div className="truncate text-[19px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{c.name}</div>
                       <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-success/85">{c.symbol ? `$${c.symbol}` : "-"}</span>
+                        <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-orange-300">{c.symbol ? `$${c.symbol}` : "-"}</span>
                         <span className="shrink-0 text-[12px] font-semibold text-orange-300">{voteMode === "24h" ? c.votes24h : c.votesAll} votes</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 text-[11px] leading-tight">
-                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-2 py-2">
-                        <div className="uppercase tracking-[0.14em] text-success/45">MCap</div>
+                      <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                        <div className="uppercase tracking-[0.14em] text-orange-300/65">MCap</div>
                         <div className="mt-1 truncate text-[16px] font-bold text-foreground">{c.mcapUsdLabel ?? "-"}</div>
                       </div>
-                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-2 py-2">
-                        <div className="uppercase tracking-[0.14em] text-success/45">ATH</div>
+                      <div className="min-w-0 rounded-sm border border-orange-400/20 bg-black/35 px-2 py-2">
+                        <div className="uppercase tracking-[0.14em] text-orange-300/65">ATH</div>
                         <div className="mt-1 truncate text-[16px] font-bold text-foreground">{c.athUsdLabel}</div>
                       </div>
                     </div>
