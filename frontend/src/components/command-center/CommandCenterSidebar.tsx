@@ -1,16 +1,24 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { FileText, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
+
+import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
 const menuItems = [
   { label: "Overview", path: "", icon: Home, end: true },
   { label: "Drafts", path: "coins", icon: FileText },
   { label: "Recruiter", path: "recruiter", icon: Shield },
-  { label: "Squad", path: "squad", icon: Users },
+  { label: "Squad", path: "squad", icon: Users, requiresSquad: true },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
   { label: "Rewards / Claims", path: "claims", icon: Trophy },
   { label: "Settings", path: "settings", icon: Settings },
 ];
+
+const NO_SQUAD_STATES = new Set(["", "none", "solo", "not_in_squad", "inactive", "unlinked", "missing"]);
+
+function hasSquadAccess(squadState?: string | null) {
+  return !NO_SQUAD_STATES.has(String(squadState || "").trim().toLowerCase());
+}
 
 type CommandCenterSidebarProps = {
   basePath: string;
@@ -18,6 +26,12 @@ type CommandCenterSidebarProps = {
 
 export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { attribution } = useCommandCenterData();
+
+  const visibleMenuItems = useMemo(
+    () => menuItems.filter((item) => !item.requiresSquad || hasSquadAccess(attribution?.squadState)),
+    [attribution?.squadState],
+  );
 
   return (
     <aside className="mwz-command-sidebar p-3 lg:sticky lg:top-4 lg:h-fit">
@@ -39,7 +53,7 @@ export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
       </div>
 
       <nav className={`${mobileOpen ? "flex" : "hidden"} mt-3 flex-col gap-1 lg:mt-0 lg:flex`}>
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const to = item.path ? `${basePath}/${item.path}` : basePath;
           return (
