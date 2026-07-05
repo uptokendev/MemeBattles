@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
-import { getActiveChainId, isEvmChainId, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
-import { isSolanaAddress } from "@/lib/address";
+import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
@@ -39,10 +38,7 @@ const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 
 function isTradeCampaignAddress(campaignAddress: string | undefined, chainId: number) {
   const raw = String(campaignAddress || "").trim();
-  if (!raw) return false;
-  if (isSolanaChainId(chainId)) return isSolanaAddress(raw);
-  if (isEvmChainId(chainId)) return ethers.isAddress(raw);
-  return false;
+  return isEvmChainId(chainId) && ethers.isAddress(raw);
 }
 
 function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
