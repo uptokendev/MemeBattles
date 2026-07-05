@@ -91,6 +91,7 @@ export async function fetchWalletRewardEligibility(walletAddress: string, limit 
 
 export async function fetchAirdropWinners(params: {
   epochId?: number | null;
+  chainId?: number | null;
   program?: string | null;
   walletAddress?: string | null;
   limit?: number;
