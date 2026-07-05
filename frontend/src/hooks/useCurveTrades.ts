@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
-import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { getActiveChainId, isEvmChainId, isSolanaChainId, type SupportedChainId } from "@/lib/chainConfig";
+import { isSolanaAddress } from "@/lib/address";
 import { getReadProvider } from "@/lib/readProvider";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
@@ -35,6 +36,14 @@ type UseCurveTradesOptions = {
 };
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
+
+function isTradeCampaignAddress(campaignAddress: string | undefined, chainId: number) {
+  const raw = String(campaignAddress || "").trim();
+  if (!raw) return false;
+  if (isSolanaChainId(chainId)) return isSolanaAddress(raw);
+  if (isEvmChainId(chainId)) return ethers.isAddress(raw);
+  return false;
+}
 
 function keyOf(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
   return `${t.txHash.toLowerCase()}:${Number(t.logIndex ?? 0)}`;
@@ -134,6 +143,7 @@ async function fetchOnChainTradeSnapshot(
   limit: number,
   signal?: AbortSignal,
 ): Promise<CurveTradePoint[]> {
+  if (!ethers.isAddress(campaignAddress)) return [];
   const provider = getReadProvider(chainId) as ethers.Provider;
   const iface = new ethers.Interface(CAMPAIGN_ABI);
   const buyEvent = iface.getEvent("TokensPurchased");
@@ -232,11 +242,12 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   const initialLoadedRef = useRef(false);
   const reconcileMs = opts?.reconcileMs ?? 60_000;
   const limit = Math.min(Math.max(Number(opts?.limit ?? 200), 1), 200);
+  const canLoadTrades = enabled && isTradeCampaignAddress(campaignAddress, chainId);
 
   const apiTradesUrl = useMemo(() => {
-    if (!API_BASE || !campaignAddress) return "";
+    if (!API_BASE || !campaignAddress || !canLoadTrades) return "";
     return `${API_BASE}/api/token/${campaignAddress.toLowerCase()}/trades?chainId=${chainId}&limit=${limit}`;
-  }, [campaignAddress, chainId, limit]);
+  }, [campaignAddress, canLoadTrades, chainId, limit]);
 
   const applySnapshot = useCallback((rows: any[]) => {
     const next: CurveTradePoint[] = (rows || [])
@@ -272,10 +283,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
   }, [campaignAddress]);
 
   const pullSnapshot = useCallback(async (signal?: AbortSignal) => {
-    if (!enabled || !campaignAddress) {
+    if (!canLoadTrades || !campaignAddress) {
       setPoints([]);
       setLoading(false);
       setError(null);
+      initialLoadedRef.current = true;
       return;
     }
     if (inFlightRef.current) return;
@@ -317,23 +329,23 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [enabled, campaignAddress, apiTradesUrl, applySnapshot, chainId, limit]);
+  }, [canLoadTrades, campaignAddress, apiTradesUrl, applySnapshot, chainId, limit]);
 
   useEffect(() => {
     const ac = new AbortController();
-    const curr = (campaignAddress || "").toLowerCase();
+    const curr = canLoadTrades ? (campaignAddress || "").toLowerCase() : "";
     const prev = prevCampaignRef.current;
     if (curr !== prev) {
       prevCampaignRef.current = curr;
       setPoints([]);
-      setLoading(true);
+      setLoading(canLoadTrades);
       setError(null);
       initialLoadedRef.current = false;
     }
 
     pullSnapshot(ac.signal);
 
-    if (!enabled || !campaignAddress || !ENABLE_TOKEN_POLLING) return () => ac.abort();
+    if (!canLoadTrades || !ENABLE_TOKEN_POLLING) return () => ac.abort();
 
     const t = setInterval(() => {
       pullSnapshot(ac.signal);
@@ -343,11 +355,11 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       clearInterval(t);
       ac.abort();
     };
-  }, [enabled, campaignAddress, pullSnapshot, reconcileMs]);
+  }, [canLoadTrades, campaignAddress, pullSnapshot, reconcileMs]);
 
-  const ably = useAblyTokenChannel({ enabled: enabled && !!campaignAddress, chainId, campaignAddress });
+  const ably = useAblyTokenChannel({ enabled: canLoadTrades, chainId, campaignAddress });
   useEffect(() => {
-    if (!enabled || !campaignAddress) return;
+    if (!canLoadTrades) return;
     if (ably.missingBase || !ably.channel) return;
 
     const onTrade = (msg: any) => {
@@ -369,7 +381,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         // ignore
       }
     };
-  }, [enabled, campaignAddress, ably.channel, ably.missingBase, applySnapshot]);
+  }, [canLoadTrades, ably.channel, ably.missingBase, applySnapshot]);
 
   return { points, loading, error };
 }
