@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, ChevronUp, ExternalLink, Swords } from "lucide-react";
+import { ChevronDown, ChevronUp, Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
@@ -132,10 +132,10 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken, b
                   {battleFeaturesEnabled && item.creatorState === "eligible" && onOpenForBattle && (
                     <Button
                       size="sm"
-                      disabled={item.isOpening}
+                      disabled={item.isOpening || battleBusyToken === item.id}
                       onClick={() => onOpenForBattle(item.id, item.name)}
                     >
-                      {item.isOpening ? "Opening..." : "Open for Battle"}
+                      {item.isOpening || battleBusyToken === item.id ? "Opening..." : "Open for Battle"}
                     </Button>
                   )}
 
