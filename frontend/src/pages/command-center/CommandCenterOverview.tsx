@@ -90,10 +90,6 @@ export default function CommandCenterOverview() {
 
   return (
     <div>
-      <CommandCenterPageHeader
-        title="Overview"
-        description="Your home base for ranking, reputation, League Cabinet, and balances. Reward-specific actions stay inside their dedicated Command Center pages."
-      />
 
       {/* Strengthened incoming challenge banner - bigger, more urgent, tactical */}
       {incomingChallenges.length > 0 && (

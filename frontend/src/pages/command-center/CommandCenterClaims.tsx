@@ -23,12 +23,8 @@ const rewardCards = [
 export default function CommandCenterClaims() {
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        title="Rewards / Claims"
-        description="View your available rewards and claim them when they are ready."
-      />
-
-      <CommandCenterCard title="Your Rewards" description="League and Airdrop rewards stay visible for every connected wallet.">
+      
+      <CommandCenterCard title="Your Rewards" >
         <div className="grid gap-3 md:grid-cols-2">
           {rewardCards.map((card) => {
             const Icon = card.icon;
