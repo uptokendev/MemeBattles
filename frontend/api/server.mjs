@@ -251,6 +251,73 @@ function wrap(fn) {
   };
 }
 
+function recruiterCodeAvailabilityPayload({ code, available, reason }) {
+  const message =
+    reason === "missing" ? "Enter a recruiter code." :
+    reason === "invalid_characters" ? "Use lowercase letters, numbers, dashes, or underscores." :
+    reason === "too_short" ? "Use at least 3 lowercase letters, numbers, dashes, or underscores." :
+    reason === "too_long" ? "Use 24 characters or fewer." :
+    reason === "taken" ? "This recruiter code is already taken." :
+    reason === "schema_unavailable" ? "Canonical reward attribution schema has not been applied yet." :
+    available ? "This recruiter code is available." : "This recruiter code is not available.";
+
+  return {
+    ok: true,
+    code,
+    available,
+    reason,
+    isAvailable: available,
+    checkedVia: "signup-endpoint",
+    message,
+  };
+}
+
+async function recruiterSignupCodeAvailabilityAlias(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const params = new URL(req.url, "http://localhost").searchParams;
+  const rawCode = String(params.get("code") || "").trim();
+  const code = rawCode.toLowerCase();
+  let reason = null;
+
+  if (!code) reason = "missing";
+  else if (!/^[a-z0-9_-]+$/.test(code)) reason = "invalid_characters";
+  else if (code.length < 3) reason = "too_short";
+  else if (code.length > 24) reason = "too_long";
+
+  if (reason) {
+    return res.status(200).json(recruiterCodeAvailabilityPayload({ code, available: false, reason }));
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `select 1
+         from public.recruiters
+        where lower(code) = lower($1)
+        limit 1`,
+      [code]
+    );
+    const available = rows.length === 0;
+    return res.status(200).json(recruiterCodeAvailabilityPayload({
+      code,
+      available,
+      reason: available ? null : "taken",
+    }));
+  } catch (error) {
+    console.error("[api/recruiters signup code availability]", error);
+    if (error?.code === "42P01" || error?.code === "42703") {
+      return res.status(200).json(recruiterCodeAvailabilityPayload({
+        code,
+        available: false,
+        reason: "schema_unavailable",
+      }));
+    }
+    return res.status(500).json({ error: "Server error" });
+  }
+}
+
 // Upload route MUST be mounted BEFORE express.json, express.urlencoded, and
 // the railwayProxyMiddleware. This guarantees that formidable receives the
 // raw multipart/form-data request stream. Any body parser or proxy that
@@ -362,6 +429,7 @@ router.all("/squads", wrap(squadsLeaderboard));
 router.all("/squads/members", wrap(squadMembers));
 router.all("/squads/:code/summary", wrap(squadSummary));
 router.all("/recruiters", wrap(recruiters));
+router.all("/recruiters/signup/code-availability", wrap(recruiterSignupCodeAvailabilityAlias));
 router.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
 router.all("/recruiters/:code/summary", wrap(recruiterSummary));
 router.all("/recruiters/:code/replacements", wrap(recruiterReplacements));
