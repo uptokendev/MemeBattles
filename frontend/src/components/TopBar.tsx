@@ -32,7 +32,7 @@ type NavLinkItem = {
   path: string;
   priority: "primary" | "secondary";
 };
-const brandMark = "/assets/navbar-logo.png";
+const brandMark = "/images/mw.png";
 
 function isExternalHref(target: string): boolean {
   return /^https?:\/\//i.test(target);
@@ -205,7 +205,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
       className="fixed left-0 right-0 top-0 z-40 bg-transparent transition-[left] lg:left-[var(--mwz-left-sidebar-width)]"
       style={topbarStyle}
     >
-      {/* Minimal top action bar - no borders, no menu items, no logo (logo lives in left sidebar) */}
+      {/* Minimal top action bar - no borders, no menu items, compact mobile logo */}
       <div className="mx-2 mt-3 flex min-h-[30px] items-center gap-1.5 px-2 md:mx-3 md:px-3">
         {/* Mobile menu trigger only */}
         <button
@@ -216,12 +216,12 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
           <Menu className="h-4 w-4 shrink-0" />
         </button>
 
-        {/* Small logo only on mobile (desktop logo is in the left sidebar) */}
-        <Link to="/" className="mr-1 flex shrink-0 items-center lg:hidden">
+        {/* Compact mark only on mobile (desktop logo is in the left sidebar) */}
+        <Link to="/" className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center lg:hidden" aria-label="MemeWarzone home">
           <img
             src={brandMark}
             alt="MemeWarzone"
-            className="h-7 w-auto object-contain"
+            className="h-8 w-8 object-contain"
             draggable={false}
           />
         </Link>
