@@ -40,6 +40,7 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   const creator = String(item?.creatorAddress ?? item?.creator_address ?? item?.creator ?? "").toLowerCase();
   const normalizedStatus = normalizeStatus(item);
   const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri) || "/placeholder.svg";
+  const isDexTrading = Boolean((item?.isDexTrading ?? item?.is_dex_trading) ?? (normalizedStatus === "graduated" || normalizedStatus === "ended"));
 
   return {
     id: 100000 + index,
@@ -57,7 +58,7 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
     status: normalizedStatus === "ended" ? "graduated" : normalizedStatus,
     isActive: typeof item?.isActive === "boolean" ? item.isActive : typeof item?.is_active === "boolean" ? item.is_active : normalizedStatus === "live" ? true : normalizedStatus === "draft" ? false : undefined,
-    isDexTrading: Boolean(item?.isDexTrading ?? item?.is_dex_trading ?? normalizedStatus === "graduated" || normalizedStatus === "ended"),
+    isDexTrading,
     graduatedAt: toUnixSeconds(item?.graduatedAtChain ?? item?.graduated_at_chain),
     holdersCount: toNumber(item?.holderCount ?? item?.holder_count),
     holders: item?.holderCount != null || item?.holder_count != null ? String(item?.holderCount ?? item?.holder_count) : undefined,
