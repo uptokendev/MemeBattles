@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { ChainFeedSwitch } from "@/components/common/ChainFeedSwitch";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
 import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { HeaderBand } from "@/components/home/HeaderBand";
-import { AudienceCard } from "@/components/home/HomeAudienceCtas";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { ContentContainer } from "@/components/layout/ContentContainer";
-import { useWallet } from "@/contexts/WalletContext";
-
-// Public static assets (moved out of src for easier editing/cropping)
-const recruiterBg = "/assets/home/cta-recruiters-bg.png";
-const recruiterSoldier = "/assets/home/cta-recruiter-soldier.png";
 
 const Showcase = () => {
   const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "", status: "all" });
@@ -36,32 +29,6 @@ const Showcase = () => {
 
   const isDraftRow = effectiveQuery.tab === "drafts";
 
-  const navigate = useNavigate();
-  const wallet = useWallet();
-  const [pendingRecruiterRedirect, setPendingRecruiterRedirect] = useState(false);
-
-  useEffect(() => {
-    if (!pendingRecruiterRedirect || !wallet.account) return;
-
-    setPendingRecruiterRedirect(false);
-    navigate(`/profile/${wallet.account.toLowerCase()}/command/recruiter`);
-  }, [pendingRecruiterRedirect, wallet.account, navigate]);
-
-  const handleRecruiterClick = async () => {
-    if (wallet.account) {
-      navigate(`/profile/${wallet.account.toLowerCase()}/command/recruiter`);
-      return;
-    }
-
-    setPendingRecruiterRedirect(true);
-
-    try {
-      await wallet.connect();
-    } catch {
-      setPendingRecruiterRedirect(false);
-    }
-  };
-
   return (
     <div className="mwz-launchpad-page h-full overflow-y-auto">
       <div className="mwz-launchpad-inner">
@@ -72,27 +39,7 @@ const Showcase = () => {
         <CampaignTickerBar className="-mt-12 !pt-0" />
 
         <div className="relative z-20 -mt-1 mb-2 md:-mt-2 md:mb-3">
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            <div className="flex-1 min-w-0">
-              <FeaturedCampaigns bare />
-            </div>
-
-            <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:pt-10">
-              <AudienceCard
-                tone="recruiter"
-                title="Recruiters"
-                kicker="We’re looking for YOU."
-                body="Recruit your Squad, bring in coin creators and traders, and become the force that drives visibility and growth."
-                buttonLabel="Join as Recruiter"
-                footer="Scout • Recruit • Earn"
-                bg={recruiterBg}
-                soldier={recruiterSoldier}
-                onClick={handleRecruiterClick}
-                size="sm"
-                className="h-full"
-              />
-            </div>
-          </div>
+          <FeaturedCampaigns bare />
         </div>
 
         <div className="mwz-live-heading flex flex-col gap-3 pt-2 md:flex-row md:items-end md:justify-between">
