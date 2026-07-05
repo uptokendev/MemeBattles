@@ -20,9 +20,10 @@ export type PostGradFeaturedFeedParams = {
 
 export type PostGradWarRoomCampaignFeedParams = {
   chainId?: number | string | null;
-  limit: number;
+  limit?: number;
   mode: PostGradWarRoomMode;
   search?: string;
+  includeTestnet?: boolean;
   signal?: AbortSignal;
 };
 
@@ -39,6 +40,14 @@ export type OpenPostGradBattleInput = {
 };
 
 export type PostGradWarPoolState = "open" | "locked" | "settling" | "paid";
+
+function envFlag(value: unknown): boolean {
+  return /^(1|true|yes|on)$/i.test(String(value ?? "").trim());
+}
+
+export function isWarRoomTestnetFeedEnabled(): boolean {
+  return envFlag(import.meta.env.VITE_WAR_ROOM_INCLUDE_TESTNET) || envFlag(import.meta.env.VITE_ENABLE_TESTNET_CAMPAIGNS);
+}
 
 async function readJson(response: Response): Promise<JsonObject | null> {
   return response.json().catch(() => null) as Promise<JsonObject | null>;
@@ -160,14 +169,22 @@ export async function fetchPostGradWarRoomCampaignFeed({
   limit = 250,
   mode,
   search = "",
+  includeTestnet,
   signal,
 }: PostGradWarRoomCampaignFeedParams) {
+  const shouldIncludeTestnet = includeTestnet ?? isWarRoomTestnetFeedEnabled();
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     limit: String(limit),
     mode,
   });
   if (search.trim()) params.set("search", search.trim());
+  if (shouldIncludeTestnet) {
+    params.set("includeTestnet", "true");
+    params.set("testnet", "true");
+    params.set("includeDrafts", "true");
+    params.set("status", "all");
+  }
 
   return fetchJson(`/api/war-room?${params.toString()}`, { cache: "no-store", signal });
 }
