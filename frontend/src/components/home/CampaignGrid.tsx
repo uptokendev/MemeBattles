@@ -9,6 +9,8 @@ import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
 import { getFactoryAddress } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
+import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
+import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 
 export type FeedTabKey = "drafts" | "trending" | "new" | "ending" | "dex";
 
@@ -173,8 +175,6 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
     if (!r.ok) throw new Error(j?.error ?? "Failed to load campaigns");
     const items = Array.isArray(j?.items) ? j.items : [];
 
-    // If the realtime feed is sparse (for example 3 DB rows), merge it with
-    // the LaunchFactory page so the grid still shows the full launched set.
     if (items.length < Number(params.limit || 24)) {
       const fallback = await fetchOnChainCampaignFeed(params);
       const merged = mergeCampaignItems(items, fallback.items).slice(0, Number(params.limit || 24));
@@ -196,7 +196,10 @@ async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignF
 }
 
 export function CampaignGrid({ className, query }: { className?: string; query: HomeQuery }) {
-  const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
+  const { fetchCampaignLogoURI } = useLaunchpad();
+  const [selectedChainId] = useSelectedFeedChainId();
+  const activeChainId = selectedChainId;
+  const includeTestnet = isTestnetCampaignsEnabled();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
   const { patchByCampaign, created } = useLeagueRealtime({
@@ -217,6 +220,13 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const [err, setErr] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const initialLoadedRef = useRef(false);
+
+  useEffect(() => {
+    initialLoadedRef.current = false;
+    setItems([]);
+    setNextCursor(0);
+    setLogoCache({});
+  }, [activeChainId]);
 
   useEffect(() => {
     if (query.tab !== "new") return;
@@ -278,7 +288,10 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
     mcapMaxUsd: query.mcapMaxUsd ?? null,
     progressMinPct: query.progressMinPct ?? null,
     progressMaxPct: query.progressMaxPct ?? null,
-  }), [activeChainId, query, bnbUsd]);
+    includeTestnet: includeTestnet ? "true" : null,
+    testnet: includeTestnet ? "true" : null,
+    includeDrafts: includeTestnet ? "true" : null,
+  }), [activeChainId, query, bnbUsd, includeTestnet]);
 
   useEffect(() => {
     let mounted = true;
