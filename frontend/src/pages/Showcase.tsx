@@ -45,14 +45,12 @@ const Showcase = () => {
         <div className="mwz-live-heading flex flex-col gap-3 pt-2 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
-              {isDraftRow ? "Prepare Mode" : "Live Warzone"}
+              {isDraftRow ? "Prepare Mode" : ""}
             </div>
             <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-              {isDraftRow ? "Draft Campaigns" : "Explore Campaigns"}
+              {isDraftRow ? "Draft Campaigns" : "Explore Coins"}
             </h2>
-            <p className="max-w-2xl text-sm text-success/65">
-              {isDraftRow ? "Drafts waiting for launch." : "Live, new, ending, and graduated campaigns across the selected chain."}
-            </p>
+
           </div>
           <ChainFeedSwitch className="shrink-0 self-start md:self-auto" />
         </div>
