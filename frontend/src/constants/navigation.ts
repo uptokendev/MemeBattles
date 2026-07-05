@@ -33,7 +33,7 @@ export const arenaSubNavItems: ArenaSubNavItem[] = isPostGradNavEnabled()
 
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
-  ...(postGradFlags.enabled && postGradFlags.league ? [{ icon: Trophy, label: "Leagues", path: "/league" }] : []),
+  { icon: Trophy, label: "Leagues", path: "/league" },
   ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: userIcon, label: "Creator tools", path: "/command" },
