@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, ExternalLink, Swords } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
-import type { CampaignDraft } from "@/lib/draftApi";
 import { getPostGradTokenDetailRoute } from "@/features/postgrad/identityRoutes";
 
 interface CoinRowItem {
@@ -19,12 +18,10 @@ interface CoinRowItem {
   battleInfo?: string;
   battleRouteId?: string | null;
   tokenRoute?: string | null;
-  // for draft
   visibility?: string;
   updatedAt?: string;
   category?: string;
   href?: string;
-  // raw for actions
   raw?: any;
   isOpening?: boolean;
   creatorState?: string;
@@ -34,17 +31,15 @@ interface CommandCenterCoinRowProps {
   item: CoinRowItem;
   onOpenForBattle?: (campaignAddress: string, name: string) => void;
   battleBusyToken?: string | null;
+  battleFeaturesEnabled?: boolean;
 }
 
-export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }: CommandCenterCoinRowProps) {
+export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken, battleFeaturesEnabled = false }: CommandCenterCoinRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const isDraft = item.type === 'draft';
   const tokenRoute = item.tokenRoute || (item.type === 'coin' ? getPostGradTokenDetailRoute(item.id) : null);
-
-  const handleAction = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
+  const showBattleInfo = battleFeaturesEnabled && Boolean(item.battleInfo);
 
   return (
     <div className="border-b border-white/8 last:border-b-0">
@@ -68,8 +63,8 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
                 {item.statusLabel && (
                   <TacticalTag label={item.statusLabel} tone={(item.statusTone as any) || "default"} />
                 )}
-                {item.battleInfo && (
-                  <TacticalTag label={item.battleInfo} tone="hot" />
+                {showBattleInfo && (
+                  <TacticalTag label={item.battleInfo || ""} tone="hot" />
                 )}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[10px] text-white/55">
@@ -81,15 +76,14 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
           </div>
         </button>
 
-        {/* Desktop metric columns matching the header */}
         <div className="hidden lg:block text-sm font-semibold text-white">
           {item.marketCap || "—"}
         </div>
         <div className="hidden lg:block text-sm font-semibold text-white">
-          {item.marketCap || "—"} {/* placeholder for Liquidity - can be enhanced */}
+          {item.marketCap || "—"}
         </div>
         <div className="hidden lg:block text-sm font-semibold text-white">
-          {item.marketCap || "—"} {/* placeholder for Volume/Holders */}
+          {item.marketCap || "—"}
         </div>
 
         <Button
@@ -125,7 +119,7 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.2em] text-accent/80">Coin Info</div>
                   <div className="mt-1 text-white/80">Market Cap: {item.marketCap || "—"}</div>
-                  {item.battleInfo && <div className="text-accent">Current: {item.battleInfo}</div>}
+                  {showBattleInfo && <div className="text-accent">Current: {item.battleInfo}</div>}
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-2">
@@ -135,7 +129,7 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
                     </Button>
                   )}
 
-                  {item.creatorState === "eligible" && onOpenForBattle && (
+                  {battleFeaturesEnabled && item.creatorState === "eligible" && onOpenForBattle && (
                     <Button
                       size="sm"
                       disabled={item.isOpening}
@@ -145,7 +139,7 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
                     </Button>
                   )}
 
-                  {item.battleRouteId && (
+                  {battleFeaturesEnabled && item.battleRouteId && (
                     <Button asChild size="sm" variant="outline">
                       <Link to={`/battle/${item.battleRouteId}`}>
                         {item.creatorState?.includes("battle") ? "View Battle" : "Battle Details"}
@@ -153,7 +147,7 @@ export function CommandCenterCoinRow({ item, onOpenForBattle, battleBusyToken }:
                     </Button>
                   )}
 
-                  {item.battleInfo === "Open for Battle" && (
+                  {battleFeaturesEnabled && item.battleInfo === "Open for Battle" && (
                     <Button size="sm" variant="default">
                       <Swords className="mr-2 h-4 w-4" />
                       Challenge
