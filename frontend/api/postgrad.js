@@ -47,7 +47,7 @@ function disabledReadPayload(path, flag) {
   if (/^\/arena\/war-pools\/[^/]+$/.test(path)) return { ...base, pool: null, settlementSummary: null };
   if (path === "/sponsored") return { ...base, items: [], updatedAt: new Date().toISOString() };
   if (path === "/sponsorship-applications") return { ...base, items: [], updatedAt: new Date().toISOString() };
-  if (path === "/war-room") return { ...base, rooms: [], updatedAt: new Date().toISOString() };
+  if (path === "/war-room") return { ...base, items: [], updatedAt: new Date().toISOString() };
   return { ...base, ok: false };
 }
 
