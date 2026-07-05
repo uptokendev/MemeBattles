@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useWallet } from "@/contexts/WalletContext";
+import { isWarRoomTestnetFeedEnabled } from "@/features/postgrad/apiClient";
 import { apiFetch } from "@/lib/apiBase";
 import type { WarRoomCampaign } from "@/hooks/useWarRoomCampaignFeed";
 
@@ -88,6 +89,10 @@ export function useWarRoomRowDetails({
           campaignAddress: address,
           chainId: String(chainId || 97),
         });
+        if (isWarRoomTestnetFeedEnabled()) {
+          params.set("includeTestnet", "true");
+          params.set("testnet", "true");
+        }
         if (account) params.set("userAddress", account);
         const response = await apiFetch(`/api/war-room?${params.toString()}`, { cache: "no-store" as RequestCache, signal: controller.signal });
         const json = await response.json().catch(() => null);
