@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
+import { apiFetch } from "@/lib/apiBase";
 import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
-export type WarRoomCampaignFeedSource = "api" | "empty";
+export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "empty";
 
 const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
 
@@ -100,6 +101,38 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoom
   } as WarRoomCampaign;
 }
 
+function modeToCampaignStatus(mode: WarRoomMode) {
+  if (mode === "graduated") return "graduated";
+  if (mode === "draft") return "ended";
+  return "all";
+}
+
+function modeToCampaignTab(mode: WarRoomMode) {
+  if (mode === "new") return "new";
+  if (mode === "graduated") return "dex";
+  return "trending";
+}
+
+async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, search: string, signal: AbortSignal): Promise<WarRoomCampaign[]> {
+  const params = new URLSearchParams({
+    chainId: String(chainId),
+    limit: "250",
+    cursor: "0",
+    tab: modeToCampaignTab(mode),
+    sort: "default",
+    status: modeToCampaignStatus(mode),
+    includeTestnet: "true",
+    testnet: "true",
+    includeDrafts: "true",
+  });
+  if (search.trim()) params.set("search", search.trim());
+  const response = await apiFetch(`/api/campaigns?${params.toString()}`, { cache: "no-store" as RequestCache, signal });
+  const json = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(String(json?.error || `Campaign fallback HTTP ${response.status}`));
+  const items = Array.isArray(json?.items) ? json.items : [];
+  return items.map((item: any, index: number) => normalizeApiCampaign(item, index));
+}
+
 async function fetchDraftCampaignsForWarRoom(chainId: number): Promise<WarRoomCampaign[]> {
   try {
     const drafts = await fetchPublicCampaignDrafts({ chainId, limit: 100 });
@@ -147,14 +180,21 @@ export function useWarRoomCampaignFeed({
           signal: controller.signal,
         });
         if (cancelled) return;
-        const apiItems = Array.isArray(json?.items) ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index)) : [];
+        let feedSource: WarRoomCampaignFeedSource = "api";
+        let apiItems = Array.isArray(json?.items) ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index)) : [];
+
+        if (!apiItems.length && (json?.disabled || json?.warning)) {
+          apiItems = await fetchCampaignApiFallback(chainId, activeMode, search, controller.signal);
+          feedSource = "campaign-api";
+        }
+
         const draftItems = activeMode === "draft" ? await fetchDraftCampaignsForWarRoom(chainId) : [];
         if (cancelled) return;
         const merged = [...apiItems, ...draftItems]
           .filter((campaign: WarRoomCampaign) => campaign.campaign)
           .filter((campaign, index, all) => all.findIndex((other) => String(other.campaign) === String(campaign.campaign)) === index);
         setCampaigns(merged);
-        setSource(merged.length ? "api" : "empty");
+        setSource(merged.length ? feedSource : "empty");
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error("[useWarRoomCampaignFeed] failed to load campaigns", loadError);
