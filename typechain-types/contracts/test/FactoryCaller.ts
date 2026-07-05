@@ -3,12 +3,8 @@
 /* eslint-disable */
 import type {
   BaseContract,
-  BigNumberish,
-  BytesLike,
   FunctionFragment,
-  Result,
   Interface,
-  AddressLike,
   ContractRunner,
   ContractMethod,
   Listener,
@@ -18,19 +14,9 @@ import type {
   TypedDeferredTopicFilter,
   TypedEventLog,
   TypedListener,
-  TypedContractMethod,
 } from "../../common";
 
-export interface FactoryCallerInterface extends Interface {
-  getFunction(nameOrSignature: "buyFor"): FunctionFragment;
-
-  encodeFunctionData(
-    functionFragment: "buyFor",
-    values: [AddressLike, AddressLike, BigNumberish, BigNumberish]
-  ): string;
-
-  decodeFunctionResult(functionFragment: "buyFor", data: BytesLike): Result;
-}
+export interface FactoryCallerInterface extends Interface {}
 
 export interface FactoryCaller extends BaseContract {
   connect(runner?: ContractRunner | null): FactoryCaller;
@@ -75,33 +61,9 @@ export interface FactoryCaller extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  buyFor: TypedContractMethod<
-    [
-      campaign: AddressLike,
-      recipient: AddressLike,
-      amountOut: BigNumberish,
-      maxCost: BigNumberish
-    ],
-    [bigint],
-    "payable"
-  >;
-
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
-
-  getFunction(
-    nameOrSignature: "buyFor"
-  ): TypedContractMethod<
-    [
-      campaign: AddressLike,
-      recipient: AddressLike,
-      amountOut: BigNumberish,
-      maxCost: BigNumberish
-    ],
-    [bigint],
-    "payable"
-  >;
 
   filters: {};
 }

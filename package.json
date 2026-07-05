@@ -10,7 +10,12 @@
     "verify:route-authority:bsc-testnet": "hardhat run scripts/verify-route-authority.cjs --network bscTestnet",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
-    "gas": "REPORT_GAS=true hardhat test"
+    "gas": "REPORT_GAS=true hardhat test",
+    "agents:plan": "node scripts/agents/plan.mjs",
+    "agents:implement": "node scripts/agents/implement.mjs",
+    "agents:check": "node scripts/agents/check.mjs",
+    "agents:run": "node scripts/agents/run.mjs",
+    "agents:test": "node scripts/agents/test/smoke.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

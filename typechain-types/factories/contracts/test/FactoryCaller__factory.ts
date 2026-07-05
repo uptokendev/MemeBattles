@@ -16,47 +16,13 @@ import type {
 
 const _abi = [
   {
-    inputs: [
-      {
-        internalType: "address",
-        name: "campaign",
-        type: "address",
-      },
-      {
-        internalType: "address",
-        name: "recipient",
-        type: "address",
-      },
-      {
-        internalType: "uint256",
-        name: "amountOut",
-        type: "uint256",
-      },
-      {
-        internalType: "uint256",
-        name: "maxCost",
-        type: "uint256",
-      },
-    ],
-    name: "buyFor",
-    outputs: [
-      {
-        internalType: "uint256",
-        name: "total",
-        type: "uint256",
-      },
-    ],
-    stateMutability: "payable",
-    type: "function",
-  },
-  {
     stateMutability: "payable",
     type: "receive",
   },
 ] as const;
 
 const _bytecode =
-  "0x6080806040523461001657610126908161001c8239f35b600080fdfe608080604052600436101561001d575b50361561001b57600080fd5b005b600090813560e01c63f681929314610035575061000f565b60803660031901126100eb576004356001600160a01b03818116918290036101155760243590811680910361011557606483602093819363ed33da2760e01b8352600483015260443560248301528235604483015234905af190811561010a5782916100a7575b602082604051908152f35b905060203d602011610103575b601f8101601f191682016001600160401b038111838210176100ef576020918391604052810103126100eb5760209150513861009c565b5080fd5b634e487b7160e01b84526041600452602484fd5b503d6100b4565b6040513d84823e3d90fd5b8380fdfea164736f6c6343000818000a";
+  "0x608080604052346013576018908160198239f35b600080fdfe3615600957600080fd5b00fea164736f6c6343000818000a";
 
 type FactoryCallerConstructorParams =
   | [signer?: Signer]

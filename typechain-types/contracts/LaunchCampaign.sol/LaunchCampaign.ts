@@ -46,6 +46,11 @@ export declare namespace LaunchCampaign {
     feeRecipient: AddressLike;
     creator: AddressLike;
     factory: AddressLike;
+    creatorRegistry: AddressLike;
+    riskRegistry: AddressLike;
+    creatorBuyLockUntil: BigNumberish;
+    creatorBuyCapWei: BigNumberish;
+    requireAuthorizedTrading: boolean;
     tradeRouteProfile: BigNumberish;
     finalizeRouteProfile: BigNumberish;
   };
@@ -72,6 +77,11 @@ export declare namespace LaunchCampaign {
     feeRecipient: string,
     creator: string,
     factory: string,
+    creatorRegistry: string,
+    riskRegistry: string,
+    creatorBuyLockUntil: bigint,
+    creatorBuyCapWei: bigint,
+    requireAuthorizedTrading: boolean,
     tradeRouteProfile: bigint,
     finalizeRouteProfile: bigint
   ] & {
@@ -96,6 +106,11 @@ export declare namespace LaunchCampaign {
     feeRecipient: string;
     creator: string;
     factory: string;
+    creatorRegistry: string;
+    riskRegistry: string;
+    creatorBuyLockUntil: bigint;
+    creatorBuyCapWei: bigint;
+    requireAuthorizedTrading: boolean;
     tradeRouteProfile: bigint;
     finalizeRouteProfile: bigint;
   };
@@ -107,12 +122,16 @@ export interface LaunchCampaignInterface extends Interface {
       | "basePrice"
       | "buyExactBnb"
       | "buyExactBnbAuthorized"
-      | "buyExactBnbFor"
       | "buyExactTokens"
       | "buyExactTokensAuthorized"
-      | "buyExactTokensFor"
+      | "buyPaused"
       | "buyersCount"
       | "claimPendingNative"
+      | "creator"
+      | "creatorBoughtWei"
+      | "creatorBuyCapWei"
+      | "creatorBuyLockUntil"
+      | "creatorRegistry"
       | "creatorReserve"
       | "currentPrice"
       | "curveSupply"
@@ -122,6 +141,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "finalize"
       | "finalizeRouteProfile"
       | "finalizedAt"
+      | "graduationPaused"
       | "graduationTarget"
       | "hasBought"
       | "initialize"
@@ -133,6 +153,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "logoURI"
       | "lpReceiver"
       | "owner"
+      | "paused"
       | "pendingNative"
       | "pendingNativeTotal"
       | "priceSlope"
@@ -141,9 +162,14 @@ export interface LaunchCampaignInterface extends Interface {
       | "quoteBuyExactTokens"
       | "quoteSellExactTokens"
       | "renounceOwnership"
+      | "requireAuthorizedTrading"
+      | "riskRegistry"
       | "router"
       | "sellExactTokens"
       | "sellExactTokensAuthorized"
+      | "sellPaused"
+      | "setPauseState"
+      | "setRequireAuthorizedTrading"
       | "sold"
       | "token"
       | "totalBuyVolumeWei"
@@ -158,9 +184,11 @@ export interface LaunchCampaignInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "CampaignFinalized"
+      | "CampaignPauseStateUpdated"
       | "NativeClaimed"
       | "NativeEscrowed"
       | "OwnershipTransferred"
+      | "RequireAuthorizedTradingUpdated"
       | "TokensPurchased"
       | "TokensSold"
   ): EventFragment;
@@ -175,10 +203,6 @@ export interface LaunchCampaignInterface extends Interface {
     values: [BigNumberish, BigNumberish, BigNumberish, BytesLike]
   ): string;
   encodeFunctionData(
-    functionFragment: "buyExactBnbFor",
-    values: [AddressLike, BigNumberish]
-  ): string;
-  encodeFunctionData(
     functionFragment: "buyExactTokens",
     values: [BigNumberish, BigNumberish]
   ): string;
@@ -186,16 +210,30 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "buyExactTokensAuthorized",
     values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
   ): string;
-  encodeFunctionData(
-    functionFragment: "buyExactTokensFor",
-    values: [AddressLike, BigNumberish, BigNumberish]
-  ): string;
+  encodeFunctionData(functionFragment: "buyPaused", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "buyersCount",
     values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "claimPendingNative",
+    values?: undefined
+  ): string;
+  encodeFunctionData(functionFragment: "creator", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "creatorBoughtWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "creatorBuyCapWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "creatorBuyLockUntil",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "creatorRegistry",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -226,6 +264,10 @@ export interface LaunchCampaignInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "finalizedAt",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "graduationPaused",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -263,6 +305,7 @@ export interface LaunchCampaignInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(functionFragment: "paused", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "pendingNative",
     values: [AddressLike]
@@ -295,6 +338,14 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "renounceOwnership",
     values?: undefined
   ): string;
+  encodeFunctionData(
+    functionFragment: "requireAuthorizedTrading",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "riskRegistry",
+    values?: undefined
+  ): string;
   encodeFunctionData(functionFragment: "router", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "sellExactTokens",
@@ -303,6 +354,18 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "sellExactTokensAuthorized",
     values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BytesLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "sellPaused",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setPauseState",
+    values: [boolean, boolean, boolean, boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setRequireAuthorizedTrading",
+    values: [boolean]
   ): string;
   encodeFunctionData(functionFragment: "sold", values?: undefined): string;
   encodeFunctionData(functionFragment: "token", values?: undefined): string;
@@ -339,10 +402,6 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "buyExactBnbFor",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "buyExactTokens",
     data: BytesLike
   ): Result;
@@ -350,16 +409,30 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "buyExactTokensAuthorized",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(
-    functionFragment: "buyExactTokensFor",
-    data: BytesLike
-  ): Result;
+  decodeFunctionResult(functionFragment: "buyPaused", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "buyersCount",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "claimPendingNative",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "creator", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "creatorBoughtWei",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "creatorBuyCapWei",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "creatorBuyLockUntil",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "creatorRegistry",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -390,6 +463,10 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "graduationPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "graduationTarget",
     data: BytesLike
   ): Result;
@@ -415,6 +492,7 @@ export interface LaunchCampaignInterface extends Interface {
   decodeFunctionResult(functionFragment: "logoURI", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "lpReceiver", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "paused", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "pendingNative",
     data: BytesLike
@@ -444,6 +522,14 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "renounceOwnership",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "requireAuthorizedTrading",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "riskRegistry",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "router", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "sellExactTokens",
@@ -451,6 +537,15 @@ export interface LaunchCampaignInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "sellExactTokensAuthorized",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "sellPaused", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setPauseState",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRequireAuthorizedTrading",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "sold", data: BytesLike): Result;
@@ -507,6 +602,31 @@ export namespace CampaignFinalizedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace CampaignPauseStateUpdatedEvent {
+  export type InputTuple = [
+    paused: boolean,
+    buyPaused: boolean,
+    sellPaused: boolean,
+    graduationPaused: boolean
+  ];
+  export type OutputTuple = [
+    paused: boolean,
+    buyPaused: boolean,
+    sellPaused: boolean,
+    graduationPaused: boolean
+  ];
+  export interface OutputObject {
+    paused: boolean;
+    buyPaused: boolean;
+    sellPaused: boolean;
+    graduationPaused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace NativeClaimedEvent {
   export type InputTuple = [beneficiary: AddressLike, amount: BigNumberish];
   export type OutputTuple = [beneficiary: string, amount: bigint];
@@ -539,6 +659,18 @@ export namespace OwnershipTransferredEvent {
   export interface OutputObject {
     previousOwner: string;
     newOwner: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RequireAuthorizedTradingUpdatedEvent {
+  export type InputTuple = [required: boolean];
+  export type OutputTuple = [required: boolean];
+  export interface OutputObject {
+    required: boolean;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -644,12 +776,6 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
 
-  buyExactBnbFor: TypedContractMethod<
-    [recipient: AddressLike, minTokensOut: BigNumberish],
-    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
-    "payable"
-  >;
-
   buyExactTokens: TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
     [bigint],
@@ -668,15 +794,21 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
 
-  buyExactTokensFor: TypedContractMethod<
-    [recipient: AddressLike, amountOut: BigNumberish, maxCost: BigNumberish],
-    [bigint],
-    "payable"
-  >;
+  buyPaused: TypedContractMethod<[], [boolean], "view">;
 
   buyersCount: TypedContractMethod<[], [bigint], "view">;
 
   claimPendingNative: TypedContractMethod<[], [bigint], "nonpayable">;
+
+  creator: TypedContractMethod<[], [string], "view">;
+
+  creatorBoughtWei: TypedContractMethod<[], [bigint], "view">;
+
+  creatorBuyCapWei: TypedContractMethod<[], [bigint], "view">;
+
+  creatorBuyLockUntil: TypedContractMethod<[], [bigint], "view">;
+
+  creatorRegistry: TypedContractMethod<[], [string], "view">;
 
   creatorReserve: TypedContractMethod<[], [bigint], "view">;
 
@@ -699,6 +831,8 @@ export interface LaunchCampaign extends BaseContract {
   finalizeRouteProfile: TypedContractMethod<[], [bigint], "view">;
 
   finalizedAt: TypedContractMethod<[], [bigint], "view">;
+
+  graduationPaused: TypedContractMethod<[], [boolean], "view">;
 
   graduationTarget: TypedContractMethod<[], [bigint], "view">;
 
@@ -725,6 +859,8 @@ export interface LaunchCampaign extends BaseContract {
   lpReceiver: TypedContractMethod<[], [string], "view">;
 
   owner: TypedContractMethod<[], [string], "view">;
+
+  paused: TypedContractMethod<[], [boolean], "view">;
 
   pendingNative: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
@@ -760,6 +896,10 @@ export interface LaunchCampaign extends BaseContract {
 
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
 
+  requireAuthorizedTrading: TypedContractMethod<[], [boolean], "view">;
+
+  riskRegistry: TypedContractMethod<[], [string], "view">;
+
   router: TypedContractMethod<[], [string], "view">;
 
   sellExactTokens: TypedContractMethod<
@@ -777,6 +917,25 @@ export interface LaunchCampaign extends BaseContract {
       routeSignature: BytesLike
     ],
     [bigint],
+    "nonpayable"
+  >;
+
+  sellPaused: TypedContractMethod<[], [boolean], "view">;
+
+  setPauseState: TypedContractMethod<
+    [
+      paused_: boolean,
+      buyPaused_: boolean,
+      sellPaused_: boolean,
+      graduationPaused_: boolean
+    ],
+    [void],
+    "nonpayable"
+  >;
+
+  setRequireAuthorizedTrading: TypedContractMethod<
+    [required: boolean],
+    [void],
     "nonpayable"
   >;
 
@@ -829,13 +988,6 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
   getFunction(
-    nameOrSignature: "buyExactBnbFor"
-  ): TypedContractMethod<
-    [recipient: AddressLike, minTokensOut: BigNumberish],
-    [[bigint, bigint] & { tokensOut: bigint; totalSpent: bigint }],
-    "payable"
-  >;
-  getFunction(
     nameOrSignature: "buyExactTokens"
   ): TypedContractMethod<
     [amountOut: BigNumberish, maxCost: BigNumberish],
@@ -856,18 +1008,29 @@ export interface LaunchCampaign extends BaseContract {
     "payable"
   >;
   getFunction(
-    nameOrSignature: "buyExactTokensFor"
-  ): TypedContractMethod<
-    [recipient: AddressLike, amountOut: BigNumberish, maxCost: BigNumberish],
-    [bigint],
-    "payable"
-  >;
+    nameOrSignature: "buyPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "buyersCount"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "claimPendingNative"
   ): TypedContractMethod<[], [bigint], "nonpayable">;
+  getFunction(
+    nameOrSignature: "creator"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "creatorBoughtWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "creatorBuyCapWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "creatorBuyLockUntil"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "creatorRegistry"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "creatorReserve"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -899,6 +1062,9 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "finalizedAt"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "graduationPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "graduationTarget"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -937,6 +1103,9 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "paused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
     nameOrSignature: "pendingNative"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
@@ -971,6 +1140,12 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "requireAuthorizedTrading"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "riskRegistry"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "router"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -993,6 +1168,24 @@ export interface LaunchCampaign extends BaseContract {
     [bigint],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "sellPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "setPauseState"
+  ): TypedContractMethod<
+    [
+      paused_: boolean,
+      buyPaused_: boolean,
+      sellPaused_: boolean,
+      graduationPaused_: boolean
+    ],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setRequireAuthorizedTrading"
+  ): TypedContractMethod<[required: boolean], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "sold"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -1029,6 +1222,13 @@ export interface LaunchCampaign extends BaseContract {
     CampaignFinalizedEvent.OutputObject
   >;
   getEvent(
+    key: "CampaignPauseStateUpdated"
+  ): TypedContractEvent<
+    CampaignPauseStateUpdatedEvent.InputTuple,
+    CampaignPauseStateUpdatedEvent.OutputTuple,
+    CampaignPauseStateUpdatedEvent.OutputObject
+  >;
+  getEvent(
     key: "NativeClaimed"
   ): TypedContractEvent<
     NativeClaimedEvent.InputTuple,
@@ -1048,6 +1248,13 @@ export interface LaunchCampaign extends BaseContract {
     OwnershipTransferredEvent.InputTuple,
     OwnershipTransferredEvent.OutputTuple,
     OwnershipTransferredEvent.OutputObject
+  >;
+  getEvent(
+    key: "RequireAuthorizedTradingUpdated"
+  ): TypedContractEvent<
+    RequireAuthorizedTradingUpdatedEvent.InputTuple,
+    RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+    RequireAuthorizedTradingUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "TokensPurchased"
@@ -1074,6 +1281,17 @@ export interface LaunchCampaign extends BaseContract {
       CampaignFinalizedEvent.InputTuple,
       CampaignFinalizedEvent.OutputTuple,
       CampaignFinalizedEvent.OutputObject
+    >;
+
+    "CampaignPauseStateUpdated(bool,bool,bool,bool)": TypedContractEvent<
+      CampaignPauseStateUpdatedEvent.InputTuple,
+      CampaignPauseStateUpdatedEvent.OutputTuple,
+      CampaignPauseStateUpdatedEvent.OutputObject
+    >;
+    CampaignPauseStateUpdated: TypedContractEvent<
+      CampaignPauseStateUpdatedEvent.InputTuple,
+      CampaignPauseStateUpdatedEvent.OutputTuple,
+      CampaignPauseStateUpdatedEvent.OutputObject
     >;
 
     "NativeClaimed(address,uint256)": TypedContractEvent<
@@ -1107,6 +1325,17 @@ export interface LaunchCampaign extends BaseContract {
       OwnershipTransferredEvent.InputTuple,
       OwnershipTransferredEvent.OutputTuple,
       OwnershipTransferredEvent.OutputObject
+    >;
+
+    "RequireAuthorizedTradingUpdated(bool)": TypedContractEvent<
+      RequireAuthorizedTradingUpdatedEvent.InputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputObject
+    >;
+    RequireAuthorizedTradingUpdated: TypedContractEvent<
+      RequireAuthorizedTradingUpdatedEvent.InputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputObject
     >;
 
     "TokensPurchased(address,uint256,uint256)": TypedContractEvent<

@@ -2,20 +2,20 @@
 anchor_version = "0.30.1"
 
 [features]
-seeds = true
+resolution = true
 skip-lint = false
 
-[programs.localnet]
-meme_warzone_launchpad = "11111111111111111111111111111111"
-
 [programs.devnet]
-meme_warzone_launchpad = "11111111111111111111111111111111"
+meme_warzone_launchpad = "66BMWiXR8ZJ4LCF67Eg52vEyQmDCiCFDnBxmPnGTTbwj"
+
+[programs.localnet]
+meme_warzone_launchpad = "66BMWiXR8ZJ4LCF67Eg52vEyQmDCiCFDnBxmPnGTTbwj"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [test]

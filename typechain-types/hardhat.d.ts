@@ -94,6 +94,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.CommunityRewardsVault__factory>;
     getContractFactory(
+      name: "CreatorRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.CreatorRegistry__factory>;
+    getContractFactory(
       name: "IPancakeRouter02",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IPancakeRouter02__factory>;
@@ -102,9 +106,17 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ITreasuryVault__factory>;
     getContractFactory(
+      name: "ILaunchFactoryGraduationNotify",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ILaunchFactoryGraduationNotify__factory>;
+    getContractFactory(
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IPhase1TreasuryRouter__factory>;
+    getContractFactory(
+      name: "IRiskRegistryView",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IRiskRegistryView__factory>;
     getContractFactory(
       name: "IRouteAuthoritySource",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -169,6 +181,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RecruiterRewardsVault__factory>;
+    getContractFactory(
+      name: "RiskRegistry",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.RiskRegistry__factory>;
     getContractFactory(
       name: "SponsorshipPayments",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -311,6 +327,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.CommunityRewardsVault>;
     getContractAt(
+      name: "CreatorRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.CreatorRegistry>;
+    getContractAt(
       name: "IPancakeRouter02",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -321,10 +342,20 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.ITreasuryVault>;
     getContractAt(
+      name: "ILaunchFactoryGraduationNotify",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    getContractAt(
       name: "IPhase1TreasuryRouter",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    getContractAt(
+      name: "IRiskRegistryView",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IRiskRegistryView>;
     getContractAt(
       name: "IRouteAuthoritySource",
       address: string | ethers.Addressable,
@@ -405,6 +436,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.RecruiterRewardsVault>;
+    getContractAt(
+      name: "RiskRegistry",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.RiskRegistry>;
     getContractAt(
       name: "SponsorshipPayments",
       address: string | ethers.Addressable,
@@ -537,6 +573,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
     deployContract(
+      name: "CreatorRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.CreatorRegistry>;
+    deployContract(
       name: "IPancakeRouter02",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPancakeRouter02>;
@@ -545,9 +585,17 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ITreasuryVault>;
     deployContract(
+      name: "ILaunchFactoryGraduationNotify",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    deployContract(
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    deployContract(
+      name: "IRiskRegistryView",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRiskRegistryView>;
     deployContract(
       name: "IRouteAuthoritySource",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -612,6 +660,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "RiskRegistry",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.RiskRegistry>;
     deployContract(
       name: "SponsorshipPayments",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -754,6 +806,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
     deployContract(
+      name: "CreatorRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.CreatorRegistry>;
+    deployContract(
       name: "IPancakeRouter02",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -764,10 +821,20 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ITreasuryVault>;
     deployContract(
+      name: "ILaunchFactoryGraduationNotify",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    deployContract(
       name: "IPhase1TreasuryRouter",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPhase1TreasuryRouter>;
+    deployContract(
+      name: "IRiskRegistryView",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRiskRegistryView>;
     deployContract(
       name: "IRouteAuthoritySource",
       args: any[],
@@ -848,6 +915,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "RiskRegistry",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.RiskRegistry>;
     deployContract(
       name: "SponsorshipPayments",
       args: any[],

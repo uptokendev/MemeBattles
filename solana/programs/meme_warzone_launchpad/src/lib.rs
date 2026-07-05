@@ -3,7 +3,7 @@ use anchor_lang::solana_program::program_option::COption;
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount};
 
 // Placeholder program id for scaffold/dev. Replace after the first Anchor deploy.
-declare_id!("11111111111111111111111111111111");
+declare_id!("66BMWiXR8ZJ4LCF67Eg52vEyQmDCiCFDnBxmPnGTTbwj");
 
 pub const TIER_NEW: u8 = 1;
 pub const TIER_TRUSTED: u8 = 2;

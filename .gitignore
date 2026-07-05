@@ -11,3 +11,5 @@ dist
 
 # Local archive accidentally created at repo root
 frontend.zip
+
+# OpenClaw agent workspaces (local to each dev).openclaw/

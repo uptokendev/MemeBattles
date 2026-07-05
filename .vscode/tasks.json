@@ -2,6 +2,54 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "OpenClaw: Echo (Main)",
+      "type": "shell",
+      "command": "openclaw acp client --server-args --session agent:main:main",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "icon": { "id": "radio-tower" },
+      "detail": "Starts Echo (main agent) ACP bridge - command & control"
+    },
+    {
+      "label": "OpenClaw: Build Agent (Strategist)",
+      "type": "shell",
+      "command": "openclaw acp client --server-args --session agent:build:main",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "icon": { "id": "map" },
+      "detail": "Give feature ideas, get build plans"
+    },
+    {
+      "label": "OpenClaw: Implementation Agent (Operator)",
+      "type": "shell",
+      "command": "openclaw acp client --server-args --session agent:impl:main",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "icon": { "id": "rocket" },
+      "detail": "Feed it a build plan, it ships code"
+    },
+    {
       "label": "Launchpad audit: list changed screenshots",
       "type": "shell",
       "command": "for f in 00-baseline/*.png; do n=$(basename \"$f\"); a=$(shasum -a 256 \"$f\" | awk '{print $1}'); b=$(shasum -a 256 \"99-final-state/$n\" 2>/dev/null | awk '{print $1}'); [ \"$a\" != \"$b\" ] && echo \"$n\"; done",

@@ -63,7 +63,6 @@ export declare namespace LaunchFactory {
     priceSlope: BigNumberish;
     graduationTarget: BigNumberish;
     lpReceiver: AddressLike;
-    initialBuyBnbWei: BigNumberish;
   };
 
   export type CampaignRequestStructOutput = [
@@ -76,8 +75,7 @@ export declare namespace LaunchFactory {
     basePrice: bigint,
     priceSlope: bigint,
     graduationTarget: bigint,
-    lpReceiver: string,
-    initialBuyBnbWei: bigint
+    lpReceiver: string
   ] & {
     name: string;
     symbol: string;
@@ -89,7 +87,6 @@ export declare namespace LaunchFactory {
     priceSlope: bigint;
     graduationTarget: bigint;
     lpReceiver: string;
-    initialBuyBnbWei: bigint;
   };
 
   export type RouteAuthorizationStruct = {
@@ -168,22 +165,34 @@ export interface LaunchFactoryInterface extends Interface {
       | "config"
       | "createCampaign"
       | "createCampaignAuthorized"
+      | "createPaused"
+      | "creatorRegistry"
       | "enableLive"
       | "feeRecipient"
       | "finalizeRouteProfile"
       | "getCampaign"
       | "getCampaignPage"
+      | "globalPaused"
+      | "isCampaign"
       | "leagueReceiver"
       | "live"
+      | "notifyCampaignGraduated"
       | "owner"
       | "protocolFeeBps"
-      | "quoteInitialBuyTotal"
       | "renounceOwnership"
+      | "requireAuthorizedTrading"
+      | "riskRegistry"
       | "routeAuthority"
       | "router"
+      | "setCampaignPauses"
+      | "setCampaignRequireAuthorizedTrading"
       | "setConfig"
+      | "setCreatePaused"
       | "setFeeRecipient"
+      | "setGlobalPaused"
       | "setProtocolFee"
+      | "setRegistries"
+      | "setRequireAuthorizedTrading"
       | "setRouteAuthority"
       | "setRouteProfiles"
       | "setRouter"
@@ -194,11 +203,17 @@ export interface LaunchFactoryInterface extends Interface {
   getEvent(
     nameOrSignatureOrTopic:
       | "CampaignCreated"
+      | "CampaignGraduated"
+      | "CampaignPauseUpdated"
       | "ConfigUpdated"
+      | "CreatePauseUpdated"
       | "FeeRecipientUpdated"
+      | "GlobalPauseUpdated"
       | "LiveEnabled"
       | "OwnershipTransferred"
       | "ProtocolFeeUpdated"
+      | "RegistriesUpdated"
+      | "RequireAuthorizedTradingUpdated"
       | "RouteAuthorityUpdated"
       | "RouteProfilesUpdated"
       | "RouterUpdated"
@@ -254,6 +269,14 @@ export interface LaunchFactoryInterface extends Interface {
     ]
   ): string;
   encodeFunctionData(
+    functionFragment: "createPaused",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "creatorRegistry",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "enableLive",
     values?: undefined
   ): string;
@@ -274,21 +297,37 @@ export interface LaunchFactoryInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "globalPaused",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "isCampaign",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "leagueReceiver",
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "live", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "notifyCampaignGraduated",
+    values: [AddressLike]
+  ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "protocolFeeBps",
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "quoteInitialBuyTotal",
-    values: [BigNumberish, BigNumberish, BigNumberish]
+    functionFragment: "renounceOwnership",
+    values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "renounceOwnership",
+    functionFragment: "requireAuthorizedTrading",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "riskRegistry",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -297,16 +336,40 @@ export interface LaunchFactoryInterface extends Interface {
   ): string;
   encodeFunctionData(functionFragment: "router", values?: undefined): string;
   encodeFunctionData(
+    functionFragment: "setCampaignPauses",
+    values: [AddressLike, boolean, boolean, boolean, boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setCampaignRequireAuthorizedTrading",
+    values: [AddressLike, boolean]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setConfig",
     values: [LaunchFactory.LaunchConfigStruct]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setCreatePaused",
+    values: [boolean]
   ): string;
   encodeFunctionData(
     functionFragment: "setFeeRecipient",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
+    functionFragment: "setGlobalPaused",
+    values: [boolean]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setProtocolFee",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setRegistries",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setRequireAuthorizedTrading",
+    values: [boolean]
   ): string;
   encodeFunctionData(
     functionFragment: "setRouteAuthority",
@@ -375,6 +438,14 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "createCampaignAuthorized",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "createPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "creatorRegistry",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "enableLive", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeRecipient",
@@ -393,17 +464,22 @@ export interface LaunchFactoryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "globalPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(functionFragment: "isCampaign", data: BytesLike): Result;
+  decodeFunctionResult(
     functionFragment: "leagueReceiver",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "live", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "notifyCampaignGraduated",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "quoteInitialBuyTotal",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -411,17 +487,49 @@ export interface LaunchFactoryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "requireAuthorizedTrading",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "riskRegistry",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "routeAuthority",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "router", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setCampaignPauses",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setCampaignRequireAuthorizedTrading",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "setConfig", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setCreatePaused",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "setFeeRecipient",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "setGlobalPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setProtocolFee",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRegistries",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setRequireAuthorizedTrading",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -480,6 +588,47 @@ export namespace CampaignCreatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace CampaignGraduatedEvent {
+  export type InputTuple = [campaign: AddressLike, creator: AddressLike];
+  export type OutputTuple = [campaign: string, creator: string];
+  export interface OutputObject {
+    campaign: string;
+    creator: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace CampaignPauseUpdatedEvent {
+  export type InputTuple = [
+    campaign: AddressLike,
+    paused: boolean,
+    buysPaused: boolean,
+    sellsPaused: boolean,
+    graduationPaused: boolean
+  ];
+  export type OutputTuple = [
+    campaign: string,
+    paused: boolean,
+    buysPaused: boolean,
+    sellsPaused: boolean,
+    graduationPaused: boolean
+  ];
+  export interface OutputObject {
+    campaign: string;
+    paused: boolean;
+    buysPaused: boolean;
+    sellsPaused: boolean;
+    graduationPaused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace ConfigUpdatedEvent {
   export type InputTuple = [newConfig: LaunchFactory.LaunchConfigStruct];
   export type OutputTuple = [newConfig: LaunchFactory.LaunchConfigStructOutput];
@@ -492,11 +641,35 @@ export namespace ConfigUpdatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace CreatePauseUpdatedEvent {
+  export type InputTuple = [paused: boolean];
+  export type OutputTuple = [paused: boolean];
+  export interface OutputObject {
+    paused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace FeeRecipientUpdatedEvent {
   export type InputTuple = [newRecipient: AddressLike];
   export type OutputTuple = [newRecipient: string];
   export interface OutputObject {
     newRecipient: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace GlobalPauseUpdatedEvent {
+  export type InputTuple = [paused: boolean];
+  export type OutputTuple = [paused: boolean];
+  export interface OutputObject {
+    paused: boolean;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -534,6 +707,34 @@ export namespace ProtocolFeeUpdatedEvent {
   export type OutputTuple = [newFeeBps: bigint];
   export interface OutputObject {
     newFeeBps: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RegistriesUpdatedEvent {
+  export type InputTuple = [
+    creatorRegistry: AddressLike,
+    riskRegistry: AddressLike
+  ];
+  export type OutputTuple = [creatorRegistry: string, riskRegistry: string];
+  export interface OutputObject {
+    creatorRegistry: string;
+    riskRegistry: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace RequireAuthorizedTradingUpdatedEvent {
+  export type InputTuple = [required: boolean];
+  export type OutputTuple = [required: boolean];
+  export interface OutputObject {
+    required: boolean;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -666,7 +867,7 @@ export interface LaunchFactory extends BaseContract {
   createCampaign: TypedContractMethod<
     [req: LaunchFactory.CampaignRequestStruct],
     [[string, string] & { campaignAddr: string; tokenAddr: string }],
-    "payable"
+    "nonpayable"
   >;
 
   createCampaignAuthorized: TypedContractMethod<
@@ -675,8 +876,12 @@ export interface LaunchFactory extends BaseContract {
       routeAuth: LaunchFactory.RouteAuthorizationStruct
     ],
     [[string, string] & { campaignAddr: string; tokenAddr: string }],
-    "payable"
+    "nonpayable"
   >;
+
+  createPaused: TypedContractMethod<[], [boolean], "view">;
+
+  creatorRegistry: TypedContractMethod<[], [string], "view">;
 
   enableLive: TypedContractMethod<[], [void], "nonpayable">;
 
@@ -696,29 +901,51 @@ export interface LaunchFactory extends BaseContract {
     "view"
   >;
 
+  globalPaused: TypedContractMethod<[], [boolean], "view">;
+
+  isCampaign: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+
   leagueReceiver: TypedContractMethod<[], [string], "view">;
 
   live: TypedContractMethod<[], [boolean], "view">;
+
+  notifyCampaignGraduated: TypedContractMethod<
+    [campaignCreator: AddressLike],
+    [void],
+    "nonpayable"
+  >;
 
   owner: TypedContractMethod<[], [string], "view">;
 
   protocolFeeBps: TypedContractMethod<[], [bigint], "view">;
 
-  quoteInitialBuyTotal: TypedContractMethod<
-    [
-      initialBuyTokens: BigNumberish,
-      basePriceOverride: BigNumberish,
-      priceSlopeOverride: BigNumberish
-    ],
-    [bigint],
-    "view"
-  >;
-
   renounceOwnership: TypedContractMethod<[], [void], "nonpayable">;
+
+  requireAuthorizedTrading: TypedContractMethod<[], [boolean], "view">;
+
+  riskRegistry: TypedContractMethod<[], [string], "view">;
 
   routeAuthority: TypedContractMethod<[], [string], "view">;
 
   router: TypedContractMethod<[], [string], "view">;
+
+  setCampaignPauses: TypedContractMethod<
+    [
+      campaign: AddressLike,
+      paused: boolean,
+      buysPaused: boolean,
+      sellsPaused: boolean,
+      graduationPaused: boolean
+    ],
+    [void],
+    "nonpayable"
+  >;
+
+  setCampaignRequireAuthorizedTrading: TypedContractMethod<
+    [campaign: AddressLike, required: boolean],
+    [void],
+    "nonpayable"
+  >;
 
   setConfig: TypedContractMethod<
     [newConfig: LaunchFactory.LaunchConfigStruct],
@@ -726,14 +953,30 @@ export interface LaunchFactory extends BaseContract {
     "nonpayable"
   >;
 
+  setCreatePaused: TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+
   setFeeRecipient: TypedContractMethod<
     [newRecipient: AddressLike],
     [void],
     "nonpayable"
   >;
 
+  setGlobalPaused: TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+
   setProtocolFee: TypedContractMethod<
     [newProtocolFeeBps: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
+  setRegistries: TypedContractMethod<
+    [newCreatorRegistry: AddressLike, newRiskRegistry: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  setRequireAuthorizedTrading: TypedContractMethod<
+    [required: boolean],
     [void],
     "nonpayable"
   >;
@@ -820,7 +1063,7 @@ export interface LaunchFactory extends BaseContract {
   ): TypedContractMethod<
     [req: LaunchFactory.CampaignRequestStruct],
     [[string, string] & { campaignAddr: string; tokenAddr: string }],
-    "payable"
+    "nonpayable"
   >;
   getFunction(
     nameOrSignature: "createCampaignAuthorized"
@@ -830,8 +1073,14 @@ export interface LaunchFactory extends BaseContract {
       routeAuth: LaunchFactory.RouteAuthorizationStruct
     ],
     [[string, string] & { campaignAddr: string; tokenAddr: string }],
-    "payable"
+    "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "createPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "creatorRegistry"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "enableLive"
   ): TypedContractMethod<[], [void], "nonpayable">;
@@ -856,11 +1105,20 @@ export interface LaunchFactory extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "globalPaused"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "isCampaign"
+  ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
     nameOrSignature: "leagueReceiver"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "live"
   ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "notifyCampaignGraduated"
+  ): TypedContractMethod<[campaignCreator: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
@@ -868,25 +1126,40 @@ export interface LaunchFactory extends BaseContract {
     nameOrSignature: "protocolFeeBps"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "quoteInitialBuyTotal"
-  ): TypedContractMethod<
-    [
-      initialBuyTokens: BigNumberish,
-      basePriceOverride: BigNumberish,
-      priceSlopeOverride: BigNumberish
-    ],
-    [bigint],
-    "view"
-  >;
-  getFunction(
     nameOrSignature: "renounceOwnership"
   ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "requireAuthorizedTrading"
+  ): TypedContractMethod<[], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "riskRegistry"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "routeAuthority"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "router"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "setCampaignPauses"
+  ): TypedContractMethod<
+    [
+      campaign: AddressLike,
+      paused: boolean,
+      buysPaused: boolean,
+      sellsPaused: boolean,
+      graduationPaused: boolean
+    ],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setCampaignRequireAuthorizedTrading"
+  ): TypedContractMethod<
+    [campaign: AddressLike, required: boolean],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "setConfig"
   ): TypedContractMethod<
@@ -895,8 +1168,14 @@ export interface LaunchFactory extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "setCreatePaused"
+  ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
     nameOrSignature: "setFeeRecipient"
   ): TypedContractMethod<[newRecipient: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setGlobalPaused"
+  ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setProtocolFee"
   ): TypedContractMethod<
@@ -904,6 +1183,16 @@ export interface LaunchFactory extends BaseContract {
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "setRegistries"
+  ): TypedContractMethod<
+    [newCreatorRegistry: AddressLike, newRiskRegistry: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setRequireAuthorizedTrading"
+  ): TypedContractMethod<[required: boolean], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setRouteAuthority"
   ): TypedContractMethod<[newAuthority: AddressLike], [void], "nonpayable">;
@@ -932,6 +1221,20 @@ export interface LaunchFactory extends BaseContract {
     CampaignCreatedEvent.OutputObject
   >;
   getEvent(
+    key: "CampaignGraduated"
+  ): TypedContractEvent<
+    CampaignGraduatedEvent.InputTuple,
+    CampaignGraduatedEvent.OutputTuple,
+    CampaignGraduatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "CampaignPauseUpdated"
+  ): TypedContractEvent<
+    CampaignPauseUpdatedEvent.InputTuple,
+    CampaignPauseUpdatedEvent.OutputTuple,
+    CampaignPauseUpdatedEvent.OutputObject
+  >;
+  getEvent(
     key: "ConfigUpdated"
   ): TypedContractEvent<
     ConfigUpdatedEvent.InputTuple,
@@ -939,11 +1242,25 @@ export interface LaunchFactory extends BaseContract {
     ConfigUpdatedEvent.OutputObject
   >;
   getEvent(
+    key: "CreatePauseUpdated"
+  ): TypedContractEvent<
+    CreatePauseUpdatedEvent.InputTuple,
+    CreatePauseUpdatedEvent.OutputTuple,
+    CreatePauseUpdatedEvent.OutputObject
+  >;
+  getEvent(
     key: "FeeRecipientUpdated"
   ): TypedContractEvent<
     FeeRecipientUpdatedEvent.InputTuple,
     FeeRecipientUpdatedEvent.OutputTuple,
     FeeRecipientUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "GlobalPauseUpdated"
+  ): TypedContractEvent<
+    GlobalPauseUpdatedEvent.InputTuple,
+    GlobalPauseUpdatedEvent.OutputTuple,
+    GlobalPauseUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "LiveEnabled"
@@ -965,6 +1282,20 @@ export interface LaunchFactory extends BaseContract {
     ProtocolFeeUpdatedEvent.InputTuple,
     ProtocolFeeUpdatedEvent.OutputTuple,
     ProtocolFeeUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RegistriesUpdated"
+  ): TypedContractEvent<
+    RegistriesUpdatedEvent.InputTuple,
+    RegistriesUpdatedEvent.OutputTuple,
+    RegistriesUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "RequireAuthorizedTradingUpdated"
+  ): TypedContractEvent<
+    RequireAuthorizedTradingUpdatedEvent.InputTuple,
+    RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+    RequireAuthorizedTradingUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "RouteAuthorityUpdated"
@@ -1000,6 +1331,28 @@ export interface LaunchFactory extends BaseContract {
       CampaignCreatedEvent.OutputObject
     >;
 
+    "CampaignGraduated(address,address)": TypedContractEvent<
+      CampaignGraduatedEvent.InputTuple,
+      CampaignGraduatedEvent.OutputTuple,
+      CampaignGraduatedEvent.OutputObject
+    >;
+    CampaignGraduated: TypedContractEvent<
+      CampaignGraduatedEvent.InputTuple,
+      CampaignGraduatedEvent.OutputTuple,
+      CampaignGraduatedEvent.OutputObject
+    >;
+
+    "CampaignPauseUpdated(address,bool,bool,bool,bool)": TypedContractEvent<
+      CampaignPauseUpdatedEvent.InputTuple,
+      CampaignPauseUpdatedEvent.OutputTuple,
+      CampaignPauseUpdatedEvent.OutputObject
+    >;
+    CampaignPauseUpdated: TypedContractEvent<
+      CampaignPauseUpdatedEvent.InputTuple,
+      CampaignPauseUpdatedEvent.OutputTuple,
+      CampaignPauseUpdatedEvent.OutputObject
+    >;
+
     "ConfigUpdated(tuple)": TypedContractEvent<
       ConfigUpdatedEvent.InputTuple,
       ConfigUpdatedEvent.OutputTuple,
@@ -1011,6 +1364,17 @@ export interface LaunchFactory extends BaseContract {
       ConfigUpdatedEvent.OutputObject
     >;
 
+    "CreatePauseUpdated(bool)": TypedContractEvent<
+      CreatePauseUpdatedEvent.InputTuple,
+      CreatePauseUpdatedEvent.OutputTuple,
+      CreatePauseUpdatedEvent.OutputObject
+    >;
+    CreatePauseUpdated: TypedContractEvent<
+      CreatePauseUpdatedEvent.InputTuple,
+      CreatePauseUpdatedEvent.OutputTuple,
+      CreatePauseUpdatedEvent.OutputObject
+    >;
+
     "FeeRecipientUpdated(address)": TypedContractEvent<
       FeeRecipientUpdatedEvent.InputTuple,
       FeeRecipientUpdatedEvent.OutputTuple,
@@ -1020,6 +1384,17 @@ export interface LaunchFactory extends BaseContract {
       FeeRecipientUpdatedEvent.InputTuple,
       FeeRecipientUpdatedEvent.OutputTuple,
       FeeRecipientUpdatedEvent.OutputObject
+    >;
+
+    "GlobalPauseUpdated(bool)": TypedContractEvent<
+      GlobalPauseUpdatedEvent.InputTuple,
+      GlobalPauseUpdatedEvent.OutputTuple,
+      GlobalPauseUpdatedEvent.OutputObject
+    >;
+    GlobalPauseUpdated: TypedContractEvent<
+      GlobalPauseUpdatedEvent.InputTuple,
+      GlobalPauseUpdatedEvent.OutputTuple,
+      GlobalPauseUpdatedEvent.OutputObject
     >;
 
     "LiveEnabled(uint64)": TypedContractEvent<
@@ -1053,6 +1428,28 @@ export interface LaunchFactory extends BaseContract {
       ProtocolFeeUpdatedEvent.InputTuple,
       ProtocolFeeUpdatedEvent.OutputTuple,
       ProtocolFeeUpdatedEvent.OutputObject
+    >;
+
+    "RegistriesUpdated(address,address)": TypedContractEvent<
+      RegistriesUpdatedEvent.InputTuple,
+      RegistriesUpdatedEvent.OutputTuple,
+      RegistriesUpdatedEvent.OutputObject
+    >;
+    RegistriesUpdated: TypedContractEvent<
+      RegistriesUpdatedEvent.InputTuple,
+      RegistriesUpdatedEvent.OutputTuple,
+      RegistriesUpdatedEvent.OutputObject
+    >;
+
+    "RequireAuthorizedTradingUpdated(bool)": TypedContractEvent<
+      RequireAuthorizedTradingUpdatedEvent.InputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputObject
+    >;
+    RequireAuthorizedTradingUpdated: TypedContractEvent<
+      RequireAuthorizedTradingUpdatedEvent.InputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputTuple,
+      RequireAuthorizedTradingUpdatedEvent.OutputObject
     >;
 
     "RouteAuthorityUpdated(address)": TypedContractEvent<

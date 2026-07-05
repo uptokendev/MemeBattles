@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\BattleTreasury.sol": {
-      "lastModificationDate": 1780393867803,
-      "contentHash": "2c9557a4a113551710af05f11b59350e",
+      "lastModificationDate": 1782076943965,
+      "contentHash": "948150febe64bf659bd675b6cdb6d7b6",
       "sourceName": "contracts/BattleTreasury.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -208,8 +208,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1777665039869,
-      "contentHash": "85edef3e228bb0b53ed3fa6890fcc74e",
+      "lastModificationDate": 1782555811988,
+      "contentHash": "afd669f9f78c122df5fec72695403cc7",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -244,6 +244,8 @@
         "@openzeppelin/contracts/utils/cryptography/ECDSA.sol",
         "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol",
         "./LaunchCampaign.sol",
+        "./CreatorRegistry.sol",
+        "./RiskRegistry.sol",
         "@openzeppelin/contracts/proxy/Clones.sol"
       ],
       "versionPragmas": [
@@ -254,8 +256,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1777566501666,
-      "contentHash": "97eaaa0c80487dea86dff55275913321",
+      "lastModificationDate": 1782555811986,
+      "contentHash": "0cb4c321ce2bc17ebb6d4555651d743c",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -300,7 +302,9 @@
         "^0.8.24"
       ],
       "artifacts": [
+        "ILaunchFactoryGraduationNotify",
         "IPhase1TreasuryRouter",
+        "IRiskRegistryView",
         "IRouteAuthoritySource",
         "LaunchCampaign"
       ]
@@ -1140,8 +1144,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\test\\FactoryCaller.sol": {
-      "lastModificationDate": 1777566501676,
-      "contentHash": "decf2a4f1584312f9063ed87035e0885",
+      "lastModificationDate": 1782555811988,
+      "contentHash": "f3d4c2649f970ff099362b27a34048d1",
       "sourceName": "contracts/test/FactoryCaller.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1171,9 +1175,7 @@
           }
         }
       },
-      "imports": [
-        "../LaunchCampaign.sol"
-      ],
+      "imports": [],
       "versionPragmas": [
         "^0.8.24"
       ],
@@ -1182,8 +1184,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\SponsorshipPayments.sol": {
-      "lastModificationDate": 1780393862376,
-      "contentHash": "866b41f08d6a0801c51f44e3bc935741",
+      "lastModificationDate": 1782076943967,
+      "contentHash": "10c5e4893b34f4a8df390f4b0a52ee67",
       "sourceName": "contracts/SponsorshipPayments.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1226,8 +1228,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\MajorLeagueTreasury.sol": {
-      "lastModificationDate": 1780393870033,
-      "contentHash": "4bf3bc80596be15dff6767386615ad95",
+      "lastModificationDate": 1782076943965,
+      "contentHash": "530e59f480c3745204fa357b471297ff",
       "sourceName": "contracts/MajorLeagueTreasury.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -2090,8 +2092,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LeagueTreasury.sol": {
-      "lastModificationDate": 1780249412480,
-      "contentHash": "3f55bf872e9169a35741bb587cf08f51",
+      "lastModificationDate": 1782076943965,
+      "contentHash": "a07e41d68d7623a98777ec34d12bc6ef",
       "sourceName": "contracts/LeagueTreasury.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -2127,6 +2129,90 @@
       ],
       "artifacts": [
         "LeagueTreasury"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\RiskRegistry.sol": {
+      "lastModificationDate": 1782555811988,
+      "contentHash": "bdd5514762dc4e93ca0393d1c2285dd1",
+      "sourceName": "contracts/RiskRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "RiskRegistry"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\CreatorRegistry.sol": {
+      "lastModificationDate": 1782555811986,
+      "contentHash": "796c2e2d17cf6ffda64e8b82d95b6130",
+      "sourceName": "contracts/CreatorRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "CreatorRegistry"
       ]
     }
   }
