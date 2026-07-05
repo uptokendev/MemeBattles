@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
+import { isAddress } from "ethers";
+import { isSolanaAddress } from "@/lib/address";
+import { isEvmChainId, isSolanaChainId } from "@/lib/chainConfig";
 
 // Token realtime belongs to the realtime-indexer Railway service.
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
@@ -16,6 +19,14 @@ function getAuthBase() {
     return window.location.origin.replace(/\/$/, "");
   }
   return "";
+}
+
+function isRealtimeCampaignAddress(chainId: number, campaign: string) {
+  const raw = String(campaign || "").trim();
+  if (!raw) return false;
+  if (isSolanaChainId(chainId)) return isSolanaAddress(raw);
+  if (isEvmChainId(chainId)) return isAddress(raw);
+  return false;
 }
 
 type Entry = {
@@ -109,16 +120,17 @@ export function useAblyTokenChannel(opts: {
   campaignAddress?: string;
 }) {
   const { enabled, chainId, campaignAddress } = opts;
+  const canOpenChannel = enabled && !!campaignAddress && isRealtimeCampaignAddress(chainId, campaignAddress);
 
   const key = useMemo(() => {
-    if (!enabled || !campaignAddress) return "";
+    if (!canOpenChannel || !campaignAddress) return "";
     return `${chainId}:${campaignAddress.toLowerCase()}`;
-  }, [enabled, chainId, campaignAddress]);
+  }, [canOpenChannel, chainId, campaignAddress]);
 
   const [entry, setEntry] = useState<Entry | null>(null);
 
   useEffect(() => {
-    if (!enabled || !campaignAddress) {
+    if (!canOpenChannel || !campaignAddress) {
       setEntry(null);
       return;
     }
@@ -131,14 +143,14 @@ export function useAblyTokenChannel(opts: {
     return () => {
       release(e.key);
     };
-  }, [enabled, chainId, campaignAddress]);
+  }, [canOpenChannel, chainId, campaignAddress]);
 
   return {
     client: entry?.client ?? null,
     channel: entry?.channel ?? null,
     channelName: entry?.channelName ?? null,
     ready: Boolean(entry && entry.client && entry.channel),
-    missingBase: enabled && !!campaignAddress && !getAuthBase(),
+    missingBase: canOpenChannel && !getAuthBase(),
     cacheKey: key,
   };
 }
