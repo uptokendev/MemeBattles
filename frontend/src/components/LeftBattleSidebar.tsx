@@ -37,7 +37,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
   const navItems = useMemo<SidebarNavItem[]>(
     () => [
       { icon: Rocket, label: "Launchpad", path: "/" },
-      ...(postGradFlags.enabled && postGradFlags.league ? [{ icon: Trophy, label: "Leagues", path: "/league" }] : []),
+      { icon: Trophy, label: "Leagues", path: "/league" },
       ...(showArenaNav ? [{ icon: Swords, label: "Arena", path: "/arena", hasSubmenu: true }] : []),
       ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Target, label: "War Trade Room", path: "/war-room" }] : []),
       { icon: User, label: "Profile", path: "/profile" },
