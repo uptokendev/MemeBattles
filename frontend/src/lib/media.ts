@@ -4,9 +4,24 @@
 // Uses multiple public gateways with fallbacks because some gateways
 // (especially cloudflare-ipfs) are unreliable or blocked on certain local networks / ISPs.
 // This explains why images load in production but show placeholders locally.
+
+const LEGACY_UNREACHABLE_IMAGE_HOSTS = new Set([
+  "jlbdueorprgnfkcpnkfq.supabase.co",
+]);
+
+function isLegacyUnreachableImageUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return LEGACY_UNREACHABLE_IMAGE_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export function resolveImageUri(uri?: string | null): string | undefined {
   const raw = String(uri ?? "").trim();
   if (!raw) return undefined;
+  if (isLegacyUnreachableImageUrl(raw)) return undefined;
 
   const isLikelyCid = (s: string) =>
     /^Qm[1-9A-HJ-NP-Za-km-z]{44,}$/.test(s) ||
