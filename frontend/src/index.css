@@ -452,6 +452,32 @@ All colors MUST be HSL.
   }
 }
 
+/* Mobile featured campaign controls */
+@media (max-width: 767px) {
+  [class*="mb-3"][class*="justify-between"]:has(.mwz-section-title) {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 0.5rem;
+  }
+
+  [class*="mb-3"][class*="justify-between"]:has(.mwz-section-title) > div:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    margin-left: auto;
+  }
+
+  [class*="mb-3"][class*="justify-between"]:has(.mwz-section-title) .mwz-button.hidden {
+    display: inline-flex !important;
+  }
+
+  [class*="mb-3"][class*="justify-between"]:has(.mwz-section-title) .mwz-chip,
+  [class*="mb-3"][class*="justify-between"]:has(.mwz-section-title) .mwz-button {
+    min-height: 1.75rem !important;
+  }
+}
+
 /* Glass Button Styles */
 @layer components {
   .glass-button-wrap {
