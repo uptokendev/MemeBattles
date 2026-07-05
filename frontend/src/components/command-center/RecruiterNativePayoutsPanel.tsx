@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatEther } from "ethers";
-import { CheckCircle2, Clock3, RefreshCw, ShieldAlert, WalletCards } from "lucide-react";
+import { CheckCircle2, ShieldAlert, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -47,19 +47,12 @@ function formatNative(raw?: string | null, token?: string | null): string {
   }
 }
 
-function statusTone(status?: string | null) {
-  const value = String(status || "").toLowerCase();
-  if (value === "claimable") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-100";
-  if (value === "missing_payout_wallet") return "border-amber-300/30 bg-amber-300/10 text-amber-100";
-  return "border-border/40 bg-card/25 text-muted-foreground";
-}
-
-function statusLabel(status?: string | null) {
-  return String(status || "pending_finality").replace(/_/g, " ");
-}
-
 function chainLabel(chain: NativeChain) {
-  return chain === "bnb" ? "BNB Chain" : "Solana";
+  return chain === "bnb" ? "BNB" : "Solana";
+}
+
+function walletPlaceholder(chain: NativeChain) {
+  return chain === "bnb" ? "0x..." : "Solana wallet address";
 }
 
 function balanceSort(balance: RecruiterPayoutBalance) {
@@ -90,15 +83,23 @@ function buildPayoutWalletMessage(input: { recruiterId: string; chain: NativeCha
 function payoutErrorCopy(message: string) {
   const raw = String(message || "");
   if (/unsupported action/i.test(raw)) {
-    return "The payout request reached a recruiter portal that does not support this action. Confirm the Network request uses memebattles-frontend-7dcf and pull the latest devpostgrad frontend bundle.";
+    return "Recruiter rewards are not available right now. Please try again later.";
   }
   if (/application not found/i.test(raw)) {
-    return "This wallet is not signed in as an approved recruiter yet. Use the recruiter sign-in button in this panel first.";
+    return "This wallet is not approved for recruiter rewards.";
   }
   if (/unauthorized|not authenticated|session/i.test(raw)) {
-    return "Sign in to recruiter tools first, then return here to view native payouts.";
+    return "Please sign in with your approved recruiter wallet first.";
   }
-  return raw || "Could not load recruiter native payouts.";
+  return raw || "Could not load recruiter rewards.";
+}
+
+function rewardReady(balance: RecruiterPayoutBalance) {
+  try {
+    return BigInt(balance.claimableRaw || "0") > 0n && Boolean(balance.payoutWallet);
+  } catch {
+    return false;
+  }
 }
 
 export function RecruiterNativePayoutsPanel() {
@@ -199,10 +200,10 @@ export function RecruiterNativePayoutsPanel() {
       const challenge = await requestRecruiterAuthNonce(wallet.account);
       const signature = await wallet.signer.signMessage(challenge.message);
       await verifyRecruiterAuth(wallet.account, signature);
-      toast.success("Recruiter tools signed in");
+      toast.success("Recruiter rewards unlocked");
       await load();
     } catch (err: any) {
-      const message = payoutErrorCopy(String(err?.message || "Could not sign in to recruiter tools."));
+      const message = payoutErrorCopy(String(err?.message || "Could not unlock recruiter rewards."));
       setError(message);
       toast.error(message);
     } finally {
@@ -213,7 +214,7 @@ export function RecruiterNativePayoutsPanel() {
   const linkBnbWallet = async () => {
     const payoutWallet = bnbWallet.trim() || wallet.account || "";
     if (!payoutWallet || !wallet.signer) {
-      toast.error("Connect or enter the BNB payout wallet first.");
+      toast.error("Connect or enter the BNB wallet first.");
       return;
     }
     setPendingAction("link-bnb");
@@ -222,10 +223,10 @@ export function RecruiterNativePayoutsPanel() {
       const challenge = await requestRecruiterPayoutWalletChallenge("bnb", payoutWallet);
       const signature = await wallet.signer.signMessage(challenge.message);
       await verifyRecruiterPayoutWallet("bnb", payoutWallet, challenge.nonce, signature);
-      toast.success("BNB payout wallet verified");
+      toast.success("BNB wallet verified");
       await load();
     } catch (err: any) {
-      const message = payoutErrorCopy(String(err?.message || "Could not verify BNB payout wallet."));
+      const message = payoutErrorCopy(String(err?.message || "Could not verify BNB wallet."));
       setError(message);
       toast.error(message);
     } finally {
@@ -243,20 +244,20 @@ export function RecruiterNativePayoutsPanel() {
         publicKey = connected.publicKey;
         setSolWallet(publicKey);
       }
-      if (!publicKey) throw new Error("Connect or enter a Solana payout wallet first.");
+      if (!publicKey) throw new Error("Connect or enter a Solana wallet first.");
 
       const latest = state?.recruiterId ? state : await load();
       const recruiterId = String(latest?.recruiterId || "").trim();
-      if (!recruiterId) throw new Error("Sign in recruiter first so the payout challenge can include your recruiter id.");
+      if (!recruiterId) throw new Error("Unlock recruiter rewards first, then verify your Solana wallet.");
 
       const nonce = randomNonce();
       const message = buildPayoutWalletMessage({ recruiterId, chain: "solana", walletAddress: publicKey, nonce });
       const signed = await signSolanaMessage(message, publicKey);
       await verifyRecruiterPayoutWallet("solana", signed.walletAddress, nonce, signed.signature);
-      toast.success("Solana payout wallet verified");
+      toast.success("Solana wallet verified");
       await load();
     } catch (err: any) {
-      const message = payoutErrorCopy(String(err?.message || "Could not verify Solana payout wallet."));
+      const message = payoutErrorCopy(String(err?.message || "Could not verify Solana wallet."));
       setError(message);
       toast.error(message);
     } finally {
@@ -269,10 +270,10 @@ export function RecruiterNativePayoutsPanel() {
     setError(null);
     try {
       const result = await createRecruiterNativeClaim(chain);
-      toast.success(String(result?.message || `${chainLabel(chain)} claim created`));
+      toast.success(String(result?.message || `${chainLabel(chain)} rewards claimed`));
       await load();
     } catch (err: any) {
-      const message = payoutErrorCopy(String(err?.message || `Could not create ${chainLabel(chain)} claim.`));
+      const message = payoutErrorCopy(String(err?.message || `Could not claim ${chainLabel(chain)} rewards.`));
       setError(message);
       toast.error(message);
     } finally {
@@ -280,61 +281,31 @@ export function RecruiterNativePayoutsPanel() {
     }
   };
 
-  if (identityLoading) {
-    return (
-      <CommandCenterCard
-        title="Recruiter native payouts"
-        description="BNB rewards stay BNB and Solana rewards stay SOL. USD values are display-only; raw native units remain the source of truth."
-        action={<WalletCards className="h-5 w-5 text-accent" />}
-      >
-        <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
-          Checking recruiter wallet status...
-        </div>
-      </CommandCenterCard>
-    );
-  }
-
-  if (identityError || !isRecruiterWallet) {
-    return (
-      <CommandCenterCard
-        title="Recruiter native payouts"
-        description="Recruiter payout balances are only shown to approved recruiter wallets."
-        action={<WalletCards className="h-5 w-5 text-accent" />}
-      >
-        <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
-          {identityError || "Recruiter payouts unlock once this connected wallet is mapped to an approved recruiter code."}
-        </div>
-      </CommandCenterCard>
-    );
+  if (identityLoading || identityError || !isRecruiterWallet) {
+    return null;
   }
 
   return (
     <CommandCenterCard
-      title="Recruiter native payouts"
-      description="BNB rewards stay BNB and Solana rewards stay SOL. USD values are display-only; raw native units remain the source of truth."
+      title="Recruiter Rewards"
+      description="Verify your BNB and Solana wallets, then claim available recruiter rewards."
       action={<WalletCards className="h-5 w-5 text-accent" />}
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="space-y-1 text-sm text-muted-foreground">
-          <div>{state?.code ? `Recruiter code: ${state.code}` : "Sign in to recruiter tools to view native payouts."}</div>
-          <div className="font-mono text-xs">
-            BNB connected: {shortAddress(wallet.account)} · SOL connected: {shortAddress(solanaWallet.solanaAccount)}
+      {error ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">{error}</div> : null}
+
+      {!state?.recruiterId ? (
+        <div className="mb-4 rounded-2xl border border-border/50 bg-background/25 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="font-retro text-sm text-foreground">Unlock recruiter rewards</div>
+              <p className="mt-1 text-sm text-muted-foreground">Sign once with your approved recruiter wallet to view and claim rewards.</p>
+            </div>
+            <Button onClick={signInRecruiter} disabled={pendingAction === "signin" || loading} className="font-retro">
+              {pendingAction === "signin" || loading ? "Unlocking..." : "Unlock Rewards"}
+            </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {!state?.code ? (
-            <Button onClick={signInRecruiter} disabled={pendingAction === "signin"} className="font-retro">
-              {pendingAction === "signin" ? "Signing..." : "Sign in recruiter"}
-            </Button>
-          ) : null}
-          <Button onClick={load} disabled={loading} variant="outline" className="font-retro">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {loading ? "Refreshing..." : "Refresh"}
-          </Button>
-        </div>
-      </div>
-
-      {error ? <div className="mb-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">{error}</div> : null}
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-2">
         {balances.map((balance) => {
@@ -342,93 +313,69 @@ export function RecruiterNativePayoutsPanel() {
           const isBnb = chain === "bnb";
           const inputValue = isBnb ? bnbWallet : solWallet;
           const setInputValue = isBnb ? setBnbWallet : setSolWallet;
-          const claimable = BigInt(balance.claimableRaw || "0");
-          const canClaim = claimable > 0n && Boolean(balance.payoutWallet);
+          const canClaim = rewardReady(balance);
+          const verified = Boolean(balance.payoutWallet);
+          const verifyPending = pendingAction === (isBnb ? "link-bnb" : "link-solana");
+          const claimPending = pendingAction === `claim-${chain}`;
+          const verifyLabel = isBnb
+            ? verified ? "Update BNB Wallet" : "Verify BNB Wallet"
+            : verified ? "Update Solana Wallet" : "Verify Solana Wallet";
+
           return (
             <div key={chain} className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-retro text-sm text-foreground">{chainLabel(chain)}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Pays in {balance.token}</div>
+                  <div className="font-retro text-sm text-foreground">{chainLabel(chain)} Rewards</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Paid in {balance.token}</div>
                 </div>
-                <span className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] ${statusTone(balance.status)}`}>
-                  {statusLabel(balance.status)}
+                <span className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] ${canClaim ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-border/40 bg-card/25 text-muted-foreground"}`}>
+                  {canClaim ? "Ready" : "No rewards yet"}
                 </span>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
-                <div className="rounded-xl border border-border/40 bg-card/25 p-3">
-                  <div className="font-retro text-lg text-foreground">{formatNative(balance.claimableRaw, balance.token)}</div>
-                  <div className="mt-1 text-muted-foreground">Claimable {balance.token}</div>
-                </div>
-                <div className="rounded-xl border border-border/40 bg-card/25 p-3">
-                  <div className="font-retro text-lg text-foreground">{formatNative(balance.pendingRaw, balance.token)}</div>
-                  <div className="mt-1 text-muted-foreground">Pending {balance.token}</div>
-                </div>
+              <div className="mt-5 rounded-xl border border-border/40 bg-card/25 p-4 text-center">
+                <div className="font-retro text-2xl text-foreground">{formatNative(balance.claimableRaw, balance.token)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">Available {balance.token}</div>
               </div>
 
-              <div className="mt-3 rounded-xl border border-border/40 bg-card/25 p-3 text-xs text-muted-foreground">
+              <div className="mt-4 rounded-xl border border-border/40 bg-card/25 p-3 text-xs text-muted-foreground">
                 <div className="flex items-center gap-2 font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                  {balance.payoutWallet ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <ShieldAlert className="h-4 w-4 text-amber-200" />}
-                  Verified payout wallet
+                  {verified ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <ShieldAlert className="h-4 w-4 text-amber-200" />}
+                  {chainLabel(chain)} wallet verification
                 </div>
                 <div className="mt-2 font-mono text-sm text-foreground">{shortAddress(balance.payoutWallet)}</div>
               </div>
 
               <div className="mt-4 space-y-2">
                 <label className="font-retro text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                  {balance.token} payout wallet
+                  {chainLabel(chain)} wallet
                 </label>
                 <input
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
-                  placeholder={isBnb ? "0x..." : "Solana wallet address"}
+                  placeholder={walletPlaceholder(chain)}
                   className="min-h-10 w-full rounded-xl border border-border/50 bg-background/60 px-3 font-mono text-sm text-foreground outline-none transition focus:border-accent/60"
                 />
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {isBnb ? (
-                  <Button onClick={linkBnbWallet} disabled={pendingAction === "link-bnb"} variant="outline" className="font-retro">
-                    {pendingAction === "link-bnb" ? "Waiting..." : balance.payoutWallet ? "Update BNB wallet" : "Verify BNB wallet"}
+                  <Button onClick={linkBnbWallet} disabled={verifyPending} variant="outline" className="font-retro">
+                    {verifyPending ? "Waiting..." : verifyLabel}
                   </Button>
                 ) : (
-                  <Button onClick={linkSolanaWallet} disabled={pendingAction === "link-solana" || solanaWallet.connectingSolana} variant="outline" className="font-retro">
-                    {pendingAction === "link-solana" || solanaWallet.connectingSolana ? "Waiting..." : balance.payoutWallet ? "Update SOL wallet" : "Verify SOL wallet"}
+                  <Button onClick={linkSolanaWallet} disabled={verifyPending || solanaWallet.connectingSolana} variant="outline" className="font-retro">
+                    {verifyPending || solanaWallet.connectingSolana ? "Waiting..." : verifyLabel}
                   </Button>
                 )}
-                <Button onClick={() => createClaim(chain)} disabled={!canClaim || pendingAction === `claim-${chain}`} className="font-retro">
-                  {pendingAction === `claim-${chain}` ? "Creating..." : `Claim ${balance.token}`}
+                <Button onClick={() => createClaim(chain)} disabled={!canClaim || claimPending} className="font-retro">
+                  {claimPending ? "Claiming..." : `Claim ${balance.token}`}
                 </Button>
               </div>
             </div>
           );
         })}
       </div>
-
-      <div className="mt-4 rounded-2xl border border-border/50 bg-background/25 p-4">
-        <div className="flex items-start gap-3">
-          <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-          <p className="text-sm text-muted-foreground">
-            Claim creation records the native payout request and locks the matched ledger entries. On-chain vault submission is intentionally left pending until the payout signer/vault integration is connected.
-          </p>
-        </div>
-      </div>
-
-      {state?.claims?.length ? (
-        <div className="mt-4 space-y-2">
-          <div className="font-retro text-sm text-foreground">Recent native claims</div>
-          {state.claims.slice(0, 5).map((claim) => (
-            <div key={claim.id} className="rounded-xl border border-border/40 bg-card/25 p-3 text-sm">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="font-retro text-foreground">{formatNative(claim.amountRaw, claim.token)} {claim.token}</div>
-                <div className="text-xs text-muted-foreground">{chainLabel(claim.chain)} · {claim.status}</div>
-              </div>
-              <div className="mt-2 font-mono text-xs text-muted-foreground">{shortAddress(claim.payoutWallet)}</div>
-            </div>
-          ))}
-        </div>
-      ) : null}
     </CommandCenterCard>
   );
 }
