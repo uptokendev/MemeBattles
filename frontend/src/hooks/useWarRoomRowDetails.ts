@@ -3,12 +3,12 @@ import { useWallet } from "@/contexts/WalletContext";
 import { apiFetch } from "@/lib/apiBase";
 import type { WarRoomCampaign } from "@/hooks/useWarRoomCampaignFeed";
 
-export type WarRoomRowDetailSource = "api" | "empty";
+export type WarRoomRowDetailSource = "api" | "draft" | "empty";
 
 export type WarRoomRowDetails = {
   campaign?: Partial<WarRoomCampaign>;
   chart?: {
-    source: "bonding_curve" | "dex";
+    source: "bonding_curve" | "dex" | "draft";
     campaignAddress: string;
     tokenAddress?: string | null;
     preferredTimeframe?: string;
@@ -20,7 +20,7 @@ export type WarRoomRowDetails = {
     summary?: string;
   };
   tradeContext?: {
-    mode: "bonding_curve" | "dex" | string;
+    mode: "bonding_curve" | "dex" | "draft" | string;
     canBuy: boolean;
     canSell: boolean;
     slippagePct?: number;
@@ -55,6 +55,25 @@ export function useWarRoomRowDetails({
       setLoading(false);
       setError(null);
       setSource("empty");
+      return;
+    }
+
+    if (address.startsWith("draft:")) {
+      setDetails({
+        chart: { source: "draft", campaignAddress: address, tokenAddress: null },
+        battleIntel: {
+          status: "unavailable",
+          eligible: false,
+          unavailableReason: "draft_not_live",
+          summary: "This draft is still in preparation. Trading and battles unlock once it goes live.",
+        },
+        tradeContext: { mode: "draft", canBuy: false, canSell: false },
+        watchlist: { supported: false, following: false, reason: "draft_not_live" },
+        updatedAt: new Date().toISOString(),
+      });
+      setLoading(false);
+      setError(null);
+      setSource("draft");
       return;
     }
 
