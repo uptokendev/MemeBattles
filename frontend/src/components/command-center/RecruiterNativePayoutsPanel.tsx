@@ -82,7 +82,7 @@ function buildPayoutWalletMessage(input: { recruiterId: string; chain: NativeCha
 
 function payoutErrorCopy(message: string) {
   const raw = String(message || "");
-  if (/unsupported action/i.test(raw)) {
+  if (/unsupported action|request failed|unknown route|not found|ledger|vault|portal|backend|api/i.test(raw)) {
     return "Recruiter rewards are not available right now. Please try again later.";
   }
   if (/application not found/i.test(raw)) {
