@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
+import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
 export type WarRoomCampaignFeedSource = "api" | "empty";
+
+const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
 
 function toNumber(value: unknown): number | undefined {
   const n = Number(value);
@@ -72,6 +75,45 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   } as WarRoomCampaign;
 }
 
+function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoomCampaign {
+  return {
+    id: 200000 + index,
+    chainId: Number(draft.chainId),
+    campaign: `draft:${draft.id}`,
+    token: "",
+    creator: String(draft.creatorWallet || "").toLowerCase(),
+    name: String(draft.name || "Unknown"),
+    symbol: String(draft.ticker || ""),
+    logoURI: resolveImageUri(draft.logoUrl) || "/placeholder.svg",
+    metadataURI: undefined,
+    xAccount: String(draft.xUrl || ""),
+    website: String(draft.websiteUrl || ""),
+    extraLink: String(draft.otherUrl || ""),
+    createdAt: toUnixSeconds(draft.createdAt),
+    status: "draft",
+    isActive: false,
+    isDexTrading: false,
+    draftId: draft.id,
+    draftSlug: draft.slug,
+    draftStatus: draft.status,
+  } as WarRoomCampaign;
+}
+
+async function fetchDraftCampaignsForWarRoom(chainId: number): Promise<WarRoomCampaign[]> {
+  try {
+    const drafts = await fetchPublicCampaignDrafts({ chainId, limit: 100 });
+    return drafts
+      .filter((draft) => Number(draft.chainId) === Number(chainId))
+      .filter((draft) => draft.visibility === "public")
+      .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
+      .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
+      .map(mapDraftToWarRoomCampaign);
+  } catch (error) {
+    console.warn("[useWarRoomCampaignFeed] public draft fallback failed", error);
+    return [];
+  }
+}
+
 export function useWarRoomCampaignFeed({
   activeMode,
   activeChainId,
@@ -96,16 +138,22 @@ export function useWarRoomCampaignFeed({
       try {
         setLoading(true);
         setError(null);
+        const chainId = Number(activeChainId || 97);
         const json = await fetchPostGradWarRoomCampaignFeed({
-          chainId: Number(activeChainId || 97),
+          chainId,
           mode: activeMode,
           search,
           signal: controller.signal,
         });
         if (cancelled) return;
-        const items = Array.isArray(json?.items) ? json.items : [];
-        setCampaigns(items.map((item: any, index: number) => normalizeApiCampaign(item, index)).filter((campaign: WarRoomCampaign) => campaign.campaign));
-        setSource(items.length ? "api" : "empty");
+        const apiItems = Array.isArray(json?.items) ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index)) : [];
+        const draftItems = activeMode === "draft" ? await fetchDraftCampaignsForWarRoom(chainId) : [];
+        if (cancelled) return;
+        const merged = [...apiItems, ...draftItems]
+          .filter((campaign: WarRoomCampaign) => campaign.campaign)
+          .filter((campaign, index, all) => all.findIndex((other) => String(other.campaign) === String(campaign.campaign)) === index);
+        setCampaigns(merged);
+        setSource(merged.length ? "api" : "empty");
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error("[useWarRoomCampaignFeed] failed to load campaigns", loadError);
