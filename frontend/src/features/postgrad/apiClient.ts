@@ -9,12 +9,14 @@ export type PostGradCampaignFeedParams = {
   chainId?: number | string | null;
   limit?: number;
   bnbUsd?: number | null;
+  includeTestnet?: boolean;
   signal?: AbortSignal;
 };
 
 export type PostGradFeaturedFeedParams = {
   chainId?: number | string | null;
   limit?: number;
+  includeTestnet?: boolean;
   signal?: AbortSignal;
 };
 
@@ -45,8 +47,21 @@ function envFlag(value: unknown): boolean {
   return /^(1|true|yes|on)$/i.test(String(value ?? "").trim());
 }
 
+export function isTestnetCampaignsEnabled(): boolean {
+  return envFlag(import.meta.env.VITE_ENABLE_TESTNET_CAMPAIGNS) || envFlag(import.meta.env.VITE_WAR_ROOM_INCLUDE_TESTNET);
+}
+
 export function isWarRoomTestnetFeedEnabled(): boolean {
-  return envFlag(import.meta.env.VITE_WAR_ROOM_INCLUDE_TESTNET) || envFlag(import.meta.env.VITE_ENABLE_TESTNET_CAMPAIGNS);
+  return isTestnetCampaignsEnabled();
+}
+
+function applyTestnetCampaignParams(params: URLSearchParams, includeTestnet?: boolean): void {
+  const shouldIncludeTestnet = includeTestnet ?? isTestnetCampaignsEnabled();
+  if (!shouldIncludeTestnet) return;
+  params.set("includeTestnet", "true");
+  params.set("testnet", "true");
+  params.set("includeDrafts", "true");
+  params.set("status", "all");
 }
 
 async function readJson(response: Response): Promise<JsonObject | null> {
@@ -140,17 +155,18 @@ export async function fetchPostGradSponsoredFeed({ chainId = 97, limit = 4, sign
   return fetchJson(`/api/sponsored?${params.toString()}`, { cache: "no-store", signal });
 }
 
-export async function fetchPostGradFeaturedFeed({ chainId = 97, limit = 6, signal }: PostGradFeaturedFeedParams) {
+export async function fetchPostGradFeaturedFeed({ chainId = 97, limit = 6, includeTestnet, signal }: PostGradFeaturedFeedParams) {
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     sort: "24h",
     limit: String(limit),
   });
+  applyTestnetCampaignParams(params, includeTestnet);
 
   return fetchJson(`/api/featured?${params.toString()}`, { cache: "no-store", signal });
 }
 
-export async function fetchPostGradCampaignFeed({ chainId = 97, limit = 12, bnbUsd, signal }: PostGradCampaignFeedParams) {
+export async function fetchPostGradCampaignFeed({ chainId = 97, limit = 12, bnbUsd, includeTestnet, signal }: PostGradCampaignFeedParams) {
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     limit: String(limit),
@@ -160,6 +176,7 @@ export async function fetchPostGradCampaignFeed({ chainId = 97, limit = 12, bnbU
     sort: "default",
   });
   if (bnbUsd && Number.isFinite(bnbUsd)) params.set("bnbUsd", String(bnbUsd));
+  applyTestnetCampaignParams(params, includeTestnet);
 
   return fetchJson(`/api/campaigns?${params.toString()}`, { cache: "no-store", signal });
 }
@@ -172,19 +189,13 @@ export async function fetchPostGradWarRoomCampaignFeed({
   includeTestnet,
   signal,
 }: PostGradWarRoomCampaignFeedParams) {
-  const shouldIncludeTestnet = includeTestnet ?? isWarRoomTestnetFeedEnabled();
   const params = new URLSearchParams({
     chainId: String(chainId || 97),
     limit: String(limit),
     mode,
   });
   if (search.trim()) params.set("search", search.trim());
-  if (shouldIncludeTestnet) {
-    params.set("includeTestnet", "true");
-    params.set("testnet", "true");
-    params.set("includeDrafts", "true");
-    params.set("status", "all");
-  }
+  applyTestnetCampaignParams(params, includeTestnet);
 
   return fetchJson(`/api/war-room?${params.toString()}`, { cache: "no-store", signal });
 }
