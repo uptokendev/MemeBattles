@@ -1,8 +1,9 @@
-import { Gift, Trophy, type LucideIcon } from "lucide-react";
+import { Gift, Trophy, Users, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
+import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
 type RewardCardState = "claimable" | "pending" | "ineligible" | "locked" | "empty";
 
@@ -15,24 +16,47 @@ type RewardCardConfig = {
   state: RewardCardState;
 };
 
-const rewardCards: RewardCardConfig[] = [
-  {
-    title: "League Rewards",
-    description: "Rewards earned from weekly or monthly league placements will appear here.",
-    icon: Trophy,
-    buttonLabel: "Claim League Rewards",
-    amountLabel: "0",
-    state: "empty",
-  },
-  {
-    title: "Airdrop Rewards",
-    description: "Airdrop rewards connected to this wallet will appear here.",
-    icon: Gift,
-    buttonLabel: "Claim Airdrop Rewards",
-    amountLabel: "0",
-    state: "empty",
-  },
-];
+function normalizeSquadState(value?: string | null) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function hasActiveSquad(value?: string | null) {
+  const state = normalizeSquadState(value);
+  return Boolean(state && !["none", "unassigned", "inactive", "left", "removed", "locked"].includes(state));
+}
+
+function buildRewardCards(squadState?: string | null): RewardCardConfig[] {
+  const inSquad = hasActiveSquad(squadState);
+
+  return [
+    {
+      title: "League Rewards",
+      description: "Rewards earned from weekly or monthly league placements will appear here.",
+      icon: Trophy,
+      buttonLabel: "Claim League Rewards",
+      amountLabel: "0",
+      state: "empty",
+    },
+    {
+      title: "Airdrop Rewards",
+      description: "Airdrop rewards connected to this wallet will appear here.",
+      icon: Gift,
+      buttonLabel: "Claim Airdrop Rewards",
+      amountLabel: "0",
+      state: "empty",
+    },
+    {
+      title: "Squad Rewards",
+      description: inSquad
+        ? "Squad rewards earned through your recruiter squad will appear here."
+        : "Squad rewards unlock once you join a recruiter squad.",
+      icon: Users,
+      buttonLabel: "Claim Squad Rewards",
+      amountLabel: "0",
+      state: inSquad ? "empty" : "locked",
+    },
+  ];
+}
 
 function getRewardStateCopy(state: RewardCardState) {
   switch (state) {
@@ -57,7 +81,7 @@ function getRewardStateCopy(state: RewardCardState) {
     case "locked":
       return {
         label: "Locked",
-        amountCaption: "Unlock required",
+        amountCaption: "Join a squad to unlock",
         disabled: true,
       };
     case "empty":
@@ -71,10 +95,13 @@ function getRewardStateCopy(state: RewardCardState) {
 }
 
 export default function CommandCenterClaims() {
+  const { attribution } = useCommandCenterData();
+  const rewardCards = buildRewardCards(attribution?.squadState);
+
   return (
     <div className="space-y-4">
       <CommandCenterCard title="Your Rewards">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-3">
           {rewardCards.map((card) => {
             const Icon = card.icon;
             const stateCopy = getRewardStateCopy(card.state);
