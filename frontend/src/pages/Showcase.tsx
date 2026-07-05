@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ThumbsUp } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { ChainFeedSwitch } from "@/components/common/ChainFeedSwitch";
 import { CampaignGrid, HomeQuery } from "@/components/home/CampaignGrid";
 import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
@@ -64,24 +64,19 @@ const Showcase = () => {
 
   return (
     <div className="mwz-launchpad-page h-full overflow-y-auto">
-      {/* Hero section stays full width */}
       <div className="mwz-launchpad-inner">
         <HeaderBand showTicker={false} />
       </div>
 
-      {/* All content below the hero (including ticker) uses standard constrained width */}
       <ContentContainer className="relative px-1 md:px-2 pb-10 space-y-3">
-        {/* Pull ticker flush against the bottom of the full-width hero */}
         <CampaignTickerBar className="-mt-12 !pt-0" />
 
         <div className="relative z-20 -mt-1 mb-2 md:-mt-2 md:mb-3">
           <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            {/* Featured Campaigns - bare so individual cards float like the drafts below */}
             <div className="flex-1 min-w-0">
               <FeaturedCampaigns bare />
             </div>
 
-            {/* Recruiter card on the right - sized + positioned per annotation in thisweneed2.png */}
             <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 lg:pt-10">
               <AudienceCard
                 tone="recruiter"
@@ -100,16 +95,19 @@ const Showcase = () => {
           </div>
         </div>
 
-        <div className="mwz-live-heading flex flex-col gap-1 pt-2">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
-            {isDraftRow ? "Prepare Mode" : "Live Warzone"}
+        <div className="mwz-live-heading flex flex-col gap-3 pt-2 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.22em] text-accent">
+              {isDraftRow ? "Prepare Mode" : "Live Warzone"}
+            </div>
+            <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
+              {isDraftRow ? "Draft Campaigns" : "Explore Campaigns"}
+            </h2>
+            <p className="max-w-2xl text-sm text-success/65">
+              {isDraftRow ? "Drafts waiting for launch." : "Live, new, ending, and graduated campaigns across the selected chain."}
+            </p>
           </div>
-          <h2 className="mwz-section-title text-2xl text-success md:text-3xl">
-            {isDraftRow ? "Draft Campaigns" : "Explore Campaigns"}
-          </h2>
-          <p className="max-w-2xl text-sm text-success/65">
-            {isDraftRow ? "Drafts waiting for launch." : "Live, new, ending, and graduated campaigns across the selected chain."}
-          </p>
+          <ChainFeedSwitch className="shrink-0 self-start md:self-auto" />
         </div>
 
         <DiscoveryControls query={effectiveQuery} onChange={setQuery} />
