@@ -99,7 +99,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     unreadCount: unreadNotifications,
     markOneRead,
     markAllRead,
-  } = usePrepareNotificationCenter(wallet.account, 20);
+  } = usePrepareNotificationCenter(account, 20);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -189,6 +189,15 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     await markOneRead(notification.id);
     setNotificationOpen(false);
     navigate(notification.target);
+  };
+
+  const openNotificationSettings = () => {
+    setNotificationOpen(false);
+    if (account) {
+      navigate(`/profile/${encodeURIComponent(account)}/command/settings#notifications`);
+      return;
+    }
+    navigate("/profile?tab=settings");
   };
 
   return (
@@ -301,10 +310,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setNotificationOpen(false);
-                        navigate("/profile?tab=notifications");
-                      }}
+                      onClick={openNotificationSettings}
                       className="mt-1 w-full border border-border/70 px-3 py-2 text-center font-retro text-xs uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
                     >
                       View all
