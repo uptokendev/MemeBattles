@@ -166,8 +166,8 @@ function TacticalSwitch<T extends string>({
         className="group flex min-h-10 w-full min-w-[190px] items-center justify-between gap-3 rounded border border-accent/35 bg-black/45 px-3 py-2 text-xs uppercase tracking-[0.18em] shadow-[inset_0_0_18px_rgba(0,0,0,0.65)] transition hover:border-accent/70 disabled:cursor-not-allowed disabled:opacity-55"
       >
         <span className={checked ? "text-muted-foreground" : "text-foreground"}>{left.label}</span>
-        <span className="relative h-5 w-11 rounded-full border border-accent/45 bg-card/80 shadow-[0_0_14px_rgba(245,132,32,0.18)]">
-          <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-sm border border-white/30 bg-accent shadow-[0_0_12px_rgba(245,132,32,0.45)] transition-transform ${checked ? "translate-x-[1.55rem]" : "translate-x-1"}`} />
+        <span className="relative h-5 w-11 shrink-0 rounded-full border border-accent/45 bg-card/80 shadow-[0_0_14px_rgba(245,132,32,0.18)]">
+          <span className={`absolute left-1 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-sm border border-white/30 bg-accent shadow-[0_0_12px_rgba(245,132,32,0.45)] transition-transform ${checked ? "translate-x-6" : "translate-x-0"}`} />
         </span>
         <span className={checked ? "text-foreground" : "text-muted-foreground"}>{right.label}</span>
       </button>
@@ -187,8 +187,8 @@ function LeagueSwitch({ selected, period, onSelect }: { selected: LeagueKey; per
             type="button"
             onClick={() => onSelect(league.key)}
             className={[
-              "mwz-hud-frame min-h-[118px] border border-accent/25 p-4 text-left transition hover:border-accent/85 hover:bg-accent/10 hover:shadow-[0_0_22px_rgba(245,132,32,0.16)]",
-              active ? "border-accent/90 bg-accent/12 shadow-[0_0_24px_rgba(245,132,32,0.2)]" : "bg-card/70",
+              "mwz-hud-frame min-h-[118px] !border !border-accent/30 p-4 text-left transition hover:!border-accent hover:!bg-accent/10 hover:!shadow-[0_0_26px_rgba(245,132,32,0.22)] focus-visible:!border-accent",
+              active ? "!border-accent bg-accent/12 !shadow-[0_0_28px_rgba(245,132,32,0.26)]" : "bg-card/70",
             ].join(" ")}
           >
             <div className="flex items-start justify-between gap-3">
