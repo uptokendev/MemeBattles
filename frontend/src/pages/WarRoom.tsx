@@ -163,7 +163,6 @@ const WarRoom = () => {
               <div className="text-[10px] uppercase tracking-[0.28em] text-orange-400">Trade War Room</div>
               <h1 className="mt-2 text-2xl font-semibold uppercase tracking-[0.08em] text-white md:text-3xl">War Trade Room</h1>
               <div className="mt-2 max-w-3xl text-sm leading-6 text-white/62 md:text-base">
-                Scan live memecoin rows, compare trade signals, and jump into token details from one clean launchpad view.
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">

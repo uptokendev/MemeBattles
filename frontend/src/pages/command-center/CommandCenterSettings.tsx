@@ -65,14 +65,12 @@ export default function CommandCenterSettings() {
     <div className="space-y-4">
       <CommandCenterPageHeader
         title="Settings"
-        description="Manage profile identity, wallet visibility, notifications, privacy expectations, and safe Command Center preferences."
       />
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <CommandCenterCard
           title="Profile settings"
-          description="Update the public identity attached to this wallet. Saves use the existing wallet-signature profile flow."
-        >
+                  >
           <div className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-background/25 p-4 sm:flex-row sm:items-center">
             <img
               src={avatarUrl}
@@ -123,8 +121,7 @@ export default function CommandCenterSettings() {
 
         <CommandCenterCard
           title="Wallet / linked address"
-          description="This Command Center is locked to the owner wallet in the URL. Wrong-wallet access is blocked by the Command Center shell."
-        >
+                  >
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="mb-2 flex items-center gap-2 font-retro text-sm text-foreground">
@@ -175,7 +172,7 @@ export default function CommandCenterSettings() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <CommandCenterCard title="Notifications" description="Command Center notification controls will live here.">
+        <CommandCenterCard title="Notifications" >
           <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
             <Bell className="mb-3 h-5 w-5 text-accent" />
             <div className="font-retro text-sm text-foreground">Profile notifications enabled by default</div>
@@ -185,39 +182,10 @@ export default function CommandCenterSettings() {
           </div>
         </CommandCenterCard>
 
-        <CommandCenterCard title="Privacy" description="Private dashboard data stays separated from public profiles.">
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
-            <Lock className="mb-3 h-5 w-5 text-accent" />
-            <div className="font-retro text-sm text-foreground">Owner-only surfaces</div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Rewards, attribution, claim history, squad posture, and private dashboard data require the matching connected wallet.
-            </p>
-          </div>
-        </CommandCenterCard>
-
-        <CommandCenterCard title="Public visibility" description="Quick reminder of what visitors can see.">
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
-            <Eye className="mb-3 h-5 w-5 text-accent" />
-            <div className="font-retro text-sm text-foreground">Public profile remains public</div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Visitors can view your public profile, created coins, public recruiter pages, public squads, and published airdrop winners.
-            </p>
-          </div>
-        </CommandCenterCard>
+        
       </div>
 
-      <CommandCenterCard
-        title="Safe settings boundary"
-        description="No admin-only controls, private anti-abuse thresholds, reward math, vault controls, or treasury routing live in user settings."
-      >
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {["Profile identity", "Avatar", "Notification preferences", "Wallet visibility", "Privacy explanation", "Public profile shortcut", "Create coin shortcut", "Owner access guard"].map((item) => (
-            <div key={item} className="rounded-2xl border border-border/50 bg-background/25 p-3 text-sm text-muted-foreground">
-              {item}
-            </div>
-          ))}
-        </div>
-      </CommandCenterCard>
+      
     </div>
   );
 }

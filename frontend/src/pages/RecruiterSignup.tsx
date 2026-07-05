@@ -263,9 +263,6 @@ export default function RecruiterSignup() {
         <div className="max-w-3xl space-y-4">
           <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Recruiter signup</p>
           <h1 className="font-retro text-3xl text-foreground md:text-5xl">Claim your recruiter identity.</h1>
-          <p className="text-sm text-muted-foreground md:text-base">
-            This wallet-first form creates the recruiter application payload and requires a wallet signature before submission. If the backend signup endpoint is not enabled yet, the form will tell you cleanly instead of failing silently.
-          </p>
         </div>
       </Card>
 

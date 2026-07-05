@@ -355,12 +355,7 @@ export default function CommandCenterCoins() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        title="Coins & Drafts"
-        description="Coins you launched, battle controls, and Prepare Mode drafts owned by this wallet."
-      />
-
-      <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-3">
         <div className="mwz-hud-frame p-4">
           <div className="mb-3 flex items-center gap-2 text-muted-foreground">
             <Coins className="h-4 w-4 text-accent" />
