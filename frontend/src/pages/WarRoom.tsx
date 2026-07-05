@@ -9,7 +9,7 @@ import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
-type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
+type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath" | "follows" | "optIns" | "comments";
 type SortDirection = "desc" | "asc";
 
 const terminalModes: Array<{ key: WarRoomMode; label: string }> = [
@@ -19,13 +19,31 @@ const terminalModes: Array<{ key: WarRoomMode; label: string }> = [
   { key: "draft", label: "Drafts" },
 ];
 
-const sortButtons: Array<{ key: SortKey; label: string }> = [
+const marketSortButtons: Array<{ key: SortKey; label: string }> = [
   { key: "marketCap", label: "Market Cap" },
   { key: "liquidity", label: "Liquidity" },
   { key: "volume", label: "Volume" },
   { key: "holders", label: "Holders" },
   { key: "ath", label: "All-time high" },
 ];
+
+const draftSortButtons: Array<{ key: SortKey; label: string }> = [
+  { key: "follows", label: "Follows" },
+  { key: "optIns", label: "Opt-Ins" },
+  { key: "comments", label: "Comments" },
+];
+
+function draftMetricValue(campaign: WarRoomCampaign, key: "follows" | "optIns" | "comments") {
+  const rich = campaign as any;
+  const value =
+    key === "follows"
+      ? rich.draftFollowCount
+      : key === "optIns"
+        ? rich.draftOptInCount
+        : rich.draftCommentCount;
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
 
 function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKey) {
   const metrics = getWarRoomCampaignMetrics(campaign, bnbUsd);
@@ -40,6 +58,12 @@ function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKe
       return metrics.holdersCount;
     case "ath":
       return metrics.athMarketCapUsd;
+    case "follows":
+      return draftMetricValue(campaign, "follows");
+    case "optIns":
+      return draftMetricValue(campaign, "optIns");
+    case "comments":
+      return draftMetricValue(campaign, "comments");
     default:
       return 0;
   }
@@ -62,6 +86,7 @@ const WarRoom = () => {
 
   const [logoCache, setLogoCache] = useState<Record<string, string>>({});
   const { fetchCampaignLogoURI } = useLaunchpad();
+  const metricButtons = activeMode === "draft" ? draftSortButtons : marketSortButtons;
 
   useEffect(() => {
     setLogoCache({});
@@ -129,6 +154,10 @@ const WarRoom = () => {
           return Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0);
         }
 
+        if (activeMode === "draft") {
+          return draftMetricValue(right, "follows") - draftMetricValue(left, "follows");
+        }
+
         const leftMetrics = getWarRoomCampaignMetrics(left, bnbUsd ?? 0);
         const rightMetrics = getWarRoomCampaignMetrics(right, bnbUsd ?? 0);
         return rightMetrics.trendScore - leftMetrics.trendScore;
@@ -191,7 +220,7 @@ const WarRoom = () => {
           </div>
 
           <div className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {sortButtons.map((button) => {
+            {metricButtons.map((button) => {
               const active = sortKey === button.key;
               const directionLabel = active ? (sortDirection === "desc" ? "↓" : "↑") : "";
               return (
@@ -216,9 +245,12 @@ const WarRoom = () => {
       ) : null}
 
       <section className="mwz-hud-frame overflow-hidden">
-        <div className="hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid">
+        <div className={activeMode === "draft"
+          ? "hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_28px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid"
+          : "hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid"}
+        >
           <div>Coin info</div>
-          {sortButtons.map((button) => {
+          {metricButtons.map((button) => {
             const active = sortKey === button.key;
             const directionLabel = active ? (sortDirection === "desc" ? "↓" : "↑") : "";
             return (
