@@ -189,59 +189,61 @@ export default function CommandCenterSettings() {
         </CommandCenterCard>
       </div>
 
-      <CommandCenterCard title="Notifications">
-        <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <Bell className="h-5 w-5 text-accent" />
-            <div>
-              <div className="font-retro text-sm text-foreground">Profile notifications</div>
-              <p className="text-sm text-muted-foreground">
-                Same feed and read state as the top-bar notification bell.
-              </p>
+      <div id="notifications" className="scroll-mt-24">
+        <CommandCenterCard title="Notifications">
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <Bell className="h-5 w-5 text-accent" />
+              <div>
+                <div className="font-retro text-sm text-foreground">Profile notifications</div>
+                <p className="text-sm text-muted-foreground">
+                  Launch alerts, Prepare Mode updates, and community activity for this wallet.
+                </p>
+              </div>
             </div>
+            <Button onClick={() => void markAllRead()} variant="outline" className="font-retro" disabled={!notifications.length || unreadCount === 0}>
+              Mark all read{unreadCount ? ` (${unreadCount})` : ""}
+            </Button>
           </div>
-          <Button onClick={() => void markAllRead()} variant="outline" className="font-retro" disabled={!notifications.length}>
-            Mark all read{unreadCount ? ` (${unreadCount})` : ""}
-          </Button>
-        </div>
 
-        <div className="mt-4 space-y-3">
-          {loadingNotifications && !notifications.length ? (
-            <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
-              Loading notifications...
-            </div>
-          ) : null}
+          <div className="mt-4 space-y-3">
+            {loadingNotifications && !notifications.length ? (
+              <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+                Loading notifications...
+              </div>
+            ) : null}
 
-          {!loadingNotifications && notifications.length === 0 ? (
-            <div className="rounded-2xl border border-border/50 bg-background/25 p-6 text-center text-sm text-muted-foreground">
-              No notifications yet.
-            </div>
-          ) : null}
+            {!loadingNotifications && notifications.length === 0 ? (
+              <div className="rounded-2xl border border-border/50 bg-background/25 p-6 text-center text-sm text-muted-foreground">
+                No notifications yet.
+              </div>
+            ) : null}
 
-          {notifications.map((notification) => (
-            <button
-              key={notification.id}
-              type="button"
-              onClick={() => void handleOpenNotification(notification)}
-              className="flex w-full items-start gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 text-left transition hover:border-accent/60 hover:bg-success/10"
-            >
-              <span className={`mt-1 h-2.5 w-2.5 shrink-0 ${notification.read ? "bg-muted" : "bg-accent"}`} />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                  <span className="font-retro text-sm text-foreground">{notification.title}</span>
-                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                    {formatNotificationDate(notification.createdAt)}
+            {notifications.map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                onClick={() => void handleOpenNotification(notification)}
+                className="flex w-full items-start gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 text-left transition hover:border-accent/60 hover:bg-success/10"
+              >
+                <span className={`mt-1 h-2.5 w-2.5 shrink-0 ${notification.read ? "bg-muted" : "bg-accent"}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <span className="font-retro text-sm text-foreground">{notification.title}</span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                      {formatNotificationDate(notification.createdAt)}
+                    </span>
                   </span>
+                  <span className="mt-1 block text-sm leading-6 text-muted-foreground">{notification.body}</span>
                 </span>
-                <span className="mt-1 block text-sm leading-6 text-muted-foreground">{notification.body}</span>
-              </span>
-              <span className="hidden rounded-full border border-border/50 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground md:block">
-                {notification.kind}
-              </span>
-            </button>
-          ))}
-        </div>
-      </CommandCenterCard>
+                <span className="hidden rounded-full border border-border/50 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground md:block">
+                  {notification.kind}
+                </span>
+              </button>
+            ))}
+          </div>
+        </CommandCenterCard>
+      </div>
     </div>
   );
 }
