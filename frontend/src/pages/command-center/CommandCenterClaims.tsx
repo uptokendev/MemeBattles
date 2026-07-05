@@ -26,9 +26,7 @@ function hasActiveSquad(value?: string | null) {
 }
 
 function buildRewardCards(squadState?: string | null): RewardCardConfig[] {
-  const inSquad = hasActiveSquad(squadState);
-
-  return [
+  const cards: RewardCardConfig[] = [
     {
       title: "League Rewards",
       description: "Rewards earned from weekly or monthly league placements will appear here.",
@@ -45,17 +43,20 @@ function buildRewardCards(squadState?: string | null): RewardCardConfig[] {
       amountLabel: "0",
       state: "empty",
     },
-    {
+  ];
+
+  if (hasActiveSquad(squadState)) {
+    cards.push({
       title: "Squad Rewards",
-      description: inSquad
-        ? "Squad rewards earned through your recruiter squad will appear here."
-        : "Squad rewards unlock once you join a recruiter squad.",
+      description: "Squad rewards earned through your recruiter squad will appear here.",
       icon: Users,
       buttonLabel: "Claim Squad Rewards",
       amountLabel: "0",
-      state: inSquad ? "empty" : "locked",
-    },
-  ];
+      state: "empty",
+    });
+  }
+
+  return cards;
 }
 
 function getRewardStateCopy(state: RewardCardState) {
@@ -81,7 +82,7 @@ function getRewardStateCopy(state: RewardCardState) {
     case "locked":
       return {
         label: "Locked",
-        amountCaption: "Join a squad to unlock",
+        amountCaption: "Unlock required",
         disabled: true,
       };
     case "empty":
@@ -101,7 +102,7 @@ export default function CommandCenterClaims() {
   return (
     <div className="space-y-4">
       <CommandCenterCard title="Your Rewards">
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {
             const Icon = card.icon;
             const stateCopy = getRewardStateCopy(card.state);
