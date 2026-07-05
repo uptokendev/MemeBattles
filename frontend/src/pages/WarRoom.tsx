@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { ChainFeedSwitch, useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
-import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
@@ -151,9 +150,6 @@ const WarRoom = () => {
     setSortDirection("desc");
   };
 
-  const sourceLabel = source === "api" ? "Live trade data" : "Data unavailable";
-  const sourceTone = source === "api" ? "success" : "default";
-
   return (
     <ContentContainer className="space-y-4 px-3 pb-10 pt-20 md:px-5 md:pt-24 lg:pt-24">
       <section className="mwz-hud-frame px-4 py-4 md:px-6 md:py-5">
@@ -162,13 +158,9 @@ const WarRoom = () => {
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.28em] text-orange-400">Trade War Room</div>
               <h1 className="mt-2 text-2xl font-semibold uppercase tracking-[0.08em] text-white md:text-3xl">War Trade Room</h1>
-              <div className="mt-2 max-w-3xl text-sm leading-6 text-white/62 md:text-base">
-              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ChainFeedSwitch />
-              <TacticalTag label={terminalModes.find((mode) => mode.key === activeMode)?.label ?? "Trending"} tone="sponsored" />
-              <TacticalTag label={sourceLabel} tone={sourceTone} />
             </div>
           </div>
 
@@ -251,7 +243,7 @@ const WarRoom = () => {
           ) : (
             <div className="py-10 text-center text-sm text-white/55">
               {source === "empty"
-                ? activeMode === "draft" ? "No public drafts are available on this chain yet." : "Coin data isn’t available right now."
+                ? activeMode === "draft" ? "No public drafts are available on this chain yet." : "Coin data isn't available right now."
                 : search.trim()
                   ? "No coins match your filters."
                   : "No coins are available right now."}
