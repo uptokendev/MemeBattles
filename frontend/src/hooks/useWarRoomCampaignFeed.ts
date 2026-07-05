@@ -78,6 +78,9 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
 }
 
 function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoomCampaign {
+  const draftSlug = String(draft.slug || "").trim();
+  const promotionHref = draftSlug ? `/prepare/${draftSlug}` : `/drafts/${draft.id}`;
+
   return {
     id: 200000 + index,
     chainId: Number(draft.chainId),
@@ -96,8 +99,13 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoom
     isActive: false,
     isDexTrading: false,
     draftId: draft.id,
-    draftSlug: draft.slug,
+    draftSlug,
     draftStatus: draft.status,
+    draftVisibility: draft.visibility,
+    draftCategory: draft.category,
+    draftDescription: draft.description || "No promotion description has been added yet.",
+    draftUpdatedAt: draft.updatedAt,
+    promotionHref,
   } as WarRoomCampaign;
 }
 
