@@ -18,13 +18,33 @@ const ROUTES = [
   { pattern: /^\/war-room(?:\/.*)?$/, flag: "POSTGRAD_WAR_ROOM_ENABLED", handler: warRoom },
 ];
 
+function truthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value ?? "").trim());
+}
+
 function enabled(name) {
-  const value = String(process.env[name] || "").trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
+  return truthy(process.env[name]);
 }
 
 function routePath(req) {
   return String(req.path || new URL(req.url, "http://localhost").pathname);
+}
+
+function routeQuery(req) {
+  return new URL(req.url, "http://localhost").searchParams;
+}
+
+function warRoomTestnetReadEnabled(req, path) {
+  if (path !== "/war-room") return false;
+  if (String(req.method || "GET").toUpperCase() !== "GET") return false;
+  const query = routeQuery(req);
+  return (
+    truthy(query.get("includeTestnet")) ||
+    truthy(query.get("testnet")) ||
+    truthy(process.env.VITE_ENABLE_TESTNET_CAMPAIGNS) ||
+    truthy(process.env.VITE_WAR_ROOM_INCLUDE_TESTNET) ||
+    truthy(process.env.WAR_ROOM_INCLUDE_TESTNET)
+  );
 }
 
 function disabledReadPayload(path, flag) {
@@ -73,6 +93,10 @@ export default async function handler(req, res) {
   if (!route) return res.status(404).json({ error: `Unknown postgrad route: ${path}` });
 
   if (!enabled(route.flag)) {
+    if (warRoomTestnetReadEnabled(req, path)) {
+      return route.handler(req, res);
+    }
+
     if (isSafeDisabledRead(req, path)) {
       return res.status(200).json(disabledReadPayload(path, route.flag));
     }
