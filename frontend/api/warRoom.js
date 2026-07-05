@@ -2,6 +2,8 @@ import { pool } from "../server/db.js";
 import { badMethod, getQuery, isAddress, isSolanaAddress, isSolanaChain, json, normalizeAddress as normalizeChainAddress } from "../server/http.js";
 
 const DEFAULT_GRAD_TARGET_BNB = 50;
+const BNB_CHAIN_ID = 56;
+const BNB_TESTNET_CHAIN_ID = 97;
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -15,6 +17,27 @@ function toInt(value, fallback) {
 function toFloat(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function truthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value ?? "").trim());
+}
+
+function testnetCampaignsEnabled(q) {
+  return (
+    truthy(q.includeTestnet) ||
+    truthy(q.testnet) ||
+    truthy(process.env.VITE_ENABLE_TESTNET_CAMPAIGNS) ||
+    truthy(process.env.VITE_WAR_ROOM_INCLUDE_TESTNET) ||
+    truthy(process.env.WAR_ROOM_INCLUDE_TESTNET)
+  );
+}
+
+function resolveWarRoomChainIds(chainId, includeTestnet) {
+  if (isSolanaChain(chainId)) return [chainId];
+  if (chainId === BNB_TESTNET_CHAIN_ID) return [BNB_TESTNET_CHAIN_ID];
+  if (chainId === BNB_CHAIN_ID && includeTestnet) return [BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID];
+  return [chainId || BNB_CHAIN_ID];
 }
 
 function normalizeMode(value) {
@@ -42,13 +65,11 @@ function buildSearchFilter(search, params) {
   return `(c.name ilike $${idx} or c.symbol ilike $${idx} or c.campaign_address::text ilike $${idx} or c.creator_address::text ilike $${idx})`;
 }
 
-function buildDetailFilter(detailAddress, chainId, params) {
+function buildDetailFilter(detailAddress, params) {
   if (!detailAddress) return null;
   params.push(detailAddress);
   const idx = params.length;
-  return isSolanaChain(chainId)
-    ? `c.campaign_address::text = $${idx}`
-    : `lower(c.campaign_address::text) = lower($${idx})`;
+  return `(c.campaign_address::text = $${idx} or lower(c.campaign_address::text) = lower($${idx}))`;
 }
 
 function modeFilter(mode) {
@@ -146,11 +167,11 @@ function detailPayload(row, watchlist) {
   };
 }
 
-async function fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb }) {
-  const params = [chainId, gradTargetBnb];
-  const filters = ["c.chain_id = $1", "c.campaign_address is not null"];
+async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, gradTargetBnb }) {
+  const params = [chainIds, gradTargetBnb];
+  const filters = ["c.chain_id = any($1::int[])", "c.campaign_address is not null"];
   const searchFilter = buildSearchFilter(search, params);
-  const detailFilter = buildDetailFilter(detailAddress, chainId, params);
+  const detailFilter = buildDetailFilter(detailAddress, params);
   const modeClause = detailAddress ? null : modeFilter(mode);
   if (searchFilter) filters.push(searchFilter);
   if (detailFilter) filters.push(detailFilter);
@@ -275,7 +296,7 @@ async function fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, g
       trending_score as "trendingScore",
       $2::numeric as "gradTargetBnb"
     from calc
-    order by ${detailAddress ? "campaign_address asc" : orderByForMode(mode)}
+    order by ${detailAddress ? "chain_id desc, campaign_address asc" : orderByForMode(mode)}
     limit $${params.length}
   `;
 
@@ -283,11 +304,11 @@ async function fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, g
   return result.rows;
 }
 
-async function fetchBasicWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb }) {
-  const params = [chainId, gradTargetBnb];
-  const filters = ["c.chain_id = $1", "c.campaign_address is not null"];
+async function fetchBasicWarRoomRows({ chainIds, mode, search, detailAddress, limit, gradTargetBnb }) {
+  const params = [chainIds, gradTargetBnb];
+  const filters = ["c.chain_id = any($1::int[])", "c.campaign_address is not null"];
   const searchFilter = buildSearchFilter(search, params);
-  const detailFilter = buildDetailFilter(detailAddress, chainId, params);
+  const detailFilter = buildDetailFilter(detailAddress, params);
   const modeClause = detailAddress ? null : modeFilter(mode);
   if (searchFilter) filters.push(searchFilter);
   if (detailFilter) filters.push(detailFilter);
@@ -325,7 +346,7 @@ async function fetchBasicWarRoomRows({ chainId, mode, search, detailAddress, lim
        $2::numeric as "gradTargetBnb"
      from public.campaigns c
      where ${filters.join(" and ")}
-     order by ${detailAddress ? "c.campaign_address asc" : mode === "new" ? "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc" : "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc"}
+     order by ${detailAddress ? "c.chain_id desc, c.campaign_address asc" : mode === "new" ? "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc" : "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc"}
      limit $${params.length}`,
     params,
   );
@@ -337,7 +358,9 @@ export default async function handler(req, res) {
 
   try {
     const q = getQuery(req);
-    const chainId = toInt(q.chainId, 97);
+    const chainId = toInt(q.chainId, BNB_CHAIN_ID);
+    const includeTestnet = testnetCampaignsEnabled(q);
+    const chainIds = resolveWarRoomChainIds(chainId, includeTestnet);
     const detailAddress = String(q.campaignAddress || q.campaign || "").trim();
     const mode = normalizeMode(q.mode);
     const search = String(q.search || "").trim();
@@ -345,28 +368,31 @@ export default async function handler(req, res) {
     const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-    if (detailAddress && !addressLooksValid(detailAddress, chainId)) {
+    if (detailAddress && !chainIds.some((id) => addressLooksValid(detailAddress, id))) {
       return json(res, 400, { error: "Invalid campaign address", campaignAddress: detailAddress, updatedAt: new Date().toISOString() });
     }
 
     let rows;
     let warning = null;
     try {
-      rows = await fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb });
+      rows = await fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, gradTargetBnb });
     } catch (richError) {
       console.error("[api/warRoom] rich query failed; trying basic fallback", richError);
-      rows = await fetchBasicWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb });
+      rows = await fetchBasicWarRoomRows({ chainIds, mode, search, detailAddress, limit, gradTargetBnb });
       warning = "War Room is showing basic coin data while live metrics sync.";
     }
 
     if (detailAddress) {
       if (!rows[0]) return json(res, 404, { error: "War Room campaign detail not found", campaignAddress: detailAddress, updatedAt: new Date().toISOString() });
-      const watchlist = await watchlistState({ chainId, campaignAddress: detailAddress, userAddress: q.userAddress || q.user || q.wallet });
+      const rowChainId = Number(rows[0].chainId || chainId);
+      const watchlist = await watchlistState({ chainId: rowChainId, campaignAddress: rows[0].campaignAddress || detailAddress, userAddress: q.userAddress || q.user || q.wallet });
       return json(res, 200, detailPayload(rows[0], watchlist));
     }
 
     return json(res, 200, {
       items: rows.map(mapWarRoomRow),
+      chainIds,
+      includeTestnet,
       updatedAt: new Date().toISOString(),
       ...(warning ? { warning } : {}),
     });
