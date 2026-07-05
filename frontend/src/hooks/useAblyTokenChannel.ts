@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Ably from "ably";
 import { isAddress } from "ethers";
-import { isSolanaAddress } from "@/lib/address";
-import { isEvmChainId, isSolanaChainId } from "@/lib/chainConfig";
+import { isEvmChainId } from "@/lib/chainConfig";
 
 // Token realtime belongs to the realtime-indexer Railway service.
 const REALTIME_API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").trim();
@@ -23,10 +22,7 @@ function getAuthBase() {
 
 function isRealtimeCampaignAddress(chainId: number, campaign: string) {
   const raw = String(campaign || "").trim();
-  if (!raw) return false;
-  if (isSolanaChainId(chainId)) return isSolanaAddress(raw);
-  if (isEvmChainId(chainId)) return isAddress(raw);
-  return false;
+  return isEvmChainId(chainId) && isAddress(raw);
 }
 
 type Entry = {
