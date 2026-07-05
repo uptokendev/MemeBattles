@@ -355,7 +355,7 @@ export default function CommandCenterCoins() {
 
   return (
     <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         <div className="mwz-hud-frame p-4">
           <div className="mb-3 flex items-center gap-2 text-muted-foreground">
             <Coins className="h-4 w-4 text-accent" />
@@ -398,10 +398,10 @@ export default function CommandCenterCoins() {
               <button
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
-                className={`px-3 py-1 text-xs font-retro uppercase tracking-wider rounded border transition ${
+                className={`rounded border px-3 py-1 font-retro text-xs uppercase tracking-wider transition ${
                   isActive 
-                    ? 'bg-accent text-black border-accent' 
-                    : 'border-border/50 text-muted-foreground hover:bg-card/40 hover:text-foreground'
+                    ? 'border-accent bg-accent/10 text-accent shadow-[0_0_14px_rgba(255,122,26,0.20)]' 
+                    : 'border-success/25 text-success/70 hover:border-accent/60 hover:text-accent'
                 }`}
               >
                 {label}
