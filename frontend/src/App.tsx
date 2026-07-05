@@ -172,8 +172,8 @@ function AppShellLayout({
           {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
           <Route path="/sponsorships/apply" element={<SponsorshipApplication />} />
           {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
-          {postGradEnabled && postGradFlags.league ? <Route path="/league" element={<League />} /> : null}
-          {postGradEnabled && postGradFlags.league ? <Route path="/leagues" element={<Navigate to="/league" replace />} /> : null}
+          <Route path="/league" element={<League />} />
+          <Route path="/leagues" element={<Navigate to="/league" replace />} />
           {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
           <Route path="/create" element={<Create />} />
           <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
