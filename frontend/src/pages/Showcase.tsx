@@ -6,7 +6,7 @@ import { DiscoveryControls } from "@/components/home/DiscoveryControls";
 import { DraftCampaignGrid } from "@/components/home/DraftCampaignGrid";
 import { FeaturedCampaigns } from "@/components/home/FeaturedCampaigns";
 import { HeaderBand } from "@/components/home/HeaderBand";
-import { HomeAudienceCtas, AudienceCard } from "@/components/home/HomeAudienceCtas";
+import { AudienceCard } from "@/components/home/HomeAudienceCtas";
 import { CampaignTickerBar } from "@/components/home/CampaignTickerBar";
 import { ContentContainer } from "@/components/layout/ContentContainer";
 import { useWallet } from "@/contexts/WalletContext";
@@ -15,9 +15,8 @@ import { useWallet } from "@/contexts/WalletContext";
 const recruiterBg = "/assets/home/cta-recruiters-bg.png";
 const recruiterSoldier = "/assets/home/cta-recruiter-soldier.png";
 
-
 const Showcase = () => {
-  const [query, setQuery] = useState<HomeQuery>({ tab: "drafts", timeFilter: "24h", search: "" });
+  const [query, setQuery] = useState<HomeQuery>({ tab: "trending", timeFilter: "24h", search: "", status: "all" });
 
   useEffect(() => {
     const onSearch = (e: Event) => {
@@ -31,7 +30,7 @@ const Showcase = () => {
   const effectiveQuery = useMemo(() => {
     return {
       ...query,
-      tab: query.tab ?? "drafts",
+      tab: query.tab ?? "trending",
     } as HomeQuery;
   }, [query]);
 
@@ -109,7 +108,7 @@ const Showcase = () => {
             {isDraftRow ? "Draft Campaigns" : "Explore Campaigns"}
           </h2>
           <p className="max-w-2xl text-sm text-success/65">
-            {isDraftRow ? "" : ""}
+            {isDraftRow ? "Drafts waiting for launch." : "Live, new, ending, and graduated campaigns across the selected chain."}
           </p>
         </div>
 
