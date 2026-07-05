@@ -1,5 +1,7 @@
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, json } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, isSolanaChain, json, normalizeAddress as normalizeChainAddress } from "../server/http.js";
+
+const DEFAULT_GRAD_TARGET_BNB = 50;
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -10,8 +12,9 @@ function toInt(value, fallback) {
   return Number.isFinite(n) ? Math.trunc(n) : fallback;
 }
 
-function normalizeAddress(value) {
-  return String(value || "").trim().toLowerCase();
+function toFloat(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function normalizeMode(value) {
@@ -19,16 +22,86 @@ function normalizeMode(value) {
   return mode === "new" || mode === "graduated" || mode === "draft" ? mode : "trending";
 }
 
+function addressLooksValid(value, chainId) {
+  return isSolanaChain(chainId) ? isSolanaAddress(value) : isAddress(String(value || "").toLowerCase());
+}
+
+function normalizeOutputAddress(value, chainId) {
+  return normalizeChainAddress(value, chainId) || String(value || "").trim();
+}
+
 function emptyWarRoom(res, error) {
   console.error("[api/warRoom] query failed", error);
   return json(res, 200, { items: [], updatedAt: new Date().toISOString(), warning: "War Room campaign data is unavailable." });
 }
 
+function buildSearchFilter(search, params) {
+  if (!search) return null;
+  params.push(`%${search}%`);
+  const idx = params.length;
+  return `(c.name ilike $${idx} or c.symbol ilike $${idx} or c.campaign_address::text ilike $${idx} or c.creator_address::text ilike $${idx})`;
+}
+
+function buildDetailFilter(detailAddress, chainId, params) {
+  if (!detailAddress) return null;
+  params.push(detailAddress);
+  const idx = params.length;
+  return isSolanaChain(chainId)
+    ? `c.campaign_address::text = $${idx}`
+    : `lower(c.campaign_address::text) = lower($${idx})`;
+}
+
+function modeFilter(mode) {
+  if (mode === "graduated") return "c.graduated_at_chain is not null";
+  if (mode === "draft") return "coalesce(c.is_active, false) = false and c.graduated_at_chain is null";
+  return null;
+}
+
+function orderByForMode(mode) {
+  if (mode === "new") return "created_block desc nulls last, created_at_chain desc nulls last, campaign_address asc";
+  if (mode === "graduated") return "graduated_block desc nulls last, graduated_at_chain desc nulls last, last_activity_at desc nulls last, campaign_address asc";
+  return "trending_score desc nulls last, last_activity_at desc nulls last, created_block desc nulls last, campaign_address asc";
+}
+
+function mapWarRoomRow(row) {
+  const chainId = Number(row.chainId);
+  const graduatedAt = row.graduatedAtChain ? String(row.graduatedAtChain) : null;
+  return {
+    chainId,
+    campaignAddress: normalizeOutputAddress(row.campaignAddress, chainId),
+    tokenAddress: row.tokenAddress ? normalizeOutputAddress(row.tokenAddress, chainId) : null,
+    creatorAddress: row.creatorAddress ? normalizeOutputAddress(row.creatorAddress, chainId) : null,
+    name: row.name ?? null,
+    symbol: row.symbol ?? null,
+    logoUri: row.logoUri ?? null,
+    createdAtChain: row.createdAtChain ? String(row.createdAtChain) : null,
+    graduatedAtChain: graduatedAt,
+    isDexTrading: Boolean(graduatedAt),
+    isActive: Boolean(row.isActive),
+    status: graduatedAt ? "graduated" : row.isActive ? "live" : "draft",
+    lastActivityAt: row.lastActivityAt ? String(row.lastActivityAt) : null,
+    lastPriceBnb: row.lastPriceBnb != null ? String(row.lastPriceBnb) : null,
+    soldTokens: row.soldTokens != null ? String(row.soldTokens) : null,
+    marketcapBnb: row.marketcapBnb != null ? String(row.marketcapBnb) : null,
+    vol24hBnb: row.vol24hBnb != null ? String(row.vol24hBnb) : null,
+    holderCount: row.holderCount != null ? Number(row.holderCount) : 0,
+    athMarketcapBnb: row.athMarketcapBnb != null ? String(row.athMarketcapBnb) : null,
+    raisedTotalBnb: row.raisedTotalBnb != null ? String(row.raisedTotalBnb) : "0",
+    raised10mBnb: row.raised10mBnb != null ? String(row.raised10mBnb) : "0",
+    progressPct: row.progressPct != null ? Number(row.progressPct) : null,
+    etaSec: row.etaSec != null ? Number(row.etaSec) : null,
+    votes24h: row.votes24h != null ? Number(row.votes24h) : 0,
+    votesAllTime: row.votesAllTime != null ? Number(row.votesAllTime) : 0,
+    trendingScore: row.trendingScore != null ? Number(row.trendingScore) : 0,
+    gradTargetBnb: row.gradTargetBnb != null ? Number(row.gradTargetBnb) : DEFAULT_GRAD_TARGET_BNB,
+  };
+}
+
 async function watchlistState({ chainId, campaignAddress, userAddress }) {
-  const user = normalizeAddress(userAddress);
-  const campaign = normalizeAddress(campaignAddress);
-  if (!isAddress(user)) return { supported: true, following: false, reason: "wallet_not_connected" };
-  if (!isAddress(campaign)) return { supported: false, following: false, reason: "invalid_campaign_address" };
+  const user = normalizeChainAddress(userAddress, chainId);
+  const campaign = normalizeChainAddress(campaignAddress, chainId);
+  if (!addressLooksValid(user, chainId)) return { supported: true, following: false, reason: "wallet_not_connected" };
+  if (!addressLooksValid(campaign, chainId)) return { supported: false, following: false, reason: "invalid_campaign_address" };
 
   const result = await pool.query(
     `select 1 from public.campaign_follows where chain_id = $1 and user_address = $2 and campaign_address = $3 limit 1`,
@@ -38,43 +111,226 @@ async function watchlistState({ chainId, campaignAddress, userAddress }) {
 }
 
 function detailPayload(row, watchlist) {
-  const campaignAddress = normalizeAddress(row.campaignAddress);
-  const tokenAddress = row.tokenAddress ? normalizeAddress(row.tokenAddress) : null;
+  const chainId = Number(row.chainId);
+  const campaignAddress = normalizeOutputAddress(row.campaignAddress, chainId);
+  const tokenAddress = row.tokenAddress ? normalizeOutputAddress(row.tokenAddress, chainId) : null;
   const isGraduated = Boolean(row.graduatedAtChain);
-  const eligible = Boolean(row.isActive) && !isGraduated;
+  const isLive = Boolean(row.isActive);
+  const eligible = isLive && !isGraduated;
   return {
-    campaign: row,
-    chart: { source: isGraduated && tokenAddress ? "dex" : "bonding_curve", campaignAddress, tokenAddress, preferredTimeframe: isGraduated ? "5m" : "1m" },
-    battleIntel: { status: eligible ? "eligible" : "unavailable", eligible, unavailableReason: eligible ? null : isGraduated ? "graduated_to_dex" : "campaign_not_active" },
-    tradeContext: { mode: isGraduated ? "dex" : "bonding_curve", canBuy: Boolean(row.isActive), canSell: Boolean(row.isActive || isGraduated), slippagePct: 5 },
+    campaign: mapWarRoomRow(row),
+    chart: {
+      source: isGraduated && tokenAddress ? "dex" : "bonding_curve",
+      campaignAddress,
+      tokenAddress,
+      preferredTimeframe: isGraduated ? "5m" : "1m",
+    },
+    battleIntel: {
+      status: eligible ? "eligible" : "unavailable",
+      eligible,
+      unavailableReason: eligible ? null : isGraduated ? "graduated_to_dex" : "campaign_not_active",
+      summary: eligible
+        ? "This coin is active and can be prepared for battle once battle rules are met."
+        : isGraduated
+          ? "This coin has graduated to DEX trading."
+          : "This coin is not active for battles right now.",
+    },
+    tradeContext: {
+      mode: isGraduated ? "dex" : "bonding_curve",
+      canBuy: Boolean(isLive || isGraduated),
+      canSell: Boolean(isLive || isGraduated),
+      slippagePct: 5,
+    },
     watchlist,
     updatedAt: new Date().toISOString(),
   };
 }
 
-const SELECT_CAMPAIGN = `
-  select
-    c.chain_id as "chainId",
-    c.campaign_address as "campaignAddress",
-    c.token_address as "tokenAddress",
-    c.creator_address as "creatorAddress",
-    c.name as "name",
-    c.symbol as "symbol",
-    c.logo_uri as "logoUri",
-    c.created_at_chain as "createdAtChain",
-    c.graduated_at_chain as "graduatedAtChain",
-    c.is_active as "isActive",
-    ts.marketcap_bnb as "marketcapBnb",
-    ts.vol_24h_bnb as "vol24hBnb",
-    coalesce(va.votes_24h, 0) as "votes24h",
-    coalesce(va.votes_all_time, 0) as "votesAllTime",
-    coalesce(va.trending_score, 0) as "trendingScore",
-    ca.last_activity_at as "lastActivityAt"
-  from public.campaigns c
-  left join public.token_stats ts on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
-  left join public.vote_aggregates va on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
-  left join public.campaign_activity ca on ca.chain_id = c.chain_id and ca.campaign_address = c.campaign_address
-`;
+async function fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb }) {
+  const params = [chainId, gradTargetBnb];
+  const filters = ["c.chain_id = $1", "c.campaign_address is not null"];
+  const searchFilter = buildSearchFilter(search, params);
+  const detailFilter = buildDetailFilter(detailAddress, chainId, params);
+  const modeClause = detailAddress ? null : modeFilter(mode);
+  if (searchFilter) filters.push(searchFilter);
+  if (detailFilter) filters.push(detailFilter);
+  if (modeClause) filters.push(modeClause);
+  params.push(limit);
+
+  const sql = `
+    with base as (
+      select
+        c.chain_id,
+        c.campaign_address,
+        c.token_address,
+        c.creator_address,
+        c.name,
+        c.symbol,
+        c.logo_uri,
+        c.created_block,
+        c.created_at_chain,
+        c.graduated_block,
+        c.graduated_at_chain,
+        c.is_active,
+        ts.last_price_bnb,
+        ts.sold_tokens,
+        ts.marketcap_bnb,
+        ts.vol_24h_bnb,
+        va.votes_24h,
+        va.votes_all_time,
+        coalesce(va.trending_score, 0) as vote_trending_score,
+        ca.last_activity_at
+      from public.campaigns c
+      left join public.token_stats ts
+        on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
+      left join public.vote_aggregates va
+        on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
+      left join public.campaign_activity ca
+        on ca.chain_id = c.chain_id and ca.campaign_address = c.campaign_address
+      where ${filters.join(" and ")}
+    ),
+    rt as (
+      select
+        b.chain_id,
+        b.campaign_address,
+        coalesce(sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end), 0) as raised_total_bnb,
+        coalesce(
+          sum(case when t.side = 'buy' then t.bnb_amount else -t.bnb_amount end)
+            filter (where t.block_time >= now() - interval '10 minutes'),
+          0
+        ) as raised_10m_bnb,
+        coalesce(count(distinct t.wallet) filter (where t.side = 'buy'), 0) as holder_count
+      from base b
+      left join public.curve_trades t
+        on t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+      group by b.chain_id, b.campaign_address
+    ),
+    ath as (
+      select
+        b.chain_id,
+        b.campaign_address,
+        max(tc.h) as ath_price_bnb
+      from base b
+      left join public.token_candles tc
+        on tc.chain_id = b.chain_id
+        and tc.campaign_address = b.campaign_address
+        and tc.timeframe = '1m'
+      group by b.chain_id, b.campaign_address
+    ),
+    calc as (
+      select
+        b.*,
+        rt.raised_total_bnb,
+        rt.raised_10m_bnb,
+        rt.holder_count,
+        case
+          when ath.ath_price_bnb is not null and b.sold_tokens is not null then ath.ath_price_bnb * b.sold_tokens
+          else b.marketcap_bnb
+        end as ath_marketcap_bnb,
+        case
+          when $2::numeric <= 0 then null
+          else least(100, greatest(0, (rt.raised_total_bnb / $2::numeric) * 100))
+        end as progress_pct,
+        case
+          when rt.raised_total_bnb >= $2::numeric then 0
+          when rt.raised_10m_bnb <= 0 then null
+          else (($2::numeric - rt.raised_total_bnb) / (rt.raised_10m_bnb / 600.0))
+        end as eta_sec,
+        (
+          coalesce(b.vol_24h_bnb, 0) * 1000
+          + coalesce(b.votes_24h, 0) * 10
+          + coalesce(rt.holder_count, 0) * 2
+          + coalesce(b.vote_trending_score, 0)
+        ) as trending_score
+      from base b
+      join rt on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
+      left join ath on ath.chain_id = b.chain_id and ath.campaign_address = b.campaign_address
+    )
+    select
+      chain_id as "chainId",
+      campaign_address as "campaignAddress",
+      token_address as "tokenAddress",
+      creator_address as "creatorAddress",
+      name as "name",
+      symbol as "symbol",
+      logo_uri as "logoUri",
+      created_block as "createdBlock",
+      created_at_chain as "createdAtChain",
+      graduated_block as "graduatedBlock",
+      graduated_at_chain as "graduatedAtChain",
+      is_active as "isActive",
+      last_activity_at as "lastActivityAt",
+      last_price_bnb as "lastPriceBnb",
+      sold_tokens as "soldTokens",
+      marketcap_bnb as "marketcapBnb",
+      vol_24h_bnb as "vol24hBnb",
+      holder_count as "holderCount",
+      ath_marketcap_bnb as "athMarketcapBnb",
+      raised_total_bnb as "raisedTotalBnb",
+      raised_10m_bnb as "raised10mBnb",
+      progress_pct as "progressPct",
+      eta_sec as "etaSec",
+      votes_24h as "votes24h",
+      votes_all_time as "votesAllTime",
+      trending_score as "trendingScore",
+      $2::numeric as "gradTargetBnb"
+    from calc
+    order by ${detailAddress ? "campaign_address asc" : orderByForMode(mode)}
+    limit $${params.length}
+  `;
+
+  const result = await pool.query(sql, params);
+  return result.rows;
+}
+
+async function fetchBasicWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb }) {
+  const params = [chainId, gradTargetBnb];
+  const filters = ["c.chain_id = $1", "c.campaign_address is not null"];
+  const searchFilter = buildSearchFilter(search, params);
+  const detailFilter = buildDetailFilter(detailAddress, chainId, params);
+  const modeClause = detailAddress ? null : modeFilter(mode);
+  if (searchFilter) filters.push(searchFilter);
+  if (detailFilter) filters.push(detailFilter);
+  if (modeClause) filters.push(modeClause);
+  params.push(limit);
+
+  const result = await pool.query(
+    `select
+       c.chain_id as "chainId",
+       c.campaign_address as "campaignAddress",
+       c.token_address as "tokenAddress",
+       c.creator_address as "creatorAddress",
+       c.name as "name",
+       c.symbol as "symbol",
+       c.logo_uri as "logoUri",
+       c.created_block as "createdBlock",
+       c.created_at_chain as "createdAtChain",
+       c.graduated_block as "graduatedBlock",
+       c.graduated_at_chain as "graduatedAtChain",
+       c.is_active as "isActive",
+       null::timestamptz as "lastActivityAt",
+       null::numeric as "lastPriceBnb",
+       null::numeric as "soldTokens",
+       null::numeric as "marketcapBnb",
+       null::numeric as "vol24hBnb",
+       0::numeric as "holderCount",
+       null::numeric as "athMarketcapBnb",
+       0::numeric as "raisedTotalBnb",
+       0::numeric as "raised10mBnb",
+       null::numeric as "progressPct",
+       null::numeric as "etaSec",
+       0::numeric as "votes24h",
+       0::numeric as "votesAllTime",
+       0::numeric as "trendingScore",
+       $2::numeric as "gradTargetBnb"
+     from public.campaigns c
+     where ${filters.join(" and ")}
+     order by ${detailAddress ? "c.campaign_address asc" : mode === "new" ? "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc" : "c.created_block desc nulls last, c.created_at_chain desc nulls last, c.campaign_address asc"}
+     limit $${params.length}`,
+    params,
+  );
+  return result.rows;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return badMethod(res);
@@ -82,37 +338,38 @@ export default async function handler(req, res) {
   try {
     const q = getQuery(req);
     const chainId = toInt(q.chainId, 97);
-    const detailAddress = normalizeAddress(q.campaignAddress || q.campaign || "");
-    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-
-    if (detailAddress) {
-      const result = await pool.query(`${SELECT_CAMPAIGN} where c.chain_id = $1 and lower(c.campaign_address::text) = lower($2) limit 1`, [chainId, detailAddress]);
-      if (!result.rows[0]) return json(res, 404, { error: "War Room campaign detail not found", campaignAddress: detailAddress, updatedAt: new Date().toISOString() });
-      const watchlist = await watchlistState({ chainId, campaignAddress: detailAddress, userAddress: q.userAddress || q.user || q.wallet });
-      return json(res, 200, detailPayload(result.rows[0], watchlist));
-    }
-
-    const limit = clamp(toInt(q.limit, 250), 1, 250);
+    const detailAddress = String(q.campaignAddress || q.campaign || "").trim();
     const mode = normalizeMode(q.mode);
     const search = String(q.search || "").trim();
-    const filters = ["c.chain_id = $1", "c.campaign_address is not null"];
-    const params = [chainId];
-    if (search) {
-      params.push(`%${search}%`);
-      filters.push(`(c.name ilike $${params.length} or c.symbol ilike $${params.length} or c.campaign_address::text ilike $${params.length} or c.creator_address::text ilike $${params.length})`);
+    const limit = clamp(toInt(q.limit, detailAddress ? 1 : 250), 1, 250);
+    const gradTargetBnb = clamp(toFloat(q.gradTargetBnb, DEFAULT_GRAD_TARGET_BNB), 0.0001, 10_000);
+
+    if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+    if (detailAddress && !addressLooksValid(detailAddress, chainId)) {
+      return json(res, 400, { error: "Invalid campaign address", campaignAddress: detailAddress, updatedAt: new Date().toISOString() });
     }
-    if (mode === "graduated") filters.push("c.graduated_at_chain is not null");
-    if (mode === "draft") filters.push("coalesce(c.is_active, false) = false and c.graduated_at_chain is null");
-    params.push(limit);
 
-    const orderBy = mode === "new"
-      ? "c.created_at_chain desc nulls last, c.campaign_address asc"
-      : mode === "graduated"
-        ? "c.graduated_at_chain desc nulls last, coalesce(ca.last_activity_at, c.created_at_chain) desc nulls last, c.campaign_address asc"
-        : "coalesce(va.trending_score, 0) desc, coalesce(ca.last_activity_at, c.created_at_chain) desc nulls last, coalesce(ts.marketcap_bnb, 0) desc, c.campaign_address asc";
+    let rows;
+    let warning = null;
+    try {
+      rows = await fetchWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb });
+    } catch (richError) {
+      console.error("[api/warRoom] rich query failed; trying basic fallback", richError);
+      rows = await fetchBasicWarRoomRows({ chainId, mode, search, detailAddress, limit, gradTargetBnb });
+      warning = "War Room is showing basic coin data while live metrics sync.";
+    }
 
-    const result = await pool.query(`${SELECT_CAMPAIGN} where ${filters.join(" and ")} order by ${orderBy} limit $${params.length}`, params);
-    return json(res, 200, { items: result.rows, updatedAt: new Date().toISOString() });
+    if (detailAddress) {
+      if (!rows[0]) return json(res, 404, { error: "War Room campaign detail not found", campaignAddress: detailAddress, updatedAt: new Date().toISOString() });
+      const watchlist = await watchlistState({ chainId, campaignAddress: detailAddress, userAddress: q.userAddress || q.user || q.wallet });
+      return json(res, 200, detailPayload(rows[0], watchlist));
+    }
+
+    return json(res, 200, {
+      items: rows.map(mapWarRoomRow),
+      updatedAt: new Date().toISOString(),
+      ...(warning ? { warning } : {}),
+    });
   } catch (error) {
     return emptyWarRoom(res, error);
   }
