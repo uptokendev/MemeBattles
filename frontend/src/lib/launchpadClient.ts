@@ -239,8 +239,9 @@ export function useLaunchpad(): LaunchpadAdapter {
   }, [factoryAddress, signer]);
 
   const getCampaignRead = useCallback((address: string) => {
-    if (!address) return null;
-    return new Contract(address, CAMPAIGN_ABI, readProvider) as any;
+    const campaignAddress = normalizeAddress(address);
+    if (!campaignAddress) return null;
+    return new Contract(campaignAddress, CAMPAIGN_ABI, readProvider) as any;
   }, [readProvider]);
 
   const fetchCampaignsCount = useCallback(async (): Promise<number> => {
@@ -347,9 +348,9 @@ export function useLaunchpad(): LaunchpadAdapter {
   }, [getCampaignRead]);
 
   const fetchCampaignActivity = useCallback(async (campaignAddress: string): Promise<CampaignActivity | null> => {
-    const latest = await readProvider.getBlockNumber().catch(() => 0);
     const campaign = getCampaignRead(campaignAddress);
     if (!campaign) return null;
+    const latest = await readProvider.getBlockNumber().catch(() => 0);
 
     try {
       const [buyersCount, totalBuyVolumeWei, totalSellVolumeWei] = await Promise.all([
@@ -389,13 +390,16 @@ export function useLaunchpad(): LaunchpadAdapter {
 
     try {
       if (metrics && campaign.token) {
-        const token = new Contract(campaign.token, TOKEN_ABI, readProvider) as any;
-        const totalSupply: bigint = await token.totalSupply();
-        const circulating = metrics.launched ? totalSupply : metrics.sold;
-        const mcWei = (metrics.currentPrice * circulating) / 10n ** 18n;
-        marketCap = formatBnbFromWei(mcWei);
-        const raw = Number(ethers.formatEther(mcWei));
-        if (Number.isFinite(raw) && raw > 0) marketCapBnb = raw;
+        const tokenAddress = normalizeAddress(campaign.token);
+        if (tokenAddress) {
+          const token = new Contract(tokenAddress, TOKEN_ABI, readProvider) as any;
+          const totalSupply: bigint = await token.totalSupply();
+          const circulating = metrics.launched ? totalSupply : metrics.sold;
+          const mcWei = (metrics.currentPrice * circulating) / 10n ** 18n;
+          marketCap = formatBnbFromWei(mcWei);
+          const raw = Number(ethers.formatEther(mcWei));
+          if (Number.isFinite(raw) && raw > 0) marketCapBnb = raw;
+        }
       }
     } catch (error) {
       console.warn("[fetchCampaignSummary] market cap calc failed", error);
@@ -446,12 +450,14 @@ export function useLaunchpad(): LaunchpadAdapter {
   }, [getFactoryWrite, wallet.account, activeChainId, signer, readProvider]);
 
   const buyTokens = useCallback(async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
+    const normalizedCampaign = normalizeAddress(campaignAddress);
+    if (!normalizedCampaign) throw new Error("Invalid campaign address");
     if (!signer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
 
-    const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
-    await fetchLaunchpadBuyPreflight(wallet.account, campaignAddress, activeChainId);
-    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
+    const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
+    await fetchLaunchpadBuyPreflight(wallet.account, normalizedCampaign, activeChainId);
+    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, normalizedCampaign, activeChainId);
     const auth = authResponse.authorization;
 
     const tx = await campaign.buyExactTokensAuthorized(
@@ -463,17 +469,19 @@ export function useLaunchpad(): LaunchpadAdapter {
       await legacyGasOverrides(signer, readProvider, { value: maxCostWei }),
     );
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+    emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);
 
   const sellTokens = useCallback(async (campaignAddress: string, amountWei: bigint, minAmountWei: bigint) => {
+    const normalizedCampaign = normalizeAddress(campaignAddress);
+    if (!normalizedCampaign) throw new Error("Invalid campaign address");
     if (!signer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
 
-    const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
-    await fetchLaunchpadSellPreflight(wallet.account, campaignAddress, activeChainId);
-    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, campaignAddress, activeChainId);
+    const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
+    await fetchLaunchpadSellPreflight(wallet.account, normalizedCampaign, activeChainId);
+    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, normalizedCampaign, activeChainId);
     const auth = authResponse.authorization;
 
     const tx = await campaign.sellExactTokensAuthorized(
@@ -485,16 +493,18 @@ export function useLaunchpad(): LaunchpadAdapter {
       await legacyGasOverrides(signer, readProvider),
     );
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+    emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);
 
   const finalizeCampaign = useCallback(async (campaignAddress: string, minTokens: bigint, minBnb: bigint) => {
+    const normalizedCampaign = normalizeAddress(campaignAddress);
+    if (!normalizedCampaign) throw new Error("Invalid campaign address");
     if (!signer) throw new Error("Wallet not connected");
-    const campaign = new Contract(campaignAddress, CAMPAIGN_ABI, signer) as any;
+    const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
     const tx = await campaign.finalize(minTokens, minBnb, await legacyGasOverrides(signer, readProvider));
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "finalize", chainId: activeChainId, campaignAddress: campaignAddress.toLowerCase(), txHash: receipt?.hash ?? tx?.hash });
+    emitTxConfirmed({ kind: "finalize", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
   }, [signer, activeChainId, readProvider]);
 
