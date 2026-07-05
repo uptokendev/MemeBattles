@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchPostGradWarRoomCampaignFeed } from "@/features/postgrad/apiClient";
 import { apiFetch } from "@/lib/apiBase";
-import { fetchPublicCampaignDrafts, type CampaignDraft } from "@/lib/draftApi";
+import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
@@ -22,6 +22,11 @@ function toUnixSeconds(value: unknown): number | undefined {
   if (Number.isFinite(n) && n > 0) return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
   const ms = Date.parse(String(value));
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+}
+
+function safeCount(value: unknown): number {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
 function normalizeStatus(item: any): "graduated" | "live" | "draft" | "ended" | undefined {
@@ -77,9 +82,11 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   } as WarRoomCampaign;
 }
 
-function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoomCampaign {
+function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number, bundle?: PrepareDraftBundle | null): WarRoomCampaign {
   const draftSlug = String(draft.slug || "").trim();
   const promotionHref = draftSlug ? `/prepare/${draftSlug}` : `/drafts/${draft.id}`;
+  const promotion = bundle?.promotion;
+  const popularity = bundle?.popularity;
 
   return {
     id: 200000 + index,
@@ -89,10 +96,10 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoom
     creator: String(draft.creatorWallet || "").toLowerCase(),
     name: String(draft.name || "Unknown"),
     symbol: String(draft.ticker || ""),
-    logoURI: resolveImageUri(draft.logoUrl) || "/placeholder.svg",
+    logoURI: resolveImageUri(promotion?.bannerUrl || draft.logoUrl) || resolveImageUri(draft.logoUrl) || "/placeholder.svg",
     metadataURI: undefined,
-    xAccount: String(draft.xUrl || ""),
-    website: String(draft.websiteUrl || ""),
+    xAccount: String(draft.xUrl || promotion?.xUrl || ""),
+    website: String(draft.websiteUrl || promotion?.websiteUrl || ""),
     extraLink: String(draft.otherUrl || ""),
     createdAt: toUnixSeconds(draft.createdAt),
     status: "draft",
@@ -103,8 +110,12 @@ function mapDraftToWarRoomCampaign(draft: CampaignDraft, index: number): WarRoom
     draftStatus: draft.status,
     draftVisibility: draft.visibility,
     draftCategory: draft.category,
-    draftDescription: draft.description || "No promotion description has been added yet.",
+    draftDescription: draft.description || promotion?.missionStatement || "No promotion description has been added yet.",
+    draftFounderNote: promotion?.creatorNote || "No founder note has been added yet.",
     draftUpdatedAt: draft.updatedAt,
+    draftFollowCount: safeCount(popularity?.follows),
+    draftOptInCount: safeCount(popularity?.armedCount),
+    draftCommentCount: safeCount(popularity?.comments),
     promotionHref,
   } as WarRoomCampaign;
 }
@@ -144,12 +155,20 @@ async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, sear
 async function fetchDraftCampaignsForWarRoom(chainId: number): Promise<WarRoomCampaign[]> {
   try {
     const drafts = await fetchPublicCampaignDrafts({ chainId, limit: 100 });
-    return drafts
+    const visibleDrafts = drafts
       .filter((draft) => Number(draft.chainId) === Number(chainId))
       .filter((draft) => draft.visibility === "public")
       .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
-      .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
-      .map(mapDraftToWarRoomCampaign);
+      .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed");
+
+    const hydrated = await Promise.all(
+      visibleDrafts.map(async (draft, index) => {
+        const bundle = await fetchCampaignDraft(draft.id).catch(() => null);
+        return mapDraftToWarRoomCampaign(draft, index, bundle);
+      }),
+    );
+
+    return hydrated;
   } catch (error) {
     console.warn("[useWarRoomCampaignFeed] public draft fallback failed", error);
     return [];
