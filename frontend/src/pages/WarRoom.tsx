@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { ChainFeedSwitch, useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import { TacticalTag } from "@/components/postgrad/PostGradPrimitives";
 import { WarRoomCampaignRow } from "@/components/postgrad/WarRoomCampaignRow";
 import { ContentContainer } from "@/components/layout/ContentContainer";
@@ -7,7 +8,6 @@ import { getWarRoomCampaignMetrics } from "@/features/postgrad/warRoomMetrics";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useWarRoomCampaignFeed, type WarRoomCampaign, type WarRoomMode } from "@/hooks/useWarRoomCampaignFeed";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { getWarRoomFeedChainId } from "@/lib/feedChainConfig";
 import { resolveImageUri } from "@/lib/media";
 
 type SortKey = "marketCap" | "liquidity" | "volume" | "holders" | "ath";
@@ -47,8 +47,7 @@ function getSortValue(campaign: WarRoomCampaign, bnbUsd: number, sortKey: SortKe
 }
 
 const WarRoom = () => {
-  const { activeChainId } = useLaunchpad();
-  const warRoomChainId = getWarRoomFeedChainId(activeChainId);
+  const [selectedChainId] = useSelectedFeedChainId();
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [search, setSearch] = useState("");
   const [activeMode, setActiveMode] = useState<WarRoomMode>("trending");
@@ -57,7 +56,7 @@ const WarRoom = () => {
 
   const { campaigns: rawCampaigns, loading, error, source } = useWarRoomCampaignFeed({
     activeMode,
-    activeChainId: Number(warRoomChainId || 97),
+    activeChainId: Number(selectedChainId || 97),
     bnbUsd,
     search,
   });
@@ -66,8 +65,13 @@ const WarRoom = () => {
   const { fetchCampaignLogoURI } = useLaunchpad();
 
   useEffect(() => {
+    setLogoCache({});
+  }, [selectedChainId]);
+
+  useEffect(() => {
     let cancelled = false;
     const missing = (rawCampaigns || [])
+      .filter((c) => !String((c as any).campaign || "").startsWith("draft:"))
       .map((c) => c.campaign?.toLowerCase())
       .filter((addr): addr is string => !!addr && !logoCache[addr]);
 
@@ -98,10 +102,11 @@ const WarRoom = () => {
       const hydratedLogo = key && logoCache[key] ? logoCache[key] : c.logoURI;
       return {
         ...c,
+        chainId: Number((c as any).chainId || selectedChainId),
         logoURI: resolveImageUri(hydratedLogo) || c.logoURI || "/placeholder.svg",
       };
     });
-  }, [rawCampaigns, logoCache]);
+  }, [rawCampaigns, logoCache, selectedChainId]);
 
   const filteredCampaigns = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -161,7 +166,8 @@ const WarRoom = () => {
                 Scan live memecoin rows, compare trade signals, and jump into token details from one clean launchpad view.
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <ChainFeedSwitch />
               <TacticalTag label={terminalModes.find((mode) => mode.key === activeMode)?.label ?? "Trending"} tone="sponsored" />
               <TacticalTag label={sourceLabel} tone={sourceTone} />
             </div>
@@ -246,7 +252,7 @@ const WarRoom = () => {
           ) : (
             <div className="py-10 text-center text-sm text-white/55">
               {source === "empty"
-                ? "Coin data isn’t available right now."
+                ? activeMode === "draft" ? "No public drafts are available on this chain yet." : "Coin data isn’t available right now."
                 : search.trim()
                   ? "No coins match your filters."
                   : "No coins are available right now."}
