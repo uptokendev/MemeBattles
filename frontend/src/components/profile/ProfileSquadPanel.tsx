@@ -30,6 +30,36 @@ function formatBnb(raw: string): string {
   }
 }
 
+function LockedSquadState() {
+  return (
+    <Card className="border-border/60 bg-card/65 p-6">
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Squad locked</p>
+          <h3 className="mt-2 font-retro text-2xl text-foreground">You are not in a squad yet.</h3>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Squad rewards and squad stats unlock once you join a recruiter squad.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Until then, your unassigned reward path can still flow into Warzone Airdrops.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="outline" className="font-retro">
+            <Link to="/recruiters">
+              Browse recruiters
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="font-retro">
+            <Link to="/airdrops">Warzone Airdrops</Link>
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: ProfileSquadPanelProps) {
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
@@ -116,6 +146,26 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
     );
   }
 
+  if (loading) {
+    return (
+      <Card className="border-border/60 bg-card/65 px-6 py-12 text-center text-sm text-muted-foreground">
+        Loading squad state...
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="border-rose-400/30 bg-rose-400/10 px-6 py-12 text-center text-sm text-rose-100">
+        {error}
+      </Card>
+    );
+  }
+
+  if (!member && !squad) {
+    return <LockedSquadState />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
@@ -133,101 +183,91 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
         </Card>
       </div>
 
-      {loading ? (
-        <Card className="border-border/60 bg-card/65 px-6 py-12 text-center text-sm text-muted-foreground">
-          Loading squad state...
+      <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <Card className="border-border/60 bg-card/65 p-6">
+          <div className="flex items-center gap-3">
+            <Wallet className="h-4 w-4 text-sky-200" />
+            <div>
+              <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Attribution</p>
+              <h3 className="mt-1 font-retro text-xl text-foreground">Current wallet posture</h3>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Recruiter link</p>
+              <p className="mt-2 font-retro text-lg text-foreground">{attribution?.recruiterLinkState ?? "unknown"}</p>
+            </div>
+            <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Squad state</p>
+              <p className="mt-2 font-retro text-lg text-foreground">{attribution?.squadState ?? "unknown"}</p>
+            </div>
+          </div>
+
+          {member ? (
+            <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+              Squad member row found: {member.memberRole || "member"} under recruiter {member.recruiterDisplayName || member.recruiterCode || "unknown"}.
+            </div>
+          ) : null}
+
+          {attribution?.squadState?.includes("solo") ? (
+            <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+              This wallet is currently solo, so it does not share the Squad Pool. Unassigned paths continue through the airdrop engine instead.
+            </div>
+          ) : null}
+
+          {attribution?.squadState === "solo_detached" ? (
+            <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
+              This wallet is detached from its previous squad. The profile tab is reading that state directly from attribution instead of requiring backend table inspection.
+            </div>
+          ) : null}
         </Card>
-      ) : error ? (
-        <Card className="border-rose-400/30 bg-rose-400/10 px-6 py-12 text-center text-sm text-rose-100">
-          {error}
-        </Card>
-      ) : (
-        <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-          <Card className="border-border/60 bg-card/65 p-6">
+
+        <Card className="border-border/60 bg-card/65 p-6">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Wallet className="h-4 w-4 text-sky-200" />
+              <Users className="h-4 w-4 text-amber-200" />
               <div>
-                <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Attribution</p>
-                <h3 className="mt-1 font-retro text-xl text-foreground">Current wallet posture</h3>
+                <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Squad preview</p>
+                <h3 className="mt-1 font-retro text-xl text-foreground">Estimated reward surface</h3>
               </div>
             </div>
+            <Button asChild variant="outline" className="font-retro">
+              <Link to="/squads">
+                Public squads
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {!squad ? (
+            <div className="mt-5 rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">
+              No active squad summary found for this wallet right now.
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
               <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Recruiter link</p>
-                <p className="mt-2 font-retro text-lg text-foreground">{attribution?.recruiterLinkState ?? "unknown"}</p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Squad recruiter</p>
+                <p className="mt-2 font-retro text-lg text-foreground">{squad.recruiterDisplayName || squad.recruiterCode}</p>
               </div>
               <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Squad state</p>
-                <p className="mt-2 font-retro text-lg text-foreground">{attribution?.squadState ?? "unknown"}</p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Eligible members</p>
+                <p className="mt-2 font-retro text-lg text-foreground">{squad.eligibleMemberCount}</p>
               </div>
+              <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Estimated pending pool</p>
+                <p className="mt-2 font-retro text-lg text-foreground">{formatBnb(squad.estimatedPendingPoolAmount)} BNB</p>
+              </div>
+              {member?.memberCapApplied ? (
+                <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+                  <ShieldAlert className="mb-2 h-4 w-4" />
+                  Your current estimated payout is sitting on the member cap, so redistribution would flow to other eligible squad members first.
+                </div>
+              ) : null}
             </div>
-
-            {member ? (
-              <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-                Squad member row found: {member.memberRole || "member"} under recruiter {member.recruiterDisplayName || member.recruiterCode || "unknown"}.
-              </div>
-            ) : null}
-
-            {attribution?.squadState?.includes("solo") ? (
-              <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-                This wallet is currently solo, so it does not share the Squad Pool. Unassigned paths continue through the airdrop engine instead.
-              </div>
-            ) : null}
-
-            {attribution?.squadState === "solo_detached" ? (
-              <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
-                This wallet is detached from its previous squad. The profile tab is reading that state directly from attribution instead of requiring backend table inspection.
-              </div>
-            ) : null}
-          </Card>
-
-          <Card className="border-border/60 bg-card/65 p-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <Users className="h-4 w-4 text-amber-200" />
-                <div>
-                  <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Squad preview</p>
-                  <h3 className="mt-1 font-retro text-xl text-foreground">Estimated reward surface</h3>
-                </div>
-              </div>
-              <Button asChild variant="outline" className="font-retro">
-                <Link to="/squads">
-                  Public squads
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
-
-            {!squad ? (
-              <div className="mt-5 rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">
-                No active squad summary found for this wallet right now.
-              </div>
-            ) : (
-              <div className="mt-5 space-y-3">
-                <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Squad recruiter</p>
-                  <p className="mt-2 font-retro text-lg text-foreground">{squad.recruiterDisplayName || squad.recruiterCode}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Eligible members</p>
-                  <p className="mt-2 font-retro text-lg text-foreground">{squad.eligibleMemberCount}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Estimated pending pool</p>
-                  <p className="mt-2 font-retro text-lg text-foreground">{formatBnb(squad.estimatedPendingPoolAmount)} BNB</p>
-                </div>
-                {member?.memberCapApplied ? (
-                  <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-                    <ShieldAlert className="mb-2 h-4 w-4" />
-                    Your current estimated payout is sitting on the member cap, so redistribution would flow to other eligible squad members first.
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
