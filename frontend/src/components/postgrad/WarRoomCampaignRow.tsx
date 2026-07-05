@@ -41,6 +41,14 @@ function formatStatus(value?: unknown) {
   return raw ? raw.replace(/^./, (letter) => letter.toUpperCase()) : "Draft";
 }
 
+function formatCompactNumber(value: unknown) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+  return String(Math.trunc(n));
+}
+
 function MobileMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
@@ -55,6 +63,15 @@ function DraftInfoTile({ label, value }: { label: string; value: string }) {
     <div className="border border-white/10 bg-black/20 px-3 py-2.5">
       <div className="text-[9px] uppercase tracking-[0.18em] text-white/35">{label}</div>
       <div className="mt-1 truncate text-sm font-semibold text-white/85">{value}</div>
+    </div>
+  );
+}
+
+function DraftTextBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-white/10 bg-black/20 px-3 py-2.5">
+      <div className="text-[9px] uppercase tracking-[0.18em] text-white/35">{label}</div>
+      <p className="mt-1.5 text-sm leading-6 text-white/68">{value}</p>
     </div>
   );
 }
@@ -74,16 +91,21 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
   const rich = campaign as any;
   const promotionHref = String(rich.promotionHref || (rich.draftSlug ? `/prepare/${rich.draftSlug}` : rich.draftId ? `/drafts/${rich.draftId}` : ""));
   const draftDescription = String(rich.draftDescription || "No promotion description has been added yet.");
+  const founderNote = String(rich.draftFounderNote || "No founder note has been added yet.");
   const draftStatus = formatStatus(rich.draftStatus);
-  const draftVisibility = formatStatus(rich.draftVisibility);
-  const draftCategory = String(rich.draftCategory || "Uncategorized");
   const chainLabel = getChainLabel(Number(rich.chainId)) || `Chain ${Number(rich.chainId || 0) || "unknown"}`;
+  const draftFollows = formatCompactNumber(rich.draftFollowCount);
+  const draftOptIns = formatCompactNumber(rich.draftOptInCount);
+  const draftComments = formatCompactNumber(rich.draftCommentCount);
 
   const createdLabel = useMemo(() => formatAge(campaign.createdAt), [campaign.createdAt]);
 
   return (
     <div className="border-b border-white/8 last:border-b-0">
-      <div className="grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5">
+      <div className={isDraft
+        ? "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"
+        : "grid grid-cols-1 gap-2 px-2.5 py-2.5 transition-colors hover:bg-white/[0.025] lg:grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5"}
+      >
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
@@ -116,46 +138,63 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
           </div>
         </button>
 
-        <div className="grid grid-cols-2 gap-1.5 text-sm sm:grid-cols-3 lg:contents">
-          <div className="lg:block">
-            <div className="lg:hidden"><MobileMetric label="MCap" value={metrics.marketCapLabel} /></div>
-            <div className="hidden font-semibold text-white lg:block">{metrics.marketCapLabel}</div>
+        {isDraft ? (
+          <div className="grid grid-cols-3 gap-1.5 text-sm lg:contents">
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Follows" value={draftFollows} /></div>
+              <div className="hidden font-semibold text-white lg:block">{draftFollows}</div>
+            </div>
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Opt-Ins" value={draftOptIns} /></div>
+              <div className="hidden font-semibold text-white lg:block">{draftOptIns}</div>
+            </div>
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Comments" value={draftComments} /></div>
+              <div className="hidden font-semibold text-white lg:block">{draftComments}</div>
+            </div>
           </div>
-          <div className="lg:block">
-            <div className="lg:hidden"><MobileMetric label="Liquidity" value={metrics.liquidityLabel} /></div>
-            <div className="hidden font-semibold text-white lg:block">{metrics.liquidityLabel}</div>
-          </div>
-          <div className="lg:block">
-            <div className="lg:hidden"><MobileMetric label="Volume" value={metrics.volumeLabel} /></div>
-            <div className="hidden font-semibold text-white lg:block">{metrics.volumeLabel}</div>
-          </div>
-          <div className="lg:block">
-            <div className="lg:hidden"><MobileMetric label="Holders" value={metrics.holdersLabel} /></div>
-            <div className="hidden font-semibold text-white lg:block">{metrics.holdersLabel}</div>
-          </div>
-          <div className="col-span-2 sm:col-span-2 lg:col-span-1 lg:block">
-            <div className="lg:hidden">
-              <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
-                <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-white/65">
-                  <span>{isDraft ? "Not launched" : `ATH ${metrics.athLabel}`}</span>
-                  <span>{isDraft ? "Draft" : `${metrics.athProgressPct}%`}</span>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5 text-sm sm:grid-cols-3 lg:contents">
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="MCap" value={metrics.marketCapLabel} /></div>
+              <div className="hidden font-semibold text-white lg:block">{metrics.marketCapLabel}</div>
+            </div>
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Liquidity" value={metrics.liquidityLabel} /></div>
+              <div className="hidden font-semibold text-white lg:block">{metrics.liquidityLabel}</div>
+            </div>
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Volume" value={metrics.volumeLabel} /></div>
+              <div className="hidden font-semibold text-white lg:block">{metrics.volumeLabel}</div>
+            </div>
+            <div className="lg:block">
+              <div className="lg:hidden"><MobileMetric label="Holders" value={metrics.holdersLabel} /></div>
+              <div className="hidden font-semibold text-white lg:block">{metrics.holdersLabel}</div>
+            </div>
+            <div className="col-span-2 sm:col-span-2 lg:col-span-1 lg:block">
+              <div className="lg:hidden">
+                <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-white/65">
+                    <span>ATH {metrics.athLabel}</span>
+                    <span>{metrics.athProgressPct}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
+                  </div>
+                </div>
+              </div>
+              <div className="hidden space-y-1 lg:block">
+                <div className="flex items-center justify-between gap-2 text-xs text-white/65">
+                  <span>{metrics.athLabel}</span>
+                  <span>{metrics.athProgressPct}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${isDraft ? 0 : metrics.athProgressPct}%` }} />
+                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${metrics.athProgressPct}%` }} />
                 </div>
               </div>
             </div>
-            <div className="hidden space-y-1 lg:block">
-              <div className="flex items-center justify-between gap-2 text-xs text-white/65">
-                <span>{isDraft ? "Not launched" : metrics.athLabel}</span>
-                <span>{isDraft ? "Draft" : `${metrics.athProgressPct}%`}</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-[linear-gradient(90deg,#fb923c,#22c55e)]" style={{ width: `${isDraft ? 0 : metrics.athProgressPct}%` }} />
-              </div>
-            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 lg:contents">
           {!isDraft && tokenRoute ? (
@@ -163,7 +202,7 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <Link to={tokenRoute}>Token details</Link>
             </Button>
           ) : <div />}
-          <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:col-start-7 lg:ml-0 lg:justify-self-end">
+          <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)} className="ml-auto h-8 px-2 lg:ml-0 lg:justify-self-end">
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </div>
@@ -171,15 +210,15 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
 
       {expanded ? (
         isDraft ? (
-          <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-2.5 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[0.95fr_1.05fr]">
-            <div className="min-h-[260px] overflow-hidden rounded-[16px] border border-white/10 bg-black/35 md:min-h-[360px]">
+          <div className="mx-2.5 mb-2.5 grid gap-3 rounded-[18px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,24,0.88),rgba(8,9,12,0.94))] p-2.5 md:mx-3 md:mb-3 md:gap-4 md:p-4 xl:grid-cols-[0.52fr_1.48fr]">
+            <div className="overflow-hidden rounded-[16px] border border-white/10 bg-black/35">
               <img
                 src={campaign.logoURI || "/placeholder.svg"}
                 alt={campaign.name}
                 onError={(event) => {
                   (event.currentTarget as HTMLImageElement).src = "/placeholder.svg";
                 }}
-                className="h-full min-h-[260px] w-full object-cover md:min-h-[360px]"
+                className="h-40 w-full object-cover md:h-52 xl:h-full xl:min-h-[260px]"
               />
             </div>
 
@@ -187,29 +226,29 @@ export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: Campaig
               <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Draft Campaign</div>
-                    <h3 className="mt-2 text-2xl font-semibold text-white">{campaign.name}</h3>
-                    <p className="mt-2 text-sm leading-6 text-white/62">{draftDescription}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 md:justify-end">
-                    <TacticalTag label="Not launched yet" tone="default" />
-                    <TacticalTag label={draftStatus} tone="sponsored" />
+                    <h3 className="text-2xl font-semibold text-white">{campaign.name}</h3>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <TacticalTag label="Not launched yet" tone="default" />
+                      <TacticalTag label={draftStatus} tone="sponsored" />
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                   <DraftInfoTile label="Ticker" value={campaign.symbol || "Draft"} />
                   <DraftInfoTile label="Chain" value={chainLabel} />
-                  <DraftInfoTile label="Category" value={draftCategory} />
-                  <DraftInfoTile label="Visibility" value={draftVisibility} />
                   <DraftInfoTile label="Creator" value={shortenAddress(campaign.creator)} />
                   <DraftInfoTile label="Status" value={draftStatus} />
+                </div>
+
+                <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                  <DraftTextBlock label="Short description" value={draftDescription} />
+                  <DraftTextBlock label="Founder note" value={founderNote} />
                 </div>
               </div>
 
               <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-3 md:rounded-[20px] md:p-4">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-accent/80">Promotion</div>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:mt-4">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {promotionHref ? (
                     <Button asChild size="sm" className="justify-between text-[11px] md:text-sm sm:col-span-2">
                       <Link to={promotionHref}>
