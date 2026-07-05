@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Bell, ExternalLink, Eye, Image, Lock, Settings, ShieldCheck, Wallet } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Bell, ExternalLink, Image, Settings, ShieldCheck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,16 @@ import { CommandCenterPageHeader } from "@/components/command-center/CommandCent
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { EditProfileDialog } from "@/components/profile/EditProfileDialog";
 import { useWallet } from "@/contexts/WalletContext";
+import { usePrepareNotificationCenter } from "@/hooks/usePrepareNotificationCenter";
 import { getActiveChainId, getChainLabel, isAllowedChainId } from "@/lib/chainConfig";
 import { requestWalletChainSwitch } from "@/lib/launchpadReadiness";
+import type { DraftNotification } from "@/lib/draftPromotion";
 
-function shortenWallet(addr?: string | null) {
-  if (!addr) return "";
-  return addr.length > 10 ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : addr;
+function formatNotificationDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export default function CommandCenterSettings() {
@@ -38,7 +42,16 @@ export default function CommandCenterSettings() {
   } = useCommandCenterData();
 
   const wallet = useWallet();
+  const navigate = useNavigate();
   const [switchingChain, setSwitchingChain] = useState(false);
+  const {
+    notifications,
+    unreadCount,
+    loading: loadingNotifications,
+    markOneRead,
+    markAllRead,
+  } = usePrepareNotificationCenter(walletAddress, 20);
+
   const handleSwitchChain = async () => {
     if (!wallet.provider) {
       toast.error("Connect a wallet first.");
@@ -61,6 +74,11 @@ export default function CommandCenterSettings() {
     }
   };
 
+  const handleOpenNotification = async (notification: DraftNotification) => {
+    await markOneRead(notification.id);
+    navigate(notification.target);
+  };
+
   return (
     <div className="space-y-4">
       <CommandCenterPageHeader
@@ -70,7 +88,7 @@ export default function CommandCenterSettings() {
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <CommandCenterCard
           title="Profile settings"
-                  >
+        >
           <div className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-background/25 p-4 sm:flex-row sm:items-center">
             <img
               src={avatarUrl}
@@ -121,7 +139,7 @@ export default function CommandCenterSettings() {
 
         <CommandCenterCard
           title="Wallet / linked address"
-                  >
+        >
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
               <div className="mb-2 flex items-center gap-2 font-retro text-sm text-foreground">
@@ -141,7 +159,7 @@ export default function CommandCenterSettings() {
               {walletChainId && !isAllowedChainId(walletChainId) ? (
                 <div className="mt-2 space-y-2">
                   <div className="text-[11px] uppercase tracking-[0.14em] text-amber-300">
-                    Unsupported network — switch your wallet to BNB Smart Chain to interact.
+                    Unsupported network - switch your wallet to BNB Smart Chain to interact.
                   </div>
                   <Button
                     size="sm"
@@ -171,21 +189,59 @@ export default function CommandCenterSettings() {
         </CommandCenterCard>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <CommandCenterCard title="Notifications" >
-          <div className="rounded-2xl border border-border/50 bg-background/25 p-4">
-            <Bell className="mb-3 h-5 w-5 text-accent" />
-            <div className="font-retro text-sm text-foreground">Profile notifications enabled by default</div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Detailed toggles for rank-ups, claims, recruiter updates, squad updates, and airdrops can plug in once the notification preferences API is available.
-            </p>
+      <CommandCenterCard title="Notifications">
+        <div className="flex flex-col gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <Bell className="h-5 w-5 text-accent" />
+            <div>
+              <div className="font-retro text-sm text-foreground">Profile notifications</div>
+              <p className="text-sm text-muted-foreground">
+                Same feed and read state as the top-bar notification bell.
+              </p>
+            </div>
           </div>
-        </CommandCenterCard>
+          <Button onClick={() => void markAllRead()} variant="outline" className="font-retro" disabled={!notifications.length}>
+            Mark all read{unreadCount ? ` (${unreadCount})` : ""}
+          </Button>
+        </div>
 
-        
-      </div>
+        <div className="mt-4 space-y-3">
+          {loadingNotifications && !notifications.length ? (
+            <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+              Loading notifications...
+            </div>
+          ) : null}
 
-      
+          {!loadingNotifications && notifications.length === 0 ? (
+            <div className="rounded-2xl border border-border/50 bg-background/25 p-6 text-center text-sm text-muted-foreground">
+              No notifications yet.
+            </div>
+          ) : null}
+
+          {notifications.map((notification) => (
+            <button
+              key={notification.id}
+              type="button"
+              onClick={() => void handleOpenNotification(notification)}
+              className="flex w-full items-start gap-3 rounded-2xl border border-border/50 bg-background/25 p-4 text-left transition hover:border-accent/60 hover:bg-success/10"
+            >
+              <span className={`mt-1 h-2.5 w-2.5 shrink-0 ${notification.read ? "bg-muted" : "bg-accent"}`} />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                  <span className="font-retro text-sm text-foreground">{notification.title}</span>
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    {formatNotificationDate(notification.createdAt)}
+                  </span>
+                </span>
+                <span className="mt-1 block text-sm leading-6 text-muted-foreground">{notification.body}</span>
+              </span>
+              <span className="hidden rounded-full border border-border/50 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground md:block">
+                {notification.kind}
+              </span>
+            </button>
+          ))}
+        </div>
+      </CommandCenterCard>
     </div>
   );
 }
