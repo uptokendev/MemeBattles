@@ -8,6 +8,7 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { signSolanaMessage } from "@/lib/solanaWallet";
+import { fetchRecruiterSignupStatus } from "@/lib/recruiterApi";
 import {
   createRecruiterNativeClaim,
   fetchRecruiterNativePayouts,
@@ -104,13 +105,53 @@ export function RecruiterNativePayoutsPanel() {
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
   const [state, setState] = useState<RecruiterNativePayouts | null>(null);
+  const [identityLoading, setIdentityLoading] = useState(false);
+  const [identityError, setIdentityError] = useState<string | null>(null);
+  const [isRecruiterWallet, setIsRecruiterWallet] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [bnbWallet, setBnbWallet] = useState("");
   const [solWallet, setSolWallet] = useState("");
 
+  useEffect(() => {
+    let cancelled = false;
+    const account = String(wallet.account || "").trim();
+
+    if (!account) {
+      setIsRecruiterWallet(false);
+      setIdentityError(null);
+      setState(null);
+      setBnbWallet("");
+      return;
+    }
+
+    setIdentityLoading(true);
+    setIdentityError(null);
+    void fetchRecruiterSignupStatus(account)
+      .then((status) => {
+        if (cancelled) return;
+        const isRecruiter = Boolean(status?.isRecruiter && status.recruiter);
+        setIsRecruiterWallet(isRecruiter);
+        if (!isRecruiter) setState(null);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setIsRecruiterWallet(false);
+        setState(null);
+        setIdentityError(String(err?.message || err || "Could not verify recruiter wallet."));
+      })
+      .finally(() => {
+        if (!cancelled) setIdentityLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet.account]);
+
   const load = useCallback(async () => {
+    if (!isRecruiterWallet) return null;
     setLoading(true);
     setError(null);
     try {
@@ -128,11 +169,11 @@ export function RecruiterNativePayoutsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [wallet.account, solanaWallet.solanaAccount]);
+  }, [isRecruiterWallet, wallet.account, solanaWallet.solanaAccount]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!identityLoading && isRecruiterWallet) void load();
+  }, [identityLoading, isRecruiterWallet, load]);
 
   useEffect(() => {
     if (wallet.account) setBnbWallet((current) => current || wallet.account || "");
@@ -238,6 +279,34 @@ export function RecruiterNativePayoutsPanel() {
       setPendingAction(null);
     }
   };
+
+  if (identityLoading) {
+    return (
+      <CommandCenterCard
+        title="Recruiter native payouts"
+        description="BNB rewards stay BNB and Solana rewards stay SOL. USD values are display-only; raw native units remain the source of truth."
+        action={<WalletCards className="h-5 w-5 text-accent" />}
+      >
+        <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+          Checking recruiter wallet status...
+        </div>
+      </CommandCenterCard>
+    );
+  }
+
+  if (identityError || !isRecruiterWallet) {
+    return (
+      <CommandCenterCard
+        title="Recruiter native payouts"
+        description="Recruiter payout balances are only shown to approved recruiter wallets."
+        action={<WalletCards className="h-5 w-5 text-accent" />}
+      >
+        <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+          {identityError || "Recruiter payouts unlock once this connected wallet is mapped to an approved recruiter code."}
+        </div>
+      </CommandCenterCard>
+    );
+  }
 
   return (
     <CommandCenterCard
