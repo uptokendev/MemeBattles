@@ -16,13 +16,10 @@ type RewardCardConfig = {
   state: RewardCardState;
 };
 
-function normalizeSquadState(value?: string | null) {
-  return String(value || "").trim().toLowerCase();
-}
+const NO_SQUAD_STATES = new Set(["", "none", "solo", "not_in_squad", "inactive", "unlinked", "missing"]);
 
 function hasActiveSquad(value?: string | null) {
-  const state = normalizeSquadState(value);
-  return Boolean(state && !["none", "unassigned", "inactive", "left", "removed", "locked"].includes(state));
+  return !NO_SQUAD_STATES.has(String(value || "").trim().toLowerCase());
 }
 
 function buildRewardCards(squadState?: string | null): RewardCardConfig[] {
