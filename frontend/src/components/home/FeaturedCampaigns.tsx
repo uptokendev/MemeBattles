@@ -12,12 +12,13 @@ import { ChevronLeft, ChevronRight, Flame, Star, ThumbsUp } from "lucide-react";
 import { AthBar } from "@/components/token/AthBar";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
-import { getFeaturedFeedChainId } from "@/lib/feedChainConfig";
 import { getFactoryAddress } from "@/lib/chainConfig";
 import { resolveImageUri } from "@/lib/media";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { apiFetch } from "@/lib/apiBase";
 import { getReadProvider } from "@/lib/readProvider";
+import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
+import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
@@ -133,6 +134,31 @@ async function safeString(fn: () => Promise<unknown>, fallback = "") {
   }
 }
 
+function buildFeedQuery(chainId: number, refetchNonce: number, path: "campaigns" | "featured") {
+  const params = new URLSearchParams({
+    chainId: String(chainId),
+    limit: "20",
+    _r: String(refetchNonce),
+  });
+
+  if (path === "campaigns") {
+    params.set("tab", "trending");
+    params.set("sort", "default");
+    params.set("status", "all");
+  } else {
+    params.set("sort", "activity");
+  }
+
+  if (isTestnetCampaignsEnabled()) {
+    params.set("includeTestnet", "true");
+    params.set("testnet", "true");
+    params.set("includeDrafts", "true");
+    params.set("status", "all");
+  }
+
+  return params.toString();
+}
+
 async function fetchOnChainFeaturedItems(chainId: number): Promise<FeaturedItemApi[]> {
   const factoryAddress = getFactoryAddress(chainId as any);
   if (!factoryAddress || !isEvmAddress(factoryAddress)) return [];
@@ -178,7 +204,7 @@ async function fetchOnChainFeaturedItems(chainId: number): Promise<FeaturedItemA
 }
 
 async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promise<FeaturedItemApi[]> {
-  const campaigns = await apiFetch(`/api/campaigns?chainId=${chainId}&limit=20&tab=trending&sort=default&status=all&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+  const campaigns = await apiFetch(`/api/campaigns?${buildFeedQuery(chainId, refetchNonce, "campaigns")}`, { cache: "no-store" as RequestCache });
   const campaignJson = await campaigns.json().catch(() => null);
   const campaignItems = getResponseItems(campaignJson);
 
@@ -186,7 +212,7 @@ async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promis
     return campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
   }
 
-  const featured = await apiFetch(`/api/featured?chainId=${chainId}&sort=activity&limit=20&_r=${refetchNonce}`, { cache: "no-store" as RequestCache });
+  const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, { cache: "no-store" as RequestCache });
   const featuredJson = await featured.json().catch(() => null);
   const featuredItems = getResponseItems(featuredJson);
 
@@ -240,8 +266,8 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   const wallet = useWallet();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { activeChainId, fetchCampaignLogoURI } = useLaunchpad();
-  const featuredChainId = getFeaturedFeedChainId(activeChainId);
+  const { fetchCampaignLogoURI } = useLaunchpad();
+  const [featuredChainId] = useSelectedFeedChainId();
   const { price: bnbUsd } = useBnbUsdPrice(true);
   const [voteMode, setVoteMode] = useState<"24h" | "all">("24h");
   const [refetchNonce, setRefetchNonce] = useState(0);
@@ -262,6 +288,13 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
     if (!a) return;
     navigate(`/profile?address=${encodeURIComponent(a)}`);
   };
+
+  useEffect(() => {
+    initialLoadedRef.current = false;
+    setItems([]);
+    setLogoCache({});
+    setProfilesByAddr({});
+  }, [featuredChainId]);
 
   useEffect(() => {
     const onRefresh = (e: Event) => {
