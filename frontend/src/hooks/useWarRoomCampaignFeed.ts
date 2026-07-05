@@ -20,11 +20,22 @@ function toUnixSeconds(value: unknown): number | undefined {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
 }
 
+function normalizeStatus(item: any): "graduated" | "live" | "draft" | "ended" | undefined {
+  const status = String(item?.status ?? item?.state ?? item?.lifecycleStatus ?? item?.lifecycle_status ?? "").toLowerCase();
+  if (["graduated", "ended", "live", "draft"].includes(status)) return status as "graduated" | "live" | "draft" | "ended";
+  if (Boolean(item?.isDexTrading ?? item?.is_dex_trading) || item?.dexPairAddress || item?.dex_pair_address || item?.dexScreenerUrl || item?.dex_screener_url) return "graduated";
+  if (typeof item?.isDraft === "boolean" && item.isDraft) return "draft";
+  if (typeof item?.is_draft === "boolean" && item.is_draft) return "draft";
+  if (typeof item?.isActive === "boolean") return item.isActive ? "live" : "draft";
+  if (typeof item?.is_active === "boolean") return item.is_active ? "live" : "draft";
+  return undefined;
+}
+
 function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
   const campaign = String(item?.campaignAddress ?? item?.campaign_address ?? item?.campaign ?? "").toLowerCase();
   const token = String(item?.tokenAddress ?? item?.token_address ?? item?.token ?? "").toLowerCase();
   const creator = String(item?.creatorAddress ?? item?.creator_address ?? item?.creator ?? "").toLowerCase();
-  const status = String(item?.status ?? "").toLowerCase();
+  const normalizedStatus = normalizeStatus(item);
   const logo = resolveImageUri(item?.logoUri ?? item?.logoURI ?? item?.logo_url ?? item?.logo_uri) || "/placeholder.svg";
 
   return {
@@ -41,9 +52,9 @@ function normalizeApiCampaign(item: any, index: number): WarRoomCampaign {
     website: String(item?.website ?? item?.website_url ?? ""),
     extraLink: String(item?.extraLink ?? item?.extra_link ?? ""),
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
-    status: status === "graduated" || status === "ended" || status === "live" ? status : undefined,
-    isActive: typeof item?.isActive === "boolean" ? item.isActive : typeof item?.is_active === "boolean" ? item.is_active : undefined,
-    isDexTrading: Boolean(item?.isDexTrading ?? item?.is_dex_trading ?? status === "graduated"),
+    status: normalizedStatus === "ended" ? "graduated" : normalizedStatus,
+    isActive: typeof item?.isActive === "boolean" ? item.isActive : typeof item?.is_active === "boolean" ? item.is_active : normalizedStatus === "live" ? true : normalizedStatus === "draft" ? false : undefined,
+    isDexTrading: Boolean(item?.isDexTrading ?? item?.is_dex_trading ?? normalizedStatus === "graduated" || normalizedStatus === "ended"),
     graduatedAt: toUnixSeconds(item?.graduatedAtChain ?? item?.graduated_at_chain),
     holdersCount: toNumber(item?.holderCount ?? item?.holder_count),
     holders: item?.holderCount != null || item?.holder_count != null ? String(item?.holderCount ?? item?.holder_count) : undefined,
