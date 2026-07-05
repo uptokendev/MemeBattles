@@ -31,7 +31,7 @@ const LEGACY_FACTORY_ABI = [
 
 const UNREACHABLE_FEATURED_IMAGE_HOSTS = new Set(["jlbdueorprgnfkcpnkfq.supabase.co"]);
 
-const FEATURED_CARD_WIDTH = 252;
+const FEATURED_CARD_WIDTH = 392;
 
 type FeaturedItemApi = {
   chainId: number;
@@ -461,7 +461,7 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
   };
 
   const header = (
-    <div className="mb-2 flex items-center justify-between gap-3">
+    <div className="mb-3 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3 min-w-0">
         <div className="inline-flex items-center gap-2 mwz-section-title text-sm md:text-base"><ThumbsUp className="h-4 w-4" />Featured Campaigns</div>
         <div className="hidden md:block text-xs uppercase tracking-[0.16em] mwz-muted">Top 20 ({voteMode === "24h" ? "24h upvotes" : "all-time upvotes"})</div>
@@ -481,29 +481,29 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       <div className="relative">
         <div
           ref={scrollRef}
-          className="grid grid-flow-col grid-rows-2 auto-cols-[226px] gap-2.5 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth sm:auto-cols-[244px] lg:auto-cols-[252px]"
+          className="grid grid-flow-col grid-rows-2 auto-cols-[340px] gap-3 overflow-x-auto pb-1 pr-2 snap-x snap-mandatory scroll-smooth sm:auto-cols-[370px] lg:auto-cols-[392px]"
           style={{ scrollbarWidth: "none" } as React.CSSProperties}
         >
           {loading && !cards.length ? (
-            Array.from({ length: 10 }).map((_, i) => <div key={i} className="mwz-card h-[92px] w-full animate-pulse" />)
+            Array.from({ length: 10 }).map((_, i) => <div key={i} className="mwz-card h-[150px] w-full animate-pulse" />)
           ) : err && !cards.length ? (
             <div className="mwz-muted py-8 text-sm">{err}</div>
           ) : cards.length === 0 ? (
             <div className="mwz-muted py-8 text-sm">No featured campaigns yet.</div>
           ) : (
             <>
-              {err && <div className="mwz-card h-[92px] w-full p-3 text-xs text-orange-200">Background refresh failed. Showing last loaded featured campaigns.</div>}
+              {err && <div className="mwz-card h-[150px] w-full p-4 text-sm text-orange-200">Background refresh failed. Showing last loaded featured campaigns.</div>}
               {cards.map((c) => (
                 <div
                   key={c.addr}
                   data-addr={c.addr}
-                  className="mwz-hud-frame group flex h-[92px] w-full snap-start overflow-hidden rounded-none border border-success/25 bg-black/70 transition hover:border-orange-400/70 hover:shadow-[0_0_18px_rgba(240,106,26,0.18)]"
+                  className="mwz-hud-frame group flex h-[150px] w-full snap-start overflow-hidden rounded-none border border-success/25 bg-black/70 transition hover:border-orange-400/70 hover:shadow-[0_0_18px_rgba(240,106,26,0.18)]"
                   role="button"
                   tabIndex={0}
                   onClick={() => navigate(`/token/${c.addr}?chainId=${c.chainId}`)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}?chainId=${c.chainId}`); }}
                 >
-                  <div className="relative h-[92px] w-[92px] shrink-0 overflow-hidden border-r border-success/25 bg-black">
+                  <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-success/25 bg-black">
                     <div className="absolute inset-0 mwz-stat-grid opacity-25 z-10 pointer-events-none" />
                     <img
                       src={c.image}
@@ -513,32 +513,32 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                       onError={(e) => { const img = e.currentTarget; if (!img.dataset.fallback) { img.dataset.fallback = "1"; img.src = "/placeholder.svg"; } }}
                     />
                     <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(0,0,0,0.04),transparent_38%,rgba(0,0,0,0.82))]" />
-                    <div className="absolute left-1.5 top-1.5 z-30 flex h-5 min-w-5 items-center justify-center border border-success/60 bg-black/75 px-1 text-[10px] font-bold text-success shadow-[0_0_10px_rgba(57,255,79,0.16)]">#{c.idx}</div>
-                    <div className="absolute inset-x-1.5 bottom-1.5 z-30 flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-7 w-7 bg-black/75", followedMap[c.addr] && "mwz-button-active")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
-                        <Star className={cn("h-3.5 w-3.5", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/85")} />
+                    <div className="absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center border border-success/60 bg-black/75 px-1.5 text-xs font-bold text-success shadow-[0_0_10px_rgba(57,255,79,0.16)]">#{c.idx}</div>
+                    <div className="absolute inset-x-2 bottom-2 z-30 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <Button type="button" variant="ghost" size="icon" className={cn("mwz-button h-9 w-9 bg-black/75", followedMap[c.addr] && "mwz-button-active")} onClick={(e) => toggleFollow(e, c)} disabled={!!followBusyMap[c.addr]} aria-label={(followedMap[c.addr] ?? false) ? "Unfollow campaign" : "Follow campaign"} title={(followedMap[c.addr] ?? false) ? "Unfollow" : "Follow"}>
+                        <Star className={cn("h-4.5 w-4.5", followedMap[c.addr] ? "fill-current text-orange-400" : "text-success/85")} />
                       </Button>
-                      <UpvoteDialog campaignAddress={c.addr} chainId={c.chainId} className="mwz-button mwz-button-active h-7 min-w-0 flex-1 px-1.5 text-[9px]" buttonVariant="ghost" buttonSize="sm" />
+                      <UpvoteDialog campaignAddress={c.addr} chainId={c.chainId} className="mwz-button mwz-button-active h-9 min-w-0 flex-1 px-2 text-[11px]" buttonVariant="ghost" buttonSize="sm" />
                     </div>
                   </div>
 
-                  <div className="flex h-[92px] min-w-0 flex-1 flex-col justify-between px-2.5 py-2">
+                  <div className="flex h-[150px] min-w-0 flex-1 flex-col justify-between px-4 py-3">
                     <div className="min-w-0">
-                      <div className="truncate text-[14px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{c.name}</div>
-                      <div className="mt-0.5 flex items-center justify-between gap-2">
-                        <span className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-success/85">{c.symbol ? `$${c.symbol}` : "-"}</span>
-                        <span className="shrink-0 text-[10px] font-semibold text-orange-300">{voteMode === "24h" ? c.votes24h : c.votesAll} votes</span>
+                      <div className="truncate text-[19px] font-semibold leading-tight text-foreground group-hover:text-orange-200">{c.name}</div>
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span className="truncate text-[13px] font-semibold uppercase tracking-[0.08em] text-success/85">{c.symbol ? `$${c.symbol}` : "-"}</span>
+                        <span className="shrink-0 text-[12px] font-semibold text-orange-300">{voteMode === "24h" ? c.votes24h : c.votesAll} votes</span>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-[10px] leading-tight">
-                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-1.5 py-1">
+                    <div className="grid grid-cols-2 gap-3 text-[11px] leading-tight">
+                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-2 py-2">
                         <div className="uppercase tracking-[0.14em] text-success/45">MCap</div>
-                        <div className="mt-0.5 truncate text-[12px] font-bold text-foreground">{c.mcapUsdLabel ?? "-"}</div>
+                        <div className="mt-1 truncate text-[16px] font-bold text-foreground">{c.mcapUsdLabel ?? "-"}</div>
                       </div>
-                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-1.5 py-1">
+                      <div className="min-w-0 rounded-sm border border-success/15 bg-black/35 px-2 py-2">
                         <div className="uppercase tracking-[0.14em] text-success/45">ATH</div>
-                        <div className="mt-0.5 truncate text-[12px] font-bold text-foreground">{c.athUsdLabel}</div>
+                        <div className="mt-1 truncate text-[16px] font-bold text-foreground">{c.athUsdLabel}</div>
                       </div>
                     </div>
                   </div>
