@@ -81,9 +81,7 @@ export default function CommandCenterSettings() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader
-        title="Settings"
-      />
+
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <CommandCenterCard

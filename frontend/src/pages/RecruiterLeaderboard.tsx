@@ -75,21 +75,11 @@ export default function RecruiterLeaderboard() {
   }, [recruiters]);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 py-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 py-16">
       <Card className="overflow-hidden border-border/60 bg-[radial-gradient(circle_at_top_left,rgba(240,106,26,0.22),transparent_42%),linear-gradient(180deg,rgba(22,26,31,0.94),rgba(8,11,15,0.98))] p-6 md:p-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-3xl space-y-3">
-            <p className="font-retro text-xs uppercase tracking-[0.26em] text-amber-100/70">
-              Recruiter Program
-            </p>
-            <h1 className="font-retro text-3xl text-foreground md:text-5xl">
-              Live recruiter leaderboard, straight from backend state.
-            </h1>
-            <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
-              Rankings use the recruiter summary read model, so linked wallets, routed volume, earnings, and claimable
-              balances all come from the same attribution and ledger system used for rewards. The score is weighted in
-              the backend so the formula can be changed without shipping a frontend rewrite.
-            </p>
+
           </div>
 
           <div className="flex flex-wrap gap-3">
