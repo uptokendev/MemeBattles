@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { FileText, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
+import { Coins, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
 
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
 const menuItems = [
   { label: "Overview", path: "", icon: Home, end: true },
-  { label: "Drafts", path: "coins", icon: FileText },
+  { label: "Coins", path: "coins", icon: Coins },
   { label: "Recruiter", path: "recruiter", icon: Shield },
   { label: "Squad", path: "squad", icon: Users, requiresSquad: true },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
