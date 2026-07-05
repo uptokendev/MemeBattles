@@ -12,25 +12,15 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
-import { isPostGradNavEnabled, postGradFlags } from "@/features/postgrad/config";
-import { ArenaDesktopNav } from "@/components/postgrad/ArenaDesktopNav";
+import { postGradFlags } from "@/features/postgrad/config";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import {
-  getDraftNotifications,
-  markAllDraftNotificationsRead,
-  markDraftNotificationRead,
-  type DraftNotification,
-} from "@/lib/draftPromotion";
-import {
-  fetchPrepareNotifications,
-  markAllPrepareNotificationsRead,
-  markPrepareNotificationRead,
-} from "@/lib/prepareNotifications";
+import { usePrepareNotificationCenter } from "@/hooks/usePrepareNotificationCenter";
+
 interface TopBarProps {
   mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
@@ -75,8 +65,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
-  const [notificationsFromApi, setNotificationsFromApi] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const bellRef = useRef<HTMLButtonElement | null>(null);
   const walletRef = useRef<HTMLButtonElement | null>(null);
@@ -105,6 +93,13 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const [allCampaigns, setAllCampaigns] = useState<CampaignInfo[]>([]);
 
   const { fetchCampaigns } = useLaunchpad();
+
+  const {
+    notifications: draftNotifications,
+    unreadCount: unreadNotifications,
+    markOneRead,
+    markAllRead,
+  } = usePrepareNotificationCenter(wallet.account, 20);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -140,7 +135,6 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   }, [notificationOpen, disconnectOpen]);
 
   const shortAddress = account && account.length > 8 ? `${account.slice(0, 4)}...${account.slice(-4)}` : account;
-  const unreadNotifications = draftNotifications.filter((item) => !item.read).length;
 
   const topbarButtonClass =
     "mwz-button !h-[12px] !min-h-0 !gap-0.5 !px-1.5 sm:!px-2 !py-0 text-[10px] leading-none font-retro";
@@ -191,61 +185,10 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
     return () => window.removeEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const refresh = async () => {
-      if (!wallet.account) {
-        setDraftNotifications([]);
-        setNotificationsFromApi(false);
-        return;
-      }
-
-      try {
-        const items = await fetchPrepareNotifications(wallet.account, 20);
-        if (cancelled) return;
-        setDraftNotifications(items);
-        setNotificationsFromApi(true);
-      } catch {
-        if (cancelled) return;
-        setDraftNotifications(getDraftNotifications());
-        setNotificationsFromApi(false);
-      }
-    };
-
-    refresh();
-    const onLocalChange = () => refresh();
-    window.addEventListener("mwz:notifications-changed", onLocalChange as EventListener);
-    const timer = window.setInterval(refresh, 30000);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("mwz:notifications-changed", onLocalChange as EventListener);
-      window.clearInterval(timer);
-    };
-  }, [wallet.account]);
-
-  const openNotificationTarget = async (notification: DraftNotification) => {
-    if (wallet.account && notificationsFromApi) {
-      await markPrepareNotificationRead(wallet.account, notification.id).catch(() => undefined);
-      setDraftNotifications((prev) => prev.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
-    } else {
-      markDraftNotificationRead(notification.id);
-      setDraftNotifications(getDraftNotifications());
-    }
+  const openNotificationTarget = async (notification: { id: string; target: string }) => {
+    await markOneRead(notification.id);
     setNotificationOpen(false);
     navigate(notification.target);
-  };
-
-  const markAllRead = async () => {
-    if (wallet.account && notificationsFromApi) {
-      await markAllPrepareNotificationsRead(wallet.account).catch(() => undefined);
-      setDraftNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
-      return;
-    }
-
-    markAllDraftNotificationsRead();
-    setDraftNotifications(getDraftNotifications());
   };
 
   return (
@@ -274,7 +217,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
           />
         </Link>
 
-        {/* Right cluster: Socials → Search → Create → Bell → Wallet (pushed right) */}
+        {/* Right cluster: Socials -> Search -> Create -> Bell -> Wallet (pushed right) */}
         <div className="ml-auto flex items-center gap-1.5">
           {/* Social icons first */}
           <div className="hidden items-center xl:flex">
@@ -333,7 +276,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                   >
                     <div className="flex items-center justify-between gap-3 border-b border-border/70 px-2 pb-2">
                       <span className="font-retro text-xs uppercase tracking-[0.16em] text-foreground">Notifications</span>
-                      <button type="button" onClick={markAllRead} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+                      <button type="button" onClick={() => void markAllRead()} className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
                         Mark read
                       </button>
                     </div>
@@ -342,7 +285,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
                         <button
                           key={notification.id}
                           type="button"
-                          onClick={() => openNotificationTarget(notification)}
+                          onClick={() => void openNotificationTarget(notification)}
                           className="block w-full border-b border-border/40 px-2 py-3 text-left hover:bg-success/10"
                         >
                           <div className="flex items-center justify-between gap-2">
