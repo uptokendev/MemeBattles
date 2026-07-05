@@ -246,7 +246,7 @@ const WarRoom = () => {
 
       <section className="mwz-hud-frame overflow-hidden">
         <div className={activeMode === "draft"
-          ? "hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_28px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid"
+          ? "hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid"
           : "hidden grid-cols-[minmax(320px,1.55fr)_110px_110px_110px_90px_130px_28px] gap-3 border-b border-[var(--mwz-flat-card-border)] px-4 py-3 text-xs font-medium uppercase tracking-[0.08em] text-white/58 lg:grid"}
         >
           <div>Coin info</div>
@@ -265,7 +265,7 @@ const WarRoom = () => {
               </button>
             );
           })}
-          <div />
+          {activeMode !== "draft" ? <div /> : null}
         </div>
         <div>
           {loading ? (
