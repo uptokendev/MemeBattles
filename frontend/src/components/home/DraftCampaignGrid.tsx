@@ -4,8 +4,7 @@ import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { resolveImageUri } from "@/lib/media";
-import { useLaunchpad } from "@/lib/launchpadClient";
-import { getDraftDiscoveryChainId } from "@/lib/feedChainConfig";
+import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
@@ -56,7 +55,7 @@ function heatClass(label?: string) {
   if (label === "On Fire") return "border-orange-400/70 text-orange-300";
   if (label === "Hot") return "border-orange-400/60 text-orange-400";
   if (label === "Warming") return "border-orange-400/50 text-orange-300";
-  return "border-orange-400/40 text-orange-300";  // Cold - now orange for visibility on black bg
+  return "border-orange-400/40 text-orange-300";
 }
 
 function matchesSearch(item: DraftCampaignVM, search?: string) {
@@ -97,8 +96,7 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
 }
 
 export function DraftCampaignGrid({ className, query }: { className?: string; query: HomeQuery & { tab?: string } }) {
-  const { activeChainId } = useLaunchpad();
-  const draftChainId = getDraftDiscoveryChainId(activeChainId);
+  const [draftChainId] = useSelectedFeedChainId();
   const [items, setItems] = useState<DraftCampaignVM[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
