@@ -123,6 +123,7 @@ export const CurvePriceChart = ({
   const livePoints = curvePointsOverride ?? live.points;
   const liveLoading = loadingOverride ?? live.loading;
   const liveError = errorOverride ?? live.error;
+  const canLoadMetricsFallback = Boolean(campaignAddress && ethers.isAddress(campaignAddress));
 
   const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
 
@@ -137,7 +138,7 @@ export const CurvePriceChart = ({
   useEffect(() => {
     let cancelled = false;
 
-    if (!campaignAddress || (livePoints?.length ?? 0) > 0) {
+    if (!campaignAddress || !canLoadMetricsFallback || (livePoints?.length ?? 0) > 0) {
       setMetricsFallback(null);
       return;
     }
@@ -155,7 +156,7 @@ export const CurvePriceChart = ({
     return () => {
       cancelled = true;
     };
-  }, [campaignAddress, fetchCampaignMetrics, livePoints?.length]);
+  }, [campaignAddress, canLoadMetricsFallback, fetchCampaignMetrics, livePoints?.length]);
 
   const chartPointsComputed: ChartPoint[] = useMemo(() => {
     if (!usd || usd <= 0) return [];
