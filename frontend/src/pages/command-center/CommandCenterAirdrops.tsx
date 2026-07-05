@@ -4,12 +4,32 @@ import { Gift, Trophy } from "lucide-react";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
+import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { fetchAirdropWinners, type AirdropWinner } from "@/lib/rewardProgramsApi";
 
 const ZERO_RAW = "0";
+const LAMPORTS_PER_SOL = 1_000_000_000;
 
-function formatBnb(raw: string): string {
+function isSolanaAirdrop(chainId?: number | null): boolean {
+  return chainId === SOLANA_CHAIN_ID;
+}
+
+function nativeSymbol(chainId?: number | null): "BNB" | "SOL" {
+  return isSolanaAirdrop(chainId) ? "SOL" : "BNB";
+}
+
+function pageTitle(chainId?: number | null): string {
+  return isSolanaAirdrop(chainId) ? "SOL Airdrops" : "BNB Airdrops";
+}
+
+function formatNativeAmount(raw: string, chainId?: number | null): string {
   try {
+    if (isSolanaAirdrop(chainId)) {
+      const value = Number(BigInt(raw || ZERO_RAW)) / LAMPORTS_PER_SOL;
+      return value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 });
+    }
+
     const value = Number(formatEther(BigInt(raw || ZERO_RAW)));
     return value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 });
   } catch {
@@ -49,6 +69,7 @@ function winnerType(program: string): string {
 }
 
 export default function CommandCenterAirdrops() {
+  const { chainId } = useCommandCenterData();
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +80,7 @@ export default function CommandCenterAirdrops() {
     setLoading(true);
     setError(null);
 
-    void fetchAirdropWinners({ limit: 12 })
+    void fetchAirdropWinners({ chainId, limit: 12 })
       .then((items) => {
         if (!cancelled) setWinners(Array.isArray(items) ? items : []);
       })
@@ -73,7 +94,7 @@ export default function CommandCenterAirdrops() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [chainId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
@@ -83,10 +104,11 @@ export default function CommandCenterAirdrops() {
   const nextDropAt = useMemo(() => getNextMondayUtc(), []);
   const countdown = formatCountdown(nextDropAt, nowMs);
   const currentPrizePoolRaw = ZERO_RAW;
+  const symbol = nativeSymbol(chainId);
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader title="Warzone Airdrops" />
+      <CommandCenterPageHeader title={pageTitle(chainId)} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="space-y-4">
@@ -95,7 +117,7 @@ export default function CommandCenterAirdrops() {
               <div>
                 <p className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Current Prize Pool</p>
                 <div className="mt-5 font-retro text-4xl text-foreground md:text-5xl">
-                  {formatBnb(currentPrizePoolRaw)} BNB
+                  {formatNativeAmount(currentPrizePoolRaw, chainId)} {symbol}
                 </div>
               </div>
               <div className="rounded-2xl border border-accent/30 bg-accent/10 p-3 text-accent">
@@ -140,7 +162,9 @@ export default function CommandCenterAirdrops() {
                         {winnerType(winner.program)} winner #{winner.winnerRank}
                       </p>
                     </div>
-                    <p className="shrink-0 font-retro text-sm text-foreground">{formatBnb(winner.payoutAmount)} BNB</p>
+                    <p className="shrink-0 font-retro text-sm text-foreground">
+                      {formatNativeAmount(winner.payoutAmount, chainId)} {symbol}
+                    </p>
                   </div>
                 </div>
               ))}
