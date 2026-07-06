@@ -114,6 +114,8 @@ function batchItem(row) {
     totalAmount: String(row.total_amount ?? "0"),
     recipientCount: Number(row.recipient_count || 0),
     claimableCount: Number(row.claimable_count || 0),
+    claimPendingCount: Number(metadata.claimPendingCount || 0),
+    claimPendingAmount: String(metadata.claimPendingAmount ?? "0"),
     claimedCount: Number(row.claimed_count || 0),
     failedCount: Number(row.failed_count || 0),
     source: row.source || null,
@@ -158,16 +160,18 @@ function alertItem(row) {
 }
 
 function totalsFor(items) {
-  const totals = { claimableAmount: 0n, claimedAmount: 0n, expiredAmount: 0n };
+  const totals = { claimableAmount: 0n, claimPendingAmount: 0n, claimedAmount: 0n, expiredAmount: 0n };
   for (const item of items) {
     let amount = 0n;
     try { amount = BigInt(item.amount || "0"); } catch {}
     if (item.status === "claimable") totals.claimableAmount += amount;
+    if (item.status === "claim_pending") totals.claimPendingAmount += amount;
     if (item.status === "claimed") totals.claimedAmount += amount;
     if (item.status === "expired") totals.expiredAmount += amount;
   }
   return {
     claimableAmount: String(totals.claimableAmount),
+    claimPendingAmount: String(totals.claimPendingAmount),
     claimedAmount: String(totals.claimedAmount),
     expiredAmount: String(totals.expiredAmount),
   };
@@ -199,6 +203,46 @@ async function writeAudit({ batchId = null, rewardLedgerId = null, action, oldVa
      values ($1, $2, 'api', $3, $4, $5, $6, $7, '{}'::jsonb)`,
     [batchId, rewardLedgerId, actorId, action, oldValue, newValue, reason],
   );
+}
+
+async function refreshBatchCountsForLedgerIds(rewardLedgerIds) {
+  if (!Array.isArray(rewardLedgerIds) || !rewardLedgerIds.length) return;
+  const { rows } = await pool.query(
+    `select distinct batch_id
+       from public.reward_batch_items
+      where reward_ledger_id = any($1::uuid[])
+        and batch_id is not null`,
+    [rewardLedgerIds],
+  );
+
+  for (const row of rows) {
+    await pool.query(
+      `update public.reward_batches rb
+          set recipient_count = stats.recipient_count,
+              claimable_count = stats.claimable_count,
+              claimed_count = stats.claimed_count,
+              failed_count = stats.failed_count,
+              metadata = coalesce(rb.metadata, '{}'::jsonb) || jsonb_build_object(
+                'claimPendingCount', stats.claim_pending_count,
+                'claimPendingAmount', stats.claim_pending_amount,
+                'lastClaimStatusRefreshAt', now()
+              ),
+              updated_at = now()
+         from (
+           select count(*)::int as recipient_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claimable')::int as claimable_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claim_pending')::int as claim_pending_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claimed')::int as claimed_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'failed')::int as failed_count,
+                  coalesce(sum(coalesce(rl.amount, rbi.amount)) filter (where coalesce(rl.status, rbi.status) = 'claim_pending'), 0)::text as claim_pending_amount
+             from public.reward_batch_items rbi
+             left join public.reward_ledger rl on rl.id = rbi.reward_ledger_id
+            where rbi.batch_id = $1::uuid
+         ) stats
+        where rb.id = $1::uuid`,
+      [row.batch_id],
+    );
+  }
 }
 
 export async function rewardsMe(req, res) {
@@ -284,6 +328,12 @@ export async function rewardsClaims(req, res) {
         returning *`,
       [ids, wallet, batchId],
     );
+
+    const updatedIds = rows.map((row) => row.id);
+    if (updatedIds.length) {
+      await pool.query(`update public.reward_batch_items set status = 'claim_pending' where reward_ledger_id = any($1::uuid[])`, [updatedIds]);
+      await refreshBatchCountsForLedgerIds(updatedIds);
+    }
 
     for (const row of rows) {
       await writeAudit({ rewardLedgerId: row.id, action: "claim_requested", oldValue: "claimable", newValue: "claim_pending", reason: body.reason || "User claim requested", req });
@@ -595,19 +645,34 @@ export async function adminRewardOverview(req, res) {
       pool.query(
         `select count(*)::int as total_rewards,
                 coalesce(sum(amount) filter (where status = 'claimable'), 0)::text as total_claimable,
+                coalesce(sum(amount) filter (where status = 'claim_pending'), 0)::text as total_claim_pending,
+                count(*) filter (where status = 'claim_pending')::int as total_claim_pending_count,
                 coalesce(sum(amount) filter (where status = 'claimed'), 0)::text as total_claimed,
                 count(*) filter (where status = 'failed')::int as total_failed,
                 count(*) filter (where status = 'expired')::int as total_expired
            from public.reward_ledger`,
       ),
       pool.query(
-        `select reward_type, count(*)::int as count, coalesce(sum(amount), 0)::text as amount
+        `select reward_type,
+                count(*)::int as count,
+                coalesce(sum(amount), 0)::text as amount,
+                count(*) filter (where status = 'claimable')::int as claimable_count,
+                count(*) filter (where status = 'claim_pending')::int as claim_pending_count,
+                count(*) filter (where status = 'claimed')::int as claimed_count,
+                count(*) filter (where status = 'failed')::int as failed_count
            from public.reward_ledger
           group by reward_type
           order by reward_type`,
       ),
       pool.query(
-        `select chain, token_symbol, count(*)::int as count, coalesce(sum(amount), 0)::text as amount
+        `select chain,
+                token_symbol,
+                count(*)::int as count,
+                coalesce(sum(amount), 0)::text as amount,
+                count(*) filter (where status = 'claimable')::int as claimable_count,
+                count(*) filter (where status = 'claim_pending')::int as claim_pending_count,
+                count(*) filter (where status = 'claimed')::int as claimed_count,
+                count(*) filter (where status = 'failed')::int as failed_count
            from public.reward_ledger
           group by chain, token_symbol
           order by chain, token_symbol`,
