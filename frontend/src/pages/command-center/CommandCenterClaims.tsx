@@ -1,110 +1,216 @@
-import { Gift, Trophy, Users, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { formatEther } from "ethers";
+import { Gift, Trophy, Users, Swords, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { fetchRewardClaims, requestRewardClaim, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
 
-type RewardCardState = "claimable" | "pending" | "ineligible" | "locked" | "empty";
+type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
 
 type RewardCardConfig = {
+  rewardType: string;
   title: string;
   description: string;
   icon: LucideIcon;
   buttonLabel: string;
   amountLabel: string;
   state: RewardCardState;
+  items: RewardLedgerItem[];
 };
 
 const NO_SQUAD_STATES = new Set(["", "none", "solo", "not_in_squad", "inactive", "unlinked", "missing"]);
+const LAMPORTS_PER_SOL = 1_000_000_000;
+
+const REWARD_COPY: Record<string, { title: string; description: string; icon: LucideIcon }> = {
+  league: {
+    title: "League Rewards",
+    description: "Rewards earned from weekly or monthly league placements.",
+    icon: Trophy,
+  },
+  airdrop: {
+    title: "Airdrop Rewards",
+    description: "Airdrop rewards connected to this wallet.",
+    icon: Gift,
+  },
+  recruiter: {
+    title: "Recruiter Rewards",
+    description: "Rewards earned through recruiter activity.",
+    icon: Users,
+  },
+  squad: {
+    title: "Squad Rewards",
+    description: "Squad rewards earned through your recruiter squad.",
+    icon: Users,
+  },
+  battle: {
+    title: "Battle Rewards",
+    description: "Rewards earned from battle participation.",
+    icon: Swords,
+  },
+  tournament: {
+    title: "Tournament Rewards",
+    description: "Tournament rewards connected to this wallet.",
+    icon: Trophy,
+  },
+  campaign: {
+    title: "Campaign Rewards",
+    description: "Campaign rewards connected to this wallet.",
+    icon: Gift,
+  },
+  manual: {
+    title: "Manual Rewards",
+    description: "Manual rewards assigned by the MemeWarzone team.",
+    icon: Gift,
+  },
+  future: {
+    title: "Future Rewards",
+    description: "Future reward programs will appear here.",
+    icon: Gift,
+  },
+};
 
 function hasActiveSquad(value?: string | null) {
   return !NO_SQUAD_STATES.has(String(value || "").trim().toLowerCase());
 }
 
-function buildRewardCards(squadState?: string | null): RewardCardConfig[] {
-  const cards: RewardCardConfig[] = [
-    {
-      title: "League Rewards",
-      description: "Rewards earned from weekly or monthly league placements will appear here.",
-      icon: Trophy,
-      buttonLabel: "Claim League Rewards",
-      amountLabel: "0",
-      state: "empty",
-    },
-    {
-      title: "Airdrop Rewards",
-      description: "Airdrop rewards connected to this wallet will appear here.",
-      icon: Gift,
-      buttonLabel: "Claim Airdrop Rewards",
-      amountLabel: "0",
-      state: "empty",
-    },
-  ];
-
-  if (hasActiveSquad(squadState)) {
-    cards.push({
-      title: "Squad Rewards",
-      description: "Squad rewards earned through your recruiter squad will appear here.",
-      icon: Users,
-      buttonLabel: "Claim Squad Rewards",
-      amountLabel: "0",
-      state: "empty",
-    });
-  }
-
-  return cards;
+function isSolana(chainId?: number | null) {
+  return chainId === SOLANA_CHAIN_ID;
 }
 
-function getRewardStateCopy(state: RewardCardState) {
+function formatNativeAmount(raw: string, chainId?: number | null, symbol?: string | null) {
+  try {
+    if (isSolana(chainId)) {
+      const value = Number(BigInt(raw || "0")) / LAMPORTS_PER_SOL;
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "SOL"}`;
+    }
+    const value = Number(formatEther(BigInt(raw || "0")));
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: value >= 100 ? 2 : 6 })} ${symbol || "BNB"}`;
+  } catch {
+    return `0 ${symbol || (isSolana(chainId) ? "SOL" : "BNB")}`;
+  }
+}
+
+function amountSum(items: RewardLedgerItem[]) {
+  return items.reduce((sum, item) => {
+    try {
+      return sum + BigInt(item.amount || "0");
+    } catch {
+      return sum;
+    }
+  }, 0n);
+}
+
+function rewardState(items: RewardLedgerItem[]): RewardCardState {
+  if (items.some((item) => item.status === "claimable")) return "claimable";
+  if (items.some((item) => item.status === "claim_pending")) return "pending";
+  if (items.some((item) => item.status === "failed")) return "failed";
+  if (items.some((item) => item.status === "expired")) return "expired";
+  return "empty";
+}
+
+function getRewardStateCopy(state: RewardCardState, solanaDisabled: boolean) {
+  if (solanaDisabled && state === "claimable") {
+    return { label: "Tracked", amountCaption: "Solana claiming disabled", disabled: true };
+  }
   switch (state) {
     case "claimable":
-      return {
-        label: "Ready",
-        amountCaption: "Available to claim",
-        disabled: false,
-      };
+      return { label: "Ready", amountCaption: "Available to claim", disabled: false };
     case "pending":
-      return {
-        label: "Pending",
-        amountCaption: "Processing soon",
-        disabled: true,
-      };
-    case "ineligible":
-      return {
-        label: "Not eligible",
-        amountCaption: "Nothing available",
-        disabled: true,
-      };
-    case "locked":
-      return {
-        label: "Locked",
-        amountCaption: "Unlock required",
-        disabled: true,
-      };
+      return { label: "Pending", amountCaption: "Claim in progress", disabled: true };
+    case "failed":
+      return { label: "Failed", amountCaption: "Retry available", disabled: false };
+    case "expired":
+      return { label: "Expired", amountCaption: "Claim window closed", disabled: true };
     case "empty":
     default:
-      return {
-        label: "No rewards yet",
-        amountCaption: "Available to claim",
-        disabled: true,
-      };
+      return { label: "No rewards yet", amountCaption: "Available to claim", disabled: true };
   }
+}
+
+function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null): RewardCardConfig[] {
+  const grouped = new Map<string, RewardLedgerItem[]>();
+  for (const item of items) {
+    const type = String(item.rewardType || "future").toLowerCase();
+    if (!grouped.has(type)) grouped.set(type, []);
+    grouped.get(type)!.push(item);
+  }
+
+  const baseline = ["league", "airdrop", "recruiter"];
+  if (hasActiveSquad(squadState)) baseline.push("squad");
+
+  const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()]));
+  return orderedTypes.map((rewardType) => {
+    const copy = REWARD_COPY[rewardType] || REWARD_COPY.future;
+    const groupItems = grouped.get(rewardType) || [];
+    const first = groupItems[0];
+    const state = rewardState(groupItems);
+    return {
+      rewardType,
+      title: copy.title,
+      description: copy.description,
+      icon: copy.icon,
+      buttonLabel: state === "failed" ? "Retry Claim" : `Claim ${copy.title}`,
+      amountLabel: formatNativeAmount(String(amountSum(groupItems)), first?.chainId, first?.tokenSymbol),
+      state,
+      items: groupItems,
+    };
+  });
 }
 
 export default function CommandCenterClaims() {
-  const { attribution } = useCommandCenterData();
-  const rewardCards = buildRewardCards(attribution?.squadState);
+  const { attribution, chainId, walletAddress } = useCommandCenterData();
+  const [items, setItems] = useState<RewardLedgerItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [claimingType, setClaimingType] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadClaims = () => {
+    setLoading(true);
+    setMessage(null);
+    void fetchRewardClaims({ walletAddress, chainId, limit: 100 })
+      .then((next) => setItems(Array.isArray(next) ? next : []))
+      .catch((err: any) => setMessage(String(err?.message || err || "Failed to load rewards")))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadClaims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletAddress, chainId]);
+
+  const rewardCards = useMemo(() => buildRewardCards(items, attribution?.squadState), [items, attribution?.squadState]);
+
+  async function claimRewards(card: RewardCardConfig) {
+    const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
+    if (!claimable.length) return;
+    setClaimingType(card.rewardType);
+    setMessage(null);
+    try {
+      await requestRewardClaim({ walletAddress, chainId, rewardLedgerIds: claimable.map((item) => item.id) });
+      setMessage(`${card.title} claim submitted.`);
+      loadClaims();
+    } catch (err: any) {
+      setMessage(String(err?.message || err || "Claim request failed"));
+    } finally {
+      setClaimingType(null);
+    }
+  }
 
   return (
     <div className="space-y-4">
       <CommandCenterCard title="Your Rewards">
+        {message ? <div className="mb-3 rounded-xl border border-border/60 bg-background/30 p-3 text-sm text-muted-foreground">{message}</div> : null}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {rewardCards.map((card) => {
             const Icon = card.icon;
-            const stateCopy = getRewardStateCopy(card.state);
+            const solanaDisabled = card.items.some((item) => item.chainId === SOLANA_CHAIN_ID);
+            const stateCopy = getRewardStateCopy(card.state, solanaDisabled);
             return (
-              <div key={card.title} className="rounded-2xl border border-border/50 bg-background/25 p-4">
+              <div key={card.rewardType} className="rounded-2xl border border-border/50 bg-background/25 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 font-retro text-sm text-foreground">
@@ -120,11 +226,15 @@ export default function CommandCenterClaims() {
 
                 <div className="mt-5 flex items-end justify-between gap-3">
                   <div>
-                    <div className="font-retro text-2xl text-foreground">{card.amountLabel}</div>
+                    <div className="font-retro text-2xl text-foreground">{loading ? "..." : card.amountLabel}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{stateCopy.amountCaption}</div>
                   </div>
-                  <Button disabled={stateCopy.disabled} className="font-retro">
-                    {card.buttonLabel}
+                  <Button
+                    disabled={stateCopy.disabled || claimingType === card.rewardType}
+                    className="font-retro"
+                    onClick={() => void claimRewards(card)}
+                  >
+                    {claimingType === card.rewardType ? "Submitting..." : card.buttonLabel}
                   </Button>
                 </div>
               </div>
