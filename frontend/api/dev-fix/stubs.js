@@ -349,12 +349,13 @@ export async function airdropWinners(req, res) {
     );
     const items = rows.map((row, index) => {
       const item = ledgerItem(row);
+      const program = item.metadata?.program || (item.metadata?.role === "Creator" ? "airdrop_creator" : "airdrop_trader");
       return {
         id: Number(item.metadata?.winnerId || index + 1),
         drawId: Number(item.metadata?.drawId || item.metadata?.batchId || 0),
         epochId: Number(item.metadata?.epochId || 0),
         chainId: item.chainId || Number(q.chainId) || 56,
-        program: item.metadata?.program || item.metadata?.role === "Creator" ? "airdrop_creator" : "airdrop_trader",
+        program,
         walletAddress: item.walletAddress,
         winnerRank: Number(item.metadata?.winnerRank || index + 1),
         weightTier: Number(item.metadata?.weightTier || 0),
@@ -371,6 +372,16 @@ export async function airdropWinners(req, res) {
     if (!schemaMissing(error)) console.error("[airdrops/winners]", error);
     return json(res, 200, { items: [], epochId: q.epochId ? Number(q.epochId) : null, chainId: q.chainId ? Number(q.chainId) : null, program: q.program || null, walletAddress: q.walletAddress || null, limit, isPublished: false, materializedAt: null, schemaReady: false });
   }
+}
+
+export async function airdropCurrent(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  return internalRewardEpochStatus(req, res);
+}
+
+export async function airdropPreviousWinners(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  return airdropWinners(req, res);
 }
 
 export async function squadsLeaderboard(req, res) {
@@ -559,6 +570,121 @@ export async function internalRewardAdminActions(req, res) {
     if (!schemaMissing(error)) console.error("[internal/reward-admin-actions]", error);
     return json(res, 200, { actions: [], status: "schema_missing", materializedAt: null });
   }
+}
+
+export async function adminRewardOverview(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  try {
+    const [totalsResult, typeResult, chainResult] = await Promise.all([
+      pool.query(
+        `select count(*)::int as total_rewards,
+                coalesce(sum(amount) filter (where status = 'claimable'), 0)::text as total_claimable,
+                coalesce(sum(amount) filter (where status = 'claimed'), 0)::text as total_claimed,
+                count(*) filter (where status = 'failed')::int as total_failed,
+                count(*) filter (where status = 'expired')::int as total_expired
+           from public.reward_ledger`,
+      ),
+      pool.query(
+        `select reward_type, count(*)::int as count, coalesce(sum(amount), 0)::text as amount
+           from public.reward_ledger
+          group by reward_type
+          order by reward_type`,
+      ),
+      pool.query(
+        `select chain, token_symbol, count(*)::int as count, coalesce(sum(amount), 0)::text as amount
+           from public.reward_ledger
+          group by chain, token_symbol
+          order by chain, token_symbol`,
+      ),
+    ]);
+    return json(res, 200, {
+      overview: totalsResult.rows[0] || {},
+      rewardsByType: typeResult.rows,
+      rewardsByChain: chainResult.rows,
+      materializedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("[admin/rewards/overview]", error);
+    return json(res, 200, { overview: {}, rewardsByType: [], rewardsByChain: [], materializedAt: null, schemaReady: false });
+  }
+}
+
+export async function adminRewardBatches(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  const q = getQuery(req);
+  try {
+    const { rows } = await pool.query(
+      `select *
+         from public.reward_batches
+        where ($1::text = '' or reward_type = $1::text)
+          and ($2::text = '' or status = $2::text)
+          and ($3::text = '' or chain::text = $3::text)
+        order by created_at desc
+        limit $4`,
+      [normalizeRewardType(q.rewardType), String(q.status || ""), q.chain ? String(q.chain) : "", parseLimit(q.limit, 100, 250)],
+    );
+    return json(res, 200, { items: rows.map(batchItem), materializedAt: new Date().toISOString() });
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("[admin/rewards/batches]", error);
+    return json(res, 200, { items: [], materializedAt: null, schemaReady: false });
+  }
+}
+
+export async function adminRewardBatchById(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  const id = String(req.params?.id || "").trim();
+  try {
+    const [batchResult, itemResult] = await Promise.all([
+      pool.query(`select * from public.reward_batches where id = $1::uuid limit 1`, [id]),
+      pool.query(
+        `select bi.*, rl.status as ledger_status, rl.claim_tx_hash, rl.claim_error
+           from public.reward_batch_items bi
+           left join public.reward_ledger rl on rl.id = bi.reward_ledger_id
+          where bi.batch_id = $1::uuid
+          order by bi.created_at desc
+          limit 500`,
+        [id],
+      ),
+    ]);
+    return json(res, 200, {
+      batch: batchResult.rows[0] ? batchItem(batchResult.rows[0]) : null,
+      items: itemResult.rows,
+      materializedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("[admin/rewards/batch]", error);
+    return json(res, 200, { batch: null, items: [], materializedAt: null, schemaReady: false });
+  }
+}
+
+export async function adminRewardLedger(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  const q = getQuery(req);
+  try {
+    const { rows } = await pool.query(
+      `select *
+         from public.reward_ledger
+        where ($1::text = '' or wallet_address = $1::text)
+          and ($2::text = '' or reward_type = $2::text)
+          and ($3::text = '' or status = $3::text)
+          and ($4::text = '' or chain::text = $4::text)
+        order by created_at desc
+        limit $5`,
+      [normalizeWallet(q.walletAddress || q.address, q.chain), normalizeRewardType(q.rewardType), String(q.status || ""), q.chain ? String(q.chain) : "", parseLimit(q.limit, 100, 500)],
+    );
+    return json(res, 200, { items: rows.map(ledgerItem), materializedAt: new Date().toISOString() });
+  } catch (error) {
+    if (!schemaMissing(error)) console.error("[admin/rewards/ledger]", error);
+    return json(res, 200, { items: [], materializedAt: null, schemaReady: false });
+  }
+}
+
+export async function adminRewardAlerts(req, res) {
+  return internalRewardAlerts(req, res);
+}
+
+export async function adminRewardAuditLog(req, res) {
+  return internalRewardAdminActions(req, res);
 }
 
 export async function internalRewardOps(req, res) {
