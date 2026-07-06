@@ -197,12 +197,19 @@ async function refreshBatchCounts(client, rewardLedgerIds) {
               claimable_count = stats.claimable_count,
               claimed_count = stats.claimed_count,
               failed_count = stats.failed_count,
+              metadata = coalesce(rb.metadata, '{}'::jsonb) || jsonb_build_object(
+                'claimPendingCount', stats.claim_pending_count,
+                'claimPendingAmount', stats.claim_pending_amount,
+                'lastClaimStatusRefreshAt', now()
+              ),
               updated_at = now()
          from (
            select count(*)::int as recipient_count,
                   count(*) filter (where coalesce(rl.status, rbi.status) = 'claimable')::int as claimable_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claim_pending')::int as claim_pending_count,
                   count(*) filter (where coalesce(rl.status, rbi.status) = 'claimed')::int as claimed_count,
-                  count(*) filter (where coalesce(rl.status, rbi.status) = 'failed')::int as failed_count
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'failed')::int as failed_count,
+                  coalesce(sum(coalesce(rl.amount, rbi.amount)) filter (where coalesce(rl.status, rbi.status) = 'claim_pending'), 0)::text as claim_pending_amount
              from public.reward_batch_items rbi
              left join public.reward_ledger rl on rl.id = rbi.reward_ledger_id
             where rbi.batch_id = $1::uuid
