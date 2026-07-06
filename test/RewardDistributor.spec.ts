@@ -68,11 +68,12 @@ describe("RewardDistributor", function () {
     const amount = ethers.parseEther("0.5");
     const batchId = ethers.id("airdrop-week-4");
     const root = leafFor(await user.getAddress(), amount);
+    const recoveryAddress = await recovery.getAddress();
     const now = (await ethers.provider.getBlock("latest"))!.timestamp;
 
     await distributor.connect(owner).createBatch(batchId, root, now + 60, { value: amount });
 
-    await expect(distributor.connect(owner).recoverUnclaimed(batchId, await recovery.getAddress())).to.be.revertedWithCustomError(
+    await expect(distributor.connect(owner).recoverUnclaimed(batchId, recoveryAddress)).to.be.revertedWithCustomError(
       distributor,
       "BatchStillOpen",
     );
@@ -80,7 +81,7 @@ describe("RewardDistributor", function () {
     await ethers.provider.send("evm_increaseTime", [61]);
     await ethers.provider.send("evm_mine", []);
 
-    await expect(() => distributor.connect(owner).recoverUnclaimed(batchId, await recovery.getAddress())).to.changeEtherBalances(
+    await expect(() => distributor.connect(owner).recoverUnclaimed(batchId, recoveryAddress)).to.changeEtherBalances(
       [distributor, recovery],
       [-amount, amount],
     );
