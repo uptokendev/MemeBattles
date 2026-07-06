@@ -106,11 +106,11 @@ function actorId(req) {
   return String(req?.headers?.["x-admin-email"] || req?.headers?.["x-user-email"] || "api");
 }
 
-async function writeAudit(client, { batchId = null, rewardLedgerId = null, action, oldValue = null, newValue = null, reason = null, req = null, metadata = {} }) {
+async function writeAudit(client, { batchId = null, rewardLedgerId = null, action, oldValue = null, newValue = null, reason = null, req = null, txHash = null, metadata = {} }) {
   await client.query(
-    `insert into public.reward_audit_logs (batch_id, reward_ledger_id, actor_type, actor_id, action, old_value, new_value, reason, metadata)
-     values ($1, $2, 'api', $3, $4, $5, $6, $7, $8::jsonb)`,
-    [batchId, rewardLedgerId, actorId(req), action, oldValue, newValue, reason, JSON.stringify(metadata || {})],
+    `insert into public.reward_audit_logs (batch_id, reward_ledger_id, actor_type, actor_id, action, old_value, new_value, reason, tx_hash, metadata)
+     values ($1, $2, 'api', $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+    [batchId, rewardLedgerId, actorId(req), action, oldValue, newValue, reason, txHash, JSON.stringify(metadata || {})],
   );
 }
 
@@ -225,9 +225,111 @@ async function updateBatchStatus(req, res, targetStatus, action, bodyOverride = 
   }
 }
 
+async function refreshBatchCounts(client, rewardLedgerId) {
+  const { rows } = await client.query(`select batch_id from public.reward_batch_items where reward_ledger_id = $1::uuid limit 1`, [rewardLedgerId]);
+  const batchId = rows[0]?.batch_id;
+  if (!batchId) return null;
+
+  await client.query(
+    `update public.reward_batches rb
+        set recipient_count = stats.recipient_count,
+            claimable_count = stats.claimable_count,
+            claimed_count = stats.claimed_count,
+            failed_count = stats.failed_count,
+            updated_at = now()
+       from (
+         select count(*)::int as recipient_count,
+                count(*) filter (where coalesce(rl.status, rbi.status) = 'claimable')::int as claimable_count,
+                count(*) filter (where coalesce(rl.status, rbi.status) = 'claimed')::int as claimed_count,
+                count(*) filter (where coalesce(rl.status, rbi.status) = 'failed')::int as failed_count
+           from public.reward_batch_items rbi
+           left join public.reward_ledger rl on rl.id = rbi.reward_ledger_id
+          where rbi.batch_id = $1::uuid
+       ) stats
+      where rb.id = $1::uuid`,
+    [batchId],
+  );
+  return batchId;
+}
+
+async function updateClaimStatus(req, res, body, targetStatus) {
+  const id = String(body.rewardLedgerId || body.rewardLedgerID || body.ledgerId || body.id || "").trim();
+  if (!id) return json(res, 400, { error: "Missing reward ledger id" });
+
+  const txHash = String(body.txHash || body.claimTxHash || "").trim() || null;
+  const claimError = String(body.claimError || body.error || "").trim() || null;
+  if (targetStatus === "claimed" && !txHash) return json(res, 400, { error: "Missing txHash for claimed reward" });
+  if (targetStatus === "failed" && !claimError) return json(res, 400, { error: "Missing claimError for failed reward" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const { rows: beforeRows } = await client.query(`select * from public.reward_ledger where id = $1::uuid for update`, [id]);
+    const before = beforeRows[0];
+    if (!before) {
+      await client.query("rollback");
+      return json(res, 404, { error: "Reward ledger entry not found" });
+    }
+
+    if (Number(before.chain) === 101 || String(before.chain).toLowerCase() === "solana") {
+      await client.query("rollback");
+      return json(res, 409, { error: "Solana reward claiming is not enabled yet." });
+    }
+
+    const { rows } = await client.query(
+      `update public.reward_ledger
+          set status = $2,
+              claim_tx_hash = case when $2 = 'claimed' then $3 else claim_tx_hash end,
+              claim_error = case when $2 = 'failed' then $4 else null end,
+              claimed_at = case when $2 = 'claimed' then coalesce(claimed_at, now()) else claimed_at end,
+              updated_at = now()
+        where id = $1::uuid
+          and status in ('claimable', 'claim_pending', 'failed')
+        returning *`,
+      [id, targetStatus, txHash, claimError],
+    );
+
+    if (!rows[0]) {
+      await client.query("rollback");
+      return json(res, 409, { error: `Reward cannot move from ${before.status} to ${targetStatus}` });
+    }
+
+    await client.query(`update public.reward_batch_items set status = $2 where reward_ledger_id = $1::uuid`, [id, targetStatus]);
+    const batchId = await refreshBatchCounts(client, id);
+    await writeAudit(client, {
+      batchId,
+      rewardLedgerId: id,
+      action: targetStatus === "claimed" ? "claim_completed" : "claim_failed",
+      oldValue: before.status,
+      newValue: targetStatus,
+      reason: body.reason || (targetStatus === "claimed" ? "Claim transaction confirmed" : "Claim transaction failed"),
+      txHash,
+      req,
+      metadata: { claimError },
+    });
+    await client.query("commit");
+    return json(res, 200, { item: ledgerItem(rows[0]), materializedAt: new Date().toISOString() });
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
+    console.error(`[internal/reward-claim-${targetStatus}]`, error);
+    return json(res, 500, { error: "Server error" });
+  } finally {
+    client.release();
+  }
+}
+
 export async function internalRewardBatches(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
+  const action = String(body.action || body.type || "").trim().toLowerCase();
+  if (["claim_completed", "claim_complete", "complete_claim", "claimed"].includes(action)) {
+    return updateClaimStatus(req, res, body, "claimed");
+  }
+  if (["claim_failed", "claim_fail", "fail_claim", "failed"].includes(action)) {
+    return updateClaimStatus(req, res, body, "failed");
+  }
+
   const client = await pool.connect();
   try {
     await client.query("begin");
