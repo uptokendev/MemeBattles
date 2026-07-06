@@ -176,6 +176,14 @@ import {
   squadSummary,
   squadsLeaderboard,
 } from "./dev-fix/stubs.js";
+import {
+  internalAirdropsCalculate,
+  internalAirdropsPublish,
+  internalRewardBatchClose,
+  internalRewardBatchPause,
+  internalRewardBatchPublish,
+  internalRewardBatches,
+} from "./dev-fix/reward-batch-ops.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -533,6 +541,12 @@ router.all("/wm-admin-quest-upsert", wrap(wmAdminQuestUpsert));
 router.all("/wm-admin-leaderboard-snapshot", wrap(wmAdminLeaderboardSnapshot));
 router.all("/wm-admin-prizes", wrap(wmAdminPrizes));
 router.all("/wm-daily-rollover", wrap(wmDailyRollover));
+router.all("/internal/airdrops/calculate", wrap(internalAirdropsCalculate));
+router.all("/internal/airdrops/publish", wrap(internalAirdropsPublish));
+router.all("/internal/rewards/batches", wrap(internalRewardBatches));
+router.all("/internal/rewards/batches/:id/publish", wrap(internalRewardBatchPublish));
+router.all("/internal/rewards/batches/:id/pause", wrap(internalRewardBatchPause));
+router.all("/internal/rewards/batches/:id/close", wrap(internalRewardBatchClose));
 router.all("/internal/rewards/ops", wrap(internalRewardOps));
 router.all("/internal/rewards/publications", wrap(internalRewardPublications));
 router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
