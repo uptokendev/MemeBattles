@@ -2,27 +2,48 @@
 
 This is the launch-safe handoff for BNB rewards. It keeps Solana ledger-only until a Solana vault/program is reviewed separately.
 
-## Deploy BNB distributor
+## Safe local checks
 
-```bash
-yarn deploy:reward-distributor:bsc-testnet
+From the repository root on Windows PowerShell:
+
+```powershell
+npm run compile:frontend-abis
 ```
 
-Optional owner override:
+This compiles contracts and syncs frontend ABIs. It does not deploy anything.
 
-```bash
-REWARD_DISTRIBUTOR_OWNER=0xYourOpsSafe yarn deploy:reward-distributor:bsc-testnet
+Then from the frontend folder:
+
+```powershell
+cd frontend
+npm run build
+```
+
+## Deploy BNB distributor
+
+Only run this when ops is ready to deploy:
+
+```powershell
+npm run deploy:reward-distributor:bsc-testnet
+```
+
+Optional owner override in PowerShell:
+
+```powershell
+$env:REWARD_DISTRIBUTOR_OWNER="0xYourOpsSafe"
+npm run deploy:reward-distributor:bsc-testnet
 ```
 
 The script prints JSON with `contract`, `address`, `owner`, `deployer`, `network`, and `chainId`. Store the address in the launch environment as the active BNB reward distributor.
 
-## Sync ABI
+Recommended env names:
 
-```bash
-yarn compile:frontend-abis
+```text
+BNB_TESTNET_REWARD_DISTRIBUTOR_ADDRESS=0x...
+BNB_REWARD_DISTRIBUTOR_ADDRESS=0x...
+REWARD_DISTRIBUTOR_ADDRESS_BNB=0x...
+REWARD_DISTRIBUTOR_ADDRESS=0x...
 ```
-
-This writes `frontend/src/abi/RewardDistributor.json` after compile.
 
 ## Create a prepared reward batch
 
@@ -39,7 +60,7 @@ Example body:
   "rewardType": "airdrop",
   "chain": "56",
   "tokenSymbol": "BNB",
-  "status": "ready",
+  "status": "published",
   "source": "prepared_airdrop_ledger",
   "reason": "Prepared launch airdrop ledger import",
   "metadata": {
@@ -60,21 +81,78 @@ Example body:
 }
 ```
 
-Amounts are integer wei. For Solana rewards, keep status non-claimable and do not send them to the BNB distributor.
+Amounts are integer wei. For Solana rewards, keep them ledger-only and do not send them to the BNB distributor.
 
-## On-chain claim batch
+## Automatic Merkle metadata
 
-Create a Merkle tree with leaves matching the distributor:
+When a BNB-chain reward batch is inserted with `claimable` recipients, the API now generates claim metadata automatically.
+
+Batch metadata receives:
+
+```json
+{
+  "claimMode": "reward_distributor_merkle",
+  "claimContract": "RewardDistributor",
+  "contractBatchId": "0x...",
+  "merkleBatchId": "0x...",
+  "merkleRoot": "0x...",
+  "merkleRecipientCount": 1,
+  "merkleTotalAmount": "100000000000000000",
+  "claimDeadline": 0
+}
+```
+
+Each claimable ledger item receives:
+
+```json
+{
+  "claimMode": "reward_distributor_merkle",
+  "claimContract": "RewardDistributor",
+  "contractBatchId": "0x...",
+  "merkleRoot": "0x...",
+  "merkleProof": [],
+  "claimAmount": "100000000000000000"
+}
+```
+
+The leaf matches the `RewardDistributor` contract:
 
 ```solidity
 keccak256(bytes.concat(keccak256(abi.encode(wallet, amount))))
 ```
 
-Create the distributor batch with the Merkle root and enough BNB funding.
+The pair hashing is compatible with OpenZeppelin's commutative Merkle proof verification.
+
+## On-chain claim batch
+
+After the prepared batch is created, use the batch metadata to fund the distributor:
+
+- `contractBatchId` as the on-chain batch id
+- `merkleRoot` as the on-chain root
+- `merkleTotalAmount` as the total BNB funding amount
+- `claimDeadline` as the deadline, or `0` for no deadline
+
+The contract call is:
+
+```solidity
+createBatch(bytes32 batchId, bytes32 merkleRoot, uint64 claimDeadline)
+```
+
+with `msg.value` equal to `merkleTotalAmount`.
+
+## Claim flow
+
+The Rewards / Claims page:
+
+1. Reads claimable rows from `reward_ledger`.
+2. Creates a claim intent through `/api/rewards/me/claim-intent`.
+3. Calls `RewardDistributor.claim(batchId, amount, proof)` from the connected BNB wallet.
+4. Records confirmed tx hashes or failed claim errors back into the reward ledger.
+5. Refreshes the claims UI.
+
+Solana claim attempts remain disabled and should show a clear message.
 
 ## Ledger callbacks after payout
-
-The claim worker or operator callback uses the same internal endpoint.
 
 Claim completed:
 
@@ -110,3 +188,4 @@ Callbacks update `reward_ledger`, linked `reward_batch_items`, batch counts, and
 - Warzone Airdrops remains visibility-only.
 - Solana rewards may be tracked in the ledger, but Solana claiming stays disabled.
 - No reward should become claimable unless it has a `reward_ledger` entry.
+- No duplicate airdrop fee is created. Use the existing airdrop allocation and show only the prize pool publicly.
