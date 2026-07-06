@@ -15,6 +15,7 @@ import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import {
   fetchWarMissionsRecruiterState,
   requestWarMissionsAuthNonce,
+  signInWarMissionsWithSolana,
   submitWarMissionsRecruiterApplication,
   verifyWarMissionsAuth,
   type WarMissionsRecruiterApplication,
@@ -97,7 +98,7 @@ function formFromApplication(application: WarMissionsRecruiterApplication | null
 export default function CommandCenterRecruiter() {
   const { walletAddress } = useCommandCenterData();
   const wallet = useWallet();
-  const { isSolanaConnected } = useSolanaWallet();
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
@@ -153,22 +154,22 @@ export default function CommandCenterRecruiter() {
   };
 
   const signIntoWarMissions = async () => {
-    const account = wallet.account || walletAddress;
-    if (!wallet.isConnected || !account || !wallet.signer) {
-      if (isSolanaConnected) {
-        toast.error("Recruiter / War Missions sign-in currently requires a connected BNB wallet (EVM). Solana support for this section is coming.");
-      } else {
-        toast.error("Connect the wallet for this profile before unlocking recruiter missions.");
-      }
-      return;
-    }
+    const evmAccount = wallet.account || (!isSolanaConnected ? walletAddress : "");
+    const solanaWalletAddress = isSolanaConnected ? (solanaAccount || walletAddress) : "";
 
     setAuthing(true);
     setLoadError(null);
     try {
-      const challenge = await requestWarMissionsAuthNonce(account);
-      const signature = await wallet.signer.signMessage(challenge.message);
-      await verifyWarMissionsAuth(account, signature);
+      if (wallet.isConnected && evmAccount && wallet.signer) {
+        const challenge = await requestWarMissionsAuthNonce(evmAccount);
+        const signature = await wallet.signer.signMessage(challenge.message);
+        await verifyWarMissionsAuth(evmAccount, signature);
+      } else if (solanaWalletAddress) {
+        await signInWarMissionsWithSolana(solanaWalletAddress);
+      } else {
+        throw new Error("Connect the wallet for this profile before unlocking recruiter missions.");
+      }
+
       await loadRecruiterState();
       toast.success("Recruiter program unlocked");
     } catch (error: any) {
