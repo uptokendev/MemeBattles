@@ -149,6 +149,14 @@ import {
 } from "./dev-fix/security.js";
 import securityRecruiterPayouts from "./dev-fix/security-recruiter-payouts.js";
 import {
+  adminRewardAlerts,
+  adminRewardAuditLog,
+  adminRewardBatchById,
+  adminRewardBatches,
+  adminRewardLedger,
+  adminRewardOverview,
+  airdropCurrent,
+  airdropPreviousWinners,
   airdropWinners,
   internalAirdropDrawRun,
   internalAirdropDraws,
@@ -156,6 +164,7 @@ import {
   internalRewardAlerts,
   internalRewardClaimVault,
   internalRewardEpochStatus,
+  internalRewardOps,
   internalRewardPublications,
   internalRewardRouting,
   recruiterReplacements,
@@ -424,7 +433,15 @@ router.all("/rewards/me/history", wrap(rewardsHistory));
 router.all("/rewards/me/claims", wrap(rewardsClaims));
 router.all("/rewards/me/eligibility", wrap(rewardsEligibility));
 router.all("/rewards", wrap(rewards));
+router.all("/airdrops/current", wrap(airdropCurrent));
+router.all("/airdrops/previous-winners", wrap(airdropPreviousWinners));
 router.all("/airdrops/winners", wrap(airdropWinners));
+router.all("/admin/rewards/overview", wrap(adminRewardOverview));
+router.all("/admin/rewards/batches", wrap(adminRewardBatches));
+router.all("/admin/rewards/batches/:id", wrap(adminRewardBatchById));
+router.all("/admin/rewards/ledger", wrap(adminRewardLedger));
+router.all("/admin/rewards/alerts", wrap(adminRewardAlerts));
+router.all("/admin/rewards/audit-log", wrap(adminRewardAuditLog));
 router.all("/squads", wrap(squadsLeaderboard));
 router.all("/squads/members", wrap(squadMembers));
 router.all("/squads/:code/summary", wrap(squadSummary));
@@ -516,6 +533,7 @@ router.all("/wm-admin-quest-upsert", wrap(wmAdminQuestUpsert));
 router.all("/wm-admin-leaderboard-snapshot", wrap(wmAdminLeaderboardSnapshot));
 router.all("/wm-admin-prizes", wrap(wmAdminPrizes));
 router.all("/wm-daily-rollover", wrap(wmDailyRollover));
+router.all("/internal/rewards/ops", wrap(internalRewardOps));
 router.all("/internal/rewards/publications", wrap(internalRewardPublications));
 router.all("/internal/rewards/ops/routing", wrap(internalRewardRouting));
 router.all("/internal/rewards/ops/claim-vault", wrap(internalRewardClaimVault));
