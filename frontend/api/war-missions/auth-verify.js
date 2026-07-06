@@ -22,7 +22,7 @@ export default async function wmAuthVerify(req, res) {
       `
         select id, wallet_address, nonce, expires_at, used_at
         from public.wm_wallet_auth_nonces
-        where lower(wallet_address) = $1 and used_at is null
+        where wallet_address = $1 and used_at is null
         order by created_at desc
         limit 1
       `,
