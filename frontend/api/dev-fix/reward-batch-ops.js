@@ -186,9 +186,9 @@ async function insertBatchWithRecipients(client, req, body, overrides = {}) {
   return { batch: batchItem(batch), items: ledgerItems };
 }
 
-async function updateBatchStatus(req, res, targetStatus, action) {
+async function updateBatchStatus(req, res, targetStatus, action, bodyOverride = null) {
   if (!methodAllowed(req, res, ["POST"])) return;
-  const body = await readJson(req);
+  const body = bodyOverride || await readJson(req);
   const id = String(req.params?.id || body.batchId || body.id || "").trim();
   if (!id) return json(res, 400, { error: "Missing batch id" });
 
@@ -288,7 +288,7 @@ export async function internalAirdropsPublish(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
   if (body.batchId || body.id || req.params?.id) {
-    return updateBatchStatus({ ...req, body }, res, "published", "airdrop_published");
+    return updateBatchStatus(req, res, "published", "airdrop_published", body);
   }
   const client = await pool.connect();
   try {
