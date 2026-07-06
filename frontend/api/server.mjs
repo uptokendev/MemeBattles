@@ -184,6 +184,7 @@ import {
   internalRewardBatchPublish,
   internalRewardBatches,
 } from "./dev-fix/reward-batch-ops.js";
+import { rewardClaimConfig, rewardClaimIntent } from "./dev-fix/reward-claim-intent.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -439,7 +440,9 @@ router.all("/prepare-notifications", wrap(prepareNotifications));
 router.all("/rewards/me", wrap(rewardsMe));
 router.all("/rewards/me/history", wrap(rewardsHistory));
 router.all("/rewards/me/claims", wrap(rewardsClaims));
+router.all("/rewards/me/claim-intent", wrap(rewardClaimIntent));
 router.all("/rewards/me/eligibility", wrap(rewardsEligibility));
+router.all("/rewards/claim-config", wrap(rewardClaimConfig));
 router.all("/rewards", wrap(rewards));
 router.all("/airdrops/current", wrap(airdropCurrent));
 router.all("/airdrops/previous-winners", wrap(airdropPreviousWinners));
