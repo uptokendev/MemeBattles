@@ -1,9 +1,14 @@
+import { AbiCoder, concat, getAddress, keccak256, toUtf8Bytes } from "ethers";
+
 import { pool } from "../../server/db.js";
 import { readJson } from "../../server/http.js";
 
 const REWARD_TYPES = new Set(["airdrop", "league", "recruiter", "squad", "battle", "tournament", "campaign", "manual", "future"]);
 const BATCH_STATUSES = new Set(["draft", "calculating", "funding_check", "ready", "published", "claim_open", "paused", "failed", "closed", "archived"]);
 const LEDGER_STATUSES = new Set(["pending", "approved", "claimable", "claim_pending", "claimed", "failed", "expired", "cancelled"]);
+const ABI_CODER = AbiCoder.defaultAbiCoder();
+const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
 function methodAllowed(req, res, methods) {
   if (methods.includes(req.method)) return true;
@@ -130,6 +135,155 @@ function preparedRecipients(body) {
     .filter((item) => item.walletAddress && Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0);
 }
 
+function isBnbClaimChain(chain) {
+  const id = Number(chain);
+  return id === 56 || id === 97;
+}
+
+function integerAmount(value) {
+  const raw = String(value ?? "0").trim();
+  if (/^\d+$/.test(raw)) return raw.replace(/^0+(?=\d)/, "") || "0";
+  if (/^\d+\.0+$/.test(raw)) return raw.split(".")[0].replace(/^0+(?=\d)/, "") || "0";
+  return "";
+}
+
+function cleanBytes32(value) {
+  const raw = String(value || "").trim();
+  return BYTES32_RE.test(raw) ? raw : "";
+}
+
+function cleanAddress(value) {
+  const raw = String(value || "").trim();
+  if (!ADDRESS_RE.test(raw)) return "";
+  try {
+    return getAddress(raw);
+  } catch {
+    return "";
+  }
+}
+
+function firstString(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function contractBatchIdFor(batch, body, metadata) {
+  const supplied = cleanBytes32(firstString(body, ["contractBatchId", "merkleBatchId", "batchIdBytes32", "rewardBatchBytes32", "claimBatchBytes32"]))
+    || cleanBytes32(firstString(metadata, ["contractBatchId", "merkleBatchId", "batchIdBytes32", "rewardBatchBytes32", "claimBatchBytes32"]));
+  return supplied || keccak256(toUtf8Bytes(`mwz-reward-batch:${batch.id}`));
+}
+
+function distributorAddressFor(body, metadata) {
+  return cleanAddress(firstString(body, ["distributorAddress", "rewardDistributorAddress", "claimContractAddress", "contractAddress"]))
+    || cleanAddress(firstString(metadata, ["distributorAddress", "rewardDistributorAddress", "claimContractAddress", "contractAddress"]));
+}
+
+function claimDeadlineFor(body, metadata) {
+  const raw = firstString(body, ["claimDeadline", "claim_deadline", "claimDeadlineTs", "claim_deadline_ts"])
+    || firstString(metadata, ["claimDeadline", "claim_deadline", "claimDeadlineTs", "claim_deadline_ts"]);
+  const value = Number(raw || 0);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+function rewardLeaf(walletAddress, amount) {
+  const account = getAddress(walletAddress);
+  const inner = keccak256(ABI_CODER.encode(["address", "uint256"], [account, BigInt(amount)]));
+  return keccak256(inner);
+}
+
+function hashPair(a, b) {
+  const leftFirst = a.toLowerCase() <= b.toLowerCase();
+  return keccak256(concat(leftFirst ? [a, b] : [b, a]));
+}
+
+function buildMerkleTree(leaves) {
+  if (!leaves.length) return { root: "", proofs: [] };
+  const levels = [leaves.map((leaf) => leaf.leaf)];
+  while (levels[levels.length - 1].length > 1) {
+    const current = levels[levels.length - 1];
+    const next = [];
+    for (let i = 0; i < current.length; i += 2) {
+      next.push(i + 1 < current.length ? hashPair(current[i], current[i + 1]) : current[i]);
+    }
+    levels.push(next);
+  }
+
+  const proofs = leaves.map((_leaf, leafIndex) => {
+    const proof = [];
+    let index = leafIndex;
+    for (let levelIndex = 0; levelIndex < levels.length - 1; levelIndex += 1) {
+      const level = levels[levelIndex];
+      const pairIndex = index % 2 === 0 ? index + 1 : index - 1;
+      if (pairIndex < level.length) proof.push(level[pairIndex]);
+      index = Math.floor(index / 2);
+    }
+    return proof;
+  });
+
+  return { root: levels[levels.length - 1][0], proofs };
+}
+
+function buildClaimMetadataPlan({ batch, recipients, chain, body, metadata }) {
+  if (!isBnbClaimChain(chain)) return { batchClaimMetadata: {}, recipientClaimMetadata: new Map() };
+
+  const leaves = [];
+  for (const [index, recipient] of recipients.entries()) {
+    if (recipient.status !== "claimable") continue;
+    const amount = integerAmount(recipient.amount);
+    if (!amount || amount === "0") continue;
+    try {
+      const wallet = getAddress(normalizeWallet(recipient.walletAddress, chain));
+      leaves.push({ index, wallet, amount, leaf: rewardLeaf(wallet, amount) });
+    } catch {
+      // Invalid EVM recipients remain in the ledger, but will not receive claim metadata.
+    }
+  }
+
+  if (!leaves.length) return { batchClaimMetadata: {}, recipientClaimMetadata: new Map() };
+
+  const contractBatchId = contractBatchIdFor(batch, body, metadata);
+  const distributorAddress = distributorAddressFor(body, metadata);
+  const claimDeadline = claimDeadlineFor(body, metadata);
+  const { root, proofs } = buildMerkleTree(leaves);
+  const totalClaimableAmount = leaves.reduce((sum, leaf) => sum + BigInt(leaf.amount), 0n).toString();
+  const batchClaimMetadata = {
+    claimMode: "reward_distributor_merkle",
+    claimContract: "RewardDistributor",
+    contractBatchId,
+    merkleBatchId: contractBatchId,
+    merkleRoot: root,
+    merkleRecipientCount: leaves.length,
+    merkleTotalAmount: totalClaimableAmount,
+    merkleLeafEncoding: "keccak256(bytes.concat(keccak256(abi.encode(account, amount))))",
+    merklePairSorting: "openzeppelins_commutative_hash",
+    claimDeadline,
+    ...(distributorAddress ? { distributorAddress, rewardDistributorAddress: distributorAddress } : {}),
+  };
+
+  const recipientClaimMetadata = new Map();
+  leaves.forEach((leaf, proofIndex) => {
+    recipientClaimMetadata.set(leaf.index, {
+      claimMode: "reward_distributor_merkle",
+      claimContract: "RewardDistributor",
+      contractBatchId,
+      merkleBatchId: contractBatchId,
+      merkleRoot: root,
+      merkleProof: proofs[proofIndex],
+      merkleLeaf: leaf.leaf,
+      claimAmount: leaf.amount,
+      claimDeadline,
+      ...(distributorAddress ? { distributorAddress, rewardDistributorAddress: distributorAddress } : {}),
+    });
+  });
+
+  return { batchClaimMetadata, recipientClaimMetadata };
+}
+
 async function insertBatchWithRecipients(client, req, body, overrides = {}) {
   const rewardType = normalizeRewardType(overrides.rewardType || body.rewardType || body.reward_type, "manual");
   const chain = String(overrides.chain || body.chain || body.chainId || body.chain_id || 56);
@@ -137,7 +291,7 @@ async function insertBatchWithRecipients(client, req, body, overrides = {}) {
   const recipients = preparedRecipients({ ...body, ...overrides });
   const fallbackStatus = overrides.status || body.status || (body.publish ? "published" : recipients.length ? "ready" : "draft");
   const status = normalizeStatus(fallbackStatus, BATCH_STATUSES, "draft");
-  const totalAmount = recipients.reduce((sum, item) => sum + BigInt(String(item.amount || "0")), 0n).toString();
+  const totalAmount = recipients.reduce((sum, item) => sum + BigInt(integerAmount(item.amount) || "0"), 0n).toString();
   const claimableCount = recipients.filter((item) => item.status === "claimable").length;
   const claimedCount = recipients.filter((item) => item.status === "claimed").length;
   const failedCount = recipients.filter((item) => item.status === "failed").length;
@@ -153,12 +307,27 @@ async function insertBatchWithRecipients(client, req, body, overrides = {}) {
      returning *`,
     [rewardType, chain, tokenSymbol, status, totalAmount, recipients.length, claimableCount, claimedCount, failedCount, source, JSON.stringify(metadata), status === "published" || status === "claim_open"],
   );
-  const batch = rows[0];
+  let batch = rows[0];
+  const { batchClaimMetadata, recipientClaimMetadata } = buildClaimMetadataPlan({ batch, recipients, chain, body, metadata });
+
+  if (Object.keys(batchClaimMetadata).length) {
+    const { rows: updatedRows } = await client.query(
+      `update public.reward_batches
+          set metadata = coalesce(metadata, '{}'::jsonb) || $2::jsonb,
+              updated_at = now()
+        where id = $1::uuid
+        returning *`,
+      [batch.id, JSON.stringify(batchClaimMetadata)],
+    );
+    batch = updatedRows[0] || batch;
+  }
+
   const ledgerItems = [];
 
   for (const [index, recipient] of recipients.entries()) {
     const wallet = normalizeWallet(recipient.walletAddress, chain);
-    const recipientMetadata = { ...recipient.metadata, batchId: batch.id, batchIndex: index };
+    const claimMetadata = recipientClaimMetadata.get(index) || {};
+    const recipientMetadata = { ...recipient.metadata, batchId: batch.id, batchIndex: index, ...claimMetadata };
     const { rows: ledgerRows } = await client.query(
       `insert into public.reward_ledger (reward_type, source_id, source_label, wallet_address, user_id, chain, token_symbol, amount, amount_usd, status, metadata, claimable_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8::numeric, $9::numeric, $10, $11::jsonb, case when $10 = 'claimable' then now() else null end)
@@ -180,7 +349,7 @@ async function insertBatchWithRecipients(client, req, body, overrides = {}) {
     newValue: JSON.stringify({ rewardType, status, recipientCount: recipients.length, totalAmount }),
     reason: body.reason || overrides.reason || "Reward batch created",
     req,
-    metadata: { source, rewardType },
+    metadata: { source, rewardType, claimMode: batchClaimMetadata.claimMode || null, merkleRoot: batchClaimMetadata.merkleRoot || null },
   });
 
   return { batch: batchItem(batch), items: ledgerItems };
