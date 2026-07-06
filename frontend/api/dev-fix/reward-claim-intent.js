@@ -5,6 +5,7 @@ const EVM_CHAINS = new Set([56, 97]);
 const SOLANA_CHAINS = new Set([101, 102]);
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const TX_RE = /^0x[a-fA-F0-9]{64}$/;
 
 function methodAllowed(req, res, methods) {
   if (methods.includes(req.method)) return true;
@@ -171,13 +172,63 @@ function claimCallForRow(row) {
   };
 }
 
-async function writeAudit(client, { rewardLedgerId, action, oldValue = null, newValue = null, reason = null, req = null, metadata = {} }) {
+async function writeAudit(client, { batchId = null, rewardLedgerId = null, action, oldValue = null, newValue = null, reason = null, req = null, txHash = null, metadata = {} }) {
   const actorId = String(req?.headers?.["x-admin-email"] || req?.headers?.["x-user-email"] || "api");
   await client.query(
-    `insert into public.reward_audit_logs (reward_ledger_id, actor_type, actor_id, action, old_value, new_value, reason, metadata)
-     values ($1, 'api', $2, $3, $4, $5, $6, $7::jsonb)`,
-    [rewardLedgerId, actorId, action, oldValue, newValue, reason, JSON.stringify(metadata || {})],
+    `insert into public.reward_audit_logs (batch_id, reward_ledger_id, actor_type, actor_id, action, old_value, new_value, reason, tx_hash, metadata)
+     values ($1, $2, 'api', $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+    [batchId, rewardLedgerId, actorId, action, oldValue, newValue, reason, txHash, JSON.stringify(metadata || {})],
   );
+}
+
+async function refreshBatchCounts(client, rewardLedgerIds) {
+  const { rows } = await client.query(
+    `select distinct batch_id
+       from public.reward_batch_items
+      where reward_ledger_id = any($1::uuid[])
+        and batch_id is not null`,
+    [rewardLedgerIds],
+  );
+
+  for (const row of rows) {
+    await client.query(
+      `update public.reward_batches rb
+          set recipient_count = stats.recipient_count,
+              claimable_count = stats.claimable_count,
+              claimed_count = stats.claimed_count,
+              failed_count = stats.failed_count,
+              updated_at = now()
+         from (
+           select count(*)::int as recipient_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claimable')::int as claimable_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'claimed')::int as claimed_count,
+                  count(*) filter (where coalesce(rl.status, rbi.status) = 'failed')::int as failed_count
+             from public.reward_batch_items rbi
+             left join public.reward_ledger rl on rl.id = rbi.reward_ledger_id
+            where rbi.batch_id = $1::uuid
+         ) stats
+        where rb.id = $1::uuid`,
+      [row.batch_id],
+    );
+  }
+}
+
+function ledgerItem(row) {
+  return {
+    id: String(row.id),
+    rewardType: row.reward_type,
+    walletAddress: row.wallet_address,
+    chain: row.chain,
+    chainId: Number(row.chain) || null,
+    tokenSymbol: row.token_symbol,
+    amount: String(row.amount || "0"),
+    status: row.status,
+    claimBatchId: row.claim_batch_id || null,
+    claimTxHash: row.claim_tx_hash || null,
+    claimError: row.claim_error || null,
+    claimedAt: row.claimed_at ? new Date(row.claimed_at).toISOString() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
 }
 
 export async function rewardClaimConfig(req, res) {
@@ -256,6 +307,9 @@ export async function rewardClaimIntent(req, res) {
       [ids, wallet, intentId],
     );
 
+    await client.query(`update public.reward_batch_items set status = 'claim_pending' where reward_ledger_id = any($1::uuid[])`, [ids]);
+    await refreshBatchCounts(client, ids);
+
     for (const row of rows) {
       await writeAudit(client, {
         rewardLedgerId: row.id,
@@ -293,6 +347,86 @@ export async function rewardClaimIntent(req, res) {
     await client.query("rollback").catch(() => {});
     if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
     console.error("[rewards/claim-intent]", error);
+    return json(res, 500, { error: "Server error" });
+  } finally {
+    client.release();
+  }
+}
+
+export async function rewardClaimRecord(req, res) {
+  if (!methodAllowed(req, res, ["POST"])) return;
+  const body = await readJson(req);
+  const ids = Array.isArray(body.rewardLedgerIds) ? body.rewardLedgerIds : [body.rewardLedgerId || body.id].filter(Boolean);
+  const chainId = body.chainId ? Number(body.chainId) : null;
+  const wallet = normalizeWallet(body.address || body.walletAddress, chainId);
+  const txHash = String(body.txHash || body.claimTxHash || "").trim();
+  const failed = String(body.status || "claimed").toLowerCase() === "failed";
+  const claimError = String(body.claimError || body.error || "").trim();
+
+  if (!ids.length || !wallet) return json(res, 400, { error: "Missing rewardLedgerIds or walletAddress" });
+  if (!failed && !TX_RE.test(txHash)) return json(res, 400, { error: "Missing or invalid txHash" });
+  if (failed && !claimError) return json(res, 400, { error: "Missing claimError for failed claim" });
+
+  const targetStatus = failed ? "failed" : "claimed";
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const { rows: beforeRows } = await client.query(
+      `select *
+         from public.reward_ledger
+        where id = any($1::uuid[])
+          and wallet_address = $2
+          and status in ('claim_pending', 'claimable', 'failed')
+        for update`,
+      [ids, wallet],
+    );
+
+    if (beforeRows.length !== ids.length) {
+      await client.query("rollback");
+      return json(res, 404, { error: "One or more rewards could not be recorded for this wallet." });
+    }
+
+    const solana = beforeRows.find((row) => SOLANA_CHAINS.has(Number(row.chain)) || String(row.chain).toLowerCase() === "solana");
+    if (solana) {
+      await client.query("rollback");
+      return json(res, 409, { error: "Solana reward claiming is not enabled yet.", code: "SOLANA_CLAIMS_DISABLED" });
+    }
+
+    const { rows } = await client.query(
+      `update public.reward_ledger
+          set status = $3,
+              claim_tx_hash = case when $3 = 'claimed' then $4 else claim_tx_hash end,
+              claim_error = case when $3 = 'failed' then $5 else null end,
+              claimed_at = case when $3 = 'claimed' then coalesce(claimed_at, now()) else claimed_at end,
+              updated_at = now()
+        where id = any($1::uuid[])
+          and wallet_address = $2
+        returning *`,
+      [ids, wallet, targetStatus, txHash || null, claimError || null],
+    );
+
+    await client.query(`update public.reward_batch_items set status = $2 where reward_ledger_id = any($1::uuid[])`, [ids, targetStatus]);
+    await refreshBatchCounts(client, ids);
+
+    for (const row of rows) {
+      await writeAudit(client, {
+        rewardLedgerId: row.id,
+        action: targetStatus === "claimed" ? "claim_recorded" : "claim_failed",
+        oldValue: "claim_pending",
+        newValue: targetStatus,
+        reason: body.reason || (targetStatus === "claimed" ? "Wallet claim transaction confirmed" : "Wallet claim transaction failed"),
+        txHash: txHash || null,
+        req,
+        metadata: { claimError: claimError || null, claimIntentId: body.claimIntentId || null },
+      });
+    }
+
+    await client.query("commit");
+    return json(res, 200, { items: rows.map(ledgerItem), materializedAt: new Date().toISOString() });
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
+    console.error("[rewards/claim-record]", error);
     return json(res, 500, { error: "Server error" });
   } finally {
     client.release();
