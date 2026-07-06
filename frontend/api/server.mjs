@@ -184,7 +184,7 @@ import {
   internalRewardBatchPublish,
   internalRewardBatches,
 } from "./dev-fix/reward-batch-ops.js";
-import { rewardClaimConfig, rewardClaimIntent } from "./dev-fix/reward-claim-intent.js";
+import { rewardClaimConfig, rewardClaimIntent, rewardClaimRecord } from "./dev-fix/reward-claim-intent.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -441,6 +441,7 @@ router.all("/rewards/me", wrap(rewardsMe));
 router.all("/rewards/me/history", wrap(rewardsHistory));
 router.all("/rewards/me/claims", wrap(rewardsClaims));
 router.all("/rewards/me/claim-intent", wrap(rewardClaimIntent));
+router.all("/rewards/me/claim-record", wrap(rewardClaimRecord));
 router.all("/rewards/me/eligibility", wrap(rewardsEligibility));
 router.all("/rewards/claim-config", wrap(rewardClaimConfig));
 router.all("/rewards", wrap(rewards));
@@ -521,7 +522,7 @@ router.all("/wm-admin-quiz-questions", wrap(wmAdminQuizQuestions));
 router.all("/wm-admin-recruiter-review", wrap(wmAdminRecruiterReview));
 router.all("/wm-admin-social-checks-list", wrap(wmAdminSocialChecksList));
 router.all("/wm-admin-review-completion", wrap(wmAdminReviewCompletion));
-router.all("/wm-admin-social-recheck", wrap(wmAdminSocialRecheck));
+router.all("/wm-admin-social-recheck", wrap(wmSocialRecheck));
 router.all("/wm-recruiter-apply", wrap(wmRecruiterApply));
 router.all("/wm-recruiter-status", wrap(wmRecruiterStatus));
 router.all("/wm-recruiter-status-check", wrap(wmRecruiterStatusCheck));
