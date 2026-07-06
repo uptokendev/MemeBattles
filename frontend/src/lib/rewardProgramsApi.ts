@@ -204,7 +204,7 @@ export async function requestRewardClaim(input: {
 }
 
 export async function fetchAirdropCurrent(chainId?: number | null): Promise<AirdropCurrent> {
-  const res = await fetch(buildRealtimeApiUrl(`/api/internal/rewards/ops/epoch-status${buildQuery({ chainId })}`));
+  const res = await fetch(buildRealtimeApiUrl(`/api/airdrops/current${buildQuery({ chainId })}`));
   const json = await parseJson(res);
   return {
     status: String(json?.status || "empty"),
