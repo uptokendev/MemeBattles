@@ -202,7 +202,8 @@ export default function CommandCenterClaims() {
       return;
     }
 
-    if (!wallet?.signer) {
+    const signer = wallet?.signer;
+    if (!signer) {
       setMessage("Connect your BNB wallet before claiming rewards.");
       try {
         window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
@@ -227,7 +228,7 @@ export default function CommandCenterClaims() {
       claimIntentId = intent.id;
 
       for (const call of intent.calls) {
-        const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, wallet.signer);
+        const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, signer);
         const toastId = toast.loading(`Confirm ${formatNativeAmount(call.amount, call.chainId, call.tokenSymbol)} claim in your wallet...`);
         try {
           const tx = await contract.claim(call.batchId, call.amount, call.proof);
