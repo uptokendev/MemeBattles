@@ -32,7 +32,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     mapping(bytes32 => mapping(address => bool)) public hasClaimed;
 
     event BatchCreated(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 totalFunded, uint64 claimDeadline);
-    event BatchPaused(bytes32 indexed batchId, bool paused);
+    event BatchPauseUpdated(bytes32 indexed batchId, bool paused);
     event RewardClaimed(bytes32 indexed batchId, address indexed account, uint256 amount);
     event UnclaimedRecovered(bytes32 indexed batchId, address indexed recipient, uint256 amount);
 
@@ -60,7 +60,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     function setBatchPaused(bytes32 batchId, bool paused_) external onlyOwner {
         Batch storage batch = _batch(batchId);
         batch.paused = paused_;
-        emit BatchPaused(batchId, paused_);
+        emit BatchPauseUpdated(batchId, paused_);
     }
 
     function pause() external onlyOwner {
@@ -95,14 +95,14 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         Batch storage batch = _batch(batchId);
         if (batch.claimDeadline == 0 || block.timestamp <= batch.claimDeadline) revert BatchStillOpen(batchId);
 
-        uint256 unclaimed = batch.totalFunded - batch.totalClaimed;
-        if (unclaimed == 0) revert AmountZero();
+        uint256 unclaimedAmount = batch.totalFunded - batch.totalClaimed;
+        if (unclaimedAmount == 0) revert AmountZero();
         batch.totalFunded = batch.totalClaimed;
 
-        (bool ok,) = recipient.call{value: unclaimed}("");
+        (bool ok,) = recipient.call{value: unclaimedAmount}("");
         if (!ok) revert TransferFailed();
 
-        emit UnclaimedRecovered(batchId, recipient, unclaimed);
+        emit UnclaimedRecovered(batchId, recipient, unclaimedAmount);
     }
 
     function unclaimed(bytes32 batchId) external view returns (uint256) {
