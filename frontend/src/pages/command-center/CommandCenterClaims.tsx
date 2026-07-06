@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { formatEther } from "ethers";
+import { Contract, formatEther } from "ethers";
 import { Gift, Trophy, Users, Swords, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { useWallet } from "@/contexts/WalletContext";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { fetchRewardClaims, requestRewardClaim, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
+import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
+import {
+  REWARD_DISTRIBUTOR_ABI,
+  createRewardClaimIntent,
+  recordRewardClaimFailure,
+  recordRewardClaimTx,
+} from "@/lib/rewardDistributor";
 
 type RewardCardState = "claimable" | "pending" | "failed" | "expired" | "empty";
 
@@ -163,6 +171,7 @@ function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null)
 
 export default function CommandCenterClaims() {
   const { attribution, chainId, walletAddress } = useCommandCenterData();
+  const wallet = useWallet();
   const [items, setItems] = useState<RewardLedgerItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [claimingType, setClaimingType] = useState<string | null>(null);
@@ -187,14 +196,66 @@ export default function CommandCenterClaims() {
   async function claimRewards(card: RewardCardConfig) {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
     if (!claimable.length) return;
+
+    if (claimable.some((item) => item.chainId === SOLANA_CHAIN_ID)) {
+      setMessage("Solana rewards are tracked, but Solana claiming is not enabled yet.");
+      return;
+    }
+
+    if (!wallet?.signer) {
+      setMessage("Connect your BNB wallet before claiming rewards.");
+      try {
+        window.dispatchEvent(new CustomEvent("memebattles:openWalletModal"));
+      } catch {}
+      return;
+    }
+
+    const activeAccount = String(wallet.account || "").toLowerCase();
+    if (!activeAccount || activeAccount !== String(walletAddress || "").toLowerCase()) {
+      setMessage("Connect the same wallet that owns these rewards before claiming.");
+      return;
+    }
+
     setClaimingType(card.rewardType);
     setMessage(null);
+    const rewardLedgerIds = claimable.map((item) => item.id);
+    let claimIntentId: string | null = null;
+    const completed: string[] = [];
+
     try {
-      await requestRewardClaim({ walletAddress, chainId, rewardLedgerIds: claimable.map((item) => item.id) });
-      setMessage(`${card.title} claim submitted.`);
+      const intent = await createRewardClaimIntent({ walletAddress, chainId, rewardLedgerIds });
+      claimIntentId = intent.id;
+
+      for (const call of intent.calls) {
+        const contract = new Contract(call.contractAddress, REWARD_DISTRIBUTOR_ABI, wallet.signer);
+        const toastId = toast.loading(`Confirm ${formatNativeAmount(call.amount, call.chainId, call.tokenSymbol)} claim in your wallet...`);
+        try {
+          const tx = await contract.claim(call.batchId, call.amount, call.proof);
+          toast.dismiss(toastId);
+          const waitToast = toast.loading("Waiting for claim confirmation...");
+          try {
+            await tx.wait();
+          } finally {
+            toast.dismiss(waitToast);
+          }
+
+          const txHash = String(tx.hash || "");
+          await recordRewardClaimTx({ walletAddress, chainId, rewardLedgerIds: [call.rewardLedgerId], claimIntentId, txHash });
+          completed.push(call.rewardLedgerId);
+        } catch (err: any) {
+          toast.dismiss(toastId);
+          const reason = String(err?.shortMessage || err?.message || "Wallet claim transaction failed");
+          await recordRewardClaimFailure({ rewardLedgerIds: [call.rewardLedgerId], claimIntentId, error: reason }).catch(() => {});
+          throw err;
+        }
+      }
+
+      const count = completed.length;
+      setMessage(count === 1 ? `${card.title} claimed on-chain.` : `${count} ${card.title} claims completed on-chain.`);
+      toast.success(count === 1 ? "Reward claimed." : `${count} rewards claimed.`);
       loadClaims();
     } catch (err: any) {
-      setMessage(String(err?.message || err || "Claim request failed"));
+      setMessage(String(err?.shortMessage || err?.message || err || "Claim request failed"));
     } finally {
       setClaimingType(null);
     }
@@ -234,7 +295,7 @@ export default function CommandCenterClaims() {
                     className="font-retro"
                     onClick={() => void claimRewards(card)}
                   >
-                    {claimingType === card.rewardType ? "Submitting..." : card.buttonLabel}
+                    {claimingType === card.rewardType ? "Claiming..." : card.buttonLabel}
                   </Button>
                 </div>
               </div>
