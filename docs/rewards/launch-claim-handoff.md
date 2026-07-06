@@ -152,6 +152,20 @@ The Rewards / Claims page:
 
 Solana claim attempts remain disabled and should show a clear message.
 
+## Pending claim tracking
+
+When a wallet creates a claim intent, the linked batch metadata now receives:
+
+```json
+{
+  "claimPendingCount": 1,
+  "claimPendingAmount": "100000000000000000",
+  "lastClaimStatusRefreshAt": "2026-07-06T21:00:00.000Z"
+}
+```
+
+When the claim is recorded as `claimed` or `failed`, these fields are recalculated from the linked ledger and batch item statuses. Admin batch responses also expose the same values at the top level where the batch helper is used.
+
 ## Ledger callbacks after payout
 
 Claim completed:
@@ -180,7 +194,7 @@ Claim failed:
 }
 ```
 
-Callbacks update `reward_ledger`, linked `reward_batch_items`, batch counts, and `reward_audit_logs`.
+Callbacks update `reward_ledger`, linked `reward_batch_items`, batch counts, pending-claim metadata, and `reward_audit_logs`.
 
 ## Launch guardrails
 
