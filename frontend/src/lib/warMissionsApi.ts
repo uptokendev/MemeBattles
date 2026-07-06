@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/apiBase";
+import { getSolanaProvider } from "@/lib/solanaWallet";
 
 const WM_CREDENTIALS: RequestCredentials = "include";
 
@@ -103,6 +104,14 @@ async function wmFetch(path: string, init?: RequestInit) {
   );
 }
 
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
 function normalizeApplication(value: any): WarMissionsRecruiterApplication | null {
   if (!value) return null;
   return {
@@ -171,6 +180,21 @@ export async function verifyWarMissionsAuth(address: string, signature: string) 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ address, signature }),
   });
+}
+
+export async function signInWarMissionsWithSolana(address: string) {
+  const provider = getSolanaProvider();
+  if (!provider?.signMessage) {
+    throw new Error("This Solana wallet does not support message signing.");
+  }
+
+  const walletAddress = String(address || provider.publicKey?.toString?.() || "").trim();
+  if (!walletAddress) throw new Error("Solana wallet not connected.");
+
+  const challenge = await requestWarMissionsAuthNonce(walletAddress);
+  const signed = await provider.signMessage(new TextEncoder().encode(challenge.message), "utf8");
+  const signatureBytes = signed instanceof Uint8Array ? signed : signed.signature;
+  return verifyWarMissionsAuth(walletAddress, bytesToBase64(signatureBytes));
 }
 
 export async function fetchWarMissionsRecruiterState(): Promise<WarMissionsRecruiterState> {
