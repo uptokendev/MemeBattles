@@ -147,10 +147,43 @@ The Rewards / Claims page:
 1. Reads claimable rows from `reward_ledger`.
 2. Creates a claim intent through `/api/rewards/me/claim-intent`.
 3. Calls `RewardDistributor.claim(batchId, amount, proof)` from the connected BNB wallet.
-4. Records confirmed tx hashes or failed claim errors back into the reward ledger.
+4. Records confirmed tx hashes or failed claim errors through `/api/rewards/me/claim-record`.
 5. Refreshes the claims UI.
 
 Solana claim attempts remain disabled and should show a clear message.
+
+## Public claim record callback
+
+After the wallet transaction resolves, the frontend should call:
+
+```http
+POST /api/rewards/me/claim-record
+```
+
+Claim completed:
+
+```json
+{
+  "rewardLedgerIds": ["reward-ledger-uuid"],
+  "walletAddress": "0x...",
+  "txHash": "0x...",
+  "claimIntentId": "claim-..."
+}
+```
+
+Claim failed:
+
+```json
+{
+  "rewardLedgerIds": ["reward-ledger-uuid"],
+  "walletAddress": "0x...",
+  "status": "failed",
+  "claimError": "RPC reverted or tx failed",
+  "claimIntentId": "claim-..."
+}
+```
+
+This public callback updates `reward_ledger`, linked `reward_batch_items`, pending-claim metadata, and `reward_audit_logs` for the connected wallet.
 
 ## Pending claim tracking
 
@@ -167,6 +200,8 @@ When a wallet creates a claim intent, the linked batch metadata now receives:
 When the claim is recorded as `claimed` or `failed`, these fields are recalculated from the linked ledger and batch item statuses. Admin batch responses also expose the same values at the top level where the batch helper is used.
 
 ## Ledger callbacks after payout
+
+Ops can also close out claims through the internal callback.
 
 Claim completed:
 
