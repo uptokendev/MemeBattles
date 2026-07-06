@@ -6,7 +6,7 @@ import { CommandCenterCard } from "@/components/command-center/CommandCenterCard
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
-import { fetchAirdropWinners, type AirdropWinner } from "@/lib/rewardProgramsApi";
+import { fetchAirdropCurrent, fetchAirdropWinners, type AirdropCurrent, type AirdropWinner } from "@/lib/rewardProgramsApi";
 
 const ZERO_RAW = "0";
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -15,7 +15,8 @@ function isSolanaAirdrop(chainId?: number | null): boolean {
   return chainId === SOLANA_CHAIN_ID;
 }
 
-function nativeSymbol(chainId?: number | null): "BNB" | "SOL" {
+function nativeSymbol(chainId?: number | null, tokenSymbol?: string | null): "BNB" | "SOL" | string {
+  if (tokenSymbol) return tokenSymbol;
   return isSolanaAirdrop(chainId) ? "SOL" : "BNB";
 }
 
@@ -71,6 +72,7 @@ function winnerType(program: string): string {
 export default function CommandCenterAirdrops() {
   const { chainId } = useCommandCenterData();
   const [winners, setWinners] = useState<AirdropWinner[]>([]);
+  const [current, setCurrent] = useState<AirdropCurrent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -80,12 +82,17 @@ export default function CommandCenterAirdrops() {
     setLoading(true);
     setError(null);
 
-    void fetchAirdropWinners({ chainId, limit: 12 })
-      .then((items) => {
-        if (!cancelled) setWinners(Array.isArray(items) ? items : []);
+    void Promise.all([
+      fetchAirdropCurrent(chainId),
+      fetchAirdropWinners({ chainId, limit: 12 }),
+    ])
+      .then(([currentBatch, items]) => {
+        if (cancelled) return;
+        setCurrent(currentBatch || null);
+        setWinners(Array.isArray(items) ? items : []);
       })
       .catch((err: any) => {
-        if (!cancelled) setError(String(err?.message || err || "Failed to load previous winners"));
+        if (!cancelled) setError(String(err?.message || err || "Failed to load airdrop data"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -101,10 +108,15 @@ export default function CommandCenterAirdrops() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const nextDropAt = useMemo(() => getNextMondayUtc(), []);
+  const nextDropAt = useMemo(() => {
+    const raw = current?.current?.metadata?.dropDate || current?.current?.metadata?.dropAt || current?.current?.metadata?.claimableAt;
+    const configured = raw ? new Date(String(raw)) : null;
+    return configured && Number.isFinite(configured.getTime()) ? configured : getNextMondayUtc();
+  }, [current]);
   const countdown = formatCountdown(nextDropAt, nowMs);
-  const currentPrizePoolRaw = ZERO_RAW;
-  const symbol = nativeSymbol(chainId);
+  const currentPrizePoolRaw = current?.prizePool?.amount || current?.current?.totalAmount || ZERO_RAW;
+  const symbol = nativeSymbol(chainId, current?.prizePool?.tokenSymbol || current?.current?.tokenSymbol);
+  const poolStatus = current?.prizePool?.status || current?.current?.status || "pending";
 
   return (
     <div className="space-y-4">
@@ -117,8 +129,9 @@ export default function CommandCenterAirdrops() {
               <div>
                 <p className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Current Prize Pool</p>
                 <div className="mt-5 font-retro text-4xl text-foreground md:text-5xl">
-                  {formatNativeAmount(currentPrizePoolRaw, chainId)} {symbol}
+                  {loading ? "..." : formatNativeAmount(currentPrizePoolRaw, chainId)} {symbol}
                 </div>
+                <p className="mt-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">{poolStatus}</p>
               </div>
               <div className="rounded-2xl border border-accent/30 bg-accent/10 p-3 text-accent">
                 <Gift className="h-5 w-5" />
@@ -129,6 +142,7 @@ export default function CommandCenterAirdrops() {
           <CommandCenterCard>
             <p className="font-retro text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Next drop in</p>
             <div className="mt-4 font-retro text-3xl text-foreground md:text-4xl">{countdown}</div>
+            {current?.currentEpochId ? <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">Epoch {current.currentEpochId}</p> : null}
           </CommandCenterCard>
         </div>
 
