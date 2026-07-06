@@ -13,6 +13,7 @@ const contracts = [
   'ProtocolRevenueVault',
   'CommunityRewardsVault',
   'TreasuryVaultV2',
+  'RewardDistributor',
 ];
 
 const artifactsRoot = path.join(root, 'artifacts', 'contracts');
