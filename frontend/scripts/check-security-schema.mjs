@@ -17,6 +17,11 @@ const requiredTables = [
   "recruiter_reward_ledger",
   "recruiter_reward_claims",
   "recruiter_payout_reconciliation_runs",
+  "reward_ledger",
+  "reward_batches",
+  "reward_batch_items",
+  "reward_audit_logs",
+  "reward_alerts",
 ];
 
 const requiredColumns = {
@@ -29,6 +34,11 @@ const requiredColumns = {
   campaign_security_states: ["campaign_address", "paused", "buy_paused", "sell_paused", "graduation_paused"],
   recruiter_reward_ledger: ["id", "recruiter_id", "chain", "token", "amount_raw", "status", "claim_id"],
   recruiter_reward_claims: ["id", "recruiter_id", "chain", "token", "amount_raw", "payout_wallet", "status", "tx_hash", "error"],
+  reward_ledger: ["id", "reward_type", "source_id", "source_label", "wallet_address", "chain", "token_symbol", "amount", "status", "claim_batch_id", "claim_tx_hash", "claim_error", "metadata", "claimable_at", "claimed_at", "expires_at"],
+  reward_batches: ["id", "reward_type", "chain", "token_symbol", "status", "total_amount", "recipient_count", "claimable_count", "claimed_count", "failed_count", "source", "metadata", "published_at", "closed_at"],
+  reward_batch_items: ["id", "batch_id", "reward_ledger_id", "wallet_address", "amount", "status", "metadata", "created_at"],
+  reward_audit_logs: ["id", "batch_id", "reward_ledger_id", "actor_type", "actor_id", "action", "old_value", "new_value", "reason", "tx_hash", "metadata", "created_at"],
+  reward_alerts: ["id", "severity", "reward_type", "batch_id", "title", "message", "status", "metadata", "created_at", "resolved_at", "resolved_by"],
 };
 
 async function main() {
