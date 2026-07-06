@@ -389,7 +389,23 @@ export async function squadsLeaderboard(req, res) {
   const q = getQuery(req);
   return json(res, 200, { items: [], currentEpochId: q.epochId ? Number(q.epochId) : null, materializedAt: null });
 }
+export async function squadSummary(req, res) {
+  if (!methodAllowed(req, res, ["GET"])) return;
+  const q = getQuery(req);
+  const code = String(req.params?.code || q.code || q.recruiterCode || "").trim();
 
+  return json(res, 200, {
+    squad: null,
+    summary: {
+      recruiterCode: code || null,
+      activeMemberCount: 0,
+      eligibleMemberCount: 0,
+      estimatedAllocationAmount: "0",
+      currentEpochId: q.epochId ? Number(q.epochId) : null,
+    },
+    materializedAt: null,
+  });
+}
 export async function squadMembers(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
