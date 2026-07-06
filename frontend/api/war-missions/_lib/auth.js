@@ -4,12 +4,58 @@ import { ethers } from "ethers";
 export const WAR_MISSIONS_AUTH_COOKIE = "mwz_wm_auth";
 export const WAR_MISSIONS_AUTH_TTL_SECONDS = 60 * 60 * 24 * 14;
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const SOLANA_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function isEvmAddress(address) {
+  return /^0x[a-f0-9]{40}$/.test(String(address || "").trim().toLowerCase());
+}
+
+function decodeBase58(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const bytes = [0];
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return null;
+
+    let carry = index;
+    for (let i = 0; i < bytes.length; i += 1) {
+      const next = bytes[i] * 58 + carry;
+      bytes[i] = next & 0xff;
+      carry = next >> 8;
+    }
+
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+
+  for (const char of raw) {
+    if (char !== "1") break;
+    bytes.push(0);
+  }
+
+  return Buffer.from(bytes.reverse());
+}
+
+function isSolanaAddress(address) {
+  const raw = String(address || "").trim();
+  if (raw.length < 32 || raw.length > 44) return false;
+  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(raw)) return false;
+  return decodeBase58(raw)?.length === 32;
+}
+
 export function normalizeAddress(address) {
-  return String(address || "").trim().toLowerCase();
+  const raw = String(address || "").trim();
+  return isEvmAddress(raw) ? raw.toLowerCase() : raw;
 }
 
 export function isWalletAddress(address) {
-  return /^0x[a-f0-9]{40}$/.test(normalizeAddress(address));
+  const normalized = normalizeAddress(address);
+  return isEvmAddress(normalized) || isSolanaAddress(normalized);
 }
 
 function parseCookies(raw) {
@@ -63,9 +109,30 @@ export function warLoginMessage(address, nonce) {
   return `MemeWarzone War Missions login\naddress: ${normalizeAddress(address)}\nnonce: ${nonce}`;
 }
 
+function verifySolanaSignature(message, signature, address) {
+  const publicKeyBytes = decodeBase58(address);
+  if (!publicKeyBytes || publicKeyBytes.length !== 32) return false;
+
+  let signatureBytes;
+  try {
+    signatureBytes = Buffer.from(String(signature || ""), "base64");
+  } catch {
+    return false;
+  }
+  if (signatureBytes.length !== 64) return false;
+
+  const key = Buffer.concat([SOLANA_SPKI_PREFIX, publicKeyBytes]);
+  return crypto.verify(null, Buffer.from(message, "utf8"), { key, format: "der", type: "spki" }, signatureBytes);
+}
+
 export async function verifyWalletSignature(message, signature, address) {
+  const normalized = normalizeAddress(address);
+  if (isSolanaAddress(normalized)) {
+    return verifySolanaSignature(message, signature, normalized);
+  }
+
   const recovered = ethers.verifyMessage(message, signature);
-  return normalizeAddress(recovered) === normalizeAddress(address);
+  return normalizeAddress(recovered) === normalized;
 }
 
 export function createWarAuthCookie(req, data) {
