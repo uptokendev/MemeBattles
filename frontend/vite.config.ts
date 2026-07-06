@@ -56,6 +56,10 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         {
+          find: "@/assets/promotion/warzonehud.png",
+          replacement: path.resolve(__dirname, "./src/lib/warzoneHudAsset.ts"),
+        },
+        {
           find: "@",
           replacement: path.resolve(__dirname, "./src"),
         },
