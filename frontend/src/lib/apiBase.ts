@@ -126,6 +126,17 @@ function emptyWalletRewardSummary(walletAddress: string) {
   };
 }
 
+function deferCompatibilityFallback(path: string): boolean {
+  try {
+    const url = new URL(path, "http://local");
+    if (url.pathname === "/api/recruiters/signup/status") return true;
+    if (url.pathname === "/api/rewards/wallet") return true;
+    return /^\/api\/recruiters\/wallet\/[^/]+\/summary$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function safeString(fn: () => Promise<unknown>, fallback = ""): Promise<string> {
   try {
     const value = await fn();
@@ -317,7 +328,8 @@ export function apiUrl(path: string): string {
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const compatibilityFallback = buildPublicCompatibilityFallback(path, init);
-  if (compatibilityFallback) return compatibilityFallback;
+  const deferredFallback = deferCompatibilityFallback(path);
+  if (compatibilityFallback && !deferredFallback) return compatibilityFallback;
 
   const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
   if (preemptiveFallback) return preemptiveFallback;
@@ -330,10 +342,12 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       const fallback = await buildTokenDetailsCampaignFallback(path);
       if (fallback) return fallback;
     }
+    if (!res.ok && compatibilityFallback) return compatibilityFallback;
     return res;
   } catch (error) {
     const fallback = await buildTokenDetailsCampaignFallback(path);
     if (fallback) return fallback;
+    if (compatibilityFallback) return compatibilityFallback;
     throw error;
   }
 }
