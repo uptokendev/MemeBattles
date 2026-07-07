@@ -96,9 +96,16 @@ function getMethod(init?: RequestInit): string {
   return String(init?.method || "GET").trim().toUpperCase();
 }
 
+function isSolanaAddress(value?: string | null): boolean {
+  const raw = String(value || "").trim();
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
+}
+
 function normalizeWallet(value?: string | null): string {
-  const raw = String(value || "").trim().toLowerCase();
-  return /^0x[a-f0-9]{40}$/.test(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  const lower = raw.toLowerCase();
+  if (/^0x[a-f0-9]{40}$/.test(lower)) return lower;
+  return isSolanaAddress(raw) ? raw : "";
 }
 
 function emptyWalletRewardSummary(walletAddress: string) {
@@ -179,9 +186,10 @@ function buildPublicCompatibilityFallback(path: string, init?: RequestInit): Res
     });
   }
 
-  const recruiterWalletMatch = url.pathname.match(/^\/api\/recruiters\/wallet\/(0x[a-fA-F0-9]{40})\/summary$/);
+  const recruiterWalletMatch = url.pathname.match(/^\/api\/recruiters\/wallet\/([^/]+)\/summary$/);
   if (recruiterWalletMatch) {
-    return jsonResponse({ summary: null });
+    const walletAddress = normalizeWallet(decodeURIComponent(recruiterWalletMatch[1] || ""));
+    return jsonResponse({ summary: null, walletAddress });
   }
 
   if (url.pathname === "/api/rewards/wallet") {
