@@ -117,6 +117,11 @@ import {
   recruiters,
 } from "./dev-fix/attribution.js";
 import {
+  solanaRecruiterSignupNonce,
+  solanaRecruiterSignupStatus,
+  solanaRecruiterSignupSubmit,
+} from "./dev-fix/recruiter-solana-signup.js";
+import {
   recruiterAuthNonce,
   recruiterAuthVerify,
   recruiterLogout,
@@ -192,7 +197,7 @@ function isDevAllowedIP(req) {
   if (DEV_ALLOWED_IPS.size === 0) return false;
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   const ip = forwarded || req.ip || req.socket?.remoteAddress || "";
-  const clean = ip.replace(/^::ffff:/, ""); // IPv4-mapped
+  const clean = ip.replace(/^::ffff:/, "");
   return DEV_ALLOWED_IPS.has(ip) || DEV_ALLOWED_IPS.has(clean);
 }
 
@@ -206,7 +211,6 @@ app.use((req, res, next) => {
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
     } else if (devIp) {
-      // For direct IP access from allowed dev IP (no origin or cross-origin tools), be permissive
       res.setHeader("Access-Control-Allow-Origin", "*");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
@@ -226,12 +230,6 @@ function wrap(fn) {
   };
 }
 
-// Upload route MUST be mounted BEFORE express.json, express.urlencoded, and
-// the railwayProxyMiddleware. This guarantees that formidable receives the
-// raw multipart/form-data request stream. Any body parser or proxy that
-// touches the stream first commonly causes ERR_CONNECTION_RESET or
-// "request aborted" on /api/upload (especially for logo uploads during
-// draft creation, and when the railway proxy is enabled in local dev).
 app.use("/api/upload", wrap(upload));
 
 app.get("/", (_req, res) => res.json({ ok: true, service: "MemeWarzone API", healthz: "/healthz", api: "/api" }));
@@ -249,18 +247,11 @@ app.get("/health", async (_req, res) => {
 app.use(express.json({ limit: process.env.API_JSON_LIMIT || "10mb" }));
 app.use(express.urlencoded({ extended: false, limit: process.env.API_FORM_LIMIT || "10mb" }));
 
-// Handle payload too large errors from body-parser early (e.g. if a draft payload or other JSON
-// exceeds the limit). This turns the raw PayloadTooLargeError into a clean 413 response instead
-// of an unhandled error that becomes a generic 500.
 app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') {
     console.error(`[api/server] Payload too large for ${req.path}: ${err.length} bytes > ${err.limit} limit`);
     if (!res.headersSent) {
-      return res.status(413).json({ 
-        error: "Payload too large", 
-        limit: err.limit, 
-        length: err.length 
-      });
+      return res.status(413).json({ error: "Payload too large", limit: err.limit, length: err.length });
     }
   }
   next(err);
@@ -357,6 +348,10 @@ router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
 router.all("/recruiter-signup", wrap(recruiterSignupSubmit));
+router.all("/solana/recruiter-signup/status", wrap(solanaRecruiterSignupStatus));
+router.all("/solana/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
+router.all("/solana/recruiter-signup/nonce", wrap(solanaRecruiterSignupNonce));
+router.all("/solana/recruiter-signup", wrap(solanaRecruiterSignupSubmit));
 router.all("/wm-auth-nonce", wrap(wmAuthNonce));
 router.all("/wm-auth-verify", wrap(wmAuthVerify));
 router.all("/wm-profile", wrap(wmProfile));
