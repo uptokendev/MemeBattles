@@ -1,11 +1,14 @@
 import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../../server/http.js";
 
 const COOKIE_NAME = "mwz_recruiter_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NONCE_CHAIN_ID = 0;
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const BASE58_MAP = new Map([...BASE58_ALPHABET].map((char, index) => [char, index]));
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -14,8 +17,20 @@ function methodAllowed(req, res, allowed) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  const evm = raw.toLowerCase();
+  if (isAddress(evm)) return evm;
+  if (isSolanaAddress(raw)) return raw;
+  return "";
+}
+
+function walletLookupKey(value) {
+  const raw = normalizeAddress(value);
+  return raw ? raw.toLowerCase() : "";
+}
+
+function isSolanaWallet(value) {
+  return isSolanaAddress(String(value || "").trim());
 }
 
 function normalizeCode(value) {
@@ -92,11 +107,8 @@ function isSecureRequest(req) {
 
 function cookieAttributes(req, maxAgeSeconds) {
   const attrs = ["Path=/", "HttpOnly", `Max-Age=${maxAgeSeconds}`];
-  if (isSecureRequest(req)) {
-    attrs.push("SameSite=None", "Secure");
-  } else {
-    attrs.push("SameSite=Lax");
-  }
+  if (isSecureRequest(req)) attrs.push("SameSite=None", "Secure");
+  else attrs.push("SameSite=Lax");
   return attrs.join("; ");
 }
 
@@ -117,13 +129,61 @@ function buildAuthMessage({ walletAddress, nonce }) {
   ].join("\n");
 }
 
+function base58Decode(value) {
+  const input = String(value || "").trim();
+  if (!input) return Buffer.alloc(0);
+  let bytes = [0];
+  for (const char of input) {
+    const carryValue = BASE58_MAP.get(char);
+    if (carryValue == null) throw new Error("Invalid base58 value");
+    let carry = carryValue;
+    for (let i = 0; i < bytes.length; i += 1) {
+      const x = bytes[i] * 58 + carry;
+      bytes[i] = x & 0xff;
+      carry = x >> 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  for (const char of input) {
+    if (char === "1") bytes.push(0);
+    else break;
+  }
+  return Buffer.from(bytes.reverse());
+}
+
+function verifySolanaSignature(message, signatureBase64, walletAddress) {
+  try {
+    const signature = Buffer.from(String(signatureBase64 || ""), "base64");
+    const publicKey = base58Decode(walletAddress);
+    if (signature.length !== 64) return false;
+    if (publicKey.length !== 32) return false;
+    const spki = Buffer.concat([ED25519_SPKI_PREFIX, publicKey]);
+    const keyObject = crypto.createPublicKey({ key: spki, format: "der", type: "spki" });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signature);
+  } catch (error) {
+    console.error("[api/recruiter portal solana verify]", error);
+    return false;
+  }
+}
+
+function verifyWalletSignature({ walletAddress, nonce, signature }) {
+  const message = buildAuthMessage({ walletAddress, nonce });
+  if (isSolanaWallet(walletAddress)) return verifySolanaSignature(message, signature, walletAddress);
+  const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+  return recovered === walletAddress.toLowerCase();
+}
+
 function recruiterShape(row) {
+  const realSolanaWallet = row.metadata?.signup?.solanaWalletAddress || null;
   return {
     id: Number(row.id),
     name: row.display_name || row.code,
     x_handle: row.metadata?.signup?.xHandle || row.metadata?.signup?.x_handle || "",
     telegram_handle: row.metadata?.signup?.telegram || row.metadata?.signup?.telegram_handle || "",
-    wallet_address: row.wallet_address,
+    wallet_address: realSolanaWallet || row.wallet_address,
     status: row.status,
     focus: row.metadata?.signup?.focus || row.metadata?.focus || null,
     recruiter_code: row.code,
@@ -134,12 +194,13 @@ function recruiterShape(row) {
 }
 
 async function findRecruiterByWallet(walletAddress) {
+  const lookup = walletLookupKey(walletAddress);
   const { rows } = await pool.query(
     `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, squad_image_url, created_at, updated_at
        from public.recruiters
-      where wallet_address = lower($1)
+      where wallet_address = $1
       limit 1`,
-    [walletAddress],
+    [lookup],
   );
   return rows[0] || null;
 }
@@ -160,7 +221,7 @@ async function getSessionRecruiter(req) {
   if (!session) return null;
   const recruiter = await findRecruiterById(Number(session.recruiterId));
   if (!recruiter) return null;
-  if (String(recruiter.wallet_address || "").toLowerCase() !== String(session.walletAddress || "").toLowerCase()) return null;
+  if (String(recruiter.wallet_address || "").toLowerCase() !== walletLookupKey(session.walletAddress)) return null;
   return recruiter;
 }
 
@@ -279,8 +340,7 @@ export async function recruiterAuthVerify(req, res) {
     const nonce = rows[0]?.nonce;
     if (!nonce) return json(res, 401, { error: "Nonce not found. Request a new recruiter login challenge." });
 
-    const recovered = ethers.verifyMessage(buildAuthMessage({ walletAddress, nonce }), signature).toLowerCase();
-    if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
+    if (!verifyWalletSignature({ walletAddress, nonce, signature })) return json(res, 401, { error: "Invalid signature" });
     await consumeNonce(walletAddress, nonce);
 
     const recruiter = await findRecruiterByWallet(walletAddress);
