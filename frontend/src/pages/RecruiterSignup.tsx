@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { getActiveChainId } from "@/lib/chainConfig";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 import {
   buildRecruiterSignupMessage,
   checkRecruiterCodeAvailability,
@@ -43,12 +45,19 @@ const initialForm: SignupFormState = {
   acceptTerms: false,
 };
 
+const SOLANA_RECRUITER_CHAIN_ID = 101;
 const pageShellClass = "mx-auto flex max-w-4xl flex-col gap-6 px-4 pt-24 pb-8 md:pt-28";
+
+type WalletMode = "bnb" | "solana";
 
 export default function RecruiterSignup() {
   const navigate = useNavigate();
   const wallet = useWallet();
-  const account = wallet.account || "";
+  const solanaWallet = useSolanaWallet();
+
+  const walletMode: WalletMode | null = solanaWallet.isSolanaConnected && solanaWallet.solanaAccount ? "solana" : wallet.account ? "bnb" : null;
+  const account = walletMode === "solana" ? solanaWallet.solanaAccount : wallet.account || "";
+  const isConnected = Boolean(walletMode && account);
 
   const [signupStatus, setSignupStatus] = useState<RecruiterSignupStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -60,7 +69,6 @@ export default function RecruiterSignup() {
 
   useEffect(() => {
     let cancelled = false;
-
     if (!account) {
       setSignupStatus(null);
       setStatusError(null);
@@ -88,7 +96,6 @@ export default function RecruiterSignup() {
   useEffect(() => {
     let cancelled = false;
     const nextCode = form.desiredCode.trim();
-
     if (!nextCode) {
       setCodeAvailability(null);
       setCheckingCode(false);
@@ -127,10 +134,11 @@ export default function RecruiterSignup() {
   };
 
   const canSubmit = useMemo(() => {
+    const hasSigner = walletMode === "solana" ? Boolean(solanaWallet.solanaAccount) : Boolean(wallet.signer);
     return Boolean(
-      wallet.isConnected &&
+      isConnected &&
         account &&
-        wallet.signer &&
+        hasSigner &&
         form.displayName.trim() &&
         form.desiredCode.trim() &&
         form.email.trim() &&
@@ -138,16 +146,15 @@ export default function RecruiterSignup() {
         form.acceptTerms &&
         codeAvailability?.isAvailable,
     );
-  }, [wallet.isConnected, account, wallet.signer, form, codeAvailability]);
+  }, [walletMode, solanaWallet.solanaAccount, wallet.signer, isConnected, account, form, codeAvailability]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
-    if (!wallet.isConnected || !account) {
+    if (!isConnected || !account || !walletMode) {
       toast.error("Connect your wallet to start recruiter signup.");
       return;
     }
-    if (!wallet.signer) {
+    if (walletMode === "bnb" && !wallet.signer) {
       toast.error("Wallet signer is unavailable. Reconnect and try again.");
       return;
     }
@@ -162,11 +169,7 @@ export default function RecruiterSignup() {
 
     setSubmitting(true);
     try {
-      // Map unsupported wallet chains (e.g. ETH mainnet=1) to the configured
-      // supported chain; otherwise the signed message and submission carry an
-      // unsupported chainId that the backend rejects. The same chainId must be
-      // passed to the nonce request because nonces are keyed by (chain_id, address).
-      const chainId = getActiveChainId(wallet.chainId);
+      const chainId = walletMode === "solana" ? SOLANA_RECRUITER_CHAIN_ID : getActiveChainId(wallet.chainId);
       const { nonce } = await requestRecruiterSignupNonce(account, chainId);
       const message = buildRecruiterSignupMessage({
         walletAddress: account,
@@ -180,7 +183,9 @@ export default function RecruiterSignup() {
         xHandle: form.xHandle,
         pitch: form.pitch,
       });
-      const signature = await wallet.signer.signMessage(message);
+      const signature = walletMode === "solana"
+        ? (await signSolanaMessage(message, account)).signature
+        : await wallet.signer!.signMessage(message);
 
       await submitRecruiterSignup({
         walletAddress: account,
@@ -206,14 +211,14 @@ export default function RecruiterSignup() {
     }
   };
 
-  if (!wallet.isConnected || !account) {
+  if (!isConnected || !account) {
     return (
       <div className={pageShellClass}>
         <Card className="border-border/60 bg-card/65 p-6">
           <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Recruiter signup</p>
           <h1 className="mt-2 font-retro text-3xl text-foreground">Connect your wallet to register as a recruiter.</h1>
           <p className="mt-3 text-sm text-muted-foreground">
-            The signup is wallet-first and requires a signature before submission, so we need the final recruiter wallet connected before continuing.
+            Use the wallet that should own the recruiter profile. BNB and Solana wallets are both supported.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <ConnectWalletButton />
@@ -265,151 +270,46 @@ export default function RecruiterSignup() {
         <div className="max-w-3xl space-y-4">
           <p className="font-retro text-xs uppercase tracking-[0.24em] text-amber-100/70">Recruiter signup</p>
           <h1 className="font-retro text-3xl text-foreground md:text-5xl">Claim your recruiter identity.</h1>
+          <p className="text-sm text-muted-foreground">Connected via {walletMode === "solana" ? "Solana" : "BNB"}: {account}</p>
         </div>
       </Card>
 
-      {statusError ? (
-        <Card className="border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
-          {statusError}
-        </Card>
-      ) : null}
+      {statusError ? <Card className="border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">{statusError}</Card> : null}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card className="border-border/60 bg-card/65 p-6">
           <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="wallet-address">Wallet address</Label>
-              <Input id="wallet-address" value={account} readOnly className="font-mono text-xs" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="display-name">Recruiter display name</Label>
-              <Input
-                id="display-name"
-                value={form.displayName}
-                onChange={(event) => updateField("displayName", event.target.value)}
-                placeholder="Warzone Alpha"
-                maxLength={40}
-              />
-            </div>
-
+            <div className="space-y-2"><Label htmlFor="wallet-address">Wallet address</Label><Input id="wallet-address" value={account} readOnly className="font-mono text-xs" /></div>
+            <div className="space-y-2"><Label htmlFor="display-name">Recruiter display name</Label><Input id="display-name" value={form.displayName} onChange={(event) => updateField("displayName", event.target.value)} placeholder="Warzone Alpha" maxLength={40} /></div>
             <div className="space-y-2">
               <Label htmlFor="desired-code">Desired recruiter code</Label>
-              <Input
-                id="desired-code"
-                value={form.desiredCode}
-                onChange={(event) => updateField("desiredCode", event.target.value)}
-                placeholder="alpha-squad"
-                maxLength={24}
-              />
+              <Input id="desired-code" value={form.desiredCode} onChange={(event) => updateField("desiredCode", event.target.value)} placeholder="alpha-squad" maxLength={24} />
               <div className="flex items-center gap-2 text-xs">
                 {checkingCode ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
-                {codeAvailability?.isAvailable === true ? (
-                  <span className="flex items-center gap-1 text-emerald-300">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    {codeAvailability.message || "Code available"}
-                  </span>
-                ) : codeAvailability?.isAvailable === false ? (
-                  <span className="flex items-center gap-1 text-rose-200">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {codeAvailability.message || "Code unavailable"}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">{codeAvailability?.message || "Use 3-24 lowercase letters, numbers, dashes, or underscores."}</span>
-                )}
+                {codeAvailability?.isAvailable === true ? <span className="flex items-center gap-1 text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" />{codeAvailability.message || "Code available"}</span> : null}
+                {codeAvailability?.isAvailable === false ? <span className="flex items-center gap-1 text-rose-200"><AlertCircle className="h-3.5 w-3.5" />{codeAvailability.message || "Code unavailable"}</span> : null}
+                {codeAvailability?.isAvailable == null ? <span className="text-muted-foreground">{codeAvailability?.message || "Use lowercase letters, numbers, dashes, or underscores."}</span> : null}
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={form.email}
-                onChange={(event) => updateField("email", event.target.value)}
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="telegram">Telegram</Label>
-              <Input
-                id="telegram"
-                value={form.telegram}
-                onChange={(event) => updateField("telegram", event.target.value)}
-                placeholder="@handle"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="discord">Discord</Label>
-              <Input
-                id="discord"
-                value={form.discord}
-                onChange={(event) => updateField("discord", event.target.value)}
-                placeholder="username#1234"
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="x-handle">X handle</Label>
-              <Input
-                id="x-handle"
-                value={form.xHandle}
-                onChange={(event) => updateField("xHandle", event.target.value)}
-                placeholder="@memewarzone"
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="pitch">Short pitch / audience description</Label>
-              <Textarea
-                id="pitch"
-                value={form.pitch}
-                onChange={(event) => updateField("pitch", event.target.value)}
-                placeholder="Tell us how you plan to grow your squad, which creators or traders you target, and what makes your community strong."
-                rows={5}
-              />
-            </div>
+            <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} placeholder="you@example.com" /></div>
+            <div className="space-y-2"><Label htmlFor="telegram">Telegram</Label><Input id="telegram" value={form.telegram} onChange={(event) => updateField("telegram", event.target.value)} placeholder="@handle" /></div>
+            <div className="space-y-2"><Label htmlFor="discord">Discord</Label><Input id="discord" value={form.discord} onChange={(event) => updateField("discord", event.target.value)} placeholder="username#1234" /></div>
+            <div className="space-y-2 md:col-span-2"><Label htmlFor="x-handle">X handle</Label><Input id="x-handle" value={form.xHandle} onChange={(event) => updateField("xHandle", event.target.value)} placeholder="@memewarzone" /></div>
+            <div className="space-y-2 md:col-span-2"><Label htmlFor="pitch">Short pitch / audience description</Label><Textarea id="pitch" value={form.pitch} onChange={(event) => updateField("pitch", event.target.value)} placeholder="Tell us how you plan to grow your squad." rows={5} /></div>
           </div>
         </Card>
 
         <Card className="border-border/60 bg-card/65 p-6">
           <div className="flex items-start gap-3">
-            <Checkbox
-              id="accept-terms"
-              checked={form.acceptTerms}
-              onCheckedChange={(checked) => updateField("acceptTerms", Boolean(checked))}
-            />
+            <Checkbox id="accept-terms" checked={form.acceptTerms} onCheckedChange={(checked) => updateField("acceptTerms", Boolean(checked))} />
             <div className="space-y-2">
               <Label htmlFor="accept-terms">I confirm this wallet is the recruiter owner and I accept the recruiter program terms.</Label>
-              <p className="text-sm text-muted-foreground">
-                Submitting the form requests a nonce, asks your wallet to sign the recruiter signup message, and then posts the signed payload to the signup endpoint.
-              </p>
-              {signupStatus && !signupStatus.signupApiAvailable ? (
-                <p className="text-sm text-amber-100">
-                  Signup status is currently using fallback checks. If the server signup endpoint is not enabled yet, submission will show a clean “not enabled” error instead of failing silently.
-                </p>
-              ) : null}
+              <p className="text-sm text-muted-foreground">Submitting asks your wallet to sign the recruiter signup message.</p>
             </div>
           </div>
-
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button type="submit" className="font-retro" disabled={!canSubmit || submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing and submitting...
-                </>
-              ) : (
-                "Sign and submit"
-              )}
-            </Button>
-            <Button asChild type="button" variant="outline" className="font-retro">
-              <Link to="/recruiter">
-                Back to recruiter overview
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            <Button type="submit" className="font-retro" disabled={!canSubmit || submitting}>{submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing and submitting...</> : "Sign and submit"}</Button>
+            <Button asChild type="button" variant="outline" className="font-retro"><Link to="/recruiter">Back to recruiter overview<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
           </div>
         </Card>
       </form>
