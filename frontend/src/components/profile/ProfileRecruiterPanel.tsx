@@ -5,6 +5,7 @@ import { ArrowRight, Clock3, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { RecruiterPayoutPanel } from "@/components/command-center/RecruiterPayoutPanel";
 import {
   fetchRecruiterSignupStatus,
@@ -72,6 +73,9 @@ function emptyRewardSummary(address: string): WalletRewardSummary {
 }
 
 export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: ProfileRecruiterPanelProps) {
+  const solanaWallet = useSolanaWallet();
+  const recruiterWalletAddress = String(solanaWallet.solanaAccount || account || "").trim();
+  const recruiterWalletConnected = Boolean(isConnected || solanaWallet.solanaAccount);
   const [recruiter, setRecruiter] = useState<RecruiterSummary | null>(null);
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
@@ -82,7 +86,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
 
   useEffect(() => {
     let cancelled = false;
-    if (!account) {
+    if (!recruiterWalletAddress) {
       setRecruiter(null);
       setSummary(null);
       setAttribution(null);
@@ -96,13 +100,13 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     void (async () => {
       try {
         const [signupStatus, attributionState] = await Promise.all([
-          fetchRecruiterSignupStatus(account).catch(() => null),
-          fetchWalletAttributionState(account).catch(() => null),
+          fetchRecruiterSignupStatus(recruiterWalletAddress).catch(() => null),
+          fetchWalletAttributionState(recruiterWalletAddress).catch(() => null),
         ]);
 
         if (cancelled) return;
         setRecruiter(signupStatus?.isRecruiter ? signupStatus.recruiter : null);
-        setSummary(emptyRewardSummary(account));
+        setSummary(emptyRewardSummary(recruiterWalletAddress));
         setHistory([]);
         setClaims([]);
         setAttribution(attributionState);
@@ -116,7 +120,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     return () => {
       cancelled = true;
     };
-  }, [account]);
+  }, [recruiterWalletAddress]);
 
   if (!isOwnProfile) {
     return (
@@ -138,7 +142,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     );
   }
 
-  if (!isConnected || !account) {
+  if (!recruiterWalletConnected || !recruiterWalletAddress) {
     return (
       <Card className="border-border/60 bg-card/65 p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
