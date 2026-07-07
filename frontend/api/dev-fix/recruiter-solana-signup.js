@@ -71,12 +71,18 @@ function base58Decode(value) {
 }
 
 function verifySolanaSignature(message, signatureBase64, walletAddress) {
-  const signature = Buffer.from(String(signatureBase64 || ""), "base64");
-  const publicKey = base58Decode(walletAddress);
-  if (signature.length !== 64) return false;
-  if (publicKey.length !== 32) return false;
-  const spki = Buffer.concat([ED25519_SPKI_PREFIX, publicKey]);
-  return crypto.verify(null, Buffer.from(message, "utf8"), { key: spki, format: "der", type: "spki" }, signature);
+  try {
+    const signature = Buffer.from(String(signatureBase64 || ""), "base64");
+    const publicKey = base58Decode(walletAddress);
+    if (signature.length !== 64) return false;
+    if (publicKey.length !== 32) return false;
+    const spki = Buffer.concat([ED25519_SPKI_PREFIX, publicKey]);
+    const keyObject = crypto.createPublicKey({ key: spki, format: "der", type: "spki" });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signature);
+  } catch (error) {
+    console.error("[api/solana recruiter signature verify]", error);
+    return false;
+  }
 }
 
 function recruiterSummaryShape(recruiter, extra = {}) {
