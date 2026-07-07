@@ -1,6 +1,6 @@
 import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
 import { apiFetch } from "@/lib/apiBase";
-import { normalizeAddress as centralNormalize } from "./address";
+import { isSolanaAddress, normalizeAddress as centralNormalize } from "./address";
 
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
@@ -81,6 +81,45 @@ async function postJson(path: string, body: any) {
       body: JSON.stringify(body),
     })
   );
+}
+
+function buildQuery(params: Record<string, string | number | null | undefined>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === "") continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+function normalizeWalletAddress(walletAddress: string, chainId?: number | null): string {
+  return centralNormalize(walletAddress, chainId);
+}
+
+function isSolanaRecruiterWallet(walletAddress: string, chainId?: number | null) {
+  return chainId === 101 || chainId === 102 || isSolanaAddress(walletAddress);
+}
+
+function recruiterSignupBase(walletAddress: string, chainId?: number | null) {
+  return isSolanaRecruiterWallet(walletAddress, chainId) ? "/api/solana/recruiter-signup" : "/api/recruiter-signup";
+}
+
+function normalizeRecruiterCode(code: string): string {
+  return String(code || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function unwrapRecruiterSummary(json: any): RecruiterSummary | null {
+  return (json?.recruiter ?? json ?? null) as RecruiterSummary | null;
+}
+
+function unwrapSquadSummary(json: any): SquadSummary | null {
+  return (json?.squad ?? json ?? null) as SquadSummary | null;
 }
 
 export async function captureRecruiterReferral(recruiterCode: string, walletAddress?: string | null) {
@@ -235,24 +274,6 @@ export type RecruiterSignupPayload = {
   signature: string;
 };
 
-function buildQuery(params: Record<string, string | number | null | undefined>) {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value == null || value === "") continue;
-    search.set(key, String(value));
-  }
-  const query = search.toString();
-  return query ? `?${query}` : "";
-}
-
-function unwrapRecruiterSummary(json: any): RecruiterSummary | null {
-  return (json?.recruiter ?? json ?? null) as RecruiterSummary | null;
-}
-
-function unwrapSquadSummary(json: any): SquadSummary | null {
-  return (json?.squad ?? json ?? null) as SquadSummary | null;
-}
-
 export async function fetchRecruiterLeaderboard(limit = 100, status?: string | null): Promise<RecruiterSummary[]> {
   const json = await getJson(`/api/recruiters${buildQuery({ limit, status })}`);
   return Array.isArray(json?.recruiters) ? json.recruiters as RecruiterSummary[] : [];
@@ -302,19 +323,6 @@ export async function fetchWalletRewardClaims(walletAddress: string, limit = 50,
   return Array.isArray(json?.claims) ? json.claims : [];
 }
 
-function normalizeWalletAddress(walletAddress: string, chainId?: number): string {
-  return centralNormalize(walletAddress, chainId);
-}
-
-function normalizeRecruiterCode(code: string): string {
-  return String(code || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 export function buildRecruiterSignupMessage(input: {
   walletAddress: string;
   chainId?: number | null;
@@ -330,7 +338,7 @@ export function buildRecruiterSignupMessage(input: {
   return [
     "MemeWarzone Recruiter Signup",
     "Action: RECRUITER_SIGNUP",
-    `Wallet: ${normalizeWalletAddress(input.walletAddress)}`,
+    `Wallet: ${normalizeWalletAddress(input.walletAddress, input.chainId)}`,
     `ChainId: ${input.chainId ?? ""}`,
     `Nonce: ${String(input.nonce || "").trim()}`,
     "",
@@ -347,8 +355,8 @@ export function buildRecruiterSignupMessage(input: {
 
 export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
   const normalized = normalizeWalletAddress(walletAddress);
-
-  const res = await apiFetch(`/api/recruiter-signup/status${buildQuery({ walletAddress: normalized })}`);
+  const base = recruiterSignupBase(normalized);
+  const res = await apiFetch(`${base}/status${buildQuery({ walletAddress: normalized })}`);
 
   if (res.ok) {
     const json = await parseJson(res);
@@ -446,8 +454,8 @@ export async function requestRecruiterSignupNonce(
   walletAddress: string,
   chainId: number,
 ): Promise<RecruiterSignupNonceResponse> {
-  const normalized = normalizeWalletAddress(walletAddress);
-  const json = await postJson("/api/recruiter-signup/nonce", {
+  const normalized = normalizeWalletAddress(walletAddress, chainId);
+  const json = await postJson(`${recruiterSignupBase(normalized, chainId)}/nonce`, {
     walletAddress: normalized,
     chainId,
   });
@@ -456,9 +464,10 @@ export async function requestRecruiterSignupNonce(
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  return postJson("/api/recruiter-signup", {
+  const walletAddress = normalizeWalletAddress(payload.walletAddress, payload.chainId);
+  return postJson(recruiterSignupBase(walletAddress, payload.chainId), {
     ...payload,
-    walletAddress: normalizeWalletAddress(payload.walletAddress),
+    walletAddress,
     desiredCode: normalizeRecruiterCode(payload.desiredCode),
   });
 }
