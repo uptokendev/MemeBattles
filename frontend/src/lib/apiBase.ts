@@ -96,9 +96,16 @@ function getMethod(init?: RequestInit): string {
   return String(init?.method || "GET").trim().toUpperCase();
 }
 
+function isSolanaAddress(value?: string | null): boolean {
+  const raw = String(value || "").trim();
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
+}
+
 function normalizeWallet(value?: string | null): string {
-  const raw = String(value || "").trim().toLowerCase();
-  return /^0x[a-f0-9]{40}$/.test(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  const lower = raw.toLowerCase();
+  if (/^0x[a-f0-9]{40}$/.test(lower)) return lower;
+  return isSolanaAddress(raw) ? raw : "";
 }
 
 function emptyWalletRewardSummary(walletAddress: string) {
@@ -117,6 +124,17 @@ function emptyWalletRewardSummary(walletAddress: string) {
     materializedAt: null,
     updatedAt: null,
   };
+}
+
+function deferCompatibilityFallback(path: string): boolean {
+  try {
+    const url = new URL(path, "http://local");
+    if (url.pathname === "/api/recruiters/signup/status") return true;
+    if (url.pathname === "/api/rewards/wallet") return true;
+    return /^\/api\/recruiters\/wallet\/[^/]+\/summary$/.test(url.pathname);
+  } catch {
+    return false;
+  }
 }
 
 async function safeString(fn: () => Promise<unknown>, fallback = ""): Promise<string> {
@@ -179,9 +197,10 @@ function buildPublicCompatibilityFallback(path: string, init?: RequestInit): Res
     });
   }
 
-  const recruiterWalletMatch = url.pathname.match(/^\/api\/recruiters\/wallet\/(0x[a-fA-F0-9]{40})\/summary$/);
+  const recruiterWalletMatch = url.pathname.match(/^\/api\/recruiters\/wallet\/([^/]+)\/summary$/);
   if (recruiterWalletMatch) {
-    return jsonResponse({ summary: null });
+    const walletAddress = normalizeWallet(decodeURIComponent(recruiterWalletMatch[1] || ""));
+    return jsonResponse({ summary: null, walletAddress });
   }
 
   if (url.pathname === "/api/rewards/wallet") {
@@ -309,7 +328,8 @@ export function apiUrl(path: string): string {
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const compatibilityFallback = buildPublicCompatibilityFallback(path, init);
-  if (compatibilityFallback) return compatibilityFallback;
+  const deferredFallback = deferCompatibilityFallback(path);
+  if (compatibilityFallback && !deferredFallback) return compatibilityFallback;
 
   const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
   if (preemptiveFallback) return preemptiveFallback;
@@ -322,10 +342,12 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       const fallback = await buildTokenDetailsCampaignFallback(path);
       if (fallback) return fallback;
     }
+    if (!res.ok && compatibilityFallback) return compatibilityFallback;
     return res;
   } catch (error) {
     const fallback = await buildTokenDetailsCampaignFallback(path);
     if (fallback) return fallback;
+    if (compatibilityFallback) return compatibilityFallback;
     throw error;
   }
 }

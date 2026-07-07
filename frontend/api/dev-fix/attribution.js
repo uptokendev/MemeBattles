@@ -3,6 +3,10 @@ import { ethers } from "ethers";
 import { pool } from "../../server/db.js";
 import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../../server/http.js";
 
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const BASE58_MAP = new Map([...BASE58_ALPHABET].map((char, index) => [char, index]));
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
   badMethod(res);
@@ -14,6 +18,10 @@ function normalizeAddress(value) {
   if (isSolanaAddress(raw)) return raw;
   const lower = raw.toLowerCase();
   return isAddress(lower) ? lower : "";
+}
+
+function isSolanaWallet(value) {
+  return isSolanaAddress(String(value || "").trim());
 }
 
 function normalizeCode(value) {
@@ -68,7 +76,7 @@ function publicState({ walletAddress, state = null, recruiter = null }) {
 function recruiterSummaryShape(recruiter, extra = {}) {
   return {
     recruiterId: Number(recruiter.id),
-    walletAddress: recruiter.wallet_address,
+    walletAddress: recruiter.metadata?.signup?.solanaWalletAddress || recruiter.wallet_address,
     code: recruiter.code,
     displayName: recruiter.display_name,
     isOg: Boolean(recruiter.is_og),
@@ -114,9 +122,57 @@ function buildRecruiterSignupMessage({ chainId, walletAddress, nonce, displayNam
   ].join("\n");
 }
 
+function base58Decode(value) {
+  const input = String(value || "").trim();
+  if (!input) return Buffer.alloc(0);
+  let bytes = [0];
+  for (const char of input) {
+    const carryValue = BASE58_MAP.get(char);
+    if (carryValue == null) throw new Error("Invalid base58 value");
+    let carry = carryValue;
+    for (let i = 0; i < bytes.length; i += 1) {
+      const x = bytes[i] * 58 + carry;
+      bytes[i] = x & 0xff;
+      carry = x >> 8;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  for (const char of input) {
+    if (char === "1") bytes.push(0);
+    else break;
+  }
+  return Buffer.from(bytes.reverse());
+}
+
+function verifySolanaSignature(message, signatureBase64, walletAddress) {
+  try {
+    const signature = Buffer.from(String(signatureBase64 || ""), "base64");
+    const publicKey = base58Decode(walletAddress);
+    if (signature.length !== 64 || publicKey.length !== 32) return false;
+    const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKey]), format: "der", type: "spki" });
+    return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signature);
+  } catch (error) {
+    console.error("[api/recruiter signup solana verify]", error);
+    return false;
+  }
+}
+
+function verifySignupSignature({ walletAddress, message, signature }) {
+  if (isSolanaWallet(walletAddress)) return verifySolanaSignature(message, signature, walletAddress);
+  const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+  return recovered === walletAddress.toLowerCase();
+}
+
+function walletMatchSql(column = "wallet_address") {
+  return `(case when $2::boolean then ${column} = $1 or metadata #>> '{signup,solanaWalletAddress}' = $1 else lower(${column}) = lower($1) end)`;
+}
+
 async function findRecruiterByCode(code) {
   const { rows } = await pool.query(
-    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at
        from public.recruiters
       where lower(code) = lower($1)
       limit 1`,
@@ -126,39 +182,44 @@ async function findRecruiterByCode(code) {
 }
 
 async function findRecruiterByWallet(walletAddress) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
-    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at
        from public.recruiters
-      where lower(wallet_address) = lower($1)
+      where ${walletMatchSql("wallet_address")}
       limit 1`,
-    [walletAddress],
+    [walletAddress, solana],
   );
   return rows[0] || null;
 }
 
 async function findWalletAttributionState(walletAddress) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
     `select *
        from public.wallet_attribution_states
-      where lower(wallet_address) = lower($1)
+      where case when $2::boolean then wallet_address = $1 else lower(wallet_address) = lower($1) end
       limit 1`,
-    [walletAddress],
+    [walletAddress, solana],
   );
   return rows[0] || null;
 }
 
 async function findActiveSquadMembership(walletAddress) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
     `select wallet_address, recruiter_id, member_role, link_source, joined_at, is_active
        from public.wallet_squad_memberships
-      where lower(wallet_address) = lower($1) and is_active = true
+      where case when $2::boolean then wallet_address = $1 else lower(wallet_address) = lower($1) end
+        and is_active = true
       limit 1`,
-    [walletAddress],
+    [walletAddress, solana],
   );
   return rows[0] || null;
 }
 
 async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress }) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
     `select w.*, r.code, r.display_name, r.is_og, r.status
        from public.wallet_referral_attribution_windows w
@@ -168,11 +229,11 @@ async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress
         and (
           ($1::text is not null and w.session_token = $1::text)
           or ($2::text is not null and w.client_fingerprint = $2::text)
-          or ($3::text is not null and lower(w.wallet_address) = lower($3::text))
+          or ($3::text is not null and case when $4::boolean then w.wallet_address = $3::text else lower(w.wallet_address) = lower($3::text) end)
         )
       order by w.captured_at desc, w.id desc
       limit 1`,
-    [sessionToken || null, clientFingerprint || null, walletAddress || null],
+    [sessionToken || null, clientFingerprint || null, walletAddress || null, solana],
   );
   return rows[0] || null;
 }
@@ -218,12 +279,14 @@ async function saveSignupNonce({ chainId, walletAddress, nonce }) {
 }
 
 async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
     `select nonce, expires_at, used_at
        from public.auth_nonces
-      where chain_id = $1 and lower(address) = lower($2)
+      where chain_id = $1
+        and case when $4::boolean then address = $2 else lower(address) = lower($2) end
       limit 1`,
-    [chainId, walletAddress],
+    [chainId, walletAddress, nonce, solana],
   );
   const row = rows[0];
   if (!row) throw new Error("Nonce not found. Request a new signup nonce and try again.");
@@ -231,79 +294,50 @@ async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
   if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch. Request a new signup nonce and try again.");
   const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
   if (!exp || Date.now() > exp) throw new Error("Nonce expired. Request a new signup nonce and try again.");
-
   await pool.query(
-    `update public.auth_nonces set used_at = now() where chain_id = $1 and lower(address) = lower($2)`,
-    [chainId, walletAddress],
+    `update public.auth_nonces set used_at = now()
+      where chain_id = $1
+        and case when $3::boolean then address = $2 else lower(address) = lower($2) end`,
+    [chainId, walletAddress, solana],
   );
 }
 
 export async function recruiterReferralCapture(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
-
   try {
     const code = normalizeCode(req.params?.code);
     const body = await readJson(req);
     const sessionToken = String(body.sessionToken || "").trim();
     const clientFingerprint = String(body.clientFingerprint || "").trim();
     const walletAddress = normalizeAddress(body.walletAddress) || null;
-
     if (!code) return json(res, 400, { error: "Missing recruiter code" });
-    if (!sessionToken && !clientFingerprint && !walletAddress) {
-      return json(res, 400, { error: "Missing attribution identifier" });
-    }
+    if (!sessionToken && !clientFingerprint && !walletAddress) return json(res, 400, { error: "Missing attribution identifier" });
 
     const recruiter = await findRecruiterByCode(code);
-    if (!recruiter || recruiter.status !== "active") {
-      return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
-    }
+    if (!recruiter || recruiter.status !== "active") return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
 
     await pool.query(
-      `insert into public.wallet_referral_attribution_windows (
-         wallet_address, recruiter_id, client_fingerprint, session_token, expires_at, metadata, updated_at
-       ) values ($1, $2, $3, $4, now() + interval '30 days', $5::jsonb, now())`,
-      [
-        walletAddress,
-        recruiter.id,
-        clientFingerprint || null,
-        sessionToken || null,
-        JSON.stringify({
-          source: "frontend_referral_capture",
-          userAgent: String(req.headers?.["user-agent"] || "").slice(0, 300),
-        }),
-      ],
+      `insert into public.wallet_referral_attribution_windows (wallet_address, recruiter_id, client_fingerprint, session_token, expires_at, metadata, updated_at)
+       values ($1, $2, $3, $4, now() + interval '30 days', $5::jsonb, now())`,
+      [walletAddress, recruiter.id, clientFingerprint || null, sessionToken || null, JSON.stringify({ source: "frontend_referral_capture", userAgent: String(req.headers?.["user-agent"] || "").slice(0, 300) })],
     );
 
-    return json(res, 200, {
-      captured: true,
-      recruiterCode: recruiter.code,
-      recruiterDisplayName: recruiter.display_name,
-      recruiterIsOg: Boolean(recruiter.is_og),
-      walletAddress,
-      expiresInDays: 30,
-    });
+    return json(res, 200, { captured: true, recruiterCode: recruiter.code, recruiterDisplayName: recruiter.display_name, recruiterIsOg: Boolean(recruiter.is_og), walletAddress, expiresInDays: 30 });
   } catch (error) {
     console.error("[api/attribution referral capture]", error);
-    if (schemaMissing(error)) {
-      return json(res, 200, {
-        captured: false,
-        warning: "Canonical reward attribution schema has not been applied yet.",
-      });
-    }
+    if (schemaMissing(error)) return json(res, 200, { captured: false, warning: "Canonical reward attribution schema has not been applied yet." });
     return json(res, 500, { error: "Server error" });
   }
 }
 
 export async function attributionWalletConnect(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
-
   try {
     const body = await readJson(req);
     const walletAddress = normalizeAddress(body.walletAddress);
     const sessionToken = String(body.sessionToken || "").trim();
     const clientFingerprint = String(body.clientFingerprint || "").trim();
     const memberRole = normalizeMemberRole(body.memberRole);
-
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
 
     await pool.query(
@@ -317,67 +351,43 @@ export async function attributionWalletConnect(req, res) {
     const recruiterWallet = await findRecruiterByWallet(walletAddress);
     if (recruiterWallet) {
       const existingState = await findWalletAttributionState(walletAddress);
-      return json(res, 200, {
-        linked: false,
-        blocked: true,
-        state: publicState({ walletAddress, state: existingState }),
-        reason: "Recruiter wallets cannot be added as squad members through recruiter referral cookies.",
-      });
+      return json(res, 200, { linked: false, blocked: true, state: publicState({ walletAddress, state: existingState }), reason: "Recruiter wallets cannot be added as squad members through recruiter referral cookies." });
     }
 
     const existingState = await findWalletAttributionState(walletAddress);
-    if (
-      existingState?.recruiter_link_state === "linked_unlocked" ||
-      existingState?.recruiter_link_state === "linked_locked"
-    ) {
+    if (existingState?.recruiter_link_state === "linked_unlocked" || existingState?.recruiter_link_state === "linked_locked") {
       const existingMembership = await findActiveSquadMembership(walletAddress).catch(() => null);
-      if (
-        memberRole &&
-        existingMembership?.recruiter_id &&
-        String(existingMembership.member_role || "member") === "member"
-      ) {
+      if (memberRole && existingMembership?.recruiter_id && String(existingMembership.member_role || "member") === "member") {
+        const solana = isSolanaWallet(walletAddress);
         await pool.query(
           `update public.wallet_squad_memberships
               set member_role = $1,
                   link_source = coalesce(nullif(link_source, ''), 'referral_cookie'),
                   updated_at = now()
-            where lower(wallet_address) = lower($2) and is_active = true`,
-          [memberRole, walletAddress],
+            where case when $3::boolean then wallet_address = $2 else lower(wallet_address) = lower($2) end
+              and is_active = true`,
+          [memberRole, walletAddress, solana],
         );
       }
-
       const updatedState = await findWalletAttributionState(walletAddress);
       return json(res, 200, {
         linked: Boolean(updatedState?.recruiter_id),
         locked: Boolean(updatedState?.has_activity || updatedState?.locked_at),
         state: publicState({ walletAddress, state: updatedState }),
-        reason: memberRole && existingMembership?.member_role === "member"
-          ? "Existing squad membership role was updated."
-          : "Existing canonical wallet attribution is already linked or locked.",
+        reason: memberRole && existingMembership?.member_role === "member" ? "Existing squad membership role was updated." : "Existing canonical wallet attribution is already linked or locked.",
       });
     }
 
     const window = await findLatestWindow({ sessionToken, clientFingerprint, walletAddress });
     const recruiter = window?.recruiter_id ? await findRecruiterByCode(window.code) : null;
-
-    if (!window || !recruiter || recruiter.status !== "active") {
-      return json(res, 200, {
-        linked: false,
-        state: publicState({ walletAddress }),
-        reason: "No active referral attribution window found for this wallet.",
-      });
-    }
+    if (!window || !recruiter || recruiter.status !== "active") return json(res, 200, { linked: false, state: publicState({ walletAddress }), reason: "No active referral attribution window found for this wallet." });
 
     if (!memberRole) {
       return json(res, 200, {
         linked: false,
         needsRoleSelection: true,
         state: publicState({ walletAddress }),
-        recruiter: {
-          code: recruiter.code,
-          displayName: recruiter.display_name,
-          isOg: Boolean(recruiter.is_og),
-        },
+        recruiter: { code: recruiter.code, displayName: recruiter.display_name, isOg: Boolean(recruiter.is_og) },
         reason: "Choose whether this wallet joins as a creator or trader before locking recruiter attribution.",
       });
     }
@@ -391,26 +401,14 @@ export async function attributionWalletConnect(req, res) {
          do nothing`,
         [walletAddress, recruiter.id],
       );
-
       await pool.query(
         `insert into public.wallet_squad_memberships (wallet_address, recruiter_id, member_role, link_source)
          values ($1, $2, $3, 'referral_cookie')
          on conflict (wallet_address) where is_active = true
-         do update set member_role = excluded.member_role,
-                       link_source = excluded.link_source,
-                       updated_at = now()`,
+         do update set member_role = excluded.member_role, link_source = excluded.link_source, updated_at = now()`,
         [walletAddress, recruiter.id, memberRole],
       );
-
-      await pool.query(
-        `update public.wallet_referral_attribution_windows
-            set wallet_address = coalesce(wallet_address, $1),
-                consumed_at = now(),
-                updated_at = now()
-          where id = $2`,
-        [walletAddress, window.id],
-      );
-
+      await pool.query(`update public.wallet_referral_attribution_windows set wallet_address = coalesce(wallet_address, $1), consumed_at = now(), updated_at = now() where id = $2`, [walletAddress, window.id]);
       await pool.query("COMMIT");
     } catch (error) {
       await pool.query("ROLLBACK");
@@ -418,21 +416,13 @@ export async function attributionWalletConnect(req, res) {
     }
 
     const updatedState = await findWalletAttributionState(walletAddress);
-    return json(res, 200, {
-      linked: Boolean(updatedState?.recruiter_id),
-      memberRole,
-      state: publicState({ walletAddress, state: updatedState, recruiter }),
-    });
+    return json(res, 200, { linked: Boolean(updatedState?.recruiter_id), memberRole, state: publicState({ walletAddress, state: updatedState, recruiter }) });
   } catch (error) {
     console.error("[api/attribution wallet-connect]", error);
     if (schemaMissing(error)) {
       const body = await readJson(req).catch(() => ({}));
       const walletAddress = normalizeAddress(body.walletAddress);
-      return json(res, 200, {
-        linked: false,
-        state: publicState({ walletAddress }),
-        warning: "Canonical reward attribution schema has not been applied yet.",
-      });
+      return json(res, 200, { linked: false, state: publicState({ walletAddress }), warning: "Canonical reward attribution schema has not been applied yet." });
     }
     return json(res, 500, { error: "Server error" });
   }
@@ -440,24 +430,16 @@ export async function attributionWalletConnect(req, res) {
 
 export async function attributionWallet(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const walletAddress = normalizeAddress(req.params?.wallet);
     if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
-
     const state = await findWalletAttributionState(walletAddress);
-    return json(res, 200, {
-      state: publicState({ walletAddress, state }),
-      materializedAt: new Date().toISOString(),
-    });
+    return json(res, 200, { state: publicState({ walletAddress, state }), materializedAt: new Date().toISOString() });
   } catch (error) {
     console.error("[api/attribution wallet]", error);
     if (schemaMissing(error)) {
       const walletAddress = normalizeAddress(req.params?.wallet);
-      return json(res, 200, {
-        state: publicState({ walletAddress }),
-        warning: "Canonical reward attribution schema has not been applied yet.",
-      });
+      return json(res, 200, { state: publicState({ walletAddress }), warning: "Canonical reward attribution schema has not been applied yet." });
     }
     return json(res, 500, { error: "Server error" });
   }
@@ -465,14 +447,11 @@ export async function attributionWallet(req, res) {
 
 export async function recruiterWalletSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const wallet = normalizeAddress(req.params?.wallet);
     if (!wallet) return json(res, 400, { error: "Invalid wallet address" });
-
     const recruiter = await findRecruiterByWallet(wallet);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
-
     const stats = await getRecruiterStats(recruiter.id);
     return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
@@ -484,14 +463,11 @@ export async function recruiterWalletSummary(req, res) {
 
 export async function recruiterSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const code = normalizeCode(req.params?.code);
     if (!code) return json(res, 400, { error: "Missing recruiter code" });
-
     const recruiter = await findRecruiterByCode(code);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
-
     const stats = await getRecruiterStats(recruiter.id);
     return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
@@ -503,22 +479,12 @@ export async function recruiterSummary(req, res) {
 
 export async function recruiters(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const q = getQuery(req);
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 250);
     const status = String(q.status || "active").trim().toLowerCase();
-
     const { rows } = await pool.query(
-      `select r.id,
-              r.wallet_address,
-              r.code,
-              r.display_name,
-              r.is_og,
-              r.status,
-              r.closed_at,
-              r.created_at,
-              r.updated_at,
+      `select r.id, r.wallet_address, r.code, r.display_name, r.is_og, r.status, r.closed_at, r.metadata, r.created_at, r.updated_at,
               count(distinct l.wallet_address)::int as linked_wallet_count,
               count(distinct s.wallet_address)::int as active_squad_member_count,
               count(distinct s.wallet_address) filter (where s.member_role = 'creator')::int as linked_creators_count,
@@ -533,15 +499,8 @@ export async function recruiters(req, res) {
         limit $2`,
       [status || "active", limit],
     );
-
     return json(res, 200, {
-      recruiters: rows.map((r) => recruiterSummaryShape(r, {
-        linkedWalletCount: r.linked_wallet_count,
-        linkedCreatorsCount: r.linked_creators_count,
-        linkedTradersCount: r.linked_traders_count,
-        activeSquadMemberCount: r.active_squad_member_count,
-        latestLinkedActivityAt: r.latest_linked_activity_at,
-      })),
+      recruiters: rows.map((r) => recruiterSummaryShape(r, { linkedWalletCount: r.linked_wallet_count, linkedCreatorsCount: r.linked_creators_count, linkedTradersCount: r.linked_traders_count, activeSquadMemberCount: r.active_squad_member_count, latestLinkedActivityAt: r.latest_linked_activity_at })),
       limit,
       status,
       materializedAt: new Date().toISOString(),
@@ -555,32 +514,17 @@ export async function recruiters(req, res) {
 
 export async function recruiterSignupStatus(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const q = getQuery(req);
     const walletAddress = normalizeAddress(q.walletAddress);
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
-
     const recruiter = await findRecruiterByWallet(walletAddress);
-    return json(res, 200, {
-      walletAddress,
-      isRecruiter: Boolean(recruiter),
-      recruiter: recruiter ? recruiterSummaryShape(recruiter, await getRecruiterStats(recruiter.id)) : null,
-      canStartSignup: !recruiter,
-      signupApiAvailable: true,
-    });
+    return json(res, 200, { walletAddress, isRecruiter: Boolean(recruiter), recruiter: recruiter ? recruiterSummaryShape(recruiter, await getRecruiterStats(recruiter.id)) : null, canStartSignup: !recruiter, signupApiAvailable: true });
   } catch (error) {
     console.error("[api/recruiter signup status]", error);
     if (schemaMissing(error)) {
       const q = getQuery(req);
-      return json(res, 200, {
-        walletAddress: normalizeAddress(q.walletAddress),
-        isRecruiter: false,
-        recruiter: null,
-        canStartSignup: true,
-        signupApiAvailable: false,
-        warning: "Canonical reward attribution schema has not been applied yet.",
-      });
+      return json(res, 200, { walletAddress: normalizeAddress(q.walletAddress), isRecruiter: false, recruiter: null, canStartSignup: true, signupApiAvailable: false, warning: "Canonical reward attribution schema has not been applied yet." });
     }
     return json(res, 500, { error: "Server error" });
   }
@@ -588,36 +532,17 @@ export async function recruiterSignupStatus(req, res) {
 
 export async function recruiterSignupCodeAvailability(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-
   try {
     const q = getQuery(req);
     const code = normalizeCode(q.code);
-    if (!code || code.length < 2) {
-      return json(res, 200, {
-        code,
-        isAvailable: false,
-        checkedVia: "signup-endpoint",
-        message: "Use at least 2 lowercase letters, numbers, dashes, or underscores.",
-      });
-    }
-
+    if (!code || code.length < 2) return json(res, 200, { code, isAvailable: false, checkedVia: "signup-endpoint", message: "Use at least 2 lowercase letters, numbers, dashes, or underscores." });
     const existing = await findRecruiterByCode(code);
-    return json(res, 200, {
-      code,
-      isAvailable: !existing,
-      checkedVia: "signup-endpoint",
-      message: existing ? "This recruiter code is already taken." : "This recruiter code is available.",
-    });
+    return json(res, 200, { code, isAvailable: !existing, checkedVia: "signup-endpoint", message: existing ? "This recruiter code is already taken." : "This recruiter code is available." });
   } catch (error) {
     console.error("[api/recruiter signup code availability]", error);
     if (schemaMissing(error)) {
       const q = getQuery(req);
-      return json(res, 200, {
-        code: normalizeCode(q.code),
-        isAvailable: null,
-        checkedVia: "unavailable",
-        message: "Canonical reward attribution schema has not been applied yet.",
-      });
+      return json(res, 200, { code: normalizeCode(q.code), isAvailable: null, checkedVia: "unavailable", message: "Canonical reward attribution schema has not been applied yet." });
     }
     return json(res, 500, { error: "Server error" });
   }
@@ -625,14 +550,13 @@ export async function recruiterSignupCodeAvailability(req, res) {
 
 export async function recruiterSignupNonce(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
-
   try {
     const body = await readJson(req);
     const walletAddress = normalizeAddress(body.walletAddress);
-    const chainId = Number(body.chainId || 97);
+    const chainId = Number(body.chainId || (isSolanaWallet(walletAddress) ? 101 : 97));
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
-
+    if (isSolanaWallet(walletAddress) && chainId !== 101 && chainId !== 102) return json(res, 400, { error: "Invalid Solana chainId" });
     const nonce = makeNonce();
     const expiresAt = await saveSignupNonce({ chainId, walletAddress, nonce });
     return json(res, 200, { nonce, expiresAt: expiresAt.toISOString() });
@@ -645,11 +569,10 @@ export async function recruiterSignupNonce(req, res) {
 
 export async function recruiterSignupSubmit(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
-
   try {
     const body = await readJson(req);
     const walletAddress = normalizeAddress(body.walletAddress);
-    const chainId = Number(body.chainId || 97);
+    const chainId = Number(body.chainId || (isSolanaWallet(walletAddress) ? 101 : 97));
     const desiredCode = normalizeCode(body.desiredCode);
     const displayName = normalizeText(body.displayName, 40);
     const email = normalizeText(body.email, 120);
@@ -659,6 +582,7 @@ export async function recruiterSignupSubmit(req, res) {
 
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+    if (isSolanaWallet(walletAddress) && chainId !== 101 && chainId !== 102) return json(res, 400, { error: "Invalid Solana chainId" });
     if (!displayName) return json(res, 400, { error: "Display name is required" });
     if (!desiredCode || desiredCode.length < 2) return json(res, 400, { error: "Recruiter code is invalid" });
     if (!email) return json(res, 400, { error: "Email is required" });
@@ -666,62 +590,38 @@ export async function recruiterSignupSubmit(req, res) {
     if (!body.acceptTerms) return json(res, 400, { error: "Recruiter terms must be accepted" });
     if (!nonce) return json(res, 400, { error: "Nonce missing" });
     if (!signature) return json(res, 400, { error: "Signature missing" });
-    if (isSolanaAddress(walletAddress)) {
-      return json(res, 400, { error: "Solana recruiter signup signature verification is not available on this endpoint yet." });
-    }
 
     const existingWallet = await findRecruiterByWallet(walletAddress);
     if (existingWallet) return json(res, 409, { error: "This wallet is already a recruiter" });
-
     const existingCode = await findRecruiterByCode(desiredCode);
     if (existingCode) return json(res, 409, { error: "This recruiter code is already taken" });
 
     await consumeSignupNonce({ chainId, walletAddress, nonce });
-
-    const message = buildRecruiterSignupMessage({
-      chainId,
-      walletAddress,
-      nonce,
-      displayName,
-      desiredCode,
-      email,
-      telegram: body.telegram,
-      discord: body.discord,
-      xHandle: body.xHandle,
-      pitch,
-    });
-    const recovered = ethers.verifyMessage(message, signature).toLowerCase();
-    if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
+    const message = buildRecruiterSignupMessage({ chainId, walletAddress, nonce, displayName, desiredCode, email, telegram: body.telegram, discord: body.discord, xHandle: body.xHandle, pitch });
+    if (!verifySignupSignature({ walletAddress, message, signature })) return json(res, 401, { error: "Invalid signature" });
 
     const isOg = preliveRecruitersAreOg();
+    const metadata = {
+      signup: {
+        chain: isSolanaWallet(walletAddress) ? "solana" : "bnb",
+        ...(isSolanaWallet(walletAddress) ? { solanaWalletAddress: walletAddress } : {}),
+        email,
+        telegram: normalizeText(body.telegram, 80),
+        discord: normalizeText(body.discord, 80),
+        xHandle: normalizeText(body.xHandle, 80),
+        pitch,
+        acceptedTermsAt: new Date().toISOString(),
+        preliveOg: isOg,
+      },
+    };
     const { rows } = await pool.query(
       `insert into public.recruiters (wallet_address, code, display_name, is_og, status, metadata)
        values ($1, $2, $3, $4, 'active', $5::jsonb)
-       returning id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at`,
-      [
-        walletAddress,
-        desiredCode,
-        displayName,
-        isOg,
-        JSON.stringify({
-          signup: {
-            email,
-            telegram: normalizeText(body.telegram, 80),
-            discord: normalizeText(body.discord, 80),
-            xHandle: normalizeText(body.xHandle, 80),
-            pitch,
-            acceptedTermsAt: new Date().toISOString(),
-            preliveOg: isOg,
-          },
-        }),
-      ],
+       returning id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at`,
+      [walletAddress, desiredCode, displayName, isOg, JSON.stringify(metadata)],
     );
 
-    const recruiter = rows[0];
-    return json(res, 200, {
-      ok: true,
-      recruiter: recruiterSummaryShape(recruiter),
-    });
+    return json(res, 200, { ok: true, recruiter: recruiterSummaryShape(rows[0]) });
   } catch (error) {
     console.error("[api/recruiter signup submit]", error);
     const message = String(error?.message || "");

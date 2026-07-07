@@ -17,8 +17,19 @@ function methodAllowed(req, res, allowed) {
 }
 
 function normalizeAddress(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  return isAddress(raw) ? raw : "";
+  const raw = String(value || "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  const lower = raw.toLowerCase();
+  return isAddress(lower) ? lower : "";
+}
+
+function isSolanaWallet(value) {
+  return isSolanaAddress(String(value || "").trim());
+}
+
+function walletForStorage(value) {
+  const wallet = normalizeAddress(value);
+  return isSolanaWallet(wallet) ? wallet : wallet.toLowerCase();
 }
 
 function normalizeCode(value) {
@@ -111,18 +122,15 @@ function buildPayoutWalletMessage({ recruiterId, chain, walletAddress, nonce }) 
 function base58Decode(value) {
   const raw = String(value || "").trim();
   if (!raw) return Buffer.alloc(0);
-
   let n = 0n;
   for (const char of raw) {
     const index = BASE58_ALPHABET.indexOf(char);
     if (index < 0) return Buffer.alloc(0);
     n = n * 58n + BigInt(index);
   }
-
   let hex = n.toString(16);
   if (hex.length % 2) hex = `0${hex}`;
   let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
-
   let leadingZeros = 0;
   for (const char of raw) {
     if (char !== "1") break;
@@ -135,12 +143,16 @@ function base58Decode(value) {
 function verifySolanaSignature({ walletAddress, message, signature }) {
   const publicKeyBytes = base58Decode(walletAddress);
   if (publicKeyBytes.length !== 32) return false;
-
   const signatureBytes = Buffer.from(String(signature || ""), "base64");
   if (signatureBytes.length !== 64) return false;
-
   const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
   return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+}
+
+function verifyWalletSignature({ walletAddress, message, signature }) {
+  if (isSolanaWallet(walletAddress)) return verifySolanaSignature({ walletAddress, message, signature });
+  const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+  return recovered === walletAddress.toLowerCase();
 }
 
 function recruiterShape(row) {
@@ -149,7 +161,7 @@ function recruiterShape(row) {
     name: row.display_name || row.code,
     x_handle: row.metadata?.signup?.xHandle || row.metadata?.signup?.x_handle || "",
     telegram_handle: row.metadata?.signup?.telegram || row.metadata?.signup?.telegram_handle || "",
-    wallet_address: row.wallet_address,
+    wallet_address: row.metadata?.signup?.solanaWalletAddress || row.wallet_address,
     status: row.status,
     focus: row.metadata?.signup?.focus || row.metadata?.focus || null,
     recruiter_code: row.code,
@@ -190,12 +202,13 @@ function emptyBalance(chain, payoutWallet = null) {
 }
 
 async function findRecruiterByWallet(walletAddress) {
+  const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
     `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, squad_image_url, created_at, updated_at
        from public.recruiters
-      where wallet_address = lower($1)
+      where case when $2::boolean then wallet_address = $1 or metadata #>> '{signup,solanaWalletAddress}' = $1 else lower(wallet_address) = lower($1) end
       limit 1`,
-    [walletAddress],
+    [walletAddress, solana],
   );
   return rows[0] || null;
 }
@@ -216,7 +229,9 @@ async function getSessionRecruiter(req) {
   if (!session) return null;
   const recruiter = await findRecruiterById(Number(session.recruiterId));
   if (!recruiter) return null;
-  if (String(recruiter.wallet_address || "").toLowerCase() !== String(session.walletAddress || "").toLowerCase()) return null;
+  const sessionWallet = walletForStorage(session.walletAddress);
+  const recruiterWallet = walletForStorage(recruiter.metadata?.signup?.solanaWalletAddress || recruiter.wallet_address);
+  if (recruiterWallet !== sessionWallet) return null;
   return recruiter;
 }
 
@@ -258,7 +273,7 @@ async function portalResponse(recruiter) {
 }
 
 async function ensureRecruiterAccount(recruiter) {
-  const wallet = String(recruiter.wallet_address || "").toLowerCase();
+  const wallet = walletForStorage(recruiter.metadata?.signup?.solanaWalletAddress || recruiter.wallet_address);
   const code = recruiter.code || null;
   const displayName = recruiter.display_name || code || null;
   const { rows } = await pool.query(
@@ -337,14 +352,27 @@ async function saveNonce(walletAddress, nonce) {
 }
 
 async function consumeNonce(walletAddress, nonce) {
-  const { rows } = await pool.query(`select nonce, expires_at, used_at from public.auth_nonces where chain_id = $1 and address = $2 limit 1`, [NONCE_CHAIN_ID, walletAddress]);
+  const solana = isSolanaWallet(walletAddress);
+  const { rows } = await pool.query(
+    `select nonce, expires_at, used_at
+       from public.auth_nonces
+      where chain_id = $1
+        and case when $3::boolean then address = $2 else lower(address) = lower($2) end
+      limit 1`,
+    [NONCE_CHAIN_ID, walletAddress, solana],
+  );
   const row = rows[0];
   if (!row) throw new Error("Nonce not found. Request a new recruiter login challenge.");
   if (row.used_at) throw new Error("Nonce already used. Request a new recruiter login challenge.");
   if (String(row.nonce) !== String(nonce)) throw new Error("Nonce mismatch. Request a new recruiter login challenge.");
   const exp = row.expires_at ? new Date(row.expires_at).getTime() : 0;
   if (!exp || Date.now() > exp) throw new Error("Nonce expired. Request a new recruiter login challenge.");
-  await pool.query(`update public.auth_nonces set used_at = now() where chain_id = $1 and address = $2`, [NONCE_CHAIN_ID, walletAddress]);
+  await pool.query(
+    `update public.auth_nonces set used_at = now()
+      where chain_id = $1
+        and case when $3::boolean then address = $2 else lower(address) = lower($2) end`,
+    [NONCE_CHAIN_ID, walletAddress, solana],
+  );
 }
 
 export async function recruiterAuthNonce(req, res) {
@@ -373,11 +401,21 @@ export async function recruiterAuthVerify(req, res) {
     const signature = String(body.signature || "").trim();
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing address" });
     if (!signature) return json(res, 400, { error: "Missing signature" });
-    const { rows } = await pool.query(`select nonce from public.auth_nonces where chain_id = $1 and address = $2 and used_at is null order by expires_at desc limit 1`, [NONCE_CHAIN_ID, walletAddress]);
+    const solana = isSolanaWallet(walletAddress);
+    const { rows } = await pool.query(
+      `select nonce
+         from public.auth_nonces
+        where chain_id = $1
+          and case when $3::boolean then address = $2 else lower(address) = lower($2) end
+          and used_at is null
+        order by expires_at desc
+        limit 1`,
+      [NONCE_CHAIN_ID, walletAddress, solana],
+    );
     const nonce = rows[0]?.nonce;
     if (!nonce) return json(res, 401, { error: "Nonce not found. Request a new recruiter login challenge." });
-    const recovered = ethers.verifyMessage(buildAuthMessage({ walletAddress, nonce }), signature).toLowerCase();
-    if (recovered !== walletAddress) return json(res, 401, { error: "Invalid signature" });
+    const message = buildAuthMessage({ walletAddress, nonce });
+    if (!verifyWalletSignature({ walletAddress, message, signature })) return json(res, 401, { error: "Invalid signature" });
     await consumeNonce(walletAddress, nonce);
     const recruiter = await findRecruiterByWallet(walletAddress);
     if (!recruiter) return json(res, 403, { error: "This wallet is not an approved recruiter." });
@@ -435,13 +473,7 @@ export async function recruiterPortal(req, res) {
       if (!walletAddress) return json(res, 400, { error: `Invalid ${chain} payout wallet.` });
       const message = buildPayoutWalletMessage({ recruiterId: String(account.recruiter_id), chain, walletAddress, nonce });
       if (!signature) return json(res, 400, { error: "Missing signature", message, nonce });
-
-      if (chain === "bnb") {
-        const recovered = ethers.verifyMessage(message, signature).toLowerCase();
-        if (recovered !== walletAddress.toLowerCase()) return json(res, 401, { error: "Invalid payout wallet signature", message, nonce });
-      } else if (!verifySolanaSignature({ walletAddress, message, signature })) {
-        return json(res, 401, { error: "Invalid Solana payout wallet signature", message, nonce });
-      }
+      if (!verifyWalletSignature({ walletAddress, message, signature })) return json(res, 401, { error: `Invalid ${chain === "solana" ? "Solana" : "payout wallet"} signature`, message, nonce });
 
       await pool.query(
         `insert into public.recruiter_payout_wallets (recruiter_id, chain, wallet_address, verified_at, verification_message, updated_at)
