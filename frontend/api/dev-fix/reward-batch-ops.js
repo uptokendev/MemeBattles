@@ -9,6 +9,7 @@ const LEDGER_STATUSES = new Set(["pending", "approved", "claimable", "claim_pend
 const ABI_CODER = AbiCoder.defaultAbiCoder();
 const BYTES32_RE = /^0x[a-fA-F0-9]{64}$/;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const SAFE_RELATION_RE = /^public\.[a-z_][a-z0-9_]*$/;
 
 function methodAllowed(req, res, methods) {
   if (methods.includes(req.method)) return true;
@@ -138,6 +139,95 @@ function preparedRecipients(body) {
     .filter((item) => item.walletAddress && Number.isFinite(Number(item.amount)) && Number(item.amount) >= 0);
 }
 
+function hasPreparedRecipients(body) {
+  return preparedRecipients(body).length > 0;
+}
+
+function wantsAutomaticCalculation(body) {
+  const mode = String(body.calculationMode || body.mode || "").trim().toLowerCase();
+  return Boolean(body.auto || body.automatic || mode === "auto" || mode === "automatic");
+}
+
+function safeSourceRelation(body) {
+  const relation = String(body.sourceView || body.sourceTable || body.inputView || "public.reward_calculation_inputs").trim();
+  return SAFE_RELATION_RE.test(relation) ? relation : "public.reward_calculation_inputs";
+}
+
+async function relationExists(client, relation) {
+  const { rows } = await client.query(`select to_regclass($1) as relation_name`, [relation]);
+  return Boolean(rows[0]?.relation_name);
+}
+
+function normalizeAutoRow(row, body, index) {
+  const chain = String(row.chain ?? row.chain_id ?? body.chain ?? body.chainId ?? 56);
+  const status = normalizeStatus(row.status || body.ledgerStatus || body.entryStatus, LEDGER_STATUSES, body.publish ? "claimable" : "approved");
+  return {
+    walletAddress: String(row.wallet_address || row.walletAddress || row.address || "").trim(),
+    amount: String(row.amount ?? row.payout_amount ?? row.payoutAmount ?? "0"),
+    amountUsd: row.amount_usd ?? row.amountUsd ?? null,
+    status,
+    sourceId: row.source_id || row.sourceId || row.id || `${body.program || "airdrop"}-${index + 1}`,
+    sourceLabel: row.source_label || row.sourceLabel || body.program || "automatic_reward_candidate",
+    userId: row.user_id || row.userId || null,
+    metadata: {
+      ...(row.metadata && typeof row.metadata === "object" ? row.metadata : {}),
+      autoCalculated: true,
+      sourceRelation: safeSourceRelation(body),
+      sourceScore: row.score ?? row.weight ?? row.activity_score ?? null,
+      chain,
+    },
+  };
+}
+
+async function buildAutomaticRecipients(client, body, rewardType) {
+  const manual = preparedRecipients(body);
+  if (manual.length || !wantsAutomaticCalculation(body)) return { recipients: manual, metadata: { autoCalculation: false } };
+
+  const relation = safeSourceRelation(body);
+  const exists = await relationExists(client, relation);
+  const chain = String(body.chain || body.chainId || 56);
+  const program = String(body.program || body.rewardProgram || rewardType || "airdrop");
+  const epochId = body.epochId || body.epoch_id || null;
+  const limit = Math.min(Math.max(Number(body.limit || 100) || 100, 1), 1000);
+
+  if (!exists) {
+    return {
+      recipients: [],
+      metadata: {
+        autoCalculation: true,
+        autoCalculationReady: false,
+        sourceRelation: relation,
+        missingSourceRelation: true,
+        calculationWarning: `${relation} does not exist yet`,
+      },
+    };
+  }
+
+  const { rows } = await client.query(
+    `select *
+       from ${relation}
+      where ($1::text is null or reward_type::text = $1::text or program::text = $1::text)
+        and ($2::text is null or chain::text = $2::text or chain_id::text = $2::text)
+        and ($3::text is null or epoch_id::text = $3::text)
+      order by coalesce(score, weight, activity_score, amount, payout_amount, 0) desc, wallet_address asc
+      limit $4`,
+    [program || null, chain || null, epochId == null ? null : String(epochId), limit],
+  );
+
+  const recipients = rows.map((row, index) => normalizeAutoRow(row, body, index)).filter((item) => item.walletAddress && Number(item.amount) > 0);
+  return {
+    recipients,
+    metadata: {
+      autoCalculation: true,
+      autoCalculationReady: recipients.length > 0,
+      sourceRelation: relation,
+      candidateRows: rows.length,
+      recipientRows: recipients.length,
+      calculationLimit: limit,
+    },
+  };
+}
+
 function isBnbClaimChain(chain) {
   const id = Number(chain);
   return id === 56 || id === 97;
@@ -242,9 +332,7 @@ function buildClaimMetadataPlan({ batch, recipients, chain, body, metadata }) {
     try {
       const wallet = getAddress(normalizeWallet(recipient.walletAddress, chain));
       leaves.push({ index, wallet, amount, leaf: rewardLeaf(wallet, amount) });
-    } catch {
-      // Invalid EVM recipients remain in the ledger, but will not receive claim metadata.
-    }
+    } catch {}
   }
 
   if (!leaves.length) return { batchClaimMetadata: {}, recipientClaimMetadata: new Map() };
@@ -326,7 +414,6 @@ async function insertBatchWithRecipients(client, req, body, overrides = {}) {
   }
 
   const ledgerItems = [];
-
   for (const [index, recipient] of recipients.entries()) {
     const wallet = normalizeWallet(recipient.walletAddress, chain);
     const claimMetadata = recipientClaimMetadata.get(index) || {};
@@ -545,16 +632,30 @@ export async function internalAirdropsCalculate(req, res) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    const result = await insertBatchWithRecipients(client, req, body, {
+    const automatic = await buildAutomaticRecipients(client, body, "airdrop");
+    const recipients = hasPreparedRecipients(body) ? preparedRecipients(body) : automatic.recipients;
+    const calculationMetadata = {
+      epochId,
+      program,
+      calculatedAt: new Date().toISOString(),
+      ...automatic.metadata,
+    };
+    const result = await insertBatchWithRecipients(client, req, { ...body, recipients }, {
       rewardType: "airdrop",
-      status: body.status || (preparedRecipients(body).length ? "ready" : "calculating"),
-      source: body.source || "airdrop_calculate",
-      metadata: { epochId, program, calculatedAt: new Date().toISOString() },
-      reason: body.reason || "Airdrop calculation recorded",
+      status: body.status || (recipients.length ? "ready" : "calculating"),
+      source: body.source || (automatic.metadata.autoCalculation ? "airdrop_auto_calculate" : "airdrop_calculate"),
+      metadata: calculationMetadata,
+      reason: body.reason || (automatic.metadata.autoCalculation ? "Automatic airdrop calculation recorded" : "Airdrop calculation recorded"),
     });
-    await writeAudit(client, { batchId: result.batch.id, action: "airdrop_calculated", reason: body.reason || "Airdrop calculation recorded", req, metadata: { epochId, program } });
+    await writeAudit(client, {
+      batchId: result.batch.id,
+      action: automatic.metadata.autoCalculation ? "airdrop_auto_calculated" : "airdrop_calculated",
+      reason: body.reason || "Airdrop calculation recorded",
+      req,
+      metadata: { epochId, program, recipientCount: recipients.length, ...automatic.metadata },
+    });
     await client.query("commit");
-    return json(res, 202, { status: "recorded", ...result, materializedAt: new Date().toISOString() });
+    return json(res, 202, { status: recipients.length ? "recorded" : "calculating", ...result, materializedAt: new Date().toISOString() });
   } catch (error) {
     await client.query("rollback").catch(() => {});
     if (schemaMissing(error)) return json(res, 503, { error: "Reward ledger schema is not installed.", code: "REWARD_SCHEMA_MISSING" });
@@ -574,13 +675,23 @@ export async function internalAirdropsPublish(req, res) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    const result = await insertBatchWithRecipients(client, req, { ...body, publish: true, status: "published" }, {
+    const automatic = await buildAutomaticRecipients(client, { ...body, publish: true }, "airdrop");
+    const recipients = hasPreparedRecipients(body) ? preparedRecipients({ ...body, publish: true }) : automatic.recipients;
+    if (wantsAutomaticCalculation(body) && !recipients.length) {
+      await client.query("rollback");
+      return json(res, 409, {
+        error: "Automatic airdrop publish has no claimable recipients.",
+        code: "AUTO_AIRDROP_EMPTY",
+        metadata: automatic.metadata,
+      });
+    }
+    const result = await insertBatchWithRecipients(client, req, { ...body, recipients, publish: true, status: "published" }, {
       rewardType: "airdrop",
-      source: body.source || "airdrop_publish",
-      metadata: { epochId: body.epochId || body.epoch_id || null, program: body.program || "airdrop_trader", publishedVia: "internal_api" },
+      source: body.source || (automatic.metadata.autoCalculation ? "airdrop_auto_publish" : "airdrop_publish"),
+      metadata: { epochId: body.epochId || body.epoch_id || null, program: body.program || "airdrop_trader", publishedVia: "internal_api", ...automatic.metadata },
       reason: body.reason || "Airdrop published",
     });
-    await writeAudit(client, { batchId: result.batch.id, action: "airdrop_published", reason: body.reason || "Airdrop published", req });
+    await writeAudit(client, { batchId: result.batch.id, action: automatic.metadata.autoCalculation ? "airdrop_auto_published" : "airdrop_published", reason: body.reason || "Airdrop published", req, metadata: automatic.metadata });
     await client.query("commit");
     return json(res, 202, { status: "published", ...result, materializedAt: new Date().toISOString() });
   } catch (error) {
