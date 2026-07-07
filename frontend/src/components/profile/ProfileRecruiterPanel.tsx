@@ -5,7 +5,7 @@ import { ArrowRight, Clock3, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { useRecruiterWallet } from "@/hooks/useRecruiterWallet";
 import { RecruiterPayoutPanel } from "@/components/command-center/RecruiterPayoutPanel";
 import {
   fetchRecruiterSignupStatus,
@@ -72,10 +72,25 @@ function emptyRewardSummary(address: string): WalletRewardSummary {
   };
 }
 
+function uniqueAddresses(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const addresses: string[] = [];
+  for (const value of values) {
+    const address = String(value || "").trim();
+    if (!address) continue;
+    const key = address.startsWith("0x") ? address.toLowerCase() : address;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    addresses.push(address);
+  }
+  return addresses;
+}
+
 export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: ProfileRecruiterPanelProps) {
-  const solanaWallet = useSolanaWallet();
-  const recruiterWalletAddress = String(solanaWallet.solanaAccount || account || "").trim();
-  const recruiterWalletConnected = Boolean(isConnected || solanaWallet.solanaAccount);
+  const recruiterWallet = useRecruiterWallet();
+  const connectedRecruiterWallets = recruiterWallet.connectedWallets.map((wallet) => wallet.address);
+  const fallbackAccount = String(account || "").trim();
+  const recruiterWalletConnected = Boolean(isConnected || connectedRecruiterWallets.length);
   const [recruiter, setRecruiter] = useState<RecruiterSummary | null>(null);
   const [summary, setSummary] = useState<WalletRewardSummary | null>(null);
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
@@ -86,7 +101,9 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
 
   useEffect(() => {
     let cancelled = false;
-    if (!recruiterWalletAddress) {
+    const candidateAddresses = uniqueAddresses([...connectedRecruiterWallets, fallbackAccount]);
+
+    if (!candidateAddresses.length) {
       setRecruiter(null);
       setSummary(null);
       setAttribution(null);
@@ -99,14 +116,23 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     setError(null);
     void (async () => {
       try {
-        const [signupStatus, attributionState] = await Promise.all([
-          fetchRecruiterSignupStatus(recruiterWalletAddress).catch(() => null),
-          fetchWalletAttributionState(recruiterWalletAddress).catch(() => null),
-        ]);
+        let matchedRecruiter: RecruiterSummary | null = null;
+        let matchedAddress = candidateAddresses[0];
+
+        for (const candidate of candidateAddresses) {
+          const signupStatus = await fetchRecruiterSignupStatus(candidate).catch(() => null);
+          if (signupStatus?.isRecruiter && signupStatus.recruiter) {
+            matchedRecruiter = signupStatus.recruiter;
+            matchedAddress = candidate;
+            break;
+          }
+        }
+
+        const attributionState = await fetchWalletAttributionState(matchedAddress).catch(() => null);
 
         if (cancelled) return;
-        setRecruiter(signupStatus?.isRecruiter ? signupStatus.recruiter : null);
-        setSummary(emptyRewardSummary(recruiterWalletAddress));
+        setRecruiter(matchedRecruiter);
+        setSummary(emptyRewardSummary(matchedAddress));
         setHistory([]);
         setClaims([]);
         setAttribution(attributionState);
@@ -120,7 +146,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     return () => {
       cancelled = true;
     };
-  }, [recruiterWalletAddress]);
+  }, [fallbackAccount, recruiterWallet.bnbAddress, recruiterWallet.solanaAddress]);
 
   if (!isOwnProfile) {
     return (
@@ -142,7 +168,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     );
   }
 
-  if (!recruiterWalletConnected || !recruiterWalletAddress) {
+  if (!recruiterWalletConnected) {
     return (
       <Card className="border-border/60 bg-card/65 p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

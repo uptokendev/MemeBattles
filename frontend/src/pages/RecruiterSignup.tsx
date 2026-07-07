@@ -9,10 +9,7 @@ import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useWallet } from "@/contexts/WalletContext";
-import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { getActiveChainId } from "@/lib/chainConfig";
-import { signSolanaMessage } from "@/lib/solanaWallet";
+import { useRecruiterWallet } from "@/hooks/useRecruiterWallet";
 import {
   buildRecruiterSignupMessage,
   checkRecruiterCodeAvailability,
@@ -45,19 +42,15 @@ const initialForm: SignupFormState = {
   acceptTerms: false,
 };
 
-const SOLANA_RECRUITER_CHAIN_ID = 101;
 const pageShellClass = "mx-auto flex max-w-4xl flex-col gap-6 px-4 pt-24 pb-8 md:pt-28";
-
-type WalletMode = "bnb" | "solana";
 
 export default function RecruiterSignup() {
   const navigate = useNavigate();
-  const wallet = useWallet();
-  const solanaWallet = useSolanaWallet();
-
-  const walletMode: WalletMode | null = solanaWallet.isSolanaConnected && solanaWallet.solanaAccount ? "solana" : wallet.account ? "bnb" : null;
-  const account = walletMode === "solana" ? solanaWallet.solanaAccount : wallet.account || "";
-  const isConnected = Boolean(walletMode && account);
+  const recruiterWallet = useRecruiterWallet();
+  const activeWallet = recruiterWallet.activeWallet;
+  const account = activeWallet?.address || "";
+  const walletMode = activeWallet?.chain || null;
+  const isConnected = Boolean(activeWallet && account);
 
   const [signupStatus, setSignupStatus] = useState<RecruiterSignupStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -134,11 +127,10 @@ export default function RecruiterSignup() {
   };
 
   const canSubmit = useMemo(() => {
-    const hasSigner = walletMode === "solana" ? Boolean(solanaWallet.solanaAccount) : Boolean(wallet.signer);
     return Boolean(
       isConnected &&
         account &&
-        hasSigner &&
+        activeWallet?.canSign &&
         form.displayName.trim() &&
         form.desiredCode.trim() &&
         form.email.trim() &&
@@ -146,15 +138,15 @@ export default function RecruiterSignup() {
         form.acceptTerms &&
         codeAvailability?.isAvailable,
     );
-  }, [walletMode, solanaWallet.solanaAccount, wallet.signer, isConnected, account, form, codeAvailability]);
+  }, [activeWallet?.canSign, isConnected, account, form, codeAvailability]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isConnected || !account || !walletMode) {
+    if (!isConnected || !account || !activeWallet) {
       toast.error("Connect your wallet to start recruiter signup.");
       return;
     }
-    if (walletMode === "bnb" && !wallet.signer) {
+    if (!activeWallet.canSign) {
       toast.error("Wallet signer is unavailable. Reconnect and try again.");
       return;
     }
@@ -169,7 +161,7 @@ export default function RecruiterSignup() {
 
     setSubmitting(true);
     try {
-      const chainId = walletMode === "solana" ? SOLANA_RECRUITER_CHAIN_ID : getActiveChainId(wallet.chainId);
+      const chainId = activeWallet.chainId;
       const { nonce } = await requestRecruiterSignupNonce(account, chainId);
       const message = buildRecruiterSignupMessage({
         walletAddress: account,
@@ -183,9 +175,7 @@ export default function RecruiterSignup() {
         xHandle: form.xHandle,
         pitch: form.pitch,
       });
-      const signature = walletMode === "solana"
-        ? (await signSolanaMessage(message, account)).signature
-        : await wallet.signer!.signMessage(message);
+      const signature = await recruiterWallet.signMessage(activeWallet.chain, account, message);
 
       await submitRecruiterSignup({
         walletAddress: account,
