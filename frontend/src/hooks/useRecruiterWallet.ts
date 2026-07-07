@@ -22,7 +22,7 @@ export type RecruiterWalletController = {
   solanaAddress: string;
   bnbChainId?: number;
   connecting: boolean;
-  connect: (chain?: RecruiterWalletChain) => Promise<void>;
+  connect: (chain?: RecruiterWalletChain) => Promise<string>;
   disconnect: (chain?: RecruiterWalletChain) => Promise<void>;
   signMessage: (chain: RecruiterWalletChain, address: string, message: string) => Promise<string>;
 };
@@ -67,11 +67,12 @@ export function useRecruiterWallet(): RecruiterWalletController {
 
   const connect = useCallback(async (chain?: RecruiterWalletChain) => {
     if (chain === "solana") {
-      await solanaWallet.connectSolana();
-      return;
+      const result = await solanaWallet.connectSolana();
+      return result.publicKey;
     }
     await bnbWallet.connect();
-  }, [bnbWallet, solanaWallet]);
+    return bnbAddress;
+  }, [bnbAddress, bnbWallet, solanaWallet]);
 
   const disconnect = useCallback(async (chain?: RecruiterWalletChain) => {
     if (chain === "solana") {
