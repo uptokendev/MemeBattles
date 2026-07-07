@@ -17,6 +17,10 @@ function normalizeSolanaWallet(value) {
   return isSolanaAddress(raw) ? raw : "";
 }
 
+function solanaWalletLookupKey(value) {
+  return normalizeSolanaWallet(value).toLowerCase();
+}
+
 function normalizeCode(value) {
   return String(value || "")
     .trim()
@@ -86,9 +90,10 @@ function verifySolanaSignature(message, signatureBase64, walletAddress) {
 }
 
 function recruiterSummaryShape(recruiter, extra = {}) {
+  const solanaWallet = recruiter?.metadata?.signup?.solanaWalletAddress || null;
   return {
     recruiterId: Number(recruiter.id),
-    walletAddress: recruiter.wallet_address,
+    walletAddress: solanaWallet || recruiter.wallet_address,
     code: recruiter.code,
     displayName: recruiter.display_name,
     isOg: Boolean(recruiter.is_og),
@@ -135,19 +140,20 @@ function buildRecruiterSignupMessage({ chainId, walletAddress, nonce, displayNam
 }
 
 async function findRecruiterByWallet(walletAddress) {
+  const lookupWallet = solanaWalletLookupKey(walletAddress);
   const { rows } = await pool.query(
-    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at
        from public.recruiters
       where wallet_address = $1
       limit 1`,
-    [walletAddress],
+    [lookupWallet],
   );
   return rows[0] || null;
 }
 
 async function findRecruiterByCode(code) {
   const { rows } = await pool.query(
-    `select id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at
+    `select id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at
        from public.recruiters
       where lower(code) = lower($1)
       limit 1`,
@@ -236,6 +242,7 @@ export async function solanaRecruiterSignupSubmit(req, res) {
   try {
     const body = await readJson(req);
     const walletAddress = normalizeSolanaWallet(body.walletAddress);
+    const walletLookupKey = solanaWalletLookupKey(walletAddress);
     const chainId = Number(body.chainId || 101);
     const desiredCode = normalizeCode(body.desiredCode);
     const displayName = normalizeText(body.displayName, 40);
@@ -244,7 +251,7 @@ export async function solanaRecruiterSignupSubmit(req, res) {
     const nonce = String(body.nonce || "").trim();
     const signature = String(body.signature || "").trim();
 
-    if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
+    if (!walletAddress || !walletLookupKey) return json(res, 400, { error: "Invalid or missing walletAddress" });
     if (chainId !== 101 && chainId !== 102) return json(res, 400, { error: "Invalid Solana chainId" });
     if (!displayName) return json(res, 400, { error: "Display name is required" });
     if (!desiredCode || desiredCode.length < 2) return json(res, 400, { error: "Recruiter code is invalid" });
@@ -262,11 +269,25 @@ export async function solanaRecruiterSignupSubmit(req, res) {
     if (!verifySolanaSignature(message, signature, walletAddress)) return json(res, 401, { error: "Invalid signature" });
 
     const isOg = envFlag("PRELIVE_RECRUITERS_ARE_OG", true);
+    const metadata = {
+      signup: {
+        chain: "solana",
+        solanaWalletAddress: walletAddress,
+        walletLookupKey,
+        email,
+        telegram: normalizeText(body.telegram, 80),
+        discord: normalizeText(body.discord, 80),
+        xHandle: normalizeText(body.xHandle, 80),
+        pitch,
+        acceptedTermsAt: new Date().toISOString(),
+        preliveOg: isOg,
+      },
+    };
     const { rows } = await pool.query(
       `insert into public.recruiters (wallet_address, code, display_name, is_og, status, metadata)
        values ($1, $2, $3, $4, 'active', $5::jsonb)
-       returning id, wallet_address, code, display_name, is_og, status, closed_at, created_at, updated_at`,
-      [walletAddress, desiredCode, displayName, isOg, JSON.stringify({ signup: { chain: "solana", email, telegram: normalizeText(body.telegram, 80), discord: normalizeText(body.discord, 80), xHandle: normalizeText(body.xHandle, 80), pitch, acceptedTermsAt: new Date().toISOString(), preliveOg: isOg } })],
+       returning id, wallet_address, code, display_name, is_og, status, closed_at, metadata, created_at, updated_at`,
+      [walletLookupKey, desiredCode, displayName, isOg, JSON.stringify(metadata)],
     );
 
     return json(res, 200, { ok: true, recruiter: recruiterSummaryShape(rows[0]) });
