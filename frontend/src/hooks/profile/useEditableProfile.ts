@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/apiBase";
+import { normalizeAddress } from "@/lib/address";
 import {
   buildProfileMessage,
   fetchUserProfile,
@@ -100,9 +101,10 @@ export function useEditableProfile({
     const fd = new FormData();
     fd.append("file", file);
 
+    const addr = normalizeAddress(account);
     const url = `/api/upload?kind=avatar&chainId=${encodeURIComponent(
       String(chainId)
-    )}&address=${encodeURIComponent(account.toLowerCase())}`;
+    )}&address=${encodeURIComponent(addr)}`;
 
     const res = await apiFetch(url, { method: "POST", body: fd });
     const j = await res.json().catch(() => null);
@@ -145,7 +147,7 @@ export function useEditableProfile({
       const uploadedUrl = await uploadAvatarFile(file);
 
       // Sign and persist the new avatar url.
-      const addr = account.toLowerCase();
+      const addr = normalizeAddress(account);
       const nonce = await requestNonce(chainId, addr);
       const displayName = (profile?.displayName ?? "").trim() || null;
       const bio = (profile?.bio ?? "").trim() || null;
@@ -219,7 +221,7 @@ export function useEditableProfile({
     const toastId = toast.loading("Preparing signature…");
 
     try {
-      const addr = account.toLowerCase();
+      const addr = normalizeAddress(account);
       const nonce = await requestNonce(chainId, addr);
       const displayName = values.username.trim();
       const avatarUrl = profile?.avatarUrl ?? null;
