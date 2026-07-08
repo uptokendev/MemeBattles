@@ -73,7 +73,7 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
     ? normalizeRouteWallet(solanaAccount)
     : normalizeRouteWallet(wallet.account);
   const requestedWallet = normalizeRouteWallet(walletParam);
-  const walletAddress = effectiveWalletAddress(requestedWallet, connectedWallet);
+  const walletAddress = requestedWallet ? effectiveWalletAddress(requestedWallet, connectedWallet) : null;
 
   if (!walletAddress) return <Navigate to="/profile" replace />;
 
