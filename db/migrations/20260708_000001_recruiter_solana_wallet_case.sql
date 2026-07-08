@@ -37,26 +37,25 @@ DECLARE
   r RECORD;
 BEGIN
   FOR r IN
-    SELECT conrelid::regclass AS table_name, conname
-      FROM pg_constraint
-     WHERE contype = 'c'
-       AND connamespace = 'public'::regnamespace
-       AND conrelid IN (
-         'public.wallet_profiles'::regclass,
-         'public.auth_nonces'::regclass,
-         'public.recruiters'::regclass,
-         'public.wallet_referral_attribution_windows'::regclass,
-         'public.wallet_recruiter_links'::regclass,
-         'public.wallet_squad_memberships'::regclass,
-         'public.user_profiles'::regclass
+    SELECT c.conrelid::regclass AS table_name, c.conname
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE c.contype = 'c'
+       AND n.nspname = 'public'
+       AND t.relname IN (
+         'wallet_profiles',
+         'auth_nonces',
+         'recruiters',
+         'wallet_referral_attribution_windows',
+         'wallet_recruiter_links',
+         'wallet_squad_memberships',
+         'user_profiles'
        )
-       AND pg_get_constraintdef(oid) ~* 'lower\s*\('
+       AND pg_get_constraintdef(c.oid) ~* 'lower\s*\('
   LOOP
     EXECUTE format('ALTER TABLE %s DROP CONSTRAINT IF EXISTS %I', r.table_name, r.conname);
   END LOOP;
-EXCEPTION
-  WHEN undefined_table THEN
-    NULL;
 END $$;
 
 -- Older EVM-only schemas sometimes used varchar(42). Solana public keys can be
