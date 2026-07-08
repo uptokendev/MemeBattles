@@ -4,16 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import PublicProfile from "./PublicProfile";
-import { normalizeAddress, addressesMatch } from "@/lib/address";
-
-function normalizeWallet(value?: string | null): string | null {
-  const normalized = normalizeAddress(value);
-  return normalized || null;
-}
-
-function sameWallet(a?: string | null, b?: string | null): boolean {
-  return addressesMatch(a, b);
-}
+import { effectiveWalletAddress, normalizeRouteWallet, routeWalletsMatch } from "@/lib/address";
 
 function openWalletModal(wallet: any) {
   try {
@@ -72,15 +63,15 @@ export default function ProfilePage() {
     : isEvmConnected
       ? evmWallet.account ?? null
       : null;
-  const accountWallet = normalizeWallet(account);
+  const accountWallet = normalizeRouteWallet(account);
 
   const legacyAddress = searchParams.get("address");
   const explicitIdentifier = identifier ?? legacyAddress;
-  const explicitWallet = normalizeWallet(explicitIdentifier);
+  const explicitWallet = normalizeRouteWallet(explicitIdentifier);
 
   const shouldRenderPublicProfile = Boolean(explicitIdentifier);
   const profileWallet = useMemo(() => {
-    if (shouldRenderPublicProfile) return explicitWallet;
+    if (shouldRenderPublicProfile) return effectiveWalletAddress(explicitWallet, accountWallet);
     return accountWallet;
   }, [accountWallet, explicitWallet, shouldRenderPublicProfile]);
 
@@ -96,10 +87,14 @@ export default function ProfilePage() {
     return <InvalidPublicProfile identifier={String(explicitIdentifier ?? "")} />;
   }
 
+  if (accountWallet && explicitWallet && routeWalletsMatch(explicitWallet, accountWallet) && profileWallet !== explicitWallet) {
+    return <Navigate to={`/profile/${profileWallet}`} replace />;
+  }
+
   return (
     <PublicProfile
       profileWallet={profileWallet}
-      isOwnProfile={sameWallet(account, profileWallet)}
+      isOwnProfile={routeWalletsMatch(accountWallet, profileWallet)}
     />
   );
 }
