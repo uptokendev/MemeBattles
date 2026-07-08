@@ -1,6 +1,10 @@
+import crypto from "crypto";
 import { ethers } from "ethers";
 import { pool } from "../server/db.js";
-import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress, json, readJson } from "../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, isSolanaChain, normalizeAddress, json, readJson } from "../server/http.js";
+
+const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }) {
   const name = String(displayName ?? "").trim().slice(0, 32);
@@ -16,6 +20,42 @@ function buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl }
     `DisplayName: ${name}`,
     `AvatarUrl: ${avatar}`,
   ].join("\n");
+}
+
+function base58Decode(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return Buffer.alloc(0);
+  let n = 0n;
+  for (const char of raw) {
+    const index = BASE58_ALPHABET.indexOf(char);
+    if (index < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(index);
+  }
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  let out = hex === "00" ? Buffer.alloc(0) : Buffer.from(hex, "hex");
+  let leadingZeros = 0;
+  for (const char of raw) {
+    if (char !== "1") break;
+    leadingZeros += 1;
+  }
+  if (leadingZeros) out = Buffer.concat([Buffer.alloc(leadingZeros), out]);
+  return out;
+}
+
+function verifySolanaSignature({ address, message, signature }) {
+  const publicKeyBytes = base58Decode(address);
+  if (publicKeyBytes.length !== 32) return false;
+  const signatureBytes = Buffer.from(String(signature || ""), "base64");
+  if (signatureBytes.length !== 64) return false;
+  const keyObject = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, publicKeyBytes]), format: "der", type: "spki" });
+  return crypto.verify(null, Buffer.from(message, "utf8"), keyObject, signatureBytes);
+}
+
+function verifyProfileSignature({ chainId, address, message, signature }) {
+  if (isSolanaChain(chainId)) return verifySolanaSignature({ address, message, signature });
+  const recovered = ethers.verifyMessage(message, signature).toLowerCase();
+  return recovered === address.toLowerCase();
 }
 
 async function consumeNonce(chainId, address, nonce) {
@@ -70,6 +110,7 @@ export default async function handler(req, res) {
       const isSol = isSolanaChain(chainId);
       const addr = normalizeAddress(raw, chainId);
       if (!addr) return json(res, 400, { error: "Invalid address" });
+      if (isSol && !isSolanaAddress(addr)) return json(res, 400, { error: "Invalid address" });
       if (!isSol && !isAddress(addr)) return json(res, 400, { error: "Invalid address" });
 
       const { rows } = await pool.query(
@@ -119,6 +160,7 @@ export default async function handler(req, res) {
       const isSol = isSolanaChain(chainId);
       const address = normalizeAddress(raw, chainId);
       if (!address) return json(res, 400, { error: "Invalid address" });
+      if (isSol && !isSolanaAddress(address)) return json(res, 400, { error: "Invalid address" });
       if (!isSol && !isAddress(address)) return json(res, 400, { error: "Invalid address" });
       if (!nonce) return json(res, 400, { error: "Nonce missing" });
       if (!signature) return json(res, 400, { error: "Signature missing" });
@@ -126,8 +168,7 @@ export default async function handler(req, res) {
 
       await consumeNonce(chainId, address, nonce);
       const msg = buildProfileMessage({ chainId, address, nonce, displayName, avatarUrl: avatarUrl ?? "" });
-      const recovered = ethers.verifyMessage(msg, signature).toLowerCase();
-      if (recovered !== address) return json(res, 401, { error: "Invalid signature" });
+      if (!verifyProfileSignature({ chainId, address, message: msg, signature })) return json(res, 401, { error: "Invalid signature" });
 
       await pool.query(
         `INSERT INTO user_profiles (chain_id, address, display_name, avatar_url, bio)
