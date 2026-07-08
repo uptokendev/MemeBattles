@@ -4,6 +4,7 @@ import { apiFetch } from "@/lib/apiBase";
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
 const MEMBER_ROLE_KEY = "mwz:recruiter:memberRole";
+const RECRUITER_SIGNUP_API_BASE = "/api/recruiter-signup";
 
 export type RecruiterMemberRole = "creator" | "trader";
 
@@ -433,7 +434,7 @@ export async function applyRecruiter(walletAddress: string, application: Recruit
 
 export async function fetchRecruiterSignupStatus(walletAddress: string): Promise<RecruiterSignupStatus> {
   try {
-    const json = await getJson(`/api/recruiters/signup/status${buildQuery({ walletAddress })}`);
+    const json = await getJson(`${RECRUITER_SIGNUP_API_BASE}/status${buildQuery({ walletAddress })}`);
     return {
       walletAddress: json?.walletAddress ?? walletAddress,
       isRecruiter: Boolean(json?.isRecruiter),
@@ -457,11 +458,11 @@ export async function fetchRecruiterSignupStatus(walletAddress: string): Promise
 }
 
 export async function checkRecruiterCodeAvailability(code: string): Promise<RecruiterCodeAvailability> {
-  return getJson(`/api/recruiters/signup/code-availability${buildQuery({ code })}`);
+  return getJson(`${RECRUITER_SIGNUP_API_BASE}/code-availability${buildQuery({ code })}`);
 }
 
 export async function requestRecruiterSignupNonce(walletAddress: string, chainId: number): Promise<RecruiterSignupNonce> {
-  return postJson("/api/recruiters/signup/nonce", { walletAddress, chainId });
+  return postJson(`${RECRUITER_SIGNUP_API_BASE}/nonce`, { walletAddress, chainId });
 }
 
 export function buildRecruiterSignupMessage({
@@ -495,7 +496,7 @@ export function buildRecruiterSignupMessage({
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
-  return postJson("/api/recruiters/signup", payload);
+  return postJson(RECRUITER_SIGNUP_API_BASE, payload);
 }
 
 export async function fetchWalletAttribution(walletAddress: string): Promise<WalletAttributionPublicState | null> {
