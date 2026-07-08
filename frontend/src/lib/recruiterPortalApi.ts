@@ -165,10 +165,8 @@ function clearPortalSessionToken(walletAddress?: string | null) {
 
 function portalHeaders(walletAddress?: string | null, extra?: HeadersInit): HeadersInit {
   const token = getPortalSessionToken(walletAddress);
-  const expectedWallet = normalizeWalletKey(walletAddress);
   return {
     ...(extra || {}),
-    ...(expectedWallet ? { "x-recruiter-wallet-address": expectedWallet } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
