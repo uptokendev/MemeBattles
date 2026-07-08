@@ -71,7 +71,9 @@ export default function ProfilePage() {
 
   const shouldRenderPublicProfile = Boolean(explicitIdentifier);
   const profileWallet = useMemo(() => {
-    if (shouldRenderPublicProfile) return effectiveWalletAddress(explicitWallet, accountWallet);
+    if (shouldRenderPublicProfile) {
+      return explicitWallet ? effectiveWalletAddress(explicitWallet, accountWallet) : null;
+    }
     return accountWallet;
   }, [accountWallet, explicitWallet, shouldRenderPublicProfile]);
 
