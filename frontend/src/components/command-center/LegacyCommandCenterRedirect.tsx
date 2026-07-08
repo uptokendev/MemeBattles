@@ -2,12 +2,7 @@ import { Navigate } from "react-router-dom";
 
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { normalizeAddress } from "@/lib/address";
-
-function normalizeWallet(value?: string | null): string | null {
-  const normalized = normalizeAddress(value);
-  return normalized || null;
-}
+import { normalizeRouteWallet } from "@/lib/address";
 
 type CommandCenterSection =
   | "overview"
@@ -30,9 +25,9 @@ export function LegacyCommandCenterRedirect({ section }: LegacyCommandCenterRedi
   const anyWallet: any = evmWallet as any;
   const isEvmConnected = Boolean(anyWallet?.isConnected ?? anyWallet?.connected ?? evmWallet.account);
   const accountWallet = isSolanaConnected && solanaAccount
-    ? normalizeWallet(solanaAccount)
+    ? normalizeRouteWallet(solanaAccount)
     : isEvmConnected
-      ? normalizeWallet(evmWallet.account)
+      ? normalizeRouteWallet(evmWallet.account)
       : null;
 
   if (!accountWallet) {
