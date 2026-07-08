@@ -5,16 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { CommandCenterLayout } from "@/components/command-center/CommandCenterLayout";
-
-function normalizeWallet(value?: string | null): string | null {
-  const v = String(value ?? "").trim();
-  if (!v) return null;
-  // EVM address (0x + 40 hex chars)
-  if (/^0x[a-fA-F0-9]{40}$/.test(v)) return v.toLowerCase();
-  // Solana address (base58, 32-44 chars, no 0x prefix)
-  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)) return v;
-  return null;
-}
+import { effectiveWalletAddress, normalizeRouteWallet, routeWalletsMatch } from "@/lib/address";
 
 function openWalletModal(wallet: any) {
   try {
@@ -79,23 +70,24 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
   const anyWallet: any = wallet as any;
 
   const connectedWallet = isSolanaConnected && solanaAccount
-    ? normalizeWallet(solanaAccount)
-    : normalizeWallet(wallet.account);
-  const requestedWallet = normalizeWallet(walletParam);
+    ? normalizeRouteWallet(solanaAccount)
+    : normalizeRouteWallet(wallet.account);
+  const requestedWallet = normalizeRouteWallet(walletParam);
+  const walletAddress = effectiveWalletAddress(requestedWallet, connectedWallet);
 
-  if (!requestedWallet) return <Navigate to="/profile" replace />;
+  if (!walletAddress) return <Navigate to="/profile" replace />;
 
   if (!connectedWallet) {
     return <ConnectRequired onConnect={() => openWalletModal(anyWallet)} />;
   }
 
-  if (connectedWallet !== requestedWallet) {
-    const section = getCommandSection(location.pathname);
-    return <Navigate to={`/profile/${connectedWallet}/command${section}`} replace />;
+  const section = getCommandSection(location.pathname);
+  if (!routeWalletsMatch(requestedWallet, connectedWallet) || walletAddress !== requestedWallet) {
+    return <Navigate to={`/profile/${walletAddress}/command${section}`} replace />;
   }
 
   return (
-    <CommandCenterLayout walletAddress={requestedWallet} basePath={`/profile/${requestedWallet}/command`}>
+    <CommandCenterLayout walletAddress={walletAddress} basePath={`/profile/${walletAddress}/command`}>
       {children}
     </CommandCenterLayout>
   );
