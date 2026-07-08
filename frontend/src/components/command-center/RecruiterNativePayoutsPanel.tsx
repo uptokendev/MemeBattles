@@ -134,6 +134,7 @@ export function RecruiterNativePayoutsPanel() {
 
     setIdentityLoading(true);
     setIdentityError(null);
+    setState(null);
     void (async () => {
       let lastError: unknown = null;
       for (const candidate of candidates) {
@@ -170,7 +171,7 @@ export function RecruiterNativePayoutsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const next = await fetchRecruiterNativePayouts();
+      const next = await fetchRecruiterNativePayouts(activeRecruiterWallet.address);
       setState(next);
       const bnb = next?.balances?.find((item) => item.chain === "bnb")?.payoutWallet || recruiterWallet.bnbAddress || "";
       const sol = next?.balances?.find((item) => item.chain === "solana")?.payoutWallet || recruiterWallet.solanaAddress || "";
@@ -230,6 +231,7 @@ export function RecruiterNativePayoutsPanel() {
   };
 
   const linkBnbWallet = async () => {
+    if (!activeRecruiterWallet) return;
     const payoutWallet = bnbWallet.trim() || recruiterWallet.bnbAddress || "";
     if (!payoutWallet) {
       toast.error("Connect or enter the BNB wallet first.");
@@ -238,9 +240,9 @@ export function RecruiterNativePayoutsPanel() {
     setPendingAction("link-bnb");
     setError(null);
     try {
-      const challenge = await requestRecruiterPayoutWalletChallenge("bnb", payoutWallet);
+      const challenge = await requestRecruiterPayoutWalletChallenge("bnb", payoutWallet, activeRecruiterWallet.address);
       const signature = await recruiterWallet.signMessage("bnb", payoutWallet, challenge.message);
-      await verifyRecruiterPayoutWallet("bnb", payoutWallet, challenge.nonce, signature);
+      await verifyRecruiterPayoutWallet("bnb", payoutWallet, challenge.nonce, signature, activeRecruiterWallet.address);
       toast.success("BNB wallet verified");
       await load();
     } catch (err: any) {
@@ -253,6 +255,7 @@ export function RecruiterNativePayoutsPanel() {
   };
 
   const linkSolanaWallet = async () => {
+    if (!activeRecruiterWallet) return;
     let publicKey = solWallet.trim() || recruiterWallet.solanaAddress;
     setPendingAction("link-solana");
     setError(null);
@@ -270,7 +273,7 @@ export function RecruiterNativePayoutsPanel() {
       const nonce = randomNonce();
       const message = buildPayoutWalletMessage({ recruiterId, chain: "solana", walletAddress: publicKey, nonce });
       const signature = await recruiterWallet.signMessage("solana", publicKey, message);
-      await verifyRecruiterPayoutWallet("solana", publicKey, nonce, signature);
+      await verifyRecruiterPayoutWallet("solana", publicKey, nonce, signature, activeRecruiterWallet.address);
       toast.success("Solana wallet verified");
       await load();
     } catch (err: any) {
@@ -283,10 +286,11 @@ export function RecruiterNativePayoutsPanel() {
   };
 
   const createClaim = async (chain: NativeChain) => {
+    if (!activeRecruiterWallet) return;
     setPendingAction(`claim-${chain}`);
     setError(null);
     try {
-      const result = await createRecruiterNativeClaim(chain);
+      const result = await createRecruiterNativeClaim(chain, activeRecruiterWallet.address);
       toast.success(String(result?.message || `${chainLabel(chain)} rewards claimed`));
       await load();
     } catch (err: any) {

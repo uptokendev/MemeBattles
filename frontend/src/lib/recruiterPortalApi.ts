@@ -83,39 +83,92 @@ export type RecruiterPayoutWalletChallenge = {
 
 const PORTAL_CREDENTIALS: RequestCredentials = "include";
 const PORTAL_TOKEN_KEY = "mwz:recruiterPortal:sessionToken";
+const PORTAL_TOKEN_KEY_PREFIX = "mwz:recruiterPortal:sessionToken:";
 
-function getPortalSessionToken(): string {
+function normalizeWalletKey(value?: string | null): string {
+  const raw = String(value || "").trim();
+  return raw.startsWith("0x") ? raw.toLowerCase() : raw;
+}
+
+function portalTokenKey(walletAddress?: string | null): string {
+  const key = normalizeWalletKey(walletAddress);
+  return key ? `${PORTAL_TOKEN_KEY_PREFIX}${key}` : PORTAL_TOKEN_KEY;
+}
+
+function decodePortalToken(token: string): { walletAddress?: string; exp?: number } | null {
   try {
-    return String(window.localStorage.getItem(PORTAL_TOKEN_KEY) || "").trim();
+    const payload = String(token || "").split(".")[0];
+    if (!payload) return null;
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return null;
+  }
+}
+
+function tokenMatchesWallet(token: string, walletAddress?: string | null): boolean {
+  const expected = normalizeWalletKey(walletAddress);
+  if (!expected) return false;
+  const decoded = decodePortalToken(token);
+  const tokenWallet = normalizeWalletKey(decoded?.walletAddress);
+  if (!tokenWallet || tokenWallet !== expected) return false;
+  if (decoded?.exp && Date.now() > Number(decoded.exp)) return false;
+  return true;
+}
+
+function getPortalSessionToken(walletAddress?: string | null): string {
+  const expected = normalizeWalletKey(walletAddress);
+  if (!expected) return "";
+  try {
+    const scoped = String(window.localStorage.getItem(portalTokenKey(expected)) || "").trim();
+    if (scoped && tokenMatchesWallet(scoped, expected)) return scoped;
+
+    const legacy = String(window.localStorage.getItem(PORTAL_TOKEN_KEY) || "").trim();
+    if (legacy && tokenMatchesWallet(legacy, expected)) {
+      window.localStorage.setItem(portalTokenKey(expected), legacy);
+      window.localStorage.removeItem(PORTAL_TOKEN_KEY);
+      return legacy;
+    }
+
+    window.localStorage.removeItem(portalTokenKey(expected));
+    window.localStorage.removeItem(PORTAL_TOKEN_KEY);
   } catch {
     return "";
   }
+  return "";
 }
 
-export function hasRecruiterPortalSession(): boolean {
-  return Boolean(getPortalSessionToken());
+export function hasRecruiterPortalSession(walletAddress?: string | null): boolean {
+  return Boolean(getPortalSessionToken(walletAddress));
 }
 
-function setPortalSessionToken(token: string) {
+function setPortalSessionToken(walletAddress: string, token: string) {
   try {
-    if (token) window.localStorage.setItem(PORTAL_TOKEN_KEY, token);
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearPortalSessionToken() {
-  try {
+    const key = normalizeWalletKey(walletAddress);
+    if (key && token && tokenMatchesWallet(token, key)) {
+      window.localStorage.setItem(portalTokenKey(key), token);
+    }
     window.localStorage.removeItem(PORTAL_TOKEN_KEY);
   } catch {
     // ignore storage failures
   }
 }
 
-function portalHeaders(extra?: HeadersInit): HeadersInit {
-  const token = getPortalSessionToken();
+function clearPortalSessionToken(walletAddress?: string | null) {
+  try {
+    const key = normalizeWalletKey(walletAddress);
+    if (key) window.localStorage.removeItem(portalTokenKey(key));
+    window.localStorage.removeItem(PORTAL_TOKEN_KEY);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function portalHeaders(walletAddress?: string | null, extra?: HeadersInit): HeadersInit {
+  const token = getPortalSessionToken(walletAddress);
+  const expectedWallet = normalizeWalletKey(walletAddress);
   return {
     ...(extra || {}),
+    ...(expectedWallet ? { "x-recruiter-wallet-address": expectedWallet } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -149,17 +202,17 @@ export function getPortalSquadImageUrl(portal?: RecruiterPortalData | null): str
   ).trim();
 }
 
-export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null> {
-  if (!hasRecruiterPortalSession()) return null;
+export async function fetchRecruiterPortal(walletAddress?: string | null): Promise<RecruiterPortalData | null> {
+  if (!hasRecruiterPortalSession(walletAddress)) return null;
 
   const res = await apiFetch("/api/recruiter-portal", {
     credentials: PORTAL_CREDENTIALS,
     cache: "no-store",
-    headers: portalHeaders(),
+    headers: portalHeaders(walletAddress),
   });
 
   if (res.status === 401) {
-    clearPortalSessionToken();
+    clearPortalSessionToken(walletAddress);
     return null;
   }
   const json = await parseJson(res);
@@ -167,8 +220,10 @@ export async function fetchRecruiterPortal(): Promise<RecruiterPortalData | null
 }
 
 export async function requestRecruiterAuthNonce(address: string): Promise<RecruiterAuthNonceResponse> {
+  clearPortalSessionToken(address);
   const res = await apiFetch(`/api/recruiter-auth-nonce?address=${encodeURIComponent(address)}`, {
     credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders(address),
   });
   const json = await parseJson(res);
   if (!json?.nonce || !json?.message) throw new Error("Recruiter login challenge missing from response.");
@@ -179,56 +234,56 @@ export async function verifyRecruiterAuth(address: string, signature: string) {
   const res = await apiFetch("/api/recruiter-auth-verify", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: { "Content-Type": "application/json" },
+    headers: portalHeaders(address, { "Content-Type": "application/json" }),
     body: JSON.stringify({ address, signature }),
   });
   const json = await parseJson(res);
-  if (json?.sessionToken) setPortalSessionToken(String(json.sessionToken));
+  if (json?.sessionToken) setPortalSessionToken(address, String(json.sessionToken));
   return json;
 }
 
-export async function updateRecruiterPortalCode(code: string): Promise<{ recruiter_code: string }> {
+export async function updateRecruiterPortalCode(code: string, walletAddress?: string | null): Promise<{ recruiter_code: string }> {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders({ "Content-Type": "application/json" }),
+    headers: portalHeaders(walletAddress, { "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "setCode", code }),
   });
   const json = await parseJson(res);
   return { recruiter_code: String(json?.recruiter_code || code) };
 }
 
-export async function updateRecruiterPortalSquadImage(imageUrl: string): Promise<{ squad_image_url: string }> {
+export async function updateRecruiterPortalSquadImage(imageUrl: string, walletAddress?: string | null): Promise<{ squad_image_url: string }> {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders({ "Content-Type": "application/json" }),
+    headers: portalHeaders(walletAddress, { "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "setSquadImage", imageUrl }),
   });
   const json = await parseJson(res);
   return { squad_image_url: String(json?.squad_image_url || json?.squadImageUrl || imageUrl) };
 }
 
-export async function fetchRecruiterNativePayouts(): Promise<RecruiterNativePayouts | null> {
-  if (!hasRecruiterPortalSession()) return null;
+export async function fetchRecruiterNativePayouts(walletAddress?: string | null): Promise<RecruiterNativePayouts | null> {
+  if (!hasRecruiterPortalSession(walletAddress)) return null;
 
   const res = await apiFetch("/api/recruiter-portal?action=payouts", {
     credentials: PORTAL_CREDENTIALS,
     cache: "no-store",
-    headers: portalHeaders(),
+    headers: portalHeaders(walletAddress),
   });
   if (res.status === 401) {
-    clearPortalSessionToken();
+    clearPortalSessionToken(walletAddress);
     return null;
   }
   return parseJson(res) as Promise<RecruiterNativePayouts>;
 }
 
-export async function requestRecruiterPayoutWalletChallenge(chain: "bnb" | "solana", walletAddress: string): Promise<RecruiterPayoutWalletChallenge> {
+export async function requestRecruiterPayoutWalletChallenge(chain: "bnb" | "solana", walletAddress: string, sessionWalletAddress?: string | null): Promise<RecruiterPayoutWalletChallenge> {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders({ "Content-Type": "application/json" }),
+    headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "linkPayoutWallet", chain, walletAddress }),
   });
   const json = await parseJsonAllowingChallenge(res);
@@ -236,31 +291,32 @@ export async function requestRecruiterPayoutWalletChallenge(chain: "bnb" | "sola
   return { nonce: String(json.nonce), message: String(json.message), error: json.error, code: json.code };
 }
 
-export async function verifyRecruiterPayoutWallet(chain: "bnb" | "solana", walletAddress: string, nonce: string, signature: string) {
+export async function verifyRecruiterPayoutWallet(chain: "bnb" | "solana", walletAddress: string, nonce: string, signature: string, sessionWalletAddress?: string | null) {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders({ "Content-Type": "application/json" }),
+    headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "linkPayoutWallet", chain, walletAddress, nonce, signature }),
   });
   return parseJson(res);
 }
 
-export async function createRecruiterNativeClaim(chain: "bnb" | "solana") {
+export async function createRecruiterNativeClaim(chain: "bnb" | "solana", sessionWalletAddress?: string | null) {
   const res = await apiFetch("/api/recruiter-portal", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
-    headers: portalHeaders({ "Content-Type": "application/json" }),
+    headers: portalHeaders(sessionWalletAddress, { "Content-Type": "application/json" }),
     body: JSON.stringify({ action: "createClaim", chain }),
   });
   return parseJson(res);
 }
 
-export async function logoutRecruiterPortal() {
-  clearPortalSessionToken();
+export async function logoutRecruiterPortal(walletAddress?: string | null) {
+  clearPortalSessionToken(walletAddress);
   const res = await apiFetch("/api/recruiter-logout", {
     method: "POST",
     credentials: PORTAL_CREDENTIALS,
+    headers: portalHeaders(walletAddress),
   });
   return parseJson(res).catch(() => ({ ok: true }));
 }
