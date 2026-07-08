@@ -43,6 +43,14 @@ export function normalizeRouteWallet(value?: string | null): string | null {
   return null;
 }
 
+function isLowercasedSolanaRoute(value: string): boolean {
+  return isSolanaAddress(value) && value === value.toLowerCase();
+}
+
+function isRecoverableSolanaRoute(requested: string, connected: string): boolean {
+  return isLowercasedSolanaRoute(requested) && requested === connected.toLowerCase();
+}
+
 /**
  * Returns a route-safe wallet address, preferring the connected wallet when it
  * proves a lowercased Solana route param is only a casing-damaged copy.
@@ -60,7 +68,7 @@ export function effectiveWalletAddress(
   if (isEvmAddress(requested) && isEvmAddress(connected) && requested.toLowerCase() === connected.toLowerCase()) {
     return connected.toLowerCase();
   }
-  if (isSolanaAddress(requested) && isSolanaAddress(connected) && requested.toLowerCase() === connected.toLowerCase()) {
+  if (isSolanaAddress(requested) && isSolanaAddress(connected) && isRecoverableSolanaRoute(requested, connected)) {
     return connected;
   }
   return requested;
@@ -76,7 +84,9 @@ export function routeWalletsMatch(a?: string | null, b?: string | null): boolean
   if (!na || !nb) return false;
   if (na === nb) return true;
   if (isEvmAddress(na) && isEvmAddress(nb)) return na.toLowerCase() === nb.toLowerCase();
-  if (isSolanaAddress(na) && isSolanaAddress(nb)) return na.toLowerCase() === nb.toLowerCase();
+  if (isSolanaAddress(na) && isSolanaAddress(nb)) {
+    return isRecoverableSolanaRoute(na, nb) || isRecoverableSolanaRoute(nb, na);
+  }
   return false;
 }
 
