@@ -190,6 +190,23 @@ function assertPreflightAllowed(preflight: LaunchpadPreflight): LaunchpadPreflig
   return preflight;
 }
 
+async function ensureRecruiterSignupWalletProfile(walletAddress: string) {
+  if (!walletAddress) return;
+  const session = getRecruiterSession();
+  try {
+    await postJson("/api/attribution/wallet-connect", {
+      walletAddress,
+      sessionToken: session.sessionToken,
+      clientFingerprint: session.clientFingerprint,
+      memberRole: null,
+    });
+  } catch (error) {
+    // This call creates/updates wallet_profiles on the API before recruiter insert.
+    // Do not block signup when attribution itself is unavailable; the submit route still performs canonical validation.
+    console.warn("[recruiterApi] wallet profile preflight failed", error);
+  }
+}
+
 export async function captureRecruiterReferral(recruiterCode: string, walletAddress?: string | null) {
   const session = getRecruiterSession();
   return postJson(`/api/recruiters/${encodeURIComponent(recruiterCode)}/referral/capture`, {
@@ -462,6 +479,7 @@ export async function checkRecruiterCodeAvailability(code: string): Promise<Recr
 }
 
 export async function requestRecruiterSignupNonce(walletAddress: string, chainId: number): Promise<RecruiterSignupNonce> {
+  await ensureRecruiterSignupWalletProfile(walletAddress);
   return postJson(`${RECRUITER_SIGNUP_API_BASE}/nonce`, { walletAddress, chainId });
 }
 
@@ -496,6 +514,7 @@ export function buildRecruiterSignupMessage({
 }
 
 export async function submitRecruiterSignup(payload: RecruiterSignupPayload) {
+  await ensureRecruiterSignupWalletProfile(payload.walletAddress);
   return postJson(RECRUITER_SIGNUP_API_BASE, payload);
 }
 
