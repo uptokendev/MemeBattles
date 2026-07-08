@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/apiBase";
 import { normalizeAddress } from "@/lib/address";
+import { signSolanaMessage } from "@/lib/solanaWallet";
 import {
   buildProfileMessage,
   fetchUserProfile,
@@ -15,6 +16,19 @@ interface UseEditableProfileArgs {
   account: string | null;
   viewedAddress: string | null;
   wallet: any;
+}
+
+function isSolanaChain(chainId?: number | null): boolean {
+  const id = Number(chainId);
+  return id === 101 || id === 102;
+}
+
+async function signProfileMessage({ chainId, account, wallet, message }: { chainId: number; account: string; wallet: any; message: string }) {
+  if (isSolanaChain(chainId)) {
+    return (await signSolanaMessage(message, account)).signature;
+  }
+  if (!wallet.signer) throw new Error("Wallet signer is not available. Reconnect your wallet and try again.");
+  return wallet.signer.signMessage(message);
 }
 
 export function useEditableProfile({
@@ -135,7 +149,7 @@ export function useEditableProfile({
       return;
     }
 
-    if (!wallet.signer) {
+    if (!isSolanaChain(chainId) && !wallet.signer) {
       toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
       return;
     }
@@ -167,7 +181,7 @@ export function useEditableProfile({
           avatarUrl: uploadedUrl,
         });
 
-        signature = await wallet.signer.signMessage(msg);
+        signature = await signProfileMessage({ chainId, account: addr, wallet, message: msg });
       } finally {
         setAwaitingWallet(false);
         toast.dismiss(toastId2);
@@ -211,7 +225,7 @@ export function useEditableProfile({
       return;
     }
 
-    if (!wallet.signer) {
+    if (!isSolanaChain(chainId) && !wallet.signer) {
       toast.error("Wallet signer is not available. Reconnect your wallet and try again.");
       return;
     }
@@ -241,7 +255,7 @@ export function useEditableProfile({
           avatarUrl: avatarUrl ?? null,
         });
 
-        signature = await wallet.signer.signMessage(msg);
+        signature = await signProfileMessage({ chainId, account: addr, wallet, message: msg });
       } finally {
         setAwaitingWallet(false);
         toast.dismiss(toastId2);
