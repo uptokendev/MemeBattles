@@ -1,4 +1,5 @@
 import { pool } from "../../../server/db.js";
+import { isSolanaAddress } from "../../../server/http.js";
 import { normalizeAddress } from "./auth.js";
 import { awardQuestForUser } from "./profile.js";
 import { ensureRecruiterReferralLink, getRecruiterApplicationForUser } from "./referrals.js";
@@ -7,6 +8,16 @@ const APPROVED_VALUES = new Set(["approved", "accepted", "active", "enabled"]);
 const PENDING_VALUES = new Set(["pending", "submitted", "review", "in_review", "waitlisted"]);
 const REJECTED_VALUES = new Set(["rejected", "denied", "declined", "disabled"]);
 const ACCEPTED_RECRUITER_SLUG = "accepted-recruiter-program";
+
+function normalizeRecruiterWallet(value) {
+  const raw = String(value || "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  return normalizeAddress(raw);
+}
+
+function walletLookupSql(columnExpression) {
+  return `case when $2::boolean then ${columnExpression} = $1 else lower(${columnExpression}) = $1 end`;
+}
 
 function readString(record, keys) {
   for (const key of keys) {
@@ -62,15 +73,18 @@ async function safeQuery(text, params = []) {
 }
 
 async function findCommandCenterRecruiterRecord(user) {
+  const wallet = normalizeRecruiterWallet(user.wallet_address);
+  const solana = isSolanaAddress(wallet);
   const rows = await safeQuery(
     `
       select *
       from public.recruiters
-      where lower(wallet_address) = $1
+      where ${walletLookupSql("wallet_address")}
+         or metadata #>> '{signup,solanaWalletAddress}' = $1
       order by updated_at desc nulls last, created_at desc nulls last
       limit 1
     `,
-    [normalizeAddress(user.wallet_address)],
+    [wallet, solana],
   );
   const record = rows[0];
   if (!record) return null;
@@ -86,7 +100,8 @@ async function findCommandCenterRecruiterRecord(user) {
 }
 
 async function findCommandCenterWaitlistRecord(user) {
-  const wallet = normalizeAddress(user.wallet_address);
+  const wallet = normalizeRecruiterWallet(user.wallet_address);
+  const solana = isSolanaAddress(wallet);
   const tables = ["recruiter_waitlist", "recruiter_waitlists", "waitlist", "recruiter_applications"];
 
   for (const table of tables) {
@@ -94,11 +109,12 @@ async function findCommandCenterWaitlistRecord(user) {
       `
         select *
         from public.${table}
-        where lower(coalesce(wallet_address, wallet, '')) = $1 or user_id = $2
+        where ${walletLookupSql("coalesce(wallet_address, wallet, '')")}
+           or user_id = $3
         order by created_at desc nulls last, updated_at desc nulls last
         limit 1
       `,
-      [wallet, user.id],
+      [wallet, solana, user.id],
     );
     const record = rows[0];
     if (!record) continue;
