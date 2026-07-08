@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { isSolanaAddress } from "@/lib/address";
 import {
+  fetchRecruiterSignupStatus,
   fetchRecruiterSummaryByWallet,
   fetchWalletAttributionState,
   fetchWalletRewardClaims,
@@ -93,11 +94,13 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
     setError(null);
     void (async () => {
       try {
-        const recruiterSummary = await fetchRecruiterSummaryByWallet(lookupAccount).catch((err: any) => {
-          const message = String(err?.message || "");
-          if (message.includes("404") || message.toLowerCase().includes("not found")) return null;
-          throw err;
-        });
+        const recruiterSummary = isSolana
+          ? (await fetchRecruiterSignupStatus(lookupAccount).catch(() => ({ recruiter: null } as any))).recruiter
+          : await fetchRecruiterSummaryByWallet(lookupAccount).catch((err: any) => {
+              const message = String(err?.message || "");
+              if (message.includes("404") || message.toLowerCase().includes("not found")) return null;
+              throw err;
+            });
 
         const [walletSummary, historyItems, claimItems, attributionState] = isSolana
           ? [null, [], [], null]
