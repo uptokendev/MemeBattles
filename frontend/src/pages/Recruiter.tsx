@@ -4,12 +4,14 @@ import { ArrowRight, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
-import { useWallet } from "@/contexts/WalletContext";
+import { useRecruiterWallet } from "@/hooks/useRecruiterWallet";
 import { fetchRecruiterSignupStatus, type RecruiterSignupStatus } from "@/lib/recruiterApi";
 
 export default function Recruiter() {
-  const wallet = useWallet();
-  const account = wallet.account || "";
+  const recruiterWallet = useRecruiterWallet();
+  const activeWallet = recruiterWallet.activeWallet;
+  const account = activeWallet?.address || "";
+  const isConnected = Boolean(activeWallet && account);
   const [status, setStatus] = useState<RecruiterSignupStatus | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -71,7 +73,7 @@ export default function Recruiter() {
         </Card>
       </div>
 
-      {!wallet.isConnected || !account ? (
+      {!isConnected || !account ? (
         <Card className="border-border/60 bg-card/65 p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -95,7 +97,7 @@ export default function Recruiter() {
               <p className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">Existing recruiter</p>
               <h2 className="mt-2 font-retro text-2xl text-foreground">{status.recruiter.displayName || status.recruiter.code}</h2>
               <p className="mt-3 text-sm text-muted-foreground">
-                This wallet already owns recruiter code <span className="text-foreground">{status.recruiter.code}</span>. Continue in your Profile recruiter tab.
+                This {activeWallet?.chain === "solana" ? "Solana" : "BNB"} wallet already owns recruiter code <span className="text-foreground">{status.recruiter.code}</span>. Continue in your Profile recruiter tab.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
