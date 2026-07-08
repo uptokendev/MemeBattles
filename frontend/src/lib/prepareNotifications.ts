@@ -13,9 +13,13 @@ function normalizeWallet(value?: string | null) {
   return String(value || "").trim().toLowerCase();
 }
 
+function isEvmAddress(value?: string | null) {
+  return /^0x[a-f0-9]{40}$/.test(normalizeWallet(value));
+}
+
 export async function fetchPrepareNotifications(walletAddress?: string | null, limit = 20): Promise<DraftNotification[]> {
   const wallet = normalizeWallet(walletAddress);
-  if (!wallet) return [];
+  if (!wallet || !isEvmAddress(wallet)) return [];
 
   const qs = new URLSearchParams({ wallet, limit: String(limit) });
   const res = await fetch(buildRealtimeApiUrl(`/api/prepare-notifications?${qs.toString()}`), {
@@ -27,7 +31,7 @@ export async function fetchPrepareNotifications(walletAddress?: string | null, l
 
 export async function markPrepareNotificationRead(walletAddress: string, id: string) {
   const wallet = normalizeWallet(walletAddress);
-  if (!wallet || !id) return;
+  if (!wallet || !id || !isEvmAddress(wallet)) return;
 
   const res = await fetch(buildRealtimeApiUrl("/api/prepare-notifications"), {
     method: "POST",
@@ -40,7 +44,7 @@ export async function markPrepareNotificationRead(walletAddress: string, id: str
 
 export async function markAllPrepareNotificationsRead(walletAddress: string) {
   const wallet = normalizeWallet(walletAddress);
-  if (!wallet) return;
+  if (!wallet || !isEvmAddress(wallet)) return;
 
   const res = await fetch(buildRealtimeApiUrl("/api/prepare-notifications"), {
     method: "POST",

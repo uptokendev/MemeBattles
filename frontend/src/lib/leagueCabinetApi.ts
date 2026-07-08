@@ -27,6 +27,15 @@ async function readJson(res: Response): Promise<any> {
   }
 }
 
+function isSolanaChain(chainId: number): boolean {
+  const id = Number(chainId);
+  return id === 101 || id === 102;
+}
+
+function emptyCabinet(): LeagueCabinet {
+  return normalizeCabinet({ summary: {}, items: [], mastery: [] });
+}
+
 function normalizeCabinet(raw: any): LeagueCabinet {
   const summary = raw?.summary ?? {};
   const items = Array.isArray(raw?.items) ? raw.items : [];
@@ -71,6 +80,8 @@ function normalizeCabinet(raw: any): LeagueCabinet {
 }
 
 export async function fetchLeagueCabinet(chainId: number, address: string): Promise<LeagueCabinet> {
+  if (isSolanaChain(chainId)) return emptyCabinet();
+
   const url = buildUrl(
     `/api/profileCabinet?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(address.toLowerCase())}`
   );
@@ -78,7 +89,7 @@ export async function fetchLeagueCabinet(chainId: number, address: string): Prom
   const res = await fetch(url, { method: "GET" });
   if (!res.ok) {
     if (res.status === 404) {
-      return normalizeCabinet({ summary: {}, items: [], mastery: [] });
+      return emptyCabinet();
     }
     const j = await readJson(res);
     throw new Error(j?.error || `Failed to load profile cabinet (${res.status})`);

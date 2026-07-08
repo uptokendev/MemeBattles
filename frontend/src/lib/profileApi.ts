@@ -28,8 +28,14 @@ function buildUrl(pathWithQuery: string): string {
   return apiUrl(pathWithQuery);
 }
 
-function normalizeAddress(addr: string): string {
-  return String(addr ?? "").trim().toLowerCase();
+function isSolanaChain(chainId?: number | null): boolean {
+  const id = Number(chainId);
+  return id === 101 || id === 102;
+}
+
+function normalizeAddress(addr: string, chainId?: number | null): string {
+  const raw = String(addr ?? "").trim();
+  return isSolanaChain(chainId) ? raw : raw.toLowerCase();
 }
 
 export function buildProfileMessage(args: {
@@ -45,7 +51,7 @@ export function buildProfileMessage(args: {
     "MemeBattles Profile",
     "Action: PROFILE_UPSERT",
     `ChainId: ${args.chainId}`,
-    `Address: ${normalizeAddress(args.address)}`,
+    `Address: ${normalizeAddress(args.address, args.chainId)}`,
     `Nonce: ${args.nonce}`,
     "",
     `DisplayName: ${name}`,
@@ -54,7 +60,9 @@ export function buildProfileMessage(args: {
 }
 
 export async function fetchUserProfile(chainId: number, address: string): Promise<UserProfile | null> {
-  const addr = normalizeAddress(address);
+  if (isSolanaChain(chainId)) return null;
+
+  const addr = normalizeAddress(address, chainId);
   const url = buildUrl(`/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`);
 
   const res = await fetch(url, { method: "GET" });
@@ -84,7 +92,9 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
 }
 
 export async function requestNonce(chainId: number, address: string): Promise<string> {
-  const addr = normalizeAddress(address);
+  if (isSolanaChain(chainId)) throw new Error("Solana profile signing is not supported yet.");
+
+  const addr = normalizeAddress(address, chainId);
   const res = await apiFetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`, { method: "GET" });
   if (!res.ok) {
     const j = await readJson(res);
@@ -106,12 +116,14 @@ export type SaveProfileInput = {
 };
 
 export async function saveUserProfile(input: SaveProfileInput): Promise<void> {
+  if (isSolanaChain(input.chainId)) throw new Error("Solana profile updates are not supported yet.");
+
   const res = await apiFetch(`/api/profile`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       chainId: input.chainId,
-      address: normalizeAddress(input.address),
+      address: normalizeAddress(input.address, input.chainId),
       displayName: input.displayName,
       avatarUrl: input.avatarUrl,
       bio: input.bio,
@@ -136,7 +148,9 @@ export async function fetchPublicPortfolioMetrics(
   address: string,
   { forceRefresh = false }: { forceRefresh?: boolean } = {}
 ): Promise<any> {
-  const addr = normalizeAddress(address);
+  if (isSolanaChain(chainId)) return null;
+
+  const addr = normalizeAddress(address, chainId);
   const params = new URLSearchParams({
     chainId: String(chainId),
     address: addr,
