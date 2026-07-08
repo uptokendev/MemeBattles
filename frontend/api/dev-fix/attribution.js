@@ -284,9 +284,9 @@ async function consumeSignupNonce({ chainId, walletAddress, nonce }) {
     `select nonce, expires_at, used_at
        from public.auth_nonces
       where chain_id = $1
-        and case when $4::boolean then address = $2 else lower(address) = lower($2) end
+        and case when $3::boolean then address = $2 else lower(address) = lower($2) end
       limit 1`,
-    [chainId, walletAddress, nonce, solana],
+    [chainId, walletAddress, solana],
   );
   const row = rows[0];
   if (!row) throw new Error("Nonce not found. Request a new signup nonce and try again.");
