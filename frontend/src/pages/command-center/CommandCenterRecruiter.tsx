@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy, WalletCards } from "lucide-react";
+import { ArrowRight, Copy, ExternalLink, Gift, Image, Link2, LogOut, ShieldCheck, Trophy } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
-import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
 import { useRecruiterWallet, type RecruiterWalletCandidate } from "@/hooks/useRecruiterWallet";
 import { fetchRecruiterSignupStatus, type RecruiterSignupStatus } from "@/lib/recruiterApi";
 import {
@@ -25,8 +24,6 @@ const benefits = [
   "Your own recruiter code and referral link",
   "Public recruiter profile and leaderboard visibility",
   "Track the creators and traders who join through your link",
-  "Weekly recruiter rewards",
-  "Claimable recruiter rewards through your creator dashboard",
   "Grow your squad as more creators and traders join",
 ];
 
@@ -35,7 +32,6 @@ const programSteps = [
   "Choose your recruiter code",
   "Share your recruiter link",
   "Grow creators, traders, and squads",
-  "Track rewards inside your creator dashboard",
 ];
 
 function shortAddress(value?: string | null) {
@@ -302,7 +298,7 @@ export default function CommandCenterRecruiter() {
               {benefits.map((benefit) => <div key={benefit} className="rounded-2xl border border-border/50 bg-background/25 p-3 text-sm text-muted-foreground">{benefit}</div>)}
             </div>
             <div className="mt-5 rounded-2xl border border-accent/30 bg-accent/10 p-4">
-              <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-accent" /><div><div className="font-retro text-sm text-foreground">Program rule</div><p className="mt-1 text-sm text-muted-foreground">Your recruiter link is tracked automatically. When creators and traders join through you, MemeWarzone keeps the squad and reward records updated.</p></div></div>
+              <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-accent" /><div><div className="font-retro text-sm text-foreground">Program rule</div><p className="mt-1 text-sm text-muted-foreground">Your recruiter link is tracked automatically. When creators and traders join through you, MemeWarzone keeps the squad records updated.</p></div></div>
             </div>
           </CommandCenterCard>
           <CommandCenterCard title="How it works" description="The short path from wallet to recruiter dashboard.">
@@ -319,7 +315,7 @@ export default function CommandCenterRecruiter() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader title="Recruiter Management" description="Manage your recruiter link, public recruiter profile, rewards, squad growth, and account settings from Command Center.">
+      <CommandCenterPageHeader title="Recruiter Management" description="Manage your recruiter link, public recruiter profile, squad growth, and account settings from Command Center.">
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="font-retro"><Link to="/recruiters">Public leaderboard<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
           <Button asChild className="font-retro"><Link to={`/recruiters/${encodeURIComponent(activeCode)}`}>Public page</Link></Button>
@@ -384,7 +380,6 @@ export default function CommandCenterRecruiter() {
                 <Button onClick={shareToX} variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro"><ExternalLink className="mr-3 h-4 w-4" />Share on X</Button>
                 <Button onClick={() => void nativeShare()} variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro"><Gift className="mr-3 h-4 w-4" />Share squad</Button>
                 <Button onClick={() => void disconnectPortal()} variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro"><LogOut className="mr-3 h-4 w-4" />Disconnect session</Button>
-                <Button asChild variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro"><Link to="/command/claims"><WalletCards className="mr-3 h-4 w-4" />Rewards / Claims</Link></Button>
                 <Button asChild variant="outline" className="h-auto justify-start rounded-2xl p-4 text-left font-retro"><Link to="/recruiters"><Trophy className="mr-3 h-4 w-4" />Leaderboard</Link></Button>
               </div>
             </div>
@@ -410,8 +405,6 @@ export default function CommandCenterRecruiter() {
           </div>
         </CommandCenterCard>
       )}
-
-      <ProfileRecruiterPanel account={effectiveWalletAddress} isConnected={true} isOwnProfile={true} />
     </div>
   );
 }
