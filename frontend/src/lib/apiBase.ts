@@ -48,6 +48,14 @@ const REALTIME_INDEXER_API_PREFIXES = [
   "/api/vote_counts",
 ];
 
+const FRONTEND_API_PREFIXES = [
+  "/api/recruiters/signup",
+  "/api/recruiter-auth-nonce",
+  "/api/recruiter-auth-verify",
+  "/api/recruiter-portal",
+  "/api/recruiter-logout",
+];
+
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
@@ -56,11 +64,18 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function matchesApiPrefix(path: string, prefix: string): boolean {
+  if (prefix.endsWith("/")) return path.startsWith(prefix);
+  return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
+}
+
+function shouldUseFrontendApi(path: string): boolean {
+  return FRONTEND_API_PREFIXES.some((prefix) => matchesApiPrefix(path, prefix));
+}
+
 function shouldUseRealtimeIndexer(path: string): boolean {
-  return REALTIME_INDEXER_API_PREFIXES.some((prefix) => {
-    if (prefix.endsWith("/")) return path.startsWith(prefix);
-    return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
-  });
+  if (shouldUseFrontendApi(path)) return false;
+  return REALTIME_INDEXER_API_PREFIXES.some((prefix) => matchesApiPrefix(path, prefix));
 }
 
 function isCampaignFeedPath(path: string): boolean {
