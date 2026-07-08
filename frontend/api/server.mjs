@@ -38,48 +38,6 @@ import newsletter from "./newsletter.js";
 import tokenMetadata from "./token-metadata.js";
 import votes from "./votes.js";
 import voteCounts from "./vote_counts.js";
-import wmAdminAuth from "./war-missions/admin-auth.js";
-import wmAdminBadgeAward from "./war-missions/admin-badge-award.js";
-import wmAdminConsoleData from "./war-missions/admin-console-data.js";
-import wmAdminLeaderboardSnapshot from "./war-missions/admin-leaderboard-snapshot.js";
-import wmAdminNotificationsList from "./war-missions/admin-notifications-list.js";
-import wmAdminPrizes from "./war-missions/admin-prizes.js";
-import wmAdminQuestUpsert from "./war-missions/admin-quest-upsert.js";
-import wmAdminQuizQuestions from "./war-missions/admin-quiz-questions.js";
-import wmAdminQuizTemplates from "./war-missions/admin-quiz-templates.js";
-import wmAdminRecruiterReview from "./war-missions/admin-recruiter-review.js";
-import wmAdminReviewCompletion from "./war-missions/admin-review-completion.js";
-import wmAdminSocialChecksList from "./war-missions/admin-social-checks-list.js";
-import wmAdminSocialRecheck from "./war-missions/admin-social-recheck.js";
-import wmAdminUserAction from "./war-missions/admin-user-action.js";
-import wmAuthNonce from "./war-missions/auth-nonce.js";
-import wmAuthVerify from "./war-missions/auth-verify.js";
-import wmBadgesList from "./war-missions/badges-list.js";
-import wmCommunityMembershipSweep from "./war-missions/community-membership-sweep.js";
-import wmDailyRollover from "./war-missions/daily-rollover.js";
-import wmDiscordMemberCheck from "./war-missions/discord-member-check.js";
-import wmDiscordOAuthCallback from "./war-missions/discord-oauth-callback.js";
-import wmDiscordOAuthStart from "./war-missions/discord-oauth-start.js";
-import wmLeaderboardCurrent from "./war-missions/leaderboard-current.js";
-import wmPrizesPublic from "./war-missions/prizes-public.js";
-import wmProfile from "./war-missions/profile.js";
-import wmQuestsList from "./war-missions/quests-list.js";
-import wmQuestsSubmit from "./war-missions/quests-submit.js";
-import wmQuizLoad from "./war-missions/quiz-load.js";
-import wmQuizSubmit from "./war-missions/quiz-submit.js";
-import wmRecruiterApply from "./war-missions/recruiter-apply.js";
-import wmRecruiterStatus from "./war-missions/recruiter-status.js";
-import wmRecruiterStatusCheck from "./war-missions/recruiter-status-check.js";
-import wmReferralStats from "./war-missions/referral-stats.js";
-import wmReferralTrack from "./war-missions/referral-track.js";
-import wmSocialLink from "./war-missions/social-link.js";
-import wmSocialStatus from "./war-missions/social-status.js";
-import wmTelegramLinkStart from "./war-missions/telegram-link-start.js";
-import wmTelegramMemberCheck from "./war-missions/telegram-member-check.js";
-import wmTelegramWebhook from "./war-missions/telegram-webhook.js";
-import wmXFollowCheck from "./war-missions/x-follow-check.js";
-import wmXOAuthCallback from "./war-missions/x-oauth-callback.js";
-import wmXOAuthStart from "./war-missions/x-oauth-start.js";
 import { contentAiGenerateVariants } from "./content-ai.js";
 import {
   contentPlannerCalendar,
@@ -253,7 +211,7 @@ app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token, x-war-missions-internal-token");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-diagnostics-token, x-rank-events-token");
   }
   if (req.method === "OPTIONS") return res.status(204).end();
   next();
@@ -366,10 +324,10 @@ app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') {
     console.error(`[api/server] Payload too large for ${req.path}: ${err.length} bytes > ${err.limit} limit`);
     if (!res.headersSent) {
-      return res.status(413).json({ 
-        error: "Payload too large", 
-        limit: err.limit, 
-        length: err.length 
+      return res.status(413).json({
+        error: "Payload too large",
+        limit: err.limit,
+        length: err.length
       });
     }
   }
@@ -501,50 +459,6 @@ router.all("/recruiter-signup/status", wrap(recruiterSignupStatus));
 router.all("/recruiter-signup/code-availability", wrap(recruiterSignupCodeAvailability));
 router.all("/recruiter-signup/nonce", wrap(recruiterSignupNonce));
 router.all("/recruiter-signup", wrap(recruiterSignupSubmit));
-router.all("/wm-auth-nonce", wrap(wmAuthNonce));
-router.all("/wm-auth-verify", wrap(wmAuthVerify));
-router.all("/wm-profile", wrap(wmProfile));
-router.all("/wm-quests-list", wrap(wmQuestsList));
-router.all("/wm-quests-submit", wrap(wmQuestsSubmit));
-router.all("/wm-social-status", wrap(wmSocialStatus));
-router.all("/wm-social-link", wrap(wmSocialLink));
-router.all("/wm-telegram-link-start", wrap(wmTelegramLinkStart));
-router.all("/wm-telegram-webhook", wrap(wmTelegramWebhook));
-router.all("/wm-telegram-member-check", wrap(wmTelegramMemberCheck));
-router.all("/wm-discord-oauth-start", wrap(wmDiscordOAuthStart));
-router.all("/wm-discord-oauth-callback", wrap(wmDiscordOAuthCallback));
-router.all("/wm-discord-member-check", wrap(wmDiscordMemberCheck));
-router.all("/wm-community-membership-sweep", wrap(wmCommunityMembershipSweep));
-router.all("/wm-admin-auth", wrap(wmAdminAuth));
-router.all("/wm-admin-console-data", wrap(wmAdminConsoleData));
-router.all("/wm-admin-quiz-templates", wrap(wmAdminQuizTemplates));
-router.all("/wm-admin-quiz-questions", wrap(wmAdminQuizQuestions));
-router.all("/wm-admin-recruiter-review", wrap(wmAdminRecruiterReview));
-router.all("/wm-admin-social-checks-list", wrap(wmAdminSocialChecksList));
-router.all("/wm-admin-review-completion", wrap(wmAdminReviewCompletion));
-router.all("/wm-admin-social-recheck", wrap(wmAdminSocialRecheck));
-router.all("/wm-recruiter-apply", wrap(wmRecruiterApply));
-router.all("/wm-recruiter-status", wrap(wmRecruiterStatus));
-router.all("/wm-recruiter-status-check", wrap(wmRecruiterStatusCheck));
-router.all("/wm-referral-track", wrap(wmReferralTrack));
-router.all("/wm-referral-stats", wrap(wmReferralStats));
-router.all("/wm-x-oauth-start", wrap(wmXOAuthStart));
-router.all("/wm-x-oauth-callback", wrap(wmXOAuthCallback));
-router.all("/social-x-callback", wrap(wmXOAuthCallback));
-router.all("/wm-x-follow-check", wrap(wmXFollowCheck));
-router.all("/wm-quiz-get", wrap(wmQuizLoad));
-router.all("/wm-quiz-load", wrap(wmQuizLoad));
-router.all("/wm-quiz-submit", wrap(wmQuizSubmit));
-router.all("/wm-leaderboard-current", wrap(wmLeaderboardCurrent));
-router.all("/wm-prizes-public", wrap(wmPrizesPublic));
-router.all("/wm-badges-list", wrap(wmBadgesList));
-router.all("/wm-admin-badge-award", wrap(wmAdminBadgeAward));
-router.all("/wm-admin-notifications-list", wrap(wmAdminNotificationsList));
-router.all("/wm-admin-user-action", wrap(wmAdminUserAction));
-router.all("/wm-admin-quest-upsert", wrap(wmAdminQuestUpsert));
-router.all("/wm-admin-leaderboard-snapshot", wrap(wmAdminLeaderboardSnapshot));
-router.all("/wm-admin-prizes", wrap(wmAdminPrizes));
-router.all("/wm-daily-rollover", wrap(wmDailyRollover));
 router.all("/internal/airdrops/calculate", wrap(internalAirdropsCalculate));
 router.all("/internal/airdrops/publish", wrap(internalAirdropsPublish));
 router.all("/internal/rewards/batches", wrap(internalRewardBatches));
