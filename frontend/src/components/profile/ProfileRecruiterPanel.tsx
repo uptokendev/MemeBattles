@@ -63,7 +63,7 @@ function formatDate(value: string | null | undefined): string {
 
 function recruiterLookupAccount(account: string | null) {
   const raw = String(account || "").trim();
-  return isSolanaAddress(raw) ? raw.toLowerCase() : raw;
+  return isSolanaAddress(raw) ? raw : raw.toLowerCase();
 }
 
 export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: ProfileRecruiterPanelProps) {
@@ -210,7 +210,7 @@ export function ProfileRecruiterPanel({ account, isConnected, isOwnProfile }: Pr
           <Card className="border-border/60 bg-card/65 p-6">
             <div><p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Reward history</p><h3 className="mt-1 font-retro text-xl text-foreground">Weekly recruiter rewards</h3></div>
             <div className="mt-5 space-y-3">
-              {history.length === 0 ? <div className="rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">No recruiter rewards have been recorded for this wallet yet.</div> : history.map((item) => <div key={item.id} className="rounded-2xl border border-border/60 bg-background/35 p-4"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-retro text-sm text-foreground">Battle Week #{item.epochId}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(item.startAt)} to {formatDate(item.endAt)}</p></div><div className="flex flex-wrap gap-4 text-sm"><div><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Reward</p><p className="mt-1 font-retro text-foreground">{formatBnb(item.netAmount)} BNB</p></div><div><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Status</p><p className="mt-1 font-retro text-foreground">{item.status}</p></div><div><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Deadline</p><p className="mt-1 font-retro text-foreground">{formatDate(item.claimDeadlineAt)}</p></div></div></div></div>)}
+              {history.length === 0 ? <div className="rounded-2xl border border-border/60 bg-background/30 p-4 text-sm text-muted-foreground">No recruiter rewards have been recorded for this wallet yet.</div> : history.map((item) => <div key={item.id} className="rounded-2xl border border-border/60 bg-background/35 p-4"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="font-retro text-sm text-foreground">Battle Week #{item.epochId}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(item.startAt)} to {formatDate(item.endAt)}</p></div><div className="flex flex-wrap gap-4 text-sm"><div><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Reward</p><p className="mt-1 font-retro text-foreground">{formatBnb(item.netAmount)} BNB</p></div><div><p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Status</p><p className="mt-1 font-retro text-foreground">{item.status}</p></div></div></div></div>)}
             </div>
           </Card>
         </>
