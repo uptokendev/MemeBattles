@@ -59,6 +59,31 @@ EXCEPTION
     NULL;
 END $$;
 
+-- Older EVM-only schemas sometimes used varchar(42). Solana public keys can be
+-- 44 chars, and signatures or future chain ids may be longer, so use TEXT for
+-- shared wallet/profile columns.
+DO $$
+DECLARE
+  c RECORD;
+BEGIN
+  FOR c IN
+    SELECT table_schema, table_name, column_name
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND (table_name, column_name) IN (
+         ('wallet_profiles', 'wallet_address'),
+         ('auth_nonces', 'address'),
+         ('recruiters', 'wallet_address'),
+         ('wallet_referral_attribution_windows', 'wallet_address'),
+         ('wallet_recruiter_links', 'wallet_address'),
+         ('wallet_squad_memberships', 'wallet_address'),
+         ('user_profiles', 'address')
+       )
+  LOOP
+    EXECUTE format('ALTER TABLE %I.%I ALTER COLUMN %I TYPE TEXT', c.table_schema, c.table_name, c.column_name);
+  END LOOP;
+END $$;
+
 COMMENT ON COLUMN public.wallet_profiles.wallet_address IS
   'Chain-normalized wallet id: lowercase EVM address or case-sensitive Solana public key.';
 
