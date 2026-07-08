@@ -60,8 +60,6 @@ export function buildProfileMessage(args: {
 }
 
 export async function fetchUserProfile(chainId: number, address: string): Promise<UserProfile | null> {
-  if (isSolanaChain(chainId)) return null;
-
   const addr = normalizeAddress(address, chainId);
   const url = buildUrl(`/api/profile?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`);
 
@@ -92,8 +90,6 @@ export async function fetchUserProfile(chainId: number, address: string): Promis
 }
 
 export async function requestNonce(chainId: number, address: string): Promise<string> {
-  if (isSolanaChain(chainId)) throw new Error("Solana profile signing is not supported yet.");
-
   const addr = normalizeAddress(address, chainId);
   const res = await apiFetch(`/api/auth/nonce?chainId=${encodeURIComponent(String(chainId))}&address=${encodeURIComponent(addr)}`, { method: "GET" });
   if (!res.ok) {
@@ -116,8 +112,6 @@ export type SaveProfileInput = {
 };
 
 export async function saveUserProfile(input: SaveProfileInput): Promise<void> {
-  if (isSolanaChain(input.chainId)) throw new Error("Solana profile updates are not supported yet.");
-
   const res = await apiFetch(`/api/profile`, {
     method: "POST",
     headers: { "content-type": "application/json" },
