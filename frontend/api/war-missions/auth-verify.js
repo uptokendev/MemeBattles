@@ -1,7 +1,6 @@
 import { pool } from "../../server/db.js";
 import {
   createWarAuthCookie,
-  isSolanaAddress,
   isWalletAddress,
   normalizeAddress,
   verifyWalletSignature,
@@ -10,31 +9,24 @@ import {
 import { awardQuestForUser, buildWarProfile, ensureUser, maybeVerifyReferralForUser } from "./_lib/profile.js";
 import { getActiveReferralLinkByCode, linkReferralToUser, readReferralCode } from "./_lib/referrals.js";
 
-function hasSignature(value) {
-  if (Array.isArray(value)) return value.length > 0;
-  return Boolean(String(value || "").trim());
-}
-
 export default async function wmAuthVerify(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
   const address = normalizeAddress(String(req.body?.address || ""));
-  const signature = req.body?.signature;
+  const signature = String(req.body?.signature || "").trim();
   if (!isWalletAddress(address)) return res.status(400).json({ error: "Enter a valid wallet address." });
-  if (!hasSignature(signature)) return res.status(400).json({ error: "Missing signature." });
+  if (!signature) return res.status(400).json({ error: "Missing signature." });
 
   try {
-    const solana = isSolanaAddress(address);
     const { rows: nonceRows } = await pool.query(
       `
         select id, wallet_address, nonce, expires_at, used_at
         from public.wm_wallet_auth_nonces
-        where case when $2::boolean then wallet_address = $1 else lower(wallet_address) = $1 end
-          and used_at is null
+        where lower(wallet_address) = $1 and used_at is null
         order by created_at desc
         limit 1
       `,
-      [address, solana],
+      [address],
     );
     const nonceRow = nonceRows[0];
     if (!nonceRow) return res.status(400).json({ error: "No login challenge found. Request a new nonce." });
