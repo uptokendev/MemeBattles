@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { pool } from "../../server/db.js";
-import { isSolanaAddress, isWalletAddress, normalizeAddress, warLoginMessage } from "./_lib/auth.js";
+import { isWalletAddress, normalizeAddress, warLoginMessage } from "./_lib/auth.js";
 
 function clientKey(req, address) {
   const forwarded = String(req.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
@@ -11,15 +11,14 @@ function clientKey(req, address) {
 async function enforceNonceRateLimit(req, address) {
   const key = clientKey(req, address);
   const since = new Date(Date.now() - 60 * 1000).toISOString();
-  const solana = isSolanaAddress(address);
   const { rows } = await pool.query(
     `
       select count(*)::int as count
       from public.wm_wallet_auth_nonces
-      where case when $3::boolean then wallet_address = $1 else lower(wallet_address) = $1 end
+      where wallet_address = $1
         and created_at >= $2
     `,
-    [address, since, solana],
+    [address, since],
   );
   if (Number(rows[0]?.count || 0) >= 5) {
     const error = new Error("Too many login challenges. Wait a minute and try again.");
