@@ -1,14 +1,9 @@
 import { Navigate, useParams } from "react-router-dom";
-import { normalizeAddress } from "@/lib/address";
-
-function normalizeWallet(value?: string | null): string | null {
-  const normalized = normalizeAddress(value);
-  return normalized || null;
-}
+import { normalizeRouteWallet } from "@/lib/address";
 
 export function ProfileWalletFallbackRedirect() {
   const { wallet } = useParams<{ wallet?: string }>();
-  const normalizedWallet = normalizeWallet(wallet);
+  const normalizedWallet = normalizeRouteWallet(wallet);
 
   if (!normalizedWallet) {
     return <Navigate to="/profile" replace />;
