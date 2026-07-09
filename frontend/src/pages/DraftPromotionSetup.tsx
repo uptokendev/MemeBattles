@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Archive, Copy, Eye, Flame, LockKeyhole, Rocket, Save, ShieldCheck } from "lucide-react";
+import { Archive, Copy, Eye, Flame, ImageIcon, LockKeyhole, Rocket, Save, ShieldCheck, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
   type PrepareDraftBundle,
 } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { apiFetch } from "@/lib/apiBase";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { getActiveChainId, getChainLabel, isSolanaChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { normalizeSocialUrl } from "@/lib/socialLinks";
@@ -25,6 +26,8 @@ const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
     .trim()
     .toLowerCase()
 );
+
+const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function splitLines(value: string) {
   return value
@@ -68,10 +71,35 @@ function getCachedLogo(draftId: string) {
   }
 }
 
+function setCachedLogo(draftId: string, logoUrl: string) {
+  if (typeof window === "undefined" || !draftId || !logoUrl) return;
+  try {
+    window.sessionStorage.setItem(`mwz:draft-logo:${draftId}`, logoUrl);
+  } catch {
+    // Ignore cache failures.
+  }
+}
+
 function TokenImage({ src, ticker }: { src?: string | null; ticker: string }) {
+  const [failedSrc, setFailedSrc] = useState("");
+  const safeSrc = src && src !== failedSrc ? src : "";
+
+  useEffect(() => {
+    setFailedSrc("");
+  }, [src]);
+
   return (
     <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-orange-400/50 bg-[radial-gradient(circle_at_30%_25%,rgba(57,255,122,0.95),rgba(0,65,28,0.95)_52%,rgba(0,0,0,0.78))] font-retro text-xl text-white shadow-[0_0_28px_rgba(57,255,122,0.22)] lg:h-24 lg:w-24">
-      {src ? <img src={src} alt={`${ticker} logo`} className="h-full w-full object-cover" /> : `$${ticker}`}
+      {safeSrc ? (
+        <img
+          src={safeSrc}
+          alt={`${ticker} logo`}
+          className="h-full w-full object-cover"
+          onError={() => setFailedSrc(String(safeSrc))}
+        />
+      ) : (
+        `$${ticker}`
+      )}
     </div>
   );
 }
@@ -94,9 +122,12 @@ export default function DraftPromotionSetup() {
   const navigate = useNavigate();
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [cachedLogoUrl, setCachedLogoUrl] = useState("");
 
   const [missionStatement, setMissionStatement] = useState("");
@@ -147,32 +178,25 @@ export default function DraftPromotionSetup() {
     setLoading(true);
 
     const loadDraft = async () => {
-      try {
-        const viewer = solanaWallet.solanaAccount || wallet.account || null;
-        const first = await fetchCampaignDraft(draftId, viewer).catch((err: any) => {
-          if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
-          throw err;
-        });
-
-        if (first) return first;
-
-        const readAuth = solanaWallet.solanaAccount
-          ? await signSolanaDraftAction({ walletAddress: solanaWallet.solanaAccount, chainId: SOLANA_CHAIN_ID, action: "read_draft", draftId })
-          : await signDraftAction({
-              signer: wallet.signer,
-              walletAddress: wallet.account || "",
-              chainId: getActiveChainId(wallet.chainId),
-              action: "read_draft",
-              draftId,
-            });
-
-        return fetchCampaignDraftWithAuth(draftId, readAuth);
-      } catch (err: any) {
-        if (String(err?.message || "").toLowerCase().includes("wallet signature chain")) {
-          throw new Error("Wrong network for this draft. Switch your connected wallet network and try again.");
-        }
+      const viewer = solanaWallet.solanaAccount || wallet.account || null;
+      const first = await fetchCampaignDraft(draftId, viewer).catch((err: any) => {
+        if (String(err?.message || "").toLowerCase().includes("private draft")) return null;
         throw err;
-      }
+      });
+
+      if (first) return first;
+
+      const readAuth = solanaWallet.solanaAccount
+        ? await signSolanaDraftAction({ walletAddress: solanaWallet.solanaAccount, chainId: SOLANA_CHAIN_ID, action: "read_draft", draftId })
+        : await signDraftAction({
+            signer: wallet.signer,
+            walletAddress: wallet.account || "",
+            chainId: getActiveChainId(wallet.chainId),
+            action: "read_draft",
+            draftId,
+          });
+
+      return fetchCampaignDraftWithAuth(draftId, readAuth);
     };
 
     void loadDraft()
@@ -209,6 +233,45 @@ export default function DraftPromotionSetup() {
     ];
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [logoUrl, missionStatement, launchStrategy, xUrl, telegramUrl, discordUrl, websiteUrl, visibility]);
+
+  const uploadLogoFile = async (file: File) => {
+    if (!draft) throw new Error("Draft is not loaded yet.");
+    if (!ownerConnected) throw new Error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before uploading.`);
+    if (file.size > MAX_LOGO_UPLOAD_BYTES) throw new Error("Image is too large. Max upload size is 5 MB.");
+    if (!/^(image\/png|image\/jpeg|image\/jpg|image\/webp)$/.test(file.type)) throw new Error("Unsupported image type. Use PNG, JPG, or WebP.");
+
+    const fd = new FormData();
+    fd.append("file", file);
+    const qs = new URLSearchParams({
+      kind: "logo",
+      chainId: String(draft.chainId),
+      address: draft.creatorWallet,
+      draftId: draft.id,
+    });
+
+    const res = await apiFetch(`/api/upload?${qs.toString()}`, { method: "POST", body: fd });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(json?.error || json?.message || `Upload failed (${res.status})`));
+    if (!json?.url) throw new Error("Upload succeeded but no image URL was returned.");
+    return { url: String(json.url), persisted: Boolean(json.persistedDraftLogo) };
+  };
+
+  const handleLogoSelected = async (file: File) => {
+    setUploadingLogo(true);
+    const toastId = toast.loading("Uploading image...");
+    try {
+      const { url, persisted } = await uploadLogoFile(file);
+      setCachedLogo(draftId, url);
+      setCachedLogoUrl(url);
+      setBundle((current) => current ? { ...current, draft: { ...current.draft, logoUrl: url } } : current);
+      toast.success(persisted ? "Image uploaded and saved." : "Image uploaded. Save the draft page to keep it.");
+    } catch (err: any) {
+      toast.error(err?.message || "Image upload failed.");
+    } finally {
+      setUploadingLogo(false);
+      toast.dismiss(toastId);
+    }
+  };
 
   const save = async (options?: { publish?: boolean; preview?: boolean }) => {
     const publish = Boolean(options?.publish);
@@ -273,17 +336,14 @@ export default function DraftPromotionSetup() {
 
   const archiveCurrentDraft = async () => {
     if (!draft) return;
-
     if (!ownerConnected) {
       toast.error(`Connect the draft owner ${isSolanaDraft ? "Solana" : "BNB"} wallet before archiving.`);
       return;
     }
-
     if (draft.status === "deployed") {
       toast.error("Deployed drafts cannot be archived.");
       return;
     }
-
     const confirmed = window.confirm(`Archive ${draft.name} / $${draft.ticker}? This removes it from public Prepare Mode listings.`);
     if (!confirmed) return;
 
@@ -337,10 +397,10 @@ export default function DraftPromotionSetup() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{draft.status.replace(/_/g, " ")}</span>
-              <Button onClick={() => save()} disabled={saving} variant="outline" className="mwz-button h-8 px-3 text-xs">
+              <Button onClick={() => save()} disabled={saving || uploadingLogo} variant="outline" className="mwz-button h-8 px-3 text-xs">
                 <Save className="mr-1 h-3 w-3" /> Save
               </Button>
-              <Button onClick={() => save({ preview: true })} disabled={saving} variant="outline" className="mwz-button h-8 px-3 text-xs">
+              <Button onClick={() => save({ preview: true })} disabled={saving || uploadingLogo} variant="outline" className="mwz-button h-8 px-3 text-xs">
                 <Eye className="mr-1 h-3 w-3" /> Preview
               </Button>
             </div>
@@ -349,7 +409,29 @@ export default function DraftPromotionSetup() {
           <div className="mx-auto grid h-auto max-w-6xl gap-3 px-3 py-3 md:px-4 lg:h-[calc(100%-4.25rem)] lg:grid-rows-[auto_1fr_1fr_auto] lg:overflow-hidden">
             <section className="mwz-card p-3">
               <div className="grid gap-3 md:grid-cols-[auto_1fr_1fr] md:items-center">
-                <TokenImage src={logoUrl} ticker={draft.ticker} />
+                <div className="flex flex-col items-start gap-2">
+                  <TokenImage src={logoUrl} ticker={draft.ticker} />
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void handleLogoSelected(file);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={!ownerConnected || saving || uploadingLogo}
+                    variant="outline"
+                    className="mwz-button h-8 px-3 text-xs"
+                  >
+                    {uploadingLogo ? <><UploadCloud className="mr-1 h-3 w-3 animate-pulse" /> Uploading</> : <><ImageIcon className="mr-1 h-3 w-3" /> Upload image</>}
+                  </Button>
+                </div>
                 <div className="min-w-0">
                   <FieldLabel>Name</FieldLabel>
                   <Input value={draft.name} readOnly className="h-11 border-dashed border-border/80 bg-background/30 font-retro text-xl uppercase tracking-[0.08em] lg:text-2xl" />
@@ -365,7 +447,7 @@ export default function DraftPromotionSetup() {
                   </div>
                 </div>
               </div>
-              {!ownerConnected && <p className="mt-2 text-xs text-orange-300">Connect {shortWallet(draft.creatorWallet)} with a {isSolanaDraft ? "Solana" : "BNB"} wallet to save or publish this draft.</p>}
+              {!ownerConnected && <p className="mt-2 text-xs text-orange-300">Connect {shortWallet(draft.creatorWallet)} with a {isSolanaDraft ? "Solana" : "BNB"} wallet to upload, save, or publish this draft.</p>}
             </section>
 
             <section className="grid min-h-0 gap-3 md:grid-cols-2">
@@ -462,7 +544,7 @@ export default function DraftPromotionSetup() {
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">Image, mission, launch plan, one comms channel, and visibility.</p>
             {isSolanaDraft ? <p className="mt-2 text-xs leading-5 text-sky-200">Solana promotion setup uses Solana wallet signatures. Push Live unlocks after the Solana protocol adapter is connected.</p> : null}
-            <Button onClick={() => save({ publish: true })} disabled={saving || !ownerConnected} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
+            <Button onClick={() => save({ publish: true })} disabled={saving || uploadingLogo || !ownerConnected} className="mwz-button mwz-button-orange mt-3 h-10 w-full justify-center font-retro">
               <Rocket className="mr-2 h-4 w-4" /> Publish promotion
             </Button>
             {canPushLive && (
@@ -477,8 +559,8 @@ export default function DraftPromotionSetup() {
               )
             )}
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button onClick={() => save()} disabled={saving || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Save className="mr-2 h-4 w-4" /> Save</Button>
-              <Button onClick={() => save({ preview: true })} disabled={saving || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Eye className="mr-2 h-4 w-4" /> Preview</Button>
+              <Button onClick={() => save()} disabled={saving || uploadingLogo || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Save className="mr-2 h-4 w-4" /> Save</Button>
+              <Button onClick={() => save({ preview: true })} disabled={saving || uploadingLogo || !ownerConnected} variant="outline" className="mwz-button h-9 justify-center font-retro text-xs"><Eye className="mr-2 h-4 w-4" /> Preview</Button>
             </div>
           </div>
 
@@ -490,8 +572,8 @@ export default function DraftPromotionSetup() {
           </div>
 
           <div className="mwz-card mb-3 p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground"><ShieldCheck className="h-4 w-4 text-orange-300" /> Fixed setup sections</div>
-            {["Identity", "Mission", "Strategy", "Comms", "Docs + Note"].map((name, index) => (
+            <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground"><ShieldCheck className="h-4 w-4 text-orange-300" /> Setup sections</div>
+            {["Identity + image", "Mission", "Strategy", "Comms", "Docs + Note"].map((name, index) => (
               <div key={name} className="flex items-center gap-3 border-b border-border/40 py-1.5 last:border-b-0">
                 <LockKeyhole className="h-3.5 w-3.5 text-orange-300" />
                 <div className="min-w-0 flex-1 font-retro text-xs text-foreground">{name}</div>
@@ -504,7 +586,7 @@ export default function DraftPromotionSetup() {
             <div className="mb-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">// Actions</div>
             <div className="grid gap-2">
               <Button onClick={copyLink} variant="outline" className="mwz-button h-9 w-full justify-center font-retro text-xs"><Flame className="mr-2 h-4 w-4" /> Copy link</Button>
-              <Button onClick={archiveCurrentDraft} disabled={saving || !ownerConnected || draft.status === "deployed" || draft.status === "archived"} variant="outline" className="mwz-button h-9 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200">
+              <Button onClick={archiveCurrentDraft} disabled={saving || uploadingLogo || !ownerConnected || draft.status === "deployed" || draft.status === "archived"} variant="outline" className="mwz-button h-9 w-full justify-center border-red-500/40 text-xs text-red-300 hover:border-red-400 hover:text-red-200">
                 <Archive className="mr-2 h-4 w-4" /> {draft.status === "archived" ? "Draft Archived" : "Archive Draft"}
               </Button>
             </div>
