@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import formidable from "formidable";
 import fs from "fs";
 import crypto from "crypto";
-import { normalizeAddress } from "../server/http.js";
+import { isSolanaAddress, normalizeAddress } from "../server/http.js";
 
 export const config = {
   api: { bodyParser: false },
@@ -50,9 +50,12 @@ function isSolanaUploadChain(chainId) {
 function normalizeUploadAddress(raw, chainId) {
   const input = String(raw || "").trim();
   if (!input) return "";
-  const normalized = normalizeAddress(input, chainId);
-  if (normalized) return normalized;
-  return isSolanaUploadChain(chainId) ? input : input.toLowerCase();
+
+  if (isSolanaUploadChain(chainId)) {
+    return isSolanaAddress(input) ? input : "";
+  }
+
+  return normalizeAddress(input, chainId);
 }
 
 export default async function handler(req, res) {
