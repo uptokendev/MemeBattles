@@ -47,7 +47,7 @@ type UnifiedWalletOption =
       sortScore: number;
     };
 
-const INITIAL_VISIBLE_WALLETS = 3;
+const INITIAL_VISIBLE_WALLETS = 4;
 
 function shortAddress(address: string) {
   if (!address) return "";
@@ -65,6 +65,28 @@ function getWalletError(error: unknown) {
   }
 
   return "Wallet connection failed. Please try again from the wallet popup.";
+}
+
+function normalizedName(value: string) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function walletPriority(option: UnifiedWalletOption) {
+  const id = normalizedName(String(option.id));
+  const name = normalizedName(option.name);
+  const key = `${id}:${name}`;
+
+  if (option.kind === "evm" && (id.includes("metamask") || name.includes("metamask"))) return 1000;
+  if (option.kind === "solana" && (id.includes("phantom") || name.includes("phantom"))) return 990;
+  if (option.kind === "solana" && (id.includes("solflare") || name.includes("solflare"))) return 980;
+  if (option.kind === "solana" && (id.includes("backpack") || name.includes("backpack"))) return 970;
+  if (key.includes("cryptocom") || key.includes("crypto.com")) return 960;
+  if (id.includes("rabby") || name.includes("rabby")) return 950;
+  if (id.includes("coinbase") || name.includes("coinbase")) return 940;
+  if (id.includes("trust") || name.includes("trust")) return 930;
+  if (id.includes("okx") || name.includes("okx")) return 920;
+  if (option.kind === "evm") return 800 + option.sortScore;
+  return 700 + option.sortScore;
 }
 
 function WalletIcon({ option }: { option: UnifiedWalletOption }) {
@@ -189,7 +211,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
           description: "Solana mainnet wallet.",
           icon: wallet.icon,
           detected: true,
-          sortScore: 120 - index,
+          sortScore: 90 - index,
         }))
       : [];
 
@@ -201,7 +223,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
         seen.add(key);
         return true;
       })
-      .sort((a, b) => b.sortScore - a.sortScore || a.name.localeCompare(b.name));
+      .sort((a, b) => walletPriority(b) - walletPriority(a) || b.sortScore - a.sortScore || a.name.localeCompare(b.name));
   }, [availableSolanaWallets, detectedWallets, filter]);
 
   const visibleWallets = moreWalletsOpen ? walletOptions : walletOptions.slice(0, INITIAL_VISIBLE_WALLETS);
@@ -286,6 +308,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     setMoreWalletsOpen(false);
     detectWallets();
 
+    const timers = [80, 250, 700, 1400].map((delay) => window.setTimeout(() => detectWallets(), delay));
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -296,6 +319,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
