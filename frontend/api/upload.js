@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import formidable from "formidable";
 import fs from "fs";
 import crypto from "crypto";
+import { pool } from "../server/db.js";
 import { isSolanaAddress, normalizeAddress } from "../server/http.js";
 
 export const config = {
@@ -58,6 +59,27 @@ function normalizeUploadAddress(raw, chainId) {
   return normalizeAddress(input, chainId);
 }
 
+async function persistDraftLogo({ draftId, chainId, address, publicUrl }) {
+  const id = String(draftId || "").trim();
+  if (!id || !address || !publicUrl || !pool) return false;
+
+  try {
+    const { rowCount } = await pool.query(
+      `update public.campaign_drafts
+          set logo_url = $1,
+              updated_at = now()
+        where id::text = $2
+          and chain_id = $3
+          and creator_wallet = $4`,
+      [publicUrl, id, Number(chainId), address],
+    );
+    return Number(rowCount || 0) > 0;
+  } catch (error) {
+    console.warn("[api/upload] failed to persist draft logo", error?.message || error);
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
@@ -65,6 +87,7 @@ export default async function handler(req, res) {
   const kind = String(q.kind || "avatar");
   const chainId = Number(q.chainId || 97);
   const address = normalizeUploadAddress(q.address, chainId);
+  const draftId = String(q.draftId || "").trim();
 
   const maxBytes = 5 * 1024 * 1024;
   const form = formidable({ multiples: false, maxFileSize: maxBytes, maxTotalFileSize: maxBytes });
@@ -92,7 +115,7 @@ export default async function handler(req, res) {
     if (!supabaseUrl || !supabaseKey) {
       console.warn("[api/upload] Supabase storage envs missing - using in-memory data URL (local dev only). Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for real uploads.");
       const dataUrl = `data:${mimetype};base64,${buf.toString("base64")}`;
-      return res.status(200).json({ url: dataUrl });
+      return res.status(200).json({ url: dataUrl, persistedDraftLogo: false });
     }
 
     let supabase;
@@ -112,7 +135,12 @@ export default async function handler(req, res) {
 
     const { data } = supabase.storage.from(bucket).getPublicUrl(name);
     if (!data?.publicUrl) return bad(res, 500, "Failed to produce public URL");
-    return res.status(200).json({ url: data.publicUrl });
+
+    const persistedDraftLogo = kind === "logo" && draftId
+      ? await persistDraftLogo({ draftId, chainId, address, publicUrl: data.publicUrl })
+      : false;
+
+    return res.status(200).json({ url: data.publicUrl, persistedDraftLogo });
   } catch (e) {
     console.error("[api/upload]", e);
     return bad(res, 500, "Server error");
