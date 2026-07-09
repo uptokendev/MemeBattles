@@ -287,18 +287,12 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                 <div>
                   <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-accent">
                     <Sparkles className="h-3.5 w-3.5" />
-                    Manual wallet flow
+                    Connect Wallet
                   </div>
                   <h2 id="connect-wallet-title" className="font-retro text-xl text-foreground sm:text-2xl">
-                    Connect a wallet
+                    Welcome back Soldier
                   </h2>
-                  <p className="mt-2 max-w-[420px] text-sm leading-relaxed text-muted-foreground">
-                    {filter === "evm"
-                      ? "Connect a BNB Chain (EVM) wallet. Phantom is excluded from the BNB/EVM path."
-                      : filter === "solana"
-                      ? "Connect a Solana wallet for Solana drafts. Nothing connects automatically."
-                      : "Choose BNB/EVM or Solana manually. MemeWarzone detects wallets, but never auto-connects on page load."}
-                  </p>
+
                 </div>
 
                 <button
@@ -311,22 +305,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                 </button>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Status</p>
-                  <p className="mt-1 truncate text-sm text-foreground">{statusCopy}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Network</p>
-                  <p className="mt-1 text-sm text-foreground">{networkCopy}</p>
-                </div>
-                <div className="rounded-2xl border border-border/60 bg-background/40 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Security</p>
-                  <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-foreground">
-                    <ShieldCheck className="h-3.5 w-3.5 text-accent" /> No seed phrases
-                  </p>
-                </div>
-              </div>
+              
             </div>
 
             <div className="relative max-h-[68vh] overflow-y-auto p-5 sm:p-6">
@@ -335,10 +314,6 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                       <CheckCircle2 className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-retro text-sm text-foreground">BNB/EVM wallet connected</p>
-                      <p className="text-xs text-muted-foreground">{shortAddress(account)}</p>
                     </div>
                   </div>
 
@@ -381,11 +356,6 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
               {(!filter || filter === "evm") && (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-retro text-sm text-foreground">BNB / EVM wallets</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Detected EVM wallets. Phantom is excluded here so it cannot be accidentally used for BNB trades.</p>
-                    </div>
-
                     <button
                       type="button"
                       onClick={handleRefresh}
@@ -446,17 +416,6 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-2 rounded-3xl border border-accent/15 bg-accent/5 p-4 text-xs leading-relaxed text-muted-foreground sm:grid-cols-3">
-                    <div>
-                      <span className="font-retro text-foreground">1.</span> Select a detected wallet.
-                    </div>
-                    <div>
-                      <span className="font-retro text-foreground">2.</span> Approve the account request in your wallet.
-                    </div>
-                    <div>
-                      <span className="font-retro text-foreground">3.</span> Switch chain in-wallet if needed.
-                    </div>
-                  </div>
                 </>
               )}
 
