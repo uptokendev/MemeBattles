@@ -2,10 +2,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   CheckCircle2,
-  ExternalLink,
+  ChevronDown,
   Loader2,
   RefreshCcw,
-  ShieldCheck,
   Sparkles,
   Wallet,
   X,
@@ -25,24 +24,30 @@ type ConnectWalletModalProps = {
   filter?: "evm" | "solana" | null;
 };
 
-type WalletDirectoryLink = {
-  label: string;
-  description: string;
-  href: string;
-};
+type UnifiedWalletOption =
+  | {
+      kind: "evm";
+      key: string;
+      id: WalletType;
+      name: string;
+      description: string;
+      icon?: string;
+      detected: boolean;
+      sortScore: number;
+      wallet: DetectedWallet;
+    }
+  | {
+      kind: "solana";
+      key: string;
+      id: string;
+      name: string;
+      description: string;
+      icon: string;
+      detected: boolean;
+      sortScore: number;
+    };
 
-const walletDirectoryLinks: WalletDirectoryLink[] = [
-  {
-    label: "BNB Chain wallets",
-    description: "Wallets known to work with BNB Smart Chain and BSC dApps.",
-    href: "https://www.bnbchain.org/en/wallets",
-  },
-  {
-    label: "Ethereum wallet finder",
-    description: "Browse more EVM-compatible wallets from ethereum.org.",
-    href: "https://ethereum.org/en/wallets/find-wallet/",
-  },
-];
+const INITIAL_VISIBLE_WALLETS = 3;
 
 function shortAddress(address: string) {
   if (!address) return "";
@@ -62,62 +67,70 @@ function getWalletError(error: unknown) {
   return "Wallet connection failed. Please try again from the wallet popup.";
 }
 
-function WalletIcon({ wallet }: { wallet: DetectedWallet }) {
+function WalletIcon({ option }: { option: UnifiedWalletOption }) {
   const [imageFailed, setImageFailed] = useState(false);
 
-  if (wallet.icon && !imageFailed) {
+  if (option.kind === "evm" && option.icon && !imageFailed) {
     return (
       <img
-        src={wallet.icon}
+        src={option.icon}
         alt=""
-        className="h-10 w-10 rounded-2xl object-cover shadow-[0_0_30px_-12px_rgba(240,106,26,0.9)]"
+        className="h-10 w-10 rounded-2xl object-cover shadow-[0_0_26px_-12px_rgba(240,106,26,0.9)]"
         onError={() => setImageFailed(true)}
       />
     );
   }
 
+  if (option.kind === "solana") {
+    return (
+      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-xl text-purple-300 shadow-[0_0_26px_-12px_rgba(168,85,247,0.9)]">
+        {option.icon || getWalletInitial(option.name)}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 font-retro text-sm text-accent shadow-[0_0_30px_-12px_rgba(240,106,26,0.9)]">
-      {getWalletInitial(wallet.name)}
+    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 font-retro text-sm text-accent shadow-[0_0_26px_-12px_rgba(240,106,26,0.9)]">
+      {getWalletInitial(option.name)}
     </div>
   );
 }
 
-function WalletCard({
-  wallet,
+function WalletRow({
+  option,
   disabled,
   connecting,
   onConnect,
 }: {
-  wallet: DetectedWallet;
+  option: UnifiedWalletOption;
   disabled: boolean;
   connecting: boolean;
-  onConnect: (wallet: DetectedWallet) => void;
+  onConnect: (option: UnifiedWalletOption) => void;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => onConnect(wallet)}
-      className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card disabled:cursor-not-allowed disabled:opacity-70"
+      onClick={() => onConnect(option)}
+      className="group relative w-full overflow-hidden rounded-2xl border border-border/70 bg-card/80 px-3 py-3 text-left transition-all duration-200 hover:border-accent/45 hover:bg-card disabled:cursor-not-allowed disabled:opacity-70"
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/15 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
       <div className="relative flex items-center gap-3">
-        <WalletIcon wallet={wallet} />
+        <WalletIcon option={option} />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate font-retro text-sm text-foreground">{wallet.name}</p>
-            {wallet.source === "eip6963" && (
-              <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-accent">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate font-retro text-sm text-foreground">{option.name}</p>
+            {option.detected && (
+              <span className={`${option.kind === "solana" ? "border-purple-400/30 bg-purple-400/10 text-purple-300" : "border-accent/30 bg-accent/10 text-accent"} rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em]`}>
                 detected
               </span>
             )}
           </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{wallet.description}</p>
+          <p className="mt-1 line-clamp-1 text-xs leading-relaxed text-muted-foreground">{option.description}</p>
         </div>
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
           {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
         </div>
       </div>
@@ -148,8 +161,51 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
   } = useSolanaWallet();
   const [selectedWalletId, setSelectedWalletId] = useState<WalletType | null>(null);
   const [selectedSolanaWalletId, setSelectedSolanaWalletId] = useState<string | null>(null);
+  const [moreWalletsOpen, setMoreWalletsOpen] = useState(false);
 
   const isBusy = connecting || Boolean(selectedWalletId) || Boolean(selectedSolanaWalletId) || connectingSolana;
+
+  const walletOptions = useMemo<UnifiedWalletOption[]>(() => {
+    const evmOptions: UnifiedWalletOption[] = (!filter || filter === "evm")
+      ? detectedWallets.map((wallet) => ({
+          kind: "evm" as const,
+          key: `evm:${wallet.id}:${wallet.rdns || wallet.name}`,
+          id: wallet.id,
+          name: wallet.name,
+          description: wallet.description || "Injected EVM browser wallet.",
+          icon: wallet.icon,
+          detected: wallet.source === "eip6963",
+          sortScore: wallet.sortScore,
+          wallet,
+        }))
+      : [];
+
+    const solanaOptions: UnifiedWalletOption[] = (!filter || filter === "solana")
+      ? availableSolanaWallets.map((wallet, index) => ({
+          kind: "solana" as const,
+          key: `solana:${wallet.id}:${wallet.name}`,
+          id: wallet.id,
+          name: wallet.name,
+          description: "Solana mainnet wallet.",
+          icon: wallet.icon,
+          detected: true,
+          sortScore: 120 - index,
+        }))
+      : [];
+
+    const seen = new Set<string>();
+    return [...evmOptions, ...solanaOptions]
+      .filter((option) => {
+        const key = `${option.kind}:${option.id}:${option.name}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => b.sortScore - a.sortScore || a.name.localeCompare(b.name));
+  }, [availableSolanaWallets, detectedWallets, filter]);
+
+  const visibleWallets = moreWalletsOpen ? walletOptions : walletOptions.slice(0, INITIAL_VISIBLE_WALLETS);
+  const hiddenWalletCount = Math.max(0, walletOptions.length - visibleWallets.length);
 
   const handleClose = useCallback(() => {
     if (!isBusy) onOpenChange(false);
@@ -177,6 +233,27 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     [connect, onOpenChange],
   );
 
+  const handleUnifiedConnect = useCallback(
+    async (option: UnifiedWalletOption) => {
+      if (option.kind === "evm") {
+        await handleConnect(option.wallet);
+        return;
+      }
+      setSelectedSolanaWalletId(option.id);
+
+      try {
+        await connectSolana(option.id);
+        toast.success(`Connected ${option.name}`);
+        onOpenChange(false);
+      } catch (error: any) {
+        toast.error(error?.message || "Failed to connect Solana wallet");
+      } finally {
+        setSelectedSolanaWalletId(null);
+      }
+    },
+    [connectSolana, handleConnect, onOpenChange],
+  );
+
   const handleDisconnect = useCallback(async () => {
     try {
       await disconnect();
@@ -197,41 +274,16 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     }
   }, [disconnectSolana, onOpenChange]);
 
-  const handleSolanaConnect = useCallback(
-    async (walletId: string, walletName: string) => {
-      setSelectedSolanaWalletId(walletId);
-
-      try {
-        await connectSolana(walletId);
-        toast.success(`Connected ${walletName}`);
-        onOpenChange(false);
-      } catch (error: any) {
-        toast.error(error?.message || "Failed to connect Solana wallet");
-      } finally {
-        setSelectedSolanaWalletId(null);
-      }
-    },
-    [connectSolana, onOpenChange],
-  );
-
-  const statusCopy = useMemo(() => {
-    if (isConnected && account) return `BNB connected: ${shortAddress(account)}`;
-    if (isSolanaConnected && solanaAccount) return `Solana connected: ${shortAddress(solanaAccount)}`;
-    const evmCount = detectedWallets.length;
-    const solCount = availableSolanaWallets.length;
-    if (evmCount || solCount) return `${evmCount} EVM / ${solCount} Solana detected`;
-    return "No wallet connected";
-  }, [account, availableSolanaWallets.length, detectedWallets.length, isConnected, isSolanaConnected, solanaAccount]);
-
-  const networkCopy = useMemo(() => {
-    if (isConnected && chainId) return `BNB chain ${chainId}`;
-    if (isSolanaConnected) return "Solana mainnet";
-    return "Choose manually";
-  }, [chainId, isConnected, isSolanaConnected]);
+  const connectedSummary = useMemo(() => {
+    if (isConnected && account) return { label: "BNB wallet connected", detail: `${chainId ? `Chain ${chainId} · ` : ""}${shortAddress(account)}`, accent: "accent" as const };
+    if (isSolanaConnected && solanaAccount) return { label: "Solana wallet connected", detail: `${solanaWalletName ? `${solanaWalletName} · ` : ""}${shortAddress(solanaAccount)}`, accent: "solana" as const };
+    return null;
+  }, [account, chainId, isConnected, isSolanaConnected, solanaAccount, solanaWalletName]);
 
   useEffect(() => {
     if (!open) return;
 
+    setMoreWalletsOpen(false);
     detectWallets();
 
     const originalOverflow = document.body.style.overflow;
@@ -272,201 +324,124 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
             role="dialog"
             aria-modal="true"
             aria-labelledby="connect-wallet-title"
-            className="relative my-8 w-full max-w-[560px] overflow-hidden rounded-[2rem] border border-accent/25 bg-card/95 shadow-[0_30px_120px_-40px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.08)]"
+            className="relative my-8 w-full max-w-[420px] overflow-hidden rounded-[1.65rem] border border-accent/25 bg-card/95 shadow-[0_30px_120px_-40px_rgba(0,0,0,0.95),0_0_0_1px_rgba(240,106,26,0.08)]"
             initial={{ opacity: 0, y: 24, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.98 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
           >
-            <div className="pointer-events-none absolute -left-24 -top-24 h-56 w-56 rounded-full bg-accent/20 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-primary/30 blur-3xl" />
+            <div className="pointer-events-none absolute -left-20 -top-24 h-48 w-48 rounded-full bg-accent/15 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-20 -right-20 h-52 w-52 rounded-full bg-primary/25 blur-3xl" />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/80 to-transparent" />
 
-            <div className="relative border-b border-border/60 p-5 sm:p-6">
+            <div className="relative border-b border-border/55 px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-accent">
-                    <Sparkles className="h-3.5 w-3.5" />
+                  <div className="mb-3 inline-flex items-center gap-2 border border-accent/25 bg-accent/10 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-accent">
+                    <Sparkles className="h-3 w-3" />
                     Connect Wallet
                   </div>
-                  <h2 id="connect-wallet-title" className="font-retro text-xl text-foreground sm:text-2xl">
+                  <h2 id="connect-wallet-title" className="font-retro text-xl text-foreground">
                     Welcome back Soldier
                   </h2>
-
                 </div>
 
                 <button
                   type="button"
                   onClick={handleClose}
                   disabled={isBusy}
-                  className="rounded-2xl border border-border/70 bg-background/50 p-2 text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  className="border border-border/70 bg-background/50 p-2 text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
-
-              
             </div>
 
-            <div className="relative max-h-[68vh] overflow-y-auto p-5 sm:p-6">
-              {isConnected && account && (
-                <div className="mb-4 flex flex-col gap-3 rounded-3xl border border-accent/25 bg-accent/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/15 text-accent">
-                      <CheckCircle2 className="h-5 w-5" />
+            <div className="relative max-h-[68vh] overflow-y-auto p-5">
+              {connectedSummary && (
+                <div className={`${connectedSummary.accent === "solana" ? "border-purple-400/25 bg-purple-500/10" : "border-accent/25 bg-accent/10"} mb-4 flex items-center justify-between gap-3 rounded-2xl border p-3`}>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={`${connectedSummary.accent === "solana" ? "bg-purple-500/15 text-purple-300" : "bg-accent/15 text-accent"} flex h-9 w-9 shrink-0 items-center justify-center rounded-xl`}>
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-retro text-sm text-foreground">{connectedSummary.label}</p>
+                      <p className="truncate text-xs text-muted-foreground">{connectedSummary.detail}</p>
                     </div>
                   </div>
-
                   <button
                     type="button"
-                    onClick={handleDisconnect}
+                    onClick={connectedSummary.accent === "solana" ? handleSolanaDisconnect : handleDisconnect}
                     disabled={isBusy}
-                    className="rounded-2xl border border-border/70 bg-background/60 px-4 py-2 text-xs text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
+                    className="shrink-0 rounded-xl border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Disconnect
                   </button>
                 </div>
               )}
 
-              {isSolanaConnected && solanaAccount && (
-                <div className="mb-4 flex flex-col gap-3 rounded-3xl border border-purple-400/25 bg-purple-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-300">
-                      <CheckCircle2 className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-retro text-sm text-foreground">Solana wallet connected</p>
-                      <p className="text-xs text-muted-foreground">
-                        {solanaWalletName ? `${solanaWalletName} · ` : ""}{shortAddress(solanaAccount)}
-                      </p>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-retro text-sm text-foreground">Detected wallets</p>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isBusy}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-background/50 px-2.5 py-1.5 text-xs text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                  Refresh
+                </button>
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSolanaDisconnect}
-                    disabled={isBusy}
-                    className="rounded-2xl border border-border/70 bg-background/60 px-4 py-2 text-xs text-muted-foreground transition hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              )}
-
-              {(!filter || filter === "evm") && (
-                <>
-                  <div className="flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={handleRefresh}
+              <div className="mt-3 space-y-2">
+                {visibleWallets.length > 0 ? (
+                  visibleWallets.map((option) => (
+                    <WalletRow
+                      key={option.key}
+                      option={option}
                       disabled={isBusy}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-background/50 px-3 py-2 text-xs text-muted-foreground transition hover:border-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCcw className="h-3.5 w-3.5" />
-                      Refresh
-                    </button>
+                      connecting={
+                        option.kind === "evm"
+                          ? selectedWalletId === option.id || connectingWalletId === option.id
+                          : connectingSolana && selectedSolanaWalletId === option.id
+                      }
+                      onConnect={handleUnifiedConnect}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border/80 bg-background/35 p-5 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent">
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <p className="mt-3 font-retro text-sm text-foreground">No wallet detected</p>
+                    <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                      Unlock your wallet extension, then refresh. On mobile, open MemeWarzone inside your wallet browser.
+                    </p>
                   </div>
+                )}
 
-                  <div className="mt-4 space-y-3">
-                    {detectedWallets.length > 0 ? (
-                      detectedWallets.map((detectedWallet) => (
-                        <WalletCard
-                          key={`${detectedWallet.id}:${detectedWallet.rdns || detectedWallet.name}`}
-                          wallet={detectedWallet}
-                          disabled={isBusy}
-                          connecting={selectedWalletId === detectedWallet.id || connectingWalletId === detectedWallet.id}
-                          onConnect={handleConnect}
-                        />
-                      ))
-                    ) : (
-                      <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center">
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-accent/25 bg-accent/10 text-accent">
-                          <AlertTriangle className="h-5 w-5" />
-                        </div>
-                        <p className="mt-3 font-retro text-sm text-foreground">No EVM wallet detected</p>
-                        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-                          Install an EVM wallet extension like MetaMask, unlock it, then refresh. On mobile, open inside the wallet browser.
+                {walletOptions.length > INITIAL_VISIBLE_WALLETS && (
+                  <button
+                    type="button"
+                    onClick={() => setMoreWalletsOpen((value) => !value)}
+                    disabled={isBusy}
+                    className="group flex w-full items-center justify-between rounded-2xl border border-border/70 bg-background/45 px-3 py-3 text-left transition hover:border-accent/40 hover:bg-card disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/60 text-muted-foreground">
+                        <Wallet className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="font-retro text-sm text-foreground">More wallets</p>
+                        <p className="text-xs text-muted-foreground">
+                          {moreWalletsOpen ? "Hide extra detected wallets" : `Show ${hiddenWalletCount} more detected wallet${hiddenWalletCount === 1 ? "" : "s"}`}
                         </p>
                       </div>
-                    )}
-                  </div>
-
-                  <div className="mt-6 rounded-3xl border border-border/70 bg-background/35 p-4">
-                    <p className="font-retro text-sm text-foreground">Need another EVM wallet?</p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Use a trusted wallet directory instead of search ads. After installing, refresh this modal and the wallet should appear automatically.
-                    </p>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {walletDirectoryLinks.map((link) => (
-                        <a
-                          key={link.href}
-                          href={link.href}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="group rounded-2xl border border-border/60 bg-card/70 p-3 transition hover:border-accent/40 hover:bg-card"
-                        >
-                          <span className="flex items-center justify-between gap-2 text-sm text-foreground">
-                            {link.label}
-                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground transition group-hover:text-accent" />
-                          </span>
-                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{link.description}</span>
-                        </a>
-                      ))}
                     </div>
-                  </div>
-
-                </>
-              )}
-
-              {(!filter || filter === "solana") && (
-                <div className={filter === "solana" ? "" : "mt-6 border-t border-border/50 pt-6"}>
-                  <p className="font-retro text-sm text-foreground">Solana wallets</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Detected wallets for Solana mainnet drafts. This is separate from the BNB/EVM path above.</p>
-                  <div className="mt-3 space-y-3">
-                    {availableSolanaWallets.length > 0 ? (
-                      availableSolanaWallets.map((wallet) => (
-                        <button
-                          type="button"
-                          key={wallet.id}
-                          onClick={() => handleSolanaConnect(wallet.id, wallet.name)}
-                          disabled={isBusy}
-                          className="group relative w-full overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/50 hover:bg-card disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-transparent to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                          <div className="relative flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-purple-500/15 text-xl text-purple-400">
-                              {wallet.icon}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="truncate font-retro text-sm text-foreground">{wallet.name}</p>
-                                <span className="rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-purple-400">
-                                  detected
-                                </span>
-                              </div>
-                              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                                Solana mainnet - use for Solana drafts.
-                              </p>
-                            </div>
-                            <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-border/70 bg-background/50 text-muted-foreground transition-colors group-hover:border-accent/40 group-hover:text-accent">
-                              {connectingSolana && selectedSolanaWalletId === wallet.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Wallet className="h-4 w-4" />
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="rounded-3xl border border-dashed border-border/80 bg-background/35 p-5 text-center text-sm text-muted-foreground">
-                        No Solana wallets detected. Install Phantom, Solflare, Backpack, or Glow.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${moreWalletsOpen ? "rotate-180" : ""}`} />
+                  </button>
+                )}
+              </div>
             </div>
           </motion.section>
         </motion.div>
