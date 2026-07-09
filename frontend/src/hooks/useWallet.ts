@@ -215,6 +215,10 @@ function detectedWallet(provider: Eip1193Provider, source: "eip6963" | "legacy",
   return { id: brand.id, name: brand.name, description: brand.description, rdns: meta.rdns, icon: meta.icon, provider, source, installed: true, sortScore: brand.score + (source === "eip6963" ? 8 : 0) };
 }
 
+function knownWalletId(id: WalletType) {
+  return ["metamask", "rabby", "coinbase", "binance", "trust", "cryptocom", "okx", "phantom", "rainbow", "brave", "frame"].includes(String(id));
+}
+
 function detectedSnapshot(): DetectedWallet[] {
   if (typeof window === "undefined") return [];
   const wallets = [
@@ -224,23 +228,25 @@ function detectedSnapshot(): DetectedWallet[] {
 
   const seenProviders = new Set<Eip1193Provider>();
   const seenKeys = new Set<string>();
-  const seenIds = new Map<string, number>();
+  const seenBrands = new Set<string>();
+
   return wallets
+    .sort((a, b) => b.sortScore - a.sortScore || Number(Boolean(b.icon)) - Number(Boolean(a.icon)) || a.name.localeCompare(b.name))
     .filter((wallet) => {
       if ((wallet.provider as any)?.isPhantom) return false;
       if (seenProviders.has(wallet.provider)) return false;
-      const key = wallet.rdns || wallet.name || wallet.id;
-      if (seenKeys.has(key)) return false;
+
+      const rawKey = String(wallet.rdns || wallet.name || wallet.id).toLowerCase();
+      const brandKey = knownWalletId(wallet.id)
+        ? String(wallet.id).toLowerCase()
+        : rawKey.replace(/^(com|io)\./, "").replace(/[^a-z0-9]+/g, "-");
+
+      if (seenKeys.has(rawKey) || seenBrands.has(brandKey)) return false;
       seenProviders.add(wallet.provider);
-      seenKeys.add(key);
+      seenKeys.add(rawKey);
+      seenBrands.add(brandKey);
       return true;
-    })
-    .map((wallet) => {
-      const count = seenIds.get(wallet.id) ?? 0;
-      seenIds.set(wallet.id, count + 1);
-      return count > 0 ? { ...wallet, id: `${wallet.id}-${count + 1}` as WalletType } : wallet;
-    })
-    .sort((a, b) => b.sortScore - a.sortScore || a.name.localeCompare(b.name));
+    });
 }
 
 function walletSnapshotKey(wallet: DetectedWallet) {
