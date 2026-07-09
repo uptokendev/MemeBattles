@@ -71,6 +71,12 @@ import {
   recruiterLogout,
   recruiterPortal,
 } from "../../api/dev-fix/recruiter-portal.js";
+import {
+  recruiterMeClaims,
+  recruiterMePayouts,
+  recruiterMeWalletLink,
+} from "../../api/dev-fix/recruiter-payouts.js";
+import { rewardClaimConfig, rewardClaimIntent, rewardClaimRecord } from "../../api/dev-fix/reward-claim-intent.js";
 import { routingCreateAuthorization, routingStatus, routingTradeAuthorization } from "../../api/dev-fix/route-auth.js";
 import {
   airdropWinners,
@@ -232,7 +238,10 @@ app.all("/prepare-notifications", wrap(prepareNotifications));
 app.all("/rewards/me", wrap(rewardsMe));
 app.all("/rewards/me/history", wrap(rewardsHistory));
 app.all("/rewards/me/claims", wrap(rewardsClaims));
+app.all("/rewards/me/claim-intent", wrap(rewardClaimIntent));
+app.all("/rewards/me/claim-record", wrap(rewardClaimRecord));
 app.all("/rewards/me/eligibility", wrap(rewardsEligibility));
+app.all("/rewards/claim-config", wrap(rewardClaimConfig));
 app.all("/rewards", wrap(rewards));
 app.all("/airdrops/winners", wrap(airdropWinners));
 app.all("/squads", wrap(squadsLeaderboard));
@@ -247,6 +256,9 @@ app.all("/recruiters/wallet/:wallet/summary", wrap(recruiterWalletSummary));
 app.all("/recruiters/:code/summary", wrap(recruiterSummary));
 app.all("/recruiters/:code/replacements", wrap(recruiterReplacements));
 app.all("/recruiters/:code/referral/capture", wrap(recruiterReferralCapture));
+app.all("/recruiters/me/payouts", wrap(recruiterMePayouts));
+app.all("/recruiters/me/wallets/link", wrap(recruiterMeWalletLink));
+app.all("/recruiters/me/claims", wrap(recruiterMeClaims));
 app.all("/attribution/wallet-connect", wrap(attributionWalletConnect));
 app.all("/attribution/wallet/:wallet", wrap(attributionWallet));
 app.all("/routing/status", wrap(routingStatus));
