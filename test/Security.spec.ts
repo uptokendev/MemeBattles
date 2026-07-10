@@ -46,9 +46,9 @@ describe("Security & invariants", function () {
       totalSupply: ethers.parseEther("1000"),
       curveBps: 5000,
       liquidityTokenBps: 4000,
-      basePrice: 10n ** 12n,
+      basePrice: ethers.parseEther("0.005"),
       priceSlope: 10n ** 9n,
-      graduationTarget: 1n,
+      graduationTarget: ethers.parseEther("0.0051"),
       liquidityBps: 8000,
     });
 
@@ -57,7 +57,8 @@ describe("Security & invariants", function () {
     const info = await factory.getCampaign(count - 1n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
 
-    const buyTx = await campaign.connect(alice).buyExactBnb(0, { value: 1n });
+    const buyValue = await campaign.quoteBuyExactTokens(ethers.parseUnits("1", 18));
+    const buyTx = await campaign.connect(alice).buyExactBnb(0, { value: buyValue });
     const buyRc = await buyTx.wait();
 
     const finalized = buyRc!.logs.some((l: any) => l.fragment?.name === "CampaignFinalized");
