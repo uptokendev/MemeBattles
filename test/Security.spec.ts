@@ -160,7 +160,8 @@ describe("Security & invariants", function () {
     expect(reserves[0]).to.be.gt(0);
     expect(reserves[1]).to.be.gt(0);
     expect(await pair.totalSupply()).to.be.gt(0);
-    expect(await campaign.dexPair()).to.equal(await pair.getAddress());
+    const state = await campaign.getGraduationState();
+    expect(state[0]).to.equal(await pair.getAddress());
   });
 
   it("reentrancy defense: feeRecipient cannot re-enter claimPendingNative during buy", async function () {
