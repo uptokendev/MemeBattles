@@ -418,20 +418,21 @@ describe("LaunchCampaign", function () {
     const creatorReserve = await campaign.creatorReserve();
     expect(await token.balanceOf(ownerAddr)).to.be.gte(creatorReserve);
 
-    expect(await campaign.dexPair()).to.not.eq(ethers.ZeroAddress);
-    expect(await campaign.finalCurvePrice()).to.eq(await campaign.currentPrice());
-    expect(await campaign.initialDexPrice()).to.eq(await campaign.finalCurvePrice());
-    expect(ev!.args.finalCurvePrice).to.eq(await campaign.finalCurvePrice());
-    expect(ev!.args.initialDexPrice).to.eq(await campaign.initialDexPrice());
+    const state = await campaign.getGraduationState();
+    expect(state[0]).to.not.eq(ethers.ZeroAddress);
+    expect(state[1]).to.eq(await campaign.currentPrice());
+    expect(state[2]).to.eq(state[1]);
+    expect(ev!.args.finalCurvePrice).to.eq(state[1]);
+    expect(ev!.args.initialDexPrice).to.eq(state[2]);
 
     const totalSupply = await campaign.totalSupply();
     const soldAtFinalize = await campaign.sold();
     const expectedUnsoldBurn = curveSupply - soldAtFinalize;
-    const expectedUnusedLpBurn = await campaign.burnedUnusedLpTokens();
-    expect(await campaign.burnedUnsoldTokens()).to.eq(expectedUnsoldBurn);
+    const expectedUnusedLpBurn = state[7];
+    expect(state[6]).to.eq(expectedUnsoldBurn);
     expect(expectedUnusedLpBurn).to.be.gt(0n);
     expect(await token.totalSupply()).to.eq(totalSupply - expectedUnsoldBurn - expectedUnusedLpBurn);
-    expect(await campaign.postBurnTotalSupply()).to.eq(await token.totalSupply());
+    expect(state[8]).to.eq(await token.totalSupply());
   });
 
   it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
@@ -475,7 +476,8 @@ describe("LaunchCampaign", function () {
     await expect(tx).to.emit(campaign, "CampaignFinalized");
     await expect(tx).to.emit(router, "LiquidityAdded");
     expect(await token.tradingEnabled()).to.eq(true);
-    expect(await campaign.dexPair()).to.eq(await pair.getAddress());
+    const state = await campaign.getGraduationState();
+    expect(state[0]).to.eq(await pair.getAddress());
   });
 
   it("post-finalize: trading restriction lifted; buys/sells revert", async () => {
