@@ -13,6 +13,7 @@
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "gas": "REPORT_GAS=true hardhat test",
+    "size": "hardhat run scripts/check-contract-size.ts",
     "agents:plan": "node scripts/agents/plan.mjs",
     "agents:implement": "node scripts/agents/implement.mjs",
     "agents:check": "node scripts/agents/check.mjs",
