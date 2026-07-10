@@ -18,6 +18,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     error InvalidProof();
     error TransferFailed();
     error InsufficientUnclaimed();
+    error NotBatchOperator(address caller);
 
     struct Batch {
         bytes32 merkleRoot;
@@ -31,16 +32,29 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     mapping(bytes32 => Batch) public batches;
     mapping(bytes32 => mapping(address => bool)) public hasClaimed;
 
+    address public batchOperator;
+
+    event BatchOperatorUpdated(address indexed oldOperator, address indexed newOperator);
     event BatchCreated(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 totalFunded, uint64 claimDeadline);
     event BatchPauseUpdated(bytes32 indexed batchId, bool paused);
     event RewardClaimed(bytes32 indexed batchId, address indexed account, uint256 amount);
     event UnclaimedRecovered(bytes32 indexed batchId, address indexed recipient, uint256 amount);
 
+    modifier onlyOwnerOrBatchOperator() {
+        if (msg.sender != owner() && msg.sender != batchOperator) revert NotBatchOperator(msg.sender);
+        _;
+    }
+
     constructor(address initialOwner) Ownable(initialOwner) {}
 
     receive() external payable {}
 
-    function createBatch(bytes32 batchId, bytes32 merkleRoot, uint64 claimDeadline) external payable onlyOwner {
+    function setBatchOperator(address newOperator) external onlyOwner {
+        emit BatchOperatorUpdated(batchOperator, newOperator);
+        batchOperator = newOperator;
+    }
+
+    function createBatch(bytes32 batchId, bytes32 merkleRoot, uint64 claimDeadline) external payable onlyOwnerOrBatchOperator {
         if (batchId == bytes32(0) || merkleRoot == bytes32(0)) revert RootZero();
         if (msg.value == 0) revert AmountZero();
         if (batches[batchId].exists) revert BatchExists(batchId);
