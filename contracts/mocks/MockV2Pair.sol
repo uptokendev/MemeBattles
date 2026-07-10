@@ -3,10 +3,17 @@ pragma solidity ^0.8.24;
 
 /// @dev Minimal UniswapV2/PancakeV2 pair mock for tests.
 contract MockV2Pair {
+    address public token0;
+    address public token1;
     uint256 public totalSupply;
     uint112 private _r0;
     uint112 private _r1;
     uint32 private _ts;
+
+    function setTokens(address token0_, address token1_) external {
+        token0 = token0_;
+        token1 = token1_;
+    }
 
     function setTotalSupply(uint256 v) external {
         totalSupply = v;
