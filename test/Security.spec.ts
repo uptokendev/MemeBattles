@@ -19,6 +19,25 @@ const req = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+async function captureRouteBalances(vaults: any) {
+  return {
+    league: await ethers.provider.getBalance(await vaults.treasuryVault.getAddress()),
+    recruiter: await ethers.provider.getBalance(await vaults.recruiterVault.getAddress()),
+    airdrop: await vaults.communityVault.warzoneAirdropBalance(),
+    squad: await vaults.communityVault.squadPoolBalance(),
+    protocol: await ethers.provider.getBalance(await vaults.protocolVault.getAddress()),
+  };
+}
+
+async function expectRouteBalanceDelta(before: any, vaults: any, expected: any) {
+  const after = await captureRouteBalances(vaults);
+  expect(after.league - before.league).to.eq(expected.league);
+  expect(after.recruiter - before.recruiter).to.eq(expected.recruiter);
+  expect(after.airdrop - before.airdrop).to.eq(expected.airdrop);
+  expect(after.squad - before.squad).to.eq(expected.squad);
+  expect(after.protocol - before.protocol).to.eq(expected.protocol);
+}
+
 describe("Security & invariants", function () {
   it("auto-finalize cannot be skipped: completion buy flips launched in same tx", async function () {
     const { owner, creator, alice, factory } = await deployCoreFixture();
@@ -47,7 +66,17 @@ describe("Security & invariants", function () {
   });
 
   it("finalize fee amounts: protocolFee equals balanceBefore * protocolFeeBps / 10000", async function () {
-    const { owner, creator, alice, feeRecipient, factory } = await deployCoreFixture();
+    const {
+      owner,
+      creator,
+      alice,
+      factory,
+      treasuryRouter,
+      treasuryVault,
+      recruiterVault,
+      communityVault,
+      protocolVault,
+    } = await deployCoreFixture();
 
     await factory.connect(owner).setConfig({
       totalSupply: ethers.parseEther("1000"),
@@ -77,7 +106,8 @@ describe("Security & invariants", function () {
 
     const balanceBefore = await ethers.provider.getBalance(campaignAddr);
     const expectedFee = (balanceBefore * 200n) / 10_000n;
-    const feeRecipientBefore = await ethers.provider.getBalance(await feeRecipient.getAddress());
+    const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
+    const routeBefore = await captureRouteBalances(routeVaults);
 
     const finTx = await campaign.connect(creator).finalize(0, 0);
     const finRc = await finTx.wait();
@@ -95,8 +125,8 @@ describe("Security & invariants", function () {
     expect(finParsed).to.not.equal(null);
     expect((finParsed!.args[3] as bigint)).to.equal(expectedFee);
 
-    const feeRecipientAfter = await ethers.provider.getBalance(await feeRecipient.getAddress());
-    expect(feeRecipientAfter - feeRecipientBefore).to.equal(expectedFee);
+    const expectedRoute = await treasuryRouter.previewRoute(expectedFee, 1, await campaign.finalizeRouteProfile());
+    await expectRouteBalanceDelta(routeBefore, routeVaults, expectedRoute);
   });
 
   it("DEX reserves correctness: LP deploy results in non-zero pair reserves when pair is registered", async function () {
