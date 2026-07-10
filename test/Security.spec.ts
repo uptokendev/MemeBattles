@@ -48,7 +48,7 @@ describe("Security & invariants", function () {
       liquidityTokenBps: 4000,
       basePrice: ethers.parseEther("0.005"),
       priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("0.0051"),
+      graduationTarget: ethers.parseEther("0.005"),
       liquidityBps: 8000,
     });
 
