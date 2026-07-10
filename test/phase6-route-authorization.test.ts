@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
 const STANDARD_LINKED = 0;
 const STANDARD_UNLINKED = 1;
@@ -66,20 +67,9 @@ async function currentDeadline(offset = 3600) {
 }
 
 async function deployFixture() {
-  const [admin, routeAuthority, creator, trader, leagueVault, recruiterVault, communityVault, protocolVault, pancakeRouter] =
-    await ethers.getSigners();
+  const [admin, routeAuthority, creator, trader] = await ethers.getSigners();
 
-  const TreasuryRouter = await ethers.getContractFactory("TreasuryRouter");
-  const treasury = await TreasuryRouter.deploy(admin.address, leagueVault.address, 3600);
-  await treasury.waitForDeployment();
-  await treasury.connect(admin).setRecruiterRewardsVault(recruiterVault.address);
-  await treasury.connect(admin).setCommunityRewardsVault(communityVault.address);
-  await treasury.connect(admin).setProtocolRevenueVault(protocolVault.address);
-
-  const LaunchFactory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await LaunchFactory.deploy(pancakeRouter.address, await treasury.getAddress());
-  await factory.waitForDeployment();
-  await factory.connect(admin).setFeeRecipient(await treasury.getAddress());
+  const { factory, treasuryRouter: treasury } = await deployRoutedLaunchFactory(admin);
   await factory.connect(admin).setRouteAuthority(routeAuthority.address);
   await factory.connect(admin).enableLive();
 
