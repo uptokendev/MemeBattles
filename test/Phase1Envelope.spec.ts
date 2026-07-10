@@ -57,7 +57,7 @@ async function deployRoutedSystem() {
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
     liquidityTokenBps: 4000,
-    basePrice: 10n ** 12n,
+    basePrice: ethers.parseEther("0.005"),
     priceSlope: 10n ** 9n,
     graduationTarget: ethers.parseEther("2"),
     liquidityBps: 8000,
@@ -95,7 +95,7 @@ async function deployLegacySystem() {
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
     liquidityTokenBps: 4000,
-    basePrice: 10n ** 12n,
+    basePrice: ethers.parseEther("0.005"),
     priceSlope: 10n ** 9n,
     graduationTarget: ethers.parseEther("2"),
     liquidityBps: 8000,
@@ -300,12 +300,12 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     const routedFinalize = await parseFinalizedEvent(routedCampaign, await routedCampaign.connect(routed.creator).finalize(0, 0));
     const legacyFinalize = await parseFinalizedEvent(legacyCampaign, await legacyCampaign.connect(legacy.creator).finalize(0, 0));
 
-    expect(routedFinalize[1]).to.equal(legacyFinalize[1]); // usedTokens
-    expect(routedFinalize[2]).to.equal(legacyFinalize[2]); // usedBnb to LP
-    expect(routedFinalize[3]).to.equal(legacyFinalize[3]); // total finalize fee envelope
-    expect(routedFinalize[4]).to.equal(legacyFinalize[4]); // creator payout
+    expect(routedFinalize.liquidityTokens).to.equal(legacyFinalize.liquidityTokens);
+    expect(routedFinalize.liquidityBnb).to.equal(legacyFinalize.liquidityBnb);
+    expect(routedFinalize.protocolFee).to.equal(legacyFinalize.protocolFee);
+    expect(routedFinalize.creatorPayout).to.equal(legacyFinalize.creatorPayout);
 
-    const expectedFinalizeSplit = await routed.treasuryRouter.previewRoute(routedFinalize[3], ROUTE_KIND_FINALIZE, ROUTE_PROFILE_STANDARD_UNLINKED);
+    const expectedFinalizeSplit = await routed.treasuryRouter.previewRoute(routedFinalize.protocolFee, ROUTE_KIND_FINALIZE, ROUTE_PROFILE_STANDARD_UNLINKED);
     expect((await getBalance(await routed.protocolVault.getAddress())) - routedProtocolBefore).to.equal(expectedFinalizeSplit.protocol);
     expect((await routed.communityVault.warzoneAirdropBalance()) - routedAirdropBefore).to.equal(expectedFinalizeSplit.airdrop);
   });
