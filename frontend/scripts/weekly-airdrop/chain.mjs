@@ -1,0 +1,249 @@
+import { Contract, JsonRpcProvider, getAddress } from "ethers";
+import { apiEndpoint, asBigInt, envText, requireEnv } from "./config.mjs";
+
+function rpcUrl(chainId) {
+  return envText(`BSC_RPC_HTTP_${chainId}`) || envText("BSC_RPC_HTTP") || envText("RPC_URL");
+}
+
+function providerFor(chainId) {
+  const raw = rpcUrl(chainId);
+  if (!raw) throw new Error(`BSC_RPC_HTTP_${chainId} is required`);
+  const url = raw.split(",").map((value) => value.trim()).find(Boolean);
+  return new JsonRpcProvider(url);
+}
+
+export function configuredVaultAddress(chainId) {
+  return envText(`COMMUNITY_REWARDS_VAULT_ADDRESS_${chainId}`) || envText("COMMUNITY_REWARDS_VAULT_ADDRESS") || null;
+}
+
+export async function resolvePoolWei(chainId) {
+  const fixed = envText("AIRDROP_WEEKLY_POOL_WEI");
+  if (fixed) {
+    const availableWei = asBigInt(fixed, -1n);
+    if (availableWei <= 0n) throw new Error("AIRDROP_WEEKLY_POOL_WEI must be positive");
+    return { availableWei, source: "env_fixed", vaultAddress: null };
+  }
+  const vaultAddress = configuredVaultAddress(chainId);
+  if (!vaultAddress) throw new Error("CommunityRewardsVault address is required");
+  const vault = new Contract(vaultAddress, ["function warzoneAirdropBalance() view returns (uint256)"], providerFor(chainId));
+  const availableWei = BigInt(await vault.warzoneAirdropBalance());
+  if (availableWei <= 0n) throw new Error("warzoneAirdropBalance is zero");
+  return { availableWei, source: "community_rewards_vault", vaultAddress };
+}
+
+export async function publishProgram({ apiBaseUrl, internalSecret, chainId, epochId, program, winnerCount, claimDeadline, distributorAddress, metadata }) {
+  const response = await fetch(apiEndpoint(apiBaseUrl, "/internal/airdrops/publish"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(internalSecret ? { "x-rewards-internal-secret": internalSecret } : {}),
+    },
+    body: JSON.stringify({
+      auto: true,
+      chainId,
+      tokenSymbol: "BNB",
+      program,
+      epochId,
+      limit: winnerCount,
+      claimDeadline,
+      distributorAddress,
+      sourceView: "public.reward_calculation_inputs",
+      source: "weekly_airdrop_scheduler",
+      reason: `Automatic weekly ${program} publication`,
+      metadata,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(`Publish ${program} failed: HTTP ${response.status} ${JSON.stringify(payload)}`);
+  }
+  if (Number(payload?.batch?.recipientCount || 0) !== winnerCount) {
+    throw new Error(`Recipient count mismatch for ${program}`);
+  }
+  return payload;
+}
+
+export async function markFundingCheck(client, batchId) {
+  await client.query("begin");
+  try {
+    await client.query(
+      `update public.reward_ledger
+          set status='approved',claimable_at=null,updated_at=now()
+        where id in (select reward_ledger_id from public.reward_batch_items where batch_id=$1::uuid)
+          and status='claimable'`,
+      [batchId],
+    );
+    await client.query(
+      `update public.reward_batch_items set status='approved'
+        where batch_id=$1::uuid and status='claimable'`,
+      [batchId],
+    );
+    await client.query(
+      `update public.reward_batches
+          set status='funding_check',claimable_count=0,
+              metadata=coalesce(metadata,'{}'::jsonb)||$2::jsonb,updated_at=now()
+        where id=$1::uuid`,
+      [batchId, JSON.stringify({ fundingCheckStartedAt: new Date().toISOString() })],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
+export async function keepFundingCheck(client, batchId, error) {
+  await client.query(
+    `update public.reward_batches
+        set status='funding_check',claimable_count=0,
+            metadata=coalesce(metadata,'{}'::jsonb)||$2::jsonb,updated_at=now()
+      where id=$1::uuid`,
+    [batchId, JSON.stringify({
+      fundingFailed: true,
+      fundingError: String(error?.message || error),
+      fundingFailedAt: new Date().toISOString(),
+    })],
+  );
+}
+
+export async function markClaimOpen(client, batchId, funding) {
+  await client.query("begin");
+  try {
+    const { rows: ledger } = await client.query(
+      `update public.reward_ledger
+          set status='claimable',claimable_at=coalesce(claimable_at,now()),claim_error=null,updated_at=now()
+        where id in (select reward_ledger_id from public.reward_batch_items where batch_id=$1::uuid)
+          and status='approved'
+        returning id`,
+      [batchId],
+    );
+    await client.query(
+      `update public.reward_batch_items set status='claimable'
+        where batch_id=$1::uuid and status='approved'`,
+      [batchId],
+    );
+    const { rows } = await client.query(
+      `update public.reward_batches
+          set status='claim_open',claimable_count=$2,
+              metadata=coalesce(metadata,'{}'::jsonb)||$3::jsonb,updated_at=now()
+        where id=$1::uuid returning *`,
+      [batchId, ledger.length, JSON.stringify({
+        onChainBatchCreated: true,
+        onChainBatchTxHash: funding.txHash || null,
+        vaultWithdrawalTxHash: funding.vaultWithdrawalTxHash || null,
+        onChainBatchBlockNumber: funding.blockNumber || null,
+        onChainBatchVerifiedAt: new Date().toISOString(),
+        fundingExecutorRequestId: funding.requestId || null,
+      })],
+    );
+    await client.query("commit");
+    return rows[0] || null;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  }
+}
+
+async function readOnChainBatch({ chainId, distributorAddress, contractBatchId }) {
+  const distributor = new Contract(distributorAddress, [
+    "function owner() view returns (address)",
+    "function batches(bytes32) view returns (bytes32 merkleRoot,uint256 totalFunded,uint256 totalClaimed,uint64 claimDeadline,bool paused,bool exists)",
+  ], providerFor(chainId));
+  const [owner, batch] = await Promise.all([distributor.owner(), distributor.batches(contractBatchId)]);
+  return {
+    owner: getAddress(owner),
+    exists: Boolean(batch.exists),
+    merkleRoot: String(batch.merkleRoot),
+    totalFunded: BigInt(batch.totalFunded),
+    totalClaimed: BigInt(batch.totalClaimed),
+    claimDeadline: Number(batch.claimDeadline),
+    paused: Boolean(batch.paused),
+  };
+}
+
+function assertBatchMatches(onChain, { contractBatchId, merkleRoot, total, deadline }) {
+  if (!onChain.exists) return false;
+  if (onChain.merkleRoot.toLowerCase() !== merkleRoot.toLowerCase()) {
+    throw new Error(`On-chain batch ${contractBatchId} has a different Merkle root`);
+  }
+  if (onChain.totalFunded !== total) {
+    throw new Error(`On-chain batch ${contractBatchId} has ${onChain.totalFunded} wei, expected ${total}`);
+  }
+  if (onChain.claimDeadline !== deadline) {
+    throw new Error(`On-chain batch ${contractBatchId} has a different claim deadline`);
+  }
+  if (onChain.paused) throw new Error(`On-chain batch ${contractBatchId} is paused`);
+  return true;
+}
+
+async function requestFundingExecution(payload) {
+  const url = requireEnv("REWARD_FUNDING_EXECUTOR_URL");
+  const token = requireEnv("REWARD_FUNDING_EXECUTOR_TOKEN");
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+      "idempotency-key": payload.idempotencyKey,
+    },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.ok === false) {
+    throw new Error(`Funding executor failed: HTTP ${response.status} ${JSON.stringify(result)}`);
+  }
+  return result;
+}
+
+export async function ensureOnChainBatch({ batchId, chainId, distributorAddress, vaultAddress, poolSource, batchMetadata }) {
+  const contractBatchId = String(batchMetadata?.contractBatchId || batchMetadata?.merkleBatchId || "");
+  const merkleRoot = String(batchMetadata?.merkleRoot || "");
+  const total = asBigInt(batchMetadata?.merkleTotalAmount, 0n);
+  const deadline = Number(batchMetadata?.claimDeadline || 0);
+  if (!/^0x[a-fA-F0-9]{64}$/.test(contractBatchId) || !/^0x[a-fA-F0-9]{64}$/.test(merkleRoot) || total <= 0n) {
+    throw new Error("Invalid published Merkle metadata");
+  }
+
+  let onChain = await readOnChainBatch({ chainId, distributorAddress, contractBatchId });
+  if (assertBatchMatches(onChain, { contractBatchId, merkleRoot, total, deadline })) {
+    return {
+      alreadyExisted: true,
+      owner: onChain.owner,
+      contractBatchId,
+      merkleRoot,
+      totalAmount: total.toString(),
+      claimDeadline: deadline,
+    };
+  }
+
+  const execution = await requestFundingExecution({
+    action: "fund_reward_batch",
+    idempotencyKey: `mwz-airdrop:${chainId}:${contractBatchId}`,
+    batchId,
+    chainId,
+    distributorAddress,
+    vaultAddress: poolSource === "community_rewards_vault" ? vaultAddress : null,
+    contractBatchId,
+    merkleRoot,
+    totalAmount: total.toString(),
+    claimDeadline: deadline,
+  });
+
+  onChain = await readOnChainBatch({ chainId, distributorAddress, contractBatchId });
+  if (!assertBatchMatches(onChain, { contractBatchId, merkleRoot, total, deadline })) {
+    throw new Error(`Funding executor returned before batch ${contractBatchId} was verifiable on-chain`);
+  }
+
+  return {
+    alreadyExisted: false,
+    owner: onChain.owner,
+    contractBatchId,
+    merkleRoot,
+    totalAmount: total.toString(),
+    claimDeadline: deadline,
+    requestId: execution.requestId || execution.id || null,
+    txHash: execution.createBatchTxHash || execution.txHash || null,
+    vaultWithdrawalTxHash: execution.vaultWithdrawalTxHash || null,
+    blockNumber: execution.blockNumber || null,
+  };
+}
