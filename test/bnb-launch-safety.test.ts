@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
+import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
 async function increaseTime(seconds: number) {
   await network.provider.send("evm_increaseTime", [seconds]);
@@ -23,17 +24,15 @@ function campaignRequest(overrides: Record<string, unknown> = {}) {
 }
 
 async function deploySafetyFixture() {
-  const [owner, creator, buyer, routeAuthority, attacker, leagueReceiver] = await ethers.getSigners();
+  const [owner, creator, buyer, routeAuthority, attacker] = await ethers.getSigners();
 
-  const Factory = await ethers.getContractFactory("LaunchFactory");
   const CreatorRegistry = await ethers.getContractFactory("CreatorRegistry");
   const RiskRegistry = await ethers.getContractFactory("RiskRegistry");
 
-  const factory = await Factory.deploy(owner.address, leagueReceiver.address);
+  const { factory, treasuryRouter } = await deployRoutedLaunchFactory(owner);
   const creatorRegistry = await CreatorRegistry.deploy();
   const riskRegistry = await RiskRegistry.deploy();
 
-  await factory.waitForDeployment();
   await creatorRegistry.waitForDeployment();
   await riskRegistry.waitForDeployment();
 
@@ -42,7 +41,7 @@ async function deploySafetyFixture() {
   await factory.setRouteAuthority(routeAuthority.address);
   await factory.enableLive();
 
-  return { owner, creator, buyer, routeAuthority, attacker, leagueReceiver, factory, creatorRegistry, riskRegistry };
+  return { owner, creator, buyer, routeAuthority, attacker, leagueReceiver: treasuryRouter, factory, creatorRegistry, riskRegistry };
 }
 
 async function createCampaign(factory: any, creator: any, overrides: Record<string, unknown> = {}) {
@@ -65,10 +64,8 @@ async function signCreateRoute(factory: any, creator: string, signer: any, trade
 
 describe("BNB launch safety simulations", function () {
   it("blocks creation until live and while create pause is enabled", async function () {
-    const [owner, creator, leagueReceiver] = await ethers.getSigners();
-    const Factory = await ethers.getContractFactory("LaunchFactory");
-    const factory = await Factory.deploy(owner.address, leagueReceiver.address);
-    await factory.waitForDeployment();
+    const [owner, creator] = await ethers.getSigners();
+    const { factory } = await deployRoutedLaunchFactory(owner);
 
     await expect(factory.connect(creator).createCampaign(campaignRequest())).to.be.revertedWithCustomError(factory, "NotLive");
 
