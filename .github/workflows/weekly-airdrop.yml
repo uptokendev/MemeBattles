@@ -1,0 +1,91 @@
+name: Weekly Airdrop
+
+on:
+  schedule:
+    - cron: "15 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Calculate winners only; do not write ledger or fund contracts"
+        required: true
+        default: true
+        type: boolean
+      chain_id:
+        description: "Chain ID (97 testnet, 56 mainnet)"
+        required: true
+        default: "97"
+        type: choice
+        options:
+          - "97"
+          - "56"
+
+concurrency:
+  group: weekly-airdrop-${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.AIRDROP_CHAIN_ID || '56' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  weekly-airdrop:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AIRDROP_AUTOMATION_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.chain_id == '97') && 'airdrop-testnet' || 'airdrop-production' }}
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      DATABASE_URL: ${{ secrets.REWARDS_DATABASE_URL }}
+      AIRDROP_CHAIN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.chain_id || vars.AIRDROP_CHAIN_ID || '56' }}
+      AIRDROP_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      AIRDROP_AUTOMATION_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'false' || vars.AIRDROP_AUTOMATION_ENABLED || 'false' }}
+      AIRDROP_WEEKLY_DISTRIBUTION_BPS: ${{ vars.AIRDROP_WEEKLY_DISTRIBUTION_BPS }}
+      AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION: ${{ vars.AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION || 'false' }}
+      AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS: ${{ vars.AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS || 'false' }}
+      AIRDROP_CLAIM_WINDOW_DAYS: ${{ vars.AIRDROP_CLAIM_WINDOW_DAYS || '7' }}
+      AIRDROP_TARGET_PAYOUT_WEI: ${{ vars.AIRDROP_TARGET_PAYOUT_WEI || '50000000000000000' }}
+      AIRDROP_MAX_WINNERS_PER_PROGRAM: ${{ vars.AIRDROP_MAX_WINNERS_PER_PROGRAM || '50' }}
+      AIRDROP_TRADER_MIN_VOLUME_WEI: ${{ vars.AIRDROP_TRADER_MIN_VOLUME_WEI || '250000000000000000' }}
+      AIRDROP_TRADER_VOLUME_CAP_WEI: ${{ vars.AIRDROP_TRADER_VOLUME_CAP_WEI || '15000000000000000000' }}
+      AIRDROP_TRADER_MIN_TRADES: ${{ vars.AIRDROP_TRADER_MIN_TRADES || '3' }}
+      AIRDROP_TRADER_MIN_ACTIVE_DAYS: ${{ vars.AIRDROP_TRADER_MIN_ACTIVE_DAYS || '2' }}
+      AIRDROP_CREATOR_MIN_VOLUME_WEI: ${{ vars.AIRDROP_CREATOR_MIN_VOLUME_WEI || '3000000000000000000' }}
+      AIRDROP_CREATOR_VOLUME_CAP_WEI: ${{ vars.AIRDROP_CREATOR_VOLUME_CAP_WEI || '25000000000000000000' }}
+      AIRDROP_CREATOR_MIN_UNIQUE_BUYERS: ${{ vars.AIRDROP_CREATOR_MIN_UNIQUE_BUYERS || '10' }}
+      AIRDROP_CREATOR_MAX_CAMPAIGNS: ${{ vars.AIRDROP_CREATOR_MAX_CAMPAIGNS || '2' }}
+      AIRDROP_DRAW_SEED_SECRET: ${{ secrets.AIRDROP_DRAW_SEED_SECRET }}
+      REWARD_FUNDING_EXECUTOR_URL: ${{ secrets.REWARD_FUNDING_EXECUTOR_URL }}
+      REWARD_FUNDING_EXECUTOR_TOKEN: ${{ secrets.REWARD_FUNDING_EXECUTOR_TOKEN }}
+      BSC_RPC_HTTP_56: ${{ secrets.BSC_RPC_HTTP_56 }}
+      BSC_RPC_HTTP_97: ${{ secrets.BSC_RPC_HTTP_97 }}
+      COMMUNITY_REWARDS_VAULT_ADDRESS_56: ${{ vars.COMMUNITY_REWARDS_VAULT_ADDRESS_56 }}
+      COMMUNITY_REWARDS_VAULT_ADDRESS_97: ${{ vars.COMMUNITY_REWARDS_VAULT_ADDRESS_97 }}
+      REWARD_DISTRIBUTOR_ADDRESS_56: ${{ vars.REWARD_DISTRIBUTOR_ADDRESS_56 }}
+      REWARD_DISTRIBUTOR_ADDRESS_97: ${{ vars.REWARD_DISTRIBUTOR_ADDRESS_97 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Syntax-check weekly airdrop
+        run: |
+          node --check scripts/weekly-airdrop/config.mjs
+          node --check scripts/weekly-airdrop/candidates.mjs
+          node --check scripts/weekly-airdrop/materialize.mjs
+          node --check scripts/weekly-airdrop/chain.mjs
+          node --check scripts/weekly-airdrop/run-weekly-airdrop.mjs
+          node --check scripts/weekly-airdrop/run-guarded.mjs
+
+      - name: Run guarded weekly airdrop
+        run: node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-guarded.mjs
