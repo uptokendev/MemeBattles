@@ -6,7 +6,8 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
-    "gas": "REPORT_GAS=true hardhat test"
+    "gas": "REPORT_GAS=true hardhat test",
+    "size": "hardhat run scripts/check-contract-size.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
