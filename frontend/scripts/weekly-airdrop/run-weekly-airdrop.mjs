@@ -1,6 +1,6 @@
 import { pool } from "../../server/db.js";
 import {
-  DAY_MS, asBigInt, envBool, envInt, epochWindow, requireEnv,
+  DAY_MS, asBigInt, envBool, envInt, envText, epochWindow, requireEnv,
   seedCommitment, splitPool, weightedSample, winnerCount,
 } from "./config.mjs";
 import {
@@ -82,6 +82,14 @@ async function main() {
   if (!dryRun && !enabled) {
     throw new Error("AIRDROP_AUTOMATION_ENABLED must be true for non-dry runs");
   }
+  const configuredDistributionBps = envText("AIRDROP_WEEKLY_DISTRIBUTION_BPS");
+  if (!dryRun && !/^\d+$/.test(configuredDistributionBps)) {
+    throw new Error("AIRDROP_WEEKLY_DISTRIBUTION_BPS must be explicitly configured for live runs");
+  }
+  const distributionBps = envInt("AIRDROP_WEEKLY_DISTRIBUTION_BPS", dryRun ? 1000 : 0, { min: 1, max: 10_000 });
+  if (!dryRun && distributionBps === 10_000 && !envBool("AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION", false)) {
+    throw new Error("100% vault distribution requires AIRDROP_ALLOW_FULL_VAULT_DISTRIBUTION=true");
+  }
   const { start, end, epochId } = epochWindow();
   const claimDeadline = Math.floor((end.getTime() + envInt("AIRDROP_CLAIM_WINDOW_DAYS", 7, { min: 1, max: 90 }) * DAY_MS) / 1000);
   const commitment = seedCommitment(drawSecret, chainId, epochId);
@@ -110,7 +118,6 @@ async function main() {
     }
 
     const anchor = traderBatch?.metadata || creatorBatch?.metadata || null;
-    const distributionBps = envInt("AIRDROP_WEEKLY_DISTRIBUTION_BPS", 10000, { min: 1, max: 10000 });
     const pool = anchor?.totalWeeklyPoolWei
       ? {
           availableWei: asBigInt(anchor.availablePoolWei || anchor.totalWeeklyPoolWei),
