@@ -62,6 +62,17 @@ async function resumeFunding(client, { batch, chainId, distributorAddress, progr
   }
 }
 
+async function batchWallets(client, batch) {
+  if (!batch?.id) return [];
+  const { rows } = await client.query(
+    `select distinct lower(wallet_address) as wallet_address
+       from public.reward_batch_items
+      where batch_id=$1::uuid`,
+    [batch.id],
+  );
+  return rows.map((row) => row.wallet_address).filter(Boolean);
+}
+
 async function main() {
   const chainId = envInt("AIRDROP_CHAIN_ID", 56, { min: 1, max: 1_000_000 });
   const drawSecret = requireEnv("AIRDROP_DRAW_SEED_SECRET");
@@ -120,22 +131,41 @@ async function main() {
       batchComplete(creatorBatch) ? [] : creatorCandidates(client, { chainId, start, end, exclusions }),
     ]);
     const programs = [
-      { program: "airdrop_trader", poolWei: traderPoolWei, candidates: traders, existing: batchComplete(traderBatch) },
-      { program: "airdrop_creator", poolWei: creatorPoolWei, candidates: creators, existing: batchComplete(creatorBatch) },
+      { program: "airdrop_trader", poolWei: traderPoolWei, candidates: traders, existing: batchComplete(traderBatch), batch: traderBatch },
+      { program: "airdrop_creator", poolWei: creatorPoolWei, candidates: creators, existing: batchComplete(creatorBatch), batch: creatorBatch },
     ];
-    const missing = programs.find((item) => !item.existing && !item.candidates.length);
-    if (missing) throw new Error(`No eligible candidates for ${missing.program}; refusing to publish either program`);
+    const allowCrossProgramWinners = envBool("AIRDROP_ALLOW_CROSS_PROGRAM_WINNERS", false);
+    const reservedWallets = new Set();
+    if (!allowCrossProgramWinners) {
+      for (const item of programs) {
+        if (!item.existing) continue;
+        for (const wallet of await batchWallets(client, item.batch)) reservedWallets.add(wallet);
+      }
+    }
 
+    const selections = [];
     for (const item of programs) {
       if (item.existing) continue;
-
-      const count = winnerCount(item.poolWei, item.candidates.length, item.program);
-      const winners = weightedSample(item.candidates, count, drawSecret, `${chainId}:${epochId}:${item.program}`);
+      const eligibleCandidates = allowCrossProgramWinners
+        ? item.candidates
+        : item.candidates.filter((candidate) => !reservedWallets.has(candidate.walletAddress.toLowerCase()));
+      if (!eligibleCandidates.length) {
+        throw new Error(`No eligible candidates remain for ${item.program}; refusing to publish either program`);
+      }
+      const count = winnerCount(item.poolWei, eligibleCandidates.length, item.program);
+      const winners = weightedSample(eligibleCandidates, count, drawSecret, `${chainId}:${epochId}:${item.program}`);
       const payouts = splitPool(item.poolWei, winners.length);
       if (!winners.length || payouts.some((value) => value <= 0n)) {
         throw new Error(`Invalid winners or payouts for ${item.program}`);
       }
+      if (!allowCrossProgramWinners) {
+        for (const winner of winners) reservedWallets.add(winner.walletAddress.toLowerCase());
+      }
+      selections.push({ ...item, candidates: eligibleCandidates, winners, payouts });
+    }
 
+    for (const item of selections) {
+      const { winners, payouts } = item;
       console.log(`[weekly-airdrop] ${item.program}: ${item.candidates.length} candidates -> ${winners.length} winners`);
       if (dryRun) {
         console.log(JSON.stringify({
@@ -146,6 +176,7 @@ async function main() {
           candidateCount: item.candidates.length,
           winnerCount: winners.length,
           programPoolWei: item.poolWei.toString(),
+          allowCrossProgramWinners,
           winners: winners.map((winner, index) => ({
             walletAddress: winner.walletAddress,
             winnerRank: winner.winnerRank,
@@ -196,6 +227,7 @@ async function main() {
           distributionBps,
           drawSeedCommitment: commitment,
           securityExclusionCount: exclusions.totalCount,
+          allowCrossProgramWinners,
         },
       });
 
@@ -215,7 +247,7 @@ async function main() {
           newValue: "claim_open",
           reason: `Automatic weekly ${item.program} completed and funded`,
           txHash: funding.txHash,
-          metadata: { chainId, epochId, program: item.program, commitment, funding },
+          metadata: { chainId, epochId, program: item.program, commitment, funding, allowCrossProgramWinners },
         });
       } catch (error) {
         await keepFundingCheck(client, payload.batch.id, error);
