@@ -1,0 +1,84 @@
+name: Weekly Airdrop CI
+
+on:
+  push:
+    paths:
+      - "contracts/CommunityRewardsVault.sol"
+      - "contracts/RewardDistributor.sol"
+      - "test/WeeklyAirdropFunding.spec.ts"
+      - "scripts/configure-reward-airdrop.cjs"
+      - "frontend/scripts/weekly-airdrop/**"
+      - "services/reward-funding-executor/**"
+      - "db/migrations/20260710_000001_reward_calculation_inputs.sql"
+      - "db/migrations/20260710_000002_weekly_airdrop_automation_guards.sql"
+      - ".github/workflows/weekly-airdrop*.yml"
+  pull_request:
+    paths:
+      - "contracts/CommunityRewardsVault.sol"
+      - "contracts/RewardDistributor.sol"
+      - "test/WeeklyAirdropFunding.spec.ts"
+      - "scripts/configure-reward-airdrop.cjs"
+      - "frontend/scripts/weekly-airdrop/**"
+      - "services/reward-funding-executor/**"
+      - "db/migrations/20260710_000001_reward_calculation_inputs.sql"
+      - "db/migrations/20260710_000002_weekly_airdrop_automation_guards.sql"
+      - ".github/workflows/weekly-airdrop*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Compile contracts
+        run: npx hardhat compile
+      - name: Test atomic airdrop funding
+        run: npx hardhat test test/WeeklyAirdropFunding.spec.ts
+
+  runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Syntax-check weekly runner
+        run: |
+          node --check scripts/weekly-airdrop/config.mjs
+          node --check scripts/weekly-airdrop/candidates.mjs
+          node --check scripts/weekly-airdrop/materialize.mjs
+          node --check scripts/weekly-airdrop/chain.mjs
+          node --check scripts/weekly-airdrop/run-weekly-airdrop.mjs
+          node --check scripts/weekly-airdrop/run-guarded.mjs
+
+  funding-executor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/reward-funding-executor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm run check
