@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import type { LaunchFactory, LaunchCampaign, LaunchToken, MockRouter } from "../typechain-types";
+import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
 const DEAD = "0x000000000000000000000000000000000000dEaD";
 
@@ -21,18 +22,17 @@ const request = (overrides: Record<string, unknown> = {}) => ({
 describe("Launchpad end-to-end", function () {
   async function deployFactoryAndRouter() {
     const [deployer, creator, trader, other] = await ethers.getSigners();
-
-    const MockV2Factory = await ethers.getContractFactory("MockV2Factory");
-    const v2Factory = await MockV2Factory.deploy();
-
-    const MockRouter = await ethers.getContractFactory("MockRouter");
-    const router = (await MockRouter.deploy(await v2Factory.getAddress(), await deployer.getAddress())) as unknown as MockRouter;
-
-    const LaunchFactory = await ethers.getContractFactory("LaunchFactory");
-    const factory = (await LaunchFactory.deploy(await router.getAddress(), await deployer.getAddress())) as unknown as LaunchFactory;
+    const { dexRouter, factory } = await deployRoutedLaunchFactory(deployer);
     await factory.connect(deployer).enableLive();
 
-    return { deployer, creator, trader, other, router, factory, v2Factory };
+    return {
+      deployer,
+      creator,
+      trader,
+      other,
+      router: dexRouter as unknown as MockRouter,
+      factory: factory as unknown as LaunchFactory,
+    };
   }
 
   async function createCampaign(factory: LaunchFactory, creator: any, overrides: Record<string, unknown> = {}) {
