@@ -334,7 +334,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint64 routeDeadline,
         bytes calldata routeSignature
     ) external nonReentrant returns (uint256 payout) {
-        _verifyTradeRouteAuthorization(msg.sender, routeProfile, deadline, routeSignature);
+        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
         return _sellExactTokens(msg.sender, amountIn, minPayout, true, routeProfile);
     }
 
