@@ -9,6 +9,9 @@ export type CoreFixture = {
   lpReceiver: any;
   router: any;
   v2factory: any;
+  treasuryVault: any;
+  treasuryRouter: any;
+  campaignImplementation: any;
   factory: any;
 };
 
@@ -17,16 +20,36 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
 
   const V2Factory = await ethers.getContractFactory("MockV2Factory");
   const v2factory = await V2Factory.deploy();
+  await v2factory.waitForDeployment();
 
   const Router = await ethers.getContractFactory("MockRouter");
   // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
   const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
+  await router.waitForDeployment();
+
+  const TreasuryVault = await ethers.getContractFactory("TreasuryVaultV2");
+  const treasuryVault = await TreasuryVault.deploy(await feeRecipient.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress);
+  await treasuryVault.waitForDeployment();
+
+  const TreasuryRouter = await ethers.getContractFactory("TreasuryRouter");
+  const treasuryRouter = await TreasuryRouter.deploy(
+    await owner.getAddress(),
+    await treasuryVault.getAddress(),
+    24 * 60 * 60
+  );
+  await treasuryRouter.waitForDeployment();
+
+  const Campaign = await ethers.getContractFactory("LaunchCampaign");
+  const campaignImplementation = await Campaign.deploy();
+  await campaignImplementation.waitForDeployment();
 
   const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(await router.getAddress(), await lpReceiver.getAddress());
-
-  // Make fee recipient explicit for assertions
-  await factory.connect(owner).setFeeRecipient(await feeRecipient.getAddress());
+  const factory = await Factory.deploy(
+    await router.getAddress(),
+    await treasuryRouter.getAddress(),
+    await campaignImplementation.getAddress()
+  );
+  await factory.waitForDeployment();
 
   // Use small, test-friendly config
   await factory.connect(owner).setConfig({
@@ -42,5 +65,18 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   // Tests assume the system is in Live Mode unless explicitly testing Prepare Mode.
   await factory.connect(owner).enableLive();
 
-  return { owner, creator, alice, bob, feeRecipient, lpReceiver, router, v2factory, factory };
+  return {
+    owner,
+    creator,
+    alice,
+    bob,
+    feeRecipient: treasuryVault,
+    lpReceiver,
+    router,
+    v2factory,
+    treasuryVault,
+    treasuryRouter,
+    campaignImplementation,
+    factory,
+  };
 }
