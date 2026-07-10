@@ -82,7 +82,7 @@ describe("Security & invariants", function () {
       totalSupply: ethers.parseEther("1000"),
       curveBps: 5000,
       liquidityTokenBps: 4000,
-      basePrice: 10n ** 12n,
+      basePrice: ethers.parseEther("0.005"),
       priceSlope: 10n ** 9n,
       graduationTarget: ethers.parseEther("2"),
       liquidityBps: 8000,
@@ -123,7 +123,7 @@ describe("Security & invariants", function () {
       } catch {}
     }
     expect(finParsed).to.not.equal(null);
-    expect((finParsed!.args[3] as bigint)).to.equal(expectedFee);
+    expect(finParsed!.args.protocolFee).to.equal(expectedFee);
 
     const expectedRoute = await treasuryRouter.previewRoute(expectedFee, 1, await campaign.finalizeRouteProfile());
     await expectRouteBalanceDelta(routeBefore, routeVaults, expectedRoute);
@@ -159,6 +159,7 @@ describe("Security & invariants", function () {
     expect(reserves[0]).to.be.gt(0);
     expect(reserves[1]).to.be.gt(0);
     expect(await pair.totalSupply()).to.be.gt(0);
+    expect(await campaign.dexPair()).to.equal(await pair.getAddress());
   });
 
   it("reentrancy defense: feeRecipient cannot re-enter claimPendingNative during buy", async function () {
