@@ -6,26 +6,18 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-function pk(): string[] {
-  const key = process.env.DEPLOYER_PK;
-  if (!key) return [];
-  return [key.startsWith("0x") ? key : `0x${key}`];
-}
-
 const config: HardhatUserConfig = {
   networks: {
-    hardhat: {
-      // Your LaunchFactory bytecode exceeds the 24KB Spurious Dragon limit.
-      // Hardhat defaults to enforcing the limit; for unit tests we disable it.
-      allowUnlimitedContractSize: true,
-    },
+    hardhat: {},
 
     // --- Added for deployments ---
     bscTestnet: {
-  url: process.env.BSC_TESTNET_RPC || "",
-  accounts: process.env.DEPLOYER_PK ? [process.env.DEPLOYER_PK.startsWith("0x") ? process.env.DEPLOYER_PK : `0x${process.env.DEPLOYER_PK}`] : [],
-  chainId: 97
-}
+      url: process.env.BSC_TESTNET_RPC || "",
+      accounts: process.env.DEPLOYER_PK
+        ? [process.env.DEPLOYER_PK.startsWith("0x") ? process.env.DEPLOYER_PK : `0x${process.env.DEPLOYER_PK}`]
+        : [],
+      chainId: 97,
+    },
   },
 
   // --- Added for contract verification ---
@@ -37,13 +29,13 @@ const config: HardhatUserConfig = {
   },
 
   solidity: {
-  version: "0.8.24",
-  settings: {
-    optimizer: { enabled: true, runs: 1 }, // low runs shrinks code size
-    viaIR: true,
-    metadata: { bytecodeHash: "none" } // removes metadata hash bytes
+    version: "0.8.24",
+    settings: {
+      optimizer: { enabled: true, runs: 1 }, // low runs shrinks code size
+      viaIR: true,
+      metadata: { bytecodeHash: "none" }, // removes metadata hash bytes
+    },
   },
-},
 
   paths: {
     sources: "./contracts",
