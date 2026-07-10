@@ -67,6 +67,10 @@ async function main() {
   const drawSecret = requireEnv("AIRDROP_DRAW_SEED_SECRET");
   const distributorAddress = requireEnv(`REWARD_DISTRIBUTOR_ADDRESS_${chainId}`);
   const dryRun = envBool("AIRDROP_DRY_RUN", false);
+  const enabled = envBool("AIRDROP_AUTOMATION_ENABLED", false);
+  if (!dryRun && !enabled) {
+    throw new Error("AIRDROP_AUTOMATION_ENABLED must be true for non-dry runs");
+  }
   const { start, end, epochId } = epochWindow();
   const claimDeadline = Math.floor((end.getTime() + envInt("AIRDROP_CLAIM_WINDOW_DAYS", 7, { min: 1, max: 90 }) * DAY_MS) / 1000);
   const commitment = seedCommitment(drawSecret, chainId, epochId);
@@ -119,10 +123,11 @@ async function main() {
       { program: "airdrop_trader", poolWei: traderPoolWei, candidates: traders, existing: batchComplete(traderBatch) },
       { program: "airdrop_creator", poolWei: creatorPoolWei, candidates: creators, existing: batchComplete(creatorBatch) },
     ];
+    const missing = programs.find((item) => !item.existing && !item.candidates.length);
+    if (missing) throw new Error(`No eligible candidates for ${missing.program}; refusing to publish either program`);
 
     for (const item of programs) {
       if (item.existing) continue;
-      if (!item.candidates.length) throw new Error(`No eligible candidates for ${item.program}; refusing to publish`);
 
       const count = winnerCount(item.poolWei, item.candidates.length, item.program);
       const winners = weightedSample(item.candidates, count, drawSecret, `${chainId}:${epochId}:${item.program}`);
