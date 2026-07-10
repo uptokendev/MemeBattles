@@ -147,7 +147,7 @@ describe("LaunchFactory", function () {
           treasuryRouter: await treasuryRouter.getAddress(),
         })
       )
-    ).to.be.revertedWith("initialized");
+    ).to.be.revertedWithCustomError(implementation, "AlreadyInitialized");
   });
 
   it("live latch: createCampaign blocked until enabled; onlyOwner; enableLive is one-way", async () => {
@@ -190,7 +190,7 @@ describe("LaunchFactory", function () {
           treasuryRouter: await treasuryRouter.getAddress(),
         })
       )
-    ).to.be.revertedWith("initialized");
+    ).to.be.revertedWithCustomError(campaign, "AlreadyInitialized");
   });
 
   it("createCampaign has no creator initial buy path", async () => {
