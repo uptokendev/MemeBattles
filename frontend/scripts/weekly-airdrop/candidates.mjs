@@ -179,7 +179,7 @@ export async function stageWinners(client, { chainId, epochId, program, winners,
     await client.query(
       `insert into public.reward_calculation_inputs
         (reward_type,program,epoch_id,chain,token_symbol,wallet_address,amount,score,activity_score,source_id,source_label,status,metadata)
-       values ('airdrop',$1,$2,$3,'BNB',$4,$5::numeric,$6::numeric,$7::numeric,$8,'weekly_airdrop_scheduler','claimable',$9::jsonb)`,
+       values ('airdrop',$1,$2,$3,'BNB',$4,$5::numeric,$6::numeric,$7::numeric,$8,'weekly_airdrop_scheduler','approved',$9::jsonb)`,
       [program, epochId, String(chainId), winner.walletAddress, payouts[i].toString(), String(winner.finalWeight), String(winner.activityScore), `${epochId}:${program}:${winner.winnerRank}`, JSON.stringify(metadata)],
     );
   }
