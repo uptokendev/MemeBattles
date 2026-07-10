@@ -16,6 +16,10 @@ interface IPhase1TreasuryRouter {
     function route(uint8 kind, uint8 profile) external payable;
 }
 
+interface IPancakeV2FactoryLike {
+    function getPair(address tokenA, address tokenB) external view returns (address pair);
+}
+
 interface IRouteAuthoritySource {
     function routeAuthority() external view returns (address);
 }
@@ -66,6 +70,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     uint256 private constant WAD = 1e18;
     uint256 private constant MAX_BPS = 10_000;
+    uint256 private constant GRADUATION_PRICE_TOLERANCE_BPS = 50;
     uint8 private constant ROUTE_KIND_TRADE = 0;
     uint8 private constant ROUTE_KIND_FINALIZE = 1;
     uint8 private constant ROUTE_PROFILE_STANDARD_LINKED = 0;
@@ -102,6 +107,17 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public sold;
     bool public launched;
     uint256 public finalizedAt;
+    address public dexPair;
+    uint256 public finalCurvePrice;
+    uint256 public initialDexPrice;
+    uint256 public graduatedLiquidityTokens;
+    uint256 public graduatedLiquidityBnb;
+    uint256 public graduatedLiquidityLp;
+    uint256 public burnedUnsoldTokens;
+    uint256 public burnedUnusedLpTokens;
+    uint256 public postBurnTotalSupply;
+    uint256 public graduationBalance;
+    uint256 public graduationOvershoot;
 
     address public creator;
     address public creatorRegistry;
@@ -135,10 +151,19 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     event RequireAuthorizedTradingUpdated(bool required);
     event CampaignFinalized(
         address indexed caller,
+        address indexed pair,
+        uint256 graduationBalance,
+        uint256 graduationOvershoot,
         uint256 liquidityTokens,
         uint256 liquidityBnb,
+        uint256 liquidityLp,
         uint256 protocolFee,
-        uint256 creatorPayout
+        uint256 creatorPayout,
+        uint256 burnedUnsoldTokens,
+        uint256 burnedUnusedLpTokens,
+        uint256 finalCurvePrice,
+        uint256 initialDexPrice,
+        uint256 postBurnTotalSupply
     );
 
     bool private _initialized;
@@ -257,7 +282,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function currentPrice() external view returns (uint256) {
-        return basePrice + Math.mulDiv(priceSlope, sold, WAD);
+        return _currentPrice();
     }
 
     function buyExactTokens(uint256 amountOut, uint256 maxCost) external payable nonReentrant returns (uint256 cost) {
@@ -438,36 +463,67 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         launched = true;
         finalizedAt = block.timestamp;
 
-        uint256 balanceBefore = _availableNativeBalance();
-        uint256 protocolFee = (balanceBefore * protocolFeeBps) / MAX_BPS;
-        if (protocolFee > 0 && feeRecipient != address(0)) _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, balanceBefore);
+        graduationBalance = _availableNativeBalance();
+        graduationOvershoot = graduationBalance > graduationTarget ? graduationBalance - graduationTarget : 0;
+        finalCurvePrice = _currentPrice();
+
+        uint256 protocolFee = (graduationBalance * protocolFeeBps) / MAX_BPS;
+        if (protocolFee > 0 && feeRecipient != address(0)) _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, graduationBalance);
 
         uint256 remainingAfterFee = _availableNativeBalance();
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
-        uint256 tokensForLp = liquiditySupply;
-        if (tokensForLp > 0 && liquidityValue > 0) {
-            tokenInterface.forceApprove(address(router), tokensForLp);
-            (usedTokens, usedBnb, ) = router.addLiquidityETH{value: liquidityValue}(
-                address(token),
-                tokensForLp,
-                minTokens,
-                minBnb,
-                lpReceiver,
-                block.timestamp + 30 minutes
-            );
-            tokenInterface.forceApprove(address(router), 0);
-            if (tokensForLp > usedTokens) tokenInterface.safeTransfer(owner(), tokensForLp - usedTokens);
-        }
+        uint256 lpTokensDesired = Math.mulDiv(liquidityValue, WAD, finalCurvePrice);
+        require(lpTokensDesired > 0, "lp tokens zero");
+        require(lpTokensDesired <= liquiditySupply, "insufficient lp allocation");
 
-        uint256 unsold = curveSupply - sold;
-        if (unsold > 0) token.burn(address(this), unsold);
+        tokenInterface.forceApprove(address(router), lpTokensDesired);
+        (usedTokens, usedBnb, graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
+            address(token),
+            lpTokensDesired,
+            minTokens,
+            minBnb,
+            lpReceiver,
+            block.timestamp + 30 minutes
+        );
+        tokenInterface.forceApprove(address(router), 0);
+        require(usedTokens > 0 && usedBnb > 0, "lp zero");
+
+        graduatedLiquidityTokens = usedTokens;
+        graduatedLiquidityBnb = usedBnb;
+        initialDexPrice = Math.mulDiv(usedBnb, WAD, usedTokens);
+        _requirePriceWithinTolerance(initialDexPrice, finalCurvePrice);
+
+        dexPair = IPancakeV2FactoryLike(router.factory()).getPair(address(token), router.WETH());
+        require(dexPair != address(0), "pair missing");
+
+        burnedUnusedLpTokens = liquiditySupply - usedTokens;
+        if (burnedUnusedLpTokens > 0) token.burn(address(this), burnedUnusedLpTokens);
+
+        burnedUnsoldTokens = curveSupply - sold;
+        if (burnedUnsoldTokens > 0) token.burn(address(this), burnedUnsoldTokens);
         if (creatorReserve > 0) tokenInterface.safeTransfer(owner(), creatorReserve);
         uint256 creatorPayout = _availableNativeBalance();
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
+        postBurnTotalSupply = token.totalSupply();
         token.enableTrading();
 
         if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator);
-        emit CampaignFinalized(caller, usedTokens, usedBnb, protocolFee, creatorPayout);
+        emit CampaignFinalized(
+            caller,
+            dexPair,
+            graduationBalance,
+            graduationOvershoot,
+            usedTokens,
+            usedBnb,
+            graduatedLiquidityLp,
+            protocolFee,
+            creatorPayout,
+            burnedUnsoldTokens,
+            burnedUnusedLpTokens,
+            finalCurvePrice,
+            initialDexPrice,
+            postBurnTotalSupply
+        );
     }
 
     function _fee(uint256 amountWei) internal view returns (uint256) {
@@ -527,6 +583,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
         );
         require(digest.recover(signature) == authority, "bad route auth");
+    }
+
+    function _currentPrice() internal view returns (uint256) {
+        return basePrice + Math.mulDiv(priceSlope, sold, WAD);
+    }
+
+    function _requirePriceWithinTolerance(uint256 actualPrice, uint256 expectedPrice) internal pure {
+        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
+        require(Math.mulDiv(diff, MAX_BPS, expectedPrice) <= GRADUATION_PRICE_TOLERANCE_BPS, "dex price drift");
     }
 
     function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
