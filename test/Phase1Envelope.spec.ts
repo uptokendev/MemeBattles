@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { getBalance } from "./helpers/balances";
 import { quoteBuyExactTokens } from "./helpers/math";
+import { deployLaunchFactory } from "./helpers/deployFactory";
 
 const ROUTE_KIND_TRADE = 0;
 const ROUTE_KIND_FINALIZE = 1;
@@ -51,11 +52,7 @@ async function deployRoutedSystem() {
   await treasuryRouter.connect(owner).setCommunityRewardsVault(await communityVault.getAddress());
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
-  const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(await dexRouter.getAddress(), await treasuryRouter.getAddress());
-  await factory.waitForDeployment();
-
-  await factory.connect(owner).setFeeRecipient(await treasuryRouter.getAddress());
+  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
@@ -92,10 +89,7 @@ async function deployLegacySystem() {
   const leagueRouter = await TreasuryRouter.deploy(await owner.getAddress(), await leagueVault.getAddress(), 3600);
   await leagueRouter.waitForDeployment();
 
-  const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(await dexRouter.getAddress(), await leagueRouter.getAddress());
-  await factory.waitForDeployment();
-
+  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await leagueRouter.getAddress());
   await factory.connect(owner).setFeeRecipient(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
