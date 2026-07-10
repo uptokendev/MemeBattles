@@ -78,6 +78,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.SafeCast__factory>;
     getContractFactory(
+      name: "Pausable",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.Pausable__factory>;
+    getContractFactory(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ReentrancyGuard__factory>;
@@ -93,6 +97,10 @@ declare module "hardhat/types/runtime" {
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.CommunityRewardsVault__factory>;
+    getContractFactory(
+      name: "IRewardDistributor",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IRewardDistributor__factory>;
     getContractFactory(
       name: "CreatorRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -181,6 +189,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.RecruiterRewardsVault__factory>;
+    getContractFactory(
+      name: "RewardDistributor",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.RewardDistributor__factory>;
     getContractFactory(
       name: "RiskRegistry",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -307,6 +319,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.SafeCast>;
     getContractAt(
+      name: "Pausable",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.Pausable>;
+    getContractAt(
       name: "ReentrancyGuard",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -326,6 +343,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.CommunityRewardsVault>;
+    getContractAt(
+      name: "IRewardDistributor",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IRewardDistributor>;
     getContractAt(
       name: "CreatorRegistry",
       address: string | ethers.Addressable,
@@ -436,6 +458,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.RecruiterRewardsVault>;
+    getContractAt(
+      name: "RewardDistributor",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.RewardDistributor>;
     getContractAt(
       name: "RiskRegistry",
       address: string | ethers.Addressable,
@@ -557,6 +584,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.SafeCast>;
     deployContract(
+      name: "Pausable",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Pausable>;
+    deployContract(
       name: "ReentrancyGuard",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ReentrancyGuard>;
@@ -572,6 +603,10 @@ declare module "hardhat/types/runtime" {
       name: "CommunityRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
+    deployContract(
+      name: "IRewardDistributor",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRewardDistributor>;
     deployContract(
       name: "CreatorRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -660,6 +695,10 @@ declare module "hardhat/types/runtime" {
       name: "RecruiterRewardsVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "RewardDistributor",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.RewardDistributor>;
     deployContract(
       name: "RiskRegistry",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -786,6 +825,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.SafeCast>;
     deployContract(
+      name: "Pausable",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.Pausable>;
+    deployContract(
       name: "ReentrancyGuard",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -805,6 +849,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CommunityRewardsVault>;
+    deployContract(
+      name: "IRewardDistributor",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IRewardDistributor>;
     deployContract(
       name: "CreatorRegistry",
       args: any[],
@@ -915,6 +964,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.RecruiterRewardsVault>;
+    deployContract(
+      name: "RewardDistributor",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.RewardDistributor>;
     deployContract(
       name: "RiskRegistry",
       args: any[],
