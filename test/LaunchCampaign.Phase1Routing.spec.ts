@@ -36,7 +36,7 @@ async function deployPhase1RoutingFixture() {
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
     liquidityTokenBps: 4000,
-    basePrice: 10n ** 12n,
+    basePrice: ethers.parseEther("0.005"),
     priceSlope: 10n ** 9n,
     graduationTarget: ethers.parseEther("2"),
     liquidityBps: 8000,
@@ -236,7 +236,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
       .find((parsed: any) => parsed?.name === "CampaignFinalized");
 
     expect(event).to.not.equal(undefined);
-    expect(event!.args[3]).to.equal(protocolFee);
+    expect(event!.args.protocolFee).to.equal(protocolFee);
   });
 
   it("routes linked trade + finalize profiles end to end when factory is configured for StandardLinked", async () => {
