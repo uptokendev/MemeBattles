@@ -68,8 +68,8 @@ export async function materializeAirdropBatch(client, {
 
     const { rows: batchRows } = await client.query(
       `insert into public.reward_batches
-        (reward_type,chain,token_symbol,status,total_amount,recipient_count,claimable_count,claimed_count,failed_count,source,metadata,published_at)
-       values ('airdrop',$1,'BNB','funding_check',$2::numeric,$3,0,0,0,'weekly_airdrop_scheduler',$4::jsonb,now())
+        (reward_type,chain,token_symbol,status,total_amount,recipient_count,claimable_count,claimed_count,failed_count,source,metadata)
+       values ('airdrop',$1,'BNB','funding_check',$2::numeric,$3,0,0,0,'weekly_airdrop_scheduler',$4::jsonb)
        returning *`,
       [String(chainId), totalAmount, entries.length, JSON.stringify({ ...metadata, epochId, program, automated: true })],
     );
