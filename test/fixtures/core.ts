@@ -20,13 +20,16 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
 
   const V2Factory = await ethers.getContractFactory("MockV2Factory");
   const v2factory = await V2Factory.deploy();
+  await v2factory.waitForDeployment();
 
   const Router = await ethers.getContractFactory("MockRouter");
   // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
   const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
+  await router.waitForDeployment();
 
   const TreasuryVault = await ethers.getContractFactory("TreasuryVault");
   const treasuryVault = await TreasuryVault.deploy(await feeRecipient.getAddress());
+  await treasuryVault.waitForDeployment();
 
   const TreasuryRouter = await ethers.getContractFactory("TreasuryRouter");
   const treasuryRouter = await TreasuryRouter.deploy(
@@ -34,9 +37,11 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     await treasuryVault.getAddress(),
     24 * 60 * 60
   );
+  await treasuryRouter.waitForDeployment();
 
   const Campaign = await ethers.getContractFactory("LaunchCampaign");
   const campaignImplementation = await Campaign.deploy();
+  await campaignImplementation.waitForDeployment();
 
   const Factory = await ethers.getContractFactory("LaunchFactory");
   const factory = await Factory.deploy(
@@ -44,6 +49,7 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     await treasuryRouter.getAddress(),
     await campaignImplementation.getAddress()
   );
+  await factory.waitForDeployment();
 
   // Use small, test-friendly config
   await factory.connect(owner).setConfig({
