@@ -128,10 +128,10 @@ function validateRequest(body, req) {
   const distributorAddress = requireAddress(body.distributorAddress, "distributorAddress");
   if (targetContract !== vaultAddress) throw Object.assign(new Error("targetContract must equal vaultAddress"), { statusCode: 400 });
 
-  const vaultAllowlistName = `ALLOWED_COMMUNITY_REWARDS_VAULTS_${chainId}` in process.env
+  const vaultAllowlistName = env(`ALLOWED_COMMUNITY_REWARDS_VAULTS_${chainId}`)
     ? `ALLOWED_COMMUNITY_REWARDS_VAULTS_${chainId}`
     : "ALLOWED_COMMUNITY_REWARDS_VAULTS";
-  const distributorAllowlistName = `ALLOWED_REWARD_DISTRIBUTORS_${chainId}` in process.env
+  const distributorAllowlistName = env(`ALLOWED_REWARD_DISTRIBUTORS_${chainId}`)
     ? `ALLOWED_REWARD_DISTRIBUTORS_${chainId}`
     : "ALLOWED_REWARD_DISTRIBUTORS";
   const allowedVaults = normalizeAllowlist(vaultAllowlistName);
@@ -260,11 +260,7 @@ async function executeFunding(request) {
 
 async function handleFunding(body, req, res) {
   const request = validateRequest(body, req);
-  const hash = requestHash({
-    ...request,
-    totalAmount: request.totalAmount.toString(),
-    claimDeadline: request.claimDeadline.toString(),
-  });
+  const hash = requestHash({ ...request, totalAmount: request.totalAmount.toString(), claimDeadline: request.claimDeadline.toString() });
   const existing = inFlight.get(request.idempotencyKey);
   if (existing && existing.hash !== hash) return json(res, 409, { ok: false, error: "Idempotency key reused with different request" });
 
@@ -279,8 +275,16 @@ async function handleFunding(body, req, res) {
 
 const expectedToken = env("FUNDING_EXECUTOR_TOKEN") || env("REWARD_FUNDING_EXECUTOR_TOKEN");
 if (!expectedToken) throw new Error("FUNDING_EXECUTOR_TOKEN is required");
-normalizeAllowlist("ALLOWED_COMMUNITY_REWARDS_VAULTS");
-normalizeAllowlist("ALLOWED_REWARD_DISTRIBUTORS");
+for (const chainId of allowedChains()) {
+  const vaultName = env(`ALLOWED_COMMUNITY_REWARDS_VAULTS_${chainId}`)
+    ? `ALLOWED_COMMUNITY_REWARDS_VAULTS_${chainId}`
+    : "ALLOWED_COMMUNITY_REWARDS_VAULTS";
+  const distributorName = env(`ALLOWED_REWARD_DISTRIBUTORS_${chainId}`)
+    ? `ALLOWED_REWARD_DISTRIBUTORS_${chainId}`
+    : "ALLOWED_REWARD_DISTRIBUTORS";
+  normalizeAllowlist(vaultName);
+  normalizeAllowlist(distributorName);
+}
 
 const server = http.createServer(async (req, res) => {
   try {
