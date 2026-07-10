@@ -201,18 +201,19 @@ describe("Launchpad end-to-end", function () {
       .to.emit(campaign, "CampaignFinalized")
       .and.to.emit(router, "LiquidityAdded");
 
-    const graduatedLiquidityTokens = await campaign.graduatedLiquidityTokens();
-    const burnedUnusedLpTokens = await campaign.burnedUnusedLpTokens();
-    const burnedUnsoldTokens = await campaign.burnedUnsoldTokens();
+    const state = await campaign.getGraduationState();
+    const graduatedLiquidityTokens = state[3];
+    const burnedUnsoldTokens = state[6];
+    const burnedUnusedLpTokens = state[7];
 
     expect(await campaign.launched()).to.equal(true);
     expect(await token.tradingEnabled()).to.equal(true);
     expect(await token.balanceOf(await campaign.getAddress())).to.equal(0n);
     expect(await token.balanceOf(await router.getAddress())).to.equal(graduatedLiquidityTokens);
     expect(await token.balanceOf(creator.address)).to.equal(creatorReserve);
-    expect(await campaign.dexPair()).to.not.equal(ethers.ZeroAddress);
-    expect(await campaign.finalCurvePrice()).to.equal(await campaign.currentPrice());
-    expect(await campaign.initialDexPrice()).to.equal(await campaign.finalCurvePrice());
+    expect(state[0]).to.not.equal(ethers.ZeroAddress);
+    expect(state[1]).to.equal(await campaign.currentPrice());
+    expect(state[2]).to.equal(state[1]);
 
     expect(await token.totalSupply()).to.equal(totalSupply - burnedUnsoldTokens - burnedUnusedLpTokens);
 
@@ -285,16 +286,17 @@ describe("Launchpad end-to-end", function () {
       .to.emit(campaign, "CampaignFinalized")
       .and.to.emit(router, "LiquidityAdded");
 
-    const graduatedLiquidityTokens = await campaign.graduatedLiquidityTokens();
-    const burnedUnusedLpTokens = await campaign.burnedUnusedLpTokens();
-    const burnedUnsoldTokens = await campaign.burnedUnsoldTokens();
+    const state = await campaign.getGraduationState();
+    const graduatedLiquidityTokens = state[3];
+    const burnedUnsoldTokens = state[6];
+    const burnedUnusedLpTokens = state[7];
 
     expect(await campaign.launched()).to.equal(true);
     expect(await token.tradingEnabled()).to.equal(true);
     expect(await token.balanceOf(campaignAddr)).to.equal(0n);
     expect(await token.balanceOf(await router.getAddress())).to.equal(graduatedLiquidityTokens);
     expect(await token.balanceOf(creator.address)).to.equal(creatorReserve);
-    expect(await campaign.dexPair()).to.not.equal(ethers.ZeroAddress);
+    expect(state[0]).to.not.equal(ethers.ZeroAddress);
 
     expect(await token.totalSupply()).to.equal(totalSupply - burnedUnsoldTokens - burnedUnusedLpTokens);
 
