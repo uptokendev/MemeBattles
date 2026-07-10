@@ -49,15 +49,12 @@ contract MockRouter is IPancakeRouter02 {
         amountETH = msg.value;
         liquidity = amountTokenDesired + msg.value;
 
-        // Test helper behavior: if a v2 pair is registered in the mock factory,
-        // update its reserves/totalSupply to simulate an actual AMM pool.
-        // This enables end-to-end assertions that "LP deploy creates reserves".
         address pair = MockV2Factory(_factory).getPair(token, _wrapped);
-        if (pair != address(0)) {
-            MockV2Pair(pair).setReserves(uint112(amountTokenDesired), uint112(msg.value));
-            // Non-zero to indicate "LP minted" (exact value isn't important in our tests).
-            MockV2Pair(pair).setTotalSupply(1);
-        }
+        if (pair == address(0)) pair = MockV2Factory(_factory).createPair(token, _wrapped);
+        MockV2Pair(pair).setReserves(uint112(amountTokenDesired), uint112(msg.value));
+        // Non-zero to indicate "LP minted" (exact value isn't important in our tests).
+        MockV2Pair(pair).setTotalSupply(1);
+
         emit LiquidityAdded(token, amountToken, amountETH, to);
     }
 }
