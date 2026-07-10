@@ -108,6 +108,35 @@ async function deployDirectCampaign(params: any) {
   return campaign;
 }
 
+async function captureRouteBalances(vaults: any) {
+  return {
+    league: await getBalance(await vaults.treasuryVault.getAddress()),
+    recruiter: await getBalance(await vaults.recruiterVault.getAddress()),
+    airdrop: await vaults.communityVault.warzoneAirdropBalance(),
+    squad: await vaults.communityVault.squadPoolBalance(),
+    protocol: await getBalance(await vaults.protocolVault.getAddress()),
+  };
+}
+
+function addRouteAmounts(a: any, b: any) {
+  return {
+    league: a.league + b.league,
+    recruiter: a.recruiter + b.recruiter,
+    airdrop: a.airdrop + b.airdrop,
+    squad: a.squad + b.squad,
+    protocol: a.protocol + b.protocol,
+  };
+}
+
+async function expectRouteBalanceDelta(before: any, vaults: any, expected: any) {
+  const after = await captureRouteBalances(vaults);
+  expect(after.league - before.league).to.eq(expected.league);
+  expect(after.recruiter - before.recruiter).to.eq(expected.recruiter);
+  expect(after.airdrop - before.airdrop).to.eq(expected.airdrop);
+  expect(after.squad - before.squad).to.eq(expected.squad);
+  expect(after.protocol - before.protocol).to.eq(expected.protocol);
+}
+
 describe("LaunchCampaign", function () {
   it("initial state / immutables / token minted to campaign", async () => {
     const { campaign, token } = await loadFixture(createCampaignFixture);
@@ -140,7 +169,7 @@ describe("LaunchCampaign", function () {
   });
 
   it("buyExactTokens: transfers tokens, updates sold & counters, emits, sends fee, refunds overpay", async () => {
-    const { campaign, token, alice, feeRecipient, lpReceiver } = await loadFixture(createCampaignFixture);
+    const { campaign, token, alice, treasuryRouter, treasuryVault, recruiterVault, communityVault, protocolVault } = await loadFixture(createCampaignFixture);
 
     const base = await campaign.basePrice();
     const slope = await campaign.priceSlope();
@@ -149,8 +178,9 @@ describe("LaunchCampaign", function () {
     const sold0 = await campaign.sold();
     const { costNoFee, fee, total } = quoteBuyExactTokens(BigInt(sold0), BigInt(amountOut), BigInt(base), BigInt(slope), BigInt(feeBps));
 
-    const feeBefore = await getBalance(await feeRecipient.getAddress());
-    const leagueBefore = await getBalance(await lpReceiver.getAddress());
+    const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
+    const routeBefore = await captureRouteBalances(routeVaults);
+    const expectedRoute = await treasuryRouter.previewRoute(fee, 0, await campaign.tradeRouteProfile());
     const buyerBefore = await getBalance(await alice.getAddress());
     const campBefore = await getBalance(await campaign.getAddress());
 
@@ -163,15 +193,7 @@ describe("LaunchCampaign", function () {
     expect(await campaign.buyersCount()).to.eq(1n);
     expect(await campaign.hasBought(await alice.getAddress())).to.eq(true);
 
-    const leagueBps = await campaign.leagueFeeBps();
-    let expectedLeagueFee = (costNoFee * BigInt(leagueBps)) / 10_000n;
-    if (expectedLeagueFee > fee) expectedLeagueFee = fee;
-    const expectedProtocolNet = fee - expectedLeagueFee;
-
-    const feeAfter = await getBalance(await feeRecipient.getAddress());
-    const leagueAfter = await getBalance(await lpReceiver.getAddress());
-    expect(feeAfter - feeBefore).to.eq(expectedProtocolNet);
-    expect(leagueAfter - leagueBefore).to.eq(expectedLeagueFee);
+    await expectRouteBalanceDelta(routeBefore, routeVaults, expectedRoute);
 
     const campAfter = await getBalance(await campaign.getAddress());
     expect(campAfter - campBefore).to.eq(costNoFee);
@@ -191,7 +213,7 @@ describe("LaunchCampaign", function () {
   });
 
   it("sellExactTokens: transfers tokens back, pays out, updates sold & counters, emits, takes fee", async () => {
-    const { campaign, token, alice, feeRecipient, lpReceiver } = await loadFixture(createCampaignFixture);
+    const { campaign, token, alice, treasuryRouter, treasuryVault, recruiterVault, communityVault, protocolVault } = await loadFixture(createCampaignFixture);
 
     const base = await campaign.basePrice();
     const slope = await campaign.priceSlope();
@@ -207,8 +229,9 @@ describe("LaunchCampaign", function () {
     const soldBefore = await campaign.sold();
     const { gross, fee, payout } = quoteSellExactTokens(BigInt(soldBefore), BigInt(amountIn), BigInt(base), BigInt(slope), BigInt(feeBps));
 
-    const feeBefore = await getBalance(await feeRecipient.getAddress());
-    const leagueBefore = await getBalance(await lpReceiver.getAddress());
+    const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
+    const routeBefore = await captureRouteBalances(routeVaults);
+    const expectedRoute = await treasuryRouter.previewRoute(fee, 0, await campaign.tradeRouteProfile());
     const campBefore = await getBalance(await campaign.getAddress());
 
     const tx = await campaign.connect(alice).sellExactTokens(amountIn, payout);
@@ -217,14 +240,7 @@ describe("LaunchCampaign", function () {
     expect(await campaign.sold()).to.eq(soldBefore - amountIn);
     expect(await token.balanceOf(await alice.getAddress())).to.eq(amountOut - amountIn);
 
-    const leagueBps = await campaign.leagueFeeBps();
-    const expectedLeagueFee = (gross * BigInt(leagueBps)) / 10_000n;
-    const expectedProtocolNet = fee - expectedLeagueFee;
-
-    const feeAfter = await getBalance(await feeRecipient.getAddress());
-    const leagueAfter = await getBalance(await lpReceiver.getAddress());
-    expect(feeAfter - feeBefore).to.eq(expectedProtocolNet);
-    expect(leagueAfter - leagueBefore).to.eq(expectedLeagueFee);
+    await expectRouteBalanceDelta(routeBefore, routeVaults, expectedRoute);
 
     const campAfter = await getBalance(await campaign.getAddress());
     expect(campBefore - campAfter).to.eq(gross);
@@ -351,10 +367,23 @@ describe("LaunchCampaign", function () {
   });
 
   it("auto-finalize: completion buy triggers graduation; adds liquidity; burns unsold; transfers creatorReserve; pays creator; enables trading", async () => {
-    const { campaign, token, creator, alice, feeRecipient, router } = await loadFixture(createCampaignFixture);
+    const { campaign, token, creator, alice, router, treasuryRouter, treasuryVault, recruiterVault, communityVault, protocolVault } = await loadFixture(createCampaignFixture);
 
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
+    const base = await campaign.basePrice();
+    const slope = await campaign.priceSlope();
+    const feeBps = await campaign.protocolFeeBps();
+    const { fee: tradeFee } = quoteBuyExactTokens(
+      BigInt(await campaign.sold()),
+      BigInt(curveSupply),
+      BigInt(base),
+      BigInt(slope),
+      BigInt(feeBps)
+    );
+    const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
+    const routeBefore = await captureRouteBalances(routeVaults);
+    const tradeRoute = await treasuryRouter.previewRoute(tradeFee, 0, await campaign.tradeRouteProfile());
     const ownerAddr = await creator.getAddress();
     const creatorBalBefore = await getBalance(ownerAddr);
 
@@ -381,6 +410,8 @@ describe("LaunchCampaign", function () {
 
     expect(ev).to.not.eq(undefined);
     const protocolFee = BigInt(ev!.args.protocolFee.toString());
+    const finalizeRoute = await treasuryRouter.previewRoute(protocolFee, 1, await campaign.finalizeRouteProfile());
+    await expectRouteBalanceDelta(routeBefore, routeVaults, addRouteAmounts(tradeRoute, finalizeRoute));
     const creatorBalAfter = await getBalance(ownerAddr);
     expect(creatorBalAfter).to.be.gt(creatorBalBefore);
 
@@ -391,9 +422,6 @@ describe("LaunchCampaign", function () {
     const soldAtFinalize = await campaign.sold();
     const expectedBurn = curveSupply - soldAtFinalize;
     expect(await token.totalSupply()).to.eq(totalSupply - expectedBurn);
-
-    const feeAfter = await getBalance(await feeRecipient.getAddress());
-    expect(feeAfter).to.be.gte(protocolFee);
   });
 
   it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
