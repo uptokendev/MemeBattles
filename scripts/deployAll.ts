@@ -50,19 +50,21 @@ async function main() {
   const leagueRouter = await Router.deploy(treasurySafe, vaultAddr, upgradeDelaySeconds);
   await leagueRouter.waitForDeployment();
   const leagueRouterAddr = await leagueRouter.getAddress();
-  console.log("TreasuryRouter (League Receiver):", leagueRouterAddr);
+  console.log("TreasuryRouter (Protocol + League Receiver):", leagueRouterAddr);
 
-  // 3) Factory (dex router + leagueReceiver)
+  // 3) Locked campaign implementation for EIP-1167 clones
+  const Campaign = await ethers.getContractFactory("LaunchCampaign");
+  const campaignImplementation = await Campaign.deploy();
+  await campaignImplementation.waitForDeployment();
+  const campaignImplementationAddr = await campaignImplementation.getAddress();
+  console.log("LaunchCampaign implementation:", campaignImplementationAddr);
+
+  // 4) Factory (dex router + treasury router + campaign implementation)
   const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(routerAddress, leagueRouterAddr);
+  const factory = await Factory.deploy(routerAddress, leagueRouterAddr, campaignImplementationAddr);
   await factory.waitForDeployment();
   const factoryAddr = await factory.getAddress();
   console.log("LaunchFactory:", factoryAddr);
-
-  // 4) Route protocol fees (buy/sell + finalize) to Treasury Safe
-  const tx1 = await factory.setFeeRecipient(treasurySafe);
-  await tx1.wait();
-  console.log("FeeRecipient set:", treasurySafe);
 
   // 5) Ensure protocol fee matches your config
   try {
@@ -94,6 +96,7 @@ async function main() {
     contracts: {
       TreasuryVault: vaultAddr,
       TreasuryRouter: leagueRouterAddr,
+      LaunchCampaignImplementation: campaignImplementationAddr,
       LaunchFactory: factoryAddr,
       UPVoteTreasury: voteTreasuryAddr,
     },
@@ -106,8 +109,7 @@ async function main() {
   console.log(`VITE_FACTORY_ADDRESS_${out.chainId}=${factoryAddr}`);
   console.log(`VITE_VOTE_TREASURY_ADDRESS_${out.chainId}=${voteTreasuryAddr}`);
   console.log("\nLeague funds:");
-  console.log("- Protocol fees -> Treasury Safe:", treasurySafe);
-  console.log("- League slice -> TreasuryRouter -> TreasuryVault:", leagueRouterAddr, "->", vaultAddr);
+  console.log("- Protocol fees and league slice -> TreasuryRouter -> TreasuryVault:", leagueRouterAddr, "->", vaultAddr);
 }
 
 main().catch((e) => {
