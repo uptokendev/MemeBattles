@@ -110,8 +110,8 @@ describe("Launchpad end-to-end", function () {
 
     await factory.setConfig({
       totalSupply: ethers.parseUnits("1000", 18),
-      curveBps: 8000n,
-      liquidityTokenBps: 1000n,
+      curveBps: 5000n,
+      liquidityTokenBps: 4000n,
       basePrice: ethers.parseEther("0.001"),
       priceSlope: ethers.parseEther("0.000001"),
       graduationTarget: ethers.parseEther("10"),
@@ -182,8 +182,8 @@ describe("Launchpad end-to-end", function () {
 
     await factory.setConfig({
       totalSupply: ethers.parseUnits("1000", 18),
-      curveBps: 8000n,
-      liquidityTokenBps: 1000n,
+      curveBps: 5000n,
+      liquidityTokenBps: 4000n,
       basePrice: ethers.parseEther("0.001"),
       priceSlope: ethers.parseEther("0.000001"),
       graduationTarget: ethers.parseEther("10"),
@@ -194,7 +194,6 @@ describe("Launchpad end-to-end", function () {
 
     const totalSupply = await campaign.totalSupply();
     const curveSupply = await campaign.curveSupply();
-    const liquiditySupply = await campaign.liquiditySupply();
     const creatorReserve = await campaign.creatorReserve();
 
     const cost = await campaign.quoteBuyExactTokens(curveSupply);
@@ -202,14 +201,20 @@ describe("Launchpad end-to-end", function () {
       .to.emit(campaign, "CampaignFinalized")
       .and.to.emit(router, "LiquidityAdded");
 
+    const graduatedLiquidityTokens = await campaign.graduatedLiquidityTokens();
+    const burnedUnusedLpTokens = await campaign.burnedUnusedLpTokens();
+    const burnedUnsoldTokens = await campaign.burnedUnsoldTokens();
+
     expect(await campaign.launched()).to.equal(true);
     expect(await token.tradingEnabled()).to.equal(true);
     expect(await token.balanceOf(await campaign.getAddress())).to.equal(0n);
-    expect(await token.balanceOf(await router.getAddress())).to.equal(liquiditySupply);
+    expect(await token.balanceOf(await router.getAddress())).to.equal(graduatedLiquidityTokens);
     expect(await token.balanceOf(creator.address)).to.equal(creatorReserve);
+    expect(await campaign.dexPair()).to.not.equal(ethers.ZeroAddress);
+    expect(await campaign.finalCurvePrice()).to.equal(await campaign.currentPrice());
+    expect(await campaign.initialDexPrice()).to.equal(await campaign.finalCurvePrice());
 
-    const sold = await campaign.sold();
-    expect(await token.totalSupply()).to.equal(totalSupply - (curveSupply - sold));
+    expect(await token.totalSupply()).to.equal(totalSupply - burnedUnsoldTokens - burnedUnusedLpTokens);
 
     const transferAmount = (await token.balanceOf(trader.address)) / 2n;
     await token.connect(trader).transfer(other.address, transferAmount);
@@ -229,9 +234,9 @@ describe("Launchpad end-to-end", function () {
 
     await factory.setConfig({
       totalSupply: ethers.parseUnits("1000", 18),
-      curveBps: 8000n,
-      liquidityTokenBps: 1000n,
-      basePrice: ethers.parseEther("0.001"),
+      curveBps: 5000n,
+      liquidityTokenBps: 4000n,
+      basePrice: ethers.parseEther("0.005"),
       priceSlope: ethers.parseEther("0.000001"),
       graduationTarget: ethers.parseEther("10"),
       liquidityBps: 8000n,
@@ -240,7 +245,6 @@ describe("Launchpad end-to-end", function () {
     const { campaign, token } = await createCampaign(factory, creator, { name: "Scenario Token", symbol: "SCN" });
     const totalSupply = await campaign.totalSupply();
     const curveSupply = await campaign.curveSupply();
-    const liquiditySupply = await campaign.liquiditySupply();
     const creatorReserve = await campaign.creatorReserve();
 
     const buyTokens = async (user: any, rawAmount: number) => {
@@ -281,14 +285,18 @@ describe("Launchpad end-to-end", function () {
       .to.emit(campaign, "CampaignFinalized")
       .and.to.emit(router, "LiquidityAdded");
 
+    const graduatedLiquidityTokens = await campaign.graduatedLiquidityTokens();
+    const burnedUnusedLpTokens = await campaign.burnedUnusedLpTokens();
+    const burnedUnsoldTokens = await campaign.burnedUnsoldTokens();
+
     expect(await campaign.launched()).to.equal(true);
     expect(await token.tradingEnabled()).to.equal(true);
     expect(await token.balanceOf(campaignAddr)).to.equal(0n);
-    expect(await token.balanceOf(await router.getAddress())).to.equal(liquiditySupply);
+    expect(await token.balanceOf(await router.getAddress())).to.equal(graduatedLiquidityTokens);
     expect(await token.balanceOf(creator.address)).to.equal(creatorReserve);
+    expect(await campaign.dexPair()).to.not.equal(ethers.ZeroAddress);
 
-    const soldFinal = await campaign.sold();
-    expect(await token.totalSupply()).to.equal(totalSupply - (curveSupply - soldFinal));
+    expect(await token.totalSupply()).to.equal(totalSupply - burnedUnsoldTokens - burnedUnusedLpTokens);
 
     await token.connect(alice).transfer(bob.address, ethers.parseUnits("2", 18));
     expect(
@@ -296,7 +304,7 @@ describe("Launchpad end-to-end", function () {
         (await token.balanceOf(bob.address)) +
         (await token.balanceOf(carol.address)) +
         creatorReserve +
-        liquiditySupply
+        graduatedLiquidityTokens
     ).to.equal(await token.totalSupply());
   });
 });
