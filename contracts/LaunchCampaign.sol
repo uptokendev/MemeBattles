@@ -166,6 +166,12 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 postBurnTotalSupply
     );
 
+    error LpTokensZero();
+    error InsufficientLpAllocation();
+    error LiquidityZero();
+    error PairMissing();
+    error DexPriceDrift();
+
     bool private _initialized;
 
     constructor() Ownable(address(1)) {
@@ -328,7 +334,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint64 routeDeadline,
         bytes calldata routeSignature
     ) external nonReentrant returns (uint256 payout) {
-        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        _verifyTradeRouteAuthorization(msg.sender, routeProfile, deadline, routeSignature);
         return _sellExactTokens(msg.sender, amountIn, minPayout, true, routeProfile);
     }
 
@@ -473,8 +479,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 remainingAfterFee = _availableNativeBalance();
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 lpTokensDesired = Math.mulDiv(liquidityValue, WAD, finalCurvePrice);
-        require(lpTokensDesired > 0, "lp tokens zero");
-        require(lpTokensDesired <= liquiditySupply, "insufficient lp allocation");
+        if (lpTokensDesired == 0) revert LpTokensZero();
+        if (lpTokensDesired > liquiditySupply) revert InsufficientLpAllocation();
 
         tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
@@ -486,7 +492,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             block.timestamp + 30 minutes
         );
         tokenInterface.forceApprove(address(router), 0);
-        require(usedTokens > 0 && usedBnb > 0, "lp zero");
+        if (usedTokens == 0 || usedBnb == 0) revert LiquidityZero();
 
         graduatedLiquidityTokens = usedTokens;
         graduatedLiquidityBnb = usedBnb;
@@ -494,7 +500,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _requirePriceWithinTolerance(initialDexPrice, finalCurvePrice);
 
         dexPair = IPancakeV2FactoryLike(router.factory()).getPair(address(token), router.WETH());
-        require(dexPair != address(0), "pair missing");
+        if (dexPair == address(0)) revert PairMissing();
 
         burnedUnusedLpTokens = liquiditySupply - usedTokens;
         if (burnedUnusedLpTokens > 0) token.burn(address(this), burnedUnusedLpTokens);
@@ -591,7 +597,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     function _requirePriceWithinTolerance(uint256 actualPrice, uint256 expectedPrice) internal pure {
         uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
-        require(Math.mulDiv(diff, MAX_BPS, expectedPrice) <= GRADUATION_PRICE_TOLERANCE_BPS, "dex price drift");
+        if (Math.mulDiv(diff, MAX_BPS, expectedPrice) > GRADUATION_PRICE_TOLERANCE_BPS) revert DexPriceDrift();
     }
 
     function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
