@@ -18,6 +18,8 @@ contract LaunchFactory is Ownable {
     error SymbolEmpty();
     error LogoEmpty();
     error RecipientZero();
+    error ImplementationZero();
+    error ContractCodeMissing();
     error FeeTooHigh();
     error FeeTooLowForLeague();
     error ParamTooHigh();
@@ -109,8 +111,8 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
+    address public immutable campaignImplementation;
     address public router;
-    address public campaignImplementation;
     CreatorRegistry public creatorRegistry;
     RiskRegistry public riskRegistry;
 
@@ -146,11 +148,20 @@ contract LaunchFactory is Ownable {
         _;
     }
 
-    constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
-        if (router_ == address(0)) revert RouterZero();
-        if (leagueReceiver_ == address(0)) revert RecipientZero();
-        router = router_;
-        leagueReceiver = leagueReceiver_;
+    constructor(address pancakeRouter_, address treasuryRouter_, address campaignImplementation_) Ownable(msg.sender) {
+        if (pancakeRouter_ == address(0)) revert RouterZero();
+        if (treasuryRouter_ == address(0)) revert RecipientZero();
+        if (campaignImplementation_ == address(0)) revert ImplementationZero();
+        if (
+            pancakeRouter_.code.length == 0 ||
+            treasuryRouter_.code.length == 0 ||
+            campaignImplementation_.code.length == 0
+        ) revert ContractCodeMissing();
+
+        router = pancakeRouter_;
+        leagueReceiver = treasuryRouter_;
+        feeRecipient = treasuryRouter_;
+        campaignImplementation = campaignImplementation_;
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
@@ -160,12 +171,10 @@ contract LaunchFactory is Ownable {
             graduationTarget: 50 ether,
             liquidityBps: 8000
         });
-        feeRecipient = msg.sender;
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         requireAuthorizedTrading = false;
-        campaignImplementation = address(new LaunchCampaign());
     }
 
     function enableLive() external onlyOwner {
