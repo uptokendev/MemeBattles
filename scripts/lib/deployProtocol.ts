@@ -240,17 +240,17 @@ export async function deployProtocol() {
     console.warn("[deploy] Treasury safe differs from deployer; router/community admin wiring left for multisig execution.");
   }
 
+  const Campaign = await ethers.getContractFactory("LaunchCampaign");
+  const campaignImplementation = await Campaign.deploy();
+  await campaignImplementation.waitForDeployment();
+  const campaignImplementationAddress = await campaignImplementation.getAddress();
+  console.log("LaunchCampaign implementation:", campaignImplementationAddress);
+
   const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(routerAddress, leagueRouterAddress);
+  const factory = await Factory.deploy(routerAddress, leagueRouterAddress, campaignImplementationAddress);
   await factory.waitForDeployment();
   const factoryAddress = await factory.getAddress();
   console.log("LaunchFactory:", factoryAddress);
-
-  if ((await factory.feeRecipient()) !== leagueRouterAddress) {
-    const tx = await factory.setFeeRecipient(leagueRouterAddress);
-    await tx.wait();
-    console.log("FeeRecipient set to TreasuryRouter for unified Phase 1 routing:", leagueRouterAddress);
-  }
 
   if ((await factory.tradeRouteProfile()) !== BigInt(tradeRouteProfile) || (await factory.finalizeRouteProfile()) !== BigInt(finalizeRouteProfile)) {
     const tx = await factory.setRouteProfiles(tradeRouteProfile, finalizeRouteProfile);
@@ -304,6 +304,7 @@ export async function deployProtocol() {
       RecruiterRewardsVault: recruiterVaultAddress,
       CommunityRewardsVault: communityVaultAddress,
       ProtocolRevenueVault: protocolVaultAddress,
+      LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: factoryAddress,
       UPVoteTreasury: voteTreasuryAddress,
     },
@@ -320,6 +321,7 @@ export async function deployProtocol() {
       factoryTradeRouteProfile: tradeRouteProfile,
       factoryFinalizeRouteProfile: finalizeRouteProfile,
       factoryRouteAuthority: routeAuthority || null,
+      campaignImplementation: campaignImplementationAddress,
       unifiedRouterModeActive: true,
     },
     postDeployActions,
@@ -335,8 +337,10 @@ export async function deployProtocol() {
   console.log(`VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${communityVaultAddress}`);
   console.log(`VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${recruiterVaultAddress}`);
   console.log(`VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${deployment.chainId}=${protocolVaultAddress}`);
+  console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
+  console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
   console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
