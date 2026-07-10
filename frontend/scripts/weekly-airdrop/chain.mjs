@@ -1,5 +1,5 @@
 import { Contract, JsonRpcProvider, getAddress } from "ethers";
-import { apiEndpoint, asBigInt, envText, requireEnv } from "./config.mjs";
+import { asBigInt, envText, requireEnv } from "./config.mjs";
 
 function rpcUrl(chainId) {
   return envText(`BSC_RPC_HTTP_${chainId}`) || envText("BSC_RPC_HTTP") || envText("RPC_URL");
@@ -29,38 +29,6 @@ export async function resolvePoolWei(chainId) {
   const availableWei = BigInt(await vault.warzoneAirdropBalance());
   if (availableWei <= 0n) throw new Error("warzoneAirdropBalance is zero");
   return { availableWei, source: "community_rewards_vault", vaultAddress };
-}
-
-export async function publishProgram({ apiBaseUrl, internalSecret, chainId, epochId, program, winnerCount, claimDeadline, distributorAddress, metadata }) {
-  const response = await fetch(apiEndpoint(apiBaseUrl, "/internal/airdrops/publish"), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(internalSecret ? { "x-rewards-internal-secret": internalSecret } : {}),
-    },
-    body: JSON.stringify({
-      auto: true,
-      chainId,
-      tokenSymbol: "BNB",
-      program,
-      epochId,
-      limit: winnerCount,
-      claimDeadline,
-      distributorAddress,
-      sourceView: "public.reward_calculation_inputs",
-      source: "weekly_airdrop_scheduler",
-      reason: `Automatic weekly ${program} publication`,
-      metadata,
-    }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(`Publish ${program} failed: HTTP ${response.status} ${JSON.stringify(payload)}`);
-  }
-  if (Number(payload?.batch?.recipientCount || 0) !== winnerCount) {
-    throw new Error(`Recipient count mismatch for ${program}`);
-  }
-  return payload;
 }
 
 export async function markFundingCheck(client, batchId) {
@@ -124,7 +92,7 @@ export async function markClaimOpen(client, batchId, funding) {
     );
     const { rows } = await client.query(
       `update public.reward_batches
-          set status='claim_open',claimable_count=$2,
+          set status='claim_open',claimable_count=$2,published_at=coalesce(published_at,now()),
               metadata=coalesce(metadata,'{}'::jsonb)||$3::jsonb,updated_at=now()
         where id=$1::uuid returning *`,
       [batchId, ledger.length, JSON.stringify({
