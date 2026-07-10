@@ -418,10 +418,20 @@ describe("LaunchCampaign", function () {
     const creatorReserve = await campaign.creatorReserve();
     expect(await token.balanceOf(ownerAddr)).to.be.gte(creatorReserve);
 
+    expect(await campaign.dexPair()).to.not.eq(ethers.ZeroAddress);
+    expect(await campaign.finalCurvePrice()).to.eq(await campaign.currentPrice());
+    expect(await campaign.initialDexPrice()).to.eq(await campaign.finalCurvePrice());
+    expect(ev!.args.finalCurvePrice).to.eq(await campaign.finalCurvePrice());
+    expect(ev!.args.initialDexPrice).to.eq(await campaign.initialDexPrice());
+
     const totalSupply = await campaign.totalSupply();
     const soldAtFinalize = await campaign.sold();
-    const expectedBurn = curveSupply - soldAtFinalize;
-    expect(await token.totalSupply()).to.eq(totalSupply - expectedBurn);
+    const expectedUnsoldBurn = curveSupply - soldAtFinalize;
+    const expectedUnusedLpBurn = await campaign.burnedUnusedLpTokens();
+    expect(await campaign.burnedUnsoldTokens()).to.eq(expectedUnsoldBurn);
+    expect(expectedUnusedLpBurn).to.be.gt(0n);
+    expect(await token.totalSupply()).to.eq(totalSupply - expectedUnsoldBurn - expectedUnusedLpBurn);
+    expect(await campaign.postBurnTotalSupply()).to.eq(await token.totalSupply());
   });
 
   it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
@@ -465,6 +475,7 @@ describe("LaunchCampaign", function () {
     await expect(tx).to.emit(campaign, "CampaignFinalized");
     await expect(tx).to.emit(router, "LiquidityAdded");
     expect(await token.tradingEnabled()).to.eq(true);
+    expect(await campaign.dexPair()).to.eq(await pair.getAddress());
   });
 
   it("post-finalize: trading restriction lifted; buys/sells revert", async () => {
