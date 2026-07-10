@@ -16,6 +16,8 @@ contract LaunchFactory is Ownable {
     error InitBuyTooLarge();
     error RefundFail();
     error RecipientZero();
+    error ImplementationZero();
+    error ContractCodeMissing();
     error FeeTooHigh();
     error FeeTooLowForLeague();
     error ParamTooHigh();
@@ -29,6 +31,7 @@ contract LaunchFactory is Ownable {
     error LiquidityBps();
     error NotLive();
     error AlreadyLive();
+
     struct LaunchConfig {
         uint256 totalSupply;
         uint256 curveBps;
@@ -82,8 +85,8 @@ contract LaunchFactory is Ownable {
     // Burn address for LP tokens. LP minted here can never be redeemed.
     address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
+    address public immutable campaignImplementation;
     address public router;
-    address public campaignImplementation;
 
     CampaignInfo[] private _campaigns;
 
@@ -101,11 +104,21 @@ contract LaunchFactory is Ownable {
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event LiveEnabled(uint64 at);
 
-    constructor(address router_, address leagueReceiver_) Ownable(msg.sender) {
-        if (router_ == address(0)) revert RouterZero();
-        if (leagueReceiver_ == address(0)) revert RecipientZero();
-        router = router_;
-        leagueReceiver = leagueReceiver_;
+    constructor(address pancakeRouter_, address treasuryRouter_, address campaignImplementation_) Ownable(msg.sender) {
+        if (pancakeRouter_ == address(0)) revert RouterZero();
+        if (treasuryRouter_ == address(0)) revert RecipientZero();
+        if (campaignImplementation_ == address(0)) revert ImplementationZero();
+        if (
+            pancakeRouter_.code.length == 0 ||
+            treasuryRouter_.code.length == 0 ||
+            campaignImplementation_.code.length == 0
+        ) revert ContractCodeMissing();
+
+        router = pancakeRouter_;
+        leagueReceiver = treasuryRouter_;
+        feeRecipient = treasuryRouter_;
+        campaignImplementation = campaignImplementation_;
+
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
@@ -116,11 +129,8 @@ contract LaunchFactory is Ownable {
             // 80% of raised BNB (after protocol fee) goes to LP, 20% to the creator.
             liquidityBps: 8000
         });
-        feeRecipient = msg.sender;
         // 2% fee on bonding-curve buys/sells, and 2% taken again at finalize before LP.
         protocolFeeBps = 200;
-        // Deploy the campaign implementation once; campaigns are cheap EIP-1167 clones.
-        campaignImplementation = address(new LaunchCampaign());
     }
 
     /// @notice Enables Live Mode permanently. Cannot be undone.
@@ -129,7 +139,6 @@ contract LaunchFactory is Ownable {
         live = true;
         emit LiveEnabled(uint64(block.timestamp));
     }
-
 
     receive() external payable {}
 
@@ -162,10 +171,9 @@ contract LaunchFactory is Ownable {
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
 
-if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
-if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
-if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
-
+        if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
+        if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
+        if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
@@ -219,15 +227,15 @@ if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) r
         // Creator specifies exact BNB to spend (req.initialBuyBnbWei). Any extra msg.value is refunded.
         uint256 spent = 0;
         if (req.initialBuyBnbWei > 0) {
-    if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
-    if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
+            if (req.initialBuyBnbWei > MAX_CREATOR_INIT_BUY) revert InitBuyTooLarge();
+            if (msg.value < req.initialBuyBnbWei) revert InitBuyValue();
 
-    (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
-        msg.sender,
-        0
-    );
-    spent = totalSpent;
-}
+            (, uint256 totalSpent) = LaunchCampaign(payable(campaignAddr)).buyExactBnbFor{value: req.initialBuyBnbWei}(
+                msg.sender,
+                0
+            );
+            spent = totalSpent;
+        }
         if (msg.value > spent) {
             (bool ok, ) = msg.sender.call{value: msg.value - spent}("");
             if (!ok) revert RefundFail();
