@@ -86,7 +86,7 @@ describe("Launchpad end-to-end", function () {
   });
 
   it("computes quotes, allows buys/sells, and updates price and sold correctly", async () => {
-    const { creator, trader, factory } = await deployCoreFixture() as any;
+    const { creator, alice: trader, factory } = await deployCoreFixture();
     const { campaign, token } = await createCampaign(factory, creator);
 
     const initialPrice = await campaign.currentPrice();
@@ -116,7 +116,7 @@ describe("Launchpad end-to-end", function () {
   });
 
   it("enforces pre-launch lock: no user transfers or manual LP before finalize", async () => {
-    const { creator, trader, other, router, factory } = await deployCoreFixture() as any;
+    const { creator, alice: trader, bob: other, router, factory } = await deployCoreFixture();
     const { campaign, token } = await createCampaign(factory, creator);
 
     expect(await token.tradingEnabled()).to.equal(false);
@@ -149,7 +149,7 @@ describe("Launchpad end-to-end", function () {
   });
 
   it("auto-finalizes when the curve sells out", async () => {
-    const { creator, trader, router, factory } = await deployCoreFixture() as any;
+    const { creator, alice: trader, router, factory } = await deployCoreFixture();
     const { campaign, token } = await createCampaign(factory, creator, { graduationTarget: ethers.parseEther("1000") });
 
     const curveSupply = await campaign.curveSupply();
@@ -165,7 +165,7 @@ describe("Launchpad end-to-end", function () {
   });
 
   it("after finalize, tokens and LP are distributed correctly and trading is open", async () => {
-    const { creator, trader, other, router, factory } = await deployCoreFixture() as any;
+    const { creator, alice: trader, bob: other, router, factory } = await deployCoreFixture();
     const { campaign, token } = await createCampaign(factory, creator, { graduationTarget: ethers.parseEther("1000") });
 
     const totalSupply = await campaign.totalSupply();
