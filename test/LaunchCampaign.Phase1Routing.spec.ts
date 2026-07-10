@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { quoteBuyExactTokens, quoteSellExactTokens } from "./helpers/math";
 import { getBalance } from "./helpers/balances";
+import { deployLaunchFactory } from "./helpers/deployFactory";
 
 async function deployPhase1RoutingFixture() {
   const [owner, creator, alice, bob] = await ethers.getSigners();
@@ -29,9 +30,7 @@ async function deployPhase1RoutingFixture() {
   await treasuryRouter.connect(owner).setCommunityRewardsVault(await communityVault.getAddress());
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
-  const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(await dexRouter.getAddress(), await treasuryRouter.getAddress());
-  await factory.connect(owner).setFeeRecipient(await treasuryRouter.getAddress());
+  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
   await factory.connect(owner).setRouteAuthority(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
