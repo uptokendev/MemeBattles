@@ -6,6 +6,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
@@ -32,6 +34,7 @@ interface ILaunchFactoryGraduationNotify {
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
     struct InitParams {
@@ -89,6 +92,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint8 private constant ROUTE_PROFILE_OG_LINKED = 2;
 
     LaunchToken public token;
+    IERC20 private tokenInterface;
     IPancakeRouter02 public router;
     address public factory;
     address public feeRecipient;
@@ -132,7 +136,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     bool public requireAuthorizedTrading;
 
     modifier onlyFactory() {
-        require(msg.sender == factory, "ONLY_FACTORY");
+        if (msg.sender != factory) revert OnlyFactory();
         _;
     }
 
@@ -166,6 +170,40 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 postBurnTotalSupply
     );
 
+    error OnlyFactory();
+    error AlreadyInitialized();
+    error InvalidSupply();
+    error InvalidCurveBps();
+    error PortionOverflow();
+    error PriceZero();
+    error SlopeZero();
+    error RouterZero();
+    error CreatorZero();
+    error InvalidLiquidityBps();
+    error InvalidProtocolBps();
+    error LeagueFeeTooHigh();
+    error LeagueReceiverZero();
+    error LogoUriRequired();
+    error InvalidTradeRouteProfile();
+    error InvalidFinalizeRouteProfile();
+    error LiquidityTokenSupplyZero();
+    error NoPendingNative();
+    error ClaimFailed();
+    error CampaignPaused();
+    error BuysPaused();
+    error SellsPaused();
+    error GraduationPaused();
+    error Finalized();
+    error ThresholdNotMet();
+    error QuoteMismatch();
+    error Insolvent();
+    error CreatorBuyLocked();
+    error CreatorBuyCapExceeded();
+    error AuthorizedTradingRequired();
+    error RouteAuthExpired();
+    error RouteAuthUnavailable();
+    error BadRouteAuth();
+    error NativeTransferFailed();
     error LpTokensZero();
     error InsufficientLpAllocation();
     error LiquidityZero();
@@ -179,23 +217,23 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function initialize(InitParams memory params) external {
-        require(!_initialized, "initialized");
+        if (_initialized) revert AlreadyInitialized();
         _initialized = true;
 
-        require(params.totalSupply > 0, "invalid supply");
-        require(params.curveBps > 0 && params.curveBps < MAX_BPS, "curve bps");
-        require(params.curveBps + params.liquidityTokenBps <= MAX_BPS, "portion overflow");
-        require(params.basePrice > 0, "price zero");
-        require(params.priceSlope > 0, "slope zero");
-        require(params.router != address(0), "router zero");
-        require(params.creator != address(0), "creator zero");
-        require(params.liquidityBps <= MAX_BPS, "liquidity bps");
-        require(params.protocolFeeBps <= MAX_BPS, "protocol bps");
-        require(params.leagueFeeBps <= params.protocolFeeBps, "league>protocol");
-        require(params.leagueReceiver != address(0), "league receiver zero");
-        require(bytes(params.logoURI).length > 0, "logo uri");
-        require(_isValidRouteProfile(params.tradeRouteProfile), "trade route profile");
-        require(_isValidRouteProfile(params.finalizeRouteProfile), "finalize route profile");
+        if (params.totalSupply == 0) revert InvalidSupply();
+        if (params.curveBps == 0 || params.curveBps >= MAX_BPS) revert InvalidCurveBps();
+        if (params.curveBps + params.liquidityTokenBps > MAX_BPS) revert PortionOverflow();
+        if (params.basePrice == 0) revert PriceZero();
+        if (params.priceSlope == 0) revert SlopeZero();
+        if (params.router == address(0)) revert RouterZero();
+        if (params.creator == address(0)) revert CreatorZero();
+        if (params.liquidityBps > MAX_BPS) revert InvalidLiquidityBps();
+        if (params.protocolFeeBps > MAX_BPS) revert InvalidProtocolBps();
+        if (params.leagueFeeBps > params.protocolFeeBps) revert LeagueFeeTooHigh();
+        if (params.leagueReceiver == address(0)) revert LeagueReceiverZero();
+        if (bytes(params.logoURI).length == 0) revert LogoUriRequired();
+        if (!_isValidRouteProfile(params.tradeRouteProfile)) revert InvalidTradeRouteProfile();
+        if (!_isValidRouteProfile(params.finalizeRouteProfile)) revert InvalidFinalizeRouteProfile();
 
         _transferOwnership(params.creator);
 
@@ -227,9 +265,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         curveSupply = (params.totalSupply * params.curveBps) / MAX_BPS;
         liquiditySupply = (params.totalSupply * params.liquidityTokenBps) / MAX_BPS;
         creatorReserve = params.totalSupply - curveSupply - liquiditySupply;
-        require(liquiditySupply > 0, "liquidity zero");
+        if (liquiditySupply == 0) revert LiquidityTokenSupplyZero();
 
         token = new LaunchToken(params.name, params.symbol, params.totalSupply, address(this));
+        tokenInterface = IERC20(address(token));
         token.mint(address(this), params.totalSupply);
     }
 
@@ -372,14 +411,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     function claimPendingNative() external nonReentrant returns (uint256 amount) {
         amount = pendingNative[msg.sender];
-        require(amount > 0, "no pending");
+        if (amount == 0) revert NoPendingNative();
         pendingNative[msg.sender] = 0;
         pendingNativeTotal -= amount;
         (bool ok, ) = payable(msg.sender).call{value: amount}("");
         if (!ok) {
             pendingNative[msg.sender] = amount;
             pendingNativeTotal += amount;
-            revert("claim failed");
+            revert ClaimFailed();
         }
         emit NativeClaimed(msg.sender, amount);
     }
@@ -418,7 +457,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 costNoFee = _quoteBuyNoFee(tokensOut);
         uint256 fee = _fee(costNoFee);
         uint256 total = costNoFee + fee;
-        require(total == totalSpent, "quote mismatch");
+        if (total != totalSpent) revert QuoteMismatch();
         _beforeBuy(buyer, costNoFee);
         _recordBuy(buyer, tokensOut, costNoFee);
         if (fee > 0) {
@@ -437,12 +476,12 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         require(amountIn <= sold, "exceeds sold");
         _beforeSell(seller);
         uint256 gross = _quoteSellNoFee(amountIn);
-        require(gross <= _availableNativeBalance(), "insolvent");
+        if (gross > _availableNativeBalance()) revert Insolvent();
         uint256 fee = _fee(gross);
         payout = gross - fee;
         require(payout >= minPayout, "slippage");
         sold -= amountIn;
-        token.transferFrom(seller, address(this), amountIn);
+        tokenInterface.safeTransferFrom(seller, address(this), amountIn);
         if (fee > 0) {
             if (useAuthorizedRoute) _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, gross, routeProfile);
             else _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, gross);
@@ -460,23 +499,23 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             buyersCount += 1;
         }
         sold += amountOut;
-        token.transfer(buyer, amountOut);
+        tokenInterface.safeTransfer(buyer, amountOut);
     }
 
     function _beforeBuy(address buyer, uint256 costNoFee) internal {
-        require(!paused, "campaign paused");
-        require(!buyPaused, "buys paused");
+        if (paused) revert CampaignPaused();
+        if (buyPaused) revert BuysPaused();
         _assertWalletCanTrade(buyer);
         if (buyer == creator) {
-            require(block.timestamp >= creatorBuyLockUntil, "creator buy locked");
-            if (creatorBuyCapWei > 0) require(creatorBoughtWei + costNoFee <= creatorBuyCapWei, "creator buy cap");
+            if (block.timestamp < creatorBuyLockUntil) revert CreatorBuyLocked();
+            if (creatorBuyCapWei > 0 && creatorBoughtWei + costNoFee > creatorBuyCapWei) revert CreatorBuyCapExceeded();
             creatorBoughtWei += costNoFee;
         }
     }
 
     function _beforeSell(address seller) internal view {
-        require(!paused, "campaign paused");
-        require(!sellPaused, "sells paused");
+        if (paused) revert CampaignPaused();
+        if (sellPaused) revert SellsPaused();
         _assertWalletCanTrade(seller);
     }
 
@@ -486,7 +525,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requireDirectTradeAllowed() internal view {
-        require(!requireAuthorizedTrading, "authorized trading required");
+        if (requireAuthorizedTrading) revert AuthorizedTradingRequired();
     }
 
     function _autoFinalizeIfEligible(address caller) internal {
@@ -494,10 +533,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _finalize(uint256 minTokens, uint256 minBnb, address caller) internal returns (uint256 usedTokens, uint256 usedBnb) {
-        require(!paused, "campaign paused");
-        require(!graduationPaused, "graduation paused");
-        require(!launched, "finalized");
-        require(sold == curveSupply || _availableNativeBalance() >= graduationTarget, "threshold");
+        if (paused) revert CampaignPaused();
+        if (graduationPaused) revert GraduationPaused();
+        if (launched) revert Finalized();
+        if (sold != curveSupply && _availableNativeBalance() < graduationTarget) revert ThresholdNotMet();
         launched = true;
         finalizedAt = block.timestamp;
 
@@ -515,7 +554,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (lpTokensDesired == 0) revert LpTokensZero();
         if (lpTokensDesired > liquiditySupply) revert InsufficientLpAllocation();
 
-        token.approve(address(router), lpTokensDesired);
+        tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
             address(token),
             lpTokensDesired,
@@ -524,7 +563,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             lpReceiver,
             block.timestamp + 30 minutes
         );
-        token.approve(address(router), 0);
+        tokenInterface.forceApprove(address(router), 0);
         if (usedTokens == 0 || usedBnb == 0) revert LiquidityZero();
 
         g.graduatedLiquidityTokens = usedTokens;
@@ -540,7 +579,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
         g.burnedUnsoldTokens = curveSupply - sold;
         if (g.burnedUnsoldTokens > 0) token.burn(address(this), g.burnedUnsoldTokens);
-        if (creatorReserve > 0) token.transfer(owner(), creatorReserve);
+        if (creatorReserve > 0) tokenInterface.safeTransfer(owner(), creatorReserve);
         uint256 creatorPayout = _availableNativeBalance();
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         g.postBurnTotalSupply = token.totalSupply();
@@ -614,14 +653,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal view {
-        require(deadline >= block.timestamp, "route auth expired");
-        require(_isValidRouteProfile(routeProfile), "trade route profile");
+        if (deadline < block.timestamp) revert RouteAuthExpired();
+        if (!_isValidRouteProfile(routeProfile)) revert InvalidTradeRouteProfile();
         address authority = IRouteAuthoritySource(factory).routeAuthority();
-        require(authority != address(0), "route auth unavailable");
+        if (authority == address(0)) revert RouteAuthUnavailable();
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
             keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
         );
-        require(digest.recover(signature) == authority, "bad route auth");
+        if (digest.recover(signature) != authority) revert BadRouteAuth();
     }
 
     function _currentPrice() internal view returns (uint256) {
@@ -675,6 +714,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     function _sendNative(address to, uint256 value) private {
         if (value == 0) return;
         (bool success, ) = to.call{value: value}("");
-        require(success, "transfer failed");
+        if (!success) revert NativeTransferFailed();
     }
 }
