@@ -98,7 +98,7 @@ export async function markClaimOpen(client, batchId, funding) {
       [batchId, ledger.length, JSON.stringify({
         onChainBatchCreated: true,
         onChainBatchTxHash: funding.txHash || null,
-        vaultWithdrawalTxHash: funding.vaultWithdrawalTxHash || null,
+        vaultFundingTxHash: funding.txHash || null,
         onChainBatchBlockNumber: funding.blockNumber || null,
         onChainBatchVerifiedAt: new Date().toISOString(),
         fundingExecutorRequestId: funding.requestId || null,
@@ -171,6 +171,9 @@ export async function ensureOnChainBatch({ batchId, chainId, distributorAddress,
   if (!/^0x[a-fA-F0-9]{64}$/.test(contractBatchId) || !/^0x[a-fA-F0-9]{64}$/.test(merkleRoot) || total <= 0n) {
     throw new Error("Invalid published Merkle metadata");
   }
+  if (poolSource !== "community_rewards_vault" || !vaultAddress) {
+    throw new Error("Live weekly airdrops must be funded atomically from CommunityRewardsVault");
+  }
 
   let onChain = await readOnChainBatch({ chainId, distributorAddress, contractBatchId });
   if (assertBatchMatches(onChain, { contractBatchId, merkleRoot, total, deadline })) {
@@ -185,12 +188,16 @@ export async function ensureOnChainBatch({ batchId, chainId, distributorAddress,
   }
 
   const execution = await requestFundingExecution({
-    action: "fund_reward_batch",
+    action: "fund_airdrop_batch",
     idempotencyKey: `mwz-airdrop:${chainId}:${contractBatchId}`,
     batchId,
     chainId,
+    targetContract: vaultAddress,
+    functionName: "fundAirdropBatch",
+    functionSignature: "fundAirdropBatch(bytes32,bytes32,uint64,uint256)",
+    args: [contractBatchId, merkleRoot, deadline, total.toString()],
+    vaultAddress,
     distributorAddress,
-    vaultAddress: poolSource === "community_rewards_vault" ? vaultAddress : null,
     contractBatchId,
     merkleRoot,
     totalAmount: total.toString(),
@@ -210,8 +217,7 @@ export async function ensureOnChainBatch({ batchId, chainId, distributorAddress,
     totalAmount: total.toString(),
     claimDeadline: deadline,
     requestId: execution.requestId || execution.id || null,
-    txHash: execution.createBatchTxHash || execution.txHash || null,
-    vaultWithdrawalTxHash: execution.vaultWithdrawalTxHash || null,
+    txHash: execution.txHash || execution.vaultFundingTxHash || null,
     blockNumber: execution.blockNumber || null,
   };
 }
