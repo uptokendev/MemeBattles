@@ -1,6 +1,6 @@
 import { pool } from "../../server/db.js";
 import {
-  DAY_MS, asBigInt, envBool, envInt, envText, epochWindow, requireEnv,
+  DAY_MS, asBigInt, envBool, envInt, epochWindow, requireEnv,
   seedCommitment, splitPool, weightedSample, winnerCount,
 } from "./config.mjs";
 import {
@@ -9,8 +9,9 @@ import {
 } from "./candidates.mjs";
 import {
   configuredVaultAddress, ensureOnChainBatch, keepFundingCheck, markClaimOpen,
-  markFundingCheck, publishProgram, resolvePoolWei,
+  markFundingCheck, resolvePoolWei,
 } from "./chain.mjs";
+import { materializeAirdropBatch } from "./materialize.mjs";
 
 async function audit(client, { batchId, action, oldValue = null, newValue = null, reason, txHash = null, metadata = {} }) {
   await client.query(
@@ -63,8 +64,6 @@ async function resumeFunding(client, { batch, chainId, distributorAddress, progr
 
 async function main() {
   const chainId = envInt("AIRDROP_CHAIN_ID", 56, { min: 1, max: 1_000_000 });
-  const apiBaseUrl = requireEnv("REWARDS_API_BASE_URL");
-  const internalSecret = requireEnv("REWARDS_INTERNAL_SECRET");
   const drawSecret = requireEnv("AIRDROP_DRAW_SEED_SECRET");
   const distributorAddress = requireEnv(`REWARD_DISTRIBUTOR_ADDRESS_${chainId}`);
   const dryRun = envBool("AIRDROP_DRY_RUN", false);
@@ -83,7 +82,6 @@ async function main() {
 
     let traderBatch = await findEpochBatch(client, { chainId, epochId, program: "airdrop_trader" });
     let creatorBatch = await findEpochBatch(client, { chainId, epochId, program: "airdrop_creator" });
-
     if (!dryRun && traderBatch && !batchComplete(traderBatch)) {
       await resumeFunding(client, { batch: traderBatch, chainId, distributorAddress, program: "airdrop_trader", epochId });
       traderBatch = await findEpochBatch(client, { chainId, epochId, program: "airdrop_trader" });
@@ -172,13 +170,12 @@ async function main() {
         throw error;
       }
 
-      const payload = await publishProgram({
-        apiBaseUrl,
-        internalSecret,
+      const payload = await materializeAirdropBatch(client, {
         chainId,
         epochId,
         program: item.program,
-        winnerCount: winners.length,
+        winners,
+        payouts,
         claimDeadline,
         distributorAddress,
         metadata: {
@@ -197,7 +194,6 @@ async function main() {
         },
       });
 
-      await markFundingCheck(client, payload.batch.id);
       try {
         const funding = await ensureOnChainBatch({
           batchId: payload.batch.id,
