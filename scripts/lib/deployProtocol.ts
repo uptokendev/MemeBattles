@@ -45,25 +45,8 @@ function writeDeployment(networkName: string, data: unknown) {
   return file;
 }
 
-async function resolveRouterAddress(deployerAddress: string): Promise<string> {
-  const explicitRouter = (
-    process.env.PANCAKE_ROUTER ??
-    process.env.PANCAKE_V2_ROUTER ??
-    process.env.ROUTER_ADDRESS ??
-    ""
-  ).trim();
-  if (explicitRouter) {
-    return explicitRouter;
-  }
-
-  const deployMock = process.env.DEPLOY_MOCK_ROUTER === "true";
-  if (!deployMock) {
-    throw new Error(
-      "Missing router address. Set PANCAKE_ROUTER, PANCAKE_V2_ROUTER, or ROUTER_ADDRESS. For local testing only, set DEPLOY_MOCK_ROUTER=true."
-    );
-  }
-
-  console.warn("[deploy] No router configured; deploying MockV2Factory + MockRouter for local/testing use.");
+async function deployMockRouter(deployerAddress: string): Promise<string> {
+  console.warn("[deploy] Deploying MockV2Factory + MockRouter for local/testing use.");
   const wrapped = (process.env.MOCK_ROUTER_WRAPPED ?? deployerAddress).trim();
 
   const V2Factory = await ethers.getContractFactory("MockV2Factory");
@@ -78,6 +61,34 @@ async function resolveRouterAddress(deployerAddress: string): Promise<string> {
   console.log("MockV2Factory:", await v2Factory.getAddress());
   console.log("MockRouter:", routerAddress);
   return routerAddress;
+}
+
+async function resolveRouterAddress(deployerAddress: string): Promise<string> {
+  const deployMock = boolEnv("DEPLOY_MOCK_ROUTER", false);
+  if (deployMock) {
+    return deployMockRouter(deployerAddress);
+  }
+
+  const explicitRouter = (
+    process.env.PANCAKE_ROUTER ??
+    process.env.PANCAKE_V2_ROUTER ??
+    process.env.ROUTER_ADDRESS ??
+    ""
+  ).trim();
+  if (explicitRouter) {
+    const code = await ethers.provider.getCode(explicitRouter);
+    if (code === "0x") {
+      throw new Error(
+        `Configured router ${explicitRouter} has no contract code on ${network.name}. ` +
+          "For local testing, set DEPLOY_MOCK_ROUTER=true."
+      );
+    }
+    return explicitRouter;
+  }
+
+  throw new Error(
+    "Missing router address. Set PANCAKE_ROUTER, PANCAKE_V2_ROUTER, or ROUTER_ADDRESS. For local testing only, set DEPLOY_MOCK_ROUTER=true."
+  );
 }
 
 export async function deployProtocol() {
