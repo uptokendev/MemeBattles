@@ -6,8 +6,6 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {LaunchToken} from "./token/LaunchToken.sol";
 import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
@@ -34,7 +32,6 @@ interface ILaunchFactoryGraduationNotify {
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
-    using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
     struct InitParams {
@@ -92,7 +89,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint8 private constant ROUTE_PROFILE_OG_LINKED = 2;
 
     LaunchToken public token;
-    IERC20 private tokenInterface;
     IPancakeRouter02 public router;
     address public factory;
     address public feeRecipient;
@@ -234,7 +230,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         require(liquiditySupply > 0, "liquidity zero");
 
         token = new LaunchToken(params.name, params.symbol, params.totalSupply, address(this));
-        tokenInterface = IERC20(address(token));
         token.mint(address(this), params.totalSupply);
     }
 
@@ -447,7 +442,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         payout = gross - fee;
         require(payout >= minPayout, "slippage");
         sold -= amountIn;
-        tokenInterface.safeTransferFrom(seller, address(this), amountIn);
+        token.transferFrom(seller, address(this), amountIn);
         if (fee > 0) {
             if (useAuthorizedRoute) _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, gross, routeProfile);
             else _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, gross);
@@ -465,7 +460,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             buyersCount += 1;
         }
         sold += amountOut;
-        tokenInterface.safeTransfer(buyer, amountOut);
+        token.transfer(buyer, amountOut);
     }
 
     function _beforeBuy(address buyer, uint256 costNoFee) internal {
@@ -520,7 +515,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (lpTokensDesired == 0) revert LpTokensZero();
         if (lpTokensDesired > liquiditySupply) revert InsufficientLpAllocation();
 
-        tokenInterface.forceApprove(address(router), lpTokensDesired);
+        token.approve(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
             address(token),
             lpTokensDesired,
@@ -529,7 +524,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             lpReceiver,
             block.timestamp + 30 minutes
         );
-        tokenInterface.forceApprove(address(router), 0);
+        token.approve(address(router), 0);
         if (usedTokens == 0 || usedBnb == 0) revert LiquidityZero();
 
         g.graduatedLiquidityTokens = usedTokens;
@@ -545,7 +540,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
         g.burnedUnsoldTokens = curveSupply - sold;
         if (g.burnedUnsoldTokens > 0) token.burn(address(this), g.burnedUnsoldTokens);
-        if (creatorReserve > 0) tokenInterface.safeTransfer(owner(), creatorReserve);
+        if (creatorReserve > 0) token.transfer(owner(), creatorReserve);
         uint256 creatorPayout = _availableNativeBalance();
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         g.postBurnTotalSupply = token.totalSupply();
