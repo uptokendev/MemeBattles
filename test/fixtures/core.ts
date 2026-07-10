@@ -11,6 +11,9 @@ export type CoreFixture = {
   v2factory: any;
   treasuryVault: any;
   treasuryRouter: any;
+  recruiterVault: any;
+  communityVault: any;
+  protocolVault: any;
   campaignImplementation: any;
   factory: any;
 };
@@ -38,6 +41,22 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     24 * 60 * 60
   );
   await treasuryRouter.waitForDeployment();
+
+  const RecruiterVault = await ethers.getContractFactory("RecruiterRewardsVault");
+  const recruiterVault = await RecruiterVault.deploy(await owner.getAddress());
+  await recruiterVault.waitForDeployment();
+
+  const CommunityVault = await ethers.getContractFactory("CommunityRewardsVault");
+  const communityVault = await CommunityVault.deploy(await owner.getAddress(), await treasuryRouter.getAddress());
+  await communityVault.waitForDeployment();
+
+  const ProtocolVault = await ethers.getContractFactory("ProtocolRevenueVault");
+  const protocolVault = await ProtocolVault.deploy(await owner.getAddress());
+  await protocolVault.waitForDeployment();
+
+  await treasuryRouter.connect(owner).setRecruiterRewardsVault(await recruiterVault.getAddress());
+  await treasuryRouter.connect(owner).setCommunityRewardsVault(await communityVault.getAddress());
+  await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
   const Campaign = await ethers.getContractFactory("LaunchCampaign");
   const campaignImplementation = await Campaign.deploy();
@@ -76,6 +95,9 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     v2factory,
     treasuryVault,
     treasuryRouter,
+    recruiterVault,
+    communityVault,
+    protocolVault,
     campaignImplementation,
     factory,
   };
