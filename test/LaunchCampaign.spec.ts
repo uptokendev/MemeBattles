@@ -435,6 +435,41 @@ describe("LaunchCampaign", function () {
     expect(state[8]).to.eq(await token.totalSupply());
   });
 
+  it("auto-finalize: rejects router liquidity that opens outside the curve price tolerance", async () => {
+    const { owner, creator, alice } = await deployCoreFixture();
+
+    const V2Factory = await ethers.getContractFactory("MockV2Factory");
+    const v2factory = await V2Factory.deploy();
+    await v2factory.waitForDeployment();
+
+    const DriftRouter = await ethers.getContractFactory("MockDriftRouter");
+    const driftRouter = await DriftRouter.deploy(await v2factory.getAddress(), await owner.getAddress());
+    await driftRouter.waitForDeployment();
+
+    const campaign = await deployDirectCampaign(
+      await directInitParams({
+        creator: await creator.getAddress(),
+        owner: await owner.getAddress(),
+        router: await driftRouter.getAddress(),
+        feeRecipient: await owner.getAddress(),
+        leagueReceiver: await owner.getAddress(),
+        basePrice: ethers.parseEther("0.005"),
+        priceSlope: 10n ** 9n,
+        graduationTarget: ethers.parseEther("2"),
+      })
+    );
+
+    const oneToken = ethers.parseUnits("1", 18);
+    const quote = await campaign.quoteBuyExactTokens(oneToken);
+    await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
+
+    const target = await campaign.graduationTarget();
+    const balance = await getBalance(await campaign.getAddress());
+    if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+
+    await expect(campaign.connect(creator).finalize(0, 0)).to.be.revertedWithCustomError(campaign, "DexPriceDrift");
+  });
+
   it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
     const { campaign, token, alice, router } = await loadFixture(createLowTargetCampaignFixture);
 
