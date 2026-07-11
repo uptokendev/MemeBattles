@@ -117,8 +117,9 @@ describe("BNB launch safety simulations", function () {
     const amountOut = ethers.parseEther("1");
     const maxCost = await campaign.quoteBuyExactTokens(amountOut);
 
-    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWith(
-      "authorized trading required"
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWithCustomError(
+      campaign,
+      "AuthorizedTradingRequired"
     );
   });
 
@@ -137,18 +138,22 @@ describe("BNB launch safety simulations", function () {
 
     await riskRegistry.setWalletRisk(buyer.address, 0, false);
     await factory.setCampaignPauses(await campaign.getAddress(), false, true, false, false);
-    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWith("buys paused");
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWithCustomError(
+      campaign,
+      "BuysPaused"
+    );
 
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, false, false);
     await campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost });
     await token.connect(buyer).approve(await campaign.getAddress(), amountOut);
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, true, false);
-    await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.be.revertedWith("sells paused");
+    await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.be.revertedWithCustomError(campaign, "SellsPaused");
 
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, false, false);
     const creatorLockedCost = await campaign.quoteBuyExactTokens(amountOut);
-    await expect(campaign.connect(creator).buyExactTokens(amountOut, creatorLockedCost, { value: creatorLockedCost })).to.be.revertedWith(
-      "creator buy locked"
+    await expect(campaign.connect(creator).buyExactTokens(amountOut, creatorLockedCost, { value: creatorLockedCost })).to.be.revertedWithCustomError(
+      campaign,
+      "CreatorBuyLocked"
     );
 
     await increaseTime(24 * 60 * 60 + 1);
@@ -156,7 +161,7 @@ describe("BNB launch safety simulations", function () {
     const capBreakerCost = await campaign.quoteBuyExactTokens(capBreakerAmount);
     await expect(
       campaign.connect(creator).buyExactTokens(capBreakerAmount, capBreakerCost, { value: capBreakerCost })
-    ).to.be.revertedWith("creator buy cap");
+    ).to.be.revertedWithCustomError(campaign, "CreatorBuyCapExceeded");
   });
 
   it("accepts only the configured route authority for create route authorization", async function () {
