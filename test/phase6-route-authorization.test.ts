@@ -293,6 +293,6 @@ describe("Phase 6 route authorization alignment", function () {
 
     await expect(
       campaign.connect(trader).buyExactTokensAuthorized(amountOut, maxCost, STANDARD_LINKED, deadline, signature, { value: maxCost }),
-    ).to.be.revertedWith("bad route auth");
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
   });
 });
