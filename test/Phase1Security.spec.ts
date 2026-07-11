@@ -58,7 +58,7 @@ describe("Phase 1 security layer", function () {
 
     await expect(
       campaign.connect(creator).buyExactBnb(0n, { value: ethers.parseEther("0.01") })
-    ).to.be.revertedWith("creator buy locked");
+    ).to.be.revertedWithCustomError(campaign, "CreatorBuyLocked");
 
     await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
     await ethers.provider.send("evm_mine", []);
@@ -84,7 +84,7 @@ describe("Phase 1 security layer", function () {
 
     await expect(
       campaign.connect(creator).buyExactBnb(0n, { value: ethers.parseEther("0.3") })
-    ).to.be.revertedWith("creator buy cap");
+    ).to.be.revertedWithCustomError(campaign, "CreatorBuyCapExceeded");
   });
 
   it("blocks restricted wallets from buying and selling", async () => {
@@ -126,7 +126,7 @@ describe("Phase 1 security layer", function () {
 
     await expect(
       campaign.connect(alice).buyExactBnb(0n, { value: ethers.parseEther("0.01") })
-    ).to.be.revertedWith("buys paused");
+    ).to.be.revertedWithCustomError(campaign, "BuysPaused");
   });
 
   it("can require route-authorized trading for all direct buy and sell paths", async () => {
@@ -137,7 +137,7 @@ describe("Phase 1 security layer", function () {
 
     await expect(
       campaign.connect(alice).buyExactBnb(0n, { value: ethers.parseEther("0.01") })
-    ).to.be.revertedWith("authorized trading required");
+    ).to.be.revertedWithCustomError(campaign, "AuthorizedTradingRequired");
 
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
     const chainId = (await ethers.provider.getNetwork()).chainId;
