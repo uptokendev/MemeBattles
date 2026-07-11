@@ -62,6 +62,48 @@ async function deployDirectCampaign(params: any) {
   return campaign;
 }
 
+async function deployEarlyGraduationCampaign() {
+  const fx = await deployCoreFixture();
+  const { owner, creator, alice, factory } = fx;
+
+  await factory.connect(owner).setConfig({
+    totalSupply: ethers.parseEther("1000"),
+    curveBps: 5000,
+    liquidityTokenBps: 4000,
+    basePrice: ethers.parseEther("0.025"),
+    priceSlope: 10n ** 9n,
+    graduationTarget: ethers.parseEther("10"),
+    liquidityBps: 8000,
+  });
+
+  await factory.connect(creator).createCampaign({
+    name: "Early Grad",
+    symbol: "EGR",
+    logoURI: "ipfs://early-grad",
+    xAccount: "",
+    website: "",
+    extraLink: "",
+    basePrice: 0n,
+    priceSlope: 0n,
+    graduationTarget: 0n,
+    lpReceiver: ethers.ZeroAddress,
+  } as any);
+
+  const info = await factory.getCampaign(0n);
+  const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+  const token = await ethers.getContractAt("LaunchToken", info.token);
+
+  const buyAmount = ethers.parseEther("1");
+  const buyQuote = await campaign.quoteBuyExactTokens(buyAmount);
+  await campaign.connect(alice).buyExactTokens(buyAmount, buyQuote, { value: buyQuote });
+
+  const target = await campaign.graduationTarget();
+  const balance = await getBalance(await campaign.getAddress());
+  if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+
+  return { ...fx, campaign, token, buyAmount };
+}
+
 describe("LaunchCampaign Phase 2 graduation guardrails", function () {
   it("rejects graduation when matching the final curve price needs more LP tokens than reserved", async () => {
     const { owner, creator, alice } = await deployCoreFixture();
@@ -97,42 +139,7 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
   });
 
   it("records separate unsold curve and unused LP burn lanes on early graduation", async () => {
-    const { owner, creator, alice, factory } = await deployCoreFixture();
-
-    await factory.connect(owner).setConfig({
-      totalSupply: ethers.parseEther("1000"),
-      curveBps: 5000,
-      liquidityTokenBps: 4000,
-      basePrice: ethers.parseEther("0.025"),
-      priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("10"),
-      liquidityBps: 8000,
-    });
-
-    await factory.connect(creator).createCampaign({
-      name: "Early Grad",
-      symbol: "EGR",
-      logoURI: "ipfs://early-grad",
-      xAccount: "",
-      website: "",
-      extraLink: "",
-      basePrice: 0n,
-      priceSlope: 0n,
-      graduationTarget: 0n,
-      lpReceiver: ethers.ZeroAddress,
-    } as any);
-
-    const info = await factory.getCampaign(0n);
-    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
-    const token = await ethers.getContractAt("LaunchToken", info.token);
-
-    const buyAmount = ethers.parseEther("1");
-    const buyQuote = await campaign.quoteBuyExactTokens(buyAmount);
-    await campaign.connect(alice).buyExactTokens(buyAmount, buyQuote, { value: buyQuote });
-
-    const target = await campaign.graduationTarget();
-    const balance = await getBalance(await campaign.getAddress());
-    if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+    const { campaign, token, creator, buyAmount } = await deployEarlyGraduationCampaign();
 
     await campaign.connect(creator).finalize(0, 0);
 
@@ -147,5 +154,36 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
     expect(burnedUnusedLpTokens).to.be.gt(0n);
     expect(postBurnTotalSupply).to.equal(await token.totalSupply());
     expect(postBurnTotalSupply).to.equal((await campaign.totalSupply()) - burnedUnsoldTokens - burnedUnusedLpTokens);
+  });
+
+  it("emits the same graduation telemetry that is stored for indexers", async () => {
+    const { campaign, creator } = await deployEarlyGraduationCampaign();
+
+    const tx = await campaign.connect(creator).finalize(0, 0);
+    const receipt = await tx.wait();
+    const event = receipt!.logs
+      .map((log: any) => {
+        try {
+          return campaign.interface.parseLog(log);
+        } catch {
+          return null;
+        }
+      })
+      .find((parsed: any) => parsed?.name === "CampaignFinalized");
+
+    expect(event).to.not.equal(undefined);
+
+    const state = await campaign.getGraduationState();
+    expect(event!.args.pair).to.equal(state[0]);
+    expect(event!.args.finalCurvePrice).to.equal(state[1]);
+    expect(event!.args.initialDexPrice).to.equal(state[2]);
+    expect(event!.args.liquidityTokens).to.equal(state[3]);
+    expect(event!.args.liquidityBnb).to.equal(state[4]);
+    expect(event!.args.liquidityLp).to.equal(state[5]);
+    expect(event!.args.burnedUnsoldTokens).to.equal(state[6]);
+    expect(event!.args.burnedUnusedLpTokens).to.equal(state[7]);
+    expect(event!.args.postBurnTotalSupply).to.equal(state[8]);
+    expect(event!.args.graduationBalance).to.equal(state[9]);
+    expect(event!.args.graduationOvershoot).to.equal(state[10]);
   });
 });
