@@ -95,4 +95,57 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
       "InsufficientLpAllocation"
     );
   });
+
+  it("records separate unsold curve and unused LP burn lanes on early graduation", async () => {
+    const { owner, creator, alice, factory } = await deployCoreFixture();
+
+    await factory.connect(owner).setConfig({
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
+      basePrice: ethers.parseEther("0.025"),
+      priceSlope: 10n ** 9n,
+      graduationTarget: ethers.parseEther("10"),
+      liquidityBps: 8000,
+    });
+
+    await factory.connect(creator).createCampaign({
+      name: "Early Grad",
+      symbol: "EGR",
+      logoURI: "ipfs://early-grad",
+      xAccount: "",
+      website: "",
+      extraLink: "",
+      basePrice: 0n,
+      priceSlope: 0n,
+      graduationTarget: 0n,
+      lpReceiver: ethers.ZeroAddress,
+    } as any);
+
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    const token = await ethers.getContractAt("LaunchToken", info.token);
+
+    const buyAmount = ethers.parseEther("1");
+    const buyQuote = await campaign.quoteBuyExactTokens(buyAmount);
+    await campaign.connect(alice).buyExactTokens(buyAmount, buyQuote, { value: buyQuote });
+
+    const target = await campaign.graduationTarget();
+    const balance = await getBalance(await campaign.getAddress());
+    if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+
+    await campaign.connect(creator).finalize(0, 0);
+
+    const state = await campaign.getGraduationState();
+    const burnedUnsoldTokens = state[6];
+    const burnedUnusedLpTokens = state[7];
+    const postBurnTotalSupply = state[8];
+
+    expect(await campaign.sold()).to.equal(buyAmount);
+    expect(burnedUnsoldTokens).to.equal((await campaign.curveSupply()) - buyAmount);
+    expect(burnedUnsoldTokens).to.be.gt(0n);
+    expect(burnedUnusedLpTokens).to.be.gt(0n);
+    expect(postBurnTotalSupply).to.equal(await token.totalSupply());
+    expect(postBurnTotalSupply).to.equal((await campaign.totalSupply()) - burnedUnsoldTokens - burnedUnusedLpTokens);
+  });
 });
