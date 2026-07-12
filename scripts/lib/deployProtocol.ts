@@ -45,6 +45,11 @@ function writeDeployment(networkName: string, data: unknown) {
   return file;
 }
 
+async function requireContractCode(address: string, label: string) {
+  const code = await ethers.provider.getCode(address);
+  if (code === "0x") throw new Error(`${label} ${address} has no contract code on ${network.name}.`);
+}
+
 async function deployMockRouter(deployerAddress: string): Promise<string> {
   console.warn("[deploy] Deploying MockV2Factory + MockRouter for local/testing use.");
   const wrapped = (process.env.MOCK_ROUTER_WRAPPED ?? deployerAddress).trim();
@@ -76,13 +81,7 @@ async function resolveRouterAddress(deployerAddress: string): Promise<string> {
     ""
   ).trim();
   if (explicitRouter) {
-    const code = await ethers.provider.getCode(explicitRouter);
-    if (code === "0x") {
-      throw new Error(
-        `Configured router ${explicitRouter} has no contract code on ${network.name}. ` +
-          "For local testing, set DEPLOY_MOCK_ROUTER=true."
-      );
-    }
+    await requireContractCode(explicitRouter, "Configured router");
     return explicitRouter;
   }
 
@@ -91,12 +90,63 @@ async function resolveRouterAddress(deployerAddress: string): Promise<string> {
   );
 }
 
+async function deployLocalMockPriceFeed(): Promise<string> {
+  console.warn("[deploy] Deploying MockUsdPriceFeed for local/testing use.");
+  const mockPrice = process.env.MOCK_NATIVE_USD_PRICE ?? "600";
+  const PriceFeed = await ethers.getContractFactory("MockUsdPriceFeed");
+  const priceFeed = await PriceFeed.deploy(8);
+  await priceFeed.waitForDeployment();
+  const block = await ethers.provider.getBlock("latest");
+  const timestamp = BigInt(block!.timestamp);
+  await priceFeed.setRoundData(1n, ethers.parseUnits(mockPrice, 8), timestamp, timestamp, 1n);
+  const feedAddress = await priceFeed.getAddress();
+  console.log("MockUsdPriceFeed:", feedAddress, "price:", mockPrice);
+  return feedAddress;
+}
+
+async function resolveGraduationOracle(): Promise<{ oracleAddress: string; priceFeedAddress: string | null; maxPriceAge: number | null }> {
+  const explicitOracle = (process.env.GRADUATION_ORACLE_ADDRESS ?? "").trim();
+  if (explicitOracle) {
+    await requireContractCode(explicitOracle, "Configured GraduationOracle");
+    return { oracleAddress: explicitOracle, priceFeedAddress: null, maxPriceAge: null };
+  }
+
+  let priceFeedAddress = (
+    process.env.BNB_USD_PRICE_FEED ??
+    process.env.NATIVE_USD_PRICE_FEED ??
+    process.env.GRADUATION_PRICE_FEED ??
+    ""
+  ).trim();
+
+  if (!priceFeedAddress && (network.name === "hardhat" || network.name === "localhost" || boolEnv("DEPLOY_MOCK_PRICE_FEED", false))) {
+    priceFeedAddress = await deployLocalMockPriceFeed();
+  }
+
+  if (!priceFeedAddress) {
+    throw new Error(
+      "Missing graduation oracle configuration. Set GRADUATION_ORACLE_ADDRESS or BNB_USD_PRICE_FEED/NATIVE_USD_PRICE_FEED. For local testing only, set DEPLOY_MOCK_PRICE_FEED=true."
+    );
+  }
+
+  await requireContractCode(priceFeedAddress, "Configured native/USD price feed");
+  const maxPriceAge = numEnv("GRADUATION_ORACLE_MAX_PRICE_AGE_SECONDS", 3600);
+  const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
+  const oracle = await GraduationOracle.deploy(priceFeedAddress, maxPriceAge);
+  await oracle.waitForDeployment();
+  const oracleAddress = await oracle.getAddress();
+  console.log("GraduationOracle:", oracleAddress);
+  console.log("Graduation price feed:", priceFeedAddress);
+  console.log("Graduation max price age:", maxPriceAge);
+  return { oracleAddress, priceFeedAddress, maxPriceAge };
+}
+
 export async function deployProtocol() {
   const [deployer] = await ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
   const net = await ethers.provider.getNetwork();
 
   const routerAddress = await resolveRouterAddress(deployerAddress);
+  const graduationOracleConfig = await resolveGraduationOracle();
   const treasurySafe = mustEnv("TREASURY_SAFE", process.env.FEE_RECIPIENT ?? deployerAddress);
   const upgradeDelaySeconds = numEnv("UPGRADE_DELAY_SECONDS", 2 * 24 * 60 * 60);
   const protocolFeeBps = BigInt(numEnv("PROTOCOL_FEE_BPS", 200));
@@ -121,6 +171,7 @@ export async function deployProtocol() {
   console.log(`Chain ID: ${net.chainId.toString()}`);
   console.log(`Deployer: ${deployerAddress}`);
   console.log("Router:", routerAddress);
+  console.log("GraduationOracle:", graduationOracleConfig.oracleAddress);
   console.log("Treasury Safe:", treasurySafe);
   console.log("Upgrade delay (seconds):", upgradeDelaySeconds);
   console.log("Protocol fee bps:", protocolFeeBps.toString());
@@ -258,7 +309,12 @@ export async function deployProtocol() {
   console.log("LaunchCampaign implementation:", campaignImplementationAddress);
 
   const Factory = await ethers.getContractFactory("LaunchFactory");
-  const factory = await Factory.deploy(routerAddress, leagueRouterAddress, campaignImplementationAddress);
+  const factory = await Factory.deploy(
+    routerAddress,
+    leagueRouterAddress,
+    campaignImplementationAddress,
+    graduationOracleConfig.oracleAddress
+  );
   await factory.waitForDeployment();
   const factoryAddress = await factory.getAddress();
   console.log("LaunchFactory:", factoryAddress);
@@ -292,6 +348,9 @@ export async function deployProtocol() {
     chainId: Number(net.chainId),
     deployer: deployerAddress,
     router: routerAddress,
+    graduationOracle: graduationOracleConfig.oracleAddress,
+    graduationPriceFeed: graduationOracleConfig.priceFeedAddress,
+    graduationMaxPriceAge: graduationOracleConfig.maxPriceAge,
     treasurySafe,
     upgradeDelaySeconds,
     protocolFeeBps: protocolFeeBps.toString(),
@@ -315,6 +374,7 @@ export async function deployProtocol() {
       RecruiterRewardsVault: recruiterVaultAddress,
       CommunityRewardsVault: communityVaultAddress,
       ProtocolRevenueVault: protocolVaultAddress,
+      GraduationOracle: graduationOracleConfig.oracleAddress,
       LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: factoryAddress,
       UPVoteTreasury: voteTreasuryAddress,
@@ -333,6 +393,7 @@ export async function deployProtocol() {
       factoryFinalizeRouteProfile: finalizeRouteProfile,
       factoryRouteAuthority: routeAuthority || null,
       campaignImplementation: campaignImplementationAddress,
+      graduationOracle: graduationOracleConfig.oracleAddress,
       unifiedRouterModeActive: true,
     },
     postDeployActions,
@@ -348,10 +409,12 @@ export async function deployProtocol() {
   console.log(`VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${communityVaultAddress}`);
   console.log(`VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${recruiterVaultAddress}`);
   console.log(`VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${deployment.chainId}=${protocolVaultAddress}`);
+  console.log(`VITE_GRADUATION_ORACLE_ADDRESS_${deployment.chainId}=${graduationOracleConfig.oracleAddress}`);
   console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
   console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
+  console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
   console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
