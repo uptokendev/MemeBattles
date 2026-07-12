@@ -19,6 +19,7 @@ contract LaunchFactory is Ownable {
     error LogoEmpty();
     error RecipientZero();
     error ImplementationZero();
+    error GraduationOracleZero();
     error ContractCodeMissing();
     error FeeTooHigh();
     error FeeTooLowForLeague();
@@ -106,6 +107,7 @@ contract LaunchFactory is Ownable {
     bool public requireAuthorizedTrading;
 
     uint256 public constant LEAGUE_FEE_BPS = 75;
+    uint256 public constant DEFAULT_GRADUATION_USD_THRESHOLD = 30_000 ether;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
@@ -113,6 +115,7 @@ contract LaunchFactory is Ownable {
     address public immutable leagueReceiver;
     address public immutable campaignImplementation;
     address public router;
+    address public graduationOracle;
     CreatorRegistry public creatorRegistry;
     RiskRegistry public riskRegistry;
 
@@ -132,6 +135,7 @@ contract LaunchFactory is Ownable {
     event ConfigUpdated(LaunchConfig newConfig);
     event FeeRecipientUpdated(address indexed newRecipient);
     event RouterUpdated(address indexed newRouter);
+    event GraduationOracleUpdated(address indexed newOracle);
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
     event RouteAuthorityUpdated(address indexed newAuthority);
@@ -148,27 +152,30 @@ contract LaunchFactory is Ownable {
         _;
     }
 
-    constructor(address pancakeRouter_, address treasuryRouter_, address campaignImplementation_) Ownable(msg.sender) {
+    constructor(address pancakeRouter_, address treasuryRouter_, address campaignImplementation_, address graduationOracle_) Ownable(msg.sender) {
         if (pancakeRouter_ == address(0)) revert RouterZero();
         if (treasuryRouter_ == address(0)) revert RecipientZero();
         if (campaignImplementation_ == address(0)) revert ImplementationZero();
+        if (graduationOracle_ == address(0)) revert GraduationOracleZero();
         if (
             pancakeRouter_.code.length == 0 ||
             treasuryRouter_.code.length == 0 ||
-            campaignImplementation_.code.length == 0
+            campaignImplementation_.code.length == 0 ||
+            graduationOracle_.code.length == 0
         ) revert ContractCodeMissing();
 
         router = pancakeRouter_;
         leagueReceiver = treasuryRouter_;
         feeRecipient = treasuryRouter_;
         campaignImplementation = campaignImplementation_;
+        graduationOracle = graduationOracle_;
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
             liquidityTokenBps: 1000,
             basePrice: 5e13,
             priceSlope: 1e9,
-            graduationTarget: 50 ether,
+            graduationTarget: DEFAULT_GRADUATION_USD_THRESHOLD,
             liquidityBps: 8000
         });
         protocolFeeBps = 200;
@@ -228,6 +235,7 @@ contract LaunchFactory is Ownable {
             basePrice: req.basePrice == 0 ? config.basePrice : req.basePrice,
             priceSlope: req.priceSlope == 0 ? config.priceSlope : req.priceSlope,
             graduationTarget: req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget,
+            graduationOracle: graduationOracle,
             liquidityBps: config.liquidityBps,
             protocolFeeBps: protocolFeeBps,
             leagueFeeBps: LEAGUE_FEE_BPS,
@@ -292,8 +300,16 @@ contract LaunchFactory is Ownable {
 
     function setRouter(address newRouter) external onlyOwner whenMutable {
         if (newRouter == address(0)) revert RouterZero();
+        if (newRouter.code.length == 0) revert ContractCodeMissing();
         router = newRouter;
         emit RouterUpdated(newRouter);
+    }
+
+    function setGraduationOracle(address newOracle) external onlyOwner whenMutable {
+        if (newOracle == address(0)) revert GraduationOracleZero();
+        if (newOracle.code.length == 0) revert ContractCodeMissing();
+        graduationOracle = newOracle;
+        emit GraduationOracleUpdated(newOracle);
     }
 
     function setFeeRecipient(address newRecipient) external onlyOwner whenMutable {
