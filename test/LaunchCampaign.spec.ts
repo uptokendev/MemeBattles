@@ -21,10 +21,29 @@ const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function deployTestOracle(price = "1") {
+  const PriceFeed = await ethers.getContractFactory("MockUsdPriceFeed");
+  const priceFeed = await PriceFeed.deploy(8);
+  await priceFeed.waitForDeployment();
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(1n, ethers.parseUnits(price, 8), now, now, 1n);
+
+  const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
+  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 3600n);
+  await graduationOracle.waitForDeployment();
+  return graduationOracle;
+}
+
 const directInitParams = async (values: {
   creator: string;
   owner: string;
   router: string;
+  graduationOracle?: string;
   feeRecipient?: string;
   leagueReceiver?: string;
   lpReceiver?: string;
@@ -48,6 +67,7 @@ const directInitParams = async (values: {
   basePrice: values.basePrice ?? 10n ** 12n,
   priceSlope: values.priceSlope ?? 10n ** 9n,
   graduationTarget: values.graduationTarget ?? ethers.parseEther("1"),
+  graduationOracle: values.graduationOracle ?? await (async () => await (await deployTestOracle()).getAddress())(),
   liquidityBps: 8000,
   protocolFeeBps: values.protocolFeeBps ?? 200,
   leagueFeeBps: values.leagueFeeBps ?? 75,
@@ -139,10 +159,12 @@ async function expectRouteBalanceDelta(before: any, vaults: any, expected: any) 
 
 describe("LaunchCampaign", function () {
   it("initial state / immutables / token minted to campaign", async () => {
-    const { campaign, token } = await loadFixture(createCampaignFixture);
+    const { campaign, token, graduationOracle } = await loadFixture(createCampaignFixture);
 
     expect(await campaign.launched()).to.eq(false);
     expect(await token.owner()).to.eq(await campaign.getAddress());
+    expect(await campaign.graduationOracle()).to.eq(await graduationOracle.getAddress());
+    expect(await campaign.graduationNativeTarget()).to.eq(await campaign.graduationTarget());
 
     const totalSupply = await campaign.totalSupply();
     expect(await token.balanceOf(await campaign.getAddress())).to.eq(totalSupply);
@@ -435,7 +457,7 @@ describe("LaunchCampaign", function () {
     expect(state[8]).to.eq(await token.totalSupply());
   });
 
-  it("auto-finalize: rejects router liquidity that opens outside the curve price tolerance", async () => {
+  it("permissionless graduation: rejects router liquidity that opens outside the curve price tolerance", async () => {
     const { owner, creator, alice } = await deployCoreFixture();
 
     const V2Factory = await ethers.getContractFactory("MockV2Factory");
@@ -463,14 +485,14 @@ describe("LaunchCampaign", function () {
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
 
-    const target = await campaign.graduationTarget();
+    const target = await campaign.graduationNativeTarget();
     const balance = await getBalance(await campaign.getAddress());
     if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
 
-    await expect(campaign.connect(creator).finalize(0, 0)).to.be.revertedWithCustomError(campaign, "DexPriceDrift");
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "DexPriceDrift");
   });
 
-  it("auto-finalize: reaching graduationTarget (without selling out) finalizes inside buy", async () => {
+  it("auto-finalize: reaching oracle USD threshold (without selling out) finalizes inside buy", async () => {
     const { campaign, token, alice, router } = await loadFixture(createLowTargetCampaignFixture);
 
     const curveSupply = await campaign.curveSupply();
@@ -492,7 +514,34 @@ describe("LaunchCampaign", function () {
       amountOut = amountOut * 2n;
     }
 
-    throw new Error("Failed to trigger graduationTarget without selling out curve");
+    throw new Error("Failed to trigger oracle graduation threshold without selling out curve");
+  });
+
+  it("price-driven graduation can be triggered permissionlessly after the oracle target falls", async () => {
+    const { factory, creator, alice, priceFeed } = await deployCoreFixture();
+
+    await factory.connect(creator).createCampaign(baseCampaignRequest({ graduationTarget: ethers.parseEther("100") }) as any);
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+
+    const amountOut = ethers.parseEther("10");
+    const totalBuy = await campaign.quoteBuyExactTokens(amountOut);
+    await campaign.connect(alice).buyExactTokens(amountOut, totalBuy, { value: totalBuy });
+    expect(await campaign.launched()).to.eq(false);
+
+    const balance = await getBalance(await campaign.getAddress());
+    const bumpedPrice = (ethers.parseEther("100") * ethers.parseUnits("1", 8) + balance - 1n) / balance;
+    const now = await latestTimestamp();
+    await priceFeed.setRoundData(2n, bumpedPrice, now, now, 2n);
+
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.emit(campaign, "CampaignFinalized");
+    expect(await campaign.launched()).to.eq(true);
+  });
+
+  it("permissionless graduation rejects callers while oracle threshold is not met", async () => {
+    const { campaign, alice } = await loadFixture(createCampaignFixture);
+
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "ThresholdNotMet");
   });
 
   it("auto-finalize: succeeds even if Pancake V2 pair is pre-created (empty)", async () => {
