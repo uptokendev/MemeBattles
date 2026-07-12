@@ -3,6 +3,24 @@ import { ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 import { getBalance } from "./helpers/balances";
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function deployTestOracle(price = "1") {
+  const PriceFeed = await ethers.getContractFactory("MockUsdPriceFeed");
+  const priceFeed = await PriceFeed.deploy(8);
+  await priceFeed.waitForDeployment();
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(1n, ethers.parseUnits(price, 8), now, now, 1n);
+
+  const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
+  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 30 * 24 * 60 * 60);
+  await graduationOracle.waitForDeployment();
+  return graduationOracle;
+}
+
 const directInitParams = async (values: {
   creator: string;
   owner: string;
@@ -25,6 +43,7 @@ const directInitParams = async (values: {
   basePrice: values.basePrice ?? ethers.parseEther("0.001"),
   priceSlope: values.priceSlope ?? 1n,
   graduationTarget: values.graduationTarget ?? ethers.parseEther("10"),
+  graduationOracle: await (await deployTestOracle()).getAddress(),
   liquidityBps: 8000,
   protocolFeeBps: 200,
   leagueFeeBps: 75,
@@ -62,6 +81,12 @@ async function deployDirectCampaign(params: any) {
   return campaign;
 }
 
+async function topUpToGraduationTarget(campaign: any, payer: any) {
+  const target = await campaign.graduationNativeTarget();
+  const balance = await getBalance(await campaign.getAddress());
+  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+}
+
 async function deployEarlyGraduationCampaign() {
   const fx = await deployCoreFixture();
   const { owner, creator, alice, factory } = fx;
@@ -96,10 +121,7 @@ async function deployEarlyGraduationCampaign() {
   const buyAmount = ethers.parseEther("1");
   const buyQuote = await campaign.quoteBuyExactTokens(buyAmount);
   await campaign.connect(alice).buyExactTokens(buyAmount, buyQuote, { value: buyQuote });
-
-  const target = await campaign.graduationTarget();
-  const balance = await getBalance(await campaign.getAddress());
-  if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+  await topUpToGraduationTarget(campaign, owner);
 
   return { ...fx, campaign, token, buyAmount };
 }
@@ -127,21 +149,18 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
     const oneToken = ethers.parseUnits("1", 18);
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
+    await topUpToGraduationTarget(campaign, owner);
 
-    const target = await campaign.graduationTarget();
-    const balance = await getBalance(await campaign.getAddress());
-    if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
-
-    await expect(campaign.connect(creator).finalize(0, 0)).to.be.revertedWithCustomError(
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(
       campaign,
       "InsufficientLpAllocation"
     );
   });
 
   it("records separate unsold curve and unused LP burn lanes on early graduation", async () => {
-    const { campaign, token, creator, buyAmount } = await deployEarlyGraduationCampaign();
+    const { campaign, token, alice, buyAmount } = await deployEarlyGraduationCampaign();
 
-    await campaign.connect(creator).finalize(0, 0);
+    await campaign.connect(alice).graduateIfEligible(0, 0);
 
     const state = await campaign.getGraduationState();
     const burnedUnsoldTokens = state[6];
@@ -157,9 +176,9 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
   });
 
   it("emits the same graduation telemetry that is stored for indexers", async () => {
-    const { campaign, creator } = await deployEarlyGraduationCampaign();
+    const { campaign, alice } = await deployEarlyGraduationCampaign();
 
-    const tx = await campaign.connect(creator).finalize(0, 0);
+    const tx = await campaign.connect(alice).graduateIfEligible(0, 0);
     const receipt = await tx.wait();
     const event = receipt!.logs
       .map((log: any) => {
