@@ -39,7 +39,7 @@ async function expectRouteBalanceDelta(before: any, vaults: any, expected: any) 
 }
 
 describe("Security & invariants", function () {
-  it("auto-finalize cannot be skipped: completion buy flips launched in same tx", async function () {
+  it("auto-finalize cannot be skipped: crossing buy flips launched in same tx", async function () {
     const { owner, creator, alice, factory } = await deployCoreFixture();
 
     await factory.connect(owner).setConfig({
@@ -101,7 +101,7 @@ describe("Security & invariants", function () {
     const qBuf = q + 1n;
     await campaign.connect(alice).buyExactTokens(oneToken, qBuf, { value: qBuf });
 
-    const target = await campaign.graduationTarget();
+    const target = await campaign.graduationNativeTarget();
     const balNow = await ethers.provider.getBalance(campaignAddr);
     if (balNow < target) await owner.sendTransaction({ to: campaignAddr, value: target - balNow });
 
@@ -110,7 +110,7 @@ describe("Security & invariants", function () {
     const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
     const routeBefore = await captureRouteBalances(routeVaults);
 
-    const finTx = await campaign.connect(creator).finalize(0, 0);
+    const finTx = await campaign.connect(alice).graduateIfEligible(0, 0);
     const finRc = await finTx.wait();
 
     let finParsed: any = null;
@@ -139,7 +139,7 @@ describe("Security & invariants", function () {
       liquidityTokenBps: 8000,
       basePrice: 10n ** 12n,
       priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("100"),
+      graduationTarget: ethers.parseEther("1"),
       liquidityBps: 8000,
     });
 
@@ -214,7 +214,7 @@ describe("Security & invariants", function () {
       liquidityTokenBps: 8000,
       basePrice: 10n ** 12n,
       priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("100"),
+      graduationTarget: ethers.parseEther("1"),
       liquidityBps: 8000,
     });
 
