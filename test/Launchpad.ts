@@ -52,7 +52,7 @@ describe("Launchpad end-to-end", function () {
     expect(cfg.liquidityTokenBps).to.equal(1000n);
     expect(cfg.basePrice).to.equal(50_000_000_000_000n);
     expect(cfg.priceSlope).to.equal(1_000_000_000n);
-    expect(cfg.graduationTarget).to.equal(ethers.parseEther("50"));
+    expect(cfg.graduationTarget).to.equal(ethers.parseEther("30000"));
     expect(cfg.liquidityBps).to.equal(8000n);
 
     const custom = request({
@@ -229,7 +229,7 @@ describe("Launchpad end-to-end", function () {
     await expect(campaign.connect(trader).sellExactTokens(ethers.parseUnits("1", 18), 0)).to.be.revertedWith("campaign launched");
   });
 
-  it("full workflow: campaign creation, multi-user buys/sells, finalize and LP", async () => {
+  it("full workflow: campaign creation, multi-user buys/sells, permissionless graduation and LP", async () => {
     const { deployer, router, factory } = await deployFactoryAndRouter();
     const [, creator, alice, bob, carol] = await ethers.getSigners();
 
@@ -273,16 +273,12 @@ describe("Launchpad end-to-end", function () {
     expect((await token.balanceOf(await campaign.getAddress())) + sumBal).to.equal(totalSupply);
     expect(await campaign.sold()).to.be.lte(curveSupply);
 
-    const target = await campaign.graduationTarget();
+    const target = await campaign.graduationNativeTarget();
     const campaignAddr = await campaign.getAddress();
     const campaignEthBal = await ethers.provider.getBalance(campaignAddr);
     if (campaignEthBal < target) await deployer.sendTransaction({ to: campaignAddr, value: target - campaignEthBal });
 
-    await expect(campaign.connect(alice).finalize(0, 0)).to.be.reverted;
-
-    const triggerBuy = ethers.parseUnits("1", 18);
-    const triggerCost = await campaign.quoteBuyExactTokens(triggerBuy);
-    await expect(campaign.connect(alice).buyExactTokens(triggerBuy, triggerCost + 1n, { value: triggerCost + 1n }))
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0))
       .to.emit(campaign, "CampaignFinalized")
       .and.to.emit(router, "LiquidityAdded");
 
