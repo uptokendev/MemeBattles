@@ -56,6 +56,10 @@ const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
 const FACTORY_ABI = toAbi(LaunchFactoryArtifact);
 const CAMPAIGN_ABI = toAbi(LaunchCampaignArtifact);
 const TOKEN_ABI = toAbi(LaunchTokenArtifact);
+const GRADUATION_WRITE_ABI = [
+  ...((CAMPAIGN_ABI as any[]) ?? []),
+  "function graduateIfEligible(uint256 minTokens, uint256 minBnb) returns (uint256 usedTokens, uint256 usedBnb)",
+] as ethers.InterfaceAbi;
 
 const LEGACY_FACTORY_ABI = [
   "function campaignsCount() view returns (uint256)",
@@ -501,8 +505,8 @@ export function useLaunchpad(): LaunchpadAdapter {
     const normalizedCampaign = normalizeAddress(campaignAddress);
     if (!normalizedCampaign) throw new Error("Invalid campaign address");
     if (!signer) throw new Error("Wallet not connected");
-    const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
-    const tx = await campaign.finalize(minTokens, minBnb, await legacyGasOverrides(signer, readProvider));
+    const campaign = new Contract(normalizedCampaign, GRADUATION_WRITE_ABI, signer) as any;
+    const tx = await campaign.graduateIfEligible(minTokens, minBnb, await legacyGasOverrides(signer, readProvider));
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "finalize", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
