@@ -139,7 +139,7 @@ describe("Security & invariants", function () {
       liquidityTokenBps: 8000,
       basePrice: 10n ** 12n,
       priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("1"),
+      graduationTarget: 1n,
       liquidityBps: 8000,
     });
 
@@ -214,7 +214,7 @@ describe("Security & invariants", function () {
       liquidityTokenBps: 8000,
       basePrice: 10n ** 12n,
       priceSlope: 10n ** 9n,
-      graduationTarget: ethers.parseEther("1"),
+      graduationTarget: 1n,
       liquidityBps: 8000,
     });
 
