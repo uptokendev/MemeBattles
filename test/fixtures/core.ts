@@ -9,6 +9,8 @@ export type CoreFixture = {
   lpReceiver: any;
   router: any;
   v2factory: any;
+  priceFeed: any;
+  graduationOracle: any;
   treasuryVault: any;
   treasuryRouter: any;
   recruiterVault: any;
@@ -17,6 +19,11 @@ export type CoreFixture = {
   campaignImplementation: any;
   factory: any;
 };
+
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
 
 export async function deployCoreFixture(): Promise<CoreFixture> {
   const [owner, creator, alice, bob, feeRecipient, lpReceiver] = await ethers.getSigners();
@@ -29,6 +36,16 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
   const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
   await router.waitForDeployment();
+
+  const PriceFeed = await ethers.getContractFactory("MockUsdPriceFeed");
+  const priceFeed = await PriceFeed.deploy(8);
+  await priceFeed.waitForDeployment();
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(1n, ethers.parseUnits("1", 8), now, now, 1n);
+
+  const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
+  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 3600n);
+  await graduationOracle.waitForDeployment();
 
   const TreasuryVault = await ethers.getContractFactory("TreasuryVaultV2");
   const treasuryVault = await TreasuryVault.deploy(await feeRecipient.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress);
@@ -66,19 +83,21 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   const factory = await Factory.deploy(
     await router.getAddress(),
     await treasuryRouter.getAddress(),
-    await campaignImplementation.getAddress()
+    await campaignImplementation.getAddress(),
+    await graduationOracle.getAddress()
   );
   await factory.waitForDeployment();
 
-  // Use small, test-friendly config
+  // Use small, test-friendly config. With the fixture oracle at $1/native,
+  // the 1 USD threshold maps to the old 1 native graduation target.
   await factory.connect(owner).setConfig({
-    totalSupply: ethers.parseEther("1000"),      // 1000 tokens
-    curveBps: 5000,                              // 50% curve
-    liquidityTokenBps: 4000,                     // 40% LP
-    basePrice: 10n ** 12n,                       // 0.000001 native per token (scaled)
-    priceSlope: 10n ** 9n,                       // slope
-    graduationTarget: ethers.parseEther("1"),    // 1 native target
-    liquidityBps: 8000                           // 80% of raised (after finalize fee) to LP
+    totalSupply: ethers.parseEther("1000"),
+    curveBps: 5000,
+    liquidityTokenBps: 4000,
+    basePrice: 10n ** 12n,
+    priceSlope: 10n ** 9n,
+    graduationTarget: ethers.parseEther("1"),
+    liquidityBps: 8000
   });
 
   // Tests assume the system is in Live Mode unless explicitly testing Prepare Mode.
@@ -93,6 +112,8 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     lpReceiver,
     router,
     v2factory,
+    priceFeed,
+    graduationOracle,
     treasuryVault,
     treasuryRouter,
     recruiterVault,
