@@ -134,6 +134,12 @@ async function createCampaign(factory: any, creator: any, suffix: string) {
   return { info, campaign, token };
 }
 
+async function topUpToGraduationTarget(campaign: any, payer: any) {
+  const target = await campaign.graduationNativeTarget();
+  const balance = await getBalance(await campaign.getAddress());
+  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+}
+
 async function parseFinalizedEvent(campaign: any, tx: any) {
   const receipt = await tx.wait();
   const parsed = receipt.logs
@@ -228,7 +234,7 @@ describe("Phase 1 fee envelope and economics invariants", function () {
   });
 
   it("legacy routing keeps finalize fee 100% to feeRecipient while trade fees still split league/protocol", async () => {
-    const { owner, alice, leagueRouter, leagueVault, factory, creator } = await loadFixture(deployLegacySystem);
+    const { owner, alice, leagueVault, factory, creator } = await loadFixture(deployLegacySystem);
     const { campaign, token } = await createCampaign(factory, creator, "Legacy");
 
     const ownerBeforeBuy = await getBalance(await owner.getAddress());
@@ -251,16 +257,14 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     expect(leagueAfterBuy - leagueBeforeBuy).to.equal(leagueExpected);
     expect(ownerAfterBuy - ownerBeforeBuy).to.equal(buyMath.fee - leagueExpected);
 
-    const target = await campaign.graduationTarget();
-    const balanceBeforeTopup = await getBalance(await campaign.getAddress());
-    await alice.sendTransaction({ to: await campaign.getAddress(), value: target - balanceBeforeTopup });
+    await topUpToGraduationTarget(campaign, alice);
 
     const ownerBeforeFinalize = await getBalance(await owner.getAddress());
     const leagueBeforeFinalize = await getBalance(await leagueVault.getAddress());
     const balanceBeforeFinalize = await getBalance(await campaign.getAddress());
     const finalizeFee = (balanceBeforeFinalize * BigInt(await campaign.protocolFeeBps())) / 10_000n;
 
-    await campaign.connect(creator).finalize(0, 0);
+    await campaign.connect(alice).graduateIfEligible(0, 0);
 
     const ownerAfterFinalize = await getBalance(await owner.getAddress());
     const leagueAfterFinalize = await getBalance(await leagueVault.getAddress());
@@ -285,8 +289,8 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     await routedCampaign.connect(routed.alice).buyExactTokens(oneToken, routedQuote, { value: routedQuote });
     await legacyCampaign.connect(legacy.alice).buyExactTokens(oneToken, legacyQuote, { value: legacyQuote });
 
-    const routedTarget = await routedCampaign.graduationTarget();
-    const legacyTarget = await legacyCampaign.graduationTarget();
+    const routedTarget = await routedCampaign.graduationNativeTarget();
+    const legacyTarget = await legacyCampaign.graduationNativeTarget();
     expect(routedTarget).to.equal(legacyTarget);
 
     const routedBalance = await getBalance(await routedCampaign.getAddress());
@@ -297,8 +301,8 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     const routedProtocolBefore = await getBalance(await routed.protocolVault.getAddress());
     const routedAirdropBefore = await routed.communityVault.warzoneAirdropBalance();
 
-    const routedFinalize = await parseFinalizedEvent(routedCampaign, await routedCampaign.connect(routed.creator).finalize(0, 0));
-    const legacyFinalize = await parseFinalizedEvent(legacyCampaign, await legacyCampaign.connect(legacy.creator).finalize(0, 0));
+    const routedFinalize = await parseFinalizedEvent(routedCampaign, await routedCampaign.connect(routed.alice).graduateIfEligible(0, 0));
+    const legacyFinalize = await parseFinalizedEvent(legacyCampaign, await legacyCampaign.connect(legacy.alice).graduateIfEligible(0, 0));
 
     expect(routedFinalize.liquidityTokens).to.equal(legacyFinalize.liquidityTokens);
     expect(routedFinalize.liquidityBnb).to.equal(legacyFinalize.liquidityBnb);
