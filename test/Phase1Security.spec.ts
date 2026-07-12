@@ -158,7 +158,11 @@ describe("Phase 1 security layer", function () {
   it("records graduation and decrements creator live bonding count", async () => {
     const { factory, creator, alice } = await deployCoreFixture();
     const { creatorRegistry } = await deployRegistries(factory);
-    const { campaign } = await createCampaign(factory, creator, { graduationTarget: ethers.parseEther("0.001") });
+    const { campaign } = await createCampaign(factory, creator, {
+      basePrice: ethers.parseEther("0.005"),
+      priceSlope: 10n ** 9n,
+      graduationTarget: ethers.parseEther("0.005"),
+    });
 
     let profile = await creatorRegistry.getCreatorProfile(await creator.getAddress());
     expect(profile.liveBondingCount).to.eq(1n);
