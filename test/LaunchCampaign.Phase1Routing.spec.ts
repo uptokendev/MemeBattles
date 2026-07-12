@@ -113,6 +113,12 @@ async function createOgCampaignViaPhase1RouterFixture() {
   return createCampaignViaPhase1RouterFixture(2, 2);
 }
 
+async function topUpToGraduationTarget(campaign: any, payer: any) {
+  const target = await campaign.graduationNativeTarget();
+  const balance = await ethers.provider.getBalance(await campaign.getAddress());
+  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+}
+
 describe("LaunchCampaign Phase 1 router integration", function () {
   it("routes buy fees through TreasuryRouter using StandardUnlinked trade splits", async () => {
     const { campaign, token, alice, treasuryRouter, leagueVault, recruiterVault, protocolVault, communityVault } =
@@ -192,17 +198,13 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes finalize fees through TreasuryRouter using StandardUnlinked finalize splits without breaking launch", async () => {
-    const { campaign, creator, alice, treasuryRouter, leagueVault, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, leagueVault, recruiterVault, protocolVault, communityVault } =
       await loadFixture(createCampaignViaPhase1RouterFixture);
 
     const oneToken = ethers.parseUnits("1", 18);
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
-
-    const target = await campaign.graduationTarget();
-    const balanceBeforeTopup = await ethers.provider.getBalance(await campaign.getAddress());
-    const topup = target - balanceBeforeTopup;
-    await alice.sendTransaction({ to: await campaign.getAddress(), value: topup });
+    await topUpToGraduationTarget(campaign, alice);
 
     const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
     const protocolFeeBps = await campaign.protocolFeeBps();
@@ -215,7 +217,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     const airdropBefore = await communityVault.warzoneAirdropBalance();
     const squadBefore = await communityVault.squadPoolBalance();
 
-    const tx = await campaign.connect(creator).finalize(0, 0);
+    const tx = await campaign.connect(alice).graduateIfEligible(0, 0);
     const rc = await tx.wait();
 
     expect(await campaign.launched()).to.equal(true);
@@ -240,7 +242,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes linked trade + finalize profiles end to end when factory is configured for StandardLinked", async () => {
-    const { campaign, creator, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
       await loadFixture(createLinkedCampaignViaPhase1RouterFixture);
 
     const amountOut = ethers.parseEther("10");
@@ -268,9 +270,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeTrade).to.equal(expectedTrade.protocol);
     expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
 
-    const target = await campaign.graduationTarget();
-    const balanceBeforeTopup = await ethers.provider.getBalance(await campaign.getAddress());
-    await alice.sendTransaction({ to: await campaign.getAddress(), value: target - balanceBeforeTopup });
+    await topUpToGraduationTarget(campaign, alice);
 
     const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
     const protocolFee = (balanceBeforeFinalize * feeBps) / 10_000n;
@@ -280,7 +280,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     const protocolBeforeFinalize = await getBalance(await protocolVault.getAddress());
     const squadBeforeFinalize = await communityVault.squadPoolBalance();
 
-    await campaign.connect(creator).finalize(0, 0);
+    await campaign.connect(alice).graduateIfEligible(0, 0);
 
     expect((await getBalance(await recruiterVault.getAddress())) - recruiterBeforeFinalize).to.equal(expectedFinalize.recruiter);
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeFinalize).to.equal(expectedFinalize.protocol);
@@ -288,7 +288,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes OG-linked trade + finalize profiles end to end when factory is configured for OgLinked", async () => {
-    const { campaign, creator, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
       await loadFixture(createOgCampaignViaPhase1RouterFixture);
 
     const amountOut = ethers.parseEther("10");
@@ -316,9 +316,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeTrade).to.equal(expectedTrade.protocol);
     expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
 
-    const target = await campaign.graduationTarget();
-    const balanceBeforeTopup = await ethers.provider.getBalance(await campaign.getAddress());
-    await alice.sendTransaction({ to: await campaign.getAddress(), value: target - balanceBeforeTopup });
+    await topUpToGraduationTarget(campaign, alice);
 
     const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
     const protocolFee = (balanceBeforeFinalize * feeBps) / 10_000n;
@@ -328,7 +326,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     const protocolBeforeFinalize = await getBalance(await protocolVault.getAddress());
     const squadBeforeFinalize = await communityVault.squadPoolBalance();
 
-    await campaign.connect(creator).finalize(0, 0);
+    await campaign.connect(alice).graduateIfEligible(0, 0);
 
     expect((await getBalance(await recruiterVault.getAddress())) - recruiterBeforeFinalize).to.equal(expectedFinalize.recruiter);
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeFinalize).to.equal(expectedFinalize.protocol);
