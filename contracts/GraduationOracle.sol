@@ -39,13 +39,21 @@ contract GraduationOracle {
         (uint80 roundId, int256 answer,, uint256 updatedAt, uint80 answeredInRound) = priceFeed.latestRoundData();
         if (answer <= 0) revert InvalidPrice();
         if (answeredInRound < roundId) revert IncompleteRound();
-        if (updatedAt == 0 || block.timestamp - updatedAt > maxPriceAge) revert StalePrice();
+        if (updatedAt == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > maxPriceAge) revert StalePrice();
 
         uint256 unsignedAnswer = uint256(answer);
         uint8 feedDecimals = priceFeed.decimals();
-        if (feedDecimals == 18) return unsignedAnswer;
-        if (feedDecimals < 18) return unsignedAnswer * (10 ** (18 - feedDecimals));
-        return unsignedAnswer / (10 ** (feedDecimals - 18));
+        uint256 normalizedPrice;
+        if (feedDecimals == 18) {
+            normalizedPrice = unsignedAnswer;
+        } else if (feedDecimals < 18) {
+            normalizedPrice = unsignedAnswer * (10 ** (18 - feedDecimals));
+        } else {
+            normalizedPrice = unsignedAnswer / (10 ** (feedDecimals - 18));
+        }
+
+        if (normalizedPrice == 0) revert InvalidPrice();
+        return normalizedPrice;
     }
 
     function nativeTargetForUsd(uint256 usdAmount) external view returns (uint256) {
