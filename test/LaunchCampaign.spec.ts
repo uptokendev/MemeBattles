@@ -34,7 +34,7 @@ async function deployTestOracle(price = "1") {
   await priceFeed.setRoundData(1n, ethers.parseUnits(price, 8), now, now, 1n);
 
   const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
-  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 3600n);
+  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 30 * 24 * 60 * 60);
   await graduationOracle.waitForDeployment();
   return graduationOracle;
 }
@@ -389,7 +389,7 @@ describe("LaunchCampaign", function () {
   });
 
   it("auto-finalize: completion buy triggers graduation; adds liquidity; burns unsold; transfers creatorReserve; pays creator; enables trading", async () => {
-    const { campaign, token, creator, alice, router, treasuryRouter, treasuryVault, recruiterVault, communityVault, protocolVault } = await loadFixture(createCampaignFixture);
+    const { campaign, token, creator, alice, router, treasuryRouter, treasuryVault, recruiterVault, communityVault, protocolVault } = await loadFixture(createLowTargetCampaignFixture);
 
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
@@ -545,7 +545,7 @@ describe("LaunchCampaign", function () {
   });
 
   it("auto-finalize: succeeds even if Pancake V2 pair is pre-created (empty)", async () => {
-    const { campaign, token, alice, router, v2factory } = await loadFixture(createCampaignFixture);
+    const { campaign, token, alice, router, v2factory } = await loadFixture(createLowTargetCampaignFixture);
 
     const Pair = await ethers.getContractFactory("MockV2Pair");
     const pair = await Pair.deploy();
@@ -565,7 +565,7 @@ describe("LaunchCampaign", function () {
   });
 
   it("post-finalize: trading restriction lifted; buys/sells revert", async () => {
-    const { campaign, token, alice, bob } = await loadFixture(createCampaignFixture);
+    const { campaign, token, alice, bob } = await loadFixture(createLowTargetCampaignFixture);
 
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
