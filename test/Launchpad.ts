@@ -186,7 +186,7 @@ describe("Launchpad end-to-end", function () {
       liquidityTokenBps: 4000n,
       basePrice: ethers.parseEther("0.001"),
       priceSlope: ethers.parseEther("0.000001"),
-      graduationTarget: ethers.parseEther("10"),
+      graduationTarget: 1n,
       liquidityBps: 8000n,
     });
 
