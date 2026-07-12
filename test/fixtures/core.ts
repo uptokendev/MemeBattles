@@ -44,7 +44,7 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   await priceFeed.setRoundData(1n, ethers.parseUnits("1", 8), now, now, 1n);
 
   const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
-  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 3600n);
+  const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 30 * 24 * 60 * 60);
   await graduationOracle.waitForDeployment();
 
   const TreasuryVault = await ethers.getContractFactory("TreasuryVaultV2");
