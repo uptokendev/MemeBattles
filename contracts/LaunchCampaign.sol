@@ -32,6 +32,10 @@ interface ILaunchFactoryGraduationNotify {
     function notifyCampaignGraduated(address creator) external;
 }
 
+interface IGraduationOracle {
+    function nativeTargetForUsd(uint256 usdAmount) external view returns (uint256);
+}
+
 /// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -50,6 +54,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 basePrice;
         uint256 priceSlope;
         uint256 graduationTarget;
+        address graduationOracle;
         uint256 liquidityBps;
         uint256 protocolFeeBps;
         uint256 leagueFeeBps;
@@ -94,6 +99,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     LaunchToken public token;
     IERC20 private tokenInterface;
     IPancakeRouter02 public router;
+    IGraduationOracle public graduationOracle;
     address public factory;
     address public feeRecipient;
     address public leagueReceiver;
@@ -109,6 +115,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     uint256 public basePrice;
     uint256 public priceSlope;
+    /// @notice USD-denominated graduation threshold, scaled to 18 decimals.
     uint256 public graduationTarget;
     uint256 public liquidityBps;
     uint256 public protocolFeeBps;
@@ -178,6 +185,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error PriceZero();
     error SlopeZero();
     error RouterZero();
+    error GraduationOracleZero();
     error CreatorZero();
     error InvalidLiquidityBps();
     error InvalidProtocolBps();
@@ -226,6 +234,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (params.basePrice == 0) revert PriceZero();
         if (params.priceSlope == 0) revert SlopeZero();
         if (params.router == address(0)) revert RouterZero();
+        if (params.graduationOracle == address(0)) revert GraduationOracleZero();
         if (params.creator == address(0)) revert CreatorZero();
         if (params.liquidityBps > MAX_BPS) revert InvalidLiquidityBps();
         if (params.protocolFeeBps > MAX_BPS) revert InvalidProtocolBps();
@@ -244,6 +253,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         basePrice = params.basePrice;
         priceSlope = params.priceSlope;
         graduationTarget = params.graduationTarget;
+        graduationOracle = IGraduationOracle(params.graduationOracle);
         liquidityBps = params.liquidityBps;
         protocolFeeBps = params.protocolFeeBps;
         factory = params.factory;
@@ -327,6 +337,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     function currentPrice() external view returns (uint256) {
         return _currentPrice();
+    }
+
+    function graduationNativeTarget() public view returns (uint256) {
+        return graduationOracle.nativeTargetForUsd(graduationTarget);
     }
 
     function getGraduationState()
@@ -423,7 +437,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         emit NativeClaimed(msg.sender, amount);
     }
 
-    function finalize(uint256 minTokens, uint256 minBnb) external onlyOwner nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
+    function graduateIfEligible(uint256 minTokens, uint256 minBnb) external nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
         return _finalize(minTokens, minBnb, msg.sender);
     }
 
@@ -529,20 +543,25 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _autoFinalizeIfEligible(address caller) internal {
-        if (sold == curveSupply || _availableNativeBalance() >= graduationTarget) _finalize(0, 0, caller);
+        if (_isGraduationReached()) _finalize(0, 0, caller);
+    }
+
+    function _isGraduationReached() internal view returns (bool) {
+        return _availableNativeBalance() >= graduationNativeTarget();
     }
 
     function _finalize(uint256 minTokens, uint256 minBnb, address caller) internal returns (uint256 usedTokens, uint256 usedBnb) {
         if (paused) revert CampaignPaused();
         if (graduationPaused) revert GraduationPaused();
         if (launched) revert Finalized();
-        if (sold != curveSupply && _availableNativeBalance() < graduationTarget) revert ThresholdNotMet();
+        uint256 nativeTarget = graduationNativeTarget();
+        if (_availableNativeBalance() < nativeTarget) revert ThresholdNotMet();
         launched = true;
         finalizedAt = block.timestamp;
 
         GraduationState storage g = graduation;
         g.graduationBalance = _availableNativeBalance();
-        g.graduationOvershoot = g.graduationBalance > graduationTarget ? g.graduationBalance - graduationTarget : 0;
+        g.graduationOvershoot = g.graduationBalance > nativeTarget ? g.graduationBalance - nativeTarget : 0;
         g.finalCurvePrice = _currentPrice();
 
         uint256 protocolFee = (g.graduationBalance * protocolFeeBps) / MAX_BPS;
