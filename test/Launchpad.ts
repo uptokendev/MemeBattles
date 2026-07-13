@@ -168,12 +168,11 @@ describe("Launchpad end-to-end", function () {
 
     const lpAmount = await token.balanceOf(trader.address);
     await token.connect(trader).approve(await router.getAddress(), lpAmount);
+    const addLegacyLiquidity = (router.connect(trader) as any)["addLiquidityETH(address,uint256,uint256,uint256,address,uint256)"];
     await expect(
-      router
-        .connect(trader)
-        .addLiquidityETH(await token.getAddress(), lpAmount, 0n, 0n, trader.address, Math.floor(Date.now() / 1000) + 3600, {
-          value: ethers.parseEther("0.1"),
-        })
+      addLegacyLiquidity(await token.getAddress(), lpAmount, 0n, 0n, trader.address, Math.floor(Date.now() / 1000) + 3600, {
+        value: ethers.parseEther("0.1"),
+      })
     ).to.be.revertedWithCustomError(token, "TradingNotEnabled");
   });
 
