@@ -45,7 +45,7 @@ contract MockRouter is IPancakeRouter02, ITopazRouter02 {
         override(IPancakeRouter02)
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
-        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired);
         emit LiquidityAdded(token, amountToken, amountETH, to);
     }
 
@@ -64,12 +64,12 @@ contract MockRouter is IPancakeRouter02, ITopazRouter02 {
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
         require(!stable, "stable pool unsupported");
-        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired);
         emit LiquidityAdded(token, amountToken, amountETH, to);
         emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
     }
 
-    function _addLiquidity(address token, uint256 amountTokenDesired, address to)
+    function _addLiquidity(address token, uint256 amountTokenDesired)
         internal
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
