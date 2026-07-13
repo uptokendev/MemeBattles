@@ -30,6 +30,13 @@ async function deployTopazDex(wrappedAddress: string) {
   return { topazFactory, topazRouter };
 }
 
+async function deployContractRecipient() {
+  const Receiver = await ethers.getContractFactory("AcceptingReceiver");
+  const receiver = await Receiver.deploy();
+  await receiver.waitForDeployment();
+  return receiver;
+}
+
 describe("Topaz v2 mocks", function () {
   it("keeps stable and volatile pools separate", async () => {
     const [owner, tokenA, tokenB] = await ethers.getSigners();
@@ -51,7 +58,8 @@ describe("Topaz v2 mocks", function () {
   it("graduates through a Topaz volatile pool and stores the pool address", async () => {
     const [owner, creator, trader] = await ethers.getSigners();
     const { topazFactory, topazRouter } = await deployTopazDex(await owner.getAddress());
-    const { factory } = await deployLaunchFactory(await topazRouter.getAddress(), await owner.getAddress());
+    const feeRecipient = await deployContractRecipient();
+    const { factory } = await deployLaunchFactory(await topazRouter.getAddress(), await feeRecipient.getAddress());
 
     await factory.connect(owner).setConfig({
       totalSupply: ethers.parseEther("1000"),
