@@ -11,7 +11,8 @@ contract MockTopazRouter is ITopazRouter02 {
     address private immutable _poolFactory;
     address private immutable _wrapped;
 
-    event LiquidityAdded(address indexed token, bool stable, uint256 amountToken, uint256 amountETH, address indexed to);
+    event LiquidityAdded(address indexed token, uint256 amountToken, uint256 amountETH, address indexed to);
+    event TopazLiquidityAdded(address indexed token, bool stable, uint256 amountToken, uint256 amountETH, address indexed to);
 
     constructor(address poolFactory_, address wrapped_) {
         _poolFactory = poolFactory_;
@@ -51,6 +52,7 @@ contract MockTopazRouter is ITopazRouter02 {
         MockTopazPool(pool).setReserves(uint112(amountTokenDesired), uint112(msg.value));
         MockTopazPool(pool).setTotalSupply(1);
 
-        emit LiquidityAdded(token, stable, amountToken, amountETH, to);
+        emit LiquidityAdded(token, amountToken, amountETH, to);
+        emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
     }
 }
