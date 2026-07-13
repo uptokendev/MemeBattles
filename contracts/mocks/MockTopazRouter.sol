@@ -19,6 +19,10 @@ contract MockTopazRouter is ITopazRouter02 {
         _wrapped = wrapped_;
     }
 
+    function factory() external view returns (address) {
+        return _poolFactory;
+    }
+
     function poolFactory() external view override returns (address) {
         return _poolFactory;
     }
