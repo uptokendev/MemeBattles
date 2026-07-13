@@ -33,6 +33,22 @@ contract MockTopazRouter is ITopazRouter02 {
 
     function addLiquidityETH(
         address token,
+        uint256 amountTokenDesired,
+        uint256,
+        uint256,
+        address to,
+        uint256
+    )
+        external
+        payable
+        returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
+    {
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
+        emit LiquidityAdded(token, amountToken, amountETH, to);
+    }
+
+    function addLiquidityETH(
+        address token,
         bool stable,
         uint256 amountTokenDesired,
         uint256,
@@ -46,6 +62,15 @@ contract MockTopazRouter is ITopazRouter02 {
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
         require(!stable, "stable pool unsupported");
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
+        emit LiquidityAdded(token, amountToken, amountETH, to);
+        emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
+    }
+
+    function _addLiquidity(address token, uint256 amountTokenDesired, address)
+        internal
+        returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
+    {
         IERC20(token).transferFrom(msg.sender, address(this), amountTokenDesired);
         amountToken = amountTokenDesired;
         amountETH = msg.value;
@@ -55,8 +80,5 @@ contract MockTopazRouter is ITopazRouter02 {
         if (pool == address(0)) pool = MockTopazFactory(_poolFactory).createPool(token, _wrapped, false);
         MockTopazPool(pool).setReserves(uint112(amountTokenDesired), uint112(msg.value));
         MockTopazPool(pool).setTotalSupply(1);
-
-        emit LiquidityAdded(token, amountToken, amountETH, to);
-        emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
     }
 }
