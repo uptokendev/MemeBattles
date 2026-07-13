@@ -2,11 +2,11 @@ import { ethers } from "hardhat";
 import { deployLaunchFactory } from "./deployFactory";
 
 export async function deployMockDexRouter(wrappedAddress: string) {
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2factory = await V2Factory.deploy();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const v2factory = await TopazFactory.deploy();
   await v2factory.waitForDeployment();
 
-  const DexRouter = await ethers.getContractFactory("MockRouter");
+  const DexRouter = await ethers.getContractFactory("MockTopazRouter");
   const dexRouter = await DexRouter.deploy(await v2factory.getAddress(), wrappedAddress);
   await dexRouter.waitForDeployment();
 
