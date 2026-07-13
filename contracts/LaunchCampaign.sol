@@ -10,14 +10,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {LaunchToken} from "./token/LaunchToken.sol";
-import {IPancakeRouter02} from "./interfaces/IPancakeRouter02.sol";
+import {ITopazRouter02} from "./interfaces/ITopazRouter02.sol";
+import {ITopazV2Factory} from "./interfaces/ITopazV2Factory.sol";
 
 interface IPhase1TreasuryRouter {
     function route(uint8 kind, uint8 profile) external payable;
-}
-
-interface IPancakeV2FactoryLike {
-    function getPair(address tokenA, address tokenB) external view returns (address pair);
 }
 
 interface IRouteAuthoritySource {
@@ -36,7 +33,7 @@ interface IGraduationOracle {
     function nativeTargetForUsd(uint256 usdAmount) external view returns (uint256);
 }
 
-/// @notice Pump.fun inspired bonding curve launch campaign that targets PancakeSwap for final liquidity.
+/// @notice Pump.fun inspired bonding curve launch campaign that targets a Topaz v2 volatile pool for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -98,7 +95,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     LaunchToken public token;
     IERC20 private tokenInterface;
-    IPancakeRouter02 public router;
+    ITopazRouter02 public router;
     IGraduationOracle public graduationOracle;
     address public factory;
     address public feeRecipient;
@@ -261,7 +258,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         leagueReceiver = params.leagueReceiver;
         leagueFeeBps = params.leagueFeeBps;
         lpReceiver = params.lpReceiver == address(0) ? params.creator : params.lpReceiver;
-        router = IPancakeRouter02(params.router);
+        router = ITopazRouter02(params.router);
         tradeRouteProfile = params.tradeRouteProfile;
         finalizeRouteProfile = params.finalizeRouteProfile;
         creator = params.creator;
@@ -576,6 +573,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
             address(token),
+            false,
             lpTokensDesired,
             minTokens,
             minBnb,
@@ -590,7 +588,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         g.initialDexPrice = Math.mulDiv(usedBnb, WAD, usedTokens);
         _requirePriceWithinTolerance(g.initialDexPrice, g.finalCurvePrice);
 
-        g.dexPair = IPancakeV2FactoryLike(router.factory()).getPair(address(token), router.WETH());
+        g.dexPair = ITopazV2Factory(router.poolFactory()).getPool(address(token), router.WETH(), false);
         if (g.dexPair == address(0)) revert PairMissing();
 
         g.burnedUnusedLpTokens = liquiditySupply - usedTokens;
