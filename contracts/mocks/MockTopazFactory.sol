@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {MockTopazPool} from "./MockTopazPool.sol";
+
+/// @dev Minimal Topaz v2 factory mock with stable/volatile pool separation.
+contract MockTopazFactory {
+    mapping(bytes32 => address) public pools;
+
+    function _key(address a, address b, bool stable) internal pure returns (bytes32) {
+        return a < b ? keccak256(abi.encodePacked(a, b, stable)) : keccak256(abi.encodePacked(b, a, stable));
+    }
+
+    function setPool(address tokenA, address tokenB, bool stable, address pool) external {
+        pools[_key(tokenA, tokenB, stable)] = pool;
+        MockTopazPool(pool).setTokens(tokenA < tokenB ? tokenA : tokenB, tokenA < tokenB ? tokenB : tokenA, stable);
+    }
+
+    function createPool(address tokenA, address tokenB, bool stable) external returns (address pool) {
+        bytes32 key = _key(tokenA, tokenB, stable);
+        pool = pools[key];
+        if (pool != address(0)) return pool;
+        MockTopazPool created = new MockTopazPool();
+        created.setTokens(tokenA < tokenB ? tokenA : tokenB, tokenA < tokenB ? tokenB : tokenA, stable);
+        pool = address(created);
+        pools[key] = pool;
+    }
+
+    function getPool(address tokenA, address tokenB, bool stable) external view returns (address pool) {
+        return pools[_key(tokenA, tokenB, stable)];
+    }
+}
