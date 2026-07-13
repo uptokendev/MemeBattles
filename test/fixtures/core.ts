@@ -28,12 +28,12 @@ async function latestTimestamp() {
 export async function deployCoreFixture(): Promise<CoreFixture> {
   const [owner, creator, alice, bob, feeRecipient, lpReceiver] = await ethers.getSigners();
 
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2factory = await V2Factory.deploy();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const v2factory = await TopazFactory.deploy();
   await v2factory.waitForDeployment();
 
-  const Router = await ethers.getContractFactory("MockRouter");
-  // Use a non-zero WETH placeholder to better mirror mainnet router behavior.
+  const Router = await ethers.getContractFactory("MockTopazRouter");
+  // Use a non-zero WBNB placeholder to better mirror mainnet router behavior.
   const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
   await router.waitForDeployment();
 
