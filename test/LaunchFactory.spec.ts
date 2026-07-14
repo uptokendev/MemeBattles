@@ -3,6 +3,10 @@ import { artifacts, ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
 const DEAD = "0x000000000000000000000000000000000000dEaD";
+const MAX_BPS = 10_000n;
+const MAX_BASE_PRICE = ethers.parseEther("1000");
+const MAX_PRICE_SLOPE = 10n ** 36n;
+const MAX_GRADUATION_TARGET = ethers.parseEther("1000000");
 
 const baseReq = (overrides: Record<string, unknown> = {}) => ({
   name: "MyToken",
@@ -50,9 +54,10 @@ async function signCreateRoute(
   req: ReturnType<typeof baseReq>,
   tradeProfile: number,
   finalizeProfile: number,
-  deadline: bigint
+  deadline: bigint,
+  chainIdOverride?: bigint
 ) {
-  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const chainId = chainIdOverride ?? (await ethers.provider.getNetwork()).chainId;
   const digest = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
       ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
@@ -349,6 +354,72 @@ describe("LaunchFactory", function () {
     expect(await campaign.finalizeRouteProfile()).to.eq(2n);
   });
 
+  it("createCampaignAuthorized rejects missing authority, expired signatures, invalid profiles, bad signers, wrong chain, and replay", async () => {
+    const { factory, creator, owner, alice } = await deployCoreFixture();
+    const req = baseReq({ name: "RouteGuard", symbol: "RGD" });
+    const deadline = (await latestTimestamp()) + 600n;
+    const expiredDeadline = (await latestTimestamp()) - 1n;
+
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(req as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline,
+        signature: "0x",
+      })
+    ).to.be.revertedWithCustomError(factory, "RouteAuthorityZero");
+
+    await factory.connect(owner).setRouteAuthority(await owner.getAddress());
+    const expiredSignature = await signCreateRoute(factory, await creator.getAddress(), owner, req, 1, 1, expiredDeadline);
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(req as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline: expiredDeadline,
+        signature: expiredSignature,
+      })
+    ).to.be.revertedWithCustomError(factory, "RouteAuthorizationExpired");
+
+    const invalidProfileSignature = await signCreateRoute(factory, await creator.getAddress(), owner, req, 99, 1, deadline);
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(req as any, {
+        tradeRouteProfile: 99,
+        finalizeRouteProfile: 1,
+        deadline,
+        signature: invalidProfileSignature,
+      })
+    ).to.be.revertedWithCustomError(factory, "InvalidRouteProfile");
+
+    const badSignerSignature = await signCreateRoute(factory, await creator.getAddress(), alice, req, 1, 1, deadline);
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(req as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline,
+        signature: badSignerSignature,
+      })
+    ).to.be.revertedWithCustomError(factory, "InvalidRouteAuthorization");
+
+    const { chainId } = await ethers.provider.getNetwork();
+    const wrongChainSignature = await signCreateRoute(factory, await creator.getAddress(), owner, req, 1, 1, deadline, chainId + 1n);
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(req as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline,
+        signature: wrongChainSignature,
+      })
+    ).to.be.revertedWithCustomError(factory, "InvalidRouteAuthorization");
+
+    const validSignature = await signCreateRoute(factory, await creator.getAddress(), owner, req, 1, 1, deadline);
+    const routeAuth = { tradeRouteProfile: 1, finalizeRouteProfile: 1, deadline, signature: validSignature };
+    await expect(factory.connect(creator).createCampaignAuthorized(req as any, routeAuth)).to.emit(factory, "CampaignCreated");
+    await expect(factory.connect(creator).createCampaignAuthorized(req as any, routeAuth)).to.be.revertedWithCustomError(
+      factory,
+      "RouteAuthorizationReplayed"
+    );
+  });
+
   it("owner-only setters with validation + events", async () => {
     const { factory, owner, alice } = await deployCoreFixture();
 
@@ -407,6 +478,93 @@ describe("LaunchFactory", function () {
     ).to.be.revertedWithCustomError(factory, "InvalidCurveBps");
   });
 
+  it("setConfig rejects every bounded economic misconfiguration", async () => {
+    const { factory, owner } = await deployCoreFixture();
+    const validConfig = {
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 6000n,
+      liquidityTokenBps: 3000n,
+      basePrice: 1n,
+      priceSlope: 1n,
+      graduationTarget: 1n,
+      liquidityBps: 8000n,
+    };
+
+    await expect(factory.connect(owner).setConfig({ ...validConfig, curveBps: MAX_BPS, liquidityTokenBps: 1n })).to.be.revertedWithCustomError(
+      factory,
+      "InvalidCurveBps"
+    );
+    await expect(factory.connect(owner).setConfig({ ...validConfig, basePrice: 0n })).to.be.revertedWithCustomError(factory, "PriceZero");
+    await expect(factory.connect(owner).setConfig({ ...validConfig, basePrice: MAX_BASE_PRICE + 1n })).to.be.revertedWithCustomError(
+      factory,
+      "ParamTooHigh"
+    );
+    await expect(factory.connect(owner).setConfig({ ...validConfig, priceSlope: 0n })).to.be.revertedWithCustomError(factory, "SlopeZero");
+    await expect(factory.connect(owner).setConfig({ ...validConfig, priceSlope: MAX_PRICE_SLOPE + 1n })).to.be.revertedWithCustomError(
+      factory,
+      "ParamTooHigh"
+    );
+    await expect(factory.connect(owner).setConfig({ ...validConfig, graduationTarget: 0n })).to.be.revertedWithCustomError(
+      factory,
+      "TargetZero"
+    );
+    await expect(factory.connect(owner).setConfig({ ...validConfig, graduationTarget: MAX_GRADUATION_TARGET + 1n })).to.be.revertedWithCustomError(
+      factory,
+      "ParamTooHigh"
+    );
+    await expect(factory.connect(owner).setConfig({ ...validConfig, liquidityBps: MAX_BPS + 1n })).to.be.revertedWithCustomError(
+      factory,
+      "LiquidityBps"
+    );
+  });
+
+  it("setConfig accepts documented upper bounds and campaigns inherit the frozen economic snapshot", async () => {
+    const { factory, owner, creator } = await deployCoreFixture();
+    const boundedConfig = {
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 6000n,
+      liquidityTokenBps: 3000n,
+      basePrice: MAX_BASE_PRICE,
+      priceSlope: MAX_PRICE_SLOPE,
+      graduationTarget: MAX_GRADUATION_TARGET,
+      liquidityBps: MAX_BPS,
+    };
+
+    await expect(factory.connect(owner).setConfig(boundedConfig)).to.emit(factory, "ConfigUpdated");
+    await factory.connect(creator).createCampaign(baseReq({ name: "Bounded", symbol: "BND" }) as any);
+
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    expect(await campaign.totalSupply()).to.eq(boundedConfig.totalSupply);
+    expect(await campaign.curveSupply()).to.eq((boundedConfig.totalSupply * boundedConfig.curveBps) / MAX_BPS);
+    expect(await campaign.liquiditySupply()).to.eq((boundedConfig.totalSupply * boundedConfig.liquidityTokenBps) / MAX_BPS);
+    expect(await campaign.creatorReserve()).to.eq(ethers.parseEther("100"));
+    expect(await campaign.basePrice()).to.eq(MAX_BASE_PRICE);
+    expect(await campaign.priceSlope()).to.eq(MAX_PRICE_SLOPE);
+    expect(await campaign.graduationTarget()).to.eq(MAX_GRADUATION_TARGET);
+    expect(await campaign.liquidityBps()).to.eq(MAX_BPS);
+  });
+
+  it("createCampaign accepts documented override bounds and stores them on the campaign", async () => {
+    const { factory, creator } = await deployCoreFixture();
+
+    await factory.connect(creator).createCampaign(
+      baseReq({
+        name: "OverrideBounded",
+        symbol: "OBND",
+        basePrice: MAX_BASE_PRICE,
+        priceSlope: MAX_PRICE_SLOPE,
+        graduationTarget: MAX_GRADUATION_TARGET,
+      }) as any
+    );
+
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    expect(await campaign.basePrice()).to.eq(MAX_BASE_PRICE);
+    expect(await campaign.priceSlope()).to.eq(MAX_PRICE_SLOPE);
+    expect(await campaign.graduationTarget()).to.eq(MAX_GRADUATION_TARGET);
+  });
+
   it("locks economic and routing setters after the first campaign exists", async () => {
     const { factory, owner, creator, alice, graduationOracle } = await deployCoreFixture();
 
@@ -417,6 +575,8 @@ describe("LaunchFactory", function () {
     await expect(factory.connect(owner).setGraduationOracle(await graduationOracle.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setProtocolFee(123n)).to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setRouteProfiles(1, 1)).to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setLaunchProtectionConfig(1, 1, 1)).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(
       factory.connect(owner).setConfig({
         totalSupply: 1n,
