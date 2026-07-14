@@ -59,6 +59,17 @@ npm run verify:route-authority:bsc-testnet
 
 The deployment verifier checks stable wiring and settings recorded at deploy time, including factory owner, protocol fee, router, treasury router, campaign implementation, graduation oracle, LP locker, registries, route profiles, route authority, vault admin wiring, and pending multisig/admin actions. It does not freeze mutable operational posture such as live/pause flags because those may change after rollout.
 
+## Frontend Env Handoff
+
+After a local or testnet deployment JSON exists, export the frontend env block from the saved deployment instead of copying it from console output:
+
+```bash
+npm run frontend:env
+npm run frontend:env:bsc-testnet
+```
+
+By default this writes `deployments/<network>.frontend.env` and prints the same values to the console. Generated `*.frontend.env` files stay local and are ignored by git.
+
 ## Required Real-Network Values
 
 Use real testnet-controlled values for:
