@@ -8,7 +8,7 @@ import {MockTopazFactory} from "./MockTopazFactory.sol";
 import {MockTopazPool} from "./MockTopazPool.sol";
 
 contract MockTopazRouter is ITopazRouter02 {
-    address private constant DEAD = 0x000000000000000000000000000000000000dead;
+    address private constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     address private immutable _poolFactory;
     address private immutable _wrapped;
