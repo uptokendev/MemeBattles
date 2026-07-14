@@ -9,6 +9,7 @@
     "deploy:check-env": "node scripts/check-deploy-env.cjs",
     "deploy:check-env:bsc-testnet": "node scripts/check-deploy-env.cjs bscTestnet",
     "deploy:verify": "hardhat run scripts/deploy-and-verify.ts",
+    "deploy:verify:bsc-testnet": "hardhat run scripts/deploy-and-verify.ts --network bscTestnet",
     "deploy:reward-distributor": "hardhat run scripts/deploy-reward-distributor.cjs",
     "deploy:reward-distributor:bsc-testnet": "hardhat run scripts/deploy-reward-distributor.cjs --network bscTestnet",
     "verify:deployment": "hardhat run scripts/verify-deployment.ts",
