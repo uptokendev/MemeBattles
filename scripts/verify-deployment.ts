@@ -105,6 +105,7 @@ export async function verifyDeployment(deployment: any) {
   if (deployment.graduationPriceFeed) await assertCode("GraduationPriceFeed", deployment.graduationPriceFeed);
 
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
+  if (deployment.deployer) assertEq("factory.owner", await factory.owner(), deployment.deployer);
   assertEq("factory.router", await factory.router(), topazRouter);
   assertEq("factory.feeRecipient", await factory.feeRecipient(), contracts.TreasuryRouter);
   assertEq("factory.leagueReceiver", await factory.leagueReceiver(), contracts.TreasuryRouter);
@@ -113,6 +114,9 @@ export async function verifyDeployment(deployment: any) {
   assertEq("factory.permanentLpLocker", await factory.permanentLpLocker(), contracts.PermanentLpLocker);
   assertEq("factory.creatorRegistry", await factory.creatorRegistry(), contracts.CreatorRegistry);
   assertEq("factory.riskRegistry", await factory.riskRegistry(), contracts.RiskRegistry);
+  if (deployment.protocolFeeBps !== undefined && deployment.protocolFeeBps !== null) {
+    assertBigIntEq("factory.protocolFeeBps", await factory.protocolFeeBps(), BigInt(deployment.protocolFeeBps));
+  }
 
   const routing = deployment.routing ?? {};
   if (routing.factoryTradeRouteProfile !== undefined && routing.factoryTradeRouteProfile !== null) {
