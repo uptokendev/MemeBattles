@@ -34,7 +34,7 @@ contract MockTopazDriftRouter is ITopazRouter02 {
         uint256 amountTokenDesired,
         uint256,
         uint256,
-        address,
+        address to,
         uint256
     )
         external
@@ -52,6 +52,6 @@ contract MockTopazDriftRouter is ITopazRouter02 {
         address pool = MockTopazFactory(_poolFactory).getPool(token, _wrapped, false);
         if (pool == address(0)) pool = MockTopazFactory(_poolFactory).createPool(token, _wrapped, false);
         MockTopazPool(pool).setReserves(uint112(amountToken), uint112(amountETH));
-        MockTopazPool(pool).setTotalSupply(1);
+        MockTopazPool(pool).mint(to, liquidity);
     }
 }
