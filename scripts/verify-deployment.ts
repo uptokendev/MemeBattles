@@ -14,11 +14,49 @@ function assertTrue(label: string, value: boolean) {
   console.log(`[verify] ${label}: ok`);
 }
 
+function hardhatEphemeralHint() {
+  return network.name === "hardhat"
+    ? " Hardhat's default network is ephemeral between commands; use npm run deploy:verify, or verify against a persistent localhost/testnet network."
+    : "";
+}
+
 async function assertCode(label: string, address: string) {
-  if (!address || address === ethers.ZeroAddress) throw new Error(`${label}: missing address`);
+  if (!address || address === ethers.ZeroAddress) {
+    throw new Error(
+      `${label}: missing address in deployment file. Redeploy with the current scripts/deploy.ts or update DEPLOYMENT_FILE to a current deployment JSON.`
+    );
+  }
   const code = await ethers.provider.getCode(address);
-  if (code === "0x") throw new Error(`${label}: ${address} has no code on ${network.name}`);
+  if (code === "0x") throw new Error(`${label}: ${address} has no code on ${network.name}.${hardhatEphemeralHint()}`);
   console.log(`[verify] ${label} code: ok`);
+}
+
+function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
+  const contracts = deployment.contracts ?? {};
+  for (const key of [canonicalName, ...fallbacks]) {
+    const fromContracts = contracts[key];
+    if (typeof fromContracts === "string" && fromContracts) return fromContracts;
+    const topLevel = deployment[key];
+    if (typeof topLevel === "string" && topLevel) return topLevel;
+  }
+  return "";
+}
+
+function resolveContracts(deployment: any) {
+  return {
+    TreasuryVaultV2: pickAddress(deployment, "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]),
+    TreasuryRouter: pickAddress(deployment, "TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]),
+    RecruiterRewardsVault: pickAddress(deployment, "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]),
+    CommunityRewardsVault: pickAddress(deployment, "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]),
+    ProtocolRevenueVault: pickAddress(deployment, "ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]),
+    CreatorRegistry: pickAddress(deployment, "CreatorRegistry", ["creatorRegistry"]),
+    RiskRegistry: pickAddress(deployment, "RiskRegistry", ["riskRegistry"]),
+    GraduationOracle: pickAddress(deployment, "GraduationOracle", ["graduationOracle"]),
+    LaunchCampaignImplementation: pickAddress(deployment, "LaunchCampaignImplementation", ["campaignImplementation"]),
+    LaunchFactory: pickAddress(deployment, "LaunchFactory", ["factory", "factoryAddress"]),
+    PermanentLpLocker: pickAddress(deployment, "PermanentLpLocker", ["permanentLpLocker"]),
+    UPVoteTreasury: pickAddress(deployment, "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]),
+  };
 }
 
 export function loadDeployment() {
@@ -36,7 +74,7 @@ export function loadDeployment() {
 }
 
 export async function verifyDeployment(deployment: any) {
-  const contracts = deployment.contracts ?? {};
+  const contracts = resolveContracts(deployment);
   const postDeployActions: string[] = deployment.postDeployActions ?? [];
 
   if (deployment.network && deployment.network !== network.name) {
@@ -50,30 +88,17 @@ export async function verifyDeployment(deployment: any) {
   }
   console.log(`[verify] chainId ${actualChainId}: ok`);
 
-  const requiredContracts = [
-    "TreasuryVaultV2",
-    "TreasuryRouter",
-    "RecruiterRewardsVault",
-    "CommunityRewardsVault",
-    "ProtocolRevenueVault",
-    "CreatorRegistry",
-    "RiskRegistry",
-    "GraduationOracle",
-    "LaunchCampaignImplementation",
-    "LaunchFactory",
-    "PermanentLpLocker",
-    "UPVoteTreasury",
-  ];
-
+  const requiredContracts = Object.keys(contracts) as Array<keyof typeof contracts>;
   for (const name of requiredContracts) {
     await assertCode(name, contracts[name]);
   }
 
-  if (deployment.topazRouter) await assertCode("TopazRouter", deployment.topazRouter);
+  const topazRouter = deployment.topazRouter ?? deployment.router;
+  if (topazRouter) await assertCode("TopazRouter", topazRouter);
   if (deployment.graduationPriceFeed) await assertCode("GraduationPriceFeed", deployment.graduationPriceFeed);
 
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
-  assertEq("factory.router", await factory.router(), deployment.topazRouter ?? deployment.router);
+  assertEq("factory.router", await factory.router(), topazRouter);
   assertEq("factory.feeRecipient", await factory.feeRecipient(), contracts.TreasuryRouter);
   assertEq("factory.leagueReceiver", await factory.leagueReceiver(), contracts.TreasuryRouter);
   assertEq("factory.campaignImplementation", await factory.campaignImplementation(), contracts.LaunchCampaignImplementation);
@@ -85,12 +110,13 @@ export async function verifyDeployment(deployment: any) {
   const locker = await ethers.getContractAt("PermanentLpLocker", contracts.PermanentLpLocker);
   assertEq("permanentLpLocker.admin", await locker.admin(), contracts.LaunchFactory);
 
+  const registryOwner = deployment.security?.registryOwner ?? deployment.treasurySafe;
   const creatorRegistry = await ethers.getContractAt("CreatorRegistry", contracts.CreatorRegistry);
   assertTrue("creatorRegistry.launchRecorder(factory)", await creatorRegistry.launchRecorder(contracts.LaunchFactory));
-  assertEq("creatorRegistry.owner", await creatorRegistry.owner(), deployment.security?.registryOwner ?? deployment.treasurySafe);
+  assertEq("creatorRegistry.owner", await creatorRegistry.owner(), registryOwner);
 
   const riskRegistry = await ethers.getContractAt("RiskRegistry", contracts.RiskRegistry);
-  assertEq("riskRegistry.owner", await riskRegistry.owner(), deployment.security?.registryOwner ?? deployment.treasurySafe);
+  assertEq("riskRegistry.owner", await riskRegistry.owner(), registryOwner);
 
   const oracle = await ethers.getContractAt("GraduationOracle", contracts.GraduationOracle);
   if (deployment.graduationPriceFeed) assertEq("graduationOracle.priceFeed", await oracle.priceFeed(), deployment.graduationPriceFeed);
