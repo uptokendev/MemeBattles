@@ -4,6 +4,8 @@ import { deployCoreFixture } from "./fixtures/core";
 
 const TOKEN = ethers.parseEther("1");
 const ROUTE_PROFILE = 1;
+const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+const TRADE_AUTH_SELL_EXACT_TOKENS = 2;
 let routeDeadlineSalt = 0;
 
 const req = (overrides: Record<string, unknown> = {}) => ({
@@ -42,17 +44,30 @@ async function signRouteAuthorization(
   campaignAddress: string,
   actorAddress: string,
   routeProfile: number,
+  action: number,
+  amount: bigint,
+  limit: bigint,
   chainId: bigint,
   deadline: bigint
 ) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint64"],
-    ["MWZ_ROUTE_TRADE_AUTH", chainId, campaignAddress, actorAddress, routeProfile, deadline]
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      ["MWZ_ROUTE_TRADE_AUTH", chainId, campaignAddress, actorAddress, routeProfile, action, amount, limit, deadline]
+    )
   );
   return authority.signMessage(ethers.getBytes(digest));
 }
 
-async function routeSignature(authority: any, campaign: any, actor: any, routeProfile = ROUTE_PROFILE) {
+async function routeSignature(
+  authority: any,
+  campaign: any,
+  actor: any,
+  action: number,
+  amount: bigint,
+  limit: bigint,
+  routeProfile = ROUTE_PROFILE
+) {
   const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600 + routeDeadlineSalt++);
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const signature = await signRouteAuthorization(
@@ -60,6 +75,9 @@ async function routeSignature(authority: any, campaign: any, actor: any, routePr
     await campaign.getAddress(),
     await actor.getAddress(),
     routeProfile,
+    action,
+    amount,
+    limit,
     chainId,
     deadline
   );
@@ -68,7 +86,7 @@ async function routeSignature(authority: any, campaign: any, actor: any, routePr
 
 async function buyAuthorized(campaign: any, authority: any, buyer: any, amount = TOKEN) {
   const quote = await campaign.quoteBuyExactTokens(amount);
-  const auth = await routeSignature(authority, campaign, buyer);
+  const auth = await routeSignature(authority, campaign, buyer, TRADE_AUTH_BUY_EXACT_TOKENS, amount, quote);
   return campaign.connect(buyer).buyExactTokensAuthorized(amount, quote, auth.routeProfile, auth.deadline, auth.signature, {
     value: quote,
   });
@@ -91,7 +109,7 @@ describe("Phase 6 launch protection", function () {
   it("prevents signed route authorization replay", async () => {
     const { campaign, owner, alice } = await createProtectedCampaign();
     const quote = await campaign.quoteBuyExactTokens(TOKEN);
-    const auth = await routeSignature(owner, campaign, alice);
+    const auth = await routeSignature(owner, campaign, alice, TRADE_AUTH_BUY_EXACT_TOKENS, TOKEN, quote);
 
     await expect(
       campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, auth.routeProfile, auth.deadline, auth.signature, {
@@ -121,6 +139,9 @@ describe("Phase 6 launch protection", function () {
       otherInfo.campaign,
       aliceAddress,
       ROUTE_PROFILE,
+      TRADE_AUTH_BUY_EXACT_TOKENS,
+      TOKEN,
+      quote,
       chainId,
       deadline
     );
@@ -135,6 +156,9 @@ describe("Phase 6 launch protection", function () {
       campaignAddress,
       aliceAddress,
       ROUTE_PROFILE,
+      TRADE_AUTH_BUY_EXACT_TOKENS,
+      TOKEN,
+      quote,
       chainId + 1n,
       deadline
     );
@@ -144,7 +168,17 @@ describe("Phase 6 launch protection", function () {
       })
     ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
 
-    const wrongProfileSignature = await signRouteAuthorization(owner, campaignAddress, aliceAddress, 0, chainId, deadline);
+    const wrongProfileSignature = await signRouteAuthorization(
+      owner,
+      campaignAddress,
+      aliceAddress,
+      0,
+      TRADE_AUTH_BUY_EXACT_TOKENS,
+      TOKEN,
+      quote,
+      chainId,
+      deadline
+    );
     await expect(
       campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, ROUTE_PROFILE, deadline, wrongProfileSignature, {
         value: quote,
@@ -154,12 +188,20 @@ describe("Phase 6 launch protection", function () {
 
   it("enforces per-buy and cumulative wallet caps so split buys cannot bypass the window", async () => {
     const { campaign, owner, alice, bob } = await createProtectedCampaign();
-    const oversizedQuote = await campaign.quoteBuyExactTokens(2n * TOKEN);
-    const oversizedAuth = await routeSignature(owner, campaign, bob);
+    const oversizedAmount = 2n * TOKEN;
+    const oversizedQuote = await campaign.quoteBuyExactTokens(oversizedAmount);
+    const oversizedAuth = await routeSignature(
+      owner,
+      campaign,
+      bob,
+      TRADE_AUTH_BUY_EXACT_TOKENS,
+      oversizedAmount,
+      oversizedQuote
+    );
 
     await expect(
       campaign.connect(bob).buyExactTokensAuthorized(
-        2n * TOKEN,
+        oversizedAmount,
         oversizedQuote,
         oversizedAuth.routeProfile,
         oversizedAuth.deadline,
@@ -186,7 +228,7 @@ describe("Phase 6 launch protection", function () {
       "AuthorizedTradingRequired"
     );
 
-    const auth = await routeSignature(owner, campaign, alice);
+    const auth = await routeSignature(owner, campaign, alice, TRADE_AUTH_SELL_EXACT_TOKENS, TOKEN, 0n);
     await expect(
       campaign.connect(alice).sellExactTokensAuthorized(TOKEN, 0n, auth.routeProfile, auth.deadline, auth.signature)
     ).to.emit(campaign, "TokensSold");
