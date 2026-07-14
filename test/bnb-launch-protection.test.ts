@@ -1,0 +1,176 @@
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
+
+const ACTION_BUY_EXACT_TOKENS = 0;
+const ACTION_BUY_EXACT_BNB = 1;
+const ACTION_SELL_EXACT_TOKENS = 2;
+const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
+
+function campaignRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    name: "Protected Token",
+    symbol: "PROT",
+    logoURI: "ipfs://protected-token-logo",
+    xAccount: "@protected",
+    website: "https://memewarzone.example/protected",
+    extraLink: "https://memewarzone.example/docs",
+    basePrice: 0,
+    priceSlope: 0,
+    graduationTarget: 0,
+    lpReceiver: ethers.ZeroAddress,
+    ...overrides,
+  };
+}
+
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function deployProtectedLaunchFixture() {
+  const [owner, creator, buyer, routeAuthority, attacker] = await ethers.getSigners();
+  const { factory } = await deployRoutedLaunchFactory(owner);
+
+  await factory.setRouteAuthority(routeAuthority.address);
+  await factory.setLaunchProtectionConfig(30, ethers.parseEther("1"), ethers.parseEther("1"));
+  await factory.enableLive();
+
+  const tx = await factory.connect(creator).createCampaign(campaignRequest());
+  await tx.wait();
+  const info = await factory.getCampaign(0n);
+  const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+  const token = await ethers.getContractAt("LaunchToken", info.token);
+
+  return { creator, buyer, routeAuthority, attacker, factory, campaign, token };
+}
+
+async function signTradeRoute(params: {
+  campaign: any;
+  actor: string;
+  signer: any;
+  routeProfile: number;
+  action: number;
+  amount: bigint;
+  limit: bigint;
+  deadline: bigint;
+}) {
+  const { chainId } = await ethers.provider.getNetwork();
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      [
+        "MWZ_ROUTE_TRADE_AUTH",
+        chainId,
+        await params.campaign.getAddress(),
+        params.actor,
+        params.routeProfile,
+        params.action,
+        params.amount,
+        params.limit,
+        params.deadline,
+      ]
+    )
+  );
+  return params.signer.signMessage(ethers.getBytes(digest));
+}
+
+describe("BNB launch protection trade flows", function () {
+  it("allows authorized exact-BNB buys during protected launch blocks", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture();
+    const totalIn = ethers.parseEther("0.00001");
+    const quote = await campaign.quoteBuyExactBnb(totalIn);
+    const minTokensOut = quote[0];
+    const deadline = (await latestTimestamp()) + 3600n;
+
+    expect(minTokensOut).to.be.gt(0n);
+
+    await expect(campaign.connect(buyer).buyExactBnb(minTokensOut, { value: totalIn })).to.be.revertedWithCustomError(
+      campaign,
+      "AuthorizedTradingRequired"
+    );
+
+    const signature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_BNB,
+      amount: totalIn,
+      limit: minTokensOut,
+      deadline,
+    });
+
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactBnbAuthorized(minTokensOut, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, { value: totalIn })
+    ).to.emit(campaign, "TokensPurchased");
+  });
+
+  it("rejects expired protected launch trade routes before accepting funds", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture();
+    const amountOut = ethers.parseEther("1");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const expiredDeadline = (await latestTimestamp()) - 1n;
+    const signature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline: expiredDeadline,
+    });
+
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactTokensAuthorized(amountOut, maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, expiredDeadline, signature, { value: maxCost })
+    ).to.be.revertedWithCustomError(campaign, "RouteAuthExpired");
+  });
+
+  it("keeps sells route-gated during protected launch blocks while allowing authorized exits", async function () {
+    const { buyer, routeAuthority, campaign, token } = await deployProtectedLaunchFixture();
+    const amountOut = ethers.parseEther("2");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const buyDeadline = (await latestTimestamp()) + 3600n;
+    const buySignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline: buyDeadline,
+    });
+
+    await campaign
+      .connect(buyer)
+      .buyExactTokensAuthorized(amountOut, maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, buyDeadline, buySignature, { value: maxCost });
+    await token.connect(buyer).approve(await campaign.getAddress(), amountOut);
+
+    await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.be.revertedWithCustomError(
+      campaign,
+      "AuthorizedTradingRequired"
+    );
+
+    const sellDeadline = (await latestTimestamp()) + 3600n;
+    const sellSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_SELL_EXACT_TOKENS,
+      amount: amountOut,
+      limit: 0n,
+      deadline: sellDeadline,
+    });
+
+    await expect(
+      campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, sellSignature)
+    ).to.emit(campaign, "TokensSold");
+  });
+});
