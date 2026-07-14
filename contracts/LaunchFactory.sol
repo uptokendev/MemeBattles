@@ -208,7 +208,7 @@ contract LaunchFactory is Ownable {
         external
         returns (address campaignAddr, address tokenAddr)
     {
-        _verifyRouteAuthorization(msg.sender, routeAuth);
+        _verifyRouteAuthorization(msg.sender, req, routeAuth);
         return _createCampaign(req, routeAuth.tradeRouteProfile, routeAuth.finalizeRouteProfile);
     }
 
@@ -405,18 +405,19 @@ contract LaunchFactory is Ownable {
         if (!riskRegistry.canCreatorLaunch(creator, maxClusterWallets)) revert RiskNotEligible();
     }
 
-    function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal {
+    function _verifyRouteAuthorization(address creator, CampaignRequest calldata req, RouteAuthorization calldata routeAuth) internal {
         address authority = routeAuthority;
         if (authority == address(0)) revert RouteAuthorityZero();
         if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
         if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) revert InvalidRouteProfile();
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
             keccak256(
-                abi.encodePacked(
+                abi.encode(
                     "MWZ_CREATE_ROUTE_AUTH",
                     block.chainid,
                     address(this),
                     creator,
+                    _hashCampaignRequest(req),
                     routeAuth.tradeRouteProfile,
                     routeAuth.finalizeRouteProfile,
                     routeAuth.deadline
@@ -426,6 +427,23 @@ contract LaunchFactory is Ownable {
         if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
         if (usedCreateRouteAuthorizations[digest]) revert RouteAuthorizationReplayed();
         usedCreateRouteAuthorizations[digest] = true;
+    }
+
+    function _hashCampaignRequest(CampaignRequest calldata req) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256(bytes(req.name)),
+                keccak256(bytes(req.symbol)),
+                keccak256(bytes(req.logoURI)),
+                keccak256(bytes(req.xAccount)),
+                keccak256(bytes(req.website)),
+                keccak256(bytes(req.extraLink)),
+                req.basePrice,
+                req.priceSlope,
+                req.graduationTarget,
+                req.lpReceiver
+            )
+        );
     }
 
     function getCampaign(uint256 id) external view returns (CampaignInfo memory) {
