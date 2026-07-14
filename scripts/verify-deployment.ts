@@ -21,7 +21,7 @@ async function assertCode(label: string, address: string) {
   console.log(`[verify] ${label} code: ok`);
 }
 
-function loadDeployment() {
+export function loadDeployment() {
   const file = process.env.DEPLOYMENT_FILE
     ? path.resolve(process.env.DEPLOYMENT_FILE)
     : path.join(__dirname, "..", "deployments", `${network.name}.json`);
@@ -35,8 +35,7 @@ function loadDeployment() {
   return deployment;
 }
 
-async function main() {
-  const deployment = loadDeployment();
+export async function verifyDeployment(deployment: any) {
   const contracts = deployment.contracts ?? {};
   const postDeployActions: string[] = deployment.postDeployActions ?? [];
 
@@ -125,7 +124,13 @@ async function main() {
   console.log("[verify] Deployment wiring verification complete.");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+async function main() {
+  await verifyDeployment(loadDeployment());
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
