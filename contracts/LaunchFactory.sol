@@ -150,7 +150,7 @@ contract LaunchFactory is Ownable {
     event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
     event RequireAuthorizedTradingUpdated(bool required);
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
-    event CampaignGraduated(address indexed campaign, address indexed creator);
+    event CampaignGraduated(address indexed campaign, address indexed creator, address indexed lpToken, address locker);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -298,7 +298,7 @@ contract LaunchFactory is Ownable {
         if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
         }
-        emit CampaignGraduated(msg.sender, campaignCreator);
+        emit CampaignGraduated(msg.sender, campaignCreator, lpToken, address(permanentLpLocker));
     }
 
     function setConfig(LaunchConfig calldata newConfig) external onlyOwner whenMutable {
