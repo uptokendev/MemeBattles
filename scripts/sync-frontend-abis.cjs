@@ -14,6 +14,8 @@ const contracts = [
   'CommunityRewardsVault',
   'TreasuryVaultV2',
   'RewardDistributor',
+  'UPVoteTreasury',
+  'PermanentLpLocker',
 ];
 
 const artifactsRoot = path.join(root, 'artifacts', 'contracts');
