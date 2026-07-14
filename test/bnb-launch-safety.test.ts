@@ -23,6 +23,31 @@ function campaignRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function asBigInt(value: unknown) {
+  return BigInt(value as string | number | bigint);
+}
+
+function hashCreateRouteRequest(req: ReturnType<typeof campaignRequest>) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  return ethers.keccak256(
+    coder.encode(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256", "address"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes(req.name)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.logoURI)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.website)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+        asBigInt(req.basePrice),
+        asBigInt(req.priceSlope),
+        asBigInt(req.graduationTarget),
+        req.lpReceiver,
+      ]
+    )
+  );
+}
+
 async function deploySafetyFixture() {
   const [owner, creator, buyer, routeAuthority, attacker] = await ethers.getSigners();
 
@@ -53,11 +78,21 @@ async function createCampaign(factory: any, creator: any, overrides: Record<stri
   return { info, campaign, token };
 }
 
-async function signCreateRoute(factory: any, creator: string, signer: any, tradeProfile: number, finalizeProfile: number, deadline: bigint) {
+async function signCreateRoute(
+  factory: any,
+  creator: string,
+  signer: any,
+  req: ReturnType<typeof campaignRequest>,
+  tradeProfile: number,
+  finalizeProfile: number,
+  deadline: bigint
+) {
   const { chainId } = await ethers.provider.getNetwork();
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
-    ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), creator, tradeProfile, finalizeProfile, deadline]
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
+      ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), creator, hashCreateRouteRequest(req), tradeProfile, finalizeProfile, deadline]
+    )
   );
   return signer.signMessage(ethers.getBytes(digest));
 }
@@ -170,10 +205,11 @@ describe("BNB launch safety simulations", function () {
     const deadline = BigInt((latestBlock?.timestamp ?? 0) + 3600);
     const tradeProfile = 2;
     const finalizeProfile = 2;
+    const authorizedReq = campaignRequest({ symbol: "AUTH" });
 
-    const badSignature = await signCreateRoute(factory, creator.address, attacker, tradeProfile, finalizeProfile, deadline);
+    const badSignature = await signCreateRoute(factory, creator.address, attacker, authorizedReq, tradeProfile, finalizeProfile, deadline);
     await expect(
-      factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "BADA" }), {
+      factory.connect(creator).createCampaignAuthorized(authorizedReq, {
         tradeRouteProfile: tradeProfile,
         finalizeRouteProfile: finalizeProfile,
         deadline,
@@ -181,7 +217,7 @@ describe("BNB launch safety simulations", function () {
       })
     ).to.be.revertedWithCustomError(factory, "InvalidRouteAuthorization");
 
-    const validSignature = await signCreateRoute(factory, creator.address, routeAuthority, tradeProfile, finalizeProfile, deadline);
+    const validSignature = await signCreateRoute(factory, creator.address, routeAuthority, authorizedReq, tradeProfile, finalizeProfile, deadline);
     const routeAuth = {
       tradeRouteProfile: tradeProfile,
       finalizeRouteProfile: finalizeProfile,
@@ -189,12 +225,13 @@ describe("BNB launch safety simulations", function () {
       signature: validSignature,
     };
 
-    await expect(factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "AUTH" }), routeAuth)).to.emit(
-      factory,
-      "CampaignCreated"
-    );
+    await expect(factory.connect(creator).createCampaignAuthorized(authorizedReq, routeAuth)).to.emit(factory, "CampaignCreated");
 
-    await expect(factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "RPLY" }), routeAuth)).to.be.revertedWithCustomError(
+    await expect(
+      factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "SWAP" }), routeAuth)
+    ).to.be.revertedWithCustomError(factory, "InvalidRouteAuthorization");
+
+    await expect(factory.connect(creator).createCampaignAuthorized(authorizedReq, routeAuth)).to.be.revertedWithCustomError(
       factory,
       "RouteAuthorizationReplayed"
     );
