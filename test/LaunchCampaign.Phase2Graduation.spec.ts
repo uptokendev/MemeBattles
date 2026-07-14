@@ -207,22 +207,38 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
   });
 
   it("permanently locks the minted Topaz LP in the factory locker", async () => {
-    const { campaign, alice, creator, permanentLpLocker } = await deployEarlyGraduationCampaign();
+    const { owner, campaign, alice, creator, factory, permanentLpLocker } = await deployEarlyGraduationCampaign();
 
-    await campaign.connect(alice).graduateIfEligible(0, 0);
+    const tx = await campaign.connect(alice).graduateIfEligible(0, 0);
+    const receipt = await tx.wait();
 
     const state = await campaign.getGraduationState();
     const pairAddress = state[0];
     const lpMinted = state[5];
     const pair = await ethers.getContractAt("MockTopazPool", pairAddress);
     const lockerAddress = await permanentLpLocker.getAddress();
+    const factoryGraduated = receipt!.logs
+      .map((log: any) => {
+        try {
+          return factory.interface.parseLog(log);
+        } catch {
+          return null;
+        }
+      })
+      .find((parsed: any) => parsed?.name === "CampaignGraduated");
 
     expect(pairAddress).to.not.equal(ethers.ZeroAddress);
     expect(lpMinted).to.be.gt(0n);
+    expect(factoryGraduated).to.not.equal(undefined);
+    expect(factoryGraduated!.args.campaign).to.equal(await campaign.getAddress());
+    expect(factoryGraduated!.args.creator).to.equal(await creator.getAddress());
+    expect(factoryGraduated!.args.lpToken).to.equal(pairAddress);
+    expect(factoryGraduated!.args.locker).to.equal(lockerAddress);
     expect(await permanentLpLocker.registeredLpToken(pairAddress)).to.equal(true);
     expect(await permanentLpLocker.lockedBalance(pairAddress)).to.equal(lpMinted);
     expect(await permanentLpLocker.lockedByDepositor(pairAddress, lockerAddress)).to.equal(lpMinted);
     expect(await pair.balanceOf(lockerAddress)).to.equal(lpMinted);
+    expect(await pair.balanceOf(await owner.getAddress())).to.equal(0n);
     expect(await pair.balanceOf(await creator.getAddress())).to.equal(0n);
     expect(await pair.balanceOf(await campaign.getAddress())).to.equal(0n);
   });
