@@ -111,9 +111,11 @@ async function signTradeRoute(
   action: number,
   amount: bigint,
   limit: bigint,
-  deadline: bigint
+  deadline: bigint,
+  chainIdOverride?: bigint
 ) {
-  const { chainId } = await ethers.provider.getNetwork();
+  const networkInfo = await ethers.provider.getNetwork();
+  const chainId = chainIdOverride ?? networkInfo.chainId;
   const digest = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
       ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
@@ -252,6 +254,131 @@ describe("BNB launch safety simulations", function () {
     await expect(
       campaign.connect(buyer).buyExactTokensAuthorized(amountOut, secondCost, routeProfile, deadline, secondSignature, { value: secondCost })
     ).to.be.revertedWithCustomError(campaign, "LaunchProtectionWalletLimit");
+  });
+
+  it("binds protected launch route signatures to replay, campaign, chain, profile, amount, and slippage", async function () {
+    const { creator, buyer, routeAuthority, attacker, factory } = await deploySafetyFixture();
+    await factory.setLaunchProtectionConfig(50, ethers.parseEther("1"), ethers.parseEther("1"));
+
+    const { campaign } = await createCampaign(factory, creator);
+    const { campaign: otherCampaign } = await createCampaign(factory, attacker, { symbol: "OTHR" });
+    const amountOut = ethers.parseEther("1");
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const deadline = BigInt((latestBlock?.timestamp ?? 0) + 3600);
+    const routeProfile = 1;
+    const alternateRouteProfile = 2;
+    const { chainId } = await ethers.provider.getNetwork();
+
+    const firstCost = await campaign.quoteBuyExactTokens(amountOut);
+    const firstSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      firstCost,
+      deadline
+    );
+    await campaign.connect(buyer).buyExactTokensAuthorized(amountOut, firstCost, routeProfile, deadline, firstSignature, { value: firstCost });
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, firstCost, routeProfile, deadline, firstSignature, { value: firstCost })
+    ).to.be.revertedWithCustomError(campaign, "RouteAuthReplayed");
+
+    const wrongProfileCost = await campaign.quoteBuyExactTokens(amountOut);
+    const wrongProfileSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      wrongProfileCost,
+      deadline
+    );
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactTokensAuthorized(amountOut, wrongProfileCost, alternateRouteProfile, deadline, wrongProfileSignature, { value: wrongProfileCost })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongAmountCost = await campaign.quoteBuyExactTokens(amountOut);
+    const wrongAmountSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut + 1n,
+      wrongAmountCost,
+      deadline
+    );
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, wrongAmountCost, routeProfile, deadline, wrongAmountSignature, {
+        value: wrongAmountCost,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongSlippageCost = await campaign.quoteBuyExactTokens(amountOut);
+    const wrongSlippageSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      wrongSlippageCost + 1n,
+      deadline
+    );
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, wrongSlippageCost, routeProfile, deadline, wrongSlippageSignature, {
+        value: wrongSlippageCost,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const otherCost = await otherCampaign.quoteBuyExactTokens(amountOut);
+    const wrongCampaignSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      otherCost,
+      deadline
+    );
+    await expect(
+      otherCampaign.connect(buyer).buyExactTokensAuthorized(amountOut, otherCost, routeProfile, deadline, wrongCampaignSignature, {
+        value: otherCost,
+      })
+    ).to.be.revertedWithCustomError(otherCampaign, "BadRouteAuth");
+
+    const wrongChainCost = await campaign.quoteBuyExactTokens(amountOut);
+    const wrongChainSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      wrongChainCost,
+      deadline,
+      chainId + 1n
+    );
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, wrongChainCost, routeProfile, deadline, wrongChainSignature, {
+        value: wrongChainCost,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+  });
+
+  it("locks launch protection configuration once campaign creation starts", async function () {
+    const { creator, factory } = await deploySafetyFixture();
+    await factory.setLaunchProtectionConfig(4, ethers.parseEther("0.0001"), ethers.parseEther("0.0002"));
+
+    await createCampaign(factory, creator);
+
+    await expect(factory.setLaunchProtectionConfig(8, 0, 0)).to.be.revertedWithCustomError(factory, "FactoryLocked");
   });
 
   it("expires launch protection at the exact block boundary", async function () {
