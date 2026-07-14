@@ -1,11 +1,12 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
 const ACTION_BUY_EXACT_TOKENS = 0;
 const ACTION_BUY_EXACT_BNB = 1;
 const ACTION_SELL_EXACT_TOKENS = 2;
 const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
+const INVALID_ROUTE_PROFILE = 99;
 
 function campaignRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -28,12 +29,20 @@ async function latestTimestamp() {
   return BigInt(block!.timestamp);
 }
 
-async function deployProtectedLaunchFixture() {
+async function minePastBlock(blockNumber: bigint) {
+  while (BigInt(await ethers.provider.getBlockNumber()) <= blockNumber) {
+    await network.provider.send("evm_mine");
+  }
+}
+
+async function deployProtectedLaunchFixture(options: { setRouteAuthority?: boolean; protectionBlocks?: number } = {}) {
   const [owner, creator, buyer, routeAuthority, attacker] = await ethers.getSigners();
   const { factory } = await deployRoutedLaunchFactory(owner);
+  const setRouteAuthority = options.setRouteAuthority ?? true;
+  const protectionBlocks = options.protectionBlocks ?? 30;
 
-  await factory.setRouteAuthority(routeAuthority.address);
-  await factory.setLaunchProtectionConfig(30, ethers.parseEther("1"), ethers.parseEther("1"));
+  if (setRouteAuthority) await factory.setRouteAuthority(routeAuthority.address);
+  await factory.setLaunchProtectionConfig(protectionBlocks, ethers.parseEther("1"), ethers.parseEther("1"));
   await factory.enableLive();
 
   const tx = await factory.connect(creator).createCampaign(campaignRequest());
@@ -108,6 +117,50 @@ describe("BNB launch protection trade flows", function () {
     ).to.emit(campaign, "TokensPurchased");
   });
 
+  it("rejects protected launch routes when no route authority is configured", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture({ setRouteAuthority: false });
+    const amountOut = ethers.parseEther("1");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const deadline = (await latestTimestamp()) + 3600n;
+    const signature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline,
+    });
+
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactTokensAuthorized(amountOut, maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, { value: maxCost })
+    ).to.be.revertedWithCustomError(campaign, "RouteAuthUnavailable");
+  });
+
+  it("rejects invalid protected launch route profiles", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture();
+    const amountOut = ethers.parseEther("1");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const deadline = (await latestTimestamp()) + 3600n;
+    const signature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: INVALID_ROUTE_PROFILE,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline,
+    });
+
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, maxCost, INVALID_ROUTE_PROFILE, deadline, signature, { value: maxCost })
+    ).to.be.revertedWithCustomError(campaign, "InvalidTradeRouteProfile");
+  });
+
   it("rejects expired protected launch trade routes before accepting funds", async function () {
     const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture();
     const amountOut = ethers.parseEther("1");
@@ -172,5 +225,17 @@ describe("BNB launch protection trade flows", function () {
     await expect(
       campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, sellSignature)
     ).to.emit(campaign, "TokensSold");
+  });
+
+  it("returns to normal direct buy and sell behavior after launch protection expires", async function () {
+    const { buyer, campaign, token } = await deployProtectedLaunchFixture({ protectionBlocks: 1 });
+    await minePastBlock(await campaign.launchProtectionEndBlock());
+
+    const amountOut = ethers.parseEther("2");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.emit(campaign, "TokensPurchased");
+
+    await token.connect(buyer).approve(await campaign.getAddress(), amountOut);
+    await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.emit(campaign, "TokensSold");
   });
 });
