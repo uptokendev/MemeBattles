@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+const { buildFrontendEnv } = require("./lib/frontendEnv.cjs");
+
+const target = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
+const deploymentFile = process.env.DEPLOYMENT_FILE
+  ? path.resolve(process.env.DEPLOYMENT_FILE)
+  : path.join(__dirname, "..", "deployments", `${target}.json`);
+const frontendEnvFile = process.env.FRONTEND_ENV_FILE
+  ? path.resolve(process.env.FRONTEND_ENV_FILE)
+  : path.join(path.dirname(deploymentFile), `${target}.frontend.env`);
+
+function readDeployment() {
+  if (!fs.existsSync(deploymentFile)) {
+    throw new Error(`Deployment file not found: ${deploymentFile}. Run deploy first or set DEPLOYMENT_FILE.`);
+  }
+  return JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
+}
+
+function pickAddress(deployment, canonicalName, fallbacks = []) {
+  const contracts = deployment.contracts || {};
+  for (const key of [canonicalName, ...fallbacks]) {
+    if (typeof contracts[key] === "string" && contracts[key]) return contracts[key];
+    if (typeof deployment[key] === "string" && deployment[key]) return deployment[key];
+  }
+  return "";
+}
+
+function printValue(label, value) {
+  console.log(`${label.padEnd(34)} ${value || "unset"}`);
+}
+
+function printAddress(deployment, label, canonicalName, fallbacks = []) {
+  printValue(label, pickAddress(deployment, canonicalName, fallbacks));
+}
+
+const deployment = readDeployment();
+const routing = deployment.routing || {};
+const postDeployActions = deployment.postDeployActions || [];
+
+console.log(`[deployment-summary] file: ${deploymentFile}`);
+printValue("network", deployment.network || target);
+printValue("chainId", deployment.chainId);
+printValue("deployer", deployment.deployer);
+printValue("treasurySafe", deployment.treasurySafe);
+printValue("protocolFeeBps", deployment.protocolFeeBps);
+printValue("topazRouter", deployment.topazRouter || deployment.router);
+printValue("graduationPriceFeed", deployment.graduationPriceFeed);
+printValue("graduationMaxPriceAge", deployment.graduationMaxPriceAge);
+
+console.log("\n[deployment-summary] core contracts");
+printAddress(deployment, "LaunchFactory", "LaunchFactory", ["factory", "factoryAddress"]);
+printAddress(deployment, "LaunchCampaignImplementation", "LaunchCampaignImplementation", ["campaignImplementation"]);
+printAddress(deployment, "TreasuryRouter", "TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]);
+printAddress(deployment, "TreasuryVaultV2", "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]);
+printAddress(deployment, "RecruiterRewardsVault", "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]);
+printAddress(deployment, "CommunityRewardsVault", "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]);
+printAddress(deployment, "ProtocolRevenueVault", "ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]);
+printAddress(deployment, "CreatorRegistry", "CreatorRegistry", ["creatorRegistry"]);
+printAddress(deployment, "RiskRegistry", "RiskRegistry", ["riskRegistry"]);
+printAddress(deployment, "GraduationOracle", "GraduationOracle", ["graduationOracle"]);
+printAddress(deployment, "PermanentLpLocker", "PermanentLpLocker", ["permanentLpLocker"]);
+printAddress(deployment, "UPVoteTreasury", "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]);
+
+console.log("\n[deployment-summary] routing");
+printValue("factoryTradeRouteProfile", routing.factoryTradeRouteProfile);
+printValue("factoryFinalizeRouteProfile", routing.factoryFinalizeRouteProfile);
+printValue("factoryRouteAuthority", routing.factoryRouteAuthority);
+printValue("unifiedRouterModeActive", routing.unifiedRouterModeActive);
+
+console.log("\n[deployment-summary] frontend env");
+try {
+  const frontendEnv = buildFrontendEnv(deployment, deploymentFile);
+  printValue("status", "valid");
+  printValue("file", fs.existsSync(frontendEnvFile) ? frontendEnvFile : `${frontendEnvFile} (not written yet)`);
+  printValue("entries", frontendEnv.trim().split("\n").length);
+} catch (error) {
+  printValue("status", `invalid: ${error.message}`);
+  process.exitCode = 1;
+}
+
+console.log("\n[deployment-summary] post deploy actions");
+if (postDeployActions.length === 0) {
+  console.log("none");
+} else {
+  for (const action of postDeployActions) console.log(`- ${action}`);
+}
