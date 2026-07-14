@@ -26,7 +26,7 @@ interface IRiskRegistryView {
 }
 
 interface ILaunchFactoryGraduationNotify {
-    function notifyCampaignGraduated(address creator) external;
+    function notifyCampaignGraduated(address creator, address lpToken) external;
 }
 
 interface IGraduationOracle {
@@ -602,7 +602,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         g.postBurnTotalSupply = token.totalSupply();
         token.enableTrading();
 
-        if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator);
+        if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator, g.dexPair);
         emit CampaignFinalized(
             caller,
             g.dexPair,
