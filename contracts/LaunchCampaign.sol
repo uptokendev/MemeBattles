@@ -33,6 +33,10 @@ interface IGraduationOracle {
     function nativeTargetForUsd(uint256 usdAmount) external view returns (uint256);
 }
 
+interface ILaunchProtectionConfigSource {
+    function launchProtectionConfig() external view returns (uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei);
+}
+
 /// @notice Pump.fun inspired bonding curve launch campaign that targets a Topaz v2 volatile pool for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
@@ -138,6 +142,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     bool public sellPaused;
     bool public graduationPaused;
     bool public requireAuthorizedTrading;
+    uint256 public launchProtectionEndBlock;
+    uint256 public launchProtectionMaxBuyWei;
+    uint256 public launchProtectionMaxWalletWei;
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert OnlyFactory();
@@ -148,6 +155,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public totalSellVolumeWei;
     uint256 public buyersCount;
     mapping(address => bool) public hasBought;
+    mapping(address => uint256) public protectedBuyWei;
     mapping(address => uint256) public pendingNative;
     uint256 public pendingNativeTotal;
 
@@ -205,6 +213,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error CreatorBuyLocked();
     error CreatorBuyCapExceeded();
     error AuthorizedTradingRequired();
+    error LaunchProtectionBuyLimit();
+    error LaunchProtectionWalletLimit();
     error RouteAuthExpired();
     error RouteAuthUnavailable();
     error BadRouteAuth();
@@ -267,6 +277,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         creatorBuyLockUntil = params.creatorBuyLockUntil;
         creatorBuyCapWei = params.creatorBuyCapWei;
         requireAuthorizedTrading = params.requireAuthorizedTrading;
+        _loadLaunchProtection(params.factory);
 
         totalSupply = params.totalSupply;
         curveSupply = (params.totalSupply * params.curveBps) / MAX_BPS;
@@ -517,6 +528,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (paused) revert CampaignPaused();
         if (buyPaused) revert BuysPaused();
         _assertWalletCanTrade(buyer);
+        if (_launchProtectionActive()) {
+            if (launchProtectionMaxBuyWei > 0 && costNoFee > launchProtectionMaxBuyWei) revert LaunchProtectionBuyLimit();
+            if (launchProtectionMaxWalletWei > 0) {
+                uint256 nextProtectedBuyWei = protectedBuyWei[buyer] + costNoFee;
+                if (nextProtectedBuyWei > launchProtectionMaxWalletWei) revert LaunchProtectionWalletLimit();
+                protectedBuyWei[buyer] = nextProtectedBuyWei;
+            }
+        }
         if (buyer == creator) {
             if (block.timestamp < creatorBuyLockUntil) revert CreatorBuyLocked();
             if (creatorBuyCapWei > 0 && creatorBoughtWei + costNoFee > creatorBuyCapWei) revert CreatorBuyCapExceeded();
@@ -536,7 +555,22 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requireDirectTradeAllowed() internal view {
-        if (requireAuthorizedTrading) revert AuthorizedTradingRequired();
+        if (requireAuthorizedTrading || _launchProtectionActive()) revert AuthorizedTradingRequired();
+    }
+
+    function _launchProtectionActive() internal view returns (bool) {
+        uint256 endBlock = launchProtectionEndBlock;
+        return endBlock != 0 && block.number <= endBlock;
+    }
+
+    function _loadLaunchProtection(address source) private {
+        if (source.code.length == 0) return;
+        try ILaunchProtectionConfigSource(source).launchProtectionConfig() returns (uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei) {
+            if (blocks_ == 0) return;
+            launchProtectionEndBlock = block.number + blocks_;
+            launchProtectionMaxBuyWei = maxBuyWei;
+            launchProtectionMaxWalletWei = maxWalletWei;
+        } catch {}
     }
 
     function _autoFinalizeIfEligible(address caller) internal {
