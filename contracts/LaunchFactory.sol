@@ -40,6 +40,7 @@ contract LaunchFactory is Ownable {
     error RouteAuthorityZero();
     error RouteAuthorizationExpired();
     error InvalidRouteAuthorization();
+    error RouteAuthorizationReplayed();
     error Paused();
     error CreatePaused();
     error CreatorNotEligible();
@@ -125,6 +126,7 @@ contract LaunchFactory is Ownable {
 
     CampaignInfo[] private _campaigns;
     mapping(address => bool) public isCampaign;
+    mapping(bytes32 => bool) public usedCreateRouteAuthorizations;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -403,7 +405,7 @@ contract LaunchFactory is Ownable {
         if (!riskRegistry.canCreatorLaunch(creator, maxClusterWallets)) revert RiskNotEligible();
     }
 
-    function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal view {
+    function _verifyRouteAuthorization(address creator, RouteAuthorization calldata routeAuth) internal {
         address authority = routeAuthority;
         if (authority == address(0)) revert RouteAuthorityZero();
         if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
@@ -422,6 +424,8 @@ contract LaunchFactory is Ownable {
             )
         );
         if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
+        if (usedCreateRouteAuthorizations[digest]) revert RouteAuthorizationReplayed();
+        usedCreateRouteAuthorizations[digest] = true;
     }
 
     function getCampaign(uint256 id) external view returns (CampaignInfo memory) {
