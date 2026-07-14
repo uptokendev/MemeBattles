@@ -225,6 +225,14 @@ describe("LaunchFactory", function () {
     ).to.be.revertedWithCustomError(campaign, "AlreadyInitialized");
   });
 
+  it("rejects graduation notifications from unknown campaigns", async () => {
+    const { factory, creator } = await deployCoreFixture();
+
+    await expect(
+      factory.connect(creator).notifyCampaignGraduated(await creator.getAddress(), ethers.ZeroAddress)
+    ).to.be.revertedWithCustomError(factory, "UnknownCampaign");
+  });
+
   it("createCampaign has no creator initial buy path", async () => {
     const { factory, creator } = await deployCoreFixture();
 
