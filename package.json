@@ -16,6 +16,8 @@
     "verify:deployment:bsc-testnet": "hardhat run scripts/verify-deployment.ts --network bscTestnet",
     "verify:route-authority": "hardhat run scripts/verify-route-authority.cjs",
     "verify:route-authority:bsc-testnet": "hardhat run scripts/verify-route-authority.cjs --network bscTestnet",
+    "frontend:env": "node scripts/export-frontend-env.cjs",
+    "frontend:env:bsc-testnet": "node scripts/export-frontend-env.cjs bscTestnet",
     "pretestnet:check": "node scripts/pretestnet-check.cjs",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
