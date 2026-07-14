@@ -109,11 +109,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint8 public tradeRouteProfile;
     uint8 public finalizeRouteProfile;
 
-    string public logoURI;
-    string public xAccount;
-    string public website;
-    string public extraLink;
-
     uint256 public basePrice;
     uint256 public priceSlope;
     /// @notice USD-denominated graduation threshold, scaled to 18 decimals.
@@ -132,7 +127,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     GraduationState private graduation;
 
     address public creator;
-    address public creatorRegistry;
     address public riskRegistry;
     uint256 public creatorBuyLockUntil;
     uint256 public creatorBuyCapWei;
@@ -255,10 +249,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
         _transferOwnership(params.creator);
 
-        logoURI = params.logoURI;
-        xAccount = params.xAccount;
-        website = params.website;
-        extraLink = params.extraLink;
         basePrice = params.basePrice;
         priceSlope = params.priceSlope;
         graduationTarget = params.graduationTarget;
@@ -274,7 +264,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         tradeRouteProfile = params.tradeRouteProfile;
         finalizeRouteProfile = params.finalizeRouteProfile;
         creator = params.creator;
-        creatorRegistry = params.creatorRegistry;
         riskRegistry = params.riskRegistry;
         creatorBuyLockUntil = params.creatorBuyLockUntil;
         creatorBuyCapWei = params.creatorBuyCapWei;
@@ -460,7 +449,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 total = costNoFee + fee;
         require(total <= maxCost, "slippage");
         require(msg.value >= total, "insufficient value");
-        _completeBuy(buyer, amountOut, costNoFee, fee, total, useAuthorizedRoute, routeProfile);
+        _beforeBuy(buyer, costNoFee);
+        _recordBuy(buyer, amountOut, costNoFee);
+        if (fee > 0) {
+            if (useAuthorizedRoute) _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, costNoFee, routeProfile);
+            else _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
+        }
+        if (msg.value > total) _sendNative(msg.sender, msg.value - total);
+        _autoFinalizeIfEligible(buyer);
+        emit TokensPurchased(buyer, amountOut, total);
         return total;
     }
 
@@ -474,28 +471,16 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 fee = _fee(costNoFee);
         uint256 total = costNoFee + fee;
         if (total != totalSpent) revert QuoteMismatch();
-        _completeBuy(buyer, tokensOut, costNoFee, fee, total, useAuthorizedRoute, routeProfile);
-        return (tokensOut, total);
-    }
-
-    function _completeBuy(
-        address buyer,
-        uint256 amountOut,
-        uint256 costNoFee,
-        uint256 fee,
-        uint256 total,
-        bool useAuthorizedRoute,
-        uint8 routeProfile
-    ) internal {
         _beforeBuy(buyer, costNoFee);
-        _recordBuy(buyer, amountOut, costNoFee);
+        _recordBuy(buyer, tokensOut, costNoFee);
         if (fee > 0) {
             if (useAuthorizedRoute) _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, costNoFee, routeProfile);
             else _routeFeeOrSendLegacy(fee, ROUTE_KIND_TRADE, costNoFee);
         }
         if (msg.value > total) _sendNative(msg.sender, msg.value - total);
         _autoFinalizeIfEligible(buyer);
-        emit TokensPurchased(buyer, amountOut, total);
+        emit TokensPurchased(buyer, tokensOut, total);
+        return (tokensOut, total);
     }
 
     function _sellExactTokens(address seller, uint256 amountIn, uint256 minPayout, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 payout) {
