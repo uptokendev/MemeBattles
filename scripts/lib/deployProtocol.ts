@@ -304,6 +304,18 @@ export async function deployProtocol() {
     console.warn("[deploy] Treasury safe differs from deployer; router/community admin wiring left for multisig execution.");
   }
 
+  const CreatorRegistryFactory = await ethers.getContractFactory("CreatorRegistry");
+  const creatorRegistry = await CreatorRegistryFactory.deploy();
+  await creatorRegistry.waitForDeployment();
+  const creatorRegistryAddress = await creatorRegistry.getAddress();
+  console.log("CreatorRegistry:", creatorRegistryAddress);
+
+  const RiskRegistryFactory = await ethers.getContractFactory("RiskRegistry");
+  const riskRegistry = await RiskRegistryFactory.deploy();
+  await riskRegistry.waitForDeployment();
+  const riskRegistryAddress = await riskRegistry.getAddress();
+  console.log("RiskRegistry:", riskRegistryAddress);
+
   const Campaign = await ethers.getContractFactory("LaunchCampaign");
   const campaignImplementation = await Campaign.deploy();
   await campaignImplementation.waitForDeployment();
@@ -322,6 +334,22 @@ export async function deployProtocol() {
   const permanentLpLockerAddress = await factory.permanentLpLocker();
   console.log("LaunchFactory:", factoryAddress);
   console.log("PermanentLpLocker:", permanentLpLockerAddress);
+
+  let registryTx = await creatorRegistry.setLaunchRecorder(factoryAddress, true);
+  await registryTx.wait();
+  console.log("CreatorRegistry launch recorder set:", factoryAddress);
+
+  registryTx = await factory.setRegistries(creatorRegistryAddress, riskRegistryAddress);
+  await registryTx.wait();
+  console.log("Factory registries set:", { creatorRegistry: creatorRegistryAddress, riskRegistry: riskRegistryAddress });
+
+  if (treasurySafe.toLowerCase() !== deployerAddress.toLowerCase()) {
+    registryTx = await creatorRegistry.transferOwnership(treasurySafe);
+    await registryTx.wait();
+    registryTx = await riskRegistry.transferOwnership(treasurySafe);
+    await registryTx.wait();
+    console.log("Registry ownership transferred to treasury safe:", treasurySafe);
+  }
 
   if ((await factory.tradeRouteProfile()) !== BigInt(tradeRouteProfile) || (await factory.finalizeRouteProfile()) !== BigInt(finalizeRouteProfile)) {
     const tx = await factory.setRouteProfiles(tradeRouteProfile, finalizeRouteProfile);
@@ -353,6 +381,8 @@ export async function deployProtocol() {
     deployer: deployerAddress,
     router: routerAddress,
     topazRouter: routerAddress,
+    creatorRegistry: creatorRegistryAddress,
+    riskRegistry: riskRegistryAddress,
     permanentLpLocker: permanentLpLockerAddress,
     graduationOracle: graduationOracleConfig.oracleAddress,
     graduationPriceFeed: graduationOracleConfig.priceFeedAddress,
@@ -380,6 +410,8 @@ export async function deployProtocol() {
       RecruiterRewardsVault: recruiterVaultAddress,
       CommunityRewardsVault: communityVaultAddress,
       ProtocolRevenueVault: protocolVaultAddress,
+      CreatorRegistry: creatorRegistryAddress,
+      RiskRegistry: riskRegistryAddress,
       GraduationOracle: graduationOracleConfig.oracleAddress,
       LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: factoryAddress,
@@ -405,6 +437,12 @@ export async function deployProtocol() {
       permanentLpLocker: permanentLpLockerAddress,
       unifiedRouterModeActive: true,
     },
+    security: {
+      creatorRegistry: creatorRegistryAddress,
+      riskRegistry: riskRegistryAddress,
+      factoryLaunchRecorderEnabled: true,
+      registryOwner: treasurySafe,
+    },
     postDeployActions,
   };
 
@@ -418,6 +456,8 @@ export async function deployProtocol() {
   console.log(`VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${communityVaultAddress}`);
   console.log(`VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${recruiterVaultAddress}`);
   console.log(`VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${deployment.chainId}=${protocolVaultAddress}`);
+  console.log(`VITE_CREATOR_REGISTRY_ADDRESS_${deployment.chainId}=${creatorRegistryAddress}`);
+  console.log(`VITE_RISK_REGISTRY_ADDRESS_${deployment.chainId}=${riskRegistryAddress}`);
   console.log(`VITE_GRADUATION_ORACLE_ADDRESS_${deployment.chainId}=${graduationOracleConfig.oracleAddress}`);
   console.log(`VITE_TOPAZ_ROUTER_ADDRESS_${deployment.chainId}=${routerAddress}`);
   console.log(`VITE_PERMANENT_LP_LOCKER_ADDRESS_${deployment.chainId}=${permanentLpLockerAddress}`);
@@ -426,6 +466,8 @@ export async function deployProtocol() {
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
   console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
   console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
+  console.log("- CreatorRegistry for tier/cooldown/live-count enforcement:", creatorRegistryAddress);
+  console.log("- RiskRegistry for wallet/cluster enforcement:", riskRegistryAddress);
   console.log("- Topaz volatile router for graduation liquidity:", routerAddress);
   console.log("- Permanent LP locker:", permanentLpLockerAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
