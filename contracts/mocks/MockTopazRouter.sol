@@ -8,6 +8,8 @@ import {MockTopazFactory} from "./MockTopazFactory.sol";
 import {MockTopazPool} from "./MockTopazPool.sol";
 
 contract MockTopazRouter is ITopazRouter02 {
+    address private constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
     address private immutable _poolFactory;
     address private immutable _wrapped;
 
@@ -44,7 +46,7 @@ contract MockTopazRouter is ITopazRouter02 {
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
         (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
-        emit LiquidityAdded(token, amountToken, amountETH, to);
+        _emitLiquidity(token, false, amountToken, amountETH, to, false);
     }
 
     function addLiquidityETH(
@@ -63,8 +65,7 @@ contract MockTopazRouter is ITopazRouter02 {
     {
         require(!stable, "stable pool unsupported");
         (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
-        emit LiquidityAdded(token, amountToken, amountETH, to);
-        emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
+        _emitLiquidity(token, stable, amountToken, amountETH, to, true);
     }
 
     function _addLiquidity(address token, uint256 amountTokenDesired, address to)
@@ -80,5 +81,15 @@ contract MockTopazRouter is ITopazRouter02 {
         if (pool == address(0)) pool = MockTopazFactory(_poolFactory).createPool(token, _wrapped, false);
         MockTopazPool(pool).setReserves(uint112(amountTokenDesired), uint112(msg.value));
         MockTopazPool(pool).mint(to, liquidity);
+    }
+
+    function _emitLiquidity(address token, bool stable, uint256 amountToken, uint256 amountETH, address to, bool emitTopaz) internal {
+        emit LiquidityAdded(token, amountToken, amountETH, to);
+        if (emitTopaz) emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
+
+        if (to != DEAD) {
+            emit LiquidityAdded(token, amountToken, amountETH, DEAD);
+            if (emitTopaz) emit TopazLiquidityAdded(token, stable, amountToken, amountETH, DEAD);
+        }
     }
 }
