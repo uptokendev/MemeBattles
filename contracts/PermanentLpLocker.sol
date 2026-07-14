@@ -40,6 +40,13 @@ contract PermanentLpLocker {
         if (registeredLpToken[lpToken]) revert AlreadyRegistered();
         registeredLpToken[lpToken] = true;
         emit LpTokenRegistered(lpToken);
+
+        uint256 currentBalance = IERC20(lpToken).balanceOf(address(this));
+        if (currentBalance > 0) {
+            lockedBalance[lpToken] = currentBalance;
+            lockedByDepositor[lpToken][address(this)] = currentBalance;
+            emit LpPermanentlyLocked(lpToken, address(this), currentBalance, currentBalance);
+        }
     }
 
     function lock(address lpToken, uint256 amount) external {
