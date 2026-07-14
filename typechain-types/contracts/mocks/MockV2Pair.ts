@@ -8,6 +8,7 @@ import type {
   FunctionFragment,
   Result,
   Interface,
+  AddressLike,
   ContractRunner,
   ContractMethod,
   Listener,
@@ -23,41 +24,65 @@ import type {
 export interface MockV2PairInterface extends Interface {
   getFunction(
     nameOrSignature:
+      | "balanceOf"
       | "getReserves"
+      | "mint"
       | "setReserves"
+      | "setTokens"
       | "setTotalSupply"
+      | "token0"
+      | "token1"
       | "totalSupply"
   ): FunctionFragment;
 
   encodeFunctionData(
+    functionFragment: "balanceOf",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "getReserves",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "mint",
+    values: [AddressLike, BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "setReserves",
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "setTokens",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setTotalSupply",
     values: [BigNumberish]
   ): string;
+  encodeFunctionData(functionFragment: "token0", values?: undefined): string;
+  encodeFunctionData(functionFragment: "token1", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "totalSupply",
     values?: undefined
   ): string;
 
+  decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getReserves",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "mint", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setReserves",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "setTokens", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setTotalSupply",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "token0", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "token1", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "totalSupply",
     data: BytesLike
@@ -107,7 +132,15 @@ export interface MockV2Pair extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  balanceOf: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+
   getReserves: TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
+
+  mint: TypedContractMethod<
+    [to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
 
   setReserves: TypedContractMethod<
     [r0: BigNumberish, r1: BigNumberish],
@@ -115,7 +148,17 @@ export interface MockV2Pair extends BaseContract {
     "nonpayable"
   >;
 
+  setTokens: TypedContractMethod<
+    [token0_: AddressLike, token1_: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
   setTotalSupply: TypedContractMethod<[v: BigNumberish], [void], "nonpayable">;
+
+  token0: TypedContractMethod<[], [string], "view">;
+
+  token1: TypedContractMethod<[], [string], "view">;
 
   totalSupply: TypedContractMethod<[], [bigint], "view">;
 
@@ -124,8 +167,18 @@ export interface MockV2Pair extends BaseContract {
   ): T;
 
   getFunction(
+    nameOrSignature: "balanceOf"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "getReserves"
   ): TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
+  getFunction(
+    nameOrSignature: "mint"
+  ): TypedContractMethod<
+    [to: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "setReserves"
   ): TypedContractMethod<
@@ -134,8 +187,21 @@ export interface MockV2Pair extends BaseContract {
     "nonpayable"
   >;
   getFunction(
+    nameOrSignature: "setTokens"
+  ): TypedContractMethod<
+    [token0_: AddressLike, token1_: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "setTotalSupply"
   ): TypedContractMethod<[v: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "token0"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "token1"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "totalSupply"
   ): TypedContractMethod<[], [bigint], "view">;

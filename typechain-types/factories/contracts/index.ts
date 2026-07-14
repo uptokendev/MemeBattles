@@ -2,6 +2,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as communityRewardsVaultSol from "./CommunityRewardsVault.sol";
+export * as graduationOracleSol from "./GraduationOracle.sol";
 export * as launchCampaignSol from "./LaunchCampaign.sol";
 export * as treasuryRouterSol from "./TreasuryRouter.sol";
 export * as upVoteTreasurySol from "./UPVoteTreasury.sol";
@@ -16,6 +17,7 @@ export { LaunchFactory__factory } from "./LaunchFactory__factory";
 export { LpTimelock__factory } from "./LpTimelock__factory";
 export { MajorLeagueTreasury__factory } from "./MajorLeagueTreasury__factory";
 export { NativeTreasuryVaultBase__factory } from "./NativeTreasuryVaultBase__factory";
+export { PermanentLpLocker__factory } from "./PermanentLpLocker__factory";
 export { ProtocolRevenueVault__factory } from "./ProtocolRevenueVault__factory";
 export { RecruiterRewardsVault__factory } from "./RecruiterRewardsVault__factory";
 export { RewardDistributor__factory } from "./RewardDistributor__factory";

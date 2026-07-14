@@ -152,7 +152,7 @@ export declare namespace LaunchFactory {
 export interface LaunchFactoryInterface extends Interface {
   getFunction(
     nameOrSignature:
-      | "DEAD"
+      | "DEFAULT_GRADUATION_USD_THRESHOLD"
       | "LEAGUE_FEE_BPS"
       | "MAX_BASE_PRICE"
       | "MAX_GRADUATION_TARGET"
@@ -173,11 +173,17 @@ export interface LaunchFactoryInterface extends Interface {
       | "getCampaign"
       | "getCampaignPage"
       | "globalPaused"
+      | "graduationOracle"
       | "isCampaign"
+      | "launchProtectionBlocks"
+      | "launchProtectionConfig"
+      | "launchProtectionMaxBuyWei"
+      | "launchProtectionMaxWalletWei"
       | "leagueReceiver"
       | "live"
       | "notifyCampaignGraduated"
       | "owner"
+      | "permanentLpLocker"
       | "protocolFeeBps"
       | "renounceOwnership"
       | "requireAuthorizedTrading"
@@ -190,6 +196,8 @@ export interface LaunchFactoryInterface extends Interface {
       | "setCreatePaused"
       | "setFeeRecipient"
       | "setGlobalPaused"
+      | "setGraduationOracle"
+      | "setLaunchProtectionConfig"
       | "setProtocolFee"
       | "setRegistries"
       | "setRequireAuthorizedTrading"
@@ -209,6 +217,8 @@ export interface LaunchFactoryInterface extends Interface {
       | "CreatePauseUpdated"
       | "FeeRecipientUpdated"
       | "GlobalPauseUpdated"
+      | "GraduationOracleUpdated"
+      | "LaunchProtectionConfigUpdated"
       | "LiveEnabled"
       | "OwnershipTransferred"
       | "ProtocolFeeUpdated"
@@ -219,7 +229,10 @@ export interface LaunchFactoryInterface extends Interface {
       | "RouterUpdated"
   ): EventFragment;
 
-  encodeFunctionData(functionFragment: "DEAD", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "DEFAULT_GRADUATION_USD_THRESHOLD",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "LEAGUE_FEE_BPS",
     values?: undefined
@@ -301,8 +314,28 @@ export interface LaunchFactoryInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "graduationOracle",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "isCampaign",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionBlocks",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionConfig",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionMaxBuyWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionMaxWalletWei",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "leagueReceiver",
@@ -311,9 +344,13 @@ export interface LaunchFactoryInterface extends Interface {
   encodeFunctionData(functionFragment: "live", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "notifyCampaignGraduated",
-    values: [AddressLike]
+    values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "permanentLpLocker",
+    values?: undefined
+  ): string;
   encodeFunctionData(
     functionFragment: "protocolFeeBps",
     values?: undefined
@@ -360,6 +397,14 @@ export interface LaunchFactoryInterface extends Interface {
     values: [boolean]
   ): string;
   encodeFunctionData(
+    functionFragment: "setGraduationOracle",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setLaunchProtectionConfig",
+    values: [BigNumberish, BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setProtocolFee",
     values: [BigNumberish]
   ): string;
@@ -392,7 +437,10 @@ export interface LaunchFactoryInterface extends Interface {
     values: [AddressLike]
   ): string;
 
-  decodeFunctionResult(functionFragment: "DEAD", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "DEFAULT_GRADUATION_USD_THRESHOLD",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "LEAGUE_FEE_BPS",
     data: BytesLike
@@ -467,7 +515,27 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "globalPaused",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "graduationOracle",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "isCampaign", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionBlocks",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionConfig",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionMaxBuyWei",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionMaxWalletWei",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "leagueReceiver",
     data: BytesLike
@@ -478,6 +546,10 @@ export interface LaunchFactoryInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "permanentLpLocker",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
     data: BytesLike
@@ -518,6 +590,14 @@ export interface LaunchFactoryInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setGlobalPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setGraduationOracle",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setLaunchProtectionConfig",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -677,6 +757,40 @@ export namespace GlobalPauseUpdatedEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
+export namespace GraduationOracleUpdatedEvent {
+  export type InputTuple = [newOracle: AddressLike];
+  export type OutputTuple = [newOracle: string];
+  export interface OutputObject {
+    newOracle: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace LaunchProtectionConfigUpdatedEvent {
+  export type InputTuple = [
+    blocks_: BigNumberish,
+    maxBuyWei: BigNumberish,
+    maxWalletWei: BigNumberish
+  ];
+  export type OutputTuple = [
+    blocks_: bigint,
+    maxBuyWei: bigint,
+    maxWalletWei: bigint
+  ];
+  export interface OutputObject {
+    blocks_: bigint;
+    maxBuyWei: bigint;
+    maxWalletWei: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
 export namespace LiveEnabledEvent {
   export type InputTuple = [at: BigNumberish];
   export type OutputTuple = [at: bigint];
@@ -828,7 +942,7 @@ export interface LaunchFactory extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  DEAD: TypedContractMethod<[], [string], "view">;
+  DEFAULT_GRADUATION_USD_THRESHOLD: TypedContractMethod<[], [bigint], "view">;
 
   LEAGUE_FEE_BPS: TypedContractMethod<[], [bigint], "view">;
 
@@ -903,19 +1017,41 @@ export interface LaunchFactory extends BaseContract {
 
   globalPaused: TypedContractMethod<[], [boolean], "view">;
 
+  graduationOracle: TypedContractMethod<[], [string], "view">;
+
   isCampaign: TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+
+  launchProtectionBlocks: TypedContractMethod<[], [bigint], "view">;
+
+  launchProtectionConfig: TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint] & {
+        blocks_: bigint;
+        maxBuyWei: bigint;
+        maxWalletWei: bigint;
+      }
+    ],
+    "view"
+  >;
+
+  launchProtectionMaxBuyWei: TypedContractMethod<[], [bigint], "view">;
+
+  launchProtectionMaxWalletWei: TypedContractMethod<[], [bigint], "view">;
 
   leagueReceiver: TypedContractMethod<[], [string], "view">;
 
   live: TypedContractMethod<[], [boolean], "view">;
 
   notifyCampaignGraduated: TypedContractMethod<
-    [campaignCreator: AddressLike],
+    [campaignCreator: AddressLike, lpToken: AddressLike],
     [void],
     "nonpayable"
   >;
 
   owner: TypedContractMethod<[], [string], "view">;
+
+  permanentLpLocker: TypedContractMethod<[], [string], "view">;
 
   protocolFeeBps: TypedContractMethod<[], [bigint], "view">;
 
@@ -962,6 +1098,22 @@ export interface LaunchFactory extends BaseContract {
   >;
 
   setGlobalPaused: TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+
+  setGraduationOracle: TypedContractMethod<
+    [newOracle: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+
+  setLaunchProtectionConfig: TypedContractMethod<
+    [
+      blocks_: BigNumberish,
+      maxBuyWei: BigNumberish,
+      maxWalletWei: BigNumberish
+    ],
+    [void],
+    "nonpayable"
+  >;
 
   setProtocolFee: TypedContractMethod<
     [newProtocolFeeBps: BigNumberish],
@@ -1012,8 +1164,8 @@ export interface LaunchFactory extends BaseContract {
   ): T;
 
   getFunction(
-    nameOrSignature: "DEAD"
-  ): TypedContractMethod<[], [string], "view">;
+    nameOrSignature: "DEFAULT_GRADUATION_USD_THRESHOLD"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "LEAGUE_FEE_BPS"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -1108,8 +1260,33 @@ export interface LaunchFactory extends BaseContract {
     nameOrSignature: "globalPaused"
   ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
+    nameOrSignature: "graduationOracle"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "isCampaign"
   ): TypedContractMethod<[arg0: AddressLike], [boolean], "view">;
+  getFunction(
+    nameOrSignature: "launchProtectionBlocks"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "launchProtectionConfig"
+  ): TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint] & {
+        blocks_: bigint;
+        maxBuyWei: bigint;
+        maxWalletWei: bigint;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "launchProtectionMaxBuyWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "launchProtectionMaxWalletWei"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "leagueReceiver"
   ): TypedContractMethod<[], [string], "view">;
@@ -1118,9 +1295,16 @@ export interface LaunchFactory extends BaseContract {
   ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "notifyCampaignGraduated"
-  ): TypedContractMethod<[campaignCreator: AddressLike], [void], "nonpayable">;
+  ): TypedContractMethod<
+    [campaignCreator: AddressLike, lpToken: AddressLike],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "owner"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "permanentLpLocker"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "protocolFeeBps"
@@ -1176,6 +1360,20 @@ export interface LaunchFactory extends BaseContract {
   getFunction(
     nameOrSignature: "setGlobalPaused"
   ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setGraduationOracle"
+  ): TypedContractMethod<[newOracle: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setLaunchProtectionConfig"
+  ): TypedContractMethod<
+    [
+      blocks_: BigNumberish,
+      maxBuyWei: BigNumberish,
+      maxWalletWei: BigNumberish
+    ],
+    [void],
+    "nonpayable"
+  >;
   getFunction(
     nameOrSignature: "setProtocolFee"
   ): TypedContractMethod<
@@ -1261,6 +1459,20 @@ export interface LaunchFactory extends BaseContract {
     GlobalPauseUpdatedEvent.InputTuple,
     GlobalPauseUpdatedEvent.OutputTuple,
     GlobalPauseUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "GraduationOracleUpdated"
+  ): TypedContractEvent<
+    GraduationOracleUpdatedEvent.InputTuple,
+    GraduationOracleUpdatedEvent.OutputTuple,
+    GraduationOracleUpdatedEvent.OutputObject
+  >;
+  getEvent(
+    key: "LaunchProtectionConfigUpdated"
+  ): TypedContractEvent<
+    LaunchProtectionConfigUpdatedEvent.InputTuple,
+    LaunchProtectionConfigUpdatedEvent.OutputTuple,
+    LaunchProtectionConfigUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "LiveEnabled"
@@ -1395,6 +1607,28 @@ export interface LaunchFactory extends BaseContract {
       GlobalPauseUpdatedEvent.InputTuple,
       GlobalPauseUpdatedEvent.OutputTuple,
       GlobalPauseUpdatedEvent.OutputObject
+    >;
+
+    "GraduationOracleUpdated(address)": TypedContractEvent<
+      GraduationOracleUpdatedEvent.InputTuple,
+      GraduationOracleUpdatedEvent.OutputTuple,
+      GraduationOracleUpdatedEvent.OutputObject
+    >;
+    GraduationOracleUpdated: TypedContractEvent<
+      GraduationOracleUpdatedEvent.InputTuple,
+      GraduationOracleUpdatedEvent.OutputTuple,
+      GraduationOracleUpdatedEvent.OutputObject
+    >;
+
+    "LaunchProtectionConfigUpdated(uint256,uint256,uint256)": TypedContractEvent<
+      LaunchProtectionConfigUpdatedEvent.InputTuple,
+      LaunchProtectionConfigUpdatedEvent.OutputTuple,
+      LaunchProtectionConfigUpdatedEvent.OutputObject
+    >;
+    LaunchProtectionConfigUpdated: TypedContractEvent<
+      LaunchProtectionConfigUpdatedEvent.InputTuple,
+      LaunchProtectionConfigUpdatedEvent.OutputTuple,
+      LaunchProtectionConfigUpdatedEvent.OutputObject
     >;
 
     "LiveEnabled(uint64)": TypedContractEvent<

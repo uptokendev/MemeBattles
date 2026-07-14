@@ -106,17 +106,45 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.CreatorRegistry__factory>;
     getContractFactory(
+      name: "GraduationOracle",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.GraduationOracle__factory>;
+    getContractFactory(
+      name: "IUsdPriceFeed",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IUsdPriceFeed__factory>;
+    getContractFactory(
       name: "IPancakeRouter02",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IPancakeRouter02__factory>;
+    getContractFactory(
+      name: "ITopazRouter02",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ITopazRouter02__factory>;
+    getContractFactory(
+      name: "ITopazV2Factory",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ITopazV2Factory__factory>;
+    getContractFactory(
+      name: "ITopazPool",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ITopazPool__factory>;
     getContractFactory(
       name: "ITreasuryVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ITreasuryVault__factory>;
     getContractFactory(
+      name: "IGraduationOracle",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IGraduationOracle__factory>;
+    getContractFactory(
       name: "ILaunchFactoryGraduationNotify",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.ILaunchFactoryGraduationNotify__factory>;
+    getContractFactory(
+      name: "ILaunchProtectionConfigSource",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ILaunchProtectionConfigSource__factory>;
     getContractFactory(
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -150,6 +178,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.AcceptingReceiver__factory>;
     getContractFactory(
+      name: "MockDriftRouter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockDriftRouter__factory>;
+    getContractFactory(
       name: "MockERC20",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockERC20__factory>;
@@ -161,6 +193,30 @@ declare module "hardhat/types/runtime" {
       name: "MockRouter",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MockRouter__factory>;
+    getContractFactory(
+      name: "MockTopazDriftRouter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockTopazDriftRouter__factory>;
+    getContractFactory(
+      name: "IPairTokenSetter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.IPairTokenSetter__factory>;
+    getContractFactory(
+      name: "MockTopazFactory",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockTopazFactory__factory>;
+    getContractFactory(
+      name: "MockTopazPool",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockTopazPool__factory>;
+    getContractFactory(
+      name: "MockTopazRouter",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockTopazRouter__factory>;
+    getContractFactory(
+      name: "MockUsdPriceFeed",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.MockUsdPriceFeed__factory>;
     getContractFactory(
       name: "MockV2Factory",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -181,6 +237,10 @@ declare module "hardhat/types/runtime" {
       name: "NativeTreasuryVaultBase",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.NativeTreasuryVaultBase__factory>;
+    getContractFactory(
+      name: "PermanentLpLocker",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.PermanentLpLocker__factory>;
     getContractFactory(
       name: "ProtocolRevenueVault",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -354,20 +414,55 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.CreatorRegistry>;
     getContractAt(
+      name: "GraduationOracle",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.GraduationOracle>;
+    getContractAt(
+      name: "IUsdPriceFeed",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IUsdPriceFeed>;
+    getContractAt(
       name: "IPancakeRouter02",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.IPancakeRouter02>;
+    getContractAt(
+      name: "ITopazRouter02",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ITopazRouter02>;
+    getContractAt(
+      name: "ITopazV2Factory",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ITopazV2Factory>;
+    getContractAt(
+      name: "ITopazPool",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ITopazPool>;
     getContractAt(
       name: "ITreasuryVault",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.ITreasuryVault>;
     getContractAt(
+      name: "IGraduationOracle",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IGraduationOracle>;
+    getContractAt(
       name: "ILaunchFactoryGraduationNotify",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    getContractAt(
+      name: "ILaunchProtectionConfigSource",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ILaunchProtectionConfigSource>;
     getContractAt(
       name: "IPhase1TreasuryRouter",
       address: string | ethers.Addressable,
@@ -409,6 +504,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.AcceptingReceiver>;
     getContractAt(
+      name: "MockDriftRouter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockDriftRouter>;
+    getContractAt(
       name: "MockERC20",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -423,6 +523,36 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.MockRouter>;
+    getContractAt(
+      name: "MockTopazDriftRouter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockTopazDriftRouter>;
+    getContractAt(
+      name: "IPairTokenSetter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.IPairTokenSetter>;
+    getContractAt(
+      name: "MockTopazFactory",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockTopazFactory>;
+    getContractAt(
+      name: "MockTopazPool",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockTopazPool>;
+    getContractAt(
+      name: "MockTopazRouter",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockTopazRouter>;
+    getContractAt(
+      name: "MockUsdPriceFeed",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.MockUsdPriceFeed>;
     getContractAt(
       name: "MockV2Factory",
       address: string | ethers.Addressable,
@@ -448,6 +578,11 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.NativeTreasuryVaultBase>;
+    getContractAt(
+      name: "PermanentLpLocker",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.PermanentLpLocker>;
     getContractAt(
       name: "ProtocolRevenueVault",
       address: string | ethers.Addressable,
@@ -612,17 +747,45 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CreatorRegistry>;
     deployContract(
+      name: "GraduationOracle",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.GraduationOracle>;
+    deployContract(
+      name: "IUsdPriceFeed",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IUsdPriceFeed>;
+    deployContract(
       name: "IPancakeRouter02",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPancakeRouter02>;
+    deployContract(
+      name: "ITopazRouter02",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazRouter02>;
+    deployContract(
+      name: "ITopazV2Factory",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazV2Factory>;
+    deployContract(
+      name: "ITopazPool",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazPool>;
     deployContract(
       name: "ITreasuryVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ITreasuryVault>;
     deployContract(
+      name: "IGraduationOracle",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IGraduationOracle>;
+    deployContract(
       name: "ILaunchFactoryGraduationNotify",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    deployContract(
+      name: "ILaunchProtectionConfigSource",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ILaunchProtectionConfigSource>;
     deployContract(
       name: "IPhase1TreasuryRouter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -656,6 +819,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AcceptingReceiver>;
     deployContract(
+      name: "MockDriftRouter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockDriftRouter>;
+    deployContract(
       name: "MockERC20",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockERC20>;
@@ -667,6 +834,30 @@ declare module "hardhat/types/runtime" {
       name: "MockRouter",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockRouter>;
+    deployContract(
+      name: "MockTopazDriftRouter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazDriftRouter>;
+    deployContract(
+      name: "IPairTokenSetter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IPairTokenSetter>;
+    deployContract(
+      name: "MockTopazFactory",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazFactory>;
+    deployContract(
+      name: "MockTopazPool",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazPool>;
+    deployContract(
+      name: "MockTopazRouter",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazRouter>;
+    deployContract(
+      name: "MockUsdPriceFeed",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockUsdPriceFeed>;
     deployContract(
       name: "MockV2Factory",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -687,6 +878,10 @@ declare module "hardhat/types/runtime" {
       name: "NativeTreasuryVaultBase",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.NativeTreasuryVaultBase>;
+    deployContract(
+      name: "PermanentLpLocker",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.PermanentLpLocker>;
     deployContract(
       name: "ProtocolRevenueVault",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -860,20 +1055,55 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.CreatorRegistry>;
     deployContract(
+      name: "GraduationOracle",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.GraduationOracle>;
+    deployContract(
+      name: "IUsdPriceFeed",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IUsdPriceFeed>;
+    deployContract(
       name: "IPancakeRouter02",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IPancakeRouter02>;
+    deployContract(
+      name: "ITopazRouter02",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazRouter02>;
+    deployContract(
+      name: "ITopazV2Factory",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazV2Factory>;
+    deployContract(
+      name: "ITopazPool",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ITopazPool>;
     deployContract(
       name: "ITreasuryVault",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ITreasuryVault>;
     deployContract(
+      name: "IGraduationOracle",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IGraduationOracle>;
+    deployContract(
       name: "ILaunchFactoryGraduationNotify",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.ILaunchFactoryGraduationNotify>;
+    deployContract(
+      name: "ILaunchProtectionConfigSource",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ILaunchProtectionConfigSource>;
     deployContract(
       name: "IPhase1TreasuryRouter",
       args: any[],
@@ -915,6 +1145,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.AcceptingReceiver>;
     deployContract(
+      name: "MockDriftRouter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockDriftRouter>;
+    deployContract(
       name: "MockERC20",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -929,6 +1164,36 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.MockRouter>;
+    deployContract(
+      name: "MockTopazDriftRouter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazDriftRouter>;
+    deployContract(
+      name: "IPairTokenSetter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.IPairTokenSetter>;
+    deployContract(
+      name: "MockTopazFactory",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazFactory>;
+    deployContract(
+      name: "MockTopazPool",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazPool>;
+    deployContract(
+      name: "MockTopazRouter",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockTopazRouter>;
+    deployContract(
+      name: "MockUsdPriceFeed",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.MockUsdPriceFeed>;
     deployContract(
       name: "MockV2Factory",
       args: any[],
@@ -954,6 +1219,11 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.NativeTreasuryVaultBase>;
+    deployContract(
+      name: "PermanentLpLocker",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.PermanentLpLocker>;
     deployContract(
       name: "ProtocolRevenueVault",
       args: any[],

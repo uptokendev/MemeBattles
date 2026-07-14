@@ -37,6 +37,7 @@ export declare namespace LaunchCampaign {
     basePrice: BigNumberish;
     priceSlope: BigNumberish;
     graduationTarget: BigNumberish;
+    graduationOracle: AddressLike;
     liquidityBps: BigNumberish;
     protocolFeeBps: BigNumberish;
     leagueFeeBps: BigNumberish;
@@ -68,6 +69,7 @@ export declare namespace LaunchCampaign {
     basePrice: bigint,
     priceSlope: bigint,
     graduationTarget: bigint,
+    graduationOracle: string,
     liquidityBps: bigint,
     protocolFeeBps: bigint,
     leagueFeeBps: bigint,
@@ -97,6 +99,7 @@ export declare namespace LaunchCampaign {
     basePrice: bigint;
     priceSlope: bigint;
     graduationTarget: bigint;
+    graduationOracle: string;
     liquidityBps: bigint;
     protocolFeeBps: bigint;
     leagueFeeBps: bigint;
@@ -138,13 +141,19 @@ export interface LaunchCampaignInterface extends Interface {
       | "extraLink"
       | "factory"
       | "feeRecipient"
-      | "finalize"
       | "finalizeRouteProfile"
       | "finalizedAt"
+      | "getGraduationState"
+      | "graduateIfEligible"
+      | "graduationNativeTarget"
+      | "graduationOracle"
       | "graduationPaused"
       | "graduationTarget"
       | "hasBought"
       | "initialize"
+      | "launchProtectionEndBlock"
+      | "launchProtectionMaxBuyWei"
+      | "launchProtectionMaxWalletWei"
       | "launched"
       | "leagueFeeBps"
       | "leagueReceiver"
@@ -157,6 +166,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "pendingNative"
       | "pendingNativeTotal"
       | "priceSlope"
+      | "protectedBuyWei"
       | "protocolFeeBps"
       | "quoteBuyExactBnb"
       | "quoteBuyExactTokens"
@@ -177,6 +187,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "totalSupply"
       | "tradeRouteProfile"
       | "transferOwnership"
+      | "usedRouteAuthorizations"
       | "website"
       | "xAccount"
   ): FunctionFragment;
@@ -255,15 +266,27 @@ export interface LaunchCampaignInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "finalize",
-    values: [BigNumberish, BigNumberish]
-  ): string;
-  encodeFunctionData(
     functionFragment: "finalizeRouteProfile",
     values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "finalizedAt",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getGraduationState",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "graduateIfEligible",
+    values: [BigNumberish, BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "graduationNativeTarget",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "graduationOracle",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -281,6 +304,18 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "initialize",
     values: [LaunchCampaign.InitParamsStruct]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionEndBlock",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionMaxBuyWei",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "launchProtectionMaxWalletWei",
+    values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "launched", values?: undefined): string;
   encodeFunctionData(
@@ -317,6 +352,10 @@ export interface LaunchCampaignInterface extends Interface {
   encodeFunctionData(
     functionFragment: "priceSlope",
     values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "protectedBuyWei",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "protocolFeeBps",
@@ -389,6 +428,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "transferOwnership",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "usedRouteAuthorizations",
+    values: [BytesLike]
+  ): string;
   encodeFunctionData(functionFragment: "website", values?: undefined): string;
   encodeFunctionData(functionFragment: "xAccount", values?: undefined): string;
 
@@ -453,13 +496,28 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "feeRecipient",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "finalize", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "finalizeRouteProfile",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "finalizedAt",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "getGraduationState",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "graduateIfEligible",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "graduationNativeTarget",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "graduationOracle",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -472,6 +530,18 @@ export interface LaunchCampaignInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "hasBought", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "initialize", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionEndBlock",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionMaxBuyWei",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "launchProtectionMaxWalletWei",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "launched", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "leagueFeeBps",
@@ -502,6 +572,10 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "priceSlope", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "protectedBuyWei",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "protocolFeeBps",
     data: BytesLike
@@ -570,6 +644,10 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "usedRouteAuthorizations",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "website", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "xAccount", data: BytesLike): Result;
 }
@@ -577,24 +655,51 @@ export interface LaunchCampaignInterface extends Interface {
 export namespace CampaignFinalizedEvent {
   export type InputTuple = [
     caller: AddressLike,
+    pair: AddressLike,
+    graduationBalance: BigNumberish,
+    graduationOvershoot: BigNumberish,
     liquidityTokens: BigNumberish,
     liquidityBnb: BigNumberish,
+    liquidityLp: BigNumberish,
     protocolFee: BigNumberish,
-    creatorPayout: BigNumberish
+    creatorPayout: BigNumberish,
+    burnedUnsoldTokens: BigNumberish,
+    burnedUnusedLpTokens: BigNumberish,
+    finalCurvePrice: BigNumberish,
+    initialDexPrice: BigNumberish,
+    postBurnTotalSupply: BigNumberish
   ];
   export type OutputTuple = [
     caller: string,
+    pair: string,
+    graduationBalance: bigint,
+    graduationOvershoot: bigint,
     liquidityTokens: bigint,
     liquidityBnb: bigint,
+    liquidityLp: bigint,
     protocolFee: bigint,
-    creatorPayout: bigint
+    creatorPayout: bigint,
+    burnedUnsoldTokens: bigint,
+    burnedUnusedLpTokens: bigint,
+    finalCurvePrice: bigint,
+    initialDexPrice: bigint,
+    postBurnTotalSupply: bigint
   ];
   export interface OutputObject {
     caller: string;
+    pair: string;
+    graduationBalance: bigint;
+    graduationOvershoot: bigint;
     liquidityTokens: bigint;
     liquidityBnb: bigint;
+    liquidityLp: bigint;
     protocolFee: bigint;
     creatorPayout: bigint;
+    burnedUnsoldTokens: bigint;
+    burnedUnusedLpTokens: bigint;
+    finalCurvePrice: bigint;
+    initialDexPrice: bigint;
+    postBurnTotalSupply: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -822,15 +927,51 @@ export interface LaunchCampaign extends BaseContract {
 
   feeRecipient: TypedContractMethod<[], [string], "view">;
 
-  finalize: TypedContractMethod<
+  finalizeRouteProfile: TypedContractMethod<[], [bigint], "view">;
+
+  finalizedAt: TypedContractMethod<[], [bigint], "view">;
+
+  getGraduationState: TypedContractMethod<
+    [],
+    [
+      [
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint
+      ] & {
+        dexPair: string;
+        finalCurvePrice: bigint;
+        initialDexPrice: bigint;
+        graduatedLiquidityTokens: bigint;
+        graduatedLiquidityBnb: bigint;
+        graduatedLiquidityLp: bigint;
+        burnedUnsoldTokens: bigint;
+        burnedUnusedLpTokens: bigint;
+        postBurnTotalSupply: bigint;
+        graduationBalance: bigint;
+        graduationOvershoot: bigint;
+      }
+    ],
+    "view"
+  >;
+
+  graduateIfEligible: TypedContractMethod<
     [minTokens: BigNumberish, minBnb: BigNumberish],
     [[bigint, bigint] & { usedTokens: bigint; usedBnb: bigint }],
     "nonpayable"
   >;
 
-  finalizeRouteProfile: TypedContractMethod<[], [bigint], "view">;
+  graduationNativeTarget: TypedContractMethod<[], [bigint], "view">;
 
-  finalizedAt: TypedContractMethod<[], [bigint], "view">;
+  graduationOracle: TypedContractMethod<[], [string], "view">;
 
   graduationPaused: TypedContractMethod<[], [boolean], "view">;
 
@@ -843,6 +984,12 @@ export interface LaunchCampaign extends BaseContract {
     [void],
     "nonpayable"
   >;
+
+  launchProtectionEndBlock: TypedContractMethod<[], [bigint], "view">;
+
+  launchProtectionMaxBuyWei: TypedContractMethod<[], [bigint], "view">;
+
+  launchProtectionMaxWalletWei: TypedContractMethod<[], [bigint], "view">;
 
   launched: TypedContractMethod<[], [boolean], "view">;
 
@@ -867,6 +1014,8 @@ export interface LaunchCampaign extends BaseContract {
   pendingNativeTotal: TypedContractMethod<[], [bigint], "view">;
 
   priceSlope: TypedContractMethod<[], [bigint], "view">;
+
+  protectedBuyWei: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
   protocolFeeBps: TypedContractMethod<[], [bigint], "view">;
 
@@ -955,6 +1104,12 @@ export interface LaunchCampaign extends BaseContract {
     [newOwner: AddressLike],
     [void],
     "nonpayable"
+  >;
+
+  usedRouteAuthorizations: TypedContractMethod<
+    [arg0: BytesLike],
+    [boolean],
+    "view"
   >;
 
   website: TypedContractMethod<[], [string], "view">;
@@ -1050,18 +1205,57 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "feeRecipient"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "finalize"
+    nameOrSignature: "finalizeRouteProfile"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "finalizedAt"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "getGraduationState"
+  ): TypedContractMethod<
+    [],
+    [
+      [
+        string,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint,
+        bigint
+      ] & {
+        dexPair: string;
+        finalCurvePrice: bigint;
+        initialDexPrice: bigint;
+        graduatedLiquidityTokens: bigint;
+        graduatedLiquidityBnb: bigint;
+        graduatedLiquidityLp: bigint;
+        burnedUnsoldTokens: bigint;
+        burnedUnusedLpTokens: bigint;
+        postBurnTotalSupply: bigint;
+        graduationBalance: bigint;
+        graduationOvershoot: bigint;
+      }
+    ],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "graduateIfEligible"
   ): TypedContractMethod<
     [minTokens: BigNumberish, minBnb: BigNumberish],
     [[bigint, bigint] & { usedTokens: bigint; usedBnb: bigint }],
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "finalizeRouteProfile"
+    nameOrSignature: "graduationNativeTarget"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "finalizedAt"
-  ): TypedContractMethod<[], [bigint], "view">;
+    nameOrSignature: "graduationOracle"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "graduationPaused"
   ): TypedContractMethod<[], [boolean], "view">;
@@ -1078,6 +1272,15 @@ export interface LaunchCampaign extends BaseContract {
     [void],
     "nonpayable"
   >;
+  getFunction(
+    nameOrSignature: "launchProtectionEndBlock"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "launchProtectionMaxBuyWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "launchProtectionMaxWalletWei"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "launched"
   ): TypedContractMethod<[], [boolean], "view">;
@@ -1114,6 +1317,9 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "priceSlope"
   ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "protectedBuyWei"
+  ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
   getFunction(
     nameOrSignature: "protocolFeeBps"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -1208,6 +1414,9 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
   getFunction(
+    nameOrSignature: "usedRouteAuthorizations"
+  ): TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
+  getFunction(
     nameOrSignature: "website"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -1272,7 +1481,7 @@ export interface LaunchCampaign extends BaseContract {
   >;
 
   filters: {
-    "CampaignFinalized(address,uint256,uint256,uint256,uint256)": TypedContractEvent<
+    "CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)": TypedContractEvent<
       CampaignFinalizedEvent.InputTuple,
       CampaignFinalizedEvent.OutputTuple,
       CampaignFinalizedEvent.OutputObject

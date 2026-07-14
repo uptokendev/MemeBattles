@@ -22,22 +22,49 @@ import type {
 
 export interface MockV2FactoryInterface extends Interface {
   getFunction(
-    nameOrSignature: "getPair" | "pairs" | "setPair"
+    nameOrSignature:
+      | "createPair"
+      | "createPool"
+      | "getPair"
+      | "getPool"
+      | "pairs"
+      | "setPair"
+      | "setPool"
   ): FunctionFragment;
 
   encodeFunctionData(
+    functionFragment: "createPair",
+    values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "createPool",
+    values: [AddressLike, AddressLike, boolean]
+  ): string;
+  encodeFunctionData(
     functionFragment: "getPair",
     values: [AddressLike, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "getPool",
+    values: [AddressLike, AddressLike, boolean]
   ): string;
   encodeFunctionData(functionFragment: "pairs", values: [BytesLike]): string;
   encodeFunctionData(
     functionFragment: "setPair",
     values: [AddressLike, AddressLike, AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "setPool",
+    values: [AddressLike, AddressLike, boolean, AddressLike]
+  ): string;
 
+  decodeFunctionResult(functionFragment: "createPair", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "createPool", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "getPair", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "getPool", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "pairs", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "setPair", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "setPool", data: BytesLike): Result;
 }
 
 export interface MockV2Factory extends BaseContract {
@@ -83,8 +110,26 @@ export interface MockV2Factory extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
+  createPair: TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike],
+    [string],
+    "nonpayable"
+  >;
+
+  createPool: TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike, stable: boolean],
+    [string],
+    "nonpayable"
+  >;
+
   getPair: TypedContractMethod<
     [tokenA: AddressLike, tokenB: AddressLike],
+    [string],
+    "view"
+  >;
+
+  getPool: TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike, stable: boolean],
     [string],
     "view"
   >;
@@ -97,14 +142,46 @@ export interface MockV2Factory extends BaseContract {
     "nonpayable"
   >;
 
+  setPool: TypedContractMethod<
+    [
+      tokenA: AddressLike,
+      tokenB: AddressLike,
+      stable: boolean,
+      pool: AddressLike
+    ],
+    [void],
+    "nonpayable"
+  >;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
   getFunction(
+    nameOrSignature: "createPair"
+  ): TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike],
+    [string],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "createPool"
+  ): TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike, stable: boolean],
+    [string],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "getPair"
   ): TypedContractMethod<
     [tokenA: AddressLike, tokenB: AddressLike],
+    [string],
+    "view"
+  >;
+  getFunction(
+    nameOrSignature: "getPool"
+  ): TypedContractMethod<
+    [tokenA: AddressLike, tokenB: AddressLike, stable: boolean],
     [string],
     "view"
   >;
@@ -115,6 +192,18 @@ export interface MockV2Factory extends BaseContract {
     nameOrSignature: "setPair"
   ): TypedContractMethod<
     [tokenA: AddressLike, tokenB: AddressLike, pair: AddressLike],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setPool"
+  ): TypedContractMethod<
+    [
+      tokenA: AddressLike,
+      tokenB: AddressLike,
+      stable: boolean,
+      pool: AddressLike
+    ],
     [void],
     "nonpayable"
   >;

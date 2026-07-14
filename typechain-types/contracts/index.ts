@@ -3,6 +3,8 @@
 /* eslint-disable */
 import type * as communityRewardsVaultSol from "./CommunityRewardsVault.sol";
 export type { communityRewardsVaultSol };
+import type * as graduationOracleSol from "./GraduationOracle.sol";
+export type { graduationOracleSol };
 import type * as launchCampaignSol from "./LaunchCampaign.sol";
 export type { launchCampaignSol };
 import type * as treasuryRouterSol from "./TreasuryRouter.sol";
@@ -24,6 +26,7 @@ export type { LaunchFactory } from "./LaunchFactory";
 export type { LpTimelock } from "./LpTimelock";
 export type { MajorLeagueTreasury } from "./MajorLeagueTreasury";
 export type { NativeTreasuryVaultBase } from "./NativeTreasuryVaultBase";
+export type { PermanentLpLocker } from "./PermanentLpLocker";
 export type { ProtocolRevenueVault } from "./ProtocolRevenueVault";
 export type { RecruiterRewardsVault } from "./RecruiterRewardsVault";
 export type { RewardDistributor } from "./RewardDistributor";

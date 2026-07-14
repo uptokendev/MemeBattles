@@ -208,8 +208,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1782555811988,
-      "contentHash": "afd669f9f78c122df5fec72695403cc7",
+      "lastModificationDate": 1784034914403,
+      "contentHash": "64eb614c023f68cb15c4b88b95b1c316",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -246,6 +246,7 @@
         "./LaunchCampaign.sol",
         "./CreatorRegistry.sol",
         "./RiskRegistry.sol",
+        "./PermanentLpLocker.sol",
         "@openzeppelin/contracts/proxy/Clones.sol"
       ],
       "versionPragmas": [
@@ -256,8 +257,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1782555811986,
-      "contentHash": "0cb4c321ce2bc17ebb6d4555651d743c",
+      "lastModificationDate": 1784034914402,
+      "contentHash": "a084f3f18c00535239e6a4038ebd89a0",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -296,13 +297,16 @@
         "@openzeppelin/contracts/token/ERC20/IERC20.sol",
         "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
         "./token/LaunchToken.sol",
-        "./interfaces/IPancakeRouter02.sol"
+        "./interfaces/ITopazRouter02.sol",
+        "./interfaces/ITopazV2Factory.sol"
       ],
       "versionPragmas": [
         "^0.8.24"
       ],
       "artifacts": [
+        "IGraduationOracle",
         "ILaunchFactoryGraduationNotify",
+        "ILaunchProtectionConfigSource",
         "IPhase1TreasuryRouter",
         "IRiskRegistryView",
         "IRouteAuthoritySource",
@@ -1313,8 +1317,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockRouter.sol": {
-      "lastModificationDate": 1777566501673,
-      "contentHash": "4d3524bd5c62ad10a838c24f509f2c8a",
+      "lastModificationDate": 1783937110076,
+      "contentHash": "b2e6ae158aaf0eb0ff0806693ff216e9",
       "sourceName": "contracts/mocks/MockRouter.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1347,6 +1351,7 @@
       "imports": [
         "@openzeppelin/contracts/token/ERC20/IERC20.sol",
         "../interfaces/IPancakeRouter02.sol",
+        "../interfaces/ITopazRouter02.sol",
         "./MockV2Factory.sol",
         "./MockV2Pair.sol"
       ],
@@ -1358,8 +1363,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockV2Pair.sol": {
-      "lastModificationDate": 1777566501674,
-      "contentHash": "fcb0297104097b5551a1af21ef7af680",
+      "lastModificationDate": 1784028895358,
+      "contentHash": "a8882aab4bc4cdc63473517da4bce4d2",
       "sourceName": "contracts/mocks/MockV2Pair.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1398,8 +1403,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockV2Factory.sol": {
-      "lastModificationDate": 1777566501674,
-      "contentHash": "2ed7cb36579c246c5430255c0005d07e",
+      "lastModificationDate": 1783936255324,
+      "contentHash": "d5319cfd22eb222f3212bf4c7c8ff563",
       "sourceName": "contracts/mocks/MockV2Factory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1429,7 +1434,9 @@
           }
         }
       },
-      "imports": [],
+      "imports": [
+        "./MockV2Pair.sol"
+      ],
       "versionPragmas": [
         "^0.8.24"
       ],
@@ -1480,8 +1487,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\CommunityRewardsVault.sol": {
-      "lastModificationDate": 1777566501664,
-      "contentHash": "c1d720a505eca48d3b2786905b66cd6f",
+      "lastModificationDate": 1783684887950,
+      "contentHash": "98c984114382b83b31d3650c9f3a7803",
       "sourceName": "contracts/CommunityRewardsVault.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1516,7 +1523,8 @@
         "^0.8.24"
       ],
       "artifacts": [
-        "CommunityRewardsVault"
+        "CommunityRewardsVault",
+        "IRewardDistributor"
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\ITreasuryVault.sol": {
@@ -2213,6 +2221,560 @@
       ],
       "artifacts": [
         "CreatorRegistry"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\RewardDistributor.sol": {
+      "lastModificationDate": 1783684887951,
+      "contentHash": "2108ad5135413f7fd91d41d0c93805c6",
+      "sourceName": "contracts/RewardDistributor.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol",
+        "@openzeppelin/contracts/utils/Pausable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "RewardDistributor"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\node_modules\\@openzeppelin\\contracts\\utils\\Pausable.sol": {
+      "lastModificationDate": 1783685137367,
+      "contentHash": "0d47b53e10b1985efbb396f937626279",
+      "sourceName": "@openzeppelin/contracts/utils/Pausable.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "../utils/Context.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "Pausable"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockDriftRouter.sol": {
+      "lastModificationDate": 1783936255322,
+      "contentHash": "f0e392096d3fd6a89d6fff4de49e55cb",
+      "sourceName": "contracts/mocks/MockDriftRouter.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "../interfaces/IPancakeRouter02.sol",
+        "../interfaces/ITopazRouter02.sol",
+        "./MockV2Factory.sol",
+        "./MockV2Pair.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockDriftRouter"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\GraduationOracle.sol": {
+      "lastModificationDate": 1783852578707,
+      "contentHash": "00a29be85ddde8c70d77c0872cc1228b",
+      "sourceName": "contracts/GraduationOracle.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/utils/math/Math.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "GraduationOracle",
+        "IUsdPriceFeed"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockUsdPriceFeed.sol": {
+      "lastModificationDate": 1783852578707,
+      "contentHash": "6a7f9a135959610e40a140a1f3866ffb",
+      "sourceName": "contracts/mocks/MockUsdPriceFeed.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockUsdPriceFeed"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\interfaces\\topaz\\ITopazPool.sol": {
+      "lastModificationDate": 1783934469831,
+      "contentHash": "c4ff5853b827a5740e045b42fb0c421f",
+      "sourceName": "contracts/interfaces/topaz/ITopazPool.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ITopazPool"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\interfaces\\ITopazRouter02.sol": {
+      "lastModificationDate": 1783936255321,
+      "contentHash": "ebc94b2e97487514ab87b02510d91d56",
+      "sourceName": "contracts/interfaces/ITopazRouter02.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ITopazRouter02"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\interfaces\\ITopazV2Factory.sol": {
+      "lastModificationDate": 1783936255322,
+      "contentHash": "7963d3db226dc8addd646f82e33229ea",
+      "sourceName": "contracts/interfaces/ITopazV2Factory.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "ITopazV2Factory"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockTopazRouter.sol": {
+      "lastModificationDate": 1784029019617,
+      "contentHash": "ce942fe06ad3880da278a5cdf9206063",
+      "sourceName": "contracts/mocks/MockTopazRouter.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "../interfaces/ITopazRouter02.sol",
+        "./MockTopazFactory.sol",
+        "./MockTopazPool.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockTopazRouter"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockTopazFactory.sol": {
+      "lastModificationDate": 1783936255323,
+      "contentHash": "d558ac6390d51b2f4d43a4491b8317e3",
+      "sourceName": "contracts/mocks/MockTopazFactory.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./MockTopazPool.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "IPairTokenSetter",
+        "MockTopazFactory"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockTopazPool.sol": {
+      "lastModificationDate": 1784028895357,
+      "contentHash": "9ae6ba2ecff70ed749f79e13f1187ba0",
+      "sourceName": "contracts/mocks/MockTopazPool.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/ERC20.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockTopazPool"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockTopazDriftRouter.sol": {
+      "lastModificationDate": 1784028895356,
+      "contentHash": "90de7e299cad7f910ba0e7802e2e249a",
+      "sourceName": "contracts/mocks/MockTopazDriftRouter.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "../interfaces/ITopazRouter02.sol",
+        "./MockTopazFactory.sol",
+        "./MockTopazPool.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "MockTopazDriftRouter"
+      ]
+    },
+    "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\PermanentLpLocker.sol": {
+      "lastModificationDate": 1784028895356,
+      "contentHash": "b209f687cc51b67819e65bdea7e49a64",
+      "sourceName": "contracts/PermanentLpLocker.sol",
+      "solcConfig": {
+        "version": "0.8.24",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 1
+          },
+          "viaIR": true,
+          "metadata": {
+            "bytecodeHash": "none"
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.24"
+      ],
+      "artifacts": [
+        "PermanentLpLocker"
       ]
     }
   }

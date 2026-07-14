@@ -25,14 +25,33 @@ import type {
 
 export interface MockRouterInterface extends Interface {
   getFunction(
-    nameOrSignature: "WETH" | "addLiquidityETH" | "factory"
+    nameOrSignature:
+      | "WETH"
+      | "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)"
+      | "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)"
+      | "factory"
+      | "poolFactory"
   ): FunctionFragment;
 
-  getEvent(nameOrSignatureOrTopic: "LiquidityAdded"): EventFragment;
+  getEvent(
+    nameOrSignatureOrTopic: "LiquidityAdded" | "TopazLiquidityAdded"
+  ): EventFragment;
 
   encodeFunctionData(functionFragment: "WETH", values?: undefined): string;
   encodeFunctionData(
-    functionFragment: "addLiquidityETH",
+    functionFragment: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)",
+    values: [
+      AddressLike,
+      boolean,
+      BigNumberish,
+      BigNumberish,
+      BigNumberish,
+      AddressLike,
+      BigNumberish
+    ]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)",
     values: [
       AddressLike,
       BigNumberish,
@@ -43,13 +62,25 @@ export interface MockRouterInterface extends Interface {
     ]
   ): string;
   encodeFunctionData(functionFragment: "factory", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "poolFactory",
+    values?: undefined
+  ): string;
 
   decodeFunctionResult(functionFragment: "WETH", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "addLiquidityETH",
+    functionFragment: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "poolFactory",
+    data: BytesLike
+  ): Result;
 }
 
 export namespace LiquidityAddedEvent {
@@ -67,6 +98,34 @@ export namespace LiquidityAddedEvent {
   ];
   export interface OutputObject {
     token: string;
+    amountToken: bigint;
+    amountETH: bigint;
+    to: string;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace TopazLiquidityAddedEvent {
+  export type InputTuple = [
+    token: AddressLike,
+    stable: boolean,
+    amountToken: BigNumberish,
+    amountETH: BigNumberish,
+    to: AddressLike
+  ];
+  export type OutputTuple = [
+    token: string,
+    stable: boolean,
+    amountToken: bigint,
+    amountETH: bigint,
+    to: string
+  ];
+  export interface OutputObject {
+    token: string;
+    stable: boolean;
     amountToken: bigint;
     amountETH: bigint;
     to: string;
@@ -122,7 +181,27 @@ export interface MockRouter extends BaseContract {
 
   WETH: TypedContractMethod<[], [string], "view">;
 
-  addLiquidityETH: TypedContractMethod<
+  "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)": TypedContractMethod<
+    [
+      token: AddressLike,
+      stable: boolean,
+      amountTokenDesired: BigNumberish,
+      arg3: BigNumberish,
+      arg4: BigNumberish,
+      to: AddressLike,
+      arg6: BigNumberish
+    ],
+    [
+      [bigint, bigint, bigint] & {
+        amountToken: bigint;
+        amountETH: bigint;
+        liquidity: bigint;
+      }
+    ],
+    "payable"
+  >;
+
+  "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)": TypedContractMethod<
     [
       token: AddressLike,
       amountTokenDesired: BigNumberish,
@@ -143,6 +222,8 @@ export interface MockRouter extends BaseContract {
 
   factory: TypedContractMethod<[], [string], "view">;
 
+  poolFactory: TypedContractMethod<[], [string], "view">;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
@@ -151,7 +232,28 @@ export interface MockRouter extends BaseContract {
     nameOrSignature: "WETH"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "addLiquidityETH"
+    nameOrSignature: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)"
+  ): TypedContractMethod<
+    [
+      token: AddressLike,
+      stable: boolean,
+      amountTokenDesired: BigNumberish,
+      arg3: BigNumberish,
+      arg4: BigNumberish,
+      to: AddressLike,
+      arg6: BigNumberish
+    ],
+    [
+      [bigint, bigint, bigint] & {
+        amountToken: bigint;
+        amountETH: bigint;
+        liquidity: bigint;
+      }
+    ],
+    "payable"
+  >;
+  getFunction(
+    nameOrSignature: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)"
   ): TypedContractMethod<
     [
       token: AddressLike,
@@ -173,6 +275,9 @@ export interface MockRouter extends BaseContract {
   getFunction(
     nameOrSignature: "factory"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "poolFactory"
+  ): TypedContractMethod<[], [string], "view">;
 
   getEvent(
     key: "LiquidityAdded"
@@ -180,6 +285,13 @@ export interface MockRouter extends BaseContract {
     LiquidityAddedEvent.InputTuple,
     LiquidityAddedEvent.OutputTuple,
     LiquidityAddedEvent.OutputObject
+  >;
+  getEvent(
+    key: "TopazLiquidityAdded"
+  ): TypedContractEvent<
+    TopazLiquidityAddedEvent.InputTuple,
+    TopazLiquidityAddedEvent.OutputTuple,
+    TopazLiquidityAddedEvent.OutputObject
   >;
 
   filters: {
@@ -192,6 +304,17 @@ export interface MockRouter extends BaseContract {
       LiquidityAddedEvent.InputTuple,
       LiquidityAddedEvent.OutputTuple,
       LiquidityAddedEvent.OutputObject
+    >;
+
+    "TopazLiquidityAdded(address,bool,uint256,uint256,address)": TypedContractEvent<
+      TopazLiquidityAddedEvent.InputTuple,
+      TopazLiquidityAddedEvent.OutputTuple,
+      TopazLiquidityAddedEvent.OutputObject
+    >;
+    TopazLiquidityAdded: TypedContractEvent<
+      TopazLiquidityAddedEvent.InputTuple,
+      TopazLiquidityAddedEvent.OutputTuple,
+      TopazLiquidityAddedEvent.OutputObject
     >;
   };
 }
