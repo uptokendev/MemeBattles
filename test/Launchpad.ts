@@ -3,8 +3,6 @@ import { ethers } from "hardhat";
 import type { LaunchFactory, LaunchCampaign, LaunchToken, MockRouter } from "../typechain-types";
 import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
-const DEAD = "0x000000000000000000000000000000000000dEaD";
-
 const request = (overrides: Record<string, unknown> = {}) => ({
   name: "Test Token",
   symbol: "TEST",
@@ -89,7 +87,7 @@ describe("Launchpad end-to-end", function () {
     expect(await campaign.liquidityBps()).to.equal(cfg.liquidityBps);
     expect(await campaign.protocolFeeBps()).to.equal(await factory.protocolFeeBps());
     expect(await campaign.router()).to.equal(await router.getAddress());
-    expect(await campaign.lpReceiver()).to.equal(DEAD);
+    expect(await campaign.lpReceiver()).to.equal(await factory.permanentLpLocker());
     expect(await campaign.sold()).to.equal(0n);
 
     const totalSupply = await campaign.totalSupply();
