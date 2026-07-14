@@ -156,6 +156,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public buyersCount;
     mapping(address => bool) public hasBought;
     mapping(address => uint256) public protectedBuyWei;
+    mapping(bytes32 => bool) public usedRouteAuthorizations;
     mapping(address => uint256) public pendingNative;
     uint256 public pendingNativeTotal;
 
@@ -218,6 +219,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error RouteAuthExpired();
     error RouteAuthUnavailable();
     error BadRouteAuth();
+    error RouteAuthReplayed();
     error NativeTransferFailed();
     error LpTokensZero();
     error InsufficientLpAllocation();
@@ -703,7 +705,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         return tradeRouteProfile;
     }
 
-    function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal view {
+    function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal {
         if (deadline < block.timestamp) revert RouteAuthExpired();
         if (!_isValidRouteProfile(routeProfile)) revert InvalidTradeRouteProfile();
         address authority = IRouteAuthoritySource(factory).routeAuthority();
@@ -712,6 +714,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
         );
         if (digest.recover(signature) != authority) revert BadRouteAuth();
+        if (usedRouteAuthorizations[digest]) revert RouteAuthReplayed();
+        usedRouteAuthorizations[digest] = true;
     }
 
     function _currentPrice() internal view returns (uint256) {
@@ -719,7 +723,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requirePriceWithinTolerance(uint256 actualPrice, uint256 expectedPrice) internal pure {
-        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
+        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - expectedPrice;
         if (Math.mulDiv(diff, MAX_BPS, expectedPrice) > GRADUATION_PRICE_TOLERANCE_BPS) revert DexPriceDrift();
     }
 
