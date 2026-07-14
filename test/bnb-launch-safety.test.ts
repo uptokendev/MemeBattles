@@ -164,7 +164,7 @@ describe("BNB launch safety simulations", function () {
     ).to.be.revertedWithCustomError(campaign, "CreatorBuyCapExceeded");
   });
 
-  it("accepts only the configured route authority for create route authorization", async function () {
+  it("accepts only the configured route authority and rejects create route replay", async function () {
     const { creator, routeAuthority, attacker, factory } = await deploySafetyFixture();
     const latestBlock = await ethers.provider.getBlock("latest");
     const deadline = BigInt((latestBlock?.timestamp ?? 0) + 3600);
@@ -182,13 +182,21 @@ describe("BNB launch safety simulations", function () {
     ).to.be.revertedWithCustomError(factory, "InvalidRouteAuthorization");
 
     const validSignature = await signCreateRoute(factory, creator.address, routeAuthority, tradeProfile, finalizeProfile, deadline);
-    await expect(
-      factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "AUTH" }), {
-        tradeRouteProfile: tradeProfile,
-        finalizeRouteProfile: finalizeProfile,
-        deadline,
-        signature: validSignature,
-      })
-    ).to.emit(factory, "CampaignCreated");
+    const routeAuth = {
+      tradeRouteProfile: tradeProfile,
+      finalizeRouteProfile: finalizeProfile,
+      deadline,
+      signature: validSignature,
+    };
+
+    await expect(factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "AUTH" }), routeAuth)).to.emit(
+      factory,
+      "CampaignCreated"
+    );
+
+    await expect(factory.connect(creator).createCampaignAuthorized(campaignRequest({ symbol: "RPLY" }), routeAuth)).to.be.revertedWithCustomError(
+      factory,
+      "RouteAuthorizationReplayed"
+    );
   });
 });
