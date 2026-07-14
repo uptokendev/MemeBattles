@@ -50,10 +50,9 @@ async function routeSignature(authority: any, campaign: any, actor: any, routePr
 async function buyAuthorized(campaign: any, authority: any, buyer: any, amount = TOKEN) {
   const quote = await campaign.quoteBuyExactTokens(amount);
   const auth = await routeSignature(authority, campaign, buyer);
-  await campaign.connect(buyer).buyExactTokensAuthorized(amount, quote, auth.routeProfile, auth.deadline, auth.signature, {
+  return campaign.connect(buyer).buyExactTokensAuthorized(amount, quote, auth.routeProfile, auth.deadline, auth.signature, {
     value: quote,
   });
-  return quote;
 }
 
 describe("Phase 6 launch protection", function () {
