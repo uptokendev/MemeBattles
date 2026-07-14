@@ -6,11 +6,37 @@ const STANDARD_LINKED = 0;
 const STANDARD_UNLINKED = 1;
 const OG_LINKED = 2;
 
+function asBigInt(value: unknown) {
+  return BigInt(value as string | number | bigint);
+}
+
+function hashCreateRouteRequest(request: any) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  return ethers.keccak256(
+    coder.encode(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256", "address"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes(request.name)),
+        ethers.keccak256(ethers.toUtf8Bytes(request.symbol)),
+        ethers.keccak256(ethers.toUtf8Bytes(request.logoURI)),
+        ethers.keccak256(ethers.toUtf8Bytes(request.xAccount)),
+        ethers.keccak256(ethers.toUtf8Bytes(request.website)),
+        ethers.keccak256(ethers.toUtf8Bytes(request.extraLink)),
+        asBigInt(request.basePrice),
+        asBigInt(request.priceSlope),
+        asBigInt(request.graduationTarget),
+        request.lpReceiver,
+      ],
+    ),
+  );
+}
+
 async function signCreateRouteAuth({
   signer,
   chainId,
   factory,
   creator,
+  request,
   tradeRouteProfile,
   finalizeRouteProfile,
   deadline,
@@ -19,21 +45,25 @@ async function signCreateRouteAuth({
   chainId: bigint;
   factory: string;
   creator: string;
+  request: any;
   tradeRouteProfile: number;
   finalizeRouteProfile: number;
   deadline: bigint;
 }) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
-    [
-      "MWZ_CREATE_ROUTE_AUTH",
-      chainId,
-      factory,
-      creator,
-      tradeRouteProfile,
-      finalizeRouteProfile,
-      deadline,
-    ],
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
+      [
+        "MWZ_CREATE_ROUTE_AUTH",
+        chainId,
+        factory,
+        creator,
+        hashCreateRouteRequest(request),
+        tradeRouteProfile,
+        finalizeRouteProfile,
+        deadline,
+      ],
+    ),
   );
   return signer.signMessage(ethers.getBytes(digest));
 }
@@ -109,6 +139,7 @@ async function createAuthorizedCampaign(fixture: Awaited<ReturnType<typeof deplo
     chainId,
     factory: await factory.getAddress(),
     creator: creator.address,
+    request,
     tradeRouteProfile: tradeProfile,
     finalizeRouteProfile: finalizeProfile,
     deadline,
@@ -197,6 +228,7 @@ describe("Phase 6 route authorization alignment", function () {
       chainId,
       factory: await factory.getAddress(),
       creator: creator.address,
+      request,
       tradeRouteProfile: OG_LINKED,
       finalizeRouteProfile: OG_LINKED,
       deadline,
@@ -223,6 +255,7 @@ describe("Phase 6 route authorization alignment", function () {
       chainId,
       factory: await factory.getAddress(),
       creator: creator.address,
+      request,
       tradeRouteProfile: OG_LINKED,
       finalizeRouteProfile: OG_LINKED,
       deadline,
