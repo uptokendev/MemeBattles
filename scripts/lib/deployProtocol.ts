@@ -50,43 +50,45 @@ async function requireContractCode(address: string, label: string) {
   if (code === "0x") throw new Error(`${label} ${address} has no contract code on ${network.name}.`);
 }
 
-async function deployMockRouter(deployerAddress: string): Promise<string> {
-  console.warn("[deploy] Deploying MockV2Factory + MockRouter for local/testing use.");
-  const wrapped = (process.env.MOCK_ROUTER_WRAPPED ?? deployerAddress).trim();
+async function deployMockTopazRouter(deployerAddress: string): Promise<string> {
+  console.warn("[deploy] Deploying MockTopazFactory + MockTopazRouter for local/testing use.");
+  const wrapped = (process.env.MOCK_TOPAZ_WRAPPED ?? process.env.MOCK_ROUTER_WRAPPED ?? deployerAddress).trim();
 
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2Factory = await V2Factory.deploy();
-  await v2Factory.waitForDeployment();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const topazFactory = await TopazFactory.deploy();
+  await topazFactory.waitForDeployment();
 
-  const Router = await ethers.getContractFactory("MockRouter");
-  const mockRouter = await Router.deploy(await v2Factory.getAddress(), wrapped);
+  const Router = await ethers.getContractFactory("MockTopazRouter");
+  const mockRouter = await Router.deploy(await topazFactory.getAddress(), wrapped);
   await mockRouter.waitForDeployment();
 
   const routerAddress = await mockRouter.getAddress();
-  console.log("MockV2Factory:", await v2Factory.getAddress());
-  console.log("MockRouter:", routerAddress);
+  console.log("MockTopazFactory:", await topazFactory.getAddress());
+  console.log("MockTopazRouter:", routerAddress);
   return routerAddress;
 }
 
 async function resolveRouterAddress(deployerAddress: string): Promise<string> {
-  const deployMock = boolEnv("DEPLOY_MOCK_ROUTER", false);
+  const deployMock = boolEnv("DEPLOY_MOCK_TOPAZ_ROUTER", boolEnv("DEPLOY_MOCK_ROUTER", false));
   if (deployMock) {
-    return deployMockRouter(deployerAddress);
+    return deployMockTopazRouter(deployerAddress);
   }
 
   const explicitRouter = (
+    process.env.TOPAZ_ROUTER ??
+    process.env.TOPAZ_V2_ROUTER ??
+    process.env.ROUTER_ADDRESS ??
     process.env.PANCAKE_ROUTER ??
     process.env.PANCAKE_V2_ROUTER ??
-    process.env.ROUTER_ADDRESS ??
     ""
   ).trim();
   if (explicitRouter) {
-    await requireContractCode(explicitRouter, "Configured router");
+    await requireContractCode(explicitRouter, "Configured Topaz router");
     return explicitRouter;
   }
 
   throw new Error(
-    "Missing router address. Set PANCAKE_ROUTER, PANCAKE_V2_ROUTER, or ROUTER_ADDRESS. For local testing only, set DEPLOY_MOCK_ROUTER=true."
+    "Missing Topaz router address. Set TOPAZ_ROUTER, TOPAZ_V2_ROUTER, or ROUTER_ADDRESS. Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER are still accepted as aliases. For local testing only, set DEPLOY_MOCK_TOPAZ_ROUTER=true."
   );
 }
 
@@ -170,7 +172,7 @@ export async function deployProtocol() {
   console.log(`Network: ${network.name}`);
   console.log(`Chain ID: ${net.chainId.toString()}`);
   console.log(`Deployer: ${deployerAddress}`);
-  console.log("Router:", routerAddress);
+  console.log("Topaz Router:", routerAddress);
   console.log("GraduationOracle:", graduationOracleConfig.oracleAddress);
   console.log("Treasury Safe:", treasurySafe);
   console.log("Upgrade delay (seconds):", upgradeDelaySeconds);
@@ -348,6 +350,7 @@ export async function deployProtocol() {
     chainId: Number(net.chainId),
     deployer: deployerAddress,
     router: routerAddress,
+    topazRouter: routerAddress,
     graduationOracle: graduationOracleConfig.oracleAddress,
     graduationPriceFeed: graduationOracleConfig.priceFeedAddress,
     graduationMaxPriceAge: graduationOracleConfig.maxPriceAge,
@@ -394,6 +397,7 @@ export async function deployProtocol() {
       factoryRouteAuthority: routeAuthority || null,
       campaignImplementation: campaignImplementationAddress,
       graduationOracle: graduationOracleConfig.oracleAddress,
+      topazRouter: routerAddress,
       unifiedRouterModeActive: true,
     },
     postDeployActions,
@@ -410,11 +414,13 @@ export async function deployProtocol() {
   console.log(`VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${deployment.chainId}=${recruiterVaultAddress}`);
   console.log(`VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${deployment.chainId}=${protocolVaultAddress}`);
   console.log(`VITE_GRADUATION_ORACLE_ADDRESS_${deployment.chainId}=${graduationOracleConfig.oracleAddress}`);
+  console.log(`VITE_TOPAZ_ROUTER_ADDRESS_${deployment.chainId}=${routerAddress}`);
   console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
   console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
   console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
+  console.log("- Topaz volatile router for graduation liquidity:", routerAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
   console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
