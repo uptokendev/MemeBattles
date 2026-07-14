@@ -8,6 +8,8 @@
     "compile:frontend-abis": "hardhat compile && node scripts/sync-frontend-abis.cjs",
     "deploy:reward-distributor": "hardhat run scripts/deploy-reward-distributor.cjs",
     "deploy:reward-distributor:bsc-testnet": "hardhat run scripts/deploy-reward-distributor.cjs --network bscTestnet",
+    "verify:deployment": "hardhat run scripts/verify-deployment.ts",
+    "verify:deployment:bsc-testnet": "hardhat run scripts/verify-deployment.ts --network bscTestnet",
     "verify:route-authority": "hardhat run scripts/verify-route-authority.cjs",
     "verify:route-authority:bsc-testnet": "hardhat run scripts/verify-route-authority.cjs --network bscTestnet",
     "test": "hardhat test",
