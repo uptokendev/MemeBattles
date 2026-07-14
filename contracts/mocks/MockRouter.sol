@@ -45,7 +45,7 @@ contract MockRouter is IPancakeRouter02, ITopazRouter02 {
         override(IPancakeRouter02)
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
-        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired);
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
         emit LiquidityAdded(token, amountToken, amountETH, to);
     }
 
@@ -64,12 +64,12 @@ contract MockRouter is IPancakeRouter02, ITopazRouter02 {
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
         require(!stable, "stable pool unsupported");
-        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired);
+        (amountToken, amountETH, liquidity) = _addLiquidity(token, amountTokenDesired, to);
         emit LiquidityAdded(token, amountToken, amountETH, to);
         emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
     }
 
-    function _addLiquidity(address token, uint256 amountTokenDesired)
+    function _addLiquidity(address token, uint256 amountTokenDesired, address to)
         internal
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
@@ -81,7 +81,6 @@ contract MockRouter is IPancakeRouter02, ITopazRouter02 {
         address pair = MockV2Factory(_factory).getPair(token, _wrapped);
         if (pair == address(0)) pair = MockV2Factory(_factory).createPair(token, _wrapped);
         MockV2Pair(pair).setReserves(uint112(amountTokenDesired), uint112(msg.value));
-        // Non-zero to indicate "LP minted" (exact value isn't important in our tests).
-        MockV2Pair(pair).setTotalSupply(1);
+        MockV2Pair(pair).mint(to, liquidity);
     }
 }
