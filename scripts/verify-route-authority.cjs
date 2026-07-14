@@ -22,6 +22,18 @@ function normalizeAddress(value, label) {
   return ethers.getAddress(value.trim());
 }
 
+function hardhatEphemeralHint(address) {
+  if (hre.network.name !== "hardhat") return "";
+  return ` The hardhat network is ephemeral per command, so a factory deployed by a previous command no longer has code at ${address}. Use npm run deploy:verify for same-run checks, run against localhost with a persistent node, or use a real network such as bscTestnet.`;
+}
+
+async function requireContractCode(address, label) {
+  const code = await ethers.provider.getCode(address);
+  if (code === "0x") {
+    throw new Error(`${label} ${address} has no code on ${hre.network.name}.${hardhatEphemeralHint(address)}`);
+  }
+}
+
 function configuredRouteAuthority() {
   if (process.env.ROUTE_AUTHORITY_PRIVATE_KEY) {
     const raw = process.env.ROUTE_AUTHORITY_PRIVATE_KEY.trim();
@@ -105,15 +117,17 @@ async function main() {
   );
   const configured = configuredRouteAuthority();
   const expectedAuthority = ethers.getAddress(configured.address);
-
-  const factory = await ethers.getContractAt(["function routeAuthority() view returns (address)"], factoryAddress);
-  const onChainAuthority = ethers.getAddress(await factory.routeAuthority());
   const chainId = (await ethers.provider.getNetwork()).chainId;
 
   console.log(`[route-authority] network=${hre.network.name}`);
   console.log(`[route-authority] chainId=${chainId}`);
   console.log(`[route-authority] factory=${factoryAddress}`);
   console.log(`[route-authority] expected=${expectedAuthority}`);
+
+  await requireContractCode(factoryAddress, "LaunchFactory");
+
+  const factory = await ethers.getContractAt(["function routeAuthority() view returns (address)"], factoryAddress);
+  const onChainAuthority = ethers.getAddress(await factory.routeAuthority());
   console.log(`[route-authority] on-chain=${onChainAuthority}`);
 
   if (onChainAuthority !== expectedAuthority) {
