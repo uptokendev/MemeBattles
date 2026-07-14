@@ -2,6 +2,8 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
+const TRADE_AUTH_BUY_EXACT_BNB = 1;
+
 const req = (overrides: Record<string, unknown> = {}) => ({
   name: "SecureToken",
   symbol: "SEC",
@@ -142,15 +144,29 @@ describe("Phase 1 security layer", function () {
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
     const chainId = (await ethers.provider.getNetwork()).chainId;
     const routeProfile = 1;
-    const digest = ethers.solidityPackedKeccak256(
-      ["string", "uint256", "address", "address", "uint8", "uint64"],
-      ["MWZ_ROUTE_TRADE_AUTH", chainId, await campaign.getAddress(), await alice.getAddress(), routeProfile, deadline]
+    const buyValue = ethers.parseEther("0.01");
+    const minTokensOut = 0n;
+    const digest = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+        [
+          "MWZ_ROUTE_TRADE_AUTH",
+          chainId,
+          await campaign.getAddress(),
+          await alice.getAddress(),
+          routeProfile,
+          TRADE_AUTH_BUY_EXACT_BNB,
+          buyValue,
+          minTokensOut,
+          deadline,
+        ]
+      )
     );
     const signature = await owner.signMessage(ethers.getBytes(digest));
 
     await expect(
-      campaign.connect(alice).buyExactBnbAuthorized(0n, routeProfile, deadline, signature, {
-        value: ethers.parseEther("0.01"),
+      campaign.connect(alice).buyExactBnbAuthorized(minTokensOut, routeProfile, deadline, signature, {
+        value: buyValue,
       })
     ).to.emit(campaign, "TokensPurchased");
   });
