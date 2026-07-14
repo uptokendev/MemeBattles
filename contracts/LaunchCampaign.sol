@@ -96,6 +96,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint8 private constant ROUTE_PROFILE_STANDARD_LINKED = 0;
     uint8 private constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
     uint8 private constant ROUTE_PROFILE_OG_LINKED = 2;
+    uint8 private constant TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+    uint8 private constant TRADE_AUTH_BUY_EXACT_BNB = 1;
+    uint8 private constant TRADE_AUTH_SELL_EXACT_TOKENS = 2;
 
     LaunchToken public token;
     IERC20 private tokenInterface;
@@ -387,7 +390,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint64 routeDeadline,
         bytes calldata routeSignature
     ) external payable nonReentrant returns (uint256 cost) {
-        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        _verifyTradeRouteAuthorization(
+            msg.sender,
+            routeProfile,
+            TRADE_AUTH_BUY_EXACT_TOKENS,
+            amountOut,
+            maxCost,
+            routeDeadline,
+            routeSignature
+        );
         return _buyExactTokens(msg.sender, amountOut, maxCost, true, routeProfile);
     }
 
@@ -402,7 +413,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint64 routeDeadline,
         bytes calldata routeSignature
     ) external payable nonReentrant returns (uint256 tokensOut, uint256 totalSpent) {
-        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        _verifyTradeRouteAuthorization(
+            msg.sender,
+            routeProfile,
+            TRADE_AUTH_BUY_EXACT_BNB,
+            msg.value,
+            minTokensOut,
+            routeDeadline,
+            routeSignature
+        );
         return _buyExactBnb(msg.sender, minTokensOut, true, routeProfile);
     }
 
@@ -418,7 +437,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint64 routeDeadline,
         bytes calldata routeSignature
     ) external nonReentrant returns (uint256 payout) {
-        _verifyTradeRouteAuthorization(msg.sender, routeProfile, routeDeadline, routeSignature);
+        _verifyTradeRouteAuthorization(
+            msg.sender,
+            routeProfile,
+            TRADE_AUTH_SELL_EXACT_TOKENS,
+            amountIn,
+            minPayout,
+            routeDeadline,
+            routeSignature
+        );
         return _sellExactTokens(msg.sender, amountIn, minPayout, true, routeProfile);
     }
 
@@ -694,13 +721,21 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         return tradeRouteProfile;
     }
 
-    function _verifyTradeRouteAuthorization(address actor, uint8 routeProfile, uint64 deadline, bytes calldata signature) internal {
+    function _verifyTradeRouteAuthorization(
+        address actor,
+        uint8 routeProfile,
+        uint8 action,
+        uint256 amount,
+        uint256 limit,
+        uint64 deadline,
+        bytes calldata signature
+    ) internal {
         if (deadline < block.timestamp) revert RouteAuthExpired();
         if (!_isValidRouteProfile(routeProfile)) revert InvalidTradeRouteProfile();
         address authority = IRouteAuthoritySource(factory).routeAuthority();
         if (authority == address(0)) revert RouteAuthUnavailable();
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
-            keccak256(abi.encodePacked("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, deadline))
+            keccak256(abi.encode("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, action, amount, limit, deadline))
         );
         if (digest.recover(signature) != authority) revert BadRouteAuth();
         if (usedRouteAuthorizations[digest]) revert RouteAuthReplayed();
