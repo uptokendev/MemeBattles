@@ -4,6 +4,7 @@ import { deployCoreFixture } from "./fixtures/core";
 
 const TOKEN = ethers.parseEther("1");
 const ROUTE_PROFILE = 1;
+let routeDeadlineSalt = 0;
 
 const req = (overrides: Record<string, unknown> = {}) => ({
   name: "ProtectedToken",
@@ -37,7 +38,7 @@ async function createProtectedCampaign(overrides: Record<string, unknown> = {}) 
 }
 
 async function routeSignature(authority: any, campaign: any, actor: any, routeProfile = ROUTE_PROFILE) {
-  const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
+  const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600 + routeDeadlineSalt++);
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const digest = ethers.solidityPackedKeccak256(
     ["string", "uint256", "address", "address", "uint8", "uint64"],
@@ -67,6 +68,24 @@ describe("Phase 6 launch protection", function () {
 
     await expect(buyAuthorized(campaign, owner, alice)).to.emit(campaign, "TokensPurchased");
     expect(await campaign.protectedBuyWei(await alice.getAddress())).to.be.gt(0n);
+  });
+
+  it("prevents signed route authorization replay", async () => {
+    const { campaign, owner, alice } = await createProtectedCampaign();
+    const quote = await campaign.quoteBuyExactTokens(TOKEN);
+    const auth = await routeSignature(owner, campaign, alice);
+
+    await expect(
+      campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, auth.routeProfile, auth.deadline, auth.signature, {
+        value: quote,
+      })
+    ).to.emit(campaign, "TokensPurchased");
+
+    await expect(
+      campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, auth.routeProfile, auth.deadline, auth.signature, {
+        value: quote,
+      })
+    ).to.be.revertedWithCustomError(campaign, "RouteAuthReplayed");
   });
 
   it("enforces per-buy and cumulative wallet caps so split buys cannot bypass the window", async () => {
