@@ -12,6 +12,7 @@ const PRODUCTION_CONTRACTS = [
   "CommunityRewardsVault",
   "ProtocolRevenueVault",
   "UPVoteTreasury",
+  "PermanentLpLocker",
 ];
 
 async function main() {
