@@ -27,6 +27,10 @@ function boolEnv(name: string, fallback = false): boolean {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function isLocalNetwork(): boolean {
+  return network.name === "hardhat" || network.name === "localhost";
+}
+
 function routeProfileEnv(name: string, fallback: number): number {
   const raw = (process.env[name] ?? "").trim();
   if (!raw) return fallback;
@@ -45,9 +49,12 @@ function writeDeployment(networkName: string, data: unknown) {
   return file;
 }
 
+async function hasContractCode(address: string): Promise<boolean> {
+  return (await ethers.provider.getCode(address)) !== "0x";
+}
+
 async function requireContractCode(address: string, label: string) {
-  const code = await ethers.provider.getCode(address);
-  if (code === "0x") throw new Error(`${label} ${address} has no contract code on ${network.name}.`);
+  if (!(await hasContractCode(address))) throw new Error(`${label} ${address} has no contract code on ${network.name}.`);
 }
 
 async function deployMockTopazRouter(deployerAddress: string): Promise<string> {
@@ -83,8 +90,19 @@ async function resolveRouterAddress(deployerAddress: string): Promise<string> {
     ""
   ).trim();
   if (explicitRouter) {
+    if (await hasContractCode(explicitRouter)) return explicitRouter;
+    if (isLocalNetwork()) {
+      console.warn(
+        `[deploy] Configured Topaz router ${explicitRouter} has no code on ${network.name}; using local mock router for rehearsal.`
+      );
+      return deployMockTopazRouter(deployerAddress);
+    }
     await requireContractCode(explicitRouter, "Configured Topaz router");
-    return explicitRouter;
+  }
+
+  if (isLocalNetwork()) {
+    console.warn(`[deploy] No Topaz router configured on ${network.name}; using local mock router for rehearsal.`);
+    return deployMockTopazRouter(deployerAddress);
   }
 
   throw new Error(
@@ -109,8 +127,15 @@ async function deployLocalMockPriceFeed(): Promise<string> {
 async function resolveGraduationOracle(): Promise<{ oracleAddress: string; priceFeedAddress: string | null; maxPriceAge: number | null }> {
   const explicitOracle = (process.env.GRADUATION_ORACLE_ADDRESS ?? "").trim();
   if (explicitOracle) {
-    await requireContractCode(explicitOracle, "Configured GraduationOracle");
-    return { oracleAddress: explicitOracle, priceFeedAddress: null, maxPriceAge: null };
+    if (await hasContractCode(explicitOracle)) {
+      return { oracleAddress: explicitOracle, priceFeedAddress: null, maxPriceAge: null };
+    }
+    if (!isLocalNetwork()) {
+      await requireContractCode(explicitOracle, "Configured GraduationOracle");
+    }
+    console.warn(
+      `[deploy] Configured GraduationOracle ${explicitOracle} has no code on ${network.name}; deploying local oracle for rehearsal.`
+    );
   }
 
   let priceFeedAddress = (
@@ -120,7 +145,17 @@ async function resolveGraduationOracle(): Promise<{ oracleAddress: string; price
     ""
   ).trim();
 
-  if (!priceFeedAddress && (network.name === "hardhat" || network.name === "localhost" || boolEnv("DEPLOY_MOCK_PRICE_FEED", false))) {
+  if (priceFeedAddress && !(await hasContractCode(priceFeedAddress))) {
+    if (!isLocalNetwork()) {
+      await requireContractCode(priceFeedAddress, "Configured native/USD price feed");
+    }
+    console.warn(
+      `[deploy] Configured native/USD price feed ${priceFeedAddress} has no code on ${network.name}; using local mock feed for rehearsal.`
+    );
+    priceFeedAddress = "";
+  }
+
+  if (!priceFeedAddress && (isLocalNetwork() || boolEnv("DEPLOY_MOCK_PRICE_FEED", false))) {
     priceFeedAddress = await deployLocalMockPriceFeed();
   }
 
