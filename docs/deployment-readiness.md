@@ -59,6 +59,15 @@ npm run verify:route-authority:bsc-testnet
 
 The deployment verifier checks stable wiring and settings recorded at deploy time, including factory owner, protocol fee, router, treasury router, campaign implementation, graduation oracle, LP locker, registries, route profiles, route authority, vault admin wiring, and pending multisig/admin actions. It does not freeze mutable operational posture such as live/pause flags because those may change after rollout.
 
+To inspect the saved deployment JSON without calling the chain, run:
+
+```bash
+npm run deployment:summary
+npm run deployment:summary:bsc-testnet
+```
+
+The summary reports core addresses, routing settings, frontend env readiness, and pending admin actions from the deployment file.
+
 ## Frontend Env Handoff
 
 `deploy.ts` and `deploy-and-verify.ts` automatically write `deployments/<network>.frontend.env` after a successful deploy. To regenerate the file later from an existing deployment JSON, run:
