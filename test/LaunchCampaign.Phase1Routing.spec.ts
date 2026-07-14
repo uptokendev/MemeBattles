@@ -5,6 +5,8 @@ import { quoteBuyExactTokens, quoteSellExactTokens } from "./helpers/math";
 import { getBalance } from "./helpers/balances";
 import { deployLaunchFactory } from "./helpers/deployFactory";
 
+const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+
 async function deployPhase1RoutingFixture() {
   const [owner, creator, alice, bob] = await ethers.getSigners();
 
@@ -63,19 +65,27 @@ async function signTradeRouteAuthorization(params: {
   campaignAddress: string;
   actor: string;
   routeProfile: number;
+  action: number;
+  amount: bigint;
+  limit: bigint;
   deadline: bigint;
   chainId: bigint;
 }) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint64"],
-    [
-      "MWZ_ROUTE_TRADE_AUTH",
-      params.chainId,
-      params.campaignAddress,
-      params.actor,
-      params.routeProfile,
-      params.deadline,
-    ]
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      [
+        "MWZ_ROUTE_TRADE_AUTH",
+        params.chainId,
+        params.campaignAddress,
+        params.actor,
+        params.routeProfile,
+        params.action,
+        params.amount,
+        params.limit,
+        params.deadline,
+      ]
+    )
   );
   return params.signer.signMessage(ethers.getBytes(digest));
 }
@@ -358,6 +368,9 @@ describe("LaunchCampaign Phase 1 router integration", function () {
       campaignAddress: await campaign.getAddress(),
       actor: await alice.getAddress(),
       routeProfile: 0,
+      action: TRADE_AUTH_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: buyTotal,
       deadline,
       chainId,
     });
