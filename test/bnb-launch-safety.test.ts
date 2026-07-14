@@ -7,6 +7,12 @@ async function increaseTime(seconds: number) {
   await network.provider.send("evm_mine");
 }
 
+async function minePastBlock(blockNumber: bigint) {
+  while (BigInt(await ethers.provider.getBlockNumber()) <= blockNumber) {
+    await network.provider.send("evm_mine");
+  }
+}
+
 function campaignRequest(overrides: Record<string, unknown> = {}) {
   return {
     name: "Safety Token",
@@ -97,6 +103,26 @@ async function signCreateRoute(
   return signer.signMessage(ethers.getBytes(digest));
 }
 
+async function signTradeRoute(
+  campaign: any,
+  actor: string,
+  signer: any,
+  routeProfile: number,
+  action: number,
+  amount: bigint,
+  limit: bigint,
+  deadline: bigint
+) {
+  const { chainId } = await ethers.provider.getNetwork();
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      ["MWZ_ROUTE_TRADE_AUTH", chainId, await campaign.getAddress(), actor, routeProfile, action, amount, limit, deadline]
+    )
+  );
+  return signer.signMessage(ethers.getBytes(digest));
+}
+
 describe("BNB launch safety simulations", function () {
   it("blocks creation until live and while create pause is enabled", async function () {
     const [owner, creator] = await ethers.getSigners();
@@ -155,6 +181,98 @@ describe("BNB launch safety simulations", function () {
     await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWithCustomError(
       campaign,
       "AuthorizedTradingRequired"
+    );
+  });
+
+  it("enforces protected launch blocks through authorized routes and early buy caps", async function () {
+    const { creator, buyer, routeAuthority, factory } = await deploySafetyFixture();
+    const maxBuyWei = ethers.parseEther("0.0001");
+    const maxWalletWei = ethers.parseEther("0.0001");
+    await factory.setLaunchProtectionConfig(8, maxBuyWei, maxWalletWei);
+
+    const { campaign } = await createCampaign(factory, creator);
+    expect(await campaign.launchProtectionEndBlock()).to.be.gt(0n);
+    expect(await campaign.launchProtectionMaxBuyWei()).to.equal(maxBuyWei);
+    expect(await campaign.launchProtectionMaxWalletWei()).to.equal(maxWalletWei);
+
+    const amountOut = ethers.parseEther("1");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const latestBlock = await ethers.provider.getBlock("latest");
+    const deadline = BigInt((latestBlock?.timestamp ?? 0) + 3600);
+    const routeProfile = 1;
+
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost })).to.be.revertedWithCustomError(
+      campaign,
+      "AuthorizedTradingRequired"
+    );
+
+    const firstSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      maxCost,
+      deadline
+    );
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, maxCost, routeProfile, deadline, firstSignature, { value: maxCost })
+    ).to.emit(campaign, "TokensPurchased");
+
+    const capBreakerAmount = ethers.parseEther("3");
+    const capBreakerCost = await campaign.quoteBuyExactTokens(capBreakerAmount);
+    const capBreakerSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      capBreakerAmount,
+      capBreakerCost,
+      deadline
+    );
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactTokensAuthorized(capBreakerAmount, capBreakerCost, routeProfile, deadline, capBreakerSignature, { value: capBreakerCost })
+    ).to.be.revertedWithCustomError(campaign, "LaunchProtectionBuyLimit");
+
+    const secondCost = await campaign.quoteBuyExactTokens(amountOut);
+    const secondSignature = await signTradeRoute(
+      campaign,
+      buyer.address,
+      routeAuthority,
+      routeProfile,
+      0,
+      amountOut,
+      secondCost,
+      deadline
+    );
+    await expect(
+      campaign.connect(buyer).buyExactTokensAuthorized(amountOut, secondCost, routeProfile, deadline, secondSignature, { value: secondCost })
+    ).to.be.revertedWithCustomError(campaign, "LaunchProtectionWalletLimit");
+  });
+
+  it("expires launch protection at the exact block boundary", async function () {
+    const { creator, buyer, factory } = await deploySafetyFixture();
+    await factory.setLaunchProtectionConfig(1, ethers.parseEther("0.0001"), ethers.parseEther("0.0001"));
+
+    const { campaign } = await createCampaign(factory, creator);
+    const amountOut = ethers.parseEther("1");
+    const protectedCost = await campaign.quoteBuyExactTokens(amountOut);
+
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, protectedCost, { value: protectedCost })).to.be.revertedWithCustomError(
+      campaign,
+      "AuthorizedTradingRequired"
+    );
+
+    await minePastBlock(await campaign.launchProtectionEndBlock());
+
+    const unprotectedCost = await campaign.quoteBuyExactTokens(amountOut);
+    await expect(campaign.connect(buyer).buyExactTokens(amountOut, unprotectedCost, { value: unprotectedCost })).to.emit(
+      campaign,
+      "TokensPurchased"
     );
   });
 
