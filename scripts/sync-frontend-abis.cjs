@@ -6,6 +6,7 @@ const contracts = [
   'LaunchFactory',
   'LaunchCampaign',
   'LaunchToken',
+  'GraduationOracle',
   'CreatorRegistry',
   'RiskRegistry',
   'TreasuryRouter',
