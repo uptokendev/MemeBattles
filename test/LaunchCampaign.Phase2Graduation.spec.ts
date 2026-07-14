@@ -205,4 +205,25 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
     expect(event!.args.graduationBalance).to.equal(state[9]);
     expect(event!.args.graduationOvershoot).to.equal(state[10]);
   });
+
+  it("permanently locks the minted Topaz LP in the factory locker", async () => {
+    const { campaign, alice, creator, permanentLpLocker } = await deployEarlyGraduationCampaign();
+
+    await campaign.connect(alice).graduateIfEligible(0, 0);
+
+    const state = await campaign.getGraduationState();
+    const pairAddress = state[0];
+    const lpMinted = state[5];
+    const pair = await ethers.getContractAt("MockV2Pair", pairAddress);
+    const lockerAddress = await permanentLpLocker.getAddress();
+
+    expect(pairAddress).to.not.equal(ethers.ZeroAddress);
+    expect(lpMinted).to.be.gt(0n);
+    expect(await permanentLpLocker.registeredLpToken(pairAddress)).to.equal(true);
+    expect(await permanentLpLocker.lockedBalance(pairAddress)).to.equal(lpMinted);
+    expect(await permanentLpLocker.lockedByDepositor(pairAddress, lockerAddress)).to.equal(lpMinted);
+    expect(await pair.balanceOf(lockerAddress)).to.equal(lpMinted);
+    expect(await pair.balanceOf(await creator.getAddress())).to.equal(0n);
+    expect(await pair.balanceOf(await campaign.getAddress())).to.equal(0n);
+  });
 });
