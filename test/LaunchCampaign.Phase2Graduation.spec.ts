@@ -214,7 +214,7 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
     const state = await campaign.getGraduationState();
     const pairAddress = state[0];
     const lpMinted = state[5];
-    const pair = await ethers.getContractAt("MockV2Pair", pairAddress);
+    const pair = await ethers.getContractAt("MockTopazPool", pairAddress);
     const lockerAddress = await permanentLpLocker.getAddress();
 
     expect(pairAddress).to.not.equal(ethers.ZeroAddress);
