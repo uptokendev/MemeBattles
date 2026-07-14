@@ -67,7 +67,7 @@ contract MockTopazRouter is ITopazRouter02 {
         emit TopazLiquidityAdded(token, stable, amountToken, amountETH, to);
     }
 
-    function _addLiquidity(address token, uint256 amountTokenDesired, address)
+    function _addLiquidity(address token, uint256 amountTokenDesired, address to)
         internal
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
@@ -79,6 +79,6 @@ contract MockTopazRouter is ITopazRouter02 {
         address pool = MockTopazFactory(_poolFactory).getPool(token, _wrapped, false);
         if (pool == address(0)) pool = MockTopazFactory(_poolFactory).createPool(token, _wrapped, false);
         MockTopazPool(pool).setReserves(uint112(amountTokenDesired), uint112(msg.value));
-        MockTopazPool(pool).setTotalSupply(1);
+        MockTopazPool(pool).mint(to, liquidity);
     }
 }
