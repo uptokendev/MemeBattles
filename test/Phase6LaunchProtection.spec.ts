@@ -37,14 +37,32 @@ async function createProtectedCampaign(overrides: Record<string, unknown> = {}) 
   return { ...fixture, campaign, token };
 }
 
+async function signRouteAuthorization(
+  authority: any,
+  campaignAddress: string,
+  actorAddress: string,
+  routeProfile: number,
+  chainId: bigint,
+  deadline: bigint
+) {
+  const digest = ethers.solidityPackedKeccak256(
+    ["string", "uint256", "address", "address", "uint8", "uint64"],
+    ["MWZ_ROUTE_TRADE_AUTH", chainId, campaignAddress, actorAddress, routeProfile, deadline]
+  );
+  return authority.signMessage(ethers.getBytes(digest));
+}
+
 async function routeSignature(authority: any, campaign: any, actor: any, routeProfile = ROUTE_PROFILE) {
   const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600 + routeDeadlineSalt++);
   const chainId = (await ethers.provider.getNetwork()).chainId;
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint64"],
-    ["MWZ_ROUTE_TRADE_AUTH", chainId, await campaign.getAddress(), await actor.getAddress(), routeProfile, deadline]
+  const signature = await signRouteAuthorization(
+    authority,
+    await campaign.getAddress(),
+    await actor.getAddress(),
+    routeProfile,
+    chainId,
+    deadline
   );
-  const signature = await authority.signMessage(ethers.getBytes(digest));
   return { deadline, signature, routeProfile };
 }
 
@@ -86,6 +104,52 @@ describe("Phase 6 launch protection", function () {
         value: quote,
       })
     ).to.be.revertedWithCustomError(campaign, "RouteAuthReplayed");
+  });
+
+  it("rejects signatures for the wrong campaign, chain, or route profile", async () => {
+    const { campaign, factory, owner, alice, bob } = await createProtectedCampaign();
+    await factory.connect(bob).createCampaign(req({ name: "OtherToken", symbol: "OTHR" }) as any);
+    const otherInfo = await factory.getCampaign(1n);
+    const quote = await campaign.quoteBuyExactTokens(TOKEN);
+    const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600 + routeDeadlineSalt++);
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const aliceAddress = await alice.getAddress();
+    const campaignAddress = await campaign.getAddress();
+
+    const wrongCampaignSignature = await signRouteAuthorization(
+      owner,
+      otherInfo.campaign,
+      aliceAddress,
+      ROUTE_PROFILE,
+      chainId,
+      deadline
+    );
+    await expect(
+      campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, ROUTE_PROFILE, deadline, wrongCampaignSignature, {
+        value: quote,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongChainSignature = await signRouteAuthorization(
+      owner,
+      campaignAddress,
+      aliceAddress,
+      ROUTE_PROFILE,
+      chainId + 1n,
+      deadline
+    );
+    await expect(
+      campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, ROUTE_PROFILE, deadline, wrongChainSignature, {
+        value: quote,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongProfileSignature = await signRouteAuthorization(owner, campaignAddress, aliceAddress, 0, chainId, deadline);
+    await expect(
+      campaign.connect(alice).buyExactTokensAuthorized(TOKEN, quote, ROUTE_PROFILE, deadline, wrongProfileSignature, {
+        value: quote,
+      })
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
   });
 
   it("enforces per-buy and cumulative wallet caps so split buys cannot bypass the window", async () => {
