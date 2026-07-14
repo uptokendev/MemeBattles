@@ -11,6 +11,7 @@ export type CoreFixture = {
   v2factory: any;
   priceFeed: any;
   graduationOracle: any;
+  permanentLpLocker: any;
   treasuryVault: any;
   treasuryRouter: any;
   recruiterVault: any;
@@ -87,6 +88,7 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     await graduationOracle.getAddress()
   );
   await factory.waitForDeployment();
+  const permanentLpLocker = await ethers.getContractAt("PermanentLpLocker", await factory.permanentLpLocker());
 
   // Use small, test-friendly config. With the fixture oracle at $1/native,
   // the 1 USD threshold maps to the old 1 native graduation target.
@@ -114,6 +116,7 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
     v2factory,
     priceFeed,
     graduationOracle,
+    permanentLpLocker,
     treasuryVault,
     treasuryRouter,
     recruiterVault,
