@@ -6,8 +6,6 @@ const STANDARD_LINKED = 0;
 const STANDARD_UNLINKED = 1;
 const OG_LINKED = 2;
 const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
-const TRADE_AUTH_BUY_EXACT_BNB = 1;
-const TRADE_AUTH_SELL_EXACT_TOKENS = 2;
 
 function asBigInt(value: unknown) {
   return BigInt(value as string | number | bigint);
