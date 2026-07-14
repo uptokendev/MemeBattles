@@ -65,13 +65,34 @@ describe("PermanentLpLocker", function () {
     expect(await locker.lockedByDepositor(await lpToken.getAddress(), await alice.getAddress())).to.equal(amount);
   });
 
-  it("rejects unregistered LP locks and zero amount locks", async () => {
-    const { alice, locker, lpToken } = await deployLockerFixture();
+  it("marks LP already held by the locker as permanently locked on registration", async () => {
+    const { owner, locker, lpToken } = await deployLockerFixture();
+    const amount = ethers.parseEther("8");
+    const lockerAddress = await locker.getAddress();
+    const lpTokenAddress = await lpToken.getAddress();
 
-    await expect(locker.connect(alice).lock(await lpToken.getAddress(), 1n)).to.be.revertedWithCustomError(
+    await lpToken.connect(owner).mint(lockerAddress, amount);
+
+    await expect(locker.connect(owner).registerLpToken(lpTokenAddress))
+      .to.emit(locker, "LpPermanentlyLocked")
+      .withArgs(lpTokenAddress, lockerAddress, amount, amount);
+
+    expect(await locker.lockedBalance(lpTokenAddress)).to.equal(amount);
+    expect(await locker.lockedByDepositor(lpTokenAddress, lockerAddress)).to.equal(amount);
+    expect(await lpToken.balanceOf(lockerAddress)).to.equal(amount);
+  });
+
+  it("rejects unregistered LP locks and zero amount locks", async () => {
+    const { owner, alice, locker, lpToken } = await deployLockerFixture();
+    const lpTokenAddress = await lpToken.getAddress();
+
+    await expect(locker.connect(alice).lock(lpTokenAddress, 1n)).to.be.revertedWithCustomError(
       locker,
       "LpTokenNotRegistered"
     );
+
+    await locker.connect(owner).registerLpToken(lpTokenAddress);
+    await expect(locker.connect(alice).lock(lpTokenAddress, 0n)).to.be.revertedWithCustomError(locker, "ZeroAmount");
   });
 
   it("does not expose withdrawal or arbitrary approval escape functions", async () => {
