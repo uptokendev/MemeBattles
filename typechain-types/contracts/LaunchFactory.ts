@@ -206,6 +206,7 @@ export interface LaunchFactoryInterface extends Interface {
       | "setRouter"
       | "tradeRouteProfile"
       | "transferOwnership"
+      | "usedCreateRouteAuthorizations"
   ): FunctionFragment;
 
   getEvent(
@@ -436,6 +437,10 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "transferOwnership",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(
+    functionFragment: "usedCreateRouteAuthorizations",
+    values: [BytesLike]
+  ): string;
 
   decodeFunctionResult(
     functionFragment: "DEFAULT_GRADUATION_USD_THRESHOLD",
@@ -629,6 +634,10 @@ export interface LaunchFactoryInterface extends Interface {
     functionFragment: "transferOwnership",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(
+    functionFragment: "usedCreateRouteAuthorizations",
+    data: BytesLike
+  ): Result;
 }
 
 export namespace CampaignCreatedEvent {
@@ -669,11 +678,23 @@ export namespace CampaignCreatedEvent {
 }
 
 export namespace CampaignGraduatedEvent {
-  export type InputTuple = [campaign: AddressLike, creator: AddressLike];
-  export type OutputTuple = [campaign: string, creator: string];
+  export type InputTuple = [
+    campaign: AddressLike,
+    creator: AddressLike,
+    lpToken: AddressLike,
+    locker: AddressLike
+  ];
+  export type OutputTuple = [
+    campaign: string,
+    creator: string,
+    lpToken: string,
+    locker: string
+  ];
   export interface OutputObject {
     campaign: string;
     creator: string;
+    lpToken: string;
+    locker: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -1159,6 +1180,12 @@ export interface LaunchFactory extends BaseContract {
     "nonpayable"
   >;
 
+  usedCreateRouteAuthorizations: TypedContractMethod<
+    [arg0: BytesLike],
+    [boolean],
+    "view"
+  >;
+
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
@@ -1410,6 +1437,9 @@ export interface LaunchFactory extends BaseContract {
   getFunction(
     nameOrSignature: "transferOwnership"
   ): TypedContractMethod<[newOwner: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "usedCreateRouteAuthorizations"
+  ): TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
 
   getEvent(
     key: "CampaignCreated"
@@ -1543,7 +1573,7 @@ export interface LaunchFactory extends BaseContract {
       CampaignCreatedEvent.OutputObject
     >;
 
-    "CampaignGraduated(address,address)": TypedContractEvent<
+    "CampaignGraduated(address,address,address,address)": TypedContractEvent<
       CampaignGraduatedEvent.InputTuple,
       CampaignGraduatedEvent.OutputTuple,
       CampaignGraduatedEvent.OutputObject

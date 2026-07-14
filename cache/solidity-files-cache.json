@@ -208,8 +208,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchFactory.sol": {
-      "lastModificationDate": 1784034914403,
-      "contentHash": "64eb614c023f68cb15c4b88b95b1c316",
+      "lastModificationDate": 1784042650526,
+      "contentHash": "4e663cd2a5316fab6c0d29995d722340",
       "sourceName": "contracts/LaunchFactory.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -257,8 +257,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\LaunchCampaign.sol": {
-      "lastModificationDate": 1784034914402,
-      "contentHash": "a084f3f18c00535239e6a4038ebd89a0",
+      "lastModificationDate": 1784043456363,
+      "contentHash": "c232cd6cea948ea15571ddb9d082919c",
       "sourceName": "contracts/LaunchCampaign.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -1317,8 +1317,8 @@
       ]
     },
     "E:\\Network\\Zakelijk\\MemeWarzone\\contracts\\mocks\\MockRouter.sol": {
-      "lastModificationDate": 1783937110076,
-      "contentHash": "b2e6ae158aaf0eb0ff0806693ff216e9",
+      "lastModificationDate": 1784037671405,
+      "contentHash": "5d5eededff9ac3e145dc894bbb8c63e4",
       "sourceName": "contracts/mocks/MockRouter.sol",
       "solcConfig": {
         "version": "0.8.24",

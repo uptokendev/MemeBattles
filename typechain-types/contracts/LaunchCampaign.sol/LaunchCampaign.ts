@@ -134,11 +134,9 @@ export interface LaunchCampaignInterface extends Interface {
       | "creatorBoughtWei"
       | "creatorBuyCapWei"
       | "creatorBuyLockUntil"
-      | "creatorRegistry"
       | "creatorReserve"
       | "currentPrice"
       | "curveSupply"
-      | "extraLink"
       | "factory"
       | "feeRecipient"
       | "finalizeRouteProfile"
@@ -159,7 +157,6 @@ export interface LaunchCampaignInterface extends Interface {
       | "leagueReceiver"
       | "liquidityBps"
       | "liquiditySupply"
-      | "logoURI"
       | "lpReceiver"
       | "owner"
       | "paused"
@@ -188,8 +185,6 @@ export interface LaunchCampaignInterface extends Interface {
       | "tradeRouteProfile"
       | "transferOwnership"
       | "usedRouteAuthorizations"
-      | "website"
-      | "xAccount"
   ): FunctionFragment;
 
   getEvent(
@@ -244,10 +239,6 @@ export interface LaunchCampaignInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "creatorRegistry",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "creatorReserve",
     values?: undefined
   ): string;
@@ -259,7 +250,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "curveSupply",
     values?: undefined
   ): string;
-  encodeFunctionData(functionFragment: "extraLink", values?: undefined): string;
   encodeFunctionData(functionFragment: "factory", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "feeRecipient",
@@ -334,7 +324,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "liquiditySupply",
     values?: undefined
   ): string;
-  encodeFunctionData(functionFragment: "logoURI", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "lpReceiver",
     values?: undefined
@@ -432,8 +421,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "usedRouteAuthorizations",
     values: [BytesLike]
   ): string;
-  encodeFunctionData(functionFragment: "website", values?: undefined): string;
-  encodeFunctionData(functionFragment: "xAccount", values?: undefined): string;
 
   decodeFunctionResult(functionFragment: "basePrice", data: BytesLike): Result;
   decodeFunctionResult(
@@ -475,10 +462,6 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
-    functionFragment: "creatorRegistry",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
     functionFragment: "creatorReserve",
     data: BytesLike
   ): Result;
@@ -490,7 +473,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "curveSupply",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "extraLink", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "feeRecipient",
@@ -559,7 +541,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "liquiditySupply",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "logoURI", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "lpReceiver", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "paused", data: BytesLike): Result;
@@ -648,8 +629,6 @@ export interface LaunchCampaignInterface extends Interface {
     functionFragment: "usedRouteAuthorizations",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "website", data: BytesLike): Result;
-  decodeFunctionResult(functionFragment: "xAccount", data: BytesLike): Result;
 }
 
 export namespace CampaignFinalizedEvent {
@@ -913,15 +892,11 @@ export interface LaunchCampaign extends BaseContract {
 
   creatorBuyLockUntil: TypedContractMethod<[], [bigint], "view">;
 
-  creatorRegistry: TypedContractMethod<[], [string], "view">;
-
   creatorReserve: TypedContractMethod<[], [bigint], "view">;
 
   currentPrice: TypedContractMethod<[], [bigint], "view">;
 
   curveSupply: TypedContractMethod<[], [bigint], "view">;
-
-  extraLink: TypedContractMethod<[], [string], "view">;
 
   factory: TypedContractMethod<[], [string], "view">;
 
@@ -1000,8 +975,6 @@ export interface LaunchCampaign extends BaseContract {
   liquidityBps: TypedContractMethod<[], [bigint], "view">;
 
   liquiditySupply: TypedContractMethod<[], [bigint], "view">;
-
-  logoURI: TypedContractMethod<[], [string], "view">;
 
   lpReceiver: TypedContractMethod<[], [string], "view">;
 
@@ -1112,10 +1085,6 @@ export interface LaunchCampaign extends BaseContract {
     "view"
   >;
 
-  website: TypedContractMethod<[], [string], "view">;
-
-  xAccount: TypedContractMethod<[], [string], "view">;
-
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
@@ -1184,9 +1153,6 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "creatorBuyLockUntil"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
-    nameOrSignature: "creatorRegistry"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
     nameOrSignature: "creatorReserve"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
@@ -1195,9 +1161,6 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "curveSupply"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "extraLink"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "factory"
   ): TypedContractMethod<[], [string], "view">;
@@ -1296,9 +1259,6 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "liquiditySupply"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "logoURI"
-  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "lpReceiver"
   ): TypedContractMethod<[], [string], "view">;
@@ -1416,12 +1376,6 @@ export interface LaunchCampaign extends BaseContract {
   getFunction(
     nameOrSignature: "usedRouteAuthorizations"
   ): TypedContractMethod<[arg0: BytesLike], [boolean], "view">;
-  getFunction(
-    nameOrSignature: "website"
-  ): TypedContractMethod<[], [string], "view">;
-  getFunction(
-    nameOrSignature: "xAccount"
-  ): TypedContractMethod<[], [string], "view">;
 
   getEvent(
     key: "CampaignFinalized"
