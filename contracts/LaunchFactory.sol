@@ -8,6 +8,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 import {LaunchCampaign} from "./LaunchCampaign.sol";
 import {CreatorRegistry} from "./CreatorRegistry.sol";
 import {RiskRegistry} from "./RiskRegistry.sol";
+import {PermanentLpLocker} from "./PermanentLpLocker.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
@@ -111,9 +112,9 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
-    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
     address public immutable leagueReceiver;
     address public immutable campaignImplementation;
+    PermanentLpLocker public immutable permanentLpLocker;
     address public router;
     address public graduationOracle;
     CreatorRegistry public creatorRegistry;
@@ -152,23 +153,24 @@ contract LaunchFactory is Ownable {
         _;
     }
 
-    constructor(address pancakeRouter_, address treasuryRouter_, address campaignImplementation_, address graduationOracle_) Ownable(msg.sender) {
-        if (pancakeRouter_ == address(0)) revert RouterZero();
+    constructor(address topazRouter_, address treasuryRouter_, address campaignImplementation_, address graduationOracle_) Ownable(msg.sender) {
+        if (topazRouter_ == address(0)) revert RouterZero();
         if (treasuryRouter_ == address(0)) revert RecipientZero();
         if (campaignImplementation_ == address(0)) revert ImplementationZero();
         if (graduationOracle_ == address(0)) revert GraduationOracleZero();
         if (
-            pancakeRouter_.code.length == 0 ||
+            topazRouter_.code.length == 0 ||
             treasuryRouter_.code.length == 0 ||
             campaignImplementation_.code.length == 0 ||
             graduationOracle_.code.length == 0
         ) revert ContractCodeMissing();
 
-        router = pancakeRouter_;
+        router = topazRouter_;
         leagueReceiver = treasuryRouter_;
         feeRecipient = treasuryRouter_;
         campaignImplementation = campaignImplementation_;
         graduationOracle = graduationOracle_;
+        permanentLpLocker = new PermanentLpLocker(address(this));
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8800,
@@ -241,7 +243,7 @@ contract LaunchFactory is Ownable {
             leagueFeeBps: LEAGUE_FEE_BPS,
             leagueReceiver: leagueReceiver,
             router: router,
-            lpReceiver: DEAD,
+            lpReceiver: address(permanentLpLocker),
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this),
@@ -284,8 +286,11 @@ contract LaunchFactory is Ownable {
         emit CampaignCreated(_campaigns.length - 1, campaignAddr, tokenAddr, msg.sender, req.name, req.symbol, req.logoURI, metadataURI);
     }
 
-    function notifyCampaignGraduated(address campaignCreator) external {
+    function notifyCampaignGraduated(address campaignCreator, address lpToken) external {
         if (!isCampaign[msg.sender]) revert UnknownCampaign();
+        if (lpToken != address(0) && !permanentLpLocker.registeredLpToken(lpToken)) {
+            permanentLpLocker.registerLpToken(lpToken);
+        }
         if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
         }
