@@ -9,6 +9,13 @@ function assertEq(label: string, actual: string, expected: string) {
   console.log(`[verify] ${label}: ok`);
 }
 
+function assertBigIntEq(label: string, actual: bigint, expected: bigint) {
+  if (actual !== expected) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
+  console.log(`[verify] ${label}: ok`);
+}
+
 function assertTrue(label: string, value: boolean) {
   if (!value) throw new Error(`${label}: expected true`);
   console.log(`[verify] ${label}: ok`);
@@ -106,6 +113,19 @@ export async function verifyDeployment(deployment: any) {
   assertEq("factory.permanentLpLocker", await factory.permanentLpLocker(), contracts.PermanentLpLocker);
   assertEq("factory.creatorRegistry", await factory.creatorRegistry(), contracts.CreatorRegistry);
   assertEq("factory.riskRegistry", await factory.riskRegistry(), contracts.RiskRegistry);
+
+  const routing = deployment.routing ?? {};
+  if (routing.factoryTradeRouteProfile !== undefined && routing.factoryTradeRouteProfile !== null) {
+    assertBigIntEq("factory.tradeRouteProfile", await factory.tradeRouteProfile(), BigInt(routing.factoryTradeRouteProfile));
+  }
+  if (routing.factoryFinalizeRouteProfile !== undefined && routing.factoryFinalizeRouteProfile !== null) {
+    assertBigIntEq("factory.finalizeRouteProfile", await factory.finalizeRouteProfile(), BigInt(routing.factoryFinalizeRouteProfile));
+  }
+  if (routing.factoryRouteAuthority) {
+    assertEq("factory.routeAuthority", await factory.routeAuthority(), routing.factoryRouteAuthority);
+  } else {
+    assertEq("factory.routeAuthority", await factory.routeAuthority(), ethers.ZeroAddress);
+  }
 
   const locker = await ethers.getContractAt("PermanentLpLocker", contracts.PermanentLpLocker);
   assertEq("permanentLpLocker.admin", await locker.admin(), contracts.LaunchFactory);
