@@ -319,7 +319,9 @@ export async function deployProtocol() {
   );
   await factory.waitForDeployment();
   const factoryAddress = await factory.getAddress();
+  const permanentLpLockerAddress = await factory.permanentLpLocker();
   console.log("LaunchFactory:", factoryAddress);
+  console.log("PermanentLpLocker:", permanentLpLockerAddress);
 
   if ((await factory.tradeRouteProfile()) !== BigInt(tradeRouteProfile) || (await factory.finalizeRouteProfile()) !== BigInt(finalizeRouteProfile)) {
     const tx = await factory.setRouteProfiles(tradeRouteProfile, finalizeRouteProfile);
@@ -351,6 +353,7 @@ export async function deployProtocol() {
     deployer: deployerAddress,
     router: routerAddress,
     topazRouter: routerAddress,
+    permanentLpLocker: permanentLpLockerAddress,
     graduationOracle: graduationOracleConfig.oracleAddress,
     graduationPriceFeed: graduationOracleConfig.priceFeedAddress,
     graduationMaxPriceAge: graduationOracleConfig.maxPriceAge,
@@ -380,6 +383,7 @@ export async function deployProtocol() {
       GraduationOracle: graduationOracleConfig.oracleAddress,
       LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: factoryAddress,
+      PermanentLpLocker: permanentLpLockerAddress,
       UPVoteTreasury: voteTreasuryAddress,
     },
     routing: {
@@ -398,6 +402,7 @@ export async function deployProtocol() {
       campaignImplementation: campaignImplementationAddress,
       graduationOracle: graduationOracleConfig.oracleAddress,
       topazRouter: routerAddress,
+      permanentLpLocker: permanentLpLockerAddress,
       unifiedRouterModeActive: true,
     },
     postDeployActions,
@@ -415,12 +420,14 @@ export async function deployProtocol() {
   console.log(`VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${deployment.chainId}=${protocolVaultAddress}`);
   console.log(`VITE_GRADUATION_ORACLE_ADDRESS_${deployment.chainId}=${graduationOracleConfig.oracleAddress}`);
   console.log(`VITE_TOPAZ_ROUTER_ADDRESS_${deployment.chainId}=${routerAddress}`);
+  console.log(`VITE_PERMANENT_LP_LOCKER_ADDRESS_${deployment.chainId}=${permanentLpLockerAddress}`);
   console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
   console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
   console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
   console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
   console.log("- Topaz volatile router for graduation liquidity:", routerAddress);
+  console.log("- Permanent LP locker:", permanentLpLockerAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
   console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
