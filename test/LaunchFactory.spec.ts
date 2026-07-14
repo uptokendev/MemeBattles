@@ -210,7 +210,7 @@ describe("LaunchFactory", function () {
     expect(await campaign.graduationOracle()).to.eq(await graduationOracle.getAddress());
     expect(await campaign.token()).to.eq(info.token);
     expect(info.token).to.not.eq(ethers.ZeroAddress);
-    expect(await campaign.lpReceiver()).to.eq(DEAD);
+    expect(await campaign.lpReceiver()).to.eq(await factory.permanentLpLocker());
 
     await expect(
       campaign.initialize(
@@ -266,7 +266,7 @@ describe("LaunchFactory", function () {
     expect(info.logoURI).to.eq("ipfs://logo");
 
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
-    expect(await campaign.lpReceiver()).to.eq(DEAD);
+    expect(await campaign.lpReceiver()).to.eq(await factory.permanentLpLocker());
 
     const page = await factory.getCampaignPage(0n, 10n);
     expect(page.length).to.eq(1);
