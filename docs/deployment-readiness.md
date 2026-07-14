@@ -75,12 +75,17 @@ Optional lanes stay paused unless explicitly configured:
 
 ## Final Local Gates Before Testnet
 
-Run these on `devpostgrad` before the first real testnet attempt:
+Run the combined gate on `devpostgrad` before the first real testnet attempt:
 
 ```bash
-npm test
-npm run size
-npm run deploy:check-env:bsc-testnet
+npm run pretestnet:check
 ```
+
+It runs, in order:
+
+- `npm test`
+- `npm run size`
+- `npm run deploy:check-env`
+- `npm run deploy:check-env:bsc-testnet`
 
 The deploy should wait if tests fail, contract size exceeds the internal target, route authority preflight fails, or the BSC testnet env still points at local Hardhat defaults.
