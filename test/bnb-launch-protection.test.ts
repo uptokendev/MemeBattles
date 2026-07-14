@@ -35,14 +35,18 @@ async function minePastBlock(blockNumber: bigint) {
   }
 }
 
-async function deployProtectedLaunchFixture(options: { setRouteAuthority?: boolean; protectionBlocks?: number } = {}) {
+async function deployProtectedLaunchFixture(
+  options: { setRouteAuthority?: boolean; protectionBlocks?: number; maxBuyWei?: bigint; maxWalletWei?: bigint } = {}
+) {
   const [owner, creator, buyer, routeAuthority, attacker] = await ethers.getSigners();
   const { factory } = await deployRoutedLaunchFactory(owner);
   const setRouteAuthority = options.setRouteAuthority ?? true;
   const protectionBlocks = options.protectionBlocks ?? 30;
+  const maxBuyWei = options.maxBuyWei ?? ethers.parseEther("1");
+  const maxWalletWei = options.maxWalletWei ?? ethers.parseEther("1");
 
   if (setRouteAuthority) await factory.setRouteAuthority(routeAuthority.address);
-  await factory.setLaunchProtectionConfig(protectionBlocks, ethers.parseEther("1"), ethers.parseEther("1"));
+  await factory.setLaunchProtectionConfig(protectionBlocks, maxBuyWei, maxWalletWei);
   await factory.enableLive();
 
   const tx = await factory.connect(creator).createCampaign(campaignRequest());
@@ -115,6 +119,72 @@ describe("BNB launch protection trade flows", function () {
         .connect(buyer)
         .buyExactBnbAuthorized(minTokensOut, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, { value: totalIn })
     ).to.emit(campaign, "TokensPurchased");
+  });
+
+  it("enforces exact-BNB per-transaction buy caps during protected launch blocks", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture({ maxBuyWei: ethers.parseEther("0.000001") });
+    const totalIn = ethers.parseEther("0.00001");
+    const quote = await campaign.quoteBuyExactBnb(totalIn);
+    const minTokensOut = quote[0];
+    const deadline = (await latestTimestamp()) + 3600n;
+    const signature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_BNB,
+      amount: totalIn,
+      limit: minTokensOut,
+      deadline,
+    });
+
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactBnbAuthorized(minTokensOut, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, { value: totalIn })
+    ).to.be.revertedWithCustomError(campaign, "LaunchProtectionBuyLimit");
+  });
+
+  it("tracks exact-BNB protected buys against the wallet cap across multiple buys", async function () {
+    const { buyer, routeAuthority, campaign } = await deployProtectedLaunchFixture({ maxWalletWei: ethers.parseEther("0.000015") });
+    const totalIn = ethers.parseEther("0.00001");
+    const firstQuote = await campaign.quoteBuyExactBnb(totalIn);
+    const firstMinTokensOut = firstQuote[0];
+    const firstDeadline = (await latestTimestamp()) + 3600n;
+    const firstSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_BNB,
+      amount: totalIn,
+      limit: firstMinTokensOut,
+      deadline: firstDeadline,
+    });
+
+    await campaign
+      .connect(buyer)
+      .buyExactBnbAuthorized(firstMinTokensOut, ROUTE_PROFILE_STANDARD_UNLINKED, firstDeadline, firstSignature, { value: totalIn });
+
+    const secondQuote = await campaign.quoteBuyExactBnb(totalIn);
+    const secondMinTokensOut = secondQuote[0];
+    const secondDeadline = (await latestTimestamp()) + 3600n;
+    const secondSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_BNB,
+      amount: totalIn,
+      limit: secondMinTokensOut,
+      deadline: secondDeadline,
+    });
+
+    await expect(
+      campaign
+        .connect(buyer)
+        .buyExactBnbAuthorized(secondMinTokensOut, ROUTE_PROFILE_STANDARD_UNLINKED, secondDeadline, secondSignature, { value: totalIn })
+    ).to.be.revertedWithCustomError(campaign, "LaunchProtectionWalletLimit");
   });
 
   it("rejects protected launch routes when no route authority is configured", async function () {
@@ -224,6 +294,85 @@ describe("BNB launch protection trade flows", function () {
 
     await expect(
       campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, sellSignature)
+    ).to.emit(campaign, "TokensSold");
+  });
+
+  it("rejects sell route signatures from the wrong signer or for the wrong action and limit", async function () {
+    const { buyer, routeAuthority, attacker, campaign, token } = await deployProtectedLaunchFixture();
+    const amountOut = ethers.parseEther("2");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const buyDeadline = (await latestTimestamp()) + 3600n;
+    const buySignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline: buyDeadline,
+    });
+
+    await campaign
+      .connect(buyer)
+      .buyExactTokensAuthorized(amountOut, maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, buyDeadline, buySignature, { value: maxCost });
+    await token.connect(buyer).approve(await campaign.getAddress(), amountOut);
+
+    const sellDeadline = (await latestTimestamp()) + 3600n;
+    const badSignerSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: attacker,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_SELL_EXACT_TOKENS,
+      amount: amountOut,
+      limit: 0n,
+      deadline: sellDeadline,
+    });
+    await expect(
+      campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, badSignerSignature)
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongActionSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: 0n,
+      deadline: sellDeadline,
+    });
+    await expect(
+      campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, wrongActionSignature)
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const wrongLimitSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_SELL_EXACT_TOKENS,
+      amount: amountOut,
+      limit: 1n,
+      deadline: sellDeadline,
+    });
+    await expect(
+      campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, wrongLimitSignature)
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+
+    const validSellSignature = await signTradeRoute({
+      campaign,
+      actor: buyer.address,
+      signer: routeAuthority,
+      routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+      action: ACTION_SELL_EXACT_TOKENS,
+      amount: amountOut,
+      limit: 0n,
+      deadline: sellDeadline,
+    });
+    await expect(
+      campaign.connect(buyer).sellExactTokensAuthorized(amountOut, 0, ROUTE_PROFILE_STANDARD_UNLINKED, sellDeadline, validSellSignature)
     ).to.emit(campaign, "TokensSold");
   });
 
