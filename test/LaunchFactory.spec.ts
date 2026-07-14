@@ -18,6 +18,50 @@ const baseReq = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+function asBigInt(value: unknown) {
+  return BigInt(value as string | number | bigint);
+}
+
+function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  return ethers.keccak256(
+    coder.encode(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256", "address"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes(req.name)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.logoURI)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.website)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+        asBigInt(req.basePrice),
+        asBigInt(req.priceSlope),
+        asBigInt(req.graduationTarget),
+        req.lpReceiver,
+      ]
+    )
+  );
+}
+
+async function signCreateRoute(
+  factory: any,
+  creator: string,
+  signer: any,
+  req: ReturnType<typeof baseReq>,
+  tradeProfile: number,
+  finalizeProfile: number,
+  deadline: bigint
+) {
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
+      ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), creator, hashCreateRouteRequest(req), tradeProfile, finalizeProfile, deadline]
+    )
+  );
+  return signer.signMessage(ethers.getBytes(digest));
+}
+
 async function latestTimestamp() {
   const block = await ethers.provider.getBlock("latest");
   return BigInt(block!.timestamp);
@@ -289,14 +333,10 @@ describe("LaunchFactory", function () {
     await factory.connect(owner).setRouteAuthority(await owner.getAddress());
 
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
-    const chainId = (await ethers.provider.getNetwork()).chainId;
-    const digest = ethers.solidityPackedKeccak256(
-      ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
-      ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), await creator.getAddress(), 2, 2, deadline]
-    );
-    const signature = await owner.signMessage(ethers.getBytes(digest));
+    const req = baseReq({ name: "RecruiterToken", symbol: "RCRT" });
+    const signature = await signCreateRoute(factory, await creator.getAddress(), owner, req, 2, 2, deadline);
 
-    await factory.connect(creator).createCampaignAuthorized(baseReq({ name: "RecruiterToken", symbol: "RCRT" }) as any, {
+    await factory.connect(creator).createCampaignAuthorized(req as any, {
       tradeRouteProfile: 2,
       finalizeRouteProfile: 2,
       deadline,
