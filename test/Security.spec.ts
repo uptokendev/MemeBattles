@@ -3,8 +3,6 @@ import { ethers } from "hardhat";
 
 import { deployCoreFixture } from "./fixtures/core";
 
-const DEAD = "0x000000000000000000000000000000000000dEaD";
-
 const req = (overrides: Record<string, unknown> = {}) => ({
   name: "T",
   symbol: "T",
@@ -149,19 +147,19 @@ describe("Security & invariants", function () {
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     const tokenAddr = await campaign.token();
 
-    const Pair = await ethers.getContractFactory("MockV2Pair");
-    const pair = await Pair.deploy();
-    await v2factory.setPair(tokenAddr, await router.WETH(), await pair.getAddress());
+    const Pool = await ethers.getContractFactory("MockTopazPool");
+    const pool = await Pool.deploy();
+    await v2factory.setPool(tokenAddr, await router.WETH(), false, await pool.getAddress());
 
     const curveSupply = await campaign.curveSupply();
     await campaign.connect(alice).buyExactTokens(curveSupply, ethers.MaxUint256, { value: ethers.parseEther("10") });
 
-    const reserves = await pair.getReserves();
+    const reserves = await pool.getReserves();
     expect(reserves[0]).to.be.gt(0);
     expect(reserves[1]).to.be.gt(0);
-    expect(await pair.totalSupply()).to.be.gt(0);
+    expect(await pool.totalSupply()).to.be.gt(0);
     const state = await campaign.getGraduationState();
-    expect(state[0]).to.equal(await pair.getAddress());
+    expect(state[0]).to.equal(await pool.getAddress());
   });
 
   it("reentrancy defense: feeRecipient cannot re-enter claimPendingNative during buy", async function () {
@@ -205,8 +203,8 @@ describe("Security & invariants", function () {
     expect(pending2).to.be.gt(0);
   });
 
-  it("LP burn cannot be bypassed: factory ignores user lpReceiver and liquidity is minted to DEAD", async function () {
-    const { owner, creator, alice, factory, router } = await deployCoreFixture();
+  it("LP lock cannot be bypassed: factory ignores user lpReceiver and liquidity LP is minted to locker", async function () {
+    const { owner, creator, alice, factory, router, permanentLpLocker } = await deployCoreFixture();
 
     await factory.connect(owner).setConfig({
       totalSupply: ethers.parseEther("1000"),
@@ -222,8 +220,9 @@ describe("Security & invariants", function () {
     const count = await factory.campaignsCount();
     const info = await factory.getCampaign(count - 1n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    const lockerAddress = await permanentLpLocker.getAddress();
 
-    expect(await campaign.lpReceiver()).to.equal(DEAD);
+    expect(await campaign.lpReceiver()).to.equal(lockerAddress);
 
     const curveSupply = await campaign.curveSupply();
     const tx = await campaign.connect(alice).buyExactTokens(curveSupply, ethers.MaxUint256, { value: ethers.parseEther("10") });
@@ -240,6 +239,12 @@ describe("Security & invariants", function () {
       } catch {}
     }
     expect(liqParsed).to.not.equal(null);
-    expect(liqParsed!.args[3]).to.equal(DEAD);
+    expect(liqParsed!.args[3]).to.equal(lockerAddress);
+
+    const state = await campaign.getGraduationState();
+    const lpToken = await ethers.getContractAt("MockTopazPool", state[0]);
+    expect(await permanentLpLocker.registeredLpToken(state[0])).to.equal(true);
+    expect(await permanentLpLocker.lockedBalance(state[0])).to.equal(state[5]);
+    expect(await lpToken.balanceOf(lockerAddress)).to.equal(state[5]);
   });
 });
