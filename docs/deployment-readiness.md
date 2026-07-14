@@ -61,14 +61,14 @@ The deployment verifier checks stable wiring and settings recorded at deploy tim
 
 ## Frontend Env Handoff
 
-After a local or testnet deployment JSON exists, export the frontend env block from the saved deployment instead of copying it from console output:
+`deploy.ts` and `deploy-and-verify.ts` automatically write `deployments/<network>.frontend.env` after a successful deploy. To regenerate the file later from an existing deployment JSON, run:
 
 ```bash
 npm run frontend:env
 npm run frontend:env:bsc-testnet
 ```
 
-By default this writes `deployments/<network>.frontend.env` and prints the same values to the console. Generated `*.frontend.env` files stay local and are ignored by git.
+The export command also prints the same values to the console. Generated `*.frontend.env` files stay local and are ignored by git.
 
 ## Required Real-Network Values
 
