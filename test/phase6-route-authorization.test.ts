@@ -5,6 +5,9 @@ import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 const STANDARD_LINKED = 0;
 const STANDARD_UNLINKED = 1;
 const OG_LINKED = 2;
+const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+const TRADE_AUTH_BUY_EXACT_BNB = 1;
+const TRADE_AUTH_SELL_EXACT_TOKENS = 2;
 
 function asBigInt(value: unknown) {
   return BigInt(value as string | number | bigint);
@@ -74,6 +77,9 @@ async function signTradeRouteAuth({
   campaign,
   actor,
   routeProfile,
+  action,
+  amount,
+  limit,
   deadline,
 }: {
   signer: any;
@@ -81,11 +87,16 @@ async function signTradeRouteAuth({
   campaign: string;
   actor: string;
   routeProfile: number;
+  action: number;
+  amount: bigint;
+  limit: bigint;
   deadline: bigint;
 }) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint64"],
-    ["MWZ_ROUTE_TRADE_AUTH", chainId, campaign, actor, routeProfile, deadline],
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      ["MWZ_ROUTE_TRADE_AUTH", chainId, campaign, actor, routeProfile, action, amount, limit, deadline],
+    ),
   );
   return signer.signMessage(ethers.getBytes(digest));
 }
@@ -288,6 +299,9 @@ describe("Phase 6 route authorization alignment", function () {
       campaign: campaignAddress,
       actor: trader.address,
       routeProfile: OG_LINKED,
+      action: TRADE_AUTH_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
       deadline,
     });
 
@@ -307,6 +321,35 @@ describe("Phase 6 route authorization alignment", function () {
       );
   });
 
+  it("rejects trade authorization when amount intent changes", async function () {
+    const fixture = await deployFixture();
+    const { trader, routeAuthority, chainId } = fixture;
+    const { campaign, campaignAddress } = await createAuthorizedCampaign(fixture, STANDARD_UNLINKED, STANDARD_UNLINKED);
+
+    const amountOut = ethers.parseEther("1000");
+    const tamperedAmountOut = ethers.parseEther("1001");
+    const maxCost = await campaign.quoteBuyExactTokens(amountOut);
+    const tamperedMaxCost = await campaign.quoteBuyExactTokens(tamperedAmountOut);
+    const deadline = await currentDeadline();
+    const signature = await signTradeRouteAuth({
+      signer: routeAuthority,
+      chainId,
+      campaign: campaignAddress,
+      actor: trader.address,
+      routeProfile: OG_LINKED,
+      action: TRADE_AUTH_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
+      deadline,
+    });
+
+    await expect(
+      campaign.connect(trader).buyExactTokensAuthorized(tamperedAmountOut, tamperedMaxCost, OG_LINKED, deadline, signature, {
+        value: tamperedMaxCost,
+      }),
+    ).to.be.revertedWithCustomError(campaign, "BadRouteAuth");
+  });
+
   it("rejects trade authorization for the wrong actor", async function () {
     const fixture = await deployFixture();
     const { trader, creator, routeAuthority, chainId } = fixture;
@@ -321,6 +364,9 @@ describe("Phase 6 route authorization alignment", function () {
       campaign: campaignAddress,
       actor: creator.address,
       routeProfile: STANDARD_LINKED,
+      action: TRADE_AUTH_BUY_EXACT_TOKENS,
+      amount: amountOut,
+      limit: maxCost,
       deadline,
     });
 
