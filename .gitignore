@@ -6,6 +6,8 @@ coverage.json
 dist
 .env
 
+deployments/*.frontend.env
+
 # Local Netlify folder
 .netlify
 
