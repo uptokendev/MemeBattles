@@ -6,6 +6,7 @@ contract MockV2Pair {
     address public token0;
     address public token1;
     uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
     uint112 private _r0;
     uint112 private _r1;
     uint32 private _ts;
@@ -16,7 +17,21 @@ contract MockV2Pair {
     }
 
     function setTotalSupply(uint256 v) external {
+        uint256 currentBalance = balanceOf[msg.sender];
+        if (v > totalSupply) {
+            uint256 delta = v - totalSupply;
+            balanceOf[msg.sender] = currentBalance + delta;
+        } else if (v < totalSupply) {
+            uint256 delta = totalSupply - v;
+            require(currentBalance >= delta, "insufficient mock balance");
+            balanceOf[msg.sender] = currentBalance - delta;
+        }
         totalSupply = v;
+    }
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        totalSupply += amount;
     }
 
     function setReserves(uint112 r0, uint112 r1) external {
