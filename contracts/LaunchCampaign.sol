@@ -723,7 +723,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requirePriceWithinTolerance(uint256 actualPrice, uint256 expectedPrice) internal pure {
-        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - expectedPrice;
+        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
         if (Math.mulDiv(diff, MAX_BPS, expectedPrice) > GRADUATION_PRICE_TOLERANCE_BPS) revert DexPriceDrift();
     }
 
