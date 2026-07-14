@@ -57,6 +57,8 @@ npm run verify:deployment:bsc-testnet
 npm run verify:route-authority:bsc-testnet
 ```
 
+The deployment verifier checks stable wiring and settings recorded at deploy time, including factory owner, protocol fee, router, treasury router, campaign implementation, graduation oracle, LP locker, registries, route profiles, route authority, vault admin wiring, and pending multisig/admin actions. It does not freeze mutable operational posture such as live/pause flags because those may change after rollout.
+
 ## Required Real-Network Values
 
 Use real testnet-controlled values for:
