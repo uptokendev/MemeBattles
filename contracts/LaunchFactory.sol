@@ -106,6 +106,9 @@ contract LaunchFactory is Ownable {
     bool public globalPaused;
     bool public createPaused;
     bool public requireAuthorizedTrading;
+    uint256 public launchProtectionBlocks;
+    uint256 public launchProtectionMaxBuyWei;
+    uint256 public launchProtectionMaxWalletWei;
 
     uint256 public constant LEAGUE_FEE_BPS = 75;
     uint256 public constant DEFAULT_GRADUATION_USD_THRESHOLD = 30_000 ether;
@@ -140,6 +143,7 @@ contract LaunchFactory is Ownable {
     event ProtocolFeeUpdated(uint256 newFeeBps);
     event RouteProfilesUpdated(uint8 tradeRouteProfile, uint8 finalizeRouteProfile);
     event RouteAuthorityUpdated(address indexed newAuthority);
+    event LaunchProtectionConfigUpdated(uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei);
     event LiveEnabled(uint64 at);
     event GlobalPauseUpdated(bool paused);
     event CreatePauseUpdated(bool paused);
@@ -340,6 +344,17 @@ contract LaunchFactory is Ownable {
     function setRouteAuthority(address newAuthority) external onlyOwner {
         routeAuthority = newAuthority;
         emit RouteAuthorityUpdated(newAuthority);
+    }
+
+    function setLaunchProtectionConfig(uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei) external onlyOwner whenMutable {
+        launchProtectionBlocks = blocks_;
+        launchProtectionMaxBuyWei = maxBuyWei;
+        launchProtectionMaxWalletWei = maxWalletWei;
+        emit LaunchProtectionConfigUpdated(blocks_, maxBuyWei, maxWalletWei);
+    }
+
+    function launchProtectionConfig() external view returns (uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei) {
+        return (launchProtectionBlocks, launchProtectionMaxBuyWei, launchProtectionMaxWalletWei);
     }
 
     function setRegistries(address newCreatorRegistry, address newRiskRegistry) external onlyOwner {
