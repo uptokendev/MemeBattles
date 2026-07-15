@@ -5,6 +5,7 @@ import path from "node:path";
 import { ethers } from "hardhat";
 import {
   assertCode,
+  assertTopazRouter,
   hardhatEphemeralHint,
   loadDeployment,
   pickAddress,
@@ -123,5 +124,24 @@ describe("verify-deployment helpers", function () {
     await distributor.waitForDeployment();
 
     await assertCode("RewardDistributor", await distributor.getAddress());
+  });
+
+  it("accepts deployed Topaz-style routers and rejects non-router contracts with code", async () => {
+    const [owner] = await ethers.getSigners();
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
+
+    const TopazRouter = await ethers.getContractFactory("MockTopazRouter");
+    const topazRouter = await TopazRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
+    await topazRouter.waitForDeployment();
+
+    await assertTopazRouter("TopazRouter", await topazRouter.getAddress());
+
+    const RewardDistributor = await ethers.getContractFactory("RewardDistributor");
+    const distributor = await RewardDistributor.deploy(await owner.getAddress());
+    await distributor.waitForDeployment();
+
+    await expectRejects(assertTopazRouter("TopazRouter", await distributor.getAddress()), "does not expose the Topaz router");
   });
 });
