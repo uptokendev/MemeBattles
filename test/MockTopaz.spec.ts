@@ -1,6 +1,8 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
+const addTopazLiquidity = "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)";
+
 describe("MockTopaz factory/router", function () {
   async function deployFixture() {
     const [owner, recipient, other] = await ethers.getSigners();
@@ -27,18 +29,21 @@ describe("MockTopaz factory/router", function () {
     const tokenAAddress = await tokenA.getAddress();
     const tokenBAddress = await tokenB.getAddress();
 
-    const volatilePoolAddress = await factory.createPool.staticCall(tokenAAddress, tokenBAddress, false);
     await factory.createPool(tokenAAddress, tokenBAddress, false);
-    const stablePoolAddress = await factory.createPool.staticCall(tokenBAddress, tokenAAddress, true);
+    const volatilePoolAddress = await factory.getPool(tokenAAddress, tokenBAddress, false);
+    await factory.createPool(tokenBAddress, tokenAAddress, false);
+    expect(await factory.getPool(tokenAAddress, tokenBAddress, false)).to.eq(volatilePoolAddress);
+
     await factory.createPool(tokenBAddress, tokenAAddress, true);
+    const stablePoolAddress = await factory.getPool(tokenAAddress, tokenBAddress, true);
+    await factory.createPool(tokenAAddress, tokenBAddress, true);
+    expect(await factory.getPool(tokenBAddress, tokenAAddress, true)).to.eq(stablePoolAddress);
 
     expect(volatilePoolAddress).to.not.eq(ethers.ZeroAddress);
     expect(stablePoolAddress).to.not.eq(ethers.ZeroAddress);
     expect(volatilePoolAddress).to.not.eq(stablePoolAddress);
-    expect(await factory.getPool(tokenAAddress, tokenBAddress, false)).to.eq(volatilePoolAddress);
     expect(await factory.getPool(tokenBAddress, tokenAAddress, false)).to.eq(volatilePoolAddress);
     expect(await factory.getPair(tokenAAddress, tokenBAddress)).to.eq(volatilePoolAddress);
-    expect(await factory.getPool(tokenAAddress, tokenBAddress, true)).to.eq(stablePoolAddress);
 
     const volatilePool = await ethers.getContractAt("MockTopazPool", volatilePoolAddress);
     const stablePool = await ethers.getContractAt("MockTopazPool", stablePoolAddress);
@@ -76,7 +81,7 @@ describe("MockTopaz factory/router", function () {
     await tokenA.connect(owner).approve(await router.getAddress(), tokenAmount);
 
     await expect(
-      router.connect(owner).addLiquidityETH(tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 123456n, {
+      router.connect(owner)[addTopazLiquidity](tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 123456n, {
         value: bnbAmount,
       })
     )
@@ -103,14 +108,14 @@ describe("MockTopaz factory/router", function () {
     await tokenA.connect(owner).mint(await owner.getAddress(), tokenAmount * 2n);
     await tokenA.connect(owner).approve(await router.getAddress(), tokenAmount * 2n);
 
-    await router.connect(owner).addLiquidityETH(tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
+    await router.connect(owner)[addTopazLiquidity](tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
       value: bnbAmount,
     });
     const poolAddress = await factory.getPool(tokenAddress, await router.WETH(), false);
     const pool = await ethers.getContractAt("MockTopazPool", poolAddress);
     const firstSupply = await pool.totalSupply();
 
-    await router.connect(owner).addLiquidityETH(tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
+    await router.connect(owner)[addTopazLiquidity](tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
       value: bnbAmount,
     });
 
@@ -127,7 +132,7 @@ describe("MockTopaz factory/router", function () {
     await tokenA.connect(owner).approve(await router.getAddress(), tokenAmount);
 
     await expect(
-      router.connect(owner).addLiquidityETH(await tokenA.getAddress(), true, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
+      router.connect(owner)[addTopazLiquidity](await tokenA.getAddress(), true, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
         value: ethers.parseEther("0.01"),
       })
     ).to.be.revertedWith("stable pool unsupported");
