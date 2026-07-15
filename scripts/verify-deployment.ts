@@ -21,13 +21,13 @@ function assertTrue(label: string, value: boolean) {
   console.log(`[verify] ${label}: ok`);
 }
 
-function hardhatEphemeralHint() {
+export function hardhatEphemeralHint() {
   return network.name === "hardhat"
     ? " Hardhat's default network is ephemeral between commands; use npm run deploy:verify, or verify against a persistent localhost/testnet network."
     : "";
 }
 
-async function assertCode(label: string, address: string) {
+export async function assertCode(label: string, address: string) {
   if (!address || address === ethers.ZeroAddress) {
     throw new Error(
       `${label}: missing address in deployment file. Redeploy with the current scripts/deploy.ts or update DEPLOYMENT_FILE to a current deployment JSON.`
@@ -38,7 +38,7 @@ async function assertCode(label: string, address: string) {
   console.log(`[verify] ${label} code: ok`);
 }
 
-function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
+export function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
   const contracts = deployment.contracts ?? {};
   for (const key of [canonicalName, ...fallbacks]) {
     const fromContracts = contracts[key];
@@ -49,7 +49,7 @@ function pickAddress(deployment: any, canonicalName: string, fallbacks: string[]
   return "";
 }
 
-function resolveContracts(deployment: any) {
+export function resolveContracts(deployment: any) {
   return {
     TreasuryVaultV2: pickAddress(deployment, "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]),
     TreasuryRouter: pickAddress(deployment, "TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]),
