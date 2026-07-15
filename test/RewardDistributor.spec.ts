@@ -94,6 +94,30 @@ describe("RewardDistributor", function () {
     expect(batch.exists).to.eq(true);
   });
 
+  it("restricts owner-only operator and global pause controls", async () => {
+    const { distributor, owner, operator, other } = await deployFixture();
+    const operatorAddress = await operator.getAddress();
+    const otherAddress = await other.getAddress();
+
+    await expect(distributor.connect(other).setBatchOperator(operatorAddress))
+      .to.be.revertedWithCustomError(distributor, "OwnableUnauthorizedAccount")
+      .withArgs(otherAddress);
+    await expect(distributor.connect(other).pause())
+      .to.be.revertedWithCustomError(distributor, "OwnableUnauthorizedAccount")
+      .withArgs(otherAddress);
+    await expect(distributor.connect(other).unpause())
+      .to.be.revertedWithCustomError(distributor, "OwnableUnauthorizedAccount")
+      .withArgs(otherAddress);
+
+    await distributor.connect(owner).setBatchOperator(operatorAddress);
+    expect(await distributor.batchOperator()).to.eq(operatorAddress);
+
+    await distributor.connect(owner).pause();
+    expect(await distributor.paused()).to.eq(true);
+    await distributor.connect(owner).unpause();
+    expect(await distributor.paused()).to.eq(false);
+  });
+
   it("rejects unauthorized or malformed batch creation", async () => {
     const { distributor, owner, user, other } = await deployFixture();
     const batchId = ethers.id("bad-batch");
@@ -136,6 +160,27 @@ describe("RewardDistributor", function () {
       distributor,
       "InvalidProof"
     );
+  });
+
+  it("blocks claims while globally paused and allows them after unpause", async () => {
+    const { distributor, owner, user } = await deployFixture();
+    const amount = ethers.parseEther("0.1");
+    const batchId = ethers.id("global-pause-airdrop");
+    const root = leafFor(await user.getAddress(), amount);
+
+    await distributor.connect(owner).createBatch(batchId, root, 0, { value: amount });
+    await distributor.connect(owner).pause();
+
+    await expect(distributor.connect(user).claim(batchId, amount, [])).to.be.revertedWithCustomError(
+      distributor,
+      "EnforcedPause"
+    );
+    expect(await distributor.hasClaimed(batchId, await user.getAddress())).to.eq(false);
+
+    await distributor.connect(owner).unpause();
+    await expect(distributor.connect(user).claim(batchId, amount, []))
+      .to.emit(distributor, "RewardClaimed")
+      .withArgs(batchId, await user.getAddress(), amount);
   });
 
   it("blocks claims when a batch is paused", async () => {
@@ -236,6 +281,28 @@ describe("RewardDistributor", function () {
       [-amount, amount]
     );
     expect(await distributor.unclaimed(batchId)).to.eq(0n);
+  });
+
+  it("rolls back recovered accounting when the recovery recipient rejects BNB", async () => {
+    const { distributor, owner, user } = await deployFixture();
+    const RevertingReceiver = await ethers.getContractFactory("RevertingReceiver");
+    const rejectingReceiver = await RevertingReceiver.deploy();
+    await rejectingReceiver.waitForDeployment();
+
+    const amount = ethers.parseEther("0.25");
+    const batchId = ethers.id("recovery-transfer-failure");
+    const root = leafFor(await user.getAddress(), amount);
+    const now = (await ethers.provider.getBlock("latest"))!.timestamp;
+
+    await distributor.connect(owner).createBatch(batchId, root, now + 10, { value: amount });
+    await increaseTime(11);
+
+    await expect(distributor.connect(owner).recoverUnclaimed(batchId, await rejectingReceiver.getAddress())).to.be.revertedWithCustomError(
+      distributor,
+      "TransferFailed"
+    );
+    expect(await distributor.unclaimed(batchId)).to.eq(amount);
+    expect(await ethers.provider.getBalance(await distributor.getAddress())).to.eq(amount);
   });
 
   it("rejects recovery for missing, open-ended, or fully claimed batches", async () => {
