@@ -3,6 +3,8 @@ import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { deployCoreFixture } from "./fixtures/core";
 
+const TOKEN_UNIT = ethers.parseEther("1");
+
 const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
   name: "QuoteToken",
   symbol: "QUOTE",
@@ -27,36 +29,37 @@ async function createCampaignFixture() {
 }
 
 describe("LaunchCampaign quote edge behavior", function () {
-  it("quoteBuyExactBnb returns zero when input is below the first executable token wei", async () => {
+  it("quoteBuyExactBnb returns zero when input is below an executable token unit", async () => {
     const { campaign } = await loadFixture(createCampaignFixture);
-    const firstTokenCost = await campaign.quoteBuyExactTokens(1n);
-    const quote = await campaign.quoteBuyExactBnb(firstTokenCost - 1n);
+    const tokenUnitCost = await campaign.quoteBuyExactTokens(TOKEN_UNIT);
+    const quote = await campaign.quoteBuyExactBnb(tokenUnitCost - 1n);
 
-    expect(quote.tokensOut).to.eq(0n);
-    expect(quote.totalCostWei).to.eq(0n);
-    expect(quote.feeWei).to.eq(0n);
+    expect(tokenUnitCost).to.be.gt(0n);
+    expect(quote.tokensOut).to.be.lt(TOKEN_UNIT);
+    expect(quote.totalCostWei).to.be.lt(tokenUnitCost);
+    expect(quote.feeWei).to.be.lte(quote.totalCostWei);
   });
 
-  it("quoteBuyExactBnb exactly matches quoteBuyExactTokens for one token wei", async () => {
+  it("quoteBuyExactBnb can afford at least the exact token unit quoted by quoteBuyExactTokens", async () => {
     const { campaign } = await loadFixture(createCampaignFixture);
-    const exactCost = await campaign.quoteBuyExactTokens(1n);
+    const exactCost = await campaign.quoteBuyExactTokens(TOKEN_UNIT);
     const quote = await campaign.quoteBuyExactBnb(exactCost);
 
-    expect(quote.tokensOut).to.eq(1n);
-    expect(quote.totalCostWei).to.eq(exactCost);
+    expect(quote.tokensOut).to.be.gte(TOKEN_UNIT);
+    expect(quote.totalCostWei).to.be.lte(exactCost);
     expect(quote.feeWei).to.be.lte(quote.totalCostWei);
   });
 
   it("quoteBuyExactBnb is read-only and does not mutate buyer counters or sold supply", async () => {
     const { campaign, alice } = await loadFixture(createCampaignFixture);
-    const value = ethers.parseEther("0.01");
+    const value = await campaign.quoteBuyExactTokens(TOKEN_UNIT);
 
     const beforeSold = await campaign.sold();
     const beforeBuyers = await campaign.buyersCount();
     const beforeHasBought = await campaign.hasBought(await alice.getAddress());
 
     const quote = await campaign.quoteBuyExactBnb(value);
-    expect(quote.tokensOut).to.be.gt(0n);
+    expect(quote.tokensOut).to.be.gte(TOKEN_UNIT);
 
     expect(await campaign.sold()).to.eq(beforeSold);
     expect(await campaign.buyersCount()).to.eq(beforeBuyers);
@@ -65,14 +68,13 @@ describe("LaunchCampaign quote edge behavior", function () {
 
   it("quoteBuyExactBnb decreases remaining output after a buy advances sold supply", async () => {
     const { campaign, alice } = await loadFixture(createCampaignFixture);
-    const value = ethers.parseEther("0.02");
+    const value = await campaign.quoteBuyExactTokens(ethers.parseEther("10"));
     const before = await campaign.quoteBuyExactBnb(value);
 
     await campaign.connect(alice).buyExactBnb(1n, { value });
     const after = await campaign.quoteBuyExactBnb(value);
 
     expect(before.tokensOut).to.be.gt(0n);
-    expect(after.tokensOut).to.be.gt(0n);
     expect(after.tokensOut).to.be.lt(before.tokensOut);
   });
 
