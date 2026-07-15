@@ -30,6 +30,26 @@ async function deployLockerFixture() {
 }
 
 describe("PermanentLpLocker", function () {
+  it("constructor and admin methods reject zero addresses and zero recovery amounts", async () => {
+    const Locker = await ethers.getContractFactory("PermanentLpLocker");
+    await expect(Locker.deploy(ethers.ZeroAddress)).to.be.revertedWithCustomError(Locker, "ZeroAddress");
+
+    const { owner, bob, locker, lpToken, unrelatedToken } = await deployLockerFixture();
+    await expect(locker.connect(owner).registerLpToken(ethers.ZeroAddress)).to.be.revertedWithCustomError(locker, "ZeroAddress");
+    await expect(
+      locker.connect(owner).recoverUnregisteredToken(ethers.ZeroAddress, await bob.getAddress(), 1n)
+    ).to.be.revertedWithCustomError(locker, "ZeroAddress");
+    await expect(
+      locker.connect(owner).recoverUnregisteredToken(await unrelatedToken.getAddress(), ethers.ZeroAddress, 1n)
+    ).to.be.revertedWithCustomError(locker, "ZeroAddress");
+    await expect(
+      locker.connect(owner).recoverUnregisteredToken(await unrelatedToken.getAddress(), await bob.getAddress(), 0n)
+    ).to.be.revertedWithCustomError(locker, "ZeroAmount");
+
+    await locker.connect(owner).registerLpToken(await lpToken.getAddress());
+    await expect(locker.connect(owner).lock(await lpToken.getAddress(), 0n)).to.be.revertedWithCustomError(locker, "ZeroAmount");
+  });
+
   it("registers LP tokens by immutable admin only", async () => {
     const { owner, bob, locker, lpToken } = await deployLockerFixture();
 
@@ -65,6 +85,42 @@ describe("PermanentLpLocker", function () {
     expect(await locker.lockedByDepositor(await lpToken.getAddress(), await alice.getAddress())).to.equal(amount);
   });
 
+  it("accumulates multiple depositor locks without mixing depositor accounting", async () => {
+    const { owner, alice, bob, locker, lpToken } = await deployLockerFixture();
+    const aliceAmount = ethers.parseEther("5");
+    const bobAmount = ethers.parseEther("7");
+    const lpTokenAddress = await lpToken.getAddress();
+    const lockerAddress = await locker.getAddress();
+
+    await lpToken.connect(owner).mint(await bob.getAddress(), bobAmount);
+    await locker.connect(owner).registerLpToken(lpTokenAddress);
+    await lpToken.connect(alice).approve(lockerAddress, aliceAmount);
+    await lpToken.connect(bob).approve(lockerAddress, bobAmount);
+
+    await locker.connect(alice).lock(lpTokenAddress, aliceAmount);
+    await expect(locker.connect(bob).lock(lpTokenAddress, bobAmount))
+      .to.emit(locker, "LpPermanentlyLocked")
+      .withArgs(lpTokenAddress, await bob.getAddress(), bobAmount, aliceAmount + bobAmount);
+
+    expect(await locker.lockedBalance(lpTokenAddress)).to.equal(aliceAmount + bobAmount);
+    expect(await locker.lockedByDepositor(lpTokenAddress, await alice.getAddress())).to.equal(aliceAmount);
+    expect(await locker.lockedByDepositor(lpTokenAddress, await bob.getAddress())).to.equal(bobAmount);
+    expect(await lpToken.balanceOf(lockerAddress)).to.equal(aliceAmount + bobAmount);
+  });
+
+  it("failed token transfers cannot create phantom locked balances", async () => {
+    const { owner, alice, locker, lpToken } = await deployLockerFixture();
+    const amount = ethers.parseEther("1");
+    const lpTokenAddress = await lpToken.getAddress();
+
+    await locker.connect(owner).registerLpToken(lpTokenAddress);
+    await expect(locker.connect(alice).lock(lpTokenAddress, amount)).to.be.reverted;
+
+    expect(await locker.lockedBalance(lpTokenAddress)).to.equal(0n);
+    expect(await locker.lockedByDepositor(lpTokenAddress, await alice.getAddress())).to.equal(0n);
+    expect(await lpToken.balanceOf(await locker.getAddress())).to.equal(0n);
+  });
+
   it("marks LP already held by the locker as permanently locked on registration", async () => {
     const { owner, locker, lpToken } = await deployLockerFixture();
     const amount = ethers.parseEther("8");
@@ -80,6 +136,24 @@ describe("PermanentLpLocker", function () {
     expect(await locker.lockedBalance(lpTokenAddress)).to.equal(amount);
     expect(await locker.lockedByDepositor(lpTokenAddress, lockerAddress)).to.equal(amount);
     expect(await lpToken.balanceOf(lockerAddress)).to.equal(amount);
+  });
+
+  it("keeps registered LP unrecoverable even when LP is sent directly to the locker", async () => {
+    const { owner, bob, locker, lpToken } = await deployLockerFixture();
+    const lockerAddress = await locker.getAddress();
+    const lpTokenAddress = await lpToken.getAddress();
+    const beforeRegistrationAmount = ethers.parseEther("3");
+    const afterRegistrationAmount = ethers.parseEther("2");
+
+    await lpToken.connect(owner).mint(lockerAddress, beforeRegistrationAmount);
+    await locker.connect(owner).registerLpToken(lpTokenAddress);
+    await lpToken.connect(owner).mint(lockerAddress, afterRegistrationAmount);
+
+    await expect(
+      locker.connect(owner).recoverUnregisteredToken(lpTokenAddress, await bob.getAddress(), beforeRegistrationAmount + afterRegistrationAmount)
+    ).to.be.revertedWithCustomError(locker, "RegisteredLpRecoveryBlocked");
+    expect(await lpToken.balanceOf(lockerAddress)).to.equal(beforeRegistrationAmount + afterRegistrationAmount);
+    expect(await lpToken.balanceOf(await bob.getAddress())).to.equal(0n);
   });
 
   it("rejects unregistered LP locks and zero amount locks", async () => {
