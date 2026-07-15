@@ -16,7 +16,7 @@ describe("ReenteringFeeRecipient edge cases", function () {
     await recipient.setTarget(await target.getAddress());
     await recipient.setMode(1);
 
-    expect(await recipient.target()).to.eq(await target.getAddress());
+    expect(await recipient.getFunction("target")()).to.eq(await target.getAddress());
     expect(await recipient.mode()).to.eq(1n);
   });
 
