@@ -40,11 +40,20 @@ function deployment(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function runExport(args: string[], env: Record<string, string | undefined>) {
+function runExport(args: string[], overrides: Record<string, string | undefined>) {
   const script = path.join(process.cwd(), "scripts", "export-frontend-env.cjs");
+  const env = { ...process.env };
+  delete env.DEPLOYMENT_FILE;
+  delete env.FRONTEND_ENV_FILE;
+  delete env.HARDHAT_NETWORK;
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+
   return spawnSync(process.execPath, [script, ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, ...env },
+    env,
     encoding: "utf8",
   });
 }
