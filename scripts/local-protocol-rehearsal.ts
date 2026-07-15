@@ -3,6 +3,8 @@ import { deployProtocol } from "./lib/deployProtocol";
 import { verifyDeployment } from "./verify-deployment";
 
 const MAX_BPS = 10_000n;
+const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
+const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
 
 function logStep(label: string, value?: unknown) {
   if (value === undefined) console.log(`[rehearsal] ${label}`);
@@ -15,9 +17,82 @@ function requireLocalNetwork() {
   }
 }
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function signTradeRoute(params: {
+  campaign: any;
+  actor: string;
+  signer: any;
+  routeProfile: number;
+  action: number;
+  amount: bigint;
+  limit: bigint;
+  deadline: bigint;
+}) {
+  const { chainId } = await ethers.provider.getNetwork();
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
+      [
+        "MWZ_ROUTE_TRADE_AUTH",
+        chainId,
+        await params.campaign.getAddress(),
+        params.actor,
+        params.routeProfile,
+        params.action,
+        params.amount,
+        params.limit,
+        params.deadline,
+      ]
+    )
+  );
+  return params.signer.signMessage(ethers.getBytes(digest));
+}
+
+async function expectRevert(promise: Promise<unknown>, expected: string) {
+  try {
+    await promise;
+  } catch (error: any) {
+    if (!String(error.message).includes(expected)) throw error;
+    return;
+  }
+  throw new Error(`Expected revert including ${expected}`);
+}
+
+async function authorizedBuyExactTokens(params: {
+  campaign: any;
+  buyer: any;
+  routeAuthority: any;
+  amountOut: bigint;
+  maxCost: bigint;
+}) {
+  const deadline = (await latestTimestamp()) + 3600n;
+  const signature = await signTradeRoute({
+    campaign: params.campaign,
+    actor: await params.buyer.getAddress(),
+    signer: params.routeAuthority,
+    routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+    action: TRADE_AUTH_BUY_EXACT_TOKENS,
+    amount: params.amountOut,
+    limit: params.maxCost,
+    deadline,
+  });
+
+  await (
+    await params.campaign
+      .connect(params.buyer)
+      .buyExactTokensAuthorized(params.amountOut, params.maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, {
+        value: params.maxCost,
+      })
+  ).wait();
+}
+
 async function main() {
   requireLocalNetwork();
-  const [, creator, buyer] = await ethers.getSigners();
+  const [, creator, buyer, routeAuthority] = await ethers.getSigners();
 
   logStep("deploying protocol");
   const deployment = await deployProtocol();
@@ -38,6 +113,16 @@ async function main() {
 
   logStep("configuring compact local curve");
   await (await factory.setConfig(rehearsalConfig)).wait();
+
+  if ((await factory.routeAuthority()).toLowerCase() !== (await routeAuthority.getAddress()).toLowerCase()) {
+    logStep("setting rehearsal route authority", await routeAuthority.getAddress());
+    await (await factory.setRouteAuthority(await routeAuthority.getAddress())).wait();
+  }
+
+  if (!(await factory.requireAuthorizedTrading())) {
+    logStep("requiring authorized trading for rehearsal campaign");
+    await (await factory.setRequireAuthorizedTrading(true)).wait();
+  }
 
   if (!(await factory.live())) {
     logStep("enabling live mode");
@@ -63,14 +148,28 @@ async function main() {
   const campaign = await ethers.getContractAt("LaunchCampaign", campaignInfo.campaign);
   const token = await ethers.getContractAt("LaunchToken", campaignInfo.token);
 
+  const probeAmount = ethers.parseEther("1");
+  const probeCost = await campaign.quoteBuyExactTokens(probeAmount);
+  await expectRevert(campaign.connect(buyer).buyExactTokens(probeAmount, probeCost, { value: probeCost }), "AuthorizedTradingRequired");
+  logStep("direct trade blocked by route authorization");
+  await authorizedBuyExactTokens({ campaign, buyer, routeAuthority, amountOut: probeAmount, maxCost: probeCost });
+  logStep("authorized probe buy complete", { amountOut: probeAmount.toString(), cost: probeCost.toString() });
+
   const curveSupply = await campaign.curveSupply();
-  const fullCurveCost = await campaign.quoteBuyExactTokens(curveSupply);
-  logStep("buying full curve supply", {
-    curveSupply: curveSupply.toString(),
-    fullCurveCost: fullCurveCost.toString(),
+  const remainingCurveSupply = curveSupply - (await campaign.sold());
+  const crossingBuyCost = await campaign.quoteBuyExactTokens(remainingCurveSupply);
+  logStep("buying remaining curve supply through signed route", {
+    remainingCurveSupply: remainingCurveSupply.toString(),
+    crossingBuyCost: crossingBuyCost.toString(),
   });
 
-  await (await campaign.connect(buyer).buyExactTokens(curveSupply, fullCurveCost, { value: fullCurveCost })).wait();
+  await authorizedBuyExactTokens({
+    campaign,
+    buyer,
+    routeAuthority,
+    amountOut: remainingCurveSupply,
+    maxCost: crossingBuyCost,
+  });
 
   if (!(await campaign.launched())) throw new Error("campaign did not graduate during crossing buy");
   if ((await campaign.sold()) !== curveSupply) throw new Error("campaign sold supply mismatch after crossing buy");
