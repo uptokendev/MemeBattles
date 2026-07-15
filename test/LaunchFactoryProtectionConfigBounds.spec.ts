@@ -42,6 +42,17 @@ describe("LaunchFactory launch protection config bounds", function () {
     );
   });
 
+  it("accepts independent per-buy and wallet caps so either guard can be the tighter bound", async () => {
+    const { factory, owner } = await deployCoreFixture();
+    const maxBuyWei = ethers.parseEther("1");
+    const maxWalletWei = ethers.parseEther("0.000015");
+
+    await expect(factory.connect(owner).setLaunchProtectionConfig(30n, maxBuyWei, maxWalletWei))
+      .to.emit(factory, "LaunchProtectionConfigUpdated")
+      .withArgs(30n, maxBuyWei, maxWalletWei);
+    await expectLaunchProtectionConfig(factory, 30n, maxBuyWei, maxWalletWei);
+  });
+
   it("rejects every launch protection bound overflow", async () => {
     const { factory, owner } = await deployCoreFixture();
 
@@ -56,14 +67,5 @@ describe("LaunchFactory launch protection config bounds", function () {
     await expect(
       factory.connect(owner).setLaunchProtectionConfig(0n, 0n, MAX_LAUNCH_PROTECTION_WALLET_WEI + 1n)
     ).to.be.revertedWithCustomError(factory, "LaunchProtectionBounds");
-  });
-
-  it("rejects per-buy caps that exceed the protected wallet cap when both caps are enabled", async () => {
-    const { factory, owner } = await deployCoreFixture();
-
-    await expect(factory.connect(owner).setLaunchProtectionConfig(10n, ethers.parseEther("2"), ethers.parseEther("1"))).to.be.revertedWithCustomError(
-      factory,
-      "LaunchProtectionBounds"
-    );
   });
 });
