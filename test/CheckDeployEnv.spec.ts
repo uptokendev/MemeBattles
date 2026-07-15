@@ -1,5 +1,7 @@
 import { expect } from "chai";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const VALID_ADDRESS = "0x1111111111111111111111111111111111111111";
@@ -57,11 +59,16 @@ function cleanEnv(overrides: Record<string, string | undefined> = {}) {
 
 function runCheck(target?: string, overrides: Record<string, string | undefined> = {}) {
   const script = path.join(process.cwd(), "scripts", "check-deploy-env.cjs");
-  return spawnSync(process.execPath, target ? [script, target] : [script], {
-    cwd: process.cwd(),
-    env: cleanEnv(overrides),
-    encoding: "utf8",
-  });
+  const isolatedCwd = mkdtempSync(path.join(tmpdir(), "mwz-check-env-"));
+  try {
+    return spawnSync(process.execPath, target ? [script, target] : [script], {
+      cwd: isolatedCwd,
+      env: cleanEnv(overrides),
+      encoding: "utf8",
+    });
+  } finally {
+    rmSync(isolatedCwd, { recursive: true, force: true });
+  }
 }
 
 describe("check-deploy-env script", function () {
