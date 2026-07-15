@@ -20,6 +20,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["deploy:verify:bsc-testnet"]).to.eq("hardhat run scripts/deploy-and-verify.ts --network bscTestnet");
     expect(pkg.scripts["verify:deployment"]).to.eq("hardhat run scripts/verify-deployment.ts");
     expect(pkg.scripts["verify:route-authority"]).to.eq("hardhat run scripts/verify-route-authority.cjs");
+    expect(pkg.scripts["protocol:rehearsal"]).to.eq("hardhat run scripts/local-protocol-rehearsal.ts");
   });
 
   it("keeps frontend ABI and env export scripts wired", async () => {
