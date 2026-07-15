@@ -56,6 +56,15 @@ describe("TreasuryVaultV2", function () {
     await vault.connect(multisig).setClaimsPaused(false);
   }
 
+  it("rejects a zero multisig constructor argument", async () => {
+    const [, operatorSigner, rootPosterSigner] = await ethers.getSigners();
+    const Vault = await ethers.getContractFactory("TreasuryVaultV2");
+
+    await expect(
+      Vault.deploy(ethers.ZeroAddress, await operatorSigner.getAddress(), await rootPosterSigner.getAddress())
+    ).to.be.revertedWith("multisig=0");
+  });
+
   it("constructor sets multisig/operator/rootPoster, starts paused, and accepts deposits", async () => {
     const { vault, multisig, operatorSigner, rootPosterSigner } = await deploy();
     expect(await vault.multisig()).to.eq(await multisig.getAddress());
@@ -178,6 +187,22 @@ describe("TreasuryVaultV2", function () {
     );
   });
 
+  it("payout transfer failure rolls back daily accounting", async () => {
+    const { vault, multisig, operatorSigner } = await deploy();
+    const RevertingReceiver = await ethers.getContractFactory("RevertingReceiver");
+    const rejectingReceiver = await RevertingReceiver.deploy();
+    await rejectingReceiver.waitForDeployment();
+
+    await operatorSigner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("1") });
+    await configurePayoutLane(vault, multisig);
+
+    await expect(vault.connect(operatorSigner).payout(await rejectingReceiver.getAddress(), 1n)).to.be.revertedWith(
+      "transfer failed"
+    );
+    expect(await vault.dailySpent()).to.eq(0n);
+    expect(await ethers.provider.getBalance(await vault.getAddress())).to.eq(ethers.parseEther("1"));
+  });
+
   it("rootPoster can set epoch root once; others cannot", async () => {
     const { vault, multisig, rootPosterSigner, alice } = await deploy();
     const epochId = 123n;
@@ -189,6 +214,18 @@ describe("TreasuryVaultV2", function () {
 
     const epochId2 = 124n;
     await expect(vault.connect(multisig).setEpochRoot(epochId2, root, 100n)).to.emit(vault, "EpochRootSet");
+  });
+
+  it("setEpochRoot rejects zero roots and max epoch totals", async () => {
+    const { vault, multisig, rootPosterSigner } = await deploy();
+    const root = ethers.keccak256(ethers.toUtf8Bytes("root"));
+
+    await expect(vault.connect(rootPosterSigner).setEpochRoot(1n, ethers.ZeroHash, 1n)).to.be.revertedWith("root=0");
+
+    await vault.connect(multisig).setClaimCaps(ethers.parseEther("0.25"), ethers.parseEther("1"));
+    await expect(vault.connect(rootPosterSigner).setEpochRoot(2n, root, ethers.parseEther("1.1"))).to.be.revertedWith(
+      "maxEpochTotal"
+    );
   });
 
   it("claim stays paused until configured, then verifies Merkle proof, enforces epochTotal and marks claimed", async () => {
@@ -284,5 +321,90 @@ describe("TreasuryVaultV2", function () {
     await expect(vault.connect(alice).claim(epochId, category, rank, aliceAddr, amount, proof)).to.be.revertedWith(
       "maxClaimPerTx"
     );
+  });
+
+  it("claim rejects invalid inputs before Merkle verification", async () => {
+    const { vault, multisig, operatorSigner, rootPosterSigner, alice } = await deploy();
+    await operatorSigner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("1") });
+    await configureClaimLane(vault, multisig);
+
+    const epochId = 3000n;
+    const category = ethers.keccak256(ethers.toUtf8Bytes("invalid_inputs"));
+    const rank = 1;
+    const amount = ethers.parseEther("0.1");
+    const aliceAddr = await alice.getAddress();
+    const leaf = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["uint256", "bytes32", "uint8", "address", "uint256"],
+        [epochId, category, rank, aliceAddr, amount]
+      )
+    );
+    const { root, proof } = buildMerkleRootAndProof([leaf, ethers.keccak256(ethers.toUtf8Bytes("other"))], 0);
+
+    await expect(vault.connect(alice).claim(epochId, category, rank, aliceAddr, amount, proof)).to.be.revertedWith(
+      "root not set"
+    );
+
+    await vault.connect(rootPosterSigner).setEpochRoot(epochId, root, amount);
+    await expect(vault.connect(alice).claim(epochId, category, rank, ethers.ZeroAddress, amount, proof)).to.be.revertedWith(
+      "to=0"
+    );
+    await expect(vault.connect(alice).claim(epochId, category, rank, aliceAddr, 0n, proof)).to.be.revertedWith(
+      "amount=0"
+    );
+    await expect(vault.connect(alice).claim(epochId, category, rank, aliceAddr, amount, [])).to.be.revertedWith(
+      "bad proof"
+    );
+  });
+
+  it("claim transfer failure rolls back claimed accounting", async () => {
+    const { vault, multisig, operatorSigner, rootPosterSigner, alice } = await deploy();
+    const RevertingReceiver = await ethers.getContractFactory("RevertingReceiver");
+    const rejectingReceiver = await RevertingReceiver.deploy();
+    await rejectingReceiver.waitForDeployment();
+
+    await operatorSigner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("1") });
+    await configureClaimLane(vault, multisig);
+
+    const epochId = 4000n;
+    const category = ethers.keccak256(ethers.toUtf8Bytes("rejecting_claim"));
+    const rank = 1;
+    const amount = ethers.parseEther("0.1");
+    const rejectingAddress = await rejectingReceiver.getAddress();
+    const leaf = ethers.keccak256(
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ["uint256", "bytes32", "uint8", "address", "uint256"],
+        [epochId, category, rank, rejectingAddress, amount]
+      )
+    );
+    const otherLeaf = ethers.keccak256(ethers.toUtf8Bytes("other-claim-leaf"));
+    const { root, proof } = buildMerkleRootAndProof([leaf, otherLeaf], 0);
+
+    await vault.connect(rootPosterSigner).setEpochRoot(epochId, root, amount);
+    await expect(vault.connect(alice).claim(epochId, category, rank, rejectingAddress, amount, proof)).to.be.revertedWith(
+      "transfer failed"
+    );
+
+    expect(await vault.epochClaimedTotal(epochId)).to.eq(0n);
+    expect(await vault.epochLeafClaimed(epochId, leaf)).to.eq(false);
+    expect(await ethers.provider.getBalance(await vault.getAddress())).to.eq(ethers.parseEther("1"));
+  });
+
+  it("withdraw validates inputs and rolls back failed transfers", async () => {
+    const { vault, multisig, operatorSigner, alice } = await deploy();
+    const RevertingReceiver = await ethers.getContractFactory("RevertingReceiver");
+    const rejectingReceiver = await RevertingReceiver.deploy();
+    await rejectingReceiver.waitForDeployment();
+
+    await operatorSigner.sendTransaction({ to: await vault.getAddress(), value: ethers.parseEther("1") });
+
+    await expect(vault.connect(multisig).withdraw(ethers.ZeroAddress, 1n)).to.be.revertedWith("to=0");
+    await expect(vault.connect(multisig).withdraw(await alice.getAddress(), ethers.parseEther("2"))).to.be.revertedWith(
+      "insufficient"
+    );
+    await expect(vault.connect(multisig).withdraw(await rejectingReceiver.getAddress(), 1n)).to.be.revertedWith(
+      "transfer failed"
+    );
+    expect(await ethers.provider.getBalance(await vault.getAddress())).to.eq(ethers.parseEther("1"));
   });
 });
