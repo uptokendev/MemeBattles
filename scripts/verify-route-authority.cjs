@@ -187,7 +187,25 @@ async function main() {
   console.log("[route-authority] OK");
 }
 
-main().catch((error) => {
-  console.error(`[route-authority] ${error.message}`);
-  process.exitCode = 1;
-});
+module.exports = {
+  CREATE_AUTH_TYPES,
+  TRADE_AUTH_TYPES,
+  REQUEST_HASH_TYPES,
+  normalizeAddress,
+  hardhatEphemeralHint,
+  requireContractCode,
+  configuredRouteAuthority,
+  hashString,
+  hashCampaignRequest,
+  createRouteAuthDigest,
+  tradeRouteAuthDigest,
+  assertSignerRoundTrip,
+  main,
+};
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`[route-authority] ${error.message}`);
+    process.exitCode = 1;
+  });
+}
