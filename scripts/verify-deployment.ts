@@ -21,6 +21,10 @@ function assertTrue(label: string, value: boolean) {
   console.log(`[verify] ${label}: ok`);
 }
 
+function assertAddress(label: string, value: string) {
+  if (!value || value === ethers.ZeroAddress) throw new Error(`${label}: expected non-zero address`);
+}
+
 export function hardhatEphemeralHint() {
   return network.name === "hardhat"
     ? " Hardhat's default network is ephemeral between commands; use npm run deploy:verify, or verify against a persistent localhost/testnet network."
@@ -36,6 +40,23 @@ export async function assertCode(label: string, address: string) {
   const code = await ethers.provider.getCode(address);
   if (code === "0x") throw new Error(`${label}: ${address} has no code on ${network.name}.${hardhatEphemeralHint()}`);
   console.log(`[verify] ${label} code: ok`);
+}
+
+export async function assertTopazRouter(label: string, address: string) {
+  await assertCode(label, address);
+  const router = await ethers.getContractAt("ITopazRouter02", address);
+  let poolFactory: string;
+  let wrappedNative: string;
+  try {
+    poolFactory = await router.poolFactory();
+    wrappedNative = await router.WETH();
+  } catch {
+    throw new Error(`${label}: ${address} does not expose the Topaz router poolFactory()/WETH() interface`);
+  }
+  assertAddress(`${label}.poolFactory`, poolFactory);
+  assertAddress(`${label}.WETH`, wrappedNative);
+  await assertCode(`${label}.poolFactory`, poolFactory);
+  console.log(`[verify] ${label} Topaz interface: ok`);
 }
 
 export function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
@@ -101,7 +122,7 @@ export async function verifyDeployment(deployment: any) {
   }
 
   const topazRouter = deployment.topazRouter ?? deployment.router;
-  if (topazRouter) await assertCode("TopazRouter", topazRouter);
+  if (topazRouter) await assertTopazRouter("TopazRouter", topazRouter);
   if (deployment.graduationPriceFeed) await assertCode("GraduationPriceFeed", deployment.graduationPriceFeed);
 
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
