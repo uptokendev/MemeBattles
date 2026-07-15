@@ -84,10 +84,11 @@ describe("LaunchFactory lifecycle integration", function () {
     expect(await factory.riskRegistry()).to.eq(await riskRegistry.getAddress());
   });
 
-  it("campaign paging handles zero limit and multi-page reads", async () => {
+  it("campaign paging handles empty state, zero limit, and multi-page reads", async () => {
     const { factory, creator, alice, bob } = await deployCoreFixture();
 
-    await expect(factory.getCampaignPage(0n, 0n)).to.be.revertedWithCustomError(factory, "Offset");
+    const initiallyEmpty = await factory.getCampaignPage(0n, 0n);
+    expect(initiallyEmpty.length).to.eq(0);
 
     await factory.connect(creator).createCampaign(baseReq({ name: "Life One", symbol: "LIF1" }) as any);
     await factory.connect(alice).createCampaign(baseReq({ name: "Life Two", symbol: "LIF2" }) as any);
