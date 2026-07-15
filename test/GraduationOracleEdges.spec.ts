@@ -71,8 +71,8 @@ describe("GraduationOracle precision edges", function () {
     const { feed, oracle } = await deployOracle();
     const threshold = ethers.parseUnits("1", 18);
 
-    await setRound(feed, ethers.parseUnits("3", 8));
-    expect(await oracle.graduationReached(WAD / 3n, threshold)).to.eq(true);
-    expect(await oracle.graduationReached(WAD / 3n - 1n, threshold)).to.eq(false);
+    await setRound(feed, ethers.parseUnits("4", 8));
+    expect(await oracle.graduationReached(WAD / 4n, threshold)).to.eq(true);
+    expect(await oracle.graduationReached(WAD / 4n - 1n, threshold)).to.eq(false);
   });
 });
