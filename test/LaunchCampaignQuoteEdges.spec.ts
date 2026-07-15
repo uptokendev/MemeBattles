@@ -88,6 +88,22 @@ describe("LaunchCampaign quote edge behavior", function () {
     expect(quote.totalCostWei).to.eq(fullCurveCost);
   });
 
+  it("quoteBuyExactBnb returns zero when all curve tokens are sold before graduation", async () => {
+    const { campaign, alice } = await loadFixture(createCampaignFixture);
+    const curveSupply = await campaign.curveSupply();
+    const fullCurveCost = await campaign.quoteBuyExactTokens(curveSupply);
+
+    await campaign.connect(alice).buyExactTokens(curveSupply, fullCurveCost, { value: fullCurveCost });
+    expect(await campaign.launched()).to.eq(false);
+    expect(await campaign.sold()).to.eq(curveSupply);
+
+    const quote = await campaign.quoteBuyExactBnb(ethers.parseEther("1"));
+    expect(quote.tokensOut).to.eq(0n);
+    expect(quote.totalCostWei).to.eq(0n);
+    expect(quote.feeWei).to.eq(0n);
+    await expect(campaign.quoteBuyExactTokens(1n)).to.be.revertedWith("sold out");
+  });
+
   it("quoteBuyExactBnb returns zero after all curve tokens are sold and finalized", async () => {
     const fx = await deployCoreFixture();
     await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest({ graduationTarget: 1n }) as any);
