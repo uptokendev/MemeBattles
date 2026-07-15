@@ -138,7 +138,7 @@ async function main() {
     extraLink: "",
     basePrice: 0n,
     priceSlope: 0n,
-    graduationTarget: 1n,
+    graduationTarget: 0n,
     lpReceiver: ethers.ZeroAddress,
   };
 
@@ -153,6 +153,7 @@ async function main() {
   await expectRevert(campaign.connect(buyer).buyExactTokens(probeAmount, probeCost, { value: probeCost }), "AuthorizedTradingRequired");
   logStep("direct trade blocked by route authorization");
   await authorizedBuyExactTokens({ campaign, buyer, routeAuthority, amountOut: probeAmount, maxCost: probeCost });
+  if (await campaign.launched()) throw new Error("authorized probe buy unexpectedly graduated the campaign");
   logStep("authorized probe buy complete", { amountOut: probeAmount.toString(), cost: probeCost.toString() });
 
   const curveSupply = await campaign.curveSupply();
