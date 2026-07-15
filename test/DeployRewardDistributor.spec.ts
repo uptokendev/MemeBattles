@@ -6,24 +6,29 @@ import path from "node:path";
 
 const OWNER = "0x1111111111111111111111111111111111111111";
 
+function jsString(value: string) {
+  return JSON.stringify(value);
+}
+
 function runDeploy(overrides: Record<string, string | undefined> = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), "mwz-reward-deploy-"));
-  const repoRoot = process.cwd().replace(/\\/g, "\\\\");
+  const tempRoot = mkdtempSync(path.join(tmpdir(), "mwz-reward-deploy-"));
+  const repoRoot = process.cwd();
+  const configPath = path.join(tempRoot, "hardhat.config.js");
   writeFileSync(
-    path.join(root, "hardhat.config.js"),
-    `require("${repoRoot}/node_modules/@nomicfoundation/hardhat-toolbox");\nmodule.exports = { solidity: { version: "0.8.24", settings: { viaIR: true, optimizer: { enabled: true, runs: 200 } } }, paths: { sources: "${repoRoot}/contracts", artifacts: "./artifacts", cache: "./cache" } };\n`
+    configPath,
+    `require(${jsString(path.join(repoRoot, "node_modules", "@nomicfoundation", "hardhat-toolbox"))});\nmodule.exports = { solidity: { version: "0.8.24", settings: { viaIR: true, optimizer: { enabled: true, runs: 200 } } }, paths: { sources: ${jsString(path.join(repoRoot, "contracts"))}, artifacts: "./artifacts", cache: "./cache" } };\n`
   );
 
-  const script = path.join(process.cwd(), "scripts", "deploy-reward-distributor.cjs");
-  const result = spawnSync("npx", ["hardhat", "run", script], {
-    cwd: root,
+  const hardhatCli = path.join(repoRoot, "node_modules", "hardhat", "internal", "cli", "cli.js");
+  const script = path.join(repoRoot, "scripts", "deploy-reward-distributor.cjs");
+  const result = spawnSync(process.execPath, [hardhatCli, "--config", configPath, "run", script], {
+    cwd: tempRoot,
     env: { ...process.env, ...overrides },
     encoding: "utf8",
-    shell: process.platform === "win32",
     timeout: 120000,
   });
 
-  rmSync(root, { recursive: true, force: true });
+  rmSync(tempRoot, { recursive: true, force: true });
   return result;
 }
 
