@@ -3,10 +3,10 @@ import { ethers } from "hardhat";
 
 describe("LaunchToken", function () {
   async function deploy() {
-    const [owner, alice, bob] = await ethers.getSigners();
+    const [owner, alice, bob, spender] = await ethers.getSigners();
     const Token = await ethers.getContractFactory("LaunchToken");
     const token = await Token.deploy("T", "T", ethers.parseEther("100"), await owner.getAddress());
-    return { owner, alice, bob, token };
+    return { owner, alice, bob, spender, token };
   }
 
   it("constructor sets cap and owner; rejects zero cap/owner", async () => {
@@ -36,14 +36,20 @@ describe("LaunchToken", function () {
       .to.be.revertedWith("cap exceeded");
   });
 
-  it("burn: onlyOwner", async () => {
+  it("burn: onlyOwner and respects ERC20 burn balance checks", async () => {
     const { owner, alice, token } = await deploy();
     await token.connect(owner).mint(await alice.getAddress(), ethers.parseEther("10"));
     await expect(token.connect(alice).burn(await alice.getAddress(), 1n))
       .to.be.revertedWithCustomError(token, "OwnableUnauthorizedAccount");
 
+    await expect(token.connect(owner).burn(await alice.getAddress(), ethers.parseEther("11"))).to.be.revertedWithCustomError(
+      token,
+      "ERC20InsufficientBalance"
+    );
+
     await token.connect(owner).burn(await alice.getAddress(), ethers.parseEther("2"));
     expect(await token.balanceOf(await alice.getAddress())).to.eq(ethers.parseEther("8"));
+    expect(await token.totalSupply()).to.eq(ethers.parseEther("8"));
   });
 
   it("trading restriction: before enableTrading, user->user transfers revert; campaign(owner) can move funds and pull via transferFrom", async () => {
@@ -68,11 +74,42 @@ describe("LaunchToken", function () {
     expect(await token.balanceOf(await bob.getAddress())).to.eq(ethers.parseEther("1"));
   });
 
-  it("after enableTrading, normal transfers work", async () => {
-    const { owner, alice, bob, token } = await deploy();
+  it("pre-trading allowance does not let a non-owner spender bypass transfer restrictions", async () => {
+    const { owner, alice, bob, spender, token } = await deploy();
+
+    await token.connect(owner).mint(await alice.getAddress(), ethers.parseEther("5"));
+    await token.connect(alice).approve(await spender.getAddress(), ethers.parseEther("2"));
+
+    await expect(
+      token.connect(spender).transferFrom(await alice.getAddress(), await bob.getAddress(), ethers.parseEther("1"))
+    ).to.be.revertedWithCustomError(token, "TradingNotEnabled");
+
+    expect(await token.allowance(await alice.getAddress(), await spender.getAddress())).to.eq(ethers.parseEther("2"));
+    expect(await token.balanceOf(await bob.getAddress())).to.eq(0n);
+  });
+
+  it("enableTrading is onlyOwner and idempotent", async () => {
+    const { owner, alice, token } = await deploy();
+
+    await expect(token.connect(alice).enableTrading()).to.be.revertedWithCustomError(token, "OwnableUnauthorizedAccount");
+    await token.connect(owner).enableTrading();
+    expect(await token.tradingEnabled()).to.eq(true);
+
+    await token.connect(owner).enableTrading();
+    expect(await token.tradingEnabled()).to.eq(true);
+  });
+
+  it("after enableTrading, normal transfers and transferFrom work", async () => {
+    const { owner, alice, bob, spender, token } = await deploy();
     await token.connect(owner).mint(await alice.getAddress(), ethers.parseEther("3"));
     await token.connect(owner).enableTrading();
+
     await token.connect(alice).transfer(await bob.getAddress(), ethers.parseEther("1"));
     expect(await token.balanceOf(await bob.getAddress())).to.eq(ethers.parseEther("1"));
+
+    await token.connect(alice).approve(await spender.getAddress(), ethers.parseEther("1"));
+    await token.connect(spender).transferFrom(await alice.getAddress(), await bob.getAddress(), ethers.parseEther("1"));
+    expect(await token.balanceOf(await bob.getAddress())).to.eq(ethers.parseEther("2"));
+    expect(await token.allowance(await alice.getAddress(), await spender.getAddress())).to.eq(0n);
   });
 });
