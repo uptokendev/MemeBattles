@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const pkg = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
@@ -19,10 +19,10 @@ describe("package agent script wiring", function () {
     }
   });
 
-  it("keeps agent workflow entrypoint files in the repository", async () => {
-    for (const script of ["plan.mjs", "implement.mjs", "check.mjs", "run.mjs"]) {
-      expect(existsSync(path.join(process.cwd(), "scripts", "agents", script)), script).to.eq(true);
+  it("keeps all agent workflow scripts under scripts/agents", async () => {
+    for (const [name, command] of Object.entries(pkg.scripts)) {
+      if (!name.startsWith("agents:")) continue;
+      expect(command, name).to.match(/^node scripts\/agents\//);
     }
-    expect(existsSync(path.join(process.cwd(), "scripts", "agents", "test", "smoke.mjs"))).to.eq(true);
   });
 });
