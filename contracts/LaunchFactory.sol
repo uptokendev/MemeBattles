@@ -486,6 +486,5 @@ contract LaunchFactory is Ownable {
         if (blocks_ > MAX_LAUNCH_PROTECTION_BLOCKS) revert LaunchProtectionBounds();
         if (maxBuyWei > MAX_LAUNCH_PROTECTION_BUY_WEI) revert LaunchProtectionBounds();
         if (maxWalletWei > MAX_LAUNCH_PROTECTION_WALLET_WEI) revert LaunchProtectionBounds();
-        if (maxBuyWei != 0 && maxWalletWei != 0 && maxBuyWei > maxWalletWei) revert LaunchProtectionBounds();
     }
 }
