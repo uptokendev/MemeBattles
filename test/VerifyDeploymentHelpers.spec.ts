@@ -52,7 +52,7 @@ describe("verify-deployment helpers", function () {
     expect(() => loadDeployment()).to.throw("Deployment file not found");
   });
 
-  it("picks canonical, fallback, then top-level addresses", async () => {
+  it("picks canonical addresses before legacy fallback aliases", async () => {
     expect(
       pickAddress(
         {
@@ -68,8 +68,9 @@ describe("verify-deployment helpers", function () {
     ).to.eq(CANONICAL);
 
     expect(pickAddress({ contracts: { factory: FALLBACK }, LaunchFactory: TOP_LEVEL }, "LaunchFactory", ["factory"])).to.eq(
-      FALLBACK
+      TOP_LEVEL
     );
+    expect(pickAddress({ contracts: { factory: FALLBACK } }, "LaunchFactory", ["factory"])).to.eq(FALLBACK);
     expect(pickAddress({ contracts: {}, factory: TOP_LEVEL }, "LaunchFactory", ["factory"])).to.eq(TOP_LEVEL);
     expect(pickAddress({ contracts: {} }, "LaunchFactory", ["factory"])).to.eq("");
   });
