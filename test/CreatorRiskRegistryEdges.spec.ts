@@ -64,14 +64,18 @@ describe("CreatorRegistry and RiskRegistry edge cases", function () {
   });
 
   it("exposes tier rule fallbacks and rejects invalid enum values", async () => {
-    const { creatorRegistry } = await deployRegistryFixture();
+    const { creator, creatorRegistry } = await deployRegistryFixture();
 
     const unknownRules = await creatorRegistry.getRulesForTier(0);
     const newCreatorRules = await creatorRegistry.getRulesForTier(1);
     expect(unknownRules.maxLiveBonding).to.eq(newCreatorRules.maxLiveBonding);
     expect(unknownRules.creatorBuyCapWei).to.eq(newCreatorRules.creatorBuyCapWei);
 
-    await expect(creatorRegistry.getRulesForTier(4)).to.be.revertedWithCustomError(creatorRegistry, "InvalidTier");
+    await expect(creatorRegistry.setCreatorTier(await creator.getAddress(), 0)).to.be.revertedWithCustomError(
+      creatorRegistry,
+      "InvalidTier"
+    );
+    await expect(creatorRegistry.getRulesForTier(4)).to.be.reverted;
   });
 
   it("returns false for zero-address canLaunch and can-trade checks", async () => {
