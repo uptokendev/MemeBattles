@@ -6,6 +6,13 @@ const MAX_LAUNCH_PROTECTION_BLOCKS = 28_800n;
 const MAX_LAUNCH_PROTECTION_BUY_WEI = ethers.parseEther("1000");
 const MAX_LAUNCH_PROTECTION_WALLET_WEI = ethers.parseEther("1000");
 
+async function expectLaunchProtectionConfig(factory: any, blocks: bigint, maxBuyWei: bigint, maxWalletWei: bigint) {
+  const config = await factory.launchProtectionConfig();
+  expect(config.blocks_).to.eq(blocks);
+  expect(config.maxBuyWei).to.eq(maxBuyWei);
+  expect(config.maxWalletWei).to.eq(maxWalletWei);
+}
+
 describe("LaunchFactory launch protection config bounds", function () {
   it("accepts disabled limits and documented upper bounds before the factory is locked", async () => {
     const { factory, owner } = await deployCoreFixture();
@@ -13,7 +20,7 @@ describe("LaunchFactory launch protection config bounds", function () {
     await expect(factory.connect(owner).setLaunchProtectionConfig(0n, 0n, 0n))
       .to.emit(factory, "LaunchProtectionConfigUpdated")
       .withArgs(0n, 0n, 0n);
-    expect(await factory.launchProtectionConfig()).to.deep.eq([0n, 0n, 0n]);
+    await expectLaunchProtectionConfig(factory, 0n, 0n, 0n);
 
     await expect(
       factory
@@ -27,11 +34,12 @@ describe("LaunchFactory launch protection config bounds", function () {
       .to.emit(factory, "LaunchProtectionConfigUpdated")
       .withArgs(MAX_LAUNCH_PROTECTION_BLOCKS, MAX_LAUNCH_PROTECTION_BUY_WEI, MAX_LAUNCH_PROTECTION_WALLET_WEI);
 
-    expect(await factory.launchProtectionConfig()).to.deep.eq([
+    await expectLaunchProtectionConfig(
+      factory,
       MAX_LAUNCH_PROTECTION_BLOCKS,
       MAX_LAUNCH_PROTECTION_BUY_WEI,
-      MAX_LAUNCH_PROTECTION_WALLET_WEI,
-    ]);
+      MAX_LAUNCH_PROTECTION_WALLET_WEI
+    );
   });
 
   it("rejects every launch protection bound overflow", async () => {
