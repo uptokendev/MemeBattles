@@ -187,15 +187,14 @@ describe("LaunchCampaign closeout integration", function () {
     expect(state.graduationOvershoot).to.eq(0n);
   });
 
-  it("finalization records state, registers LP with the permanent locker, and is idempotent", async () => {
-    const { campaign, token, alice, permanentLpLocker } = await loadFixture(createLowTargetCampaignFixture);
+  it("finalization records state, uses Topaz liquidity, registers LP with the permanent locker, and is idempotent", async () => {
+    const { campaign, token, alice, permanentLpLocker, router } = await loadFixture(createLowTargetCampaignFixture);
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
 
-    await expect(campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy })).to.emit(
-      campaign,
-      "CampaignFinalized"
-    );
+    const tx = campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
+    await expect(tx).to.emit(campaign, "CampaignFinalized");
+    await expect(tx).to.emit(router, "TopazLiquidityAdded");
 
     const state = await campaign.getGraduationState();
     expect(await campaign.launched()).to.eq(true);
