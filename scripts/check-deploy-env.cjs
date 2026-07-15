@@ -5,7 +5,9 @@ const TARGET = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_RE = /^(0x)?[a-fA-F0-9]{64}$/;
 
-const ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS", "PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
+const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
+const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
+const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
 const PRICE_ENVS = ["GRADUATION_ORACLE_ADDRESS", "BNB_USD_PRICE_FEED", "NATIVE_USD_PRICE_FEED", "GRADUATION_PRICE_FEED"];
 const REAL_NETWORK_ADMIN_ENVS = [
   "TREASURY_SAFE",
@@ -114,6 +116,17 @@ function firstConfigured(names) {
   return names.find((name) => raw(name));
 }
 
+function checkLegacyRouterAliases(isRealNetwork) {
+  if (!hasAny(LEGACY_ROUTER_ENVS)) return;
+  if (hasAny(TOPAZ_ROUTER_ENVS)) {
+    warnings.push("Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are set but ignored in favor of Topaz router envs.");
+    return;
+  }
+  const message = "Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are not accepted for Topaz rollout; set TOPAZ_ROUTER, TOPAZ_V2_ROUTER, or ROUTER_ADDRESS.";
+  if (isRealNetwork) errors.push(message);
+  else warnings.push(message);
+}
+
 function checkCommon() {
   checkAddress("TREASURY_SAFE", TARGET !== "hardhat");
   checkAddress("ROUTE_AUTHORITY_ADDRESS");
@@ -144,6 +157,7 @@ function checkCommon() {
 
 function checkLocal() {
   checkCommon();
+  checkLegacyRouterAliases(false);
   if (!raw("TREASURY_SAFE")) warnings.push("TREASURY_SAFE is unset; local deploy will fall back to the deployer address.");
   if (!hasAny(ROUTER_ENVS)) warnings.push("No Topaz router configured; local deploy will use a mock router.");
   if (!hasAny(PRICE_ENVS)) warnings.push("No graduation oracle/price feed configured; local deploy will use a mock price feed.");
@@ -158,9 +172,10 @@ function checkBscTestnet() {
   checkNotLocalPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   REAL_NETWORK_ADMIN_ENVS.forEach(checkNotLocalAddress);
 
-  if (!hasAny(ROUTER_ENVS)) {
-    errors.push(`Topaz router missing: set one of ${ROUTER_ENVS.join(", ")}`);
+  if (!hasAny(TOPAZ_ROUTER_ENVS)) {
+    errors.push(`Topaz router missing: set one of ${TOPAZ_ROUTER_ENVS.join(", ")}`);
   }
+  checkLegacyRouterAliases(true);
   if (!hasAny(PRICE_ENVS)) {
     errors.push(`Graduation oracle/price feed missing: set one of ${PRICE_ENVS.join(", ")}`);
   }
