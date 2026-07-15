@@ -86,15 +86,16 @@ describe("CommunityRewardsVault", function () {
     const { vault, admin, router, alice, bob } = await deployFixture();
     const amount = ethers.parseEther("1");
     const withdrawal = ethers.parseEther("0.4");
+    const bobAddress = await bob.getAddress();
     await fundTrackedAirdrop(vault, router, amount);
 
-    await expect(vault.connect(alice).withdrawAirdrop(await bob.getAddress(), withdrawal)).to.be.revertedWith("not admin");
+    await expect(vault.connect(alice).withdrawAirdrop(bobAddress, withdrawal)).to.be.revertedWith("not admin");
     await expect(vault.connect(admin).withdrawAirdrop(ethers.ZeroAddress, withdrawal)).to.be.revertedWith("to=0");
-    await expect(vault.connect(admin).withdrawAirdrop(await bob.getAddress(), amount + 1n)).to.be.revertedWith(
+    await expect(vault.connect(admin).withdrawAirdrop(bobAddress, amount + 1n)).to.be.revertedWith(
       "tracked insufficient"
     );
 
-    await expect(() => vault.connect(admin).withdrawAirdrop(await bob.getAddress(), withdrawal)).to.changeEtherBalances(
+    await expect(() => vault.connect(admin).withdrawAirdrop(bobAddress, withdrawal)).to.changeEtherBalances(
       [vault, bob],
       [-withdrawal, withdrawal]
     );
@@ -106,15 +107,16 @@ describe("CommunityRewardsVault", function () {
     const { vault, admin, router, alice, bob } = await deployFixture();
     const amount = ethers.parseEther("0.8");
     const withdrawal = ethers.parseEther("0.3");
+    const bobAddress = await bob.getAddress();
     await fundTrackedSquad(vault, router, amount);
 
-    await expect(vault.connect(alice).withdrawSquadPool(await bob.getAddress(), withdrawal)).to.be.revertedWith("not admin");
+    await expect(vault.connect(alice).withdrawSquadPool(bobAddress, withdrawal)).to.be.revertedWith("not admin");
     await expect(vault.connect(admin).withdrawSquadPool(ethers.ZeroAddress, withdrawal)).to.be.revertedWith("to=0");
-    await expect(vault.connect(admin).withdrawSquadPool(await bob.getAddress(), amount + 1n)).to.be.revertedWith(
+    await expect(vault.connect(admin).withdrawSquadPool(bobAddress, amount + 1n)).to.be.revertedWith(
       "tracked insufficient"
     );
 
-    await expect(() => vault.connect(admin).withdrawSquadPool(await bob.getAddress(), withdrawal)).to.changeEtherBalances(
+    await expect(() => vault.connect(admin).withdrawSquadPool(bobAddress, withdrawal)).to.changeEtherBalances(
       [vault, bob],
       [-withdrawal, withdrawal]
     );
