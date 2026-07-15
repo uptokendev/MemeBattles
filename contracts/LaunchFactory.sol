@@ -33,6 +33,7 @@ contract LaunchFactory is Ownable {
     error SlopeZero();
     error TargetZero();
     error LiquidityBps();
+    error LaunchProtectionBounds();
     error NotLive();
     error AlreadyLive();
     error FactoryLocked();
@@ -116,6 +117,9 @@ contract LaunchFactory is Ownable {
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
+    uint256 public constant MAX_LAUNCH_PROTECTION_BLOCKS = 28_800;
+    uint256 public constant MAX_LAUNCH_PROTECTION_BUY_WEI = 1_000 ether;
+    uint256 public constant MAX_LAUNCH_PROTECTION_WALLET_WEI = 1_000 ether;
     address public immutable leagueReceiver;
     address public immutable campaignImplementation;
     PermanentLpLocker public immutable permanentLpLocker;
@@ -349,6 +353,7 @@ contract LaunchFactory is Ownable {
     }
 
     function setLaunchProtectionConfig(uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei) external onlyOwner whenMutable {
+        _validateLaunchProtectionConfig(blocks_, maxBuyWei, maxWalletWei);
         launchProtectionBlocks = blocks_;
         launchProtectionMaxBuyWei = maxBuyWei;
         launchProtectionMaxWalletWei = maxWalletWei;
@@ -475,5 +480,12 @@ contract LaunchFactory is Ownable {
         if (newConfig.graduationTarget == 0) revert TargetZero();
         if (newConfig.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
         if (newConfig.liquidityBps > MAX_BPS) revert LiquidityBps();
+    }
+
+    function _validateLaunchProtectionConfig(uint256 blocks_, uint256 maxBuyWei, uint256 maxWalletWei) internal pure {
+        if (blocks_ > MAX_LAUNCH_PROTECTION_BLOCKS) revert LaunchProtectionBounds();
+        if (maxBuyWei > MAX_LAUNCH_PROTECTION_BUY_WEI) revert LaunchProtectionBounds();
+        if (maxWalletWei > MAX_LAUNCH_PROTECTION_WALLET_WEI) revert LaunchProtectionBounds();
+        if (maxBuyWei != 0 && maxWalletWei != 0 && maxBuyWei > maxWalletWei) revert LaunchProtectionBounds();
     }
 }
