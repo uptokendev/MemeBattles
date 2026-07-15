@@ -107,7 +107,7 @@ async function main() {
     liquidityTokenBps: 4000n,
     basePrice: 10n ** 12n,
     priceSlope: 10n ** 9n,
-    graduationTarget: ethers.parseEther("1"),
+    graduationTarget: ethers.parseEther("0.1"),
     liquidityBps: 8000n,
   };
 
