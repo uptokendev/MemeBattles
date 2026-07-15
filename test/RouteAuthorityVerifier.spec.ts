@@ -38,7 +38,7 @@ describe("route authority verifier helpers", function () {
       "0x00000000000000000000000000000000000000AA"
     );
     expect(() => verifier.normalizeAddress("", "ADDR")).to.throw("ADDR is required");
-    expect(() => verifier.normalizeAddress("not-an-address", "ADDR")).to.throw;
+    expect(() => verifier.normalizeAddress("not-an-address", "ADDR")).to.throw();
   });
 
   it("hashes campaign requests exactly like the route auth ABI", async () => {
@@ -185,8 +185,18 @@ describe("route authority verifier helpers", function () {
     });
 
     await verifier.assertSignerRoundTrip(wallet, wallet.address, digest, "trade route auth");
-    await expect(
-      verifier.assertSignerRoundTrip(wallet, "0x00000000000000000000000000000000000000AA", digest, "trade route auth")
-    ).to.be.rejectedWith("trade route auth signer self-test failed");
+
+    let message = "";
+    try {
+      await verifier.assertSignerRoundTrip(
+        wallet,
+        "0x00000000000000000000000000000000000000AA",
+        digest,
+        "trade route auth"
+      );
+    } catch (error: any) {
+      message = error.message;
+    }
+    expect(message).to.include("trade route auth signer self-test failed");
   });
 });
