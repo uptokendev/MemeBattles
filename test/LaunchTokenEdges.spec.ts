@@ -74,7 +74,8 @@ describe("LaunchToken edge cases", function () {
     await token.connect(newOwner).transferFrom(await alice.getAddress(), await bob.getAddress(), transferAmount);
     expect(await token.balanceOf(await bob.getAddress())).to.eq(transferAmount);
 
-    await expect(token.connect(owner).transferFrom(await alice.getAddress(), await bob.getAddress(), 1n)).to.be.revertedWithCustomError(
+    await token.connect(alice).approve(await owner.getAddress(), transferAmount);
+    await expect(token.connect(owner).transferFrom(await alice.getAddress(), await bob.getAddress(), transferAmount)).to.be.revertedWithCustomError(
       token,
       "TradingNotEnabled"
     );
