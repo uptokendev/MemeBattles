@@ -16,7 +16,11 @@ describe("MockTopazFactory and MockTopazPool", function () {
     const pool = await Pool.deploy();
     await pool.waitForDeployment();
 
-    return { owner, alice, bob, factory, pool };
+    const Pair = await ethers.getContractFactory("MockV2Pair");
+    const pair = await Pair.deploy();
+    await pair.waitForDeployment();
+
+    return { owner, alice, bob, factory, pool, pair };
   }
 
   it("setPool stores sorted tokens and stable flag for either order", async () => {
@@ -35,14 +39,14 @@ describe("MockTopazFactory and MockTopazPool", function () {
   });
 
   it("setPair stores only the volatile pool slot", async () => {
-    const { alice, bob, factory, pool } = await deployFixture();
+    const { alice, bob, factory, pair } = await deployFixture();
     const tokenA = await alice.getAddress();
     const tokenB = await bob.getAddress();
 
-    await factory.setPair(tokenA, tokenB, await pool.getAddress());
+    await factory.setPair(tokenA, tokenB, await pair.getAddress());
 
-    expect(await factory.getPair(tokenA, tokenB)).to.eq(await pool.getAddress());
-    expect(await factory.getPool(tokenA, tokenB, false)).to.eq(await pool.getAddress());
+    expect(await factory.getPair(tokenA, tokenB)).to.eq(await pair.getAddress());
+    expect(await factory.getPool(tokenA, tokenB, false)).to.eq(await pair.getAddress());
     expect(await factory.getPool(tokenA, tokenB, true)).to.eq(ethers.ZeroAddress);
   });
 
