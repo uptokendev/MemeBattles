@@ -86,6 +86,16 @@ describe("check-deploy-env script", function () {
     expect(result.stderr).to.include("local deploy will use a mock price feed");
   });
 
+  it("warns when local rehearsal only has legacy Pancake router aliases", async () => {
+    const result = runCheck("hardhat", {
+      PANCAKE_ROUTER: VALID_ADDRESS,
+    });
+
+    expect(result.status).to.eq(0);
+    expect(result.stdout).to.include("router=PANCAKE_ROUTER");
+    expect(result.stderr).to.include("Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are not accepted for Topaz rollout");
+  });
+
   it("validates common optional local settings", async () => {
     const result = runCheck("hardhat", {
       TREASURY_SAFE: "not-an-address",
@@ -117,6 +127,21 @@ describe("check-deploy-env script", function () {
     expect(result.stderr).to.include("Topaz router missing");
     expect(result.stderr).to.include("Graduation oracle/price feed missing");
     expect(result.stderr).to.include("ROUTE_AUTHORITY_ADDRESS or ROUTE_AUTHORITY_PRIVATE_KEY is required");
+  });
+
+  it("rejects legacy Pancake-only router aliases on bscTestnet", async () => {
+    const result = runCheck("bscTestnet", {
+      BSC_TESTNET_RPC: "https://example.invalid/rpc",
+      DEPLOYER_PK: VALID_PRIVATE_KEY,
+      TREASURY_SAFE: VALID_ADDRESS,
+      PANCAKE_ROUTER: VALID_ADDRESS_2,
+      BNB_USD_PRICE_FEED: VALID_ADDRESS_3,
+      ROUTE_AUTHORITY_PRIVATE_KEY: VALID_PRIVATE_KEY,
+    });
+
+    expect(result.status).to.eq(1);
+    expect(result.stderr).to.include("Topaz router missing: set one of TOPAZ_ROUTER, TOPAZ_V2_ROUTER, ROUTER_ADDRESS");
+    expect(result.stderr).to.include("Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are not accepted for Topaz rollout");
   });
 
   it("rejects default Hardhat credentials and mock flags on bscTestnet", async () => {
