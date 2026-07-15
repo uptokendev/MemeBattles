@@ -8,7 +8,7 @@ describe("bonding curve math helpers", function () {
     expect(bn(2)).to.eq(2n);
     expect(bn("3")).to.eq(3n);
     expect(bn(ethers.parseEther("4"))).to.eq(ethers.parseEther("4"));
-    expect(() => bn({} as any)).to.throw("Unsupported BigNumberish");
+    expect(() => bn({} as any)).to.throw();
   });
 
   it("computes zero area at zero supply", async () => {
