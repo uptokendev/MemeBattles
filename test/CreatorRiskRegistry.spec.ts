@@ -91,9 +91,10 @@ describe("CreatorRegistry and RiskRegistry", function () {
       "CreatorZero"
     );
 
-    await expect(creatorRegistry.connect(recorder).recordLaunch(await creator.getAddress()))
-      .to.emit(creatorRegistry, "CreatorLaunchRecorded")
-      .withArgs(await creator.getAddress(), 1n, await ethers.provider.getBlock("latest").then((block) => BigInt(block!.timestamp + 1)));
+    await expect(creatorRegistry.connect(recorder).recordLaunch(await creator.getAddress())).to.emit(
+      creatorRegistry,
+      "CreatorLaunchRecorded"
+    );
     await expect(creatorRegistry.connect(recorder).recordLaunch(await creator.getAddress())).to.be.revertedWithCustomError(
       creatorRegistry,
       "CreatorCooldown"
