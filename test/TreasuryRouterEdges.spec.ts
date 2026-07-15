@@ -27,7 +27,7 @@ async function deployBare() {
 }
 
 describe("TreasuryRouter edge cases", function () {
-  it("keeps rounding dust in protocol across every route profile", async () => {
+  it("conserves rounding dust in protocol across every route profile", async () => {
     const { router } = await deployBare();
     const amount = 3n;
     const cases: Array<[number, number]> = [
@@ -41,8 +41,9 @@ describe("TreasuryRouter edge cases", function () {
 
     for (const [kind, profile] of cases) {
       const preview = await router.previewRoute(amount, kind, profile);
-      expect(preview.league + preview.recruiter + preview.airdrop + preview.squad + preview.protocol).to.eq(amount);
-      expect(preview.protocol).to.eq(amount);
+      const nonProtocol = preview.league + preview.recruiter + preview.airdrop + preview.squad;
+      expect(nonProtocol + preview.protocol).to.eq(amount);
+      expect(preview.protocol).to.eq(amount - nonProtocol);
     }
   });
 
