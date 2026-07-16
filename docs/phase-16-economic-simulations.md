@@ -7,6 +7,7 @@ Phase 16 is covered by a deterministic simulator that mirrors the launch curve e
 - graduation liquidity native amount after protocol fee
 - final curve price used as the opening DEX price
 - LP token demand versus reserved liquidity allocation
+- tuning diagnostics for failed economics
 
 ## Scenario fixture
 
@@ -53,9 +54,17 @@ This writes:
 output/economic-simulation-results.json
 ```
 
-## Interpreting results
+## Interpreting Results
 
 The simulator returns JSON with an `ok` flag. A false `ok` means at least one configured scenario failed an economic acceptance check, such as not graduating before sellout or needing more LP tokens than the reserved liquidity allocation.
+
+Each scenario includes tuning diagnostics:
+
+- `raiseToTargetRatio`: gross curve raise divided by the USD graduation target converted to native.
+- `requiredLiquidityTokenBps`: minimum token allocation needed to satisfy the configured graduation liquidity amount at the final curve price.
+- `maxSafeLiquidityBps`: maximum graduation native liquidity bps that fits inside the configured liquidity token allocation.
+
+For the current `production-candidate`, strict mode correctly reports a liquidity allocation mismatch. At `liquidityBps = 8000`, the run needs about `3450` liquidity token bps, but the scenario reserves `1000`. With `liquidityTokenBps = 1000`, the maximum safe liquidity setting is about `2318` bps.
 
 By default, the CLI exits successfully so reviewers can inspect the JSON even when a scenario is risky. Add `--strict` when a pipeline should fail on any economic risk:
 
