@@ -19,7 +19,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["deploy:verify"]).to.eq("hardhat run scripts/deploy-and-verify.ts");
     expect(pkg.scripts["deploy:verify:bsc-testnet"]).to.eq("hardhat run scripts/deploy-and-verify.ts --network bscTestnet");
     expect(pkg.scripts["verify:deployment"]).to.eq("hardhat run scripts/verify-deployment.ts");
-    expect(pkg.scripts["verify:route-authority"]).to.eq("hardhat run scripts/verify-route-authority.cjs");
+    expect(pkg.scripts["verify:route-authority"]).to.eq("node scripts/verify-route-authority.cjs");
     expect(pkg.scripts["protocol:rehearsal"]).to.eq("hardhat run scripts/local-protocol-rehearsal.ts");
     expect(pkg.scripts["rehearsal:check"]).to.eq("node scripts/rehearsal-check.cjs");
   });
@@ -31,7 +31,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["frontend:env:bsc-testnet"]).to.eq("node scripts/export-frontend-env.cjs bscTestnet");
   });
 
-  it("keeps pretestnet, deployment summary, and simulation scripts wired", async () => {
+  it("keeps pretestnet, deployment summary, simulation, and monitoring scripts wired", async () => {
     expect(pkg.scripts["pretestnet:check"]).to.eq("node scripts/pretestnet-check.cjs");
     expect(pkg.scripts["deployment:summary"]).to.eq("node scripts/deployment-summary.cjs");
     expect(pkg.scripts["deployment:summary:bsc-testnet"]).to.eq("node scripts/deployment-summary.cjs bscTestnet");
@@ -40,6 +40,8 @@ describe("package scripts", function () {
     expect(pkg.scripts["economics:simulate:acceptance"]).to.eq(
       "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
     );
+    expect(pkg.scripts["monitor:readiness"]).to.eq("node scripts/monitoring-readiness.cjs");
+    expect(pkg.scripts["monitor:readiness:bsc-testnet"]).to.eq("node scripts/monitoring-readiness.cjs bscTestnet");
   });
 
   it("uses the expected package manager and core dependencies", async () => {
