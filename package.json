@@ -21,6 +21,8 @@
     "economics:simulate": "node scripts/economic-simulations.cjs",
     "economics:simulate:suite": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json",
     "economics:simulate:acceptance": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
+    "monitor:readiness": "node scripts/monitoring-readiness.cjs",
+    "monitor:readiness:bsc-testnet": "node scripts/monitoring-readiness.cjs bscTestnet",
     "frontend:env": "node scripts/export-frontend-env.cjs",
     "frontend:env:bsc-testnet": "node scripts/export-frontend-env.cjs bscTestnet",
     "deployment:summary": "node scripts/deployment-summary.cjs",
