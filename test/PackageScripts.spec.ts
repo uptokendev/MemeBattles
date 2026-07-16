@@ -31,7 +31,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["frontend:env:bsc-testnet"]).to.eq("node scripts/export-frontend-env.cjs bscTestnet");
   });
 
-  it("keeps pretestnet, deployment summary, simulation, and monitoring scripts wired", async () => {
+  it("keeps pretestnet, deployment summary, simulation, monitoring, and acceptance scripts wired", async () => {
     expect(pkg.scripts["pretestnet:check"]).to.eq("node scripts/pretestnet-check.cjs");
     expect(pkg.scripts["deployment:summary"]).to.eq("node scripts/deployment-summary.cjs");
     expect(pkg.scripts["deployment:summary:bsc-testnet"]).to.eq("node scripts/deployment-summary.cjs bscTestnet");
@@ -44,6 +44,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["monitor:readiness:bsc-testnet"]).to.eq("node scripts/monitoring-readiness.cjs bscTestnet");
     expect(pkg.scripts["monitor:snapshot"]).to.eq("hardhat run scripts/monitoring-snapshot.ts");
     expect(pkg.scripts["monitor:snapshot:bsc-testnet"]).to.eq("hardhat run scripts/monitoring-snapshot.ts --network bscTestnet");
+    expect(pkg.scripts["testnet:acceptance"]).to.eq("node scripts/testnet-acceptance.cjs");
   });
 
   it("uses the expected package manager and core dependencies", async () => {
