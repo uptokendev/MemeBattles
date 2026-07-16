@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+
 const WAD = 10n ** 18n;
 const MAX_BPS = 10_000n;
 
@@ -21,6 +24,12 @@ function parseDecimal(value, decimals = 18) {
   const [whole, fraction = ""] = raw.split(".");
   const padded = `${fraction}${"0".repeat(decimals)}`.slice(0, decimals);
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(padded || "0");
+}
+
+function parseBps(value, label) {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(String(value))) throw new Error(`${label} must be an integer bps value`);
+  return BigInt(value);
 }
 
 function formatDecimal(value, decimals = 18, precision = 6) {
@@ -84,6 +93,24 @@ function buildConfig(overrides = {}) {
   return config;
 }
 
+function externalCaseToOverrides(caseConfig = {}) {
+  const nativeUsdPrices = caseConfig.nativeUsdPrices || caseConfig.prices;
+  const overrides = {};
+  if (caseConfig.totalSupplyTokens !== undefined) overrides.totalSupply = parseDecimal(caseConfig.totalSupplyTokens);
+  if (caseConfig.curveBps !== undefined) overrides.curveBps = parseBps(caseConfig.curveBps, "curveBps");
+  if (caseConfig.liquidityTokenBps !== undefined) overrides.liquidityTokenBps = parseBps(caseConfig.liquidityTokenBps, "liquidityTokenBps");
+  if (caseConfig.basePriceNative !== undefined) overrides.basePrice = parseDecimal(caseConfig.basePriceNative);
+  if (caseConfig.priceSlopeNative !== undefined) overrides.priceSlope = parseDecimal(caseConfig.priceSlopeNative);
+  if (caseConfig.graduationTargetUsd !== undefined) overrides.graduationTargetUsd = parseDecimal(caseConfig.graduationTargetUsd);
+  if (caseConfig.liquidityBps !== undefined) overrides.liquidityBps = parseBps(caseConfig.liquidityBps, "liquidityBps");
+  if (caseConfig.protocolFeeBps !== undefined) overrides.protocolFeeBps = parseBps(caseConfig.protocolFeeBps, "protocolFeeBps");
+  if (nativeUsdPrices !== undefined) {
+    if (!Array.isArray(nativeUsdPrices)) throw new Error("nativeUsdPrices must be an array");
+    overrides.nativeUsdPrices = nativeUsdPrices.map((price) => parseDecimal(price));
+  }
+  return overrides;
+}
+
 function simulateScenario(config, nativeUsdPrice) {
   const curveSupply = (config.totalSupply * config.curveBps) / MAX_BPS;
   const liquiditySupply = (config.totalSupply * config.liquidityTokenBps) / MAX_BPS;
@@ -134,6 +161,23 @@ function simulate(config = DEFAULT_CONFIG) {
   };
 }
 
+function simulateSuite(suiteConfig) {
+  const cases = (suiteConfig.cases || []).map((caseConfig, index) => {
+    const result = simulate(buildConfig(externalCaseToOverrides(caseConfig)));
+    return {
+      name: caseConfig.name || `case-${index + 1}`,
+      result,
+    };
+  });
+  const failedCases = cases.filter((entry) => !entry.result.ok);
+  return {
+    name: suiteConfig.name || "economic-simulation-suite",
+    ok: failedCases.length === 0,
+    cases,
+    failedCases,
+  };
+}
+
 function scenarioToJson(scenario) {
   return {
     nativeUsdPrice: formatDecimal(scenario.nativeUsdPrice),
@@ -173,9 +217,35 @@ function simulationToJson(result) {
   };
 }
 
+function suiteToJson(suite) {
+  return {
+    name: suite.name,
+    ok: suite.ok,
+    cases: suite.cases.map((entry) => ({
+      name: entry.name,
+      ...simulationToJson(entry.result),
+    })),
+    failedCases: suite.failedCases.map((entry) => entry.name),
+  };
+}
+
+function readSuiteConfig(configPath) {
+  const resolved = path.resolve(process.cwd(), configPath);
+  return JSON.parse(fs.readFileSync(resolved, "utf8"));
+}
+
+function writeOutput(outputPath, payload) {
+  const resolved = path.resolve(process.cwd(), outputPath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, `${JSON.stringify(payload, null, 2)}\n`);
+  return resolved;
+}
+
 function parseArgs(argv) {
   const overrides = {};
   let strict = false;
+  let configPath;
+  let outputPath;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = argv[i + 1];
@@ -191,6 +261,14 @@ function parseArgs(argv) {
       if (!next) throw new Error("--liquidity-bps requires a value");
       overrides.liquidityBps = BigInt(next);
       i += 1;
+    } else if (arg === "--config") {
+      if (!next) throw new Error("--config requires a path");
+      configPath = next;
+      i += 1;
+    } else if (arg === "--output") {
+      if (!next) throw new Error("--output requires a path");
+      outputPath = next;
+      i += 1;
     } else if (arg === "--strict") {
       strict = true;
     } else if (arg === "--help") {
@@ -199,11 +277,14 @@ function parseArgs(argv) {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  return { overrides, strict };
+  if (configPath && Object.keys(overrides).length > 0) {
+    throw new Error("Use either --config or direct override flags, not both");
+  }
+  return { configPath, outputPath, overrides, strict };
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --strict               Exit non-zero when any scenario fails acceptance checks\n`);
+  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --config <path>        Read a JSON suite from config/economic-scenarios.json style input\n  --output <path>        Write the JSON result to a file instead of stdout\n  --strict               Exit non-zero when any scenario fails acceptance checks\n`);
 }
 
 function main(argv = process.argv.slice(2), io = console) {
@@ -212,9 +293,19 @@ function main(argv = process.argv.slice(2), io = console) {
     printHelp();
     return { ok: true, status: 0 };
   }
-  const result = simulate(buildConfig(parsed.overrides));
-  io.log(JSON.stringify(simulationToJson(result), null, 2));
-  return { ok: result.ok, status: parsed.strict && !result.ok ? 1 : 0 };
+
+  const payload = parsed.configPath
+    ? suiteToJson(simulateSuite(readSuiteConfig(parsed.configPath)))
+    : simulationToJson(simulate(buildConfig(parsed.overrides)));
+
+  if (parsed.outputPath) {
+    const written = writeOutput(parsed.outputPath, payload);
+    io.log(`[economics] wrote ${written}`);
+  } else {
+    io.log(JSON.stringify(payload, null, 2));
+  }
+
+  return { ok: payload.ok, status: parsed.strict && !payload.ok ? 1 : 0 };
 }
 
 module.exports = {
@@ -225,16 +316,22 @@ module.exports = {
   buildConfig,
   ceilDiv,
   currentPrice,
+  externalCaseToOverrides,
   fee,
   formatDecimal,
   main,
   nativeTargetForUsd,
   parseArgs,
+  parseBps,
   parseDecimal,
+  readSuiteConfig,
   scenarioToJson,
   simulate,
   simulateScenario,
+  simulateSuite,
   simulationToJson,
+  suiteToJson,
+  writeOutput,
 };
 
 if (require.main === module) {
