@@ -322,7 +322,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --config <path>        Read a JSON suite from config/economic-scenarios.json style input\n  --output <path>        Write the JSON result to a file instead of stdout\n  --strict               Exit non-zero when any scenario cannot execute graduation\n`);
+  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 3300\n  --config <path>        Read a JSON suite from config/economic-scenarios.json style input\n  --output <path>        Write the JSON result to a file instead of stdout\n  --strict               Exit non-zero when any scenario cannot execute graduation\n`);
 }
 
 function main(argv = process.argv.slice(2), io = console) {
