@@ -15,6 +15,7 @@ const focusedSpecs = [
   "test/LaunchCampaignCloseout.spec.ts",
   "test/EconomicSimulations.spec.ts",
   "test/IndexerManifest.spec.ts",
+  "test/IndexerSchema.spec.ts",
   "test/MonitoringReadiness.spec.ts",
   "test/MonitoringSnapshot.spec.ts",
   "test/TestnetAcceptance.spec.ts",
