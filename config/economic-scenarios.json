@@ -4,12 +4,12 @@
     {
       "name": "production-candidate",
       "totalSupplyTokens": "1000000000",
-      "curveBps": "8800",
-      "liquidityTokenBps": "1000",
-      "basePriceNative": "0.00005",
-      "priceSlopeNative": "0.000000001",
+      "curveBps": "8400",
+      "liquidityTokenBps": "1400",
+      "basePriceNative": "0.000000001",
+      "priceSlopeNative": "0.00000000000000085",
       "graduationTargetUsd": "30000",
-      "liquidityBps": "8000",
+      "liquidityBps": "3300",
       "protocolFeeBps": "200",
       "nativeUsdPrices": ["100", "300", "600", "1000", "2000"]
     },
