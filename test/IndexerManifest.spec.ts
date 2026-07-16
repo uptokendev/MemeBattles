@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const { buildIndexerManifest, eventTopic } = require("../scripts/lib/indexerManifest.cjs");
+const { EVENT_SIGNATURES, buildIndexerManifest, eventTopic } = require("../scripts/lib/indexerManifest.cjs");
 
 const ADDRESSES = {
   deployer: "0x0000000000000000000000000000000000000001",
@@ -99,6 +99,28 @@ describe("indexer manifest export", function () {
     );
   });
 
+  it("exports exact event topics for the indexer-critical contract surfaces", async () => {
+    const manifest = buildIndexerManifest(baseDeployment(), "unit-test");
+
+    for (const [contractName, signatures] of Object.entries(EVENT_SIGNATURES) as [string, string[]][]) {
+      expect(Object.keys(manifest.events[contractName])).to.deep.eq(signatures);
+      for (const signature of signatures) {
+        expect(manifest.events[contractName][signature]).to.eq(eventTopic(signature));
+      }
+    }
+
+    expect(manifest.events.TreasuryRouter).to.have.property(
+      "RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)"
+    );
+    expect(manifest.events.CreatorRegistry).to.have.property("CreatorLaunchRecorded(address,uint256,uint256)");
+    expect(manifest.events.RiskRegistry).to.have.property("WalletRiskUpdated(address,uint8,bool)");
+    expect(manifest.events.PermanentLpLocker).to.have.property("LpPermanentlyLocked(address,address,uint256,uint256)");
+    expect(manifest.events.TreasuryRouter).not.to.have.property("Routed(uint8,uint8,address,uint256)");
+    expect(manifest.events.CreatorRegistry).not.to.have.property(
+      "CreatorRulesUpdated(address,uint8,bool,bool,uint256,uint256,uint256,uint256)"
+    );
+  });
+
   it("supports legacy top-level deployment aliases", async () => {
     const manifest = buildIndexerManifest(
       baseDeployment({
@@ -143,5 +165,8 @@ describe("indexer manifest export", function () {
     expect(result.written.schemaVersion).to.eq(1);
     expect(result.written.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
     expect(result.written.events.PermanentLpLocker["LpTokenRegistered(address)"]).to.eq(eventTopic("LpTokenRegistered(address)"));
+    expect(result.written.events.TreasuryRouter["RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)"]).to.eq(
+      eventTopic("RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)")
+    );
   });
 });
