@@ -106,8 +106,8 @@ describe("economic simulation script", function () {
     expect(json.scenarios[0]).to.have.property("requiredLiquidityTokenBps").that.is.a("string");
     expect(json.scenarios[0]).to.have.property("maxSafeLiquidityBps").that.is.a("string");
     expect(json.scenarios[0]).to.have.property("raiseToTargetRatio").that.is.a("string");
-    expect(json.scenarios[0]).to.have.property("lpAllocationCapped").that.eq(true);
-    expect(json.warningScenarios).to.have.length(1);
+    expect(json.scenarios[0]).to.have.property("lpAllocationCapped").that.eq(false);
+    expect(json.warningScenarios).to.have.length(0);
   });
 
   it("loads and simulates the Phase 16 economic scenario fixture", async () => {
@@ -119,11 +119,12 @@ describe("economic simulation script", function () {
     expect(json.name).to.eq("phase-16-default-economics");
     expect(json.ok).to.eq(true);
     expect(json.failedCases).to.deep.eq([]);
-    expect(json.warningCases).to.deep.eq(["production-candidate"]);
+    expect(json.warningCases).to.deep.eq([]);
     expect(json.cases.map((entry: { name: string }) => entry.name)).to.deep.eq(["production-candidate", "local-rehearsal-compact"]);
     expect(json.cases[0].scenarios).to.have.length(5);
-    expect(json.cases[0].warningScenarios[0].requiredLiquidityTokenBps).to.eq("3450");
-    expect(json.cases[0].warningScenarios[0].maxSafeLiquidityBps).to.eq("2318");
+    expect(json.cases[0].config.curveBps).to.eq("8400");
+    expect(json.cases[0].config.liquidityTokenBps).to.eq("1400");
+    expect(json.cases[0].config.liquidityBps).to.eq("3300");
     expect(json.cases[1].ok).to.eq(true);
   });
 
@@ -166,8 +167,8 @@ describe("economic simulation script", function () {
     expect(result.status).to.eq(0);
     expect(written.name).to.eq("phase-16-default-economics");
     expect(written.ok).to.eq(true);
+    expect(written.warningCases).to.deep.eq([]);
     expect(written.cases).to.have.length(2);
-    expect(written.cases[0].warningScenarios[0].requiredLiquidityTokenBps).to.eq("3450");
     expect(logs[0]).to.include("[economics] wrote");
   });
 
@@ -175,16 +176,16 @@ describe("economic simulation script", function () {
     const logs: string[] = [];
     const io = { log: (message: string) => logs.push(message) };
 
-    const capped = main(["--config", fixturePath, "--strict"], io);
+    const retuned = main(["--config", fixturePath, "--strict"], io);
     const relaxed = main(["--prices", "600", "--target-usd", "1000000000"], io);
     const strict = main(["--prices", "600", "--target-usd", "1000000000", "--strict"], io);
 
-    expect(capped.status).to.eq(0);
-    expect(capped.ok).to.eq(true);
+    expect(retuned.status).to.eq(0);
+    expect(retuned.ok).to.eq(true);
     expect(relaxed.status).to.eq(0);
     expect(relaxed.ok).to.eq(false);
     expect(strict.status).to.eq(1);
     expect(strict.ok).to.eq(false);
-    expect(JSON.parse(logs[0]).warningCases).to.deep.eq(["production-candidate"]);
+    expect(JSON.parse(logs[0]).warningCases).to.deep.eq([]);
   });
 });
