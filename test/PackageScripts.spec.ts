@@ -21,6 +21,7 @@ describe("package scripts", function () {
     expect(pkg.scripts["verify:deployment"]).to.eq("hardhat run scripts/verify-deployment.ts");
     expect(pkg.scripts["verify:route-authority"]).to.eq("hardhat run scripts/verify-route-authority.cjs");
     expect(pkg.scripts["protocol:rehearsal"]).to.eq("hardhat run scripts/local-protocol-rehearsal.ts");
+    expect(pkg.scripts["rehearsal:check"]).to.eq("node scripts/rehearsal-check.cjs");
   });
 
   it("keeps frontend ABI and env export scripts wired", async () => {
