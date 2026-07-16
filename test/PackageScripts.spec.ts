@@ -36,6 +36,10 @@ describe("package scripts", function () {
     expect(pkg.scripts["deployment:summary"]).to.eq("node scripts/deployment-summary.cjs");
     expect(pkg.scripts["deployment:summary:bsc-testnet"]).to.eq("node scripts/deployment-summary.cjs bscTestnet");
     expect(pkg.scripts["economics:simulate"]).to.eq("node scripts/economic-simulations.cjs");
+    expect(pkg.scripts["economics:simulate:suite"]).to.eq("node scripts/economic-simulations.cjs --config config/economic-scenarios.json");
+    expect(pkg.scripts["economics:simulate:acceptance"]).to.eq(
+      "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
+    );
   });
 
   it("uses the expected package manager and core dependencies", async () => {
