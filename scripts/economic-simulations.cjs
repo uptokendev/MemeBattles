@@ -111,6 +111,11 @@ function externalCaseToOverrides(caseConfig = {}) {
   return overrides;
 }
 
+function maxLiquidityBpsForReserve(liquiditySupply, finalCurvePrice, remainingAfterFee) {
+  if (remainingAfterFee === 0n) return MAX_BPS;
+  return mulDiv(liquiditySupply * finalCurvePrice, MAX_BPS, WAD * remainingAfterFee);
+}
+
 function simulateScenario(config, nativeUsdPrice) {
   const curveSupply = (config.totalSupply * config.curveBps) / MAX_BPS;
   const liquiditySupply = (config.totalSupply * config.liquidityTokenBps) / MAX_BPS;
@@ -121,6 +126,7 @@ function simulateScenario(config, nativeUsdPrice) {
   const nativeTarget = nativeTargetForUsd(config.graduationTargetUsd, nativeUsdPrice);
   const graduationReachedAtSellout = grossCurveRaise >= nativeTarget;
   const overshoot = graduationReachedAtSellout ? grossCurveRaise - nativeTarget : 0n;
+  const raiseToTargetRatio = nativeTarget === 0n ? 0n : mulDiv(grossCurveRaise, WAD, nativeTarget);
   const finalCurvePrice = currentPrice(curveSupply, config.basePrice, config.priceSlope);
   const graduationProtocolFee = fee(grossCurveRaise, config.protocolFeeBps);
   const remainingAfterFee = grossCurveRaise - graduationProtocolFee;
@@ -128,6 +134,8 @@ function simulateScenario(config, nativeUsdPrice) {
   const lpTokensDesired = finalCurvePrice === 0n ? 0n : mulDiv(liquidityNative, WAD, finalCurvePrice);
   const lpAllocationSufficient = lpTokensDesired <= liquiditySupply;
   const unusedLiquidityTokens = lpAllocationSufficient ? liquiditySupply - lpTokensDesired : 0n;
+  const requiredLiquidityTokenBps = ceilDiv(lpTokensDesired * MAX_BPS, config.totalSupply);
+  const maxSafeLiquidityBps = maxLiquidityBpsForReserve(liquiditySupply, finalCurvePrice, remainingAfterFee);
 
   return {
     nativeUsdPrice,
@@ -140,12 +148,16 @@ function simulateScenario(config, nativeUsdPrice) {
     nativeTarget,
     graduationReachedAtSellout,
     overshoot,
+    raiseToTargetRatio,
     finalCurvePrice,
     graduationProtocolFee,
+    remainingAfterFee,
     liquidityNative,
     lpTokensDesired,
     lpAllocationSufficient,
     unusedLiquidityTokens,
+    requiredLiquidityTokenBps,
+    maxSafeLiquidityBps,
   };
 }
 
@@ -190,12 +202,16 @@ function scenarioToJson(scenario) {
     nativeTarget: formatDecimal(scenario.nativeTarget),
     graduationReachedAtSellout: scenario.graduationReachedAtSellout,
     overshootNative: formatDecimal(scenario.overshoot),
+    raiseToTargetRatio: formatDecimal(scenario.raiseToTargetRatio),
     finalCurvePriceNative: formatDecimal(scenario.finalCurvePrice),
     graduationProtocolFeeNative: formatDecimal(scenario.graduationProtocolFee),
+    remainingAfterFeeNative: formatDecimal(scenario.remainingAfterFee),
     liquidityNative: formatDecimal(scenario.liquidityNative),
     lpTokensDesired: formatDecimal(scenario.lpTokensDesired),
     lpAllocationSufficient: scenario.lpAllocationSufficient,
     unusedLiquidityTokens: formatDecimal(scenario.unusedLiquidityTokens),
+    requiredLiquidityTokenBps: scenario.requiredLiquidityTokenBps.toString(),
+    maxSafeLiquidityBps: scenario.maxSafeLiquidityBps.toString(),
   };
 }
 
@@ -320,6 +336,7 @@ module.exports = {
   fee,
   formatDecimal,
   main,
+  maxLiquidityBpsForReserve,
   nativeTargetForUsd,
   parseArgs,
   parseBps,
