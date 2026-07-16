@@ -1,5 +1,6 @@
 import { ethers, network } from "hardhat";
 import { deployProtocol } from "./lib/deployProtocol";
+import { buildMonitoringSnapshot } from "./monitoring-snapshot";
 import { verifyDeployment } from "./verify-deployment";
 
 const MAX_BPS = 10_000n;
@@ -191,6 +192,18 @@ async function main() {
   const expectedLiquiditySupply = (rehearsalConfig.totalSupply * rehearsalConfig.liquidityTokenBps) / MAX_BPS;
   if (curveSupply !== expectedCurveSupply) throw new Error("curve supply does not match rehearsal config");
   if ((await campaign.liquiditySupply()) !== expectedLiquiditySupply) throw new Error("liquidity supply does not match rehearsal config");
+
+  const monitoringSnapshot = await buildMonitoringSnapshot({ limit: 10 });
+  const monitoredCampaign = monitoringSnapshot.snapshots.find((entry: any) => entry.campaign.toLowerCase() === campaignInfo.campaign.toLowerCase());
+  if (!monitoredCampaign) throw new Error("monitoring snapshot did not include rehearsal campaign");
+  if (monitoredCampaign.status !== "graduated") throw new Error(`monitoring snapshot status mismatch: ${monitoredCampaign.status}`);
+  if (monitoringSnapshot.summary.counts.graduated !== 1) throw new Error("monitoring snapshot graduated count mismatch");
+  if (monitoringSnapshot.summary.attentionCount !== 0) throw new Error("monitoring snapshot unexpectedly requires operator attention");
+  logStep("monitoring snapshot verified", {
+    status: monitoredCampaign.status,
+    totalCampaigns: monitoringSnapshot.summary.totalCampaigns,
+    attention: monitoringSnapshot.summary.attentionCount,
+  });
 
   logStep("complete", {
     campaign: campaignInfo.campaign,
