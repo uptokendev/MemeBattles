@@ -1,0 +1,147 @@
+import { expect } from "chai";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+const { buildIndexerManifest, eventTopic } = require("../scripts/lib/indexerManifest.cjs");
+
+const ADDRESSES = {
+  deployer: "0x0000000000000000000000000000000000000001",
+  treasurySafe: "0x0000000000000000000000000000000000000002",
+  topazRouter: "0x0000000000000000000000000000000000000003",
+  factory: "0x0000000000000000000000000000000000000004",
+  implementation: "0x0000000000000000000000000000000000000005",
+  treasuryRouter: "0x0000000000000000000000000000000000000006",
+  treasuryVault: "0x0000000000000000000000000000000000000007",
+  recruiterVault: "0x0000000000000000000000000000000000000008",
+  communityVault: "0x0000000000000000000000000000000000000009",
+  protocolVault: "0x000000000000000000000000000000000000000a",
+  creatorRegistry: "0x000000000000000000000000000000000000000b",
+  riskRegistry: "0x000000000000000000000000000000000000000c",
+  graduationOracle: "0x000000000000000000000000000000000000000d",
+  permanentLpLocker: "0x000000000000000000000000000000000000000e",
+  upVoteTreasury: "0x000000000000000000000000000000000000000f",
+  priceFeed: "0x0000000000000000000000000000000000000010",
+};
+
+function baseDeployment(overrides: Record<string, unknown> = {}) {
+  return {
+    network: "unitnet",
+    chainId: 31337,
+    deploymentBlock: 1234,
+    deployer: ADDRESSES.deployer,
+    treasurySafe: ADDRESSES.treasurySafe,
+    topazRouter: ADDRESSES.topazRouter,
+    graduationPriceFeed: ADDRESSES.priceFeed,
+    contracts: {
+      LaunchFactory: ADDRESSES.factory,
+      LaunchCampaignImplementation: ADDRESSES.implementation,
+      TreasuryRouter: ADDRESSES.treasuryRouter,
+      TreasuryVaultV2: ADDRESSES.treasuryVault,
+      RecruiterRewardsVault: ADDRESSES.recruiterVault,
+      CommunityRewardsVault: ADDRESSES.communityVault,
+      ProtocolRevenueVault: ADDRESSES.protocolVault,
+      CreatorRegistry: ADDRESSES.creatorRegistry,
+      RiskRegistry: ADDRESSES.riskRegistry,
+      GraduationOracle: ADDRESSES.graduationOracle,
+      PermanentLpLocker: ADDRESSES.permanentLpLocker,
+      UPVoteTreasury: ADDRESSES.upVoteTreasury,
+    },
+    routing: {
+      factoryTradeRouteProfile: 1,
+      factoryFinalizeRouteProfile: 1,
+      factoryRouteAuthority: ADDRESSES.deployer,
+    },
+    ...overrides,
+  };
+}
+
+function runExporter(deployment: unknown) {
+  const dir = mkdtempSync(path.join(tmpdir(), "mwz-indexer-manifest-"));
+  const deploymentFile = path.join(dir, "deployment.json");
+  const outFile = path.join(dir, "manifest.json");
+  writeFileSync(deploymentFile, JSON.stringify(deployment, null, 2));
+
+  const result = spawnSync(process.execPath, [path.join(process.cwd(), "scripts", "export-indexer-manifest.cjs"), "unitnet"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      DEPLOYMENT_FILE: deploymentFile,
+      INDEXER_MANIFEST_FILE: outFile,
+    },
+    encoding: "utf8",
+  });
+
+  const written = existsSync(outFile) ? JSON.parse(readFileSync(outFile, "utf8")) : null;
+  rmSync(dir, { recursive: true, force: true });
+  return { ...result, written };
+}
+
+describe("indexer manifest export", function () {
+  it("builds an indexer manifest from canonical deployment keys", async () => {
+    const manifest = buildIndexerManifest(baseDeployment(), "unit-test");
+
+    expect(manifest.schemaVersion).to.eq(1);
+    expect(manifest.network).to.eq("unitnet");
+    expect(manifest.chainId).to.eq(31337);
+    expect(manifest.deploymentBlock).to.eq(1234);
+    expect(manifest.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
+    expect(manifest.contracts.LaunchCampaignImplementation).to.eq(ADDRESSES.implementation);
+    expect(manifest.topazRouter).to.eq(ADDRESSES.topazRouter);
+    expect(manifest.graduationPriceFeed).to.eq(ADDRESSES.priceFeed);
+    expect(manifest.routing.factoryRouteAuthority).to.eq(ADDRESSES.deployer);
+    expect(manifest.events.LaunchFactory["CampaignCreated(uint256,address,address,address,string,string,string,string)"]).to.eq(
+      eventTopic("CampaignCreated(uint256,address,address,address,string,string,string,string)")
+    );
+    expect(manifest.events.LaunchCampaign["CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)"]).to.eq(
+      eventTopic("CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)")
+    );
+  });
+
+  it("supports legacy top-level deployment aliases", async () => {
+    const manifest = buildIndexerManifest(
+      baseDeployment({
+        contracts: {},
+        router: ADDRESSES.topazRouter,
+        factoryAddress: ADDRESSES.factory,
+        campaignImplementation: ADDRESSES.implementation,
+        treasuryRouter: ADDRESSES.treasuryRouter,
+        vault: ADDRESSES.treasuryVault,
+        recruiterVault: ADDRESSES.recruiterVault,
+        communityVault: ADDRESSES.communityVault,
+        protocolVault: ADDRESSES.protocolVault,
+        creatorRegistry: ADDRESSES.creatorRegistry,
+        riskRegistry: ADDRESSES.riskRegistry,
+        graduationOracle: ADDRESSES.graduationOracle,
+        permanentLpLocker: ADDRESSES.permanentLpLocker,
+        voteTreasuryAddress: ADDRESSES.upVoteTreasury,
+      }),
+      "legacy"
+    );
+
+    expect(manifest.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
+    expect(manifest.contracts.UPVoteTreasury).to.eq(ADDRESSES.upVoteTreasury);
+    expect(manifest.topazRouter).to.eq(ADDRESSES.topazRouter);
+  });
+
+  it("rejects missing chain id or invalid required addresses", async () => {
+    expect(() => buildIndexerManifest(baseDeployment({ chainId: undefined }), "missing-chain")).to.throw("chainId missing");
+    expect(() =>
+      buildIndexerManifest(
+        baseDeployment({ contracts: { ...baseDeployment().contracts, LaunchFactory: "not-an-address" } }),
+        "bad-address"
+      )
+    ).to.throw("LaunchFactory: missing or invalid address");
+  });
+
+  it("writes a manifest file from the CLI", async () => {
+    const result = runExporter(baseDeployment());
+
+    expect(result.status).to.eq(0);
+    expect(result.stdout).to.include("[indexer-manifest] Wrote:");
+    expect(result.written.schemaVersion).to.eq(1);
+    expect(result.written.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
+    expect(result.written.events.PermanentLpLocker["LpTokenRegistered(address)"]).to.eq(eventTopic("LpTokenRegistered(address)"));
+  });
+});
