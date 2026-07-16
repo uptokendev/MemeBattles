@@ -84,9 +84,11 @@ describe("economic simulation script", function () {
 
     expect(result.ok).to.eq(false);
     expect(result.failedScenarios[0].lpAllocationSufficient).to.eq(false);
+    expect(result.failedScenarios[0].requiredLiquidityTokenBps > result.config.liquidityTokenBps).to.eq(true);
+    expect(result.failedScenarios[0].maxSafeLiquidityBps < result.config.liquidityBps).to.eq(true);
   });
 
-  it("serializes bigint simulation outputs into reviewable JSON", async () => {
+  it("serializes bigint simulation outputs and tuning diagnostics into reviewable JSON", async () => {
     const result = simulate(buildConfig({ nativeUsdPrices: [600n * WAD] }));
     const json = simulationToJson(result);
 
@@ -94,6 +96,9 @@ describe("economic simulation script", function () {
     expect(json.scenarios).to.have.length(1);
     expect(json.scenarios[0].nativeUsdPrice).to.eq("600");
     expect(json.scenarios[0]).to.have.property("grossCurveRaiseNative").that.is.a("string");
+    expect(json.scenarios[0]).to.have.property("requiredLiquidityTokenBps").that.is.a("string");
+    expect(json.scenarios[0]).to.have.property("maxSafeLiquidityBps").that.is.a("string");
+    expect(json.scenarios[0]).to.have.property("raiseToTargetRatio").that.is.a("string");
   });
 
   it("loads and simulates the Phase 16 economic scenario fixture", async () => {
@@ -105,6 +110,8 @@ describe("economic simulation script", function () {
     expect(json.name).to.eq("phase-16-default-economics");
     expect(json.cases.map((entry: { name: string }) => entry.name)).to.deep.eq(["production-candidate", "local-rehearsal-compact"]);
     expect(json.cases[0].scenarios).to.have.length(5);
+    expect(json.cases[0].failedScenarios[0].requiredLiquidityTokenBps).to.eq("3450");
+    expect(json.cases[0].failedScenarios[0].maxSafeLiquidityBps).to.eq("2318");
     expect(json.cases[1].ok).to.eq(true);
   });
 
@@ -147,6 +154,7 @@ describe("economic simulation script", function () {
     expect(result.status).to.eq(0);
     expect(written.name).to.eq("phase-16-default-economics");
     expect(written.cases).to.have.length(2);
+    expect(written.cases[0].failedScenarios[0].requiredLiquidityTokenBps).to.eq("3450");
     expect(logs[0]).to.include("[economics] wrote");
   });
 
