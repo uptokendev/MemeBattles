@@ -24,6 +24,7 @@ describe("rehearsal-check script", function () {
     expect(focusedSpecs).to.deep.eq([
       "test/CheckDeployEnv.spec.ts",
       "test/VerifyDeploymentHelpers.spec.ts",
+      "test/VerifyRouteAuthority.spec.ts",
       "test/LaunchFactory.spec.ts",
       "test/LaunchFactoryDefaultEconomics.spec.ts",
       "test/LaunchCampaignQuoteEdges.spec.ts",
