@@ -31,10 +31,11 @@ describe("package scripts", function () {
     expect(pkg.scripts["frontend:env:bsc-testnet"]).to.eq("node scripts/export-frontend-env.cjs bscTestnet");
   });
 
-  it("keeps pretestnet and deployment summary scripts wired", async () => {
+  it("keeps pretestnet, deployment summary, and simulation scripts wired", async () => {
     expect(pkg.scripts["pretestnet:check"]).to.eq("node scripts/pretestnet-check.cjs");
     expect(pkg.scripts["deployment:summary"]).to.eq("node scripts/deployment-summary.cjs");
     expect(pkg.scripts["deployment:summary:bsc-testnet"]).to.eq("node scripts/deployment-summary.cjs bscTestnet");
+    expect(pkg.scripts["economics:simulate"]).to.eq("node scripts/economic-simulations.cjs");
   });
 
   it("uses the expected package manager and core dependencies", async () => {
