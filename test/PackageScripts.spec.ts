@@ -42,6 +42,7 @@ describe("package scripts", function () {
     );
     expect(pkg.scripts["indexer:manifest"]).to.eq("node scripts/export-indexer-manifest.cjs");
     expect(pkg.scripts["indexer:manifest:bsc-testnet"]).to.eq("node scripts/export-indexer-manifest.cjs bscTestnet");
+    expect(pkg.scripts["indexer:schema"]).to.eq("node scripts/export-indexer-schema.cjs");
     expect(pkg.scripts["monitor:readiness"]).to.eq("node scripts/monitoring-readiness.cjs");
     expect(pkg.scripts["monitor:readiness:bsc-testnet"]).to.eq("node scripts/monitoring-readiness.cjs bscTestnet");
     expect(pkg.scripts["monitor:snapshot"]).to.eq("hardhat run scripts/monitoring-snapshot.ts");
