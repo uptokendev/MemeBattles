@@ -32,6 +32,7 @@ describe("rehearsal-check script", function () {
       "test/EconomicSimulations.spec.ts",
       "test/MonitoringReadiness.spec.ts",
       "test/MonitoringSnapshot.spec.ts",
+      "test/TestnetAcceptance.spec.ts",
       "test/PackageScripts.spec.ts",
     ]);
   });
