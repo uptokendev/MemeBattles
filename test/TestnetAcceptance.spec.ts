@@ -30,6 +30,7 @@ describe("testnet-acceptance script", function () {
       ["bscTestnet deploy env", ["run", "deploy:check-env:bsc-testnet"]],
       ["deployment wiring", ["run", "verify:deployment:bsc-testnet"]],
       ["route authority", ["run", "verify:route-authority:bsc-testnet"]],
+      ["indexer schema", ["run", "indexer:schema"]],
       ["indexer manifest", ["run", "indexer:manifest:bsc-testnet"]],
       ["monitoring readiness", ["run", "monitor:readiness:bsc-testnet"]],
       ["monitoring snapshot", ["run", "monitor:snapshot:bsc-testnet"]],
