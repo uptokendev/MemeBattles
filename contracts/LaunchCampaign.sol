@@ -179,6 +179,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 initialDexPrice,
         uint256 postBurnTotalSupply
     );
+    event GraduationLiquidityCapped(uint256 desiredLiquidityTokens, uint256 cappedLiquidityTokens, uint256 desiredLiquidityBnb, uint256 cappedLiquidityBnb);
 
     error OnlyFactory();
     error AlreadyInitialized();
@@ -620,7 +621,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 lpTokensDesired = Math.mulDiv(liquidityValue, WAD, g.finalCurvePrice);
         if (lpTokensDesired == 0) revert LpTokensZero();
-        if (lpTokensDesired > liquiditySupply) revert InsufficientLpAllocation();
+        if (lpTokensDesired > liquiditySupply) {
+            uint256 desiredLiquidityTokens = lpTokensDesired;
+            uint256 desiredLiquidityValue = liquidityValue;
+            lpTokensDesired = liquiditySupply;
+            liquidityValue = Math.mulDiv(lpTokensDesired, g.finalCurvePrice, WAD);
+            if (liquidityValue == 0) revert LiquidityZero();
+            emit GraduationLiquidityCapped(desiredLiquidityTokens, lpTokensDesired, desiredLiquidityValue, liquidityValue);
+        }
 
         tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
