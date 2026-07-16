@@ -23,6 +23,8 @@
     "economics:simulate:acceptance": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
     "monitor:readiness": "node scripts/monitoring-readiness.cjs",
     "monitor:readiness:bsc-testnet": "node scripts/monitoring-readiness.cjs bscTestnet",
+    "monitor:snapshot": "hardhat run scripts/monitoring-snapshot.ts",
+    "monitor:snapshot:bsc-testnet": "hardhat run scripts/monitoring-snapshot.ts --network bscTestnet",
     "frontend:env": "node scripts/export-frontend-env.cjs",
     "frontend:env:bsc-testnet": "node scripts/export-frontend-env.cjs bscTestnet",
     "deployment:summary": "node scripts/deployment-summary.cjs",
