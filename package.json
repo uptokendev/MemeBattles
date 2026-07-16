@@ -21,6 +21,8 @@
     "economics:simulate": "node scripts/economic-simulations.cjs",
     "economics:simulate:suite": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json",
     "economics:simulate:acceptance": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
+    "indexer:manifest": "node scripts/export-indexer-manifest.cjs",
+    "indexer:manifest:bsc-testnet": "node scripts/export-indexer-manifest.cjs bscTestnet",
     "monitor:readiness": "node scripts/monitoring-readiness.cjs",
     "monitor:readiness:bsc-testnet": "node scripts/monitoring-readiness.cjs bscTestnet",
     "monitor:snapshot": "hardhat run scripts/monitoring-snapshot.ts",
