@@ -36,8 +36,8 @@ describe("economic simulation script", function () {
 
     expect(scenario.graduationReachedAtSellout).to.eq(true);
     expect(scenario.lpAllocationSufficient).to.eq(true);
-    expect(scenario.lpTokensDesired).to.be.lessThanOrEqual(scenario.liquiditySupply);
-    expect(scenario.overshoot).to.be.greaterThan(0n);
+    expect(scenario.lpTokensDesired <= scenario.liquiditySupply).to.eq(true);
+    expect(scenario.overshoot > 0n).to.eq(true);
   });
 
   it("flags scenarios that cannot graduate before curve sellout", async () => {
