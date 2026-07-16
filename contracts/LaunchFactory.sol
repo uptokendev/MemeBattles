@@ -183,12 +183,12 @@ contract LaunchFactory is Ownable {
         permanentLpLocker = new PermanentLpLocker(address(this));
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
-            curveBps: 8800,
-            liquidityTokenBps: 1000,
-            basePrice: 5e13,
-            priceSlope: 1e9,
+            curveBps: 8400,
+            liquidityTokenBps: 1400,
+            basePrice: 1e9,
+            priceSlope: 850,
             graduationTarget: DEFAULT_GRADUATION_USD_THRESHOLD,
-            liquidityBps: 8000
+            liquidityBps: 3300
         });
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
@@ -382,7 +382,6 @@ contract LaunchFactory is Ownable {
 
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
         requireAuthorizedTrading = required;
-        emit RequireAuthorizedTradingUpdated(required);
     }
 
     function setCampaignPauses(address campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused) external onlyOwner {
