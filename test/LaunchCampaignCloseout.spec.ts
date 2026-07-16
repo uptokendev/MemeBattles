@@ -3,6 +3,8 @@ import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { deployCoreFixture } from "./fixtures/core";
 
+const WAD = ethers.parseEther("1");
+
 const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
   name: "CloseoutToken",
   symbol: "CLOSE",
@@ -207,6 +209,26 @@ describe("LaunchCampaign closeout integration", function () {
     expect(await permanentLpLocker.registeredLpToken(state.dexPair)).to.eq(true);
 
     await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "Finalized");
+  });
+
+  it("caps graduation liquidity instead of reverting when desired LP tokens exceed the reserve", async () => {
+    const { campaign, owner, alice } = await loadFixture(createLowTargetCampaignFixture);
+    await owner.sendTransaction({ to: await campaign.getAddress(), value: ethers.parseEther("1") });
+
+    const liquiditySupply = await campaign.liquiditySupply();
+    const curveSupply = await campaign.curveSupply();
+    const expectedLiquidityBnb = (liquiditySupply * (await campaign.currentPrice())) / WAD;
+
+    const tx = campaign.connect(alice).graduateIfEligible(0, 0);
+    await expect(tx).to.emit(campaign, "GraduationLiquidityCapped");
+    await expect(tx).to.emit(campaign, "CampaignFinalized");
+
+    const state = await campaign.getGraduationState();
+    expect(await campaign.launched()).to.eq(true);
+    expect(state.graduatedLiquidityTokens).to.eq(liquiditySupply);
+    expect(state.graduatedLiquidityBnb).to.eq(expectedLiquidityBnb);
+    expect(state.burnedUnusedLpTokens).to.eq(0n);
+    expect(state.burnedUnsoldTokens).to.eq(curveSupply);
   });
 
   it("quoteBuyExactBnb returns zeros after finalization", async () => {
