@@ -181,6 +181,7 @@ export async function deployProtocol() {
   const [deployer] = await ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
   const net = await ethers.provider.getNetwork();
+  const deploymentStartBlock = await ethers.provider.getBlockNumber();
 
   const routerAddress = await resolveRouterAddress(deployerAddress);
   const graduationOracleConfig = await resolveGraduationOracle();
@@ -206,6 +207,7 @@ export async function deployProtocol() {
 
   console.log(`Network: ${network.name}`);
   console.log(`Chain ID: ${net.chainId.toString()}`);
+  console.log(`Deployment start block: ${deploymentStartBlock}`);
   console.log(`Deployer: ${deployerAddress}`);
   console.log("Topaz Router:", routerAddress);
   console.log("GraduationOracle:", graduationOracleConfig.oracleAddress);
@@ -413,6 +415,7 @@ export async function deployProtocol() {
   const deployment = {
     network: network.name,
     chainId: Number(net.chainId),
+    deploymentBlock: deploymentStartBlock,
     deployer: deployerAddress,
     router: routerAddress,
     topazRouter: routerAddress,
