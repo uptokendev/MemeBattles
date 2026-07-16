@@ -14,7 +14,7 @@
     "deploy:reward-distributor:bsc-testnet": "hardhat run scripts/deploy-reward-distributor.cjs --network bscTestnet",
     "verify:deployment": "hardhat run scripts/verify-deployment.ts",
     "verify:deployment:bsc-testnet": "hardhat run scripts/verify-deployment.ts --network bscTestnet",
-    "verify:route-authority": "hardhat run scripts/verify-route-authority.cjs",
+    "verify:route-authority": "node scripts/verify-route-authority.cjs",
     "verify:route-authority:bsc-testnet": "hardhat run scripts/verify-route-authority.cjs --network bscTestnet",
     "protocol:rehearsal": "hardhat run scripts/local-protocol-rehearsal.ts",
     "rehearsal:check": "node scripts/rehearsal-check.cjs",
