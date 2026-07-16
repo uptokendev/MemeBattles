@@ -30,6 +30,7 @@ describe("rehearsal-check script", function () {
       "test/LaunchCampaignCloseout.spec.ts",
       "test/EconomicSimulations.spec.ts",
       "test/MonitoringReadiness.spec.ts",
+      "test/MonitoringSnapshot.spec.ts",
       "test/PackageScripts.spec.ts",
     ]);
   });
