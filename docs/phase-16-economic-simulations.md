@@ -22,6 +22,16 @@ It currently includes:
 - `production-candidate`: the default large-supply economics swept across multiple native/USD prices.
 - `local-rehearsal-compact`: the compact curve used to keep local rehearsal fast and deterministic.
 
+The production candidate is tuned around this token split:
+
+```text
+Curve        84%
+LP           14%
+Creator       2%
+```
+
+With the current linear-price bonding curve, that split cannot safely pair 80% of raised native into LP without using the cap. The default production candidate therefore uses `liquidityBps = 3300`, which keeps graduation uncapped across the configured native/USD sweep while preserving the non-blocking cap as a safety net.
+
 ## Commands
 
 Run the focused simulator tests:
@@ -68,8 +78,6 @@ Each scenario includes tuning diagnostics:
 - `lpAllocationCapped`: whether the non-blocking cap path is used.
 - `nativeReturnedByCap`: native amount not used for LP because reserved liquidity tokens were the limiting side.
 
-For the current `production-candidate`, strict mode should pass because graduation remains executable, but the suite should report a warning. At `liquidityBps = 8000`, the run would need about `3450` liquidity token bps to avoid capping, while the scenario reserves `1000`. With `liquidityTokenBps = 1000`, the maximum uncapped liquidity setting is about `2318` bps.
-
 Add `--strict` when a pipeline should fail on true graduation blockers:
 
 ```bash
@@ -81,4 +89,4 @@ Phase 16 should be treated as closed when:
 - `test/EconomicSimulations.spec.ts` passes.
 - `npm run economics:simulate:acceptance` writes the acceptance JSON.
 - Strict mode passes for the scenario suite.
-- Any `warningScenarios` production case has been intentionally accepted or the economics have been retuned until the suite has no warnings.
+- Production `warningScenarios` are empty, or any warnings have been intentionally accepted.
