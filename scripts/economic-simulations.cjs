@@ -7,12 +7,12 @@ const MAX_BPS = 10_000n;
 
 const DEFAULT_CONFIG = {
   totalSupply: 1_000_000_000n * WAD,
-  curveBps: 8_800n,
-  liquidityTokenBps: 1_000n,
-  basePrice: 50_000_000_000_000n,
-  priceSlope: 1_000_000_000n,
+  curveBps: 8_400n,
+  liquidityTokenBps: 1_400n,
+  basePrice: 1_000_000_000n,
+  priceSlope: 850n,
   graduationTargetUsd: 30_000n * WAD,
-  liquidityBps: 8_000n,
+  liquidityBps: 3_300n,
   protocolFeeBps: 200n,
   nativeUsdPrices: [100n, 300n, 600n, 1_000n, 2_000n].map((price) => price * WAD),
 };
