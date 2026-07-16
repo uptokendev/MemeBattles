@@ -30,6 +30,7 @@
     "deployment:summary": "node scripts/deployment-summary.cjs",
     "deployment:summary:bsc-testnet": "node scripts/deployment-summary.cjs bscTestnet",
     "pretestnet:check": "node scripts/pretestnet-check.cjs",
+    "testnet:acceptance": "node scripts/testnet-acceptance.cjs",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "gas": "REPORT_GAS=true hardhat test",
