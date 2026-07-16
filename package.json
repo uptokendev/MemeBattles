@@ -19,6 +19,8 @@
     "protocol:rehearsal": "hardhat run scripts/local-protocol-rehearsal.ts",
     "rehearsal:check": "node scripts/rehearsal-check.cjs",
     "economics:simulate": "node scripts/economic-simulations.cjs",
+    "economics:simulate:suite": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json",
+    "economics:simulate:acceptance": "node scripts/economic-simulations.cjs --config config/economic-scenarios.json --output output/economic-simulation-results.json",
     "frontend:env": "node scripts/export-frontend-env.cjs",
     "frontend:env:bsc-testnet": "node scripts/export-frontend-env.cjs bscTestnet",
     "deployment:summary": "node scripts/deployment-summary.cjs",
