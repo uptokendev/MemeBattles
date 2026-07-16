@@ -130,12 +130,17 @@ function simulateScenario(config, nativeUsdPrice) {
   const finalCurvePrice = currentPrice(curveSupply, config.basePrice, config.priceSlope);
   const graduationProtocolFee = fee(grossCurveRaise, config.protocolFeeBps);
   const remainingAfterFee = grossCurveRaise - graduationProtocolFee;
-  const liquidityNative = (remainingAfterFee * config.liquidityBps) / MAX_BPS;
-  const lpTokensDesired = finalCurvePrice === 0n ? 0n : mulDiv(liquidityNative, WAD, finalCurvePrice);
-  const lpAllocationSufficient = lpTokensDesired <= liquiditySupply;
-  const unusedLiquidityTokens = lpAllocationSufficient ? liquiditySupply - lpTokensDesired : 0n;
-  const requiredLiquidityTokenBps = ceilDiv(lpTokensDesired * MAX_BPS, config.totalSupply);
+  const desiredLiquidityNative = (remainingAfterFee * config.liquidityBps) / MAX_BPS;
+  const desiredLpTokens = finalCurvePrice === 0n ? 0n : mulDiv(desiredLiquidityNative, WAD, finalCurvePrice);
+  const lpAllocationSufficient = desiredLpTokens <= liquiditySupply;
+  const lpAllocationCapped = desiredLpTokens > liquiditySupply;
+  const lpTokensUsed = lpAllocationCapped ? liquiditySupply : desiredLpTokens;
+  const liquidityNativeUsed = finalCurvePrice === 0n ? 0n : mulDiv(lpTokensUsed, finalCurvePrice, WAD);
+  const nativeReturnedByCap = desiredLiquidityNative > liquidityNativeUsed ? desiredLiquidityNative - liquidityNativeUsed : 0n;
+  const unusedLiquidityTokens = liquiditySupply > lpTokensUsed ? liquiditySupply - lpTokensUsed : 0n;
+  const requiredLiquidityTokenBps = ceilDiv(desiredLpTokens * MAX_BPS, config.totalSupply);
   const maxSafeLiquidityBps = maxLiquidityBpsForReserve(liquiditySupply, finalCurvePrice, remainingAfterFee);
+  const graduationExecutable = graduationReachedAtSellout && lpTokensUsed > 0n && liquidityNativeUsed > 0n;
 
   return {
     nativeUsdPrice,
@@ -147,14 +152,20 @@ function simulateScenario(config, nativeUsdPrice) {
     totalBuyerSpend,
     nativeTarget,
     graduationReachedAtSellout,
+    graduationExecutable,
     overshoot,
     raiseToTargetRatio,
     finalCurvePrice,
     graduationProtocolFee,
     remainingAfterFee,
-    liquidityNative,
-    lpTokensDesired,
+    desiredLiquidityNative,
+    desiredLpTokens,
+    liquidityNative: liquidityNativeUsed,
+    lpTokensDesired: desiredLpTokens,
+    lpTokensUsed,
     lpAllocationSufficient,
+    lpAllocationCapped,
+    nativeReturnedByCap,
     unusedLiquidityTokens,
     requiredLiquidityTokenBps,
     maxSafeLiquidityBps,
@@ -164,12 +175,14 @@ function simulateScenario(config, nativeUsdPrice) {
 function simulate(config = DEFAULT_CONFIG) {
   const normalized = buildConfig(config);
   const scenarios = normalized.nativeUsdPrices.map((price) => simulateScenario(normalized, price));
-  const failedScenarios = scenarios.filter((scenario) => !scenario.graduationReachedAtSellout || !scenario.lpAllocationSufficient);
+  const failedScenarios = scenarios.filter((scenario) => !scenario.graduationExecutable);
+  const warningScenarios = scenarios.filter((scenario) => scenario.lpAllocationCapped);
   return {
     config: normalized,
     scenarios,
     ok: failedScenarios.length === 0,
     failedScenarios,
+    warningScenarios,
   };
 }
 
@@ -182,11 +195,13 @@ function simulateSuite(suiteConfig) {
     };
   });
   const failedCases = cases.filter((entry) => !entry.result.ok);
+  const warningCases = cases.filter((entry) => entry.result.warningScenarios.length > 0);
   return {
     name: suiteConfig.name || "economic-simulation-suite",
     ok: failedCases.length === 0,
     cases,
     failedCases,
+    warningCases,
   };
 }
 
@@ -201,14 +216,19 @@ function scenarioToJson(scenario) {
     totalBuyerSpendNative: formatDecimal(scenario.totalBuyerSpend),
     nativeTarget: formatDecimal(scenario.nativeTarget),
     graduationReachedAtSellout: scenario.graduationReachedAtSellout,
+    graduationExecutable: scenario.graduationExecutable,
     overshootNative: formatDecimal(scenario.overshoot),
     raiseToTargetRatio: formatDecimal(scenario.raiseToTargetRatio),
     finalCurvePriceNative: formatDecimal(scenario.finalCurvePrice),
     graduationProtocolFeeNative: formatDecimal(scenario.graduationProtocolFee),
     remainingAfterFeeNative: formatDecimal(scenario.remainingAfterFee),
+    desiredLiquidityNative: formatDecimal(scenario.desiredLiquidityNative),
     liquidityNative: formatDecimal(scenario.liquidityNative),
     lpTokensDesired: formatDecimal(scenario.lpTokensDesired),
+    lpTokensUsed: formatDecimal(scenario.lpTokensUsed),
     lpAllocationSufficient: scenario.lpAllocationSufficient,
+    lpAllocationCapped: scenario.lpAllocationCapped,
+    nativeReturnedByCap: formatDecimal(scenario.nativeReturnedByCap),
     unusedLiquidityTokens: formatDecimal(scenario.unusedLiquidityTokens),
     requiredLiquidityTokenBps: scenario.requiredLiquidityTokenBps.toString(),
     maxSafeLiquidityBps: scenario.maxSafeLiquidityBps.toString(),
@@ -230,6 +250,7 @@ function simulationToJson(result) {
     },
     scenarios: result.scenarios.map(scenarioToJson),
     failedScenarios: result.failedScenarios.map(scenarioToJson),
+    warningScenarios: result.warningScenarios.map(scenarioToJson),
   };
 }
 
@@ -242,6 +263,7 @@ function suiteToJson(suite) {
       ...simulationToJson(entry.result),
     })),
     failedCases: suite.failedCases.map((entry) => entry.name),
+    warningCases: suite.warningCases.map((entry) => entry.name),
   };
 }
 
@@ -300,7 +322,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --config <path>        Read a JSON suite from config/economic-scenarios.json style input\n  --output <path>        Write the JSON result to a file instead of stdout\n  --strict               Exit non-zero when any scenario fails acceptance checks\n`);
+  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --config <path>        Read a JSON suite from config/economic-scenarios.json style input\n  --output <path>        Write the JSON result to a file instead of stdout\n  --strict               Exit non-zero when any scenario cannot execute graduation\n`);
 }
 
 function main(argv = process.argv.slice(2), io = console) {
