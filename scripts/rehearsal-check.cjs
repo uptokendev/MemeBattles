@@ -2,6 +2,8 @@
 const { spawnSync } = require("node:child_process");
 
 const defaultNpmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+const defaultNpxCmd = process.platform === "win32" ? "npx.cmd" : "npx";
+const spawnOptions = (stdio) => ({ stdio, shell: process.platform === "win32" });
 
 const focusedSpecs = [
   "test/CheckDeployEnv.spec.ts",
@@ -12,20 +14,24 @@ const focusedSpecs = [
 ];
 
 const checks = [
-  ["focused hardening specs", ["exec", "--", "hardhat", "test", ...focusedSpecs]],
-  ["local protocol rehearsal", ["run", "protocol:rehearsal"]],
+  ["focused hardening specs", "npx", ["hardhat", "test", ...focusedSpecs]],
+  ["local protocol rehearsal", "npm", ["run", "protocol:rehearsal"]],
 ];
+
+function commandFor(kind, options) {
+  if (kind === "npx") return options.npxCmd || defaultNpxCmd;
+  return options.npmCmd || defaultNpmCmd;
+}
 
 function runRehearsalChecks(options = {}) {
   const spawn = options.spawn || spawnSync;
-  const npmCmd = options.npmCmd || defaultNpmCmd;
   const stdio = options.stdio || "inherit";
 
   console.log("[rehearsal-check] Running focused hardening checks and local protocol rehearsal.");
 
-  for (const [label, args] of checks) {
+  for (const [label, kind, args] of checks) {
     console.log(`\n[rehearsal-check] ${label}`);
-    const result = spawn(npmCmd, args, { stdio });
+    const result = spawn(commandFor(kind, options), args, spawnOptions(stdio));
 
     if (result.error) {
       const message = `[rehearsal-check] ${label} could not start: ${result.error.message}`;
@@ -48,8 +54,10 @@ function runRehearsalChecks(options = {}) {
 module.exports = {
   checks,
   defaultNpmCmd,
+  defaultNpxCmd,
   focusedSpecs,
   runRehearsalChecks,
+  spawnOptions,
 };
 
 if (require.main === module) {
