@@ -26,6 +26,7 @@ describe("rehearsal-check script", function () {
       "test/VerifyDeploymentHelpers.spec.ts",
       "test/LaunchCampaignQuoteEdges.spec.ts",
       "test/LaunchCampaignCloseout.spec.ts",
+      "test/EconomicSimulations.spec.ts",
       "test/PackageScripts.spec.ts",
     ]);
   });
