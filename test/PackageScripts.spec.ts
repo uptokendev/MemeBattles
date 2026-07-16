@@ -42,6 +42,8 @@ describe("package scripts", function () {
     );
     expect(pkg.scripts["monitor:readiness"]).to.eq("node scripts/monitoring-readiness.cjs");
     expect(pkg.scripts["monitor:readiness:bsc-testnet"]).to.eq("node scripts/monitoring-readiness.cjs bscTestnet");
+    expect(pkg.scripts["monitor:snapshot"]).to.eq("hardhat run scripts/monitoring-snapshot.ts");
+    expect(pkg.scripts["monitor:snapshot:bsc-testnet"]).to.eq("hardhat run scripts/monitoring-snapshot.ts --network bscTestnet");
   });
 
   it("uses the expected package manager and core dependencies", async () => {
