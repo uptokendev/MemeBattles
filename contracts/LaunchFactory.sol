@@ -382,6 +382,7 @@ contract LaunchFactory is Ownable {
 
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
         requireAuthorizedTrading = required;
+        emit RequireAuthorizedTradingUpdated(required);
     }
 
     function setCampaignPauses(address campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused) external onlyOwner {
