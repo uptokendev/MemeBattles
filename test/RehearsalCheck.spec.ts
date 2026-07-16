@@ -1,13 +1,13 @@
 import { expect } from "chai";
 
-const { checks, defaultNpmCmd, focusedSpecs, runRehearsalChecks } = require("../scripts/rehearsal-check.cjs");
+const { checks, defaultNpmCmd, defaultNpxCmd, focusedSpecs, runRehearsalChecks, spawnOptions } = require("../scripts/rehearsal-check.cjs");
 
 describe("rehearsal-check script", function () {
-  it("runs focused specs and the protocol rehearsal in order with the default npm command", async () => {
-    const calls: Array<{ command: string; args: string[]; options: { stdio: string } }> = [];
+  it("runs focused specs and the protocol rehearsal in order with platform-safe commands", async () => {
+    const calls: Array<{ command: string; args: string[]; options: { stdio: string; shell: boolean } }> = [];
     const result = runRehearsalChecks({
       stdio: "pipe",
-      spawn: (command: string, args: string[], options: { stdio: string }) => {
+      spawn: (command: string, args: string[], options: { stdio: string; shell: boolean }) => {
         calls.push({ command, args, options });
         return { status: 0 };
       },
@@ -15,9 +15,9 @@ describe("rehearsal-check script", function () {
 
     expect(result).to.deep.eq({ ok: true, status: 0, label: "complete", message: "Focused hardening checks passed" });
     expect(calls).to.have.length(checks.length);
-    expect(calls.map((call) => call.command)).to.deep.eq(checks.map(() => defaultNpmCmd));
-    expect(calls.map((call) => call.args)).to.deep.eq(checks.map(([, args]: [string, string[]]) => args));
-    expect(calls.map((call) => call.options.stdio)).to.deep.eq(checks.map(() => "pipe"));
+    expect(calls.map((call) => call.command)).to.deep.eq([defaultNpxCmd, defaultNpmCmd]);
+    expect(calls.map((call) => call.args)).to.deep.eq(checks.map(([, , args]: [string, string, string[]]) => args));
+    expect(calls.map((call) => call.options)).to.deep.eq(checks.map(() => spawnOptions("pipe")));
   });
 
   it("keeps the focused spec list on the expected hardening surface", async () => {
@@ -30,10 +30,11 @@ describe("rehearsal-check script", function () {
     ]);
   });
 
-  it("supports a custom npm command", async () => {
+  it("supports custom npm and npx commands", async () => {
     const commands: string[] = [];
     const result = runRehearsalChecks({
       npmCmd: "pnpm",
+      npxCmd: "pnpx",
       stdio: "pipe",
       spawn: (command: string) => {
         commands.push(command);
@@ -42,13 +43,13 @@ describe("rehearsal-check script", function () {
     });
 
     expect(result.ok).to.eq(true);
-    expect(commands).to.deep.eq(checks.map(() => "pnpm"));
+    expect(commands).to.deep.eq(["pnpx", "pnpm"]);
   });
 
   it("stops at the first failing check", async () => {
     const calls: string[] = [];
     const result = runRehearsalChecks({
-      npmCmd: "npm-test",
+      npxCmd: "npx-test",
       stdio: "pipe",
       spawn: (_command: string, args: string[]) => {
         calls.push(args.join(" "));
@@ -60,7 +61,7 @@ describe("rehearsal-check script", function () {
     expect(result.status).to.eq(7);
     expect(result.label).to.eq("focused hardening specs");
     expect(result.message).to.include("focused hardening specs failed");
-    expect(calls).to.deep.eq([`exec -- hardhat test ${focusedSpecs.join(" ")}`]);
+    expect(calls).to.deep.eq([`hardhat test ${focusedSpecs.join(" ")}`]);
   });
 
   it("returns status 1 when a failed process has no numeric status", async () => {
