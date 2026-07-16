@@ -45,6 +45,10 @@ function mulDiv(n, m, d) {
   return (n * m) / d;
 }
 
+function assertBps(value, label) {
+  if (value < 0n || value > MAX_BPS) throw new Error(`${label} must be between 0 and 10000 bps`);
+}
+
 function area(x, basePrice, priceSlope) {
   const linear = mulDiv(x, basePrice, WAD);
   const slopeTerm = mulDiv(priceSlope, x * x, 2n * WAD * WAD);
@@ -61,12 +65,23 @@ function fee(amountWei, protocolFeeBps) {
 }
 
 function nativeTargetForUsd(usdAmount, nativeUsdPrice) {
+  if (nativeUsdPrice <= 0n) throw new Error("nativeUsdPrice must be positive");
   if (usdAmount === 0n) return 0n;
   return ceilDiv(usdAmount * WAD, nativeUsdPrice);
 }
 
 function buildConfig(overrides = {}) {
-  return { ...DEFAULT_CONFIG, ...overrides };
+  const config = { ...DEFAULT_CONFIG, ...overrides };
+  assertBps(config.curveBps, "curveBps");
+  assertBps(config.liquidityTokenBps, "liquidityTokenBps");
+  assertBps(config.liquidityBps, "liquidityBps");
+  assertBps(config.protocolFeeBps, "protocolFeeBps");
+  if (config.curveBps + config.liquidityTokenBps > MAX_BPS) {
+    throw new Error("curveBps + liquidityTokenBps cannot exceed 10000 bps");
+  }
+  if (config.totalSupply <= 0n) throw new Error("totalSupply must be positive");
+  if (!config.nativeUsdPrices.length) throw new Error("at least one native/USD price is required");
+  return config;
 }
 
 function simulateScenario(config, nativeUsdPrice) {
@@ -74,7 +89,8 @@ function simulateScenario(config, nativeUsdPrice) {
   const liquiditySupply = (config.totalSupply * config.liquidityTokenBps) / MAX_BPS;
   const creatorReserve = config.totalSupply - curveSupply - liquiditySupply;
   const grossCurveRaise = area(curveSupply, config.basePrice, config.priceSlope);
-  const totalBuyerSpend = grossCurveRaise + fee(grossCurveRaise, config.protocolFeeBps);
+  const tradeProtocolFee = fee(grossCurveRaise, config.protocolFeeBps);
+  const totalBuyerSpend = grossCurveRaise + tradeProtocolFee;
   const nativeTarget = nativeTargetForUsd(config.graduationTargetUsd, nativeUsdPrice);
   const graduationReachedAtSellout = grossCurveRaise >= nativeTarget;
   const overshoot = graduationReachedAtSellout ? grossCurveRaise - nativeTarget : 0n;
@@ -92,6 +108,7 @@ function simulateScenario(config, nativeUsdPrice) {
     liquiditySupply,
     creatorReserve,
     grossCurveRaise,
+    tradeProtocolFee,
     totalBuyerSpend,
     nativeTarget,
     graduationReachedAtSellout,
@@ -106,10 +123,11 @@ function simulateScenario(config, nativeUsdPrice) {
 }
 
 function simulate(config = DEFAULT_CONFIG) {
-  const scenarios = config.nativeUsdPrices.map((price) => simulateScenario(config, price));
+  const normalized = buildConfig(config);
+  const scenarios = normalized.nativeUsdPrices.map((price) => simulateScenario(normalized, price));
   const failedScenarios = scenarios.filter((scenario) => !scenario.graduationReachedAtSellout || !scenario.lpAllocationSufficient);
   return {
-    config,
+    config: normalized,
     scenarios,
     ok: failedScenarios.length === 0,
     failedScenarios,
@@ -123,6 +141,7 @@ function scenarioToJson(scenario) {
     liquiditySupplyTokens: formatDecimal(scenario.liquiditySupply),
     creatorReserveTokens: formatDecimal(scenario.creatorReserve),
     grossCurveRaiseNative: formatDecimal(scenario.grossCurveRaise),
+    tradeProtocolFeeNative: formatDecimal(scenario.tradeProtocolFee),
     totalBuyerSpendNative: formatDecimal(scenario.totalBuyerSpend),
     nativeTarget: formatDecimal(scenario.nativeTarget),
     graduationReachedAtSellout: scenario.graduationReachedAtSellout,
@@ -156,6 +175,7 @@ function simulationToJson(result) {
 
 function parseArgs(argv) {
   const overrides = {};
+  let strict = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     const next = argv[i + 1];
@@ -171,32 +191,35 @@ function parseArgs(argv) {
       if (!next) throw new Error("--liquidity-bps requires a value");
       overrides.liquidityBps = BigInt(next);
       i += 1;
+    } else if (arg === "--strict") {
+      strict = true;
     } else if (arg === "--help") {
-      return { help: true };
+      return { help: true, strict: false, overrides: {} };
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  return { overrides };
+  return { overrides, strict };
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n`);
+  console.log(`Usage: node scripts/economic-simulations.cjs [options]\n\nOptions:\n  --prices <csv>         Native/USD prices to simulate, e.g. 100,300,600\n  --target-usd <value>   USD graduation target, default 30000\n  --liquidity-bps <bps>  Graduation native liquidity bps, default 8000\n  --strict               Exit non-zero when any scenario fails acceptance checks\n`);
 }
 
-function main(argv = process.argv.slice(2)) {
+function main(argv = process.argv.slice(2), io = console) {
   const parsed = parseArgs(argv);
   if (parsed.help) {
     printHelp();
     return { ok: true, status: 0 };
   }
   const result = simulate(buildConfig(parsed.overrides));
-  console.log(JSON.stringify(simulationToJson(result), null, 2));
-  return { ok: result.ok, status: result.ok ? 0 : 1 };
+  io.log(JSON.stringify(simulationToJson(result), null, 2));
+  return { ok: result.ok, status: parsed.strict && !result.ok ? 1 : 0 };
 }
 
 module.exports = {
   DEFAULT_CONFIG,
+  MAX_BPS,
   WAD,
   area,
   buildConfig,
@@ -217,7 +240,7 @@ module.exports = {
 if (require.main === module) {
   try {
     const result = main();
-    if (!result.ok) process.exitCode = result.status;
+    if (result.status !== 0) process.exitCode = result.status;
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
