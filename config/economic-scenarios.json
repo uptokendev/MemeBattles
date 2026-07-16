@@ -1,0 +1,29 @@
+{
+  "name": "phase-16-default-economics",
+  "cases": [
+    {
+      "name": "production-candidate",
+      "totalSupplyTokens": "1000000000",
+      "curveBps": "8800",
+      "liquidityTokenBps": "1000",
+      "basePriceNative": "0.00005",
+      "priceSlopeNative": "0.000000001",
+      "graduationTargetUsd": "30000",
+      "liquidityBps": "8000",
+      "protocolFeeBps": "200",
+      "nativeUsdPrices": ["100", "300", "600", "1000", "2000"]
+    },
+    {
+      "name": "local-rehearsal-compact",
+      "totalSupplyTokens": "1000",
+      "curveBps": "5000",
+      "liquidityTokenBps": "4000",
+      "basePriceNative": "0.000001",
+      "priceSlopeNative": "0.000000001",
+      "graduationTargetUsd": "0.1",
+      "liquidityBps": "8000",
+      "protocolFeeBps": "200",
+      "nativeUsdPrices": ["600"]
+    }
+  ]
+}
