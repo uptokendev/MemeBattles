@@ -13,6 +13,7 @@ const focusedSpecs = [
   "test/LaunchCampaignQuoteEdges.spec.ts",
   "test/LaunchCampaignCloseout.spec.ts",
   "test/EconomicSimulations.spec.ts",
+  "test/MonitoringReadiness.spec.ts",
   "test/PackageScripts.spec.ts",
 ];
 
