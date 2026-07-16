@@ -9,6 +9,7 @@ const focusedSpecs = [
   "test/CheckDeployEnv.spec.ts",
   "test/VerifyDeploymentHelpers.spec.ts",
   "test/LaunchFactory.spec.ts",
+  "test/LaunchFactoryDefaultEconomics.spec.ts",
   "test/LaunchCampaignQuoteEdges.spec.ts",
   "test/LaunchCampaignCloseout.spec.ts",
   "test/EconomicSimulations.spec.ts",
