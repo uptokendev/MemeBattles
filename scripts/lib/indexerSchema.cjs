@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const INDEXER_TABLES = [
   {
@@ -98,6 +98,120 @@ const INDEXER_TABLES = [
 );`,
   },
   {
+    name: "lp_pool_registrations",
+    sql: `CREATE TABLE IF NOT EXISTS lp_pool_registrations (
+  chain_id INTEGER NOT NULL,
+  pool_address TEXT NOT NULL,
+  campaign_address TEXT NOT NULL,
+  creator_address TEXT NOT NULL,
+  creator_fee_recipient TEXT NOT NULL,
+  token0_address TEXT NOT NULL,
+  token1_address TEXT NOT NULL,
+  locked_lp_amount_wei TEXT NOT NULL,
+  creator_fee_bps INTEGER NOT NULL,
+  protocol_fee_bps INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, pool_address),
+  UNIQUE (chain_id, tx_hash, log_index)
+);`,
+  },
+  {
+    name: "lp_claimable_snapshots",
+    sql: `CREATE TABLE IF NOT EXISTS lp_claimable_snapshots (
+  chain_id INTEGER NOT NULL,
+  pool_address TEXT NOT NULL,
+  locker_address TEXT NOT NULL,
+  token0_address TEXT NOT NULL,
+  token1_address TEXT NOT NULL,
+  claimable0_wei TEXT NOT NULL,
+  claimable1_wei TEXT NOT NULL,
+  block_number INTEGER NOT NULL,
+  observed_at INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, pool_address, block_number)
+);`,
+  },
+  {
+    name: "lp_harvests",
+    sql: `CREATE TABLE IF NOT EXISTS lp_harvests (
+  chain_id INTEGER NOT NULL,
+  pool_address TEXT NOT NULL,
+  caller_address TEXT NOT NULL,
+  token_address TEXT NOT NULL,
+  collected_wei TEXT NOT NULL,
+  creator_paid_wei TEXT NOT NULL,
+  protocol_routed_wei TEXT NOT NULL,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, tx_hash, log_index)
+);`,
+  },
+  {
+    name: "lp_pending_payments",
+    sql: `CREATE TABLE IF NOT EXISTS lp_pending_payments (
+  chain_id INTEGER NOT NULL,
+  pool_address TEXT NOT NULL,
+  recipient_address TEXT NOT NULL,
+  token_address TEXT NOT NULL,
+  amount_wei TEXT NOT NULL,
+  protocol_share INTEGER NOT NULL,
+  claimed INTEGER NOT NULL DEFAULT 0,
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, tx_hash, log_index)
+);`,
+  },
+  {
+    name: "lp_revenue_routes",
+    sql: `CREATE TABLE IF NOT EXISTS lp_revenue_routes (
+  chain_id INTEGER NOT NULL,
+  router_address TEXT NOT NULL,
+  locker_address TEXT NOT NULL,
+  token_address TEXT,
+  protocol_revenue_vault TEXT NOT NULL,
+  amount_wei TEXT NOT NULL,
+  route_type TEXT NOT NULL CHECK (route_type IN ('native', 'token')),
+  tx_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  block_number INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, tx_hash, log_index)
+);`,
+  },
+  {
+    name: "pool_operations",
+    sql: `CREATE TABLE IF NOT EXISTS pool_operations (
+  chain_id INTEGER NOT NULL,
+  pool_address TEXT NOT NULL,
+  status_type TEXT NOT NULL CHECK (status_type IN ('fee_override', 'gauge')),
+  status TEXT NOT NULL,
+  requested_fee_bps INTEGER,
+  current_fee_bps INTEGER,
+  requested_at INTEGER,
+  applied_tx_hash TEXT,
+  notes TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (chain_id, pool_address, status_type)
+);`,
+  },
+  {
+    name: "keeper_runs",
+    sql: `CREATE TABLE IF NOT EXISTS keeper_runs (
+  chain_id INTEGER NOT NULL,
+  keeper_type TEXT NOT NULL CHECK (keeper_type IN ('graduation', 'lp_harvest')),
+  run_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  scanned_count INTEGER NOT NULL DEFAULT 0,
+  submitted_count INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  payload_json TEXT NOT NULL,
+  PRIMARY KEY (chain_id, keeper_type, run_id)
+);`,
+  },
+  {
     name: "route_executions",
     sql: `CREATE TABLE IF NOT EXISTS route_executions (
   chain_id INTEGER NOT NULL,
@@ -184,6 +298,13 @@ const INDEXES = [
   "CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns (chain_id, status, created_block);",
   "CREATE INDEX IF NOT EXISTS idx_trades_campaign_block ON trades (chain_id, campaign_address, block_number);",
   "CREATE INDEX IF NOT EXISTS idx_trades_trader_block ON trades (chain_id, trader_address, block_number);",
+  "CREATE INDEX IF NOT EXISTS idx_graduations_pair ON graduations (chain_id, pair_address, block_number);",
+  "CREATE INDEX IF NOT EXISTS idx_lp_pool_registrations_creator ON lp_pool_registrations (chain_id, creator_address, block_number);",
+  "CREATE INDEX IF NOT EXISTS idx_lp_harvests_pool_token ON lp_harvests (chain_id, pool_address, token_address, block_number);",
+  "CREATE INDEX IF NOT EXISTS idx_lp_pending_recipient ON lp_pending_payments (chain_id, recipient_address, claimed);",
+  "CREATE INDEX IF NOT EXISTS idx_lp_revenue_routes_vault ON lp_revenue_routes (chain_id, protocol_revenue_vault, block_number);",
+  "CREATE INDEX IF NOT EXISTS idx_pool_operations_status ON pool_operations (chain_id, status_type, status);",
+  "CREATE INDEX IF NOT EXISTS idx_keeper_runs_type ON keeper_runs (chain_id, keeper_type, started_at);",
   "CREATE INDEX IF NOT EXISTS idx_route_executions_block ON route_executions (chain_id, block_number);",
   "CREATE INDEX IF NOT EXISTS idx_lp_locks_token_block ON lp_locks (chain_id, lp_token_address, block_number);",
   "CREATE INDEX IF NOT EXISTS idx_creator_registry_events_creator ON creator_registry_events (chain_id, creator_address, block_number);",
