@@ -1,15 +1,19 @@
 node_modules
 cache
 artifacts
+typechain-types
+types/ethers-contracts
 coverage
 coverage.json
 dist
 .env
 .env.bsc-testnet
 
+deployments/*.json
 deployments/*.frontend.env
 deployments/*.activation.json
 deployments/*.retired.json
+output/*.json
 output/testnet-cycle-results*.json
 
 # Local Netlify folder
