@@ -116,10 +116,21 @@ function loadCursor(file, manifest) {
   return readJson(file);
 }
 
+async function getLatestBlock(provider, rpcUrl) {
+  try {
+    return await provider.getBlockNumber();
+  } catch (error) {
+    const detail = error && error.message ? String(error.message).split("\n")[0] : String(error);
+    throw new Error(
+      `[indexer] RPC unavailable at ${rpcUrl}. Start a local node or set INDEXER_RPC_URL/RPC_URL/BSC_TESTNET_RPC. ${detail}`
+    );
+  }
+}
+
 async function indexOnce(options = {}) {
   const manifest = options.manifest || loadManifest();
   const rpcUrl = options.rpcUrl || requireEnv("INDEXER_RPC_URL", process.env.RPC_URL || process.env.BSC_TESTNET_RPC || "http://127.0.0.1:8545");
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
   const confirmations = options.confirmations ?? optionalInt("INDEXER_CONFIRMATIONS", DEFAULT_CONFIRMATIONS);
   const batchBlocks = options.batchBlocks ?? optionalInt("INDEXER_BATCH_BLOCKS", DEFAULT_BATCH_BLOCKS);
   const outDir = options.outDir || process.env.INDEXER_OUT_DIR || defaultOutputDir(manifest.network || String(manifest.chainId));
@@ -128,7 +139,7 @@ async function indexOnce(options = {}) {
   const topicMap = buildInterfaces(manifest);
   const filters = contractFilters(manifest);
   const cursor = loadCursor(cursorFile, manifest);
-  const latest = await provider.getBlockNumber();
+  const latest = await getLatestBlock(provider, rpcUrl);
   const finalizedTo = Math.max(0, latest - confirmations);
   let fromBlock = Number(cursor.lastFinalizedBlock || 0) + 1;
 
@@ -176,7 +187,7 @@ module.exports = { buildInterfaces, contractFilters, decodeLog, indexOnce, loadM
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(error);
+    console.error(error.message || error);
     process.exitCode = 1;
   });
 }
