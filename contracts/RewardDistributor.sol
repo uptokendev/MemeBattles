@@ -18,7 +18,9 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     error InvalidProof();
     error TransferFailed();
     error InsufficientUnclaimed();
+    error InsufficientExcessNative();
     error NotBatchOperator(address caller);
+    error ZeroAddress();
 
     struct Batch {
         bytes32 merkleRoot;
@@ -33,12 +35,14 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     mapping(bytes32 => mapping(address => bool)) public hasClaimed;
 
     address public batchOperator;
+    uint256 public totalOutstandingRewards;
 
     event BatchOperatorUpdated(address indexed oldOperator, address indexed newOperator);
     event BatchCreated(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 totalFunded, uint64 claimDeadline);
     event BatchPauseUpdated(bytes32 indexed batchId, bool paused);
     event RewardClaimed(bytes32 indexed batchId, address indexed account, uint256 amount);
     event UnclaimedRecovered(bytes32 indexed batchId, address indexed recipient, uint256 amount);
+    event ExcessNativeRescued(address indexed recipient, uint256 amount);
 
     modifier onlyOwnerOrBatchOperator() {
         if (msg.sender != owner() && msg.sender != batchOperator) revert NotBatchOperator(msg.sender);
@@ -67,6 +71,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
             paused: false,
             exists: true
         });
+        totalOutstandingRewards += msg.value;
 
         emit BatchCreated(batchId, merkleRoot, msg.value, claimDeadline);
     }
@@ -98,6 +103,7 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
 
         hasClaimed[batchId][msg.sender] = true;
         batch.totalClaimed += amount;
+        totalOutstandingRewards -= amount;
 
         (bool ok,) = msg.sender.call{value: amount}("");
         if (!ok) revert TransferFailed();
@@ -106,12 +112,14 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
     }
 
     function recoverUnclaimed(bytes32 batchId, address payable recipient) external onlyOwner nonReentrant {
+        if (recipient == address(0)) revert ZeroAddress();
         Batch storage batch = _batch(batchId);
         if (batch.claimDeadline == 0 || block.timestamp <= batch.claimDeadline) revert BatchStillOpen(batchId);
 
         uint256 unclaimedAmount = batch.totalFunded - batch.totalClaimed;
         if (unclaimedAmount == 0) revert AmountZero();
         batch.totalFunded = batch.totalClaimed;
+        totalOutstandingRewards -= unclaimedAmount;
 
         (bool ok,) = recipient.call{value: unclaimedAmount}("");
         if (!ok) revert TransferFailed();
@@ -119,9 +127,25 @@ contract RewardDistributor is Ownable, Pausable, ReentrancyGuard {
         emit UnclaimedRecovered(batchId, recipient, unclaimedAmount);
     }
 
+    function rescueExcessNative(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
+        if (recipient == address(0)) revert ZeroAddress();
+        if (amount == 0) revert AmountZero();
+        uint256 excess = address(this).balance - totalOutstandingRewards;
+        if (amount > excess) revert InsufficientExcessNative();
+
+        (bool ok,) = recipient.call{value: amount}("");
+        if (!ok) revert TransferFailed();
+
+        emit ExcessNativeRescued(recipient, amount);
+    }
+
     function unclaimed(bytes32 batchId) external view returns (uint256) {
         Batch storage batch = _batch(batchId);
         return batch.totalFunded - batch.totalClaimed;
+    }
+
+    function excessNativeBalance() external view returns (uint256) {
+        return address(this).balance - totalOutstandingRewards;
     }
 
     function _batch(bytes32 batchId) internal view returns (Batch storage batch) {
