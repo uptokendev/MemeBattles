@@ -12,6 +12,8 @@
     "deploy:verify:bsc-testnet": "hardhat run scripts/deploy-and-verify.ts --network bscTestnet",
     "deploy:reward-distributor": "hardhat run scripts/deploy-reward-distributor.cjs",
     "deploy:reward-distributor:bsc-testnet": "hardhat run scripts/deploy-reward-distributor.cjs --network bscTestnet",
+    "wire:lp-revenue": "hardhat run scripts/wire-lp-revenue.ts",
+    "wire:lp-revenue:bsc-testnet": "hardhat run scripts/wire-lp-revenue.ts --network bscTestnet",
     "verify:deployment": "hardhat run scripts/verify-deployment.ts",
     "verify:deployment:bsc-testnet": "hardhat run scripts/verify-deployment.ts --network bscTestnet",
     "verify:route-authority": "node scripts/verify-route-authority.cjs",
