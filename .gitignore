@@ -5,8 +5,12 @@ coverage
 coverage.json
 dist
 .env
+.env.bsc-testnet
 
 deployments/*.frontend.env
+deployments/*.activation.json
+deployments/*.retired.json
+output/testnet-cycle-results*.json
 
 # Local Netlify folder
 .netlify
