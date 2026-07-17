@@ -18,6 +18,12 @@ function requireLocalNetwork() {
   }
 }
 
+function boolEnv(name: string, fallback = false): boolean {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 async function latestTimestamp() {
   const block = await ethers.provider.getBlock("latest");
   return BigInt(block!.timestamp);
@@ -93,7 +99,12 @@ async function authorizedBuyExactTokens(params: {
 
 async function main() {
   requireLocalNetwork();
-  const [, creator, buyer, routeAuthority] = await ethers.getSigners();
+  const [deployer, creator, buyer, routeAuthority] = await ethers.getSigners();
+
+  if (!boolEnv("LOCAL_REHEARSAL_PRESERVE_TREASURY_SAFE", false)) {
+    process.env.TREASURY_SAFE = await deployer.getAddress();
+    logStep("using deployer as local treasury safe", process.env.TREASURY_SAFE);
+  }
 
   logStep("deploying protocol");
   const deployment = await deployProtocol();
