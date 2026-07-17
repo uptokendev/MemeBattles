@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 const { spawnSync } = require("node:child_process");
 
-const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCmd = process.platform === "win32" ? "npm" : "npm";
+const useShell = process.platform === "win32";
 
 const REQUIRED = [
   ["compile", ["run", "compile"]],
@@ -17,7 +18,7 @@ const OPTIONAL = [
 
 function run(label, args, required) {
   console.log(`\n[security-check] ${label}`);
-  const result = spawnSync(npmCmd, args, { stdio: "inherit" });
+  const result = spawnSync(npmCmd, args, { stdio: "inherit", shell: useShell });
   if (result.error) {
     const message = `${label} could not start: ${result.error.message}`;
     if (required) throw new Error(message);
