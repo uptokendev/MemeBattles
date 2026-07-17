@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 1;
 
 const INDEXER_TABLES = [
   {
