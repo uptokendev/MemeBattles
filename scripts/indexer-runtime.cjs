@@ -227,7 +227,7 @@ async function main() {
   console.log(`[indexer] complete indexed=${result.indexed} out=${result.outDir}`);
 }
 
-module.exports = { buildInterfaces, contractFilters, decodeLog, indexOnce, loadManifest };
+module.exports = { buildInterfaces, contractFilters, decodeLog, defaultConfirmations, indexOnce, loadManifest };
 
 if (require.main === module) {
   main().catch((error) => {
