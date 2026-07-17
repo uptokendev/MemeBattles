@@ -75,12 +75,12 @@ async function latestTimestamp() {
 async function deployFactoryPrereqs() {
   const [deployer] = await ethers.getSigners();
 
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2factory = await V2Factory.deploy();
-  await v2factory.waitForDeployment();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const topazFactory = await TopazFactory.deploy();
+  await topazFactory.waitForDeployment();
 
   const Router = await ethers.getContractFactory("MockRouter");
-  const router = await Router.deploy(await v2factory.getAddress(), await deployer.getAddress());
+  const router = await Router.deploy(await topazFactory.getAddress(), await deployer.getAddress());
   await router.waitForDeployment();
 
   const PriceFeed = await ethers.getContractFactory("MockUsdPriceFeed");
@@ -439,7 +439,10 @@ describe("LaunchFactory", function () {
     await expect(factory.connect(owner).setProtocolFee(123n)).to.emit(factory, "ProtocolFeeUpdated").withArgs(123n);
     expect(await factory.protocolFeeBps()).to.eq(123n);
 
-    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
+    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(await topazFactory.getAddress(), await owner.getAddress());
     await expect(factory.connect(owner).setRouter(await newRouter.getAddress()))
       .to.emit(factory, "RouterUpdated")
       .withArgs(await newRouter.getAddress());
@@ -570,7 +573,10 @@ describe("LaunchFactory", function () {
 
     await factory.connect(creator).createCampaign(baseReq({ name: "Locked", symbol: "LCK" }) as any);
 
-    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
+    const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(await topazFactory.getAddress(), await owner.getAddress());
     await expect(factory.connect(owner).setRouter(await newRouter.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setGraduationOracle(await graduationOracle.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
