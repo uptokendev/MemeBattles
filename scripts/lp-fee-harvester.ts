@@ -1,5 +1,5 @@
 import { ethers } from "hardhat";
-import { loadDeployment, resolveContracts } from "./verify-deployment";
+import { assertCode, loadDeployment, resolveContracts } from "./verify-deployment";
 
 const TOPAZ_POOL_ABI = [
   "function claimable0(address) view returns (uint256)",
@@ -38,6 +38,8 @@ async function main() {
 
   const deployment = loadDeployment();
   const contracts = resolveContracts(deployment);
+  await assertCode("LaunchFactory", contracts.LaunchFactory);
+  await assertCode("PermanentLpLocker", contracts.PermanentLpLocker);
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
   const locker = await ethers.getContractAt("PermanentLpLocker", contracts.PermanentLpLocker);
   const total = Number(await factory.campaignsCount());
