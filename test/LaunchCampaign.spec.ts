@@ -36,7 +36,13 @@ async function deployTestOracle(price = "1") {
   const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
   const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 30 * 24 * 60 * 60);
   await graduationOracle.waitForDeployment();
-  return graduationOracle;
+  return { priceFeed, graduationOracle };
+}
+
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
 }
 
 const directInitParams = async (values: {
@@ -67,7 +73,7 @@ const directInitParams = async (values: {
   basePrice: values.basePrice ?? 10n ** 12n,
   priceSlope: values.priceSlope ?? 10n ** 9n,
   graduationTarget: values.graduationTarget ?? ethers.parseEther("1"),
-  graduationOracle: values.graduationOracle ?? await (async () => await (await deployTestOracle()).getAddress())(),
+  graduationOracle: values.graduationOracle ?? await (await deployTestOracle()).graduationOracle.getAddress(),
   liquidityBps: 8000,
   protocolFeeBps: values.protocolFeeBps ?? 200,
   leagueFeeBps: values.leagueFeeBps ?? 75,
@@ -312,8 +318,12 @@ describe("LaunchCampaign", function () {
     const leagueReceiver = await TreasuryRouter.deploy(await owner.getAddress(), await vault.getAddress(), 3600);
     await leagueReceiver.waitForDeployment();
 
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
+
     const Router = await ethers.getContractFactory("MockRouter");
-    const dexRouter = await Router.deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    const dexRouter = await Router.deploy(await topazFactory.getAddress(), await owner.getAddress());
     await dexRouter.waitForDeployment();
 
     const campaign = await deployDirectCampaign(
@@ -355,8 +365,12 @@ describe("LaunchCampaign", function () {
     const feeRecipient = await Reverting.deploy();
     await feeRecipient.waitForDeployment();
 
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
+
     const Router = await ethers.getContractFactory("MockRouter");
-    const dexRouter = await Router.deploy(ethers.ZeroAddress, ethers.ZeroAddress);
+    const dexRouter = await Router.deploy(await topazFactory.getAddress(), await owner.getAddress());
     await dexRouter.waitForDeployment();
 
     const amountOut = ethers.parseEther("1");
@@ -460,19 +474,21 @@ describe("LaunchCampaign", function () {
   it("permissionless graduation: rejects router liquidity that opens outside the curve price tolerance", async () => {
     const { owner, creator, alice } = await deployCoreFixture();
 
-    const V2Factory = await ethers.getContractFactory("MockV2Factory");
-    const v2factory = await V2Factory.deploy();
-    await v2factory.waitForDeployment();
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
 
     const DriftRouter = await ethers.getContractFactory("MockDriftRouter");
-    const driftRouter = await DriftRouter.deploy(await v2factory.getAddress(), await owner.getAddress());
+    const driftRouter = await DriftRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
     await driftRouter.waitForDeployment();
 
+    const { priceFeed, graduationOracle } = await deployTestOracle();
     const campaign = await deployDirectCampaign(
       await directInitParams({
         creator: await creator.getAddress(),
         owner: await owner.getAddress(),
         router: await driftRouter.getAddress(),
+        graduationOracle: await graduationOracle.getAddress(),
         feeRecipient: await owner.getAddress(),
         leagueReceiver: await owner.getAddress(),
         basePrice: ethers.parseEther("0.005"),
@@ -484,10 +500,7 @@ describe("LaunchCampaign", function () {
     const oneToken = ethers.parseUnits("1", 18);
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
-
-    const target = await campaign.graduationNativeTarget();
-    const balance = await getBalance(await campaign.getAddress());
-    if (balance < target) await owner.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
     await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "DexPriceDrift");
   });
@@ -529,8 +542,8 @@ describe("LaunchCampaign", function () {
     await campaign.connect(alice).buyExactTokens(amountOut, totalBuy, { value: totalBuy });
     expect(await campaign.launched()).to.eq(false);
 
-    const balance = await getBalance(await campaign.getAddress());
-    const bumpedPrice = (ethers.parseEther("100") * ethers.parseUnits("1", 8) + balance - 1n) / balance;
+    const netRaised = await campaign.netRaisedWei();
+    const bumpedPrice = (ethers.parseEther("100") * ethers.parseUnits("1", 8) + netRaised - 1n) / netRaised;
     const now = await latestTimestamp();
     await priceFeed.setRoundData(2n, bumpedPrice, now, now, 2n);
 
@@ -544,14 +557,14 @@ describe("LaunchCampaign", function () {
     await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "ThresholdNotMet");
   });
 
-  it("auto-finalize: succeeds even if Pancake V2 pair is pre-created (empty)", async () => {
+  it("auto-finalize: succeeds even if Topaz volatile pool is pre-created (empty)", async () => {
     const { campaign, token, alice, router, v2factory } = await loadFixture(createLowTargetCampaignFixture);
 
-    const Pair = await ethers.getContractFactory("MockV2Pair");
-    const pair = await Pair.deploy();
-    await pair.setTotalSupply(0);
-    await pair.setReserves(0, 0);
-    await v2factory.setPair(await token.getAddress(), await router.WETH(), await pair.getAddress());
+    const Pool = await ethers.getContractFactory("MockTopazPool");
+    const pool = await Pool.deploy();
+    await pool.setTotalSupply(0);
+    await pool.setReserves(0, 0);
+    await v2factory.setPool(await token.getAddress(), await router.WETH(), false, await pool.getAddress());
 
     const curveSupply = await campaign.curveSupply();
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
@@ -561,7 +574,7 @@ describe("LaunchCampaign", function () {
     await expect(tx).to.emit(router, "LiquidityAdded");
     expect(await token.tradingEnabled()).to.eq(true);
     const state = await campaign.getGraduationState();
-    expect(state[0]).to.eq(await pair.getAddress());
+    expect(state[0]).to.eq(await pool.getAddress());
   });
 
   it("post-finalize: trading restriction lifted; buys/sells revert", async () => {
