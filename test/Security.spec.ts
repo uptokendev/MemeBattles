@@ -17,6 +17,17 @@ const req = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
+}
+
 async function captureRouteBalances(vaults: any) {
   return {
     league: await ethers.provider.getBalance(await vaults.treasuryVault.getAddress()),
@@ -64,7 +75,7 @@ describe("Security & invariants", function () {
     expect(await campaign.launched()).to.equal(true);
   });
 
-  it("finalize fee amounts: protocolFee equals balanceBefore * protocolFeeBps / 10000", async function () {
+  it("finalize fee amounts: protocolFee equals netRaisedWei * protocolFeeBps / 10000", async function () {
     const {
       owner,
       creator,
@@ -75,6 +86,7 @@ describe("Security & invariants", function () {
       recruiterVault,
       communityVault,
       protocolVault,
+      priceFeed,
     } = await deployCoreFixture();
 
     await factory.connect(owner).setConfig({
@@ -98,13 +110,10 @@ describe("Security & invariants", function () {
     const q = await campaign.quoteBuyExactTokens(oneToken);
     const qBuf = q + 1n;
     await campaign.connect(alice).buyExactTokens(oneToken, qBuf, { value: qBuf });
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    const target = await campaign.graduationNativeTarget();
-    const balNow = await ethers.provider.getBalance(campaignAddr);
-    if (balNow < target) await owner.sendTransaction({ to: campaignAddr, value: target - balNow });
-
-    const balanceBefore = await ethers.provider.getBalance(campaignAddr);
-    const expectedFee = (balanceBefore * 200n) / 10_000n;
+    const graduationPrincipal = await campaign.netRaisedWei();
+    const expectedFee = (graduationPrincipal * 200n) / 10_000n;
     const routeVaults = { treasuryVault, recruiterVault, communityVault, protocolVault };
     const routeBefore = await captureRouteBalances(routeVaults);
 
