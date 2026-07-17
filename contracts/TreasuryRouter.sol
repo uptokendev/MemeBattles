@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 interface ICommunityRewardsVault {
     function depositAirdrop() external payable;
     function depositSquadPool() external payable;
 }
 
 contract TreasuryRouter {
+    using SafeERC20 for IERC20;
+
     uint16 internal constant ROUTE_BPS = 10_000;
 
     enum RouteKind {
@@ -39,6 +44,7 @@ contract TreasuryRouter {
     address public recruiterRewardsVault;
     address public communityRewardsVault;
     address public protocolRevenueVault;
+    address public permanentLpLocker;
 
     bool public forwardingPaused;
 
@@ -52,6 +58,9 @@ contract TreasuryRouter {
     event RecruiterRewardsVaultUpdated(address indexed oldVault, address indexed newVault);
     event CommunityRewardsVaultUpdated(address indexed oldVault, address indexed newVault);
     event ProtocolRevenueVaultUpdated(address indexed oldVault, address indexed newVault);
+    event PermanentLpLockerUpdated(address indexed oldLocker, address indexed newLocker);
+    event LpNativeRouted(address indexed locker, address indexed protocolRevenueVault, uint256 amount);
+    event LpTokenRouted(address indexed locker, address indexed token, address indexed protocolRevenueVault, uint256 amount);
 
     event RouteExecuted(
         RouteKind indexed kind,
@@ -66,6 +75,11 @@ contract TreasuryRouter {
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "not admin");
+        _;
+    }
+
+    modifier onlyPermanentLpLocker() {
+        require(msg.sender == permanentLpLocker && msg.sender != address(0), "not lp locker");
         _;
     }
 
@@ -129,6 +143,25 @@ contract TreasuryRouter {
         );
     }
 
+    function routeLpNative() external payable onlyPermanentLpLocker {
+        require(!forwardingPaused, "routing paused");
+        require(msg.value > 0, "amount=0");
+        require(protocolRevenueVault != address(0), "protocolVault=0");
+
+        _sendValue(protocolRevenueVault, msg.value, true);
+        emit LpNativeRouted(msg.sender, protocolRevenueVault, msg.value);
+    }
+
+    function routeLpToken(address token, uint256 amount) external onlyPermanentLpLocker {
+        require(!forwardingPaused, "routing paused");
+        require(token != address(0), "token=0");
+        require(amount > 0, "amount=0");
+        require(protocolRevenueVault != address(0), "protocolVault=0");
+
+        IERC20(token).safeTransferFrom(msg.sender, protocolRevenueVault, amount);
+        emit LpTokenRouted(msg.sender, token, protocolRevenueVault, amount);
+    }
+
     function previewRoute(uint256 amount, RouteKind kind, RouteProfile profile) public pure returns (RouteAmounts memory amounts) {
         require(amount > 0, "amount=0");
 
@@ -185,6 +218,12 @@ contract TreasuryRouter {
         require(newVault != address(0), "vault=0");
         emit ProtocolRevenueVaultUpdated(protocolRevenueVault, newVault);
         protocolRevenueVault = newVault;
+    }
+
+    function setPermanentLpLocker(address newLocker) external onlyAdmin {
+        require(newLocker != address(0), "locker=0");
+        emit PermanentLpLockerUpdated(permanentLpLocker, newLocker);
+        permanentLpLocker = newLocker;
     }
 
     function proposeVault(address newVault) external onlyAdmin {
