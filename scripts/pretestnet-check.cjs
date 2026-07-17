@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 const { spawnSync } = require("node:child_process");
 
-const defaultNpmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+const defaultNpmCmd = "npm";
+const defaultUseShell = process.platform === "win32";
 
 const checks = [
   ["test", ["run", "test"]],
@@ -14,12 +15,13 @@ function runPretestnetChecks(options = {}) {
   const spawn = options.spawn || spawnSync;
   const npmCmd = options.npmCmd || defaultNpmCmd;
   const stdio = options.stdio || "inherit";
+  const shell = options.shell ?? defaultUseShell;
 
   console.log("[pretestnet] Running readiness checks before any BSC testnet deploy.");
 
   for (const [label, args] of checks) {
     console.log(`\n[pretestnet] ${label}`);
-    const result = spawn(npmCmd, args, { stdio });
+    const result = spawn(npmCmd, args, { stdio, shell });
 
     if (result.error) {
       const message = `[pretestnet] ${label} could not start: ${result.error.message}`;
