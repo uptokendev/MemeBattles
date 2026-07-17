@@ -1,12 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-const addPancakeLiquidity = "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)";
 const addTopazLiquidity = "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)";
 
 async function deployFixture() {
   const [owner, recipient] = await ethers.getSigners();
-  const Factory = await ethers.getContractFactory("MockV2Factory");
+  const Factory = await ethers.getContractFactory("MockTopazFactory");
   const factory = await Factory.deploy();
   await factory.waitForDeployment();
 
@@ -35,7 +34,7 @@ describe("MockRouter", function () {
     expect(await router.WETH()).to.eq(await owner.getAddress());
   });
 
-  it("pancake-style liquidity creates a pair, transfers tokens, sets reserves, and mints LP", async () => {
+  it("topaz volatile liquidity creates a pool, transfers tokens, sets reserves, and mints LP", async () => {
     const { owner, recipient, factory, router, token } = await deployFixture();
     const tokenAmount = ethers.parseEther("5");
     const bnbAmount = ethers.parseEther("0.25");
@@ -43,19 +42,19 @@ describe("MockRouter", function () {
 
     await mintAndApprove(token, router, owner, tokenAmount);
     await expect(
-      router.connect(owner)[addPancakeLiquidity](tokenAddress, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
+      router.connect(owner)[addTopazLiquidity](tokenAddress, false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
         value: bnbAmount,
       })
     )
       .to.emit(router, "LiquidityAdded")
       .withArgs(tokenAddress, tokenAmount, bnbAmount, await recipient.getAddress());
 
-    const pairAddress = await factory.getPair(tokenAddress, await router.WETH());
-    const pair = await ethers.getContractAt("MockV2Pair", pairAddress);
-    const reserves = await pair.getReserves();
+    const poolAddress = await factory.getPool(tokenAddress, await router.WETH(), false);
+    const pool = await ethers.getContractAt("MockTopazPool", poolAddress);
+    const reserves = await pool.getReserves();
 
     expect(await token.balanceOf(await router.getAddress())).to.eq(tokenAmount);
-    expect(await pair.balanceOf(await recipient.getAddress())).to.eq(tokenAmount + bnbAmount);
+    expect(await pool.balanceOf(await recipient.getAddress())).to.eq(tokenAmount + bnbAmount);
     expect(reserves[0]).to.eq(tokenAmount);
     expect(reserves[1]).to.eq(bnbAmount);
   });
@@ -96,7 +95,7 @@ describe("MockRouter", function () {
 
     await token.connect(owner).mint(await owner.getAddress(), tokenAmount);
     await expect(
-      router.connect(owner)[addPancakeLiquidity](await token.getAddress(), tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
+      router.connect(owner)[addTopazLiquidity](await token.getAddress(), false, tokenAmount, 0n, 0n, await recipient.getAddress(), 1n, {
         value: 1n,
       })
     ).to.be.reverted;
