@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "network": "localhost",
+  "chainId": 31337,
+  "deploymentBlock": 0,
+  "contracts": {
+    "LaunchFactory": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+    "LaunchCampaignImplementation": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "TreasuryRouter": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "TreasuryVaultV2": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "RecruiterRewardsVault": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "CommunityRewardsVault": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "ProtocolRevenueVault": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+    "CreatorRegistry": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "RiskRegistry": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "GraduationOracle": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "PermanentLpLocker": "0x32467b43BFa67273FC7dDda0999Ee9A12F2AaA08",
+    "UPVoteTreasury": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+  },
+  "topazRouter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  "graduationPriceFeed": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+  "routing": {
+    "activeLeagueVault": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "recruiterRewardsVault": null,
+    "recruiterPayoutOperator": null,
+    "recruiterPayoutMaxPerTx": null,
+    "recruiterPayoutDailyCap": null,
+    "recruiterPayoutsEnabled": null,
+    "communityRewardsVault": null,
+    "protocolRevenueVault": null,
+    "factoryFeeRecipient": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "factoryTradeRouteProfile": 1,
+    "factoryFinalizeRouteProfile": 1,
+    "factoryRouteAuthority": null,
+    "campaignImplementation": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "graduationOracle": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "topazRouter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "permanentLpLocker": "0x32467b43BFa67273FC7dDda0999Ee9A12F2AaA08",
+    "unifiedRouterModeActive": true
+  },
+  "events": {
+    "LaunchFactory": {
+      "CampaignCreated(uint256,address,address,address,string,string,string,string)": "0xfb4bb74ec62382dfc592366cd0a191f11577c00818629aeb97e14d198f41e40c",
+      "FeeRecipientUpdated(address)": "0x7a7b5a0a132f9e0581eb8527f66eae9ee89c2a3e79d4ac7e41a1f1f4d48a7fc2",
+      "RouterUpdated(address)": "0x7aed1d3e8155a07ccf395e44ea3109a0e2d6c9b29bbbe9f142d9790596f4dc80",
+      "GraduationOracleUpdated(address)": "0xde2b4538df63c265c3dfa51c3079fe8ef386755ee9fca14c32d71294d65cc139",
+      "ProtocolFeeUpdated(uint256)": "0xd10d75876659a287a59a6ccfa2e3fff42f84d94b542837acd30bc184d562de40",
+      "RouteProfilesUpdated(uint8,uint8)": "0xc15619e87d5998c4acfcf354b80b2b5a692deb6c90a8b0311dfd352bb0cd9f09",
+      "RouteAuthorityUpdated(address)": "0x7c76240a5dadd742c13decd1d777d5d896222e4b2687c281e7791784a2155d27",
+      "LaunchProtectionConfigUpdated(uint256,uint256,uint256)": "0x702d4210cd121bd3c2c60ce6f31ef55d4757980c6ddaf2e2988ebdd0fae50a86",
+      "LiveEnabled(uint64)": "0xf3dd7f906edae26d4a174b2257082e2a27f8666a7df815a5bc48c00dde8034c1",
+      "GlobalPauseUpdated(bool)": "0x256bf8e8b40cbfb88946b4d95d17bf45cb52d93ba9d2f767df67c6c15f0253f7",
+      "CreatePauseUpdated(bool)": "0x28c36262e5023dfc3cdf8a7df429a96172a59eb42be686deec6829da252c2e07",
+      "RegistriesUpdated(address,address)": "0xdf7fe2da2d082a3d2dcc0de8f29d619c5da152f8e4ab66640101539661f02532",
+      "RequireAuthorizedTradingUpdated(bool)": "0x7e302248a164950c265d778f0af77852c22815bd902627260ceb598c5329e30a",
+      "CampaignPauseUpdated(address,bool,bool,bool,bool)": "0xfc5b6740195cd03a7899baaadd722c53e4ce5bd72ed19ee4211cf9a5702c08c7",
+      "CampaignGraduated(address,address,address,address)": "0x599e1401cb5afca4ff8fa70dd3209efe674410c565b4a827a3a3f771cc5dfce2"
+    },
+    "LaunchCampaign": {
+      "TokensPurchased(address,uint256,uint256)": "0x8fafebcaf9d154343dad25669bfa277f4fbacd7ac6b0c4fed522580e040a0f33",
+      "TokensSold(address,uint256,uint256)": "0x2dcf9433d75db0d8b1c172641f85e319ffe4ad22e108a95d1847ceb906e5195d",
+      "NativeEscrowed(address,uint256)": "0x1196ff9c61f6c4d265bb9529d5aa6afceea1fc7646a5c406fcc1dcb61941db15",
+      "NativeClaimed(address,uint256)": "0x7b3fcf6b642a0d537ec94e3e3554737ca883871bc8a5ea348d8ee3a9b9d9656c",
+      "CampaignPauseStateUpdated(bool,bool,bool,bool)": "0xff0ca60d02ac2924993ed1a5a5acda55985d6d562707a07e47c3e76bca45b773",
+      "RequireAuthorizedTradingUpdated(bool)": "0x7e302248a164950c265d778f0af77852c22815bd902627260ceb598c5329e30a",
+      "CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)": "0x51bc2ffe6e4d291e2fc906efa18ca019f236da296904d56ba9ab74c0e710d2af",
+      "GraduationLiquidityCapped(uint256,uint256,uint256,uint256)": "0x96c9b94e090d68386aab7083627da78fedc7ad9d2f89cfd2a237f03ac64f2406"
+    },
+    "TreasuryRouter": {
+      "Forwarded(address,uint256)": "0x6f1deddfc28100c291fae8f1064e4a91e844f0841993bb8fba9a913c3b801d80",
+      "ForwardFailed(address,uint256)": "0x8936c63f7941213ec179a97cdc6c377a9ca1413f1c446afcd31722e61986a377",
+      "ForwardingPaused(bool)": "0x77931a4b47db78545305ad5b4bf71028f486d6ec695d5dbdc458bc05bca859dc",
+      "VaultProposed(address,uint64)": "0x5cb4a822b49d038ed291acea6fac59902b34649b9a41fa3ef079c7d24ee93234",
+      "VaultActivated(address,address)": "0xc4fb0a69c59dd3724ce26374fc1b6ce92bed4fa90efafb34f552e80f02a2dfd8",
+      "RecruiterRewardsVaultUpdated(address,address)": "0x4a1f675239ed88e78dd64f923caf16697c7827fc45ff56a110f045e5748cf1db",
+      "CommunityRewardsVaultUpdated(address,address)": "0xbf98049ca429ebf1bd9f6a67b706fb05fe97b996aadc415a3de4e5bec9daf6ae",
+      "ProtocolRevenueVaultUpdated(address,address)": "0x0f332f71ab1839b5bc79a2a72bcd23d70ff2b253395ce682e66346fedd0abf41",
+      "PermanentLpLockerUpdated(address,address)": "0x7367570dd7b1c731341969fa4fcce030bd4c581a40eebab2a9f068cf721bd674",
+      "LpNativeRouted(address,address,uint256)": "0x041900f6a0eca84d9502f8b77f342bf450901fc73a2332960182d1cb16662b88",
+      "LpTokenRouted(address,address,address,uint256)": "0x4181fc73ba8d182d012665baaea9123d0274b101cece7c197a5eeb588e392e30",
+      "RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)": "0xf4d3007fcb5943e7297b8f754520795f1826511eae46442cd8c89c5a18ce1251"
+    },
+    "TreasuryVaultV2": {
+      "OperatorUpdated(address)": "0xb3b3f5f64ab192e4b5fefde1f51ce9733bbdcf831951543b325aebd49cc27ec4",
+      "RootPosterUpdated(address)": "0x49fdb2d6a69384ec28dae653749def594f6f2669e0cadf71881d116ecc17c398",
+      "CapsUpdated(uint256,uint256)": "0xfa35f2d22b9a5eb6bed3254e60910f91291653a71679c8cbb1f00d24551a45c4",
+      "PayoutsPaused(bool)": "0x650efa1625180c59468b706a5f5de0480899f72b1a3b36f0abe6a948c5eb33e3",
+      "Payout(address,uint256)": "0x5afeca38b2064c23a692c4cf353015d80ab3ecc417b4f893f372690c11fbd9a6",
+      "ClaimCapsUpdated(uint256,uint256)": "0x13f61d0a2445146735d2af9ae1bd7269adb76653e84ffc452174fb5bce77a376",
+      "ClaimsPaused(bool)": "0x6d0ef31fcddf8993a6f3195a744ef1e2ca39090ffd1480fcf387560d90f9b890",
+      "EpochRootSet(uint256,bytes32,uint256)": "0xb1e84f0e16ad503c316d64a7caf01a922416ce7b735d499cdd9134489483c85b",
+      "Claimed(uint256,address,uint256,bytes32)": "0x04672052dcb6b5b19a9cc2ec1b8f447f1f5e47b5e24cfa5e4ffb640d63ca2be7",
+      "Withdraw(address,uint256)": "0x884edad9ce6fa2440d8a54cc123490eb96d2768479d49ff9c7366125a9424364"
+    },
+    "RecruiterRewardsVault": {
+      "Deposit(address,uint256,uint256)": "0x90890809c654f11d6e72a28fa60149770a0d11ec6c92319d6ceb2bb0a4ea1a15",
+      "Withdraw(address,uint256,uint256)": "0xf279e6a1f5e320cca91135676d9cb6e44ca8a08c0b88342bcdb1144f6511b568",
+      "OperatorUpdated(address)": "0xb3b3f5f64ab192e4b5fefde1f51ce9733bbdcf831951543b325aebd49cc27ec4",
+      "PayoutCapsUpdated(uint256,uint256)": "0x73d2e77d1ace4c7e60be5e87b6efb03a17bc1989d1be9e7b79732ac8ee69f9a9",
+      "PayoutsPaused(bool)": "0x650efa1625180c59468b706a5f5de0480899f72b1a3b36f0abe6a948c5eb33e3",
+      "Payout(address,uint256)": "0x5afeca38b2064c23a692c4cf353015d80ab3ecc417b4f893f372690c11fbd9a6"
+    },
+    "CommunityRewardsVault": {
+      "RouterUpdated(address,address)": "0x02dc5c233404867c793b749c6d644beb2277536d18a7e7974d3f238e4c6f1684",
+      "RewardDistributorUpdated(address,address)": "0x1df95772db25c427e0df149fe4cd5b7c2e970e096ee7305ff86f6e1167281d7b",
+      "AirdropOperatorUpdated(address,address)": "0x81abd5c6576a4d15dff54d56f5235ca33eec1bb4620d3ca7fc0970935cd43528",
+      "AirdropDeposited(address,uint256,uint256)": "0x2aa1780fc2827b8daee0bddffdedfc44705d1fad71583afb7c2982be3e3002e8",
+      "SquadPoolDeposited(address,uint256,uint256)": "0xbe86bc7ac53a4552b5bd953877839c1403e901511a165a1b6692d322839a6545",
+      "AirdropWithdrawn(address,uint256,uint256)": "0xc9f285155175be20dac67e0a60f658b8d0ea585d64493aefa95a48630d009ac7",
+      "SquadPoolWithdrawn(address,uint256,uint256)": "0x427e2c594ce79cef21f2f01846bba922953407e951d82a50ba3cc12d21169eb0",
+      "AirdropBatchFunded(bytes32,bytes32,address,uint256,uint64,uint256)": "0x57333fa48a1ed84022660d693c93e94d8659a0d39ab282591146ef6d166928ac"
+    },
+    "ProtocolRevenueVault": {
+      "Deposit(address,uint256,uint256)": "0x90890809c654f11d6e72a28fa60149770a0d11ec6c92319d6ceb2bb0a4ea1a15",
+      "Withdraw(address,uint256,uint256)": "0xf279e6a1f5e320cca91135676d9cb6e44ca8a08c0b88342bcdb1144f6511b568"
+    },
+    "CreatorRegistry": {
+      "CreatorTierUpdated(address,uint8)": "0x7437436b6b4407753cd1490fb13b6c78da782800a1c525e0b5359046ec26481a",
+      "CreatorTrustScoreUpdated(address,uint256)": "0x9188a5c08284891a8eb28a13e9247e9e701bfaac53c620bdd48e8bfdbf68d21a",
+      "CreatorRestrictedUpdated(address,bool)": "0xdc0132868be186c5ef56f85100eaa099eeed159a0fbbf5ebf30abb328933347f",
+      "CreatorManualReviewUpdated(address,bool)": "0x3742efbfcfb3e8602fb4c80bf39490555fc33ea8aa4565dd44b083d8b9242f62",
+      "LaunchRecorderUpdated(address,bool)": "0x3ba94447e5bd80a32a24335481e73c63809dabf36f4b9f5ddb6e8d58aacaca44",
+      "CreatorLaunchRecorded(address,uint256,uint256)": "0x910c522d5e5a9c27d467f2ae2bdf56fdd0cfaa0eff6fe7792732d92d9e49919f",
+      "CreatorGraduationRecorded(address,uint256)": "0xbeffb6301ce978d65a53522f54f6dde9357f89ee64111ad65f446b7983a6aa9c"
+    },
+    "RiskRegistry": {
+      "WalletRiskUpdated(address,uint8,bool)": "0x927f99f0e373e263b47b5d31becd8d9192d918db00e64b0fca0f48ace08bf625",
+      "WalletClusterUpdated(address,bytes32)": "0x1bf15f7bb9c804c5d36f9e8abdc546c30999650b528d4376750a2ba837970fd1",
+      "ClusterRiskUpdated(bytes32,uint256,uint8,bool)": "0xd2a7238eeffaffdfc8820d583e4d906dbd569e5f27e58ea83f211c49e72db07d"
+    },
+    "PermanentLpLocker": {
+      "LpTokenRegistered(address)": "0x97fa1a4e27d55828fa1f361a611b100a3493f2030c082bebb8e053809eb1da78",
+      "GraduationPoolRegistered(address,address,address,address,address,address,uint256,uint16,uint16)": "0xa8e56b464a048dd8d223d2ae902ef834759f1affddb0dc4f34714b55fbcde55a",
+      "CreatorPayoutRecipientUpdated(address,address,address)": "0x697d7066ead0057a5418ee2afc6cdfb28e57de8501b35df25b770647754447de",
+      "LpPermanentlyLocked(address,address,uint256,uint256)": "0x6caaa493537bd9d8480938e0dedeeaec3eddaf60b71834bdb62e4bb3d0e239c0",
+      "FeesHarvested(address,address,address,uint256,uint256,uint256)": "0xd5d9db89cda5c8fb0e2afb114ee06eb9eb866536960b26cd286faaa1ec831760",
+      "HarvestPaymentPending(address,address,address,uint256,bool)": "0xf39032ab15d9c89cf96b7022c282ce89992b9cc1f3a788ed9c99a2f5d87ac4a0",
+      "PendingTokenClaimed(address,address,uint256)": "0xb0dc2c8664864719ef23f490910b61d1dea63ce9fe26ccffa56a55526aa1fdd7",
+      "PendingNativeClaimed(address,uint256)": "0x01c126dfbbbd96881e04fdb9476646528b84ce89c32aba36cf47bb5f02e3c61a",
+      "PendingProtocolTokenRouted(address,uint256)": "0x371015b485aa92e252657e9692f22b1c3dc36e36afb01af632bea15cbecbc9e1",
+      "PendingProtocolNativeRouted(uint256)": "0xb219b806d6db72d8c8b01a37d3696ff1af5890ab9adc07848ed5d7bd28b92231",
+      "UnregisteredTokenRecovered(address,address,uint256)": "0x39794fb535323159751a1b2ea1a9a51b271d78ccad70ec44e2a42e708b72fbf8"
+    }
+  }
+}

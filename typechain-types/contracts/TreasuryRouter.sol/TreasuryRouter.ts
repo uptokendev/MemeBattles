@@ -58,13 +58,17 @@ export interface TreasuryRouterInterface extends Interface {
       | "forwardingPaused"
       | "pendingSince"
       | "pendingVault"
+      | "permanentLpLocker"
       | "previewRoute"
       | "proposeVault"
       | "protocolRevenueVault"
       | "recruiterRewardsVault"
       | "route"
+      | "routeLpNative"
+      | "routeLpToken"
       | "setCommunityRewardsVault"
       | "setForwardingPaused"
+      | "setPermanentLpLocker"
       | "setProtocolRevenueVault"
       | "setRecruiterRewardsVault"
       | "upgradeDelay"
@@ -76,6 +80,9 @@ export interface TreasuryRouterInterface extends Interface {
       | "ForwardFailed"
       | "Forwarded"
       | "ForwardingPaused"
+      | "LpNativeRouted"
+      | "LpTokenRouted"
+      | "PermanentLpLockerUpdated"
       | "ProtocolRevenueVaultUpdated"
       | "RecruiterRewardsVaultUpdated"
       | "RouteExecuted"
@@ -110,6 +117,10 @@ export interface TreasuryRouterInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
+    functionFragment: "permanentLpLocker",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
     functionFragment: "previewRoute",
     values: [BigNumberish, BigNumberish, BigNumberish]
   ): string;
@@ -130,12 +141,24 @@ export interface TreasuryRouterInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "routeLpNative",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "routeLpToken",
+    values: [AddressLike, BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "setCommunityRewardsVault",
     values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setForwardingPaused",
     values: [boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setPermanentLpLocker",
+    values: [AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setProtocolRevenueVault",
@@ -177,6 +200,10 @@ export interface TreasuryRouterInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "permanentLpLocker",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "previewRoute",
     data: BytesLike
   ): Result;
@@ -194,11 +221,23 @@ export interface TreasuryRouterInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "route", data: BytesLike): Result;
   decodeFunctionResult(
+    functionFragment: "routeLpNative",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "routeLpToken",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "setCommunityRewardsVault",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "setForwardingPaused",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setPermanentLpLocker",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -259,6 +298,66 @@ export namespace ForwardingPausedEvent {
   export type OutputTuple = [paused: boolean];
   export interface OutputObject {
     paused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace LpNativeRoutedEvent {
+  export type InputTuple = [
+    locker: AddressLike,
+    protocolRevenueVault: AddressLike,
+    amount: BigNumberish
+  ];
+  export type OutputTuple = [
+    locker: string,
+    protocolRevenueVault: string,
+    amount: bigint
+  ];
+  export interface OutputObject {
+    locker: string;
+    protocolRevenueVault: string;
+    amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace LpTokenRoutedEvent {
+  export type InputTuple = [
+    locker: AddressLike,
+    token: AddressLike,
+    protocolRevenueVault: AddressLike,
+    amount: BigNumberish
+  ];
+  export type OutputTuple = [
+    locker: string,
+    token: string,
+    protocolRevenueVault: string,
+    amount: bigint
+  ];
+  export interface OutputObject {
+    locker: string;
+    token: string;
+    protocolRevenueVault: string;
+    amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PermanentLpLockerUpdatedEvent {
+  export type InputTuple = [oldLocker: AddressLike, newLocker: AddressLike];
+  export type OutputTuple = [oldLocker: string, newLocker: string];
+  export interface OutputObject {
+    oldLocker: string;
+    newLocker: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -414,6 +513,8 @@ export interface TreasuryRouter extends BaseContract {
 
   pendingVault: TypedContractMethod<[], [string], "view">;
 
+  permanentLpLocker: TypedContractMethod<[], [string], "view">;
+
   previewRoute: TypedContractMethod<
     [amount: BigNumberish, kind: BigNumberish, profile: BigNumberish],
     [TreasuryRouter.RouteAmountsStructOutput],
@@ -436,6 +537,14 @@ export interface TreasuryRouter extends BaseContract {
     "payable"
   >;
 
+  routeLpNative: TypedContractMethod<[], [void], "payable">;
+
+  routeLpToken: TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   setCommunityRewardsVault: TypedContractMethod<
     [newVault: AddressLike],
     [void],
@@ -444,6 +553,12 @@ export interface TreasuryRouter extends BaseContract {
 
   setForwardingPaused: TypedContractMethod<
     [paused: boolean],
+    [void],
+    "nonpayable"
+  >;
+
+  setPermanentLpLocker: TypedContractMethod<
+    [newLocker: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -491,6 +606,9 @@ export interface TreasuryRouter extends BaseContract {
     nameOrSignature: "pendingVault"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "permanentLpLocker"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
     nameOrSignature: "previewRoute"
   ): TypedContractMethod<
     [amount: BigNumberish, kind: BigNumberish, profile: BigNumberish],
@@ -514,11 +632,24 @@ export interface TreasuryRouter extends BaseContract {
     "payable"
   >;
   getFunction(
+    nameOrSignature: "routeLpNative"
+  ): TypedContractMethod<[], [void], "payable">;
+  getFunction(
+    nameOrSignature: "routeLpToken"
+  ): TypedContractMethod<
+    [token: AddressLike, amount: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "setCommunityRewardsVault"
   ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setForwardingPaused"
   ): TypedContractMethod<[paused: boolean], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "setPermanentLpLocker"
+  ): TypedContractMethod<[newLocker: AddressLike], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "setProtocolRevenueVault"
   ): TypedContractMethod<[newVault: AddressLike], [void], "nonpayable">;
@@ -556,6 +687,27 @@ export interface TreasuryRouter extends BaseContract {
     ForwardingPausedEvent.InputTuple,
     ForwardingPausedEvent.OutputTuple,
     ForwardingPausedEvent.OutputObject
+  >;
+  getEvent(
+    key: "LpNativeRouted"
+  ): TypedContractEvent<
+    LpNativeRoutedEvent.InputTuple,
+    LpNativeRoutedEvent.OutputTuple,
+    LpNativeRoutedEvent.OutputObject
+  >;
+  getEvent(
+    key: "LpTokenRouted"
+  ): TypedContractEvent<
+    LpTokenRoutedEvent.InputTuple,
+    LpTokenRoutedEvent.OutputTuple,
+    LpTokenRoutedEvent.OutputObject
+  >;
+  getEvent(
+    key: "PermanentLpLockerUpdated"
+  ): TypedContractEvent<
+    PermanentLpLockerUpdatedEvent.InputTuple,
+    PermanentLpLockerUpdatedEvent.OutputTuple,
+    PermanentLpLockerUpdatedEvent.OutputObject
   >;
   getEvent(
     key: "ProtocolRevenueVaultUpdated"
@@ -636,6 +788,39 @@ export interface TreasuryRouter extends BaseContract {
       ForwardingPausedEvent.InputTuple,
       ForwardingPausedEvent.OutputTuple,
       ForwardingPausedEvent.OutputObject
+    >;
+
+    "LpNativeRouted(address,address,uint256)": TypedContractEvent<
+      LpNativeRoutedEvent.InputTuple,
+      LpNativeRoutedEvent.OutputTuple,
+      LpNativeRoutedEvent.OutputObject
+    >;
+    LpNativeRouted: TypedContractEvent<
+      LpNativeRoutedEvent.InputTuple,
+      LpNativeRoutedEvent.OutputTuple,
+      LpNativeRoutedEvent.OutputObject
+    >;
+
+    "LpTokenRouted(address,address,address,uint256)": TypedContractEvent<
+      LpTokenRoutedEvent.InputTuple,
+      LpTokenRoutedEvent.OutputTuple,
+      LpTokenRoutedEvent.OutputObject
+    >;
+    LpTokenRouted: TypedContractEvent<
+      LpTokenRoutedEvent.InputTuple,
+      LpTokenRoutedEvent.OutputTuple,
+      LpTokenRoutedEvent.OutputObject
+    >;
+
+    "PermanentLpLockerUpdated(address,address)": TypedContractEvent<
+      PermanentLpLockerUpdatedEvent.InputTuple,
+      PermanentLpLockerUpdatedEvent.OutputTuple,
+      PermanentLpLockerUpdatedEvent.OutputObject
+    >;
+    PermanentLpLockerUpdated: TypedContractEvent<
+      PermanentLpLockerUpdatedEvent.InputTuple,
+      PermanentLpLockerUpdatedEvent.OutputTuple,
+      PermanentLpLockerUpdatedEvent.OutputObject
     >;
 
     "ProtocolRevenueVaultUpdated(address,address)": TypedContractEvent<

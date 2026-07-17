@@ -29,17 +29,25 @@ export interface MockTopazPoolInterface extends Interface {
       | "allowance"
       | "approve"
       | "balanceOf"
+      | "claimFees"
+      | "claimable0"
+      | "claimable1"
       | "decimals"
+      | "factory"
+      | "fundFees"
       | "getReserves"
+      | "metadata"
       | "mint"
       | "name"
       | "setReserves"
-      | "setTokens"
+      | "setTokens(address,address,bool)"
+      | "setTokens(address,address)"
       | "setTotalSupply"
       | "stable"
       | "symbol"
       | "token0"
       | "token1"
+      | "tokens"
       | "totalSupply"
       | "transfer"
       | "transferFrom"
@@ -59,11 +67,26 @@ export interface MockTopazPoolInterface extends Interface {
     functionFragment: "balanceOf",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(functionFragment: "claimFees", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "claimable0",
+    values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "claimable1",
+    values: [AddressLike]
+  ): string;
   encodeFunctionData(functionFragment: "decimals", values?: undefined): string;
+  encodeFunctionData(functionFragment: "factory", values?: undefined): string;
+  encodeFunctionData(
+    functionFragment: "fundFees",
+    values: [AddressLike, BigNumberish, BigNumberish]
+  ): string;
   encodeFunctionData(
     functionFragment: "getReserves",
     values?: undefined
   ): string;
+  encodeFunctionData(functionFragment: "metadata", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "mint",
     values: [AddressLike, BigNumberish]
@@ -74,8 +97,12 @@ export interface MockTopazPoolInterface extends Interface {
     values: [BigNumberish, BigNumberish]
   ): string;
   encodeFunctionData(
-    functionFragment: "setTokens",
+    functionFragment: "setTokens(address,address,bool)",
     values: [AddressLike, AddressLike, boolean]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "setTokens(address,address)",
+    values: [AddressLike, AddressLike]
   ): string;
   encodeFunctionData(
     functionFragment: "setTotalSupply",
@@ -85,6 +112,7 @@ export interface MockTopazPoolInterface extends Interface {
   encodeFunctionData(functionFragment: "symbol", values?: undefined): string;
   encodeFunctionData(functionFragment: "token0", values?: undefined): string;
   encodeFunctionData(functionFragment: "token1", values?: undefined): string;
+  encodeFunctionData(functionFragment: "tokens", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "totalSupply",
     values?: undefined
@@ -101,18 +129,31 @@ export interface MockTopazPoolInterface extends Interface {
   decodeFunctionResult(functionFragment: "allowance", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "approve", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "claimFees", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "claimable0", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "claimable1", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "decimals", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "fundFees", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getReserves",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "metadata", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "mint", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "name", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setReserves",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "setTokens", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "setTokens(address,address,bool)",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "setTokens(address,address)",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "setTotalSupply",
     data: BytesLike
@@ -121,6 +162,7 @@ export interface MockTopazPoolInterface extends Interface {
   decodeFunctionResult(functionFragment: "symbol", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token0", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token1", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "tokens", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "totalSupply",
     data: BytesLike
@@ -225,9 +267,39 @@ export interface MockTopazPool extends BaseContract {
 
   balanceOf: TypedContractMethod<[account: AddressLike], [bigint], "view">;
 
+  claimFees: TypedContractMethod<[], [void], "nonpayable">;
+
+  claimable0: TypedContractMethod<[account: AddressLike], [bigint], "view">;
+
+  claimable1: TypedContractMethod<[account: AddressLike], [bigint], "view">;
+
   decimals: TypedContractMethod<[], [bigint], "view">;
 
+  factory: TypedContractMethod<[], [string], "view">;
+
+  fundFees: TypedContractMethod<
+    [account: AddressLike, amount0: BigNumberish, amount1: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+
   getReserves: TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
+
+  metadata: TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint, bigint, boolean, string, string] & {
+        decimals0: bigint;
+        decimals1: bigint;
+        reserve0: bigint;
+        reserve1: bigint;
+        stable_: boolean;
+        token0_: string;
+        token1_: string;
+      }
+    ],
+    "view"
+  >;
 
   mint: TypedContractMethod<
     [to: AddressLike, amount: BigNumberish],
@@ -243,8 +315,14 @@ export interface MockTopazPool extends BaseContract {
     "nonpayable"
   >;
 
-  setTokens: TypedContractMethod<
+  "setTokens(address,address,bool)": TypedContractMethod<
     [token0_: AddressLike, token1_: AddressLike, stable_: boolean],
+    [void],
+    "nonpayable"
+  >;
+
+  "setTokens(address,address)": TypedContractMethod<
+    [token0_: AddressLike, token1_: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -258,6 +336,8 @@ export interface MockTopazPool extends BaseContract {
   token0: TypedContractMethod<[], [string], "view">;
 
   token1: TypedContractMethod<[], [string], "view">;
+
+  tokens: TypedContractMethod<[], [[string, string]], "view">;
 
   totalSupply: TypedContractMethod<[], [bigint], "view">;
 
@@ -295,11 +375,47 @@ export interface MockTopazPool extends BaseContract {
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[account: AddressLike], [bigint], "view">;
   getFunction(
+    nameOrSignature: "claimFees"
+  ): TypedContractMethod<[], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "claimable0"
+  ): TypedContractMethod<[account: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "claimable1"
+  ): TypedContractMethod<[account: AddressLike], [bigint], "view">;
+  getFunction(
     nameOrSignature: "decimals"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
+    nameOrSignature: "factory"
+  ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "fundFees"
+  ): TypedContractMethod<
+    [account: AddressLike, amount0: BigNumberish, amount1: BigNumberish],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
     nameOrSignature: "getReserves"
   ): TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
+  getFunction(
+    nameOrSignature: "metadata"
+  ): TypedContractMethod<
+    [],
+    [
+      [bigint, bigint, bigint, bigint, boolean, string, string] & {
+        decimals0: bigint;
+        decimals1: bigint;
+        reserve0: bigint;
+        reserve1: bigint;
+        stable_: boolean;
+        token0_: string;
+        token1_: string;
+      }
+    ],
+    "view"
+  >;
   getFunction(
     nameOrSignature: "mint"
   ): TypedContractMethod<
@@ -318,9 +434,16 @@ export interface MockTopazPool extends BaseContract {
     "nonpayable"
   >;
   getFunction(
-    nameOrSignature: "setTokens"
+    nameOrSignature: "setTokens(address,address,bool)"
   ): TypedContractMethod<
     [token0_: AddressLike, token1_: AddressLike, stable_: boolean],
+    [void],
+    "nonpayable"
+  >;
+  getFunction(
+    nameOrSignature: "setTokens(address,address)"
+  ): TypedContractMethod<
+    [token0_: AddressLike, token1_: AddressLike],
     [void],
     "nonpayable"
   >;
@@ -339,6 +462,9 @@ export interface MockTopazPool extends BaseContract {
   getFunction(
     nameOrSignature: "token1"
   ): TypedContractMethod<[], [string], "view">;
+  getFunction(
+    nameOrSignature: "tokens"
+  ): TypedContractMethod<[], [[string, string]], "view">;
   getFunction(
     nameOrSignature: "totalSupply"
   ): TypedContractMethod<[], [bigint], "view">;

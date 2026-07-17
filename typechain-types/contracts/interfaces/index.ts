@@ -3,5 +3,6 @@
 /* eslint-disable */
 import type * as topaz from "./topaz";
 export type { topaz };
+export type { IPancakeRouter02 } from "./IPancakeRouter02";
 export type { ITopazRouter02 } from "./ITopazRouter02";
 export type { ITopazV2Factory } from "./ITopazV2Factory";

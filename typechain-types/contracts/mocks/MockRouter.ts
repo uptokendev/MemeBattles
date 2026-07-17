@@ -25,12 +25,7 @@ import type {
 
 export interface MockRouterInterface extends Interface {
   getFunction(
-    nameOrSignature:
-      | "WETH"
-      | "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)"
-      | "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)"
-      | "factory"
-      | "poolFactory"
+    nameOrSignature: "WETH" | "addLiquidityETH" | "factory" | "poolFactory"
   ): FunctionFragment;
 
   getEvent(
@@ -39,21 +34,10 @@ export interface MockRouterInterface extends Interface {
 
   encodeFunctionData(functionFragment: "WETH", values?: undefined): string;
   encodeFunctionData(
-    functionFragment: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)",
+    functionFragment: "addLiquidityETH",
     values: [
       AddressLike,
       boolean,
-      BigNumberish,
-      BigNumberish,
-      BigNumberish,
-      AddressLike,
-      BigNumberish
-    ]
-  ): string;
-  encodeFunctionData(
-    functionFragment: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)",
-    values: [
-      AddressLike,
       BigNumberish,
       BigNumberish,
       BigNumberish,
@@ -69,11 +53,7 @@ export interface MockRouterInterface extends Interface {
 
   decodeFunctionResult(functionFragment: "WETH", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)",
+    functionFragment: "addLiquidityETH",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
@@ -181,7 +161,7 @@ export interface MockRouter extends BaseContract {
 
   WETH: TypedContractMethod<[], [string], "view">;
 
-  "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)": TypedContractMethod<
+  addLiquidityETH: TypedContractMethod<
     [
       token: AddressLike,
       stable: boolean,
@@ -190,25 +170,6 @@ export interface MockRouter extends BaseContract {
       arg4: BigNumberish,
       to: AddressLike,
       arg6: BigNumberish
-    ],
-    [
-      [bigint, bigint, bigint] & {
-        amountToken: bigint;
-        amountETH: bigint;
-        liquidity: bigint;
-      }
-    ],
-    "payable"
-  >;
-
-  "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)": TypedContractMethod<
-    [
-      token: AddressLike,
-      amountTokenDesired: BigNumberish,
-      arg2: BigNumberish,
-      arg3: BigNumberish,
-      to: AddressLike,
-      arg5: BigNumberish
     ],
     [
       [bigint, bigint, bigint] & {
@@ -232,7 +193,7 @@ export interface MockRouter extends BaseContract {
     nameOrSignature: "WETH"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "addLiquidityETH(address,bool,uint256,uint256,uint256,address,uint256)"
+    nameOrSignature: "addLiquidityETH"
   ): TypedContractMethod<
     [
       token: AddressLike,
@@ -242,26 +203,6 @@ export interface MockRouter extends BaseContract {
       arg4: BigNumberish,
       to: AddressLike,
       arg6: BigNumberish
-    ],
-    [
-      [bigint, bigint, bigint] & {
-        amountToken: bigint;
-        amountETH: bigint;
-        liquidity: bigint;
-      }
-    ],
-    "payable"
-  >;
-  getFunction(
-    nameOrSignature: "addLiquidityETH(address,uint256,uint256,uint256,address,uint256)"
-  ): TypedContractMethod<
-    [
-      token: AddressLike,
-      amountTokenDesired: BigNumberish,
-      arg2: BigNumberish,
-      arg3: BigNumberish,
-      to: AddressLike,
-      arg5: BigNumberish
     ],
     [
       [bigint, bigint, bigint] & {

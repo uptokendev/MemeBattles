@@ -25,11 +25,13 @@ export interface MockV2PairInterface extends Interface {
   getFunction(
     nameOrSignature:
       | "balanceOf"
+      | "factory"
       | "getReserves"
       | "mint"
       | "setReserves"
       | "setTokens"
       | "setTotalSupply"
+      | "stable"
       | "token0"
       | "token1"
       | "totalSupply"
@@ -39,6 +41,7 @@ export interface MockV2PairInterface extends Interface {
     functionFragment: "balanceOf",
     values: [AddressLike]
   ): string;
+  encodeFunctionData(functionFragment: "factory", values?: undefined): string;
   encodeFunctionData(
     functionFragment: "getReserves",
     values?: undefined
@@ -59,6 +62,7 @@ export interface MockV2PairInterface extends Interface {
     functionFragment: "setTotalSupply",
     values: [BigNumberish]
   ): string;
+  encodeFunctionData(functionFragment: "stable", values?: undefined): string;
   encodeFunctionData(functionFragment: "token0", values?: undefined): string;
   encodeFunctionData(functionFragment: "token1", values?: undefined): string;
   encodeFunctionData(
@@ -67,6 +71,7 @@ export interface MockV2PairInterface extends Interface {
   ): string;
 
   decodeFunctionResult(functionFragment: "balanceOf", data: BytesLike): Result;
+  decodeFunctionResult(functionFragment: "factory", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "getReserves",
     data: BytesLike
@@ -81,6 +86,7 @@ export interface MockV2PairInterface extends Interface {
     functionFragment: "setTotalSupply",
     data: BytesLike
   ): Result;
+  decodeFunctionResult(functionFragment: "stable", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token0", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "token1", data: BytesLike): Result;
   decodeFunctionResult(
@@ -134,6 +140,8 @@ export interface MockV2Pair extends BaseContract {
 
   balanceOf: TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
 
+  factory: TypedContractMethod<[], [string], "view">;
+
   getReserves: TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
 
   mint: TypedContractMethod<
@@ -156,6 +164,8 @@ export interface MockV2Pair extends BaseContract {
 
   setTotalSupply: TypedContractMethod<[v: BigNumberish], [void], "nonpayable">;
 
+  stable: TypedContractMethod<[], [boolean], "view">;
+
   token0: TypedContractMethod<[], [string], "view">;
 
   token1: TypedContractMethod<[], [string], "view">;
@@ -169,6 +179,9 @@ export interface MockV2Pair extends BaseContract {
   getFunction(
     nameOrSignature: "balanceOf"
   ): TypedContractMethod<[arg0: AddressLike], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "factory"
+  ): TypedContractMethod<[], [string], "view">;
   getFunction(
     nameOrSignature: "getReserves"
   ): TypedContractMethod<[], [[bigint, bigint, bigint]], "view">;
@@ -196,6 +209,9 @@ export interface MockV2Pair extends BaseContract {
   getFunction(
     nameOrSignature: "setTotalSupply"
   ): TypedContractMethod<[v: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "stable"
+  ): TypedContractMethod<[], [boolean], "view">;
   getFunction(
     nameOrSignature: "token0"
   ): TypedContractMethod<[], [string], "view">;

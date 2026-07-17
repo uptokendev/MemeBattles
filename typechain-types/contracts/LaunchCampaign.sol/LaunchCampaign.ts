@@ -158,6 +158,7 @@ export interface LaunchCampaignInterface extends Interface {
       | "liquidityBps"
       | "liquiditySupply"
       | "lpReceiver"
+      | "netRaisedWei"
       | "owner"
       | "paused"
       | "pendingNative"
@@ -191,6 +192,7 @@ export interface LaunchCampaignInterface extends Interface {
     nameOrSignatureOrTopic:
       | "CampaignFinalized"
       | "CampaignPauseStateUpdated"
+      | "GraduationLiquidityCapped"
       | "NativeClaimed"
       | "NativeEscrowed"
       | "OwnershipTransferred"
@@ -326,6 +328,10 @@ export interface LaunchCampaignInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "lpReceiver",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "netRaisedWei",
     values?: undefined
   ): string;
   encodeFunctionData(functionFragment: "owner", values?: undefined): string;
@@ -542,6 +548,10 @@ export interface LaunchCampaignInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "lpReceiver", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "netRaisedWei",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(functionFragment: "owner", data: BytesLike): Result;
   decodeFunctionResult(functionFragment: "paused", data: BytesLike): Result;
   decodeFunctionResult(
@@ -704,6 +714,31 @@ export namespace CampaignPauseStateUpdatedEvent {
     buyPaused: boolean;
     sellPaused: boolean;
     graduationPaused: boolean;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace GraduationLiquidityCappedEvent {
+  export type InputTuple = [
+    desiredLiquidityTokens: BigNumberish,
+    cappedLiquidityTokens: BigNumberish,
+    desiredLiquidityBnb: BigNumberish,
+    cappedLiquidityBnb: BigNumberish
+  ];
+  export type OutputTuple = [
+    desiredLiquidityTokens: bigint,
+    cappedLiquidityTokens: bigint,
+    desiredLiquidityBnb: bigint,
+    cappedLiquidityBnb: bigint
+  ];
+  export interface OutputObject {
+    desiredLiquidityTokens: bigint;
+    cappedLiquidityTokens: bigint;
+    desiredLiquidityBnb: bigint;
+    cappedLiquidityBnb: bigint;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -977,6 +1012,8 @@ export interface LaunchCampaign extends BaseContract {
   liquiditySupply: TypedContractMethod<[], [bigint], "view">;
 
   lpReceiver: TypedContractMethod<[], [string], "view">;
+
+  netRaisedWei: TypedContractMethod<[], [bigint], "view">;
 
   owner: TypedContractMethod<[], [string], "view">;
 
@@ -1263,6 +1300,9 @@ export interface LaunchCampaign extends BaseContract {
     nameOrSignature: "lpReceiver"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
+    nameOrSignature: "netRaisedWei"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
     nameOrSignature: "owner"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
@@ -1392,6 +1432,13 @@ export interface LaunchCampaign extends BaseContract {
     CampaignPauseStateUpdatedEvent.OutputObject
   >;
   getEvent(
+    key: "GraduationLiquidityCapped"
+  ): TypedContractEvent<
+    GraduationLiquidityCappedEvent.InputTuple,
+    GraduationLiquidityCappedEvent.OutputTuple,
+    GraduationLiquidityCappedEvent.OutputObject
+  >;
+  getEvent(
     key: "NativeClaimed"
   ): TypedContractEvent<
     NativeClaimedEvent.InputTuple,
@@ -1455,6 +1502,17 @@ export interface LaunchCampaign extends BaseContract {
       CampaignPauseStateUpdatedEvent.InputTuple,
       CampaignPauseStateUpdatedEvent.OutputTuple,
       CampaignPauseStateUpdatedEvent.OutputObject
+    >;
+
+    "GraduationLiquidityCapped(uint256,uint256,uint256,uint256)": TypedContractEvent<
+      GraduationLiquidityCappedEvent.InputTuple,
+      GraduationLiquidityCappedEvent.OutputTuple,
+      GraduationLiquidityCappedEvent.OutputObject
+    >;
+    GraduationLiquidityCapped: TypedContractEvent<
+      GraduationLiquidityCappedEvent.InputTuple,
+      GraduationLiquidityCappedEvent.OutputTuple,
+      GraduationLiquidityCappedEvent.OutputObject
     >;
 
     "NativeClaimed(address,uint256)": TypedContractEvent<

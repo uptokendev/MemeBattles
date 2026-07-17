@@ -156,6 +156,9 @@ export interface LaunchFactoryInterface extends Interface {
       | "LEAGUE_FEE_BPS"
       | "MAX_BASE_PRICE"
       | "MAX_GRADUATION_TARGET"
+      | "MAX_LAUNCH_PROTECTION_BLOCKS"
+      | "MAX_LAUNCH_PROTECTION_BUY_WEI"
+      | "MAX_LAUNCH_PROTECTION_WALLET_WEI"
       | "MAX_PRICE_SLOPE"
       | "ROUTE_PROFILE_OG_LINKED"
       | "ROUTE_PROFILE_STANDARD_LINKED"
@@ -244,6 +247,18 @@ export interface LaunchFactoryInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "MAX_GRADUATION_TARGET",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_LAUNCH_PROTECTION_BLOCKS",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_LAUNCH_PROTECTION_BUY_WEI",
+    values?: undefined
+  ): string;
+  encodeFunctionData(
+    functionFragment: "MAX_LAUNCH_PROTECTION_WALLET_WEI",
     values?: undefined
   ): string;
   encodeFunctionData(
@@ -456,6 +471,18 @@ export interface LaunchFactoryInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "MAX_GRADUATION_TARGET",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_LAUNCH_PROTECTION_BLOCKS",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_LAUNCH_PROTECTION_BUY_WEI",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "MAX_LAUNCH_PROTECTION_WALLET_WEI",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
@@ -971,6 +998,12 @@ export interface LaunchFactory extends BaseContract {
 
   MAX_GRADUATION_TARGET: TypedContractMethod<[], [bigint], "view">;
 
+  MAX_LAUNCH_PROTECTION_BLOCKS: TypedContractMethod<[], [bigint], "view">;
+
+  MAX_LAUNCH_PROTECTION_BUY_WEI: TypedContractMethod<[], [bigint], "view">;
+
+  MAX_LAUNCH_PROTECTION_WALLET_WEI: TypedContractMethod<[], [bigint], "view">;
+
   MAX_PRICE_SLOPE: TypedContractMethod<[], [bigint], "view">;
 
   ROUTE_PROFILE_OG_LINKED: TypedContractMethod<[], [bigint], "view">;
@@ -1201,6 +1234,15 @@ export interface LaunchFactory extends BaseContract {
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "MAX_GRADUATION_TARGET"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "MAX_LAUNCH_PROTECTION_BLOCKS"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "MAX_LAUNCH_PROTECTION_BUY_WEI"
+  ): TypedContractMethod<[], [bigint], "view">;
+  getFunction(
+    nameOrSignature: "MAX_LAUNCH_PROTECTION_WALLET_WEI"
   ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "MAX_PRICE_SLOPE"
