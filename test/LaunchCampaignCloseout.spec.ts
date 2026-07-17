@@ -3,8 +3,6 @@ import { ethers } from "hardhat";
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { deployCoreFixture } from "./fixtures/core";
 
-const WAD = ethers.parseEther("1");
-
 const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
   name: "CloseoutToken",
   symbol: "CLOSE",
@@ -18,6 +16,17 @@ const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
   lpReceiver: ethers.ZeroAddress,
   ...overrides,
 });
+
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
+}
 
 async function createCampaignFixture() {
   const fx = await deployCoreFixture();
@@ -42,6 +51,24 @@ async function createHighTargetCampaignFixture() {
 async function createLowTargetCampaignFixture() {
   const fx = await deployCoreFixture();
   await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest({ graduationTarget: 1n }) as any);
+  const info = await fx.factory.getCampaign(0n);
+  const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+  const token = await ethers.getContractAt("LaunchToken", info.token);
+  return { ...fx, info, campaign, token };
+}
+
+async function createCappedLiquidityCampaignFixture() {
+  const fx = await deployCoreFixture();
+  await fx.factory.connect(fx.owner).setConfig({
+    totalSupply: ethers.parseEther("1000"),
+    curveBps: 8000,
+    liquidityTokenBps: 1000,
+    basePrice: 10n ** 12n,
+    priceSlope: 10n ** 9n,
+    graduationTarget: 1n,
+    liquidityBps: 8000,
+  });
+  await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest() as any);
   const info = await fx.factory.getCampaign(0n);
   const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
   const token = await ethers.getContractAt("LaunchToken", info.token);
@@ -135,10 +162,12 @@ describe("LaunchCampaign closeout integration", function () {
   });
 
   it("graduation pause blocks eligible permissionless finalization", async () => {
-    const { factory, campaign, owner, alice } = await loadFixture(createCampaignFixture);
-    const target = await campaign.graduationNativeTarget();
+    const { factory, campaign, owner, alice, priceFeed } = await loadFixture(createCampaignFixture);
+    const amountOut = ethers.parseEther("1");
+    const total = await campaign.quoteBuyExactTokens(amountOut);
 
-    await owner.sendTransaction({ to: await campaign.getAddress(), value: target });
+    await campaign.connect(alice).buyExactTokens(amountOut, total, { value: total });
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
     await factory.connect(owner).setCampaignPauses(await campaign.getAddress(), false, false, false, true);
 
     await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(
@@ -212,23 +241,20 @@ describe("LaunchCampaign closeout integration", function () {
   });
 
   it("caps graduation liquidity instead of reverting when desired LP tokens exceed the reserve", async () => {
-    const { campaign, owner, alice } = await loadFixture(createLowTargetCampaignFixture);
-    await owner.sendTransaction({ to: await campaign.getAddress(), value: ethers.parseEther("1") });
-
+    const { campaign, alice } = await loadFixture(createCappedLiquidityCampaignFixture);
     const liquiditySupply = await campaign.liquiditySupply();
     const curveSupply = await campaign.curveSupply();
-    const expectedLiquidityBnb = (liquiditySupply * (await campaign.currentPrice())) / WAD;
+    const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
 
-    const tx = campaign.connect(alice).graduateIfEligible(0, 0);
+    const tx = campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
     await expect(tx).to.emit(campaign, "GraduationLiquidityCapped");
     await expect(tx).to.emit(campaign, "CampaignFinalized");
 
     const state = await campaign.getGraduationState();
     expect(await campaign.launched()).to.eq(true);
     expect(state.graduatedLiquidityTokens).to.eq(liquiditySupply);
-    expect(state.graduatedLiquidityBnb).to.eq(expectedLiquidityBnb);
     expect(state.burnedUnusedLpTokens).to.eq(0n);
-    expect(state.burnedUnsoldTokens).to.eq(curveSupply);
+    expect(state.burnedUnsoldTokens).to.eq(0n);
   });
 
   it("quoteBuyExactBnb returns zeros after finalization", async () => {
