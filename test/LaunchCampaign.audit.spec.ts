@@ -27,6 +27,10 @@ async function createCampaign(overrides: Record<string, unknown> = {}) {
   return { ...fx, info, campaign, token };
 }
 
+async function createLowTargetCampaign() {
+  return createCampaign({ graduationTarget: 1n });
+}
+
 describe("LaunchCampaign audit hardening", function () {
   it("does not count direct native transfers toward graduation", async () => {
     const { campaign, owner, alice } = await loadFixture(createCampaign);
@@ -41,7 +45,7 @@ describe("LaunchCampaign audit hardening", function () {
   });
 
   it("leaves direct native surplus out of creator payout at graduation", async () => {
-    const { campaign, owner, alice } = await loadFixture(async () => createCampaign({ graduationTarget: 1n }));
+    const { campaign, owner, alice } = await loadFixture(createLowTargetCampaign);
 
     const surplus = ethers.parseEther("2");
     await owner.sendTransaction({ to: await campaign.getAddress(), value: surplus });
