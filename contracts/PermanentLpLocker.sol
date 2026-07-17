@@ -45,6 +45,7 @@ contract PermanentLpLocker is ReentrancyGuard {
     address public immutable topazFactory;
 
     mapping(address => bool) public registeredLpToken;
+    mapping(address => bool) public registeredFeeAsset;
     mapping(address => uint256) public lockedBalance;
     mapping(address => mapping(address => uint256)) public lockedByDepositor;
     mapping(address => PoolRegistration) public poolInfo;
@@ -136,6 +137,8 @@ contract PermanentLpLocker is ReentrancyGuard {
         if (IERC20(pool).balanceOf(address(this)) < lockedLpAmount) revert LockedLpMissing();
 
         _registerLpToken(pool);
+        registeredFeeAsset[token0_] = true;
+        registeredFeeAsset[token1_] = true;
         lockedBalance[pool] += lockedLpAmount;
         lockedByDepositor[pool][campaign] += lockedLpAmount;
         creatorPayoutRecipient[creator] = creatorFeeRecipient;
@@ -244,7 +247,7 @@ contract PermanentLpLocker is ReentrancyGuard {
         if (token == address(0) || to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (registeredLpToken[token]) revert RegisteredLpRecoveryBlocked();
-        if (_isRegisteredFeeAsset(token)) revert RegisteredFeeAssetRecoveryBlocked();
+        if (registeredFeeAsset[token]) revert RegisteredFeeAssetRecoveryBlocked();
 
         IERC20(token).safeTransfer(to, amount);
         emit UnregisteredTokenRecovered(token, to, amount);
@@ -311,9 +314,5 @@ contract PermanentLpLocker is ReentrancyGuard {
 
     function _samePair(address a0, address a1, address b0, address b1) internal pure returns (bool) {
         return (a0 == b0 && a1 == b1) || (a0 == b1 && a1 == b0);
-    }
-
-    function _isRegisteredFeeAsset(address token) internal view returns (bool) {
-        return pendingProtocolToken[token] != 0;
     }
 }
