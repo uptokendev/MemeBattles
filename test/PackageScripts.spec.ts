@@ -74,8 +74,8 @@ describe("package scripts", function () {
     expect(pkg.scripts["security:check"]).to.eq("node scripts/security-check.cjs");
   });
 
-  it("uses the expected package manager and core dependencies", async () => {
-    expect(pkg.packageManager).to.include("yarn@1.22.22");
+  it("uses npm workflow and expected core dependencies", async () => {
+    expect(pkg).to.not.have.property("packageManager");
     expect(pkg.devDependencies.hardhat).to.eq("^2.22.10");
     expect(pkg.devDependencies["@nomicfoundation/hardhat-toolbox"]).to.eq("^5.0.0");
     expect(pkg.dependencies["@openzeppelin/contracts"]).to.eq("^5.0.2");
