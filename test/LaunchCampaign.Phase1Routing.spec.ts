@@ -7,14 +7,19 @@ import { deployLaunchFactory } from "./helpers/deployFactory";
 
 const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
 async function deployPhase1RoutingFixture() {
   const [owner, creator, alice, bob] = await ethers.getSigners();
 
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2factory = await V2Factory.deploy();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const topazFactory = await TopazFactory.deploy();
 
   const DexRouter = await ethers.getContractFactory("MockRouter");
-  const dexRouter = await DexRouter.deploy(await v2factory.getAddress(), await owner.getAddress());
+  const dexRouter = await DexRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
 
   const AcceptingReceiver = await ethers.getContractFactory("AcceptingReceiver");
   const leagueVault = await AcceptingReceiver.deploy();
@@ -32,7 +37,7 @@ async function deployPhase1RoutingFixture() {
   await treasuryRouter.connect(owner).setCommunityRewardsVault(await communityVault.getAddress());
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
-  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
+  const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
   await factory.connect(owner).setRouteAuthority(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
@@ -57,6 +62,7 @@ async function deployPhase1RoutingFixture() {
     treasuryRouter,
     communityVault,
     factory,
+    priceFeed,
   };
 }
 
@@ -123,10 +129,10 @@ async function createOgCampaignViaPhase1RouterFixture() {
   return createCampaignViaPhase1RouterFixture(2, 2);
 }
 
-async function topUpToGraduationTarget(campaign: any, payer: any) {
-  const target = await campaign.graduationNativeTarget();
-  const balance = await ethers.provider.getBalance(await campaign.getAddress());
-  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
 }
 
 describe("LaunchCampaign Phase 1 router integration", function () {
@@ -208,17 +214,17 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes finalize fees through TreasuryRouter using StandardUnlinked finalize splits without breaking launch", async () => {
-    const { campaign, alice, treasuryRouter, leagueVault, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, leagueVault, recruiterVault, protocolVault, communityVault, priceFeed } =
       await loadFixture(createCampaignViaPhase1RouterFixture);
 
     const oneToken = ethers.parseUnits("1", 18);
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
-    await topUpToGraduationTarget(campaign, alice);
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
+    const graduationPrincipal = await campaign.netRaisedWei();
     const protocolFeeBps = await campaign.protocolFeeBps();
-    const protocolFee = (balanceBeforeFinalize * protocolFeeBps) / 10_000n;
+    const protocolFee = (graduationPrincipal * protocolFeeBps) / 10_000n;
     const expected = await treasuryRouter.previewRoute(protocolFee, 1, 1);
 
     const leagueBefore = await getBalance(await leagueVault.getAddress());
@@ -252,7 +258,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes linked trade + finalize profiles end to end when factory is configured for StandardLinked", async () => {
-    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault, priceFeed } =
       await loadFixture(createLinkedCampaignViaPhase1RouterFixture);
 
     const amountOut = ethers.parseEther("10");
@@ -280,10 +286,10 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeTrade).to.equal(expectedTrade.protocol);
     expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
 
-    await topUpToGraduationTarget(campaign, alice);
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
-    const protocolFee = (balanceBeforeFinalize * feeBps) / 10_000n;
+    const graduationPrincipal = await campaign.netRaisedWei();
+    const protocolFee = (graduationPrincipal * feeBps) / 10_000n;
     const expectedFinalize = await treasuryRouter.previewRoute(protocolFee, 1, 0);
 
     const recruiterBeforeFinalize = await getBalance(await recruiterVault.getAddress());
@@ -298,7 +304,7 @@ describe("LaunchCampaign Phase 1 router integration", function () {
   });
 
   it("routes OG-linked trade + finalize profiles end to end when factory is configured for OgLinked", async () => {
-    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault } =
+    const { campaign, alice, treasuryRouter, recruiterVault, protocolVault, communityVault, priceFeed } =
       await loadFixture(createOgCampaignViaPhase1RouterFixture);
 
     const amountOut = ethers.parseEther("10");
@@ -326,10 +332,10 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await getBalance(await protocolVault.getAddress())) - protocolBeforeTrade).to.equal(expectedTrade.protocol);
     expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
 
-    await topUpToGraduationTarget(campaign, alice);
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    const balanceBeforeFinalize = await ethers.provider.getBalance(await campaign.getAddress());
-    const protocolFee = (balanceBeforeFinalize * feeBps) / 10_000n;
+    const graduationPrincipal = await campaign.netRaisedWei();
+    const protocolFee = (graduationPrincipal * feeBps) / 10_000n;
     const expectedFinalize = await treasuryRouter.previewRoute(protocolFee, 1, 2);
 
     const recruiterBeforeFinalize = await getBalance(await recruiterVault.getAddress());
