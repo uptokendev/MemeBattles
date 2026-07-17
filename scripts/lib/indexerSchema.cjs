@@ -2,6 +2,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SCHEMA_VERSION = 1;
+const CORE_TABLE_NAMES = [
+  "indexer_meta",
+  "contracts",
+  "event_cursors",
+  "campaigns",
+  "trades",
+  "graduations",
+  "route_executions",
+  "lp_locks",
+  "creator_registry_events",
+  "risk_registry_events",
+  "treasury_movements",
+];
 
 const INDEXER_TABLES = [
   {
@@ -326,19 +339,25 @@ function buildIndexerSchemaSql() {
 }
 
 function tableNames() {
+  return CORE_TABLE_NAMES.slice();
+}
+
+function allTableNames() {
   return INDEXER_TABLES.map((table) => table.name);
 }
 
 function writeIndexerSchema(outFile) {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, buildIndexerSchemaSql());
-  return { schemaVersion: SCHEMA_VERSION, tables: tableNames(), outFile };
+  return { schemaVersion: SCHEMA_VERSION, tables: tableNames(), allTables: allTableNames(), outFile };
 }
 
 module.exports = {
+  CORE_TABLE_NAMES,
   INDEXER_TABLES,
   INDEXES,
   SCHEMA_VERSION,
+  allTableNames,
   buildIndexerSchemaSql,
   tableNames,
   writeIndexerSchema,
