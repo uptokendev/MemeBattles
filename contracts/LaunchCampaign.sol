@@ -125,6 +125,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public creatorReserve;
 
     uint256 public sold;
+    /// @notice Net bonding-curve principal from buys minus sell gross, excluding fees and direct native transfers.
+    uint256 public netRaisedWei;
     bool public launched;
     uint256 public finalizedAt;
     GraduationState private graduation;
@@ -517,11 +519,12 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         require(amountIn <= sold, "exceeds sold");
         _beforeSell(seller);
         uint256 gross = _quoteSellNoFee(amountIn);
-        if (gross > _availableNativeBalance()) revert Insolvent();
+        if (gross > netRaisedWei) revert Insolvent();
         uint256 fee = _fee(gross);
         payout = gross - fee;
         require(payout >= minPayout, "slippage");
         sold -= amountIn;
+        netRaisedWei -= gross;
         tokenInterface.safeTransferFrom(seller, address(this), amountIn);
         if (fee > 0) {
             if (useAuthorizedRoute) _routeFeeOrSendLegacyWithProfile(fee, ROUTE_KIND_TRADE, gross, routeProfile);
@@ -535,6 +538,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     function _recordBuy(address buyer, uint256 amountOut, uint256 costNoFee) internal {
         totalBuyVolumeWei += costNoFee;
+        netRaisedWei += costNoFee;
         if (!hasBought[buyer]) {
             hasBought[buyer] = true;
             buyersCount += 1;
@@ -597,7 +601,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _isGraduationReached() internal view returns (bool) {
-        return _availableNativeBalance() >= graduationNativeTarget();
+        return netRaisedWei >= graduationNativeTarget();
     }
 
     function _finalize(uint256 minTokens, uint256 minBnb, address caller) internal returns (uint256 usedTokens, uint256 usedBnb) {
@@ -605,19 +609,19 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (graduationPaused) revert GraduationPaused();
         if (launched) revert Finalized();
         uint256 nativeTarget = graduationNativeTarget();
-        if (_availableNativeBalance() < nativeTarget) revert ThresholdNotMet();
+        if (netRaisedWei < nativeTarget) revert ThresholdNotMet();
         launched = true;
         finalizedAt = block.timestamp;
 
         GraduationState storage g = graduation;
-        g.graduationBalance = _availableNativeBalance();
+        g.graduationBalance = netRaisedWei;
         g.graduationOvershoot = g.graduationBalance > nativeTarget ? g.graduationBalance - nativeTarget : 0;
         g.finalCurvePrice = _currentPrice();
 
         uint256 protocolFee = (g.graduationBalance * protocolFeeBps) / MAX_BPS;
         if (protocolFee > 0 && feeRecipient != address(0)) _routeFeeOrSendLegacy(protocolFee, ROUTE_KIND_FINALIZE, g.graduationBalance);
 
-        uint256 remainingAfterFee = _availableNativeBalance();
+        uint256 remainingAfterFee = g.graduationBalance - protocolFee;
         uint256 liquidityValue = (remainingAfterFee * liquidityBps) / MAX_BPS;
         uint256 lpTokensDesired = Math.mulDiv(liquidityValue, WAD, g.finalCurvePrice);
         if (lpTokensDesired == 0) revert LpTokensZero();
@@ -657,7 +661,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         g.burnedUnsoldTokens = curveSupply - sold;
         if (g.burnedUnsoldTokens > 0) token.burn(address(this), g.burnedUnsoldTokens);
         if (creatorReserve > 0) tokenInterface.safeTransfer(owner(), creatorReserve);
-        uint256 creatorPayout = _availableNativeBalance();
+        uint256 creatorPayout = remainingAfterFee > usedBnb ? remainingAfterFee - usedBnb : 0;
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         g.postBurnTotalSupply = token.totalSupply();
         token.enableTrading();
@@ -712,8 +716,12 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     function _routeFeeOrSendLegacyWithProfile(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount, uint8 routeProfile) internal {
         if (feeAmount == 0) return;
         if (_useUnifiedRewardRouter()) {
-            IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile);
-            return;
+            try IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile) {
+                return;
+            } catch {
+                _escrowNativeFee(feeRecipient, feeAmount);
+                return;
+            }
         }
         if (routeKind == ROUTE_KIND_FINALIZE) {
             if (feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), feeAmount);
@@ -784,11 +792,13 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     function _sendNativeFee(address payable to, uint256 value) private {
         if (value == 0) return;
         (bool ok, ) = to.call{value: value}("");
-        if (!ok) {
-            pendingNative[to] += value;
-            pendingNativeTotal += value;
-            emit NativeEscrowed(to, value);
-        }
+        if (!ok) _escrowNativeFee(to, value);
+    }
+
+    function _escrowNativeFee(address to, uint256 value) private {
+        pendingNative[to] += value;
+        pendingNativeTotal += value;
+        emit NativeEscrowed(to, value);
     }
 
     function _availableNativeBalance() internal view returns (uint256) {
