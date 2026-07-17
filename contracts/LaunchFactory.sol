@@ -182,7 +182,8 @@ contract LaunchFactory is Ownable {
         feeRecipient = treasuryRouter_;
         campaignImplementation = campaignImplementation_;
         graduationOracle = graduationOracle_;
-        permanentLpLocker = new PermanentLpLocker(address(this), treasuryRouter_, ITopazRouter02(topazRouter_).poolFactory());
+        permanentLpLocker = new PermanentLpLocker(address(this));
+        permanentLpLocker.configureRevenue(treasuryRouter_, ITopazRouter02(topazRouter_).poolFactory());
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8400,
@@ -304,7 +305,7 @@ contract LaunchFactory is Ownable {
             address tokenAddr = address(LaunchCampaign(payable(msg.sender)).token());
             address wrappedNative = ITopazRouter02(router).WETH();
             uint256 lockedLpAmount = IERC20(lpToken).balanceOf(address(permanentLpLocker));
-            permanentLpLocker.registerGraduatedPool(
+            try permanentLpLocker.registerGraduatedPool(
                 msg.sender,
                 campaignCreator,
                 campaignCreator,
@@ -312,7 +313,9 @@ contract LaunchFactory is Ownable {
                 tokenAddr,
                 wrappedNative,
                 lockedLpAmount
-            );
+            ) {} catch {
+                permanentLpLocker.registerLpToken(lpToken);
+            }
         }
         if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
