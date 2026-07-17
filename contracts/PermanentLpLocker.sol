@@ -116,6 +116,7 @@ contract PermanentLpLocker is ReentrancyGuard {
     }
 
     function registerLpToken(address lpToken) external onlyAdmin {
+        if (registeredLpToken[lpToken]) revert AlreadyRegistered();
         _registerLpToken(lpToken, true, address(this));
     }
 
@@ -143,11 +144,11 @@ contract PermanentLpLocker is ReentrancyGuard {
         if (!_samePair(token0_, token1_, expectedTokenA, expectedTokenB)) revert TokenPairMismatch();
         if (IERC20(pool).balanceOf(address(this)) < lockedLpAmount) revert LockedLpMissing();
 
-        _registerLpToken(pool, false, campaign);
+        _registerLpToken(pool, false, address(this));
         registeredFeeAsset[token0_] = true;
         registeredFeeAsset[token1_] = true;
         lockedBalance[pool] += lockedLpAmount;
-        lockedByDepositor[pool][campaign] += lockedLpAmount;
+        lockedByDepositor[pool][address(this)] += lockedLpAmount;
         creatorPayoutRecipient[creator] = creatorFeeRecipient;
         poolInfo[pool] = PoolRegistration({
             campaign: campaign,
@@ -162,7 +163,7 @@ contract PermanentLpLocker is ReentrancyGuard {
             registered: true
         });
 
-        emit LpPermanentlyLocked(pool, campaign, lockedLpAmount, lockedBalance[pool]);
+        emit LpPermanentlyLocked(pool, address(this), lockedLpAmount, lockedBalance[pool]);
         emit GraduationPoolRegistered(
             pool,
             campaign,
