@@ -305,7 +305,7 @@ contract LaunchFactory is Ownable {
             address tokenAddr = address(LaunchCampaign(payable(msg.sender)).token());
             address wrappedNative = ITopazRouter02(router).WETH();
             uint256 lockedLpAmount = IERC20(lpToken).balanceOf(address(permanentLpLocker));
-            try permanentLpLocker.registerGraduatedPool(
+            permanentLpLocker.registerGraduatedPool(
                 msg.sender,
                 campaignCreator,
                 campaignCreator,
@@ -313,9 +313,7 @@ contract LaunchFactory is Ownable {
                 tokenAddr,
                 wrappedNative,
                 lockedLpAmount
-            ) {} catch {
-                permanentLpLocker.registerLpToken(lpToken);
-            }
+            );
         }
         if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
