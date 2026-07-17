@@ -5,6 +5,8 @@ pragma solidity ^0.8.24;
 contract MockV2Pair {
     address public token0;
     address public token1;
+    address public factory;
+    bool public stable;
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
     uint112 private _r0;
@@ -14,6 +16,7 @@ contract MockV2Pair {
     function setTokens(address token0_, address token1_) external {
         token0 = token0_;
         token1 = token1_;
+        if (factory == address(0)) factory = msg.sender;
     }
 
     function setTotalSupply(uint256 v) external {
