@@ -41,8 +41,8 @@ contract PermanentLpLocker is ReentrancyGuard {
     }
 
     address public immutable admin;
-    address public immutable treasuryRouter;
-    address public immutable topazFactory;
+    address public treasuryRouter;
+    address public topazFactory;
 
     mapping(address => bool) public registeredLpToken;
     mapping(address => bool) public registeredFeeAsset;
@@ -58,6 +58,7 @@ contract PermanentLpLocker is ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public cumulativeProtocolRouted;
 
     event LpTokenRegistered(address indexed lpToken);
+    event RevenueConfigUpdated(address indexed treasuryRouter, address indexed topazFactory);
     event GraduationPoolRegistered(
         address indexed pool,
         address indexed campaign,
@@ -100,17 +101,22 @@ contract PermanentLpLocker is ReentrancyGuard {
         _;
     }
 
-    constructor(address admin_, address treasuryRouter_, address topazFactory_) {
-        if (admin_ == address(0) || treasuryRouter_ == address(0) || topazFactory_ == address(0)) revert ZeroAddress();
+    constructor(address admin_) {
+        if (admin_ == address(0)) revert ZeroAddress();
         admin = admin_;
-        treasuryRouter = treasuryRouter_;
-        topazFactory = topazFactory_;
     }
 
     receive() external payable {}
 
+    function configureRevenue(address treasuryRouter_, address topazFactory_) external onlyAdmin {
+        if (treasuryRouter_ == address(0) || topazFactory_ == address(0)) revert ZeroAddress();
+        treasuryRouter = treasuryRouter_;
+        topazFactory = topazFactory_;
+        emit RevenueConfigUpdated(treasuryRouter_, topazFactory_);
+    }
+
     function registerLpToken(address lpToken) external onlyAdmin {
-        _registerLpToken(lpToken);
+        _registerLpToken(lpToken, true, address(this));
     }
 
     function registerGraduatedPool(
@@ -128,7 +134,8 @@ contract PermanentLpLocker is ReentrancyGuard {
         if (lockedLpAmount == 0) revert ZeroAmount();
 
         ITopazPoolFeeSource topazPool = ITopazPoolFeeSource(pool);
-        if (topazPool.factory() != topazFactory) revert InvalidTopazFactory();
+        address configuredFactory = topazFactory;
+        if (configuredFactory != address(0) && topazPool.factory() != configuredFactory) revert InvalidTopazFactory();
         if (topazPool.stable()) revert StablePoolUnsupported();
 
         address token0_ = topazPool.token0();
@@ -136,7 +143,7 @@ contract PermanentLpLocker is ReentrancyGuard {
         if (!_samePair(token0_, token1_, expectedTokenA, expectedTokenB)) revert TokenPairMismatch();
         if (IERC20(pool).balanceOf(address(this)) < lockedLpAmount) revert LockedLpMissing();
 
-        _registerLpToken(pool);
+        _registerLpToken(pool, false, campaign);
         registeredFeeAsset[token0_] = true;
         registeredFeeAsset[token1_] = true;
         lockedBalance[pool] += lockedLpAmount;
@@ -253,11 +260,20 @@ contract PermanentLpLocker is ReentrancyGuard {
         emit UnregisteredTokenRecovered(token, to, amount);
     }
 
-    function _registerLpToken(address lpToken) internal {
+    function _registerLpToken(address lpToken, bool lockExisting, address depositor) internal {
         if (lpToken == address(0)) revert ZeroAddress();
         if (registeredLpToken[lpToken]) return;
         registeredLpToken[lpToken] = true;
         emit LpTokenRegistered(lpToken);
+
+        if (lockExisting) {
+            uint256 currentBalance = IERC20(lpToken).balanceOf(address(this));
+            if (currentBalance > 0) {
+                lockedBalance[lpToken] = currentBalance;
+                lockedByDepositor[lpToken][depositor] = currentBalance;
+                emit LpPermanentlyLocked(lpToken, depositor, currentBalance, currentBalance);
+            }
+        }
     }
 
     function _splitAndRoute(PoolRegistration memory info, address token, uint256 amount) internal {
@@ -283,25 +299,37 @@ contract PermanentLpLocker is ReentrancyGuard {
 
     function _routeProtocolToken(address pool, address token, uint256 amount) internal returns (bool) {
         if (amount == 0) return true;
-        IERC20(token).forceApprove(treasuryRouter, amount);
-        try ILpRevenueTreasuryRouter(treasuryRouter).routeLpToken(token, amount) {
-            IERC20(token).forceApprove(treasuryRouter, 0);
+        address router = treasuryRouter;
+        if (router == address(0)) {
+            pendingProtocolToken[token] += amount;
+            emit HarvestPaymentPending(pool, address(0), token, amount, true);
+            return false;
+        }
+        IERC20(token).forceApprove(router, amount);
+        try ILpRevenueTreasuryRouter(router).routeLpToken(token, amount) {
+            IERC20(token).forceApprove(router, 0);
             return true;
         } catch {
-            IERC20(token).forceApprove(treasuryRouter, 0);
+            IERC20(token).forceApprove(router, 0);
             pendingProtocolToken[token] += amount;
-            emit HarvestPaymentPending(pool, treasuryRouter, token, amount, true);
+            emit HarvestPaymentPending(pool, router, token, amount, true);
             return false;
         }
     }
 
     function _routeProtocolNative(address pool, uint256 amount) internal returns (bool) {
         if (amount == 0) return true;
-        try ILpRevenueTreasuryRouter(treasuryRouter).routeLpNative{value: amount}() {
+        address router = treasuryRouter;
+        if (router == address(0)) {
+            pendingProtocolNative += amount;
+            emit HarvestPaymentPending(pool, address(0), address(0), amount, true);
+            return false;
+        }
+        try ILpRevenueTreasuryRouter(router).routeLpNative{value: amount}() {
             return true;
         } catch {
             pendingProtocolNative += amount;
-            emit HarvestPaymentPending(pool, treasuryRouter, address(0), amount, true);
+            emit HarvestPaymentPending(pool, router, address(0), amount, true);
             return false;
         }
     }
