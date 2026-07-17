@@ -192,7 +192,10 @@ describe("BNB launch safety simulations", function () {
     const maxWalletWei = ethers.parseEther("0.0001");
     await factory.setLaunchProtectionConfig(8, maxBuyWei, maxWalletWei);
 
-    const { campaign } = await createCampaign(factory, creator);
+    const { campaign } = await createCampaign(factory, creator, {
+      basePrice: ethers.parseEther("0.00006"),
+      priceSlope: 1n,
+    });
     expect(await campaign.launchProtectionEndBlock()).to.be.gt(0n);
     expect(await campaign.launchProtectionMaxBuyWei()).to.equal(maxBuyWei);
     expect(await campaign.launchProtectionMaxWalletWei()).to.equal(maxWalletWei);
@@ -405,7 +408,10 @@ describe("BNB launch safety simulations", function () {
 
   it("blocks restricted wallets, buy/sell pauses, and creator buy lock/cap paths", async function () {
     const { creator, buyer, factory, riskRegistry } = await deploySafetyFixture();
-    const { campaign, token } = await createCampaign(factory, creator);
+    const { campaign, token } = await createCampaign(factory, creator, {
+      basePrice: ethers.parseEther("0.0001"),
+      priceSlope: 1n,
+    });
 
     const amountOut = ethers.parseEther("1");
     const maxCost = await campaign.quoteBuyExactTokens(amountOut);
