@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import type { LaunchCampaign, LaunchFactory, LaunchToken } from "../typechain-types";
-import { deployFactoryAndRouter } from "./helpers/deployFactory";
+import { deployRoutedLaunchFactory } from "./helpers/deployRouting";
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
@@ -29,7 +29,8 @@ describe("Launchpad end-to-end", function () {
   }
 
   it("deploys factory with default config and creates a campaign with correct params", async () => {
-    const { creator, router, factory } = await deployFactoryAndRouter();
+    const [owner, creator] = await ethers.getSigners();
+    const { dexRouter: router, factory } = await deployRoutedLaunchFactory(owner);
 
     const cfg = await factory.config();
     expect(cfg.totalSupply).to.equal(ethers.parseUnits("1000000000", 18));
