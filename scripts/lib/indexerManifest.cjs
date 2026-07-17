@@ -61,6 +61,9 @@ const EVENT_SIGNATURES = {
     "RecruiterRewardsVaultUpdated(address,address)",
     "CommunityRewardsVaultUpdated(address,address)",
     "ProtocolRevenueVaultUpdated(address,address)",
+    "PermanentLpLockerUpdated(address,address)",
+    "LpNativeRouted(address,address,uint256)",
+    "LpTokenRouted(address,address,address,uint256)",
     "RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)",
   ],
   TreasuryVaultV2: [
@@ -109,7 +112,15 @@ const EVENT_SIGNATURES = {
   ],
   PermanentLpLocker: [
     "LpTokenRegistered(address)",
+    "GraduationPoolRegistered(address,address,address,address,address,address,uint256,uint16,uint16)",
+    "CreatorPayoutRecipientUpdated(address,address,address)",
     "LpPermanentlyLocked(address,address,uint256,uint256)",
+    "FeesHarvested(address,address,address,uint256,uint256,uint256)",
+    "HarvestPaymentPending(address,address,address,uint256,bool)",
+    "PendingTokenClaimed(address,address,uint256)",
+    "PendingNativeClaimed(address,uint256)",
+    "PendingProtocolTokenRouted(address,uint256)",
+    "PendingProtocolNativeRouted(uint256)",
     "UnregisteredTokenRecovered(address,address,uint256)",
   ],
 };
