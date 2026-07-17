@@ -11,6 +11,10 @@ function topic(signature: string) {
   return ethers.id(signature);
 }
 
+function arg(args: Record<string, string>, index: number, name: string) {
+  return args[name] ?? args[String(index)];
+}
+
 describe("indexer runtime", function () {
   it("decodes indexed event fields with compiled ABI metadata", async () => {
     const manifest = {
@@ -48,12 +52,12 @@ describe("indexer runtime", function () {
 
     expect(decoded.eventName).to.eq("RouteExecuted");
     expect(decoded.eventSignature).to.eq(ROUTE_EXECUTED);
-    expect(decoded.args.kind).to.eq("0");
-    expect(decoded.args.profile).to.eq("1");
-    expect(decoded.args.amountIn).to.eq("100");
-    expect(decoded.args.leagueAmount).to.eq("37");
-    expect(decoded.args.airdropAmount).to.eq("15");
-    expect(decoded.args.protocolAmount).to.eq("48");
+    expect(arg(decoded.args, 0, "kind")).to.eq("0");
+    expect(arg(decoded.args, 1, "profile")).to.eq("1");
+    expect(arg(decoded.args, 2, "amountIn")).to.eq("100");
+    expect(arg(decoded.args, 3, "leagueAmount")).to.eq("37");
+    expect(arg(decoded.args, 5, "airdropAmount")).to.eq("15");
+    expect(arg(decoded.args, 7, "protocolAmount")).to.eq("48");
   });
 
   it("uses zero confirmations for local networks and six for real networks", async () => {
