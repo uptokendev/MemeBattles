@@ -40,9 +40,9 @@ function defaultOutputDir(target) {
   return path.join(process.cwd(), "output", "indexer", target);
 }
 
-function loadManifest() {
+function loadManifest(targetOverride = process.argv[2]) {
   if (process.env.INDEXER_MANIFEST_FILE) return readJson(path.resolve(process.env.INDEXER_MANIFEST_FILE));
-  const target = process.env.HARDHAT_NETWORK || process.env.INDEXER_NETWORK || "hardhat";
+  const target = targetOverride || process.env.HARDHAT_NETWORK || process.env.INDEXER_NETWORK || "hardhat";
   const deploymentFile = process.env.DEPLOYMENT_FILE ? path.resolve(process.env.DEPLOYMENT_FILE) : defaultDeploymentFile(target);
   return buildIndexerManifest(readJson(deploymentFile), deploymentFile);
 }
@@ -128,7 +128,7 @@ async function getLatestBlock(provider, rpcUrl) {
 }
 
 async function indexOnce(options = {}) {
-  const manifest = options.manifest || loadManifest();
+  const manifest = options.manifest || loadManifest(options.target);
   const rpcUrl = options.rpcUrl || requireEnv("INDEXER_RPC_URL", process.env.RPC_URL || process.env.BSC_TESTNET_RPC || "http://127.0.0.1:8545");
   const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
   const confirmations = options.confirmations ?? optionalInt("INDEXER_CONFIRMATIONS", DEFAULT_CONFIRMATIONS);
@@ -179,7 +179,7 @@ async function indexOnce(options = {}) {
 }
 
 async function main() {
-  const result = await indexOnce();
+  const result = await indexOnce({ target: process.argv[2] });
   console.log(`[indexer] complete indexed=${result.indexed} out=${result.outDir}`);
 }
 
