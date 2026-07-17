@@ -6,6 +6,8 @@ const defaultNpmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const checks = [
   ["test", ["run", "test"]],
   ["size", ["run", "size"]],
+  ["indexer schema", ["run", "indexer:schema"]],
+  ["security check", ["run", "security:check"]],
   ["local deploy env", ["run", "deploy:check-env"]],
   ["bscTestnet deploy env", ["run", "deploy:check-env:bsc-testnet"]],
 ];
