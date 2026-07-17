@@ -127,15 +127,15 @@ async function deployEarlyGraduationCampaign() {
 }
 
 describe("LaunchCampaign Phase 2 graduation guardrails", function () {
-  it("rejects graduation when matching the final curve price needs more LP tokens than reserved", async () => {
+  it("rejects graduation when router liquidity opens outside the curve price tolerance", async () => {
     const { owner, creator, alice } = await deployCoreFixture();
 
     const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
     const topazFactory = await TopazFactory.deploy();
     await topazFactory.waitForDeployment();
 
-    const Router = await ethers.getContractFactory("MockRouter");
-    const router = await Router.deploy(await topazFactory.getAddress(), await owner.getAddress());
+    const DriftRouter = await ethers.getContractFactory("MockDriftRouter");
+    const router = await DriftRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
     await router.waitForDeployment();
 
     const { priceFeed, graduationOracle } = await deployTestOracle();
@@ -153,7 +153,7 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
     await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.reverted;
+    await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.revertedWithCustomError(campaign, "DexPriceDrift");
   });
 
   it("records separate unsold curve and unused LP burn lanes on early graduation", async () => {
