@@ -4,11 +4,13 @@ pragma solidity ^0.8.24;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {LaunchCampaign} from "./LaunchCampaign.sol";
 import {CreatorRegistry} from "./CreatorRegistry.sol";
 import {RiskRegistry} from "./RiskRegistry.sol";
 import {PermanentLpLocker} from "./PermanentLpLocker.sol";
+import {ITopazRouter02} from "./interfaces/ITopazRouter02.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 
 contract LaunchFactory is Ownable {
@@ -180,7 +182,7 @@ contract LaunchFactory is Ownable {
         feeRecipient = treasuryRouter_;
         campaignImplementation = campaignImplementation_;
         graduationOracle = graduationOracle_;
-        permanentLpLocker = new PermanentLpLocker(address(this));
+        permanentLpLocker = new PermanentLpLocker(address(this), treasuryRouter_, ITopazRouter02(topazRouter_).poolFactory());
         config = LaunchConfig({
             totalSupply: 1_000_000_000 ether,
             curveBps: 8400,
@@ -299,7 +301,18 @@ contract LaunchFactory is Ownable {
     function notifyCampaignGraduated(address campaignCreator, address lpToken) external {
         if (!isCampaign[msg.sender]) revert UnknownCampaign();
         if (lpToken != address(0) && !permanentLpLocker.registeredLpToken(lpToken)) {
-            permanentLpLocker.registerLpToken(lpToken);
+            address tokenAddr = address(LaunchCampaign(payable(msg.sender)).token());
+            address wrappedNative = ITopazRouter02(router).WETH();
+            uint256 lockedLpAmount = IERC20(lpToken).balanceOf(address(permanentLpLocker));
+            permanentLpLocker.registerGraduatedPool(
+                msg.sender,
+                campaignCreator,
+                campaignCreator,
+                lpToken,
+                tokenAddr,
+                wrappedNative,
+                lockedLpAmount
+            );
         }
         if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
