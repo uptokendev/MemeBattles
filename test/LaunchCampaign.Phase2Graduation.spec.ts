@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
-import { getBalance } from "./helpers/balances";
 
 async function latestTimestamp() {
   const block = await ethers.provider.getBlock("latest");
@@ -18,7 +17,13 @@ async function deployTestOracle(price = "1") {
   const GraduationOracle = await ethers.getContractFactory("GraduationOracle");
   const graduationOracle = await GraduationOracle.deploy(await priceFeed.getAddress(), 30 * 24 * 60 * 60);
   await graduationOracle.waitForDeployment();
-  return graduationOracle;
+  return { priceFeed, graduationOracle };
+}
+
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
 }
 
 const directInitParams = async (values: {
@@ -30,6 +35,7 @@ const directInitParams = async (values: {
   basePrice?: bigint;
   priceSlope?: bigint;
   graduationTarget?: bigint;
+  graduationOracle?: string;
 }) => ({
   name: "Phase2Guard",
   symbol: "P2G",
@@ -43,7 +49,7 @@ const directInitParams = async (values: {
   basePrice: values.basePrice ?? ethers.parseEther("0.001"),
   priceSlope: values.priceSlope ?? 1n,
   graduationTarget: values.graduationTarget ?? ethers.parseEther("10"),
-  graduationOracle: await (await deployTestOracle()).getAddress(),
+  graduationOracle: values.graduationOracle ?? await (await deployTestOracle()).graduationOracle.getAddress(),
   liquidityBps: 8000,
   protocolFeeBps: 200,
   leagueFeeBps: 75,
@@ -81,12 +87,6 @@ async function deployDirectCampaign(params: any) {
   return campaign;
 }
 
-async function topUpToGraduationTarget(campaign: any, payer: any) {
-  const target = await campaign.graduationNativeTarget();
-  const balance = await getBalance(await campaign.getAddress());
-  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
-}
-
 async function deployEarlyGraduationCampaign() {
   const fx = await deployCoreFixture();
   const { owner, creator, alice, factory } = fx;
@@ -121,7 +121,7 @@ async function deployEarlyGraduationCampaign() {
   const buyAmount = ethers.parseEther("1");
   const buyQuote = await campaign.quoteBuyExactTokens(buyAmount);
   await campaign.connect(alice).buyExactTokens(buyAmount, buyQuote, { value: buyQuote });
-  await topUpToGraduationTarget(campaign, owner);
+  await makeGraduationEligibleByOracle(campaign, fx.priceFeed);
 
   return { ...fx, campaign, token, buyAmount };
 }
@@ -130,26 +130,28 @@ describe("LaunchCampaign Phase 2 graduation guardrails", function () {
   it("rejects graduation when matching the final curve price needs more LP tokens than reserved", async () => {
     const { owner, creator, alice } = await deployCoreFixture();
 
-    const V2Factory = await ethers.getContractFactory("MockV2Factory");
-    const v2factory = await V2Factory.deploy();
-    await v2factory.waitForDeployment();
+    const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await TopazFactory.deploy();
+    await topazFactory.waitForDeployment();
 
     const Router = await ethers.getContractFactory("MockRouter");
-    const router = await Router.deploy(await v2factory.getAddress(), await owner.getAddress());
+    const router = await Router.deploy(await topazFactory.getAddress(), await owner.getAddress());
     await router.waitForDeployment();
 
+    const { priceFeed, graduationOracle } = await deployTestOracle();
     const campaign = await deployDirectCampaign(
       await directInitParams({
         creator: await creator.getAddress(),
         owner: await owner.getAddress(),
         router: await router.getAddress(),
+        graduationOracle: await graduationOracle.getAddress(),
       })
     );
 
     const oneToken = ethers.parseUnits("1", 18);
     const quote = await campaign.quoteBuyExactTokens(oneToken);
     await campaign.connect(alice).buyExactTokens(oneToken, quote, { value: quote });
-    await topUpToGraduationTarget(campaign, owner);
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
     await expect(campaign.connect(alice).graduateIfEligible(0, 0)).to.be.reverted;
   });
