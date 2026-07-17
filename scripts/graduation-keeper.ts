@@ -1,5 +1,5 @@
 import { ethers } from "hardhat";
-import { loadDeployment, resolveContracts } from "./verify-deployment";
+import { assertCode, loadDeployment, resolveContracts } from "./verify-deployment";
 
 function bigintEnv(name: string, fallback: bigint): bigint {
   const raw = (process.env[name] ?? "").trim();
@@ -31,6 +31,7 @@ async function main() {
 
   const deployment = loadDeployment();
   const contracts = resolveContracts(deployment);
+  await assertCode("LaunchFactory", contracts.LaunchFactory);
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
   const total = Number(await factory.campaignsCount());
   const end = Math.min(total, offset + limit);
