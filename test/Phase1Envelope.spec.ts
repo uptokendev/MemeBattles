@@ -12,15 +12,20 @@ const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
 type RoutedSystem = Awaited<ReturnType<typeof deployRoutedSystem>>;
 type LegacySystem = Awaited<ReturnType<typeof deployLegacySystem>>;
 
+async function latestTimestamp() {
+  const block = await ethers.provider.getBlock("latest");
+  return BigInt(block!.timestamp);
+}
+
 async function deployCommonDex() {
   const [owner, creator, alice] = await ethers.getSigners();
 
-  const V2Factory = await ethers.getContractFactory("MockV2Factory");
-  const v2factory = await V2Factory.deploy();
-  await v2factory.waitForDeployment();
+  const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
+  const topazFactory = await TopazFactory.deploy();
+  await topazFactory.waitForDeployment();
 
   const DexRouter = await ethers.getContractFactory("MockRouter");
-  const dexRouter = await DexRouter.deploy(await v2factory.getAddress(), await owner.getAddress());
+  const dexRouter = await DexRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
   await dexRouter.waitForDeployment();
 
   return { owner, creator, alice, dexRouter };
@@ -52,7 +57,7 @@ async function deployRoutedSystem() {
   await treasuryRouter.connect(owner).setCommunityRewardsVault(await communityVault.getAddress());
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
-  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
+  const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
@@ -75,6 +80,7 @@ async function deployRoutedSystem() {
     communityVault,
     protocolVault,
     factory,
+    priceFeed,
   };
 }
 
@@ -89,7 +95,7 @@ async function deployLegacySystem() {
   const leagueRouter = await TreasuryRouter.deploy(await owner.getAddress(), await leagueVault.getAddress(), 3600);
   await leagueRouter.waitForDeployment();
 
-  const { factory } = await deployLaunchFactory(await dexRouter.getAddress(), await leagueRouter.getAddress());
+  const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await leagueRouter.getAddress());
   await factory.connect(owner).setFeeRecipient(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
@@ -110,6 +116,7 @@ async function deployLegacySystem() {
     leagueRouter,
     leagueVault,
     factory,
+    priceFeed,
   };
 }
 
@@ -134,10 +141,10 @@ async function createCampaign(factory: any, creator: any, suffix: string) {
   return { info, campaign, token };
 }
 
-async function topUpToGraduationTarget(campaign: any, payer: any) {
-  const target = await campaign.graduationNativeTarget();
-  const balance = await getBalance(await campaign.getAddress());
-  if (balance < target) await payer.sendTransaction({ to: await campaign.getAddress(), value: target - balance });
+async function makeGraduationEligibleByOracle(campaign: any, priceFeed: any) {
+  const now = await latestTimestamp();
+  await priceFeed.setRoundData(2n, ethers.parseUnits("1000", 8), now, now, 2n);
+  expect(await campaign.netRaisedWei()).to.be.gte(await campaign.graduationNativeTarget());
 }
 
 async function parseFinalizedEvent(campaign: any, tx: any) {
@@ -234,7 +241,7 @@ describe("Phase 1 fee envelope and economics invariants", function () {
   });
 
   it("legacy routing keeps finalize fee 100% to feeRecipient while trade fees still split league/protocol", async () => {
-    const { owner, alice, leagueVault, factory, creator } = await loadFixture(deployLegacySystem);
+    const { owner, alice, leagueVault, factory, creator, priceFeed } = await loadFixture(deployLegacySystem);
     const { campaign, token } = await createCampaign(factory, creator, "Legacy");
 
     const ownerBeforeBuy = await getBalance(await owner.getAddress());
@@ -257,12 +264,12 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     expect(leagueAfterBuy - leagueBeforeBuy).to.equal(leagueExpected);
     expect(ownerAfterBuy - ownerBeforeBuy).to.equal(buyMath.fee - leagueExpected);
 
-    await topUpToGraduationTarget(campaign, alice);
+    await makeGraduationEligibleByOracle(campaign, priceFeed);
 
     const ownerBeforeFinalize = await getBalance(await owner.getAddress());
     const leagueBeforeFinalize = await getBalance(await leagueVault.getAddress());
-    const balanceBeforeFinalize = await getBalance(await campaign.getAddress());
-    const finalizeFee = (balanceBeforeFinalize * BigInt(await campaign.protocolFeeBps())) / 10_000n;
+    const graduationPrincipal = await campaign.netRaisedWei();
+    const finalizeFee = (graduationPrincipal * BigInt(await campaign.protocolFeeBps())) / 10_000n;
 
     await campaign.connect(alice).graduateIfEligible(0, 0);
 
@@ -293,10 +300,8 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     const legacyTarget = await legacyCampaign.graduationNativeTarget();
     expect(routedTarget).to.equal(legacyTarget);
 
-    const routedBalance = await getBalance(await routedCampaign.getAddress());
-    const legacyBalance = await getBalance(await legacyCampaign.getAddress());
-    await routed.alice.sendTransaction({ to: await routedCampaign.getAddress(), value: routedTarget - routedBalance });
-    await legacy.alice.sendTransaction({ to: await legacyCampaign.getAddress(), value: legacyTarget - legacyBalance });
+    await makeGraduationEligibleByOracle(routedCampaign, routed.priceFeed);
+    await makeGraduationEligibleByOracle(legacyCampaign, legacy.priceFeed);
 
     const routedProtocolBefore = await getBalance(await routed.protocolVault.getAddress());
     const routedAirdropBefore = await routed.communityVault.warzoneAirdropBalance();
