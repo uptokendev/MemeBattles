@@ -392,7 +392,7 @@ contract LaunchFactory is Ownable {
 
     function setCreatePaused(bool paused) external onlyOwner {
         createPaused = paused;
-        emit CreatePaused(paused);
+        emit CreatePauseUpdated(paused);
     }
 
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
