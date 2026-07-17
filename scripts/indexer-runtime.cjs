@@ -63,6 +63,11 @@ function loadManifest(targetOverride = process.argv[2]) {
   return buildIndexerManifest(readJson(deploymentFile), deploymentFile);
 }
 
+function defaultConfirmations(manifest) {
+  if (manifest.chainId === 31337 || manifest.network === "localhost" || manifest.network === "hardhat") return 0;
+  return DEFAULT_CONFIRMATIONS;
+}
+
 function artifactPath(contractName) {
   const candidates = ARTIFACT_CANDIDATES[contractName] || [];
   for (const candidate of candidates) {
@@ -166,7 +171,7 @@ async function indexOnce(options = {}) {
   const manifest = options.manifest || loadManifest(options.target);
   const rpcUrl = options.rpcUrl || requireEnv("INDEXER_RPC_URL", process.env.RPC_URL || process.env.BSC_TESTNET_RPC || "http://127.0.0.1:8545");
   const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
-  const confirmations = options.confirmations ?? optionalInt("INDEXER_CONFIRMATIONS", DEFAULT_CONFIRMATIONS);
+  const confirmations = options.confirmations ?? optionalInt("INDEXER_CONFIRMATIONS", defaultConfirmations(manifest));
   const batchBlocks = options.batchBlocks ?? optionalInt("INDEXER_BATCH_BLOCKS", DEFAULT_BATCH_BLOCKS);
   const outDir = options.outDir || process.env.INDEXER_OUT_DIR || defaultOutputDir(manifest.network || String(manifest.chainId));
   const cursorFile = path.join(outDir, "cursor.json");
@@ -177,6 +182,10 @@ async function indexOnce(options = {}) {
   const latest = await getLatestBlock(provider, rpcUrl);
   const finalizedTo = Math.max(0, latest - confirmations);
   let fromBlock = Number(cursor.lastFinalizedBlock || 0) + 1;
+
+  if (latest === 0 && (manifest.chainId === 31337 || manifest.network === "localhost" || manifest.network === "hardhat")) {
+    console.warn("[indexer] local node has no blocks yet. Run npm run deploy:verify:localhost against this same node, then rerun the indexer.");
+  }
 
   if (fromBlock > finalizedTo) {
     console.log(`[indexer] up to date latest=${latest} finalized=${finalizedTo}`);
