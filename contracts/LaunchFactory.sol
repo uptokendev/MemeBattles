@@ -116,6 +116,7 @@ contract LaunchFactory is Ownable {
 
     uint256 public constant LEAGUE_FEE_BPS = 75;
     uint256 public constant DEFAULT_GRADUATION_USD_THRESHOLD = 30_000 ether;
+    uint256 public constant MAX_TOTAL_SUPPLY = 1_000_000_000 ether;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
     uint256 public constant MAX_GRADUATION_TARGET = 1_000_000 ether;
@@ -185,7 +186,7 @@ contract LaunchFactory is Ownable {
         permanentLpLocker = new PermanentLpLocker(address(this));
         permanentLpLocker.configureRevenue(treasuryRouter_, ITopazRouter02(topazRouter_).poolFactory());
         config = LaunchConfig({
-            totalSupply: 1_000_000_000 ether,
+            totalSupply: MAX_TOTAL_SUPPLY,
             curveBps: 8400,
             liquidityTokenBps: 1400,
             basePrice: 1e9,
@@ -391,7 +392,7 @@ contract LaunchFactory is Ownable {
 
     function setCreatePaused(bool paused) external onlyOwner {
         createPaused = paused;
-        emit CreatePauseUpdated(paused);
+        emit CreatePaused(paused);
     }
 
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
@@ -486,6 +487,7 @@ contract LaunchFactory is Ownable {
 
     function _validateConfig(LaunchConfig memory newConfig) internal pure {
         if (newConfig.totalSupply == 0) revert SupplyZero();
+        if (newConfig.totalSupply > MAX_TOTAL_SUPPLY) revert ParamTooHigh();
         if (!(newConfig.curveBps > 0 && newConfig.curveBps + newConfig.liquidityTokenBps <= MAX_BPS)) revert InvalidCurveBps();
         if (newConfig.basePrice == 0) revert PriceZero();
         if (newConfig.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
