@@ -25,6 +25,10 @@ const ADDRESSES = {
   priceFeed: "0x0000000000000000000000000000000000000010",
 };
 
+function expectSameAddress(actual: string, expected: string) {
+  expect(actual.toLowerCase()).to.eq(expected.toLowerCase());
+}
+
 function baseDeployment(overrides: Record<string, unknown> = {}) {
   return {
     network: "unitnet",
@@ -86,11 +90,11 @@ describe("indexer manifest export", function () {
     expect(manifest.network).to.eq("unitnet");
     expect(manifest.chainId).to.eq(31337);
     expect(manifest.deploymentBlock).to.eq(1234);
-    expect(manifest.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
-    expect(manifest.contracts.LaunchCampaignImplementation).to.eq(ADDRESSES.implementation);
-    expect(manifest.topazRouter).to.eq(ADDRESSES.topazRouter);
-    expect(manifest.graduationPriceFeed).to.eq(ADDRESSES.priceFeed);
-    expect(manifest.routing.factoryRouteAuthority).to.eq(ADDRESSES.deployer);
+    expectSameAddress(manifest.contracts.LaunchFactory, ADDRESSES.factory);
+    expectSameAddress(manifest.contracts.LaunchCampaignImplementation, ADDRESSES.implementation);
+    expectSameAddress(manifest.topazRouter, ADDRESSES.topazRouter);
+    expectSameAddress(manifest.graduationPriceFeed, ADDRESSES.priceFeed);
+    expectSameAddress(manifest.routing.factoryRouteAuthority, ADDRESSES.deployer);
     expect(manifest.events.LaunchFactory["CampaignCreated(uint256,address,address,address,string,string,string,string)"]).to.eq(
       eventTopic("CampaignCreated(uint256,address,address,address,string,string,string,string)")
     );
@@ -142,9 +146,9 @@ describe("indexer manifest export", function () {
       "legacy"
     );
 
-    expect(manifest.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
-    expect(manifest.contracts.UPVoteTreasury).to.eq(ADDRESSES.upVoteTreasury);
-    expect(manifest.topazRouter).to.eq(ADDRESSES.topazRouter);
+    expectSameAddress(manifest.contracts.LaunchFactory, ADDRESSES.factory);
+    expectSameAddress(manifest.contracts.UPVoteTreasury, ADDRESSES.upVoteTreasury);
+    expectSameAddress(manifest.topazRouter, ADDRESSES.topazRouter);
   });
 
   it("rejects missing chain id or invalid required addresses", async () => {
@@ -163,7 +167,7 @@ describe("indexer manifest export", function () {
     expect(result.status).to.eq(0);
     expect(result.stdout).to.include("[indexer-manifest] Wrote:");
     expect(result.written.schemaVersion).to.eq(1);
-    expect(result.written.contracts.LaunchFactory).to.eq(ADDRESSES.factory);
+    expectSameAddress(result.written.contracts.LaunchFactory, ADDRESSES.factory);
     expect(result.written.events.PermanentLpLocker["LpTokenRegistered(address)"]).to.eq(eventTopic("LpTokenRegistered(address)"));
     expect(result.written.events.TreasuryRouter["RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)"]).to.eq(
       eventTopic("RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)")
