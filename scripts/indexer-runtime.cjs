@@ -7,6 +7,22 @@ const { buildIndexerManifest } = require("./lib/indexerManifest.cjs");
 const DEFAULT_CONFIRMATIONS = 6;
 const DEFAULT_BATCH_BLOCKS = 2_000;
 
+const ARTIFACT_CANDIDATES = {
+  LaunchFactory: ["contracts/LaunchFactory.sol/LaunchFactory.json"],
+  LaunchCampaign: ["contracts/LaunchCampaign.sol/LaunchCampaign.json"],
+  LaunchCampaignImplementation: ["contracts/LaunchCampaign.sol/LaunchCampaign.json"],
+  TreasuryRouter: ["contracts/TreasuryRouter.sol/TreasuryRouter.json"],
+  TreasuryVaultV2: ["contracts/TreasuryVaultV2.sol/TreasuryVaultV2.json", "contracts/treasury/TreasuryVaultV2.sol/TreasuryVaultV2.json"],
+  RecruiterRewardsVault: ["contracts/RecruiterRewardsVault.sol/RecruiterRewardsVault.json"],
+  CommunityRewardsVault: ["contracts/CommunityRewardsVault.sol/CommunityRewardsVault.json"],
+  ProtocolRevenueVault: ["contracts/ProtocolRevenueVault.sol/ProtocolRevenueVault.json"],
+  CreatorRegistry: ["contracts/CreatorRegistry.sol/CreatorRegistry.json"],
+  RiskRegistry: ["contracts/RiskRegistry.sol/RiskRegistry.json"],
+  GraduationOracle: ["contracts/GraduationOracle.sol/GraduationOracle.json"],
+  PermanentLpLocker: ["contracts/PermanentLpLocker.sol/PermanentLpLocker.json"],
+  UPVoteTreasury: ["contracts/UPVoteTreasury.sol/UPVoteTreasury.json"],
+};
+
 function requireEnv(name, fallback = "") {
   const value = (process.env[name] || fallback).trim();
   if (!value) throw new Error(`Missing ${name}`);
@@ -47,17 +63,36 @@ function loadManifest(targetOverride = process.argv[2]) {
   return buildIndexerManifest(readJson(deploymentFile), deploymentFile);
 }
 
+function artifactPath(contractName) {
+  const candidates = ARTIFACT_CANDIDATES[contractName] || [];
+  for (const candidate of candidates) {
+    const file = path.join(process.cwd(), "artifacts", candidate);
+    if (fs.existsSync(file)) return file;
+  }
+  return "";
+}
+
+function loadArtifactInterface(contractName) {
+  const file = artifactPath(contractName);
+  if (!file) return null;
+  return new ethers.Interface(readJson(file).abi);
+}
+
+function fallbackInterface(signatures) {
+  return new ethers.Interface(signatures.map((signature) => `event ${signature}`));
+}
+
 function buildInterfaces(manifest) {
-  const byTopic = new Map();
+  const byContractTopic = new Map();
   for (const [contractName, events] of Object.entries(manifest.events || {})) {
     const signatures = Object.keys(events);
     if (signatures.length === 0) continue;
-    const iface = new ethers.Interface(signatures.map((signature) => `event ${signature}`));
+    const iface = loadArtifactInterface(contractName) || fallbackInterface(signatures);
     for (const [signature, topic] of Object.entries(events)) {
-      byTopic.set(String(topic).toLowerCase(), { contractName, signature, iface });
+      byContractTopic.set(`${contractName}:${String(topic).toLowerCase()}`, { contractName, signature, iface });
     }
   }
-  return byTopic;
+  return byContractTopic;
 }
 
 function contractFilters(manifest) {
@@ -79,7 +114,7 @@ function serializeArg(value) {
 }
 
 function decodeLog(log, topicMap) {
-  const meta = topicMap.get(String(log.topics[0]).toLowerCase());
+  const meta = topicMap.get(`${log.contractName}:${String(log.topics[0]).toLowerCase()}`);
   if (!meta) return null;
   const parsed = meta.iface.parseLog({ topics: log.topics, data: log.data });
   return {
@@ -156,7 +191,7 @@ async function indexOnce(options = {}) {
     for (const filter of filters) {
       const logs = await provider.getLogs({ address: filter.address, fromBlock, toBlock, topics: [filter.topics] });
       for (const log of logs) {
-        const event = decodeLog({ ...log, chainId: manifest.chainId }, topicMap);
+        const event = decodeLog({ ...log, chainId: manifest.chainId, contractName: filter.contractName }, topicMap);
         if (!event) continue;
         const key = eventKey(event);
         if (cursor.seen[key]) continue;
