@@ -1,0 +1,34 @@
+name: Topaz Integration CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - devpostgrad
+
+jobs:
+  topaz-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Topaz adapter and locker tests
+        run: >-
+          npx hardhat test
+          test/TopazRouterAdapter.spec.ts
+          test/LaunchCampaignTopazAdapter.spec.ts
+          test/PermanentLpLockerTopazFee.spec.ts
+          test/PermanentLpLockerHarvest.spec.ts
