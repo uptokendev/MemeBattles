@@ -32,6 +32,7 @@ contract TopazRouterAdapter is ITopazRouter02 {
     error InvalidTopazFactory();
     error InvalidWrappedNative();
     error NativeRefundFailed();
+    error UnexpectedNativeSender();
 
     ITopazProductionRouter public immutable topazRouter;
     address private immutable _poolFactory;
@@ -53,7 +54,9 @@ contract TopazRouterAdapter is ITopazRouter02 {
         _wrappedNative = wrapped_;
     }
 
-    receive() external payable {}
+    receive() external payable {
+        if (msg.sender != address(topazRouter)) revert UnexpectedNativeSender();
+    }
 
     /// @inheritdoc ITopazRouter02
     function poolFactory() external view returns (address) {
