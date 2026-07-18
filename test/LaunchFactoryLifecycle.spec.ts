@@ -212,8 +212,17 @@ describe("LaunchFactory lifecycle integration", function () {
 
     await creatorRegistry.setLaunchRecorder(await factory.getAddress(), true);
     await factory.connect(owner).setRegistries(await creatorRegistry.getAddress(), await riskRegistry.getAddress());
+    await factory.connect(owner).setConfig({
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
+      basePrice: 10n ** 12n,
+      priceSlope: 10n ** 9n,
+      graduationTarget: 1n,
+      liquidityBps: 8000,
+    });
 
-    await factory.connect(creator).createCampaign(baseReq({ name: "Graduate Life", symbol: "GRAD", graduationTarget: 1n }) as any);
+    await factory.connect(creator).createCampaign(baseReq({ name: "Graduate Life", symbol: "GRAD" }) as any);
     expect((await creatorRegistry.getCreatorProfile(creatorAddress)).liveBondingCount).to.eq(1n);
 
     const info = await factory.getCampaign(0n);

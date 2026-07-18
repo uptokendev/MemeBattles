@@ -27,6 +27,15 @@ async function createProtectedCampaign(overrides: Record<string, unknown> = {}) 
   const { factory, owner, creator } = fixture;
 
   await factory.connect(owner).setRouteAuthority(await owner.getAddress());
+  await factory.connect(owner).setConfig({
+    totalSupply: ethers.parseEther("1000"),
+    curveBps: 5000,
+    liquidityTokenBps: 4000,
+    basePrice: ethers.parseEther("0.001"),
+    priceSlope: 1n,
+    graduationTarget: ethers.parseEther("100"),
+    liquidityBps: 8000,
+  });
   await factory
     .connect(owner)
     .setLaunchProtectionConfig(4n, ethers.parseEther("0.0015"), ethers.parseEther("0.0025"));

@@ -172,7 +172,7 @@ describe("Security & invariants", function () {
   });
 
   it("reentrancy defense: feeRecipient cannot re-enter claimPendingNative during buy", async function () {
-    const { owner, creator, alice, factory } = await deployCoreFixture();
+    const { owner, creator, alice, factory, router } = await deployCoreFixture();
 
     await factory.connect(owner).setConfig({
       totalSupply: ethers.parseEther("1000"),
@@ -186,7 +186,7 @@ describe("Security & invariants", function () {
 
     const Reenter = await ethers.getContractFactory("ReenteringFeeRecipient");
     const reenter = await Reenter.deploy();
-    await factory.connect(owner).setFeeRecipient(await reenter.getAddress());
+    await factory.connect(owner).setCoreRouting(await router.getAddress(), await reenter.getAddress());
 
     await factory.connect(creator).createCampaign(req({ name: "R", symbol: "R", graduationTarget: ethers.parseEther("100") }) as any);
     const count = await factory.campaignsCount();

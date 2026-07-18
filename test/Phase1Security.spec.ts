@@ -73,13 +73,18 @@ describe("Phase 1 security layer", function () {
   });
 
   it("enforces creator buy cap after the lock expires", async () => {
-    const { factory, creator } = await deployCoreFixture();
-    await deployRegistries(factory);
-    const { campaign } = await createCampaign(factory, creator, {
+    const { factory, owner, creator } = await deployCoreFixture();
+    await factory.connect(owner).setConfig({
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
       basePrice: ethers.parseEther("0.001"),
       priceSlope: 1n,
       graduationTarget: ethers.parseEther("100"),
+      liquidityBps: 8000,
     });
+    await deployRegistries(factory);
+    const { campaign } = await createCampaign(factory, creator);
 
     await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
     await ethers.provider.send("evm_mine", []);
@@ -172,13 +177,18 @@ describe("Phase 1 security layer", function () {
   });
 
   it("records graduation and decrements creator live bonding count", async () => {
-    const { factory, creator, alice } = await deployCoreFixture();
-    const { creatorRegistry } = await deployRegistries(factory);
-    const { campaign } = await createCampaign(factory, creator, {
+    const { factory, owner, creator, alice } = await deployCoreFixture();
+    await factory.connect(owner).setConfig({
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
       basePrice: ethers.parseEther("0.005"),
       priceSlope: 10n ** 9n,
       graduationTarget: ethers.parseEther("0.005"),
+      liquidityBps: 8000,
     });
+    const { creatorRegistry } = await deployRegistries(factory);
+    const { campaign } = await createCampaign(factory, creator);
 
     let profile = await creatorRegistry.getCreatorProfile(await creator.getAddress());
     expect(profile.liveBondingCount).to.eq(1n);

@@ -89,14 +89,15 @@ async function deployLegacySystem() {
 
   const AcceptingReceiver = await ethers.getContractFactory("AcceptingReceiver");
   const leagueVault = await AcceptingReceiver.deploy();
-  await leagueVault.waitForDeployment();
+  const legacyFeeRecipient = await AcceptingReceiver.deploy();
+  await Promise.all([leagueVault.waitForDeployment(), legacyFeeRecipient.waitForDeployment()]);
 
   const TreasuryRouter = await ethers.getContractFactory("TreasuryRouter");
   const leagueRouter = await TreasuryRouter.deploy(await owner.getAddress(), await leagueVault.getAddress(), 3600);
   await leagueRouter.waitForDeployment();
 
   const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await leagueRouter.getAddress());
-  await factory.connect(owner).setFeeRecipient(await owner.getAddress());
+  await factory.connect(owner).setCoreRouting(await dexRouter.getAddress(), await legacyFeeRecipient.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
@@ -115,6 +116,7 @@ async function deployLegacySystem() {
     dexRouter,
     leagueRouter,
     leagueVault,
+    legacyFeeRecipient,
     factory,
     priceFeed,
   };
@@ -241,10 +243,10 @@ describe("Phase 1 fee envelope and economics invariants", function () {
   });
 
   it("legacy routing keeps finalize fee 100% to feeRecipient while trade fees still split league/protocol", async () => {
-    const { owner, alice, leagueVault, factory, creator, priceFeed } = await loadFixture(deployLegacySystem);
+    const { alice, leagueVault, legacyFeeRecipient, factory, creator, priceFeed } = await loadFixture(deployLegacySystem);
     const { campaign, token } = await createCampaign(factory, creator, "Legacy");
 
-    const ownerBeforeBuy = await getBalance(await owner.getAddress());
+    const feeRecipientBeforeBuy = await getBalance(await legacyFeeRecipient.getAddress());
     const leagueBeforeBuy = await getBalance(await leagueVault.getAddress());
 
     const amountOut = ethers.parseEther("10");
@@ -258,24 +260,24 @@ describe("Phase 1 fee envelope and economics invariants", function () {
     );
     await campaign.connect(alice).buyExactTokens(amountOut, total, { value: total });
 
-    const ownerAfterBuy = await getBalance(await owner.getAddress());
+    const feeRecipientAfterBuy = await getBalance(await legacyFeeRecipient.getAddress());
     const leagueAfterBuy = await getBalance(await leagueVault.getAddress());
     const leagueExpected = (buyMath.costNoFee * BigInt(await campaign.leagueFeeBps())) / 10_000n;
     expect(leagueAfterBuy - leagueBeforeBuy).to.equal(leagueExpected);
-    expect(ownerAfterBuy - ownerBeforeBuy).to.equal(buyMath.fee - leagueExpected);
+    expect(feeRecipientAfterBuy - feeRecipientBeforeBuy).to.equal(buyMath.fee - leagueExpected);
 
     await makeGraduationEligibleByOracle(campaign, priceFeed);
 
-    const ownerBeforeFinalize = await getBalance(await owner.getAddress());
+    const feeRecipientBeforeFinalize = await getBalance(await legacyFeeRecipient.getAddress());
     const leagueBeforeFinalize = await getBalance(await leagueVault.getAddress());
     const graduationPrincipal = await campaign.netRaisedWei();
     const finalizeFee = (graduationPrincipal * BigInt(await campaign.protocolFeeBps())) / 10_000n;
 
     await campaign.connect(alice).graduateIfEligible(0, 0);
 
-    const ownerAfterFinalize = await getBalance(await owner.getAddress());
+    const feeRecipientAfterFinalize = await getBalance(await legacyFeeRecipient.getAddress());
     const leagueAfterFinalize = await getBalance(await leagueVault.getAddress());
-    expect(ownerAfterFinalize - ownerBeforeFinalize).to.equal(finalizeFee);
+    expect(feeRecipientAfterFinalize - feeRecipientBeforeFinalize).to.equal(finalizeFee);
     expect(leagueAfterFinalize - leagueBeforeFinalize).to.equal(0n);
 
     expect(await token.tradingEnabled()).to.equal(true);

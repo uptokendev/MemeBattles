@@ -109,7 +109,10 @@ describe("verify-route-authority script", function () {
   it("reports hardhat ephemeral-network hints for addresses without code", async () => {
     const [owner] = await ethers.getSigners();
 
-    expect(hardhatEphemeralHint(await owner.getAddress())).to.include("ephemeral per command");
-    await expectRejects(requireContractCode(await owner.getAddress(), "LaunchFactory"), "has no code on hardhat");
+    expect(hardhatEphemeralHint(await owner.getAddress(), "hardhat")).to.include("ephemeral per command");
+    await expectRejects(
+      requireContractCode(await owner.getAddress(), "LaunchFactory", ethers.provider, "hardhat"),
+      "has no code on hardhat"
+    );
   });
 });

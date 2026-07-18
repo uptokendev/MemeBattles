@@ -19,7 +19,16 @@ const baseCampaignRequest = (overrides: Record<string, unknown> = {}) => ({
 
 async function createLowTargetCampaign() {
   const fx = await deployCoreFixture();
-  await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest({ graduationTarget: 1n }) as any);
+  await fx.factory.connect(fx.owner).setConfig({
+    totalSupply: ethers.parseEther("1000"),
+    curveBps: 5000,
+    liquidityTokenBps: 4000,
+    basePrice: 10n ** 12n,
+    priceSlope: 10n ** 9n,
+    graduationTarget: 1n,
+    liquidityBps: 8000,
+  });
+  await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest() as any);
   const info = await fx.factory.getCampaign(0n);
   const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
   return { ...fx, info, campaign };

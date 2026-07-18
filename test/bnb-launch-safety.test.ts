@@ -166,7 +166,18 @@ describe("BNB launch safety simulations", function () {
   });
 
   it("blocks restricted wallets, buy/sell pauses, and creator buy lock/cap paths", async function () {
-    const { creator, buyer, factory, riskRegistry } = await deploySafetyFixture();
+    const { owner, creator, buyer, factory, riskRegistry } = await deploySafetyFixture();
+
+    await factory.connect(owner).setConfig({
+      totalSupply: ethers.parseEther("1000"),
+      curveBps: 5000,
+      liquidityTokenBps: 4000,
+      basePrice: ethers.parseEther("0.001"),
+      priceSlope: 1n,
+      graduationTarget: ethers.parseEther("100"),
+      liquidityBps: 8000,
+    });
+
     const { campaign, token } = await createCampaign(factory, creator);
     const amountOut = ethers.parseEther("1");
     const maxCost = await campaign.quoteBuyExactTokens(amountOut);
@@ -181,6 +192,7 @@ describe("BNB launch safety simulations", function () {
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, false, false);
     await campaign.connect(buyer).buyExactTokens(amountOut, maxCost, { value: maxCost });
     await token.connect(buyer).approve(await campaign.getAddress(), amountOut);
+
     await factory.setCampaignPauses(await campaign.getAddress(), false, false, true, false);
     await expect(campaign.connect(buyer).sellExactTokens(amountOut, 0)).to.be.revertedWithCustomError(campaign, "SellsPaused");
 
@@ -189,9 +201,12 @@ describe("BNB launch safety simulations", function () {
     await expect(campaign.connect(creator).buyExactTokens(amountOut, creatorLockedCost, { value: creatorLockedCost })).to.be.revertedWithCustomError(campaign, "CreatorBuyLocked");
 
     await increaseTime(24 * 60 * 60 + 1);
-    const capBreakerAmount = ethers.parseEther("5000");
+
+    const capBreakerAmount = ethers.parseEther("251");
     const capBreakerCost = await campaign.quoteBuyExactTokens(capBreakerAmount);
-    await expect(campaign.connect(creator).buyExactTokens(capBreakerAmount, capBreakerCost, { value: capBreakerCost })).to.be.revertedWithCustomError(campaign, "CreatorBuyCapExceeded");
+    await expect(
+      campaign.connect(creator).buyExactTokens(capBreakerAmount, capBreakerCost, { value: capBreakerCost }),
+    ).to.be.revertedWithCustomError(campaign, "CreatorBuyCapExceeded");
   });
 
   it("accepts only the configured route authority and rejects create route replay", async function () {
