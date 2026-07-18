@@ -182,6 +182,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 postBurnTotalSupply
     );
     event GraduationLiquidityCapped(uint256 desiredLiquidityTokens, uint256 cappedLiquidityTokens, uint256 desiredLiquidityBnb, uint256 cappedLiquidityBnb);
+    event ExcessNativeRescued(address indexed recipient, uint256 amount);
 
     error OnlyFactory();
     error AlreadyInitialized();
@@ -226,6 +227,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error LiquidityZero();
     error PairMissing();
     error DexPriceDrift();
+    error NotFinalized();
+    error RescueRecipientZero();
+    error ExcessNativeUnavailable();
 
     bool private _initialized;
 
@@ -464,6 +468,19 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             revert ClaimFailed();
         }
         emit NativeClaimed(msg.sender, amount);
+    }
+
+    function excessNativeBalance() public view returns (uint256) {
+        if (!launched) return 0;
+        return _availableNativeBalance();
+    }
+
+    function rescueExcessNative(address payable recipient, uint256 amount) external onlyOwner nonReentrant {
+        if (!launched) revert NotFinalized();
+        if (recipient == address(0)) revert RescueRecipientZero();
+        if (amount > excessNativeBalance()) revert ExcessNativeUnavailable();
+        _sendNative(recipient, amount);
+        emit ExcessNativeRescued(recipient, amount);
     }
 
     function graduateIfEligible(uint256 minTokens, uint256 minBnb) external nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
