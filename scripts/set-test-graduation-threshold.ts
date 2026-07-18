@@ -1,14 +1,17 @@
+import fs from "fs";
+import path from "path";
 import { ethers, network } from "hardhat";
 
-function requiredEnv(...names: string[]): string {
+function optionalEnv(...names: string[]): string {
   for (const name of names) {
     const value = (process.env[name] ?? "").trim();
     if (value) return value;
   }
-  throw new Error(`Missing required env var: ${names.join(" or ")}`);
+  return "";
 }
 
-async function main() {
-  const net = await ethers.provider.getNetwork();
-  if (net.chainId === 56n) {
-    throw new Error("Refusing to lower the
+function loadFactoryAddress(): string {
+  const configured = optionalEnv("LAUNCH_FACTORY_ADDRESS", "FACTORY_ADDRESS");
+  if (configured) return configured;
+
+  const deploymentFile = path.join(__dirname, "..
