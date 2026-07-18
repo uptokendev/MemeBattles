@@ -33,10 +33,6 @@ describe("route authority verifier helper edges", function () {
       "bytes32",
       "bytes32",
       "bytes32",
-      "uint256",
-      "uint256",
-      "uint256",
-      "address",
     ]);
   });
 
@@ -47,7 +43,7 @@ describe("route authority verifier helper edges", function () {
   });
 
   it("adds a hardhat ephemeral-network hint on the local hardhat network", async () => {
-    const hint = verifier.hardhatEphemeralHint("0x0000000000000000000000000000000000000001");
+    const hint = verifier.hardhatEphemeralHint("0x0000000000000000000000000000000000000001", "hardhat");
 
     expect(hint).to.include("hardhat network is ephemeral per command");
     expect(hint).to.include("0x0000000000000000000000000000000000000001");
@@ -56,7 +52,7 @@ describe("route authority verifier helper edges", function () {
   it("rejects addresses without contract code with the checked label", async () => {
     let message = "";
     try {
-      await verifier.requireContractCode(ethers.ZeroAddress, "ZeroProbe");
+      await verifier.requireContractCode(ethers.ZeroAddress, "ZeroProbe", ethers.provider, "hardhat");
     } catch (error: any) {
       message = error.message;
     }
@@ -68,6 +64,6 @@ describe("route authority verifier helper edges", function () {
     const receiver = await ethers.deployContract("AcceptingReceiver");
     await receiver.waitForDeployment();
 
-    await verifier.requireContractCode(await receiver.getAddress(), "AcceptingReceiver");
+    await verifier.requireContractCode(await receiver.getAddress(), "AcceptingReceiver", ethers.provider, "hardhat");
   });
 });
