@@ -54,9 +54,13 @@ describe("PermanentLpLocker Topaz fee harvest", function () {
 
     const feeToken = ethers.parseEther("100");
     const feeWbnb = ethers.parseEther("5");
+    const poolToken0 = await pool.token0();
+    const amount0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase() ? feeToken : feeWbnb;
+    const amount1 = poolToken0.toLowerCase() === tokenAddress.toLowerCase() ? feeWbnb : feeToken;
+
     await token.approve(poolAddress, feeToken);
     await wbnb.approve(poolAddress, feeWbnb);
-    await pool.fundFees(await locker.getAddress(), feeToken, feeWbnb);
+    await pool.fundFees(await locker.getAddress(), amount0, amount1);
 
     const creatorTokenBefore = await token.balanceOf(await creatorFeeRecipient.getAddress());
     const creatorWbnbBefore = await wbnb.balanceOf(await creatorFeeRecipient.getAddress());
