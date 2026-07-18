@@ -35,7 +35,7 @@ The deploy script reads the manifest, sets `TOPAZ_ROUTER` from `contracts.Router
 
 Create a test campaign, buy until it graduates, confirm the graduated volatile Topaz pool, execute at least one buy and sell against the Topaz pool, then harvest LP fees through the locker path.
 
-Record these values for the final report:
+Record these values for the final report. Amount fields must be unsigned integer strings in wei/base units. `finalCurvePrice` and `initialDexPrice` must use the same units and match exactly in strict mode.
 
 ```json
 {
@@ -47,16 +47,16 @@ Record these values for the final report:
   "buyTx": "0x...",
   "sellTx": "0x...",
   "harvestTx": "0x...",
-  "lockerLpBalanceBeforeTrades": "0",
-  "lockerLpBalanceAfterHarvest": "0",
-  "claimedToken": "0",
-  "claimedWbnb": "0",
-  "creatorTokenReceived": "0",
-  "creatorWbnbReceived": "0",
-  "protocolTokenReceived": "0",
-  "protocolWbnbReceived": "0",
-  "finalCurvePrice": "0",
-  "initialDexPrice": "0"
+  "lockerLpBalanceBeforeTrades": "10000000000000000000",
+  "lockerLpBalanceAfterHarvest": "10000000000000000000",
+  "claimedToken": "100000000000000000000",
+  "claimedWbnb": "5000000000000000000",
+  "creatorTokenReceived": "80000000000000000000",
+  "creatorWbnbReceived": "4000000000000000000",
+  "protocolTokenReceived": "20000000000000000000",
+  "protocolWbnbReceived": "1000000000000000000",
+  "finalCurvePrice": "123456789",
+  "initialDexPrice": "123456789"
 }
 ```
 
@@ -70,7 +70,7 @@ Preflight mode checks deployment wiring and writes a report even before campaign
 TOPAZ_MANIFEST=deployments/bscTestnet/minimal-topaz.json npm run testnet:topaz-graduation
 ```
 
-Strict evidence mode fails if the campaign, pool, transaction, LP, and fee-harvest values are missing:
+Strict evidence mode fails if the campaign, pool, transaction, LP, price-continuity, and fee-harvest values are missing or inconsistent:
 
 ```bash
 TOPAZ_MANIFEST=deployments/bscTestnet/minimal-topaz.json \
@@ -85,4 +85,4 @@ The script writes:
 reports/topaz-graduation-testnet-<timestamp>.json
 ```
 
-The report validates BSC testnet chain id 97, Minimal Topaz manifest values, Topaz router/factory/WBNB bytecode, fixed volatile fee of 100 bps, MemeBattles deployment bytecode, optional campaign/token/pool bytecode, optional transaction receipts, pool reserves, pool stability, and the locker LP balance at report time.
+The report validates BSC testnet chain id 97, Minimal Topaz manifest values, Topaz router/factory/WBNB bytecode, fixed volatile fee of 100 bps, MemeBattles deployment bytecode, optional campaign/token/pool bytecode, optional transaction receipts, pool reserves, pool stability, Topaz WBNB pairing, price continuity, locked LP preservation after harvest, nonzero claimed fees in both assets, and the exact 80/20 creator/protocol fee split.
