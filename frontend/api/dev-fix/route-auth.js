@@ -9,6 +9,7 @@ import {
   ROUTE_PROFILE_STANDARD_UNLINKED,
   ROUTE_PROFILE_OG_LINKED,
 } from "./route-decision.js";
+import { signCreateAuthorization, signTradeAuthorization } from "./routeAuthorizationSigner.js";
 
 const VALID_PROFILES = new Set([
   ROUTE_PROFILE_STANDARD_LINKED,
@@ -33,6 +34,23 @@ function parsePositiveInt(value, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
   return Math.trunc(n);
+}
+
+function parseUint8(value, label) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 255) throw new Error(`${label} must be a uint8 value`);
+  return n;
+}
+
+function parseUint(value, label) {
+  if (value === undefined || value === null || value === "") throw new Error(`${label} is required`);
+  try {
+    const parsed = BigInt(value);
+    if (parsed < 0n) throw new Error();
+    return parsed;
+  } catch {
+    throw new Error(`${label} must be a uint-compatible value`);
+  }
 }
 
 function getRouteAuthorityPrivateKey() {
@@ -84,21 +102,11 @@ function firstCsvValue(value) {
 }
 
 function getRpcUrl(chainId) {
-  const perChain =
-    process.env[`BSC_RPC_HTTP_${chainId}`] ||
-    process.env[`VITE_PUBLIC_RPC_${chainId}`];
-
+  const perChain = process.env[`BSC_RPC_HTTP_${chainId}`] || process.env[`VITE_PUBLIC_RPC_${chainId}`];
   const perChainFirst = firstCsvValue(perChain);
   if (perChainFirst) return perChainFirst;
-
-  if (chainId === 56) {
-    return firstCsvValue(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC);
-  }
-
-  if (chainId === 97) {
-    return firstCsvValue(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC);
-  }
-
+  if (chainId === 56) return firstCsvValue(process.env.BSC_RPC_HTTP_56 || process.env.VITE_BSC_MAINNET_RPC);
+  if (chainId === 97) return firstCsvValue(process.env.BSC_RPC_HTTP_97 || process.env.VITE_BSC_TESTNET_RPC);
   return "";
 }
 
@@ -112,15 +120,27 @@ function getFactoryAddressFromEnv(chainId) {
   );
 }
 
+function normalizeCampaignRequest(body) {
+  const source = body.campaignRequest || body.request || body;
+  const request = {
+    name: String(source.name || ""),
+    symbol: String(source.symbol || ""),
+    logoURI: String(source.logoURI || source.logoUri || ""),
+    xAccount: String(source.xAccount || ""),
+    website: String(source.website || ""),
+    extraLink: String(source.extraLink || ""),
+  };
+  if (!request.name.trim()) throw new Error("Campaign request name is required");
+  if (!request.symbol.trim()) throw new Error("Campaign request symbol is required");
+  if (!request.logoURI.trim()) throw new Error("Campaign request logoURI is required");
+  return request;
+}
+
 function routeSignerUnavailable(res) {
   return json(res, 503, {
     error: "Route authorization signer is not configured.",
     code: "ROUTE_AUTHORIZER_NOT_CONFIGURED",
-    requiredEnv: [
-      "ROUTE_AUTHORITY_PRIVATE_KEY",
-      "or MWZ_ROUTE_AUTHORITY_PRIVATE_KEY",
-      "or ROUTE_AUTH_PRIVATE_KEY",
-    ],
+    requiredEnv: ["ROUTE_AUTHORITY_PRIVATE_KEY", "or MWZ_ROUTE_AUTHORITY_PRIVATE_KEY", "or ROUTE_AUTH_PRIVATE_KEY"],
   });
 }
 
@@ -138,33 +158,8 @@ async function readOnchainRouteAuthority({ chainId, factoryAddress }) {
   }
 }
 
-async function signCreateAuthorization({ signer, chainId, factoryAddress, creator, tradeRouteProfileId, finalizeRouteProfileId, deadline }) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint8", "uint64"],
-    [
-      "MWZ_CREATE_ROUTE_AUTH",
-      BigInt(chainId),
-      factoryAddress,
-      creator,
-      tradeRouteProfileId,
-      finalizeRouteProfileId,
-      BigInt(deadline),
-    ],
-  );
-  return signer.signMessage(ethers.getBytes(digest));
-}
-
-async function signTradeAuthorization({ signer, chainId, campaignAddress, actor, routeProfileId, deadline }) {
-  const digest = ethers.solidityPackedKeccak256(
-    ["string", "uint256", "address", "address", "uint8", "uint64"],
-    ["MWZ_ROUTE_TRADE_AUTH", BigInt(chainId), campaignAddress, actor, routeProfileId, BigInt(deadline)],
-  );
-  return signer.signMessage(ethers.getBytes(digest));
-}
-
 function buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain }) {
   const warnings = [];
-
   if (!signer) warnings.push("Route-authority private key is not configured or is invalid.");
   if (!factoryAddress) warnings.push("Factory address is missing for this chain.");
   if (!rpcUrlConfigured) warnings.push("RPC URL is missing for this chain, so on-chain routeAuthority cannot be verified.");
@@ -172,7 +167,6 @@ function buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onch
   if (signer && onchain.routeAuthority && !matchesOnchain) {
     warnings.push("Configured signer address does not match LaunchFactory.routeAuthority().");
   }
-
   return warnings;
 }
 
@@ -196,9 +190,7 @@ export async function routingStatus(req, res) {
   const defaults = getDefaultRouteProfiles();
   const rpcUrlConfigured = Boolean(getRpcUrl(chainId));
   const onchain = await readOnchainRouteAuthority({ chainId, factoryAddress });
-  const matchesOnchain = Boolean(
-    routeAuthority && onchain.routeAuthority && routeAuthority.toLowerCase() === onchain.routeAuthority.toLowerCase(),
-  );
+  const matchesOnchain = Boolean(routeAuthority && onchain.routeAuthority && routeAuthority.toLowerCase() === onchain.routeAuthority.toLowerCase());
 
   const readyForCoreFlow = Boolean(signer && factoryAddress && rpcUrlConfigured && onchain.routeAuthority && matchesOnchain);
   const warnings = buildReadinessWarnings({ signer, factoryAddress, rpcUrlConfigured, onchain, matchesOnchain });
@@ -252,6 +244,13 @@ export async function routingCreateAuthorization(req, res) {
   if (!factoryAddress) return json(res, 400, { error: "Invalid or missing factoryAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
 
+  let campaignRequest;
+  try {
+    campaignRequest = normalizeCampaignRequest(body);
+  } catch (error) {
+    return json(res, 400, { error: error.message });
+  }
+
   const createPreflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress });
   if (!createPreflight.allowed) {
     return json(res, 403, {
@@ -269,6 +268,7 @@ export async function routingCreateAuthorization(req, res) {
     chainId,
     factoryAddress,
     creator: walletAddress,
+    request: campaignRequest,
     tradeRouteProfileId,
     finalizeRouteProfileId,
     deadline,
@@ -285,16 +285,11 @@ export async function routingCreateAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/create-authorization", preflight: createPreflight },
+    metadata: { endpoint: "/api/routing/create-authorization", campaignRequest, preflight: createPreflight },
   });
 
   return json(res, 200, {
-    authorization: {
-      tradeRouteProfileId,
-      finalizeRouteProfileId,
-      validUntil,
-      signature,
-    },
+    authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
     routeAuthority: signer.address,
     decision,
     preflight: createPreflight,
@@ -316,6 +311,17 @@ export async function routingTradeAuthorization(req, res) {
   if (!campaignAddress) return json(res, 400, { error: "Invalid or missing campaignAddress" });
   if (!chainId) return json(res, 400, { error: "Invalid or missing chainId" });
 
+  let action;
+  let amount;
+  let limit;
+  try {
+    action = parseUint8(body.action, "action");
+    amount = parseUint(body.amount, "amount");
+    limit = parseUint(body.limit, "limit");
+  } catch (error) {
+    return json(res, 400, { error: error.message });
+  }
+
   const tradePreflight = await evaluateTradePreflight({ walletAddress, campaignAddress, chainId });
   if (!tradePreflight.allowed) {
     return json(res, 403, {
@@ -334,6 +340,9 @@ export async function routingTradeAuthorization(req, res) {
     campaignAddress,
     actor: walletAddress,
     routeProfileId,
+    action,
+    amount,
+    limit,
     deadline,
   });
 
@@ -347,15 +356,11 @@ export async function routingTradeAuthorization(req, res) {
     routeAuthority: signer.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: "/api/routing/trade-authorization", preflight: tradePreflight },
+    metadata: { endpoint: "/api/routing/trade-authorization", action, amount: amount.toString(), limit: limit.toString(), preflight: tradePreflight },
   });
 
   return json(res, 200, {
-    authorization: {
-      routeProfileId,
-      validUntil,
-      signature,
-    },
+    authorization: { routeProfileId, validUntil, signature },
     routeAuthority: signer.address,
     decision,
     preflight: tradePreflight,
