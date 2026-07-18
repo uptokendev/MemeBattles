@@ -38,6 +38,8 @@ async function deployPhase1RoutingFixture() {
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
   const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
+  await factory.connect(owner).setRequireRouteAuthorization(false);
+  await factory.connect(owner).setRequireAuthorizedTrading(false);
   await factory.connect(owner).setRouteAuthority(await owner.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
@@ -393,5 +395,4 @@ describe("LaunchCampaign Phase 1 router integration", function () {
     expect((await communityVault.squadPoolBalance()) - squadBeforeTrade).to.equal(expectedTrade.squad);
     expect(await campaign.tradeRouteProfile()).to.equal(1n);
   });
-
 });
