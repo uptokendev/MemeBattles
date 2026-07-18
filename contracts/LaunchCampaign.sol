@@ -40,7 +40,6 @@ interface ILaunchProtectionConfigSource {
 /// @notice Pump.fun inspired bonding curve launch campaign that targets a Topaz v2 volatile pool for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
     using SafeERC20 for IERC20;
-    using ECDSA for bytes32;
 
     struct InitParams {
         string name;
@@ -580,7 +579,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (buyer == creator) {
             if (block.timestamp < creatorBuyLockUntil) revert CreatorBuyLocked();
             if (creatorBuyCapWei > 0 && creatorBoughtWei + costNoFee > creatorBuyCapWei) revert CreatorBuyCapExceeded();
-            creatorBoughtWei += costNoFee;
         }
     }
 
@@ -649,6 +647,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             emit GraduationLiquidityCapped(desiredLiquidityTokens, lpTokensDesired, desiredLiquidityValue, liquidityValue);
         }
 
+        // Production Topaz pulls from the adapter, so the launch token must allow the adapter-to-pool transfer during this atomic handoff.
+        token.enableTrading();
         tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
             address(token),
@@ -679,7 +679,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 creatorPayout = remainingAfterFee > usedBnb ? remainingAfterFee - usedBnb : 0;
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         g.postBurnTotalSupply = token.totalSupply();
-        token.enableTrading();
 
         if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator, g.dexPair);
         emit CampaignFinalized(
@@ -787,6 +786,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _quoteSellNoFee(uint256 amountIn) internal view returns (uint256) {
+        require(amountIn <= sold, "exceeds sold");
         return _area(sold) - _area(sold - amountIn);
     }
 
