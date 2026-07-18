@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from "react";
 import { Contract, ethers } from "ethers";
-import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
@@ -54,10 +53,15 @@ const ENABLE_ONCHAIN_CAMPAIGN_FALLBACK = envEnabled(import.meta.env.VITE_ENABLE_
 
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
 const FACTORY_ABI = [
-  ...((toAbi(LaunchFactoryArtifact) as any[]) ?? []),
+  "function campaignsCount() view returns (uint256)",
+  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string metadataURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
   "function createCampaignAuthorized((string name,string symbol,string logoURI,string xAccount,string website,string extraLink) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
 ] as ethers.InterfaceAbi;
-const CAMPAIGN_ABI = toAbi(LaunchCampaignArtifact);
+const CAMPAIGN_ABI = [
+  ...((toAbi(LaunchCampaignArtifact) as any[]) ?? []),
+  "function buyExactTokensAuthorized(uint256 amountOut,uint256 maxCost,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) payable returns (uint256 cost)",
+  "function sellExactTokensAuthorized(uint256 amountIn,uint256 minPayout,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) returns (uint256 payout)",
+] as ethers.InterfaceAbi;
 const TOKEN_ABI = toAbi(LaunchTokenArtifact);
 const GRADUATION_WRITE_ABI = [
   ...((CAMPAIGN_ABI as any[]) ?? []),
