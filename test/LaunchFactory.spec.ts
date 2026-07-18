@@ -191,6 +191,8 @@ describe("LaunchFactory", function () {
     expect((await factory.config()).totalSupply).to.be.gt(0n);
     expect((await factory.config()).graduationTarget).to.eq(ethers.parseEther("30000"));
     expect(await factory.protocolFeeBps()).to.eq(200n);
+    expect(await factory.requireAuthorizedTrading()).to.eq(true);
+    expect(await factory.requireRouteAuthorization()).to.eq(true);
     expect(await factory.live()).to.eq(false);
   });
 
@@ -227,6 +229,8 @@ describe("LaunchFactory", function () {
       await graduationOracle.getAddress()
     );
 
+    await expect(factory.connect(creator).createCampaign(baseReq() as any)).to.be.revertedWithCustomError(factory, "RouteAuthorizationRequired");
+    await factory.connect(owner).setRequireRouteAuthorization(false);
     await expect(factory.connect(creator).createCampaign(baseReq() as any)).to.be.revertedWithCustomError(factory, "NotLive");
     await expect(factory.connect(creator).enableLive()).to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
     await expect(factory.connect(owner).enableLive()).to.emit(factory, "LiveEnabled");
@@ -323,6 +327,7 @@ describe("LaunchFactory", function () {
 
   it("createCampaignAuthorized applies signer-approved recruiter route profiles", async () => {
     const { factory, creator, owner } = await deployCoreFixture();
+    await factory.connect(owner).setRequireRouteAuthorization(true);
     await factory.connect(owner).setRouteAuthority(await owner.getAddress());
 
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
@@ -344,6 +349,7 @@ describe("LaunchFactory", function () {
 
   it("createCampaignAuthorized rejects missing authority, expired signatures, invalid profiles, bad signers, wrong chain, and replay", async () => {
     const { factory, creator, owner, alice } = await deployCoreFixture();
+    await factory.connect(owner).setRequireRouteAuthorization(true);
     const req = baseReq({ name: "RouteGuard", symbol: "RGD" });
     const deadline = (await latestTimestamp()) + 600n;
     const expiredDeadline = (await latestTimestamp()) - 1n;
@@ -423,9 +429,21 @@ describe("LaunchFactory", function () {
     );
     await expect(factory.connect(owner).setProtocolFee(1001n)).to.be.revertedWithCustomError(factory, "FeeTooHigh");
     await expect(factory.connect(owner).setProtocolFee(24n)).to.be.revertedWithCustomError(factory, "FeeTooLowForLeague");
+    await expect(factory.connect(owner).setRegistries(await alice.getAddress(), ethers.ZeroAddress)).to.be.revertedWithCustomError(
+      factory,
+      "ContractCodeMissing"
+    );
+    await expect(factory.connect(owner).setRegistries(ethers.ZeroAddress, await alice.getAddress())).to.be.revertedWithCustomError(
+      factory,
+      "ContractCodeMissing"
+    );
 
     await expect(factory.connect(owner).setProtocolFee(123n)).to.emit(factory, "ProtocolFeeUpdated").withArgs(123n);
     expect(await factory.protocolFeeBps()).to.eq(123n);
+    await expect(factory.connect(owner).setRequireRouteAuthorization(true))
+      .to.emit(factory, "RequireRouteAuthorizationUpdated")
+      .withArgs(true);
+    expect(await factory.requireRouteAuthorization()).to.eq(true);
 
     const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
     const topazFactory = await TopazFactory.deploy();
@@ -443,8 +461,6 @@ describe("LaunchFactory", function () {
     await expect(factory.connect(owner).setGraduationOracle(await newOracle.getAddress()))
       .to.emit(factory, "GraduationOracleUpdated")
       .withArgs(await newOracle.getAddress());
-
-    
 
     await expect(
       factory.connect(owner).setConfig({
@@ -538,7 +554,6 @@ describe("LaunchFactory", function () {
     expect(await campaign.liquidityBps()).to.eq(MAX_BPS);
   });
 
-
   it("always applies factory-configured economics to new campaigns", async () => {
     const { factory, creator } = await deployCoreFixture();
     const configured = await factory.config();
@@ -578,5 +593,4 @@ describe("LaunchFactory", function () {
       })
     ).to.be.revertedWithCustomError(factory, "FactoryLocked");
   });
-
 });
