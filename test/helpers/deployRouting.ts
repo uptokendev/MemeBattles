@@ -47,5 +47,10 @@ export async function deployRoutedLaunchFactory(admin: any) {
     await routing.treasuryRouter.getAddress()
   );
 
+  // Older routing and safety fixtures isolate trade behavior through direct calls.
+  // Production defaults remain authorization-gated in LaunchFactory itself.
+  await factory.connect(admin).setRequireRouteAuthorization(false);
+  await factory.connect(admin).setRequireAuthorizedTrading(false);
+
   return { dexRouter, v2factory, ...routing, factory, campaignImplementation };
 }
