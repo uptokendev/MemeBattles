@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {ITopazRouter02} from "../interfaces/ITopazRouter02.sol";
 
 /// @notice Exact subset of the production Topaz Router ABI used by MemeWarzone.
@@ -20,12 +23,15 @@ interface ITopazProductionRouter {
 }
 
 /// @notice Immutable ABI adapter between MemeWarzone's audited router interface and Topaz production.
-/// @dev The adapter contains no custody, administration, upgrade, rescue, or configuration paths.
+/// @dev The adapter has no administration, upgrade, rescue, or configuration paths. Liquidity assets are held only for the forwarded call.
 contract TopazRouterAdapter is ITopazRouter02 {
+    using SafeERC20 for IERC20;
+
     error ZeroAddress();
     error ContractCodeMissing();
     error InvalidTopazFactory();
     error InvalidWrappedNative();
+    error NativeRefundFailed();
 
     ITopazProductionRouter public immutable topazRouter;
     address private immutable _poolFactory;
@@ -46,6 +52,8 @@ contract TopazRouterAdapter is ITopazRouter02 {
         _poolFactory = factory_;
         _wrappedNative = wrapped_;
     }
+
+    receive() external payable {}
 
     /// @inheritdoc ITopazRouter02
     function poolFactory() external view returns (address) {
@@ -71,7 +79,14 @@ contract TopazRouterAdapter is ITopazRouter02 {
         payable
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
-        return topazRouter.addLiquidityETH{value: msg.value}(
+        IERC20 liquidityToken = IERC20(token);
+        uint256 tokenBalanceBefore = liquidityToken.balanceOf(address(this));
+        uint256 nativeBalanceBefore = address(this).balance - msg.value;
+
+        liquidityToken.safeTransferFrom(msg.sender, address(this), amountTokenDesired);
+        liquidityToken.forceApprove(address(topazRouter), amountTokenDesired);
+
+        (amountToken, amountETH, liquidity) = topazRouter.addLiquidityETH{value: msg.value}(
             token,
             stable,
             amountTokenDesired,
@@ -80,5 +95,17 @@ contract TopazRouterAdapter is ITopazRouter02 {
             to,
             deadline
         );
+
+        liquidityToken.forceApprove(address(topazRouter), 0);
+        uint256 tokenBalanceAfter = liquidityToken.balanceOf(address(this));
+        if (tokenBalanceAfter > tokenBalanceBefore) {
+            liquidityToken.safeTransfer(msg.sender, tokenBalanceAfter - tokenBalanceBefore);
+        }
+
+        uint256 nativeRefund = address(this).balance - nativeBalanceBefore;
+        if (nativeRefund != 0) {
+            (bool ok, ) = payable(msg.sender).call{value: nativeRefund}("");
+            if (!ok) revert NativeRefundFailed();
+        }
     }
 }
