@@ -39,6 +39,7 @@ describe("TopazRouterAdapter", function () {
 
     const token = await deployToken("Launch Token", "LAUNCH", owner);
     await token.mint(await owner.getAddress(), ethers.parseEther("10000"));
+    await token.enableTrading();
 
     const Factory = await ethers.getContractFactory("MockTopazFactory");
     const factory = await Factory.deploy();
@@ -87,6 +88,7 @@ describe("TopazRouterAdapter", function () {
 
     const token = await deployToken("Launch Token", "LAUNCH", owner);
     await token.mint(await owner.getAddress(), ethers.parseEther("10000"));
+    await token.enableTrading();
 
     const Factory = await ethers.getContractFactory("MockTopazFactory");
     const factory = await Factory.deploy();
