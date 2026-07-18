@@ -127,8 +127,11 @@ function checkLegacyRouterAliases(isRealNetwork) {
   else warnings.push(message);
 }
 
-function checkCommon() {
-  checkAddress("TREASURY_SAFE", TARGET !== "hardhat");
+function checkCommon(options = {}) {
+  const requireTreasurySafe = options.requireTreasurySafe || false;
+  const warnMissingRouteAuthority = options.warnMissingRouteAuthority !== false;
+
+  checkAddress("TREASURY_SAFE", requireTreasurySafe);
   checkAddress("ROUTE_AUTHORITY_ADDRESS");
   checkPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   checkRouteProfile("PHASE1_TRADE_ROUTE_PROFILE");
@@ -150,7 +153,7 @@ function checkCommon() {
 
   ["ENABLE_LEAGUE_PAYOUTS", "ENABLE_LEAGUE_CLAIMS", "ENABLE_RECRUITER_PAYOUTS", ...MOCK_FLAG_ENVS].forEach(checkBool);
 
-  if (!raw("ROUTE_AUTHORITY_ADDRESS") && !raw("ROUTE_AUTHORITY_PRIVATE_KEY")) {
+  if (warnMissingRouteAuthority && !raw("ROUTE_AUTHORITY_ADDRESS") && !raw("ROUTE_AUTHORITY_PRIVATE_KEY")) {
     warnings.push("ROUTE_AUTHORITY_ADDRESS is not set; route-authorized launches/trades will be unavailable until set on-chain.");
   }
 }
@@ -166,11 +169,14 @@ function checkLocal() {
 function checkBscTestnet() {
   requireEnv("BSC_TESTNET_RPC", "required for --network bscTestnet");
   checkPrivateKey("DEPLOYER_PK", true);
-  checkCommon();
-  checkAddress("TREASURY_SAFE", true);
+  checkCommon({ requireTreasurySafe: true, warnMissingRouteAuthority: false });
   checkNotLocalPrivateKey("DEPLOYER_PK");
   checkNotLocalPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   REAL_NETWORK_ADMIN_ENVS.forEach(checkNotLocalAddress);
+
+  if (!raw("BSCSCAN_API_KEY")) {
+    warnings.push("BSCSCAN_API_KEY is unset; deployment can run, but contract verification will be skipped or fail.");
+  }
 
   if (!hasAny(TOPAZ_ROUTER_ENVS)) {
     errors.push(`Topaz router missing: set one of ${TOPAZ_ROUTER_ENVS.join(", ")}`);

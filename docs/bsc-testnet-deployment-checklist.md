@@ -11,27 +11,39 @@ Use this checklist for the first audit-hardened `devpostgrad` BSC testnet deploy
 - Confirm `npm run size` keeps `LaunchCampaign` below the internal 23,000-byte target and under the EVM deployment limit.
 - Confirm `npm run deploy:check-env:bsc-testnet` passes with the exact environment that will deploy.
 
+Latest known gate result from 2026-07-18:
+
+- `npm run test`: 540 passing.
+- `npm run size`: all listed contracts passed; `LaunchCampaign` was 22,864 bytes and `LaunchFactory` was 15,180 bytes.
+- `npm run deploy:check-env`: local hardhat environment passed with expected mock/fallback warnings.
+- `npm run deploy:check-env:bsc-testnet`: blocked because real BSC testnet env values were unset.
+
 ## 2. Required BSC Testnet Inputs
 
+Use `config/bsc-testnet.env.example` as the fill-in template for the real deployment environment. Never commit the completed file if it contains keys or private operational addresses.
+
 - `BSC_TESTNET_RPC` points at the selected BSC testnet RPC endpoint.
-- `DEPLOYER_PK` is funded only for testnet deployment and is not reused for production administration.
+- `DEPLOYER_PK` is a funded BSC testnet deployer key and is not reused for production administration.
+- `TREASURY_SAFE` is the testnet treasury/admin safe or wallet; do not use default Hardhat accounts.
+- `ROUTE_AUTHORITY_ADDRESS` or `ROUTE_AUTHORITY_PRIVATE_KEY` is set so route-authorized launches/trades can be configured.
 - `BSCSCAN_API_KEY` is set for contract verification.
 - Official Topaz testnet router, pool factory, and WBNB addresses are recorded.
-- The selected BNB/USD oracle feed and maximum stale-price age are recorded.
+- Either `GRADUATION_ORACLE_ADDRESS` is set to an existing oracle, or a real BNB/USD feed is set through `BNB_USD_PRICE_FEED`, `NATIVE_USD_PRICE_FEED`, or `GRADUATION_PRICE_FEED`.
+- `GRADUATION_ORACLE_MAX_PRICE_AGE_SECONDS` is approved; the deployment script defaults to 3600 seconds when deploying a new oracle from a feed.
 - TreasuryRouter, protocol revenue vault, creator registry, risk registry, and route authority addresses are finalized before campaign creation.
 - Keeper and monitoring wallets are separate from owner, route signer, and reward operator keys wherever possible.
 
 ## 3. Locked Production-Style Deployment Sequence
 
 1. Deploy and verify the Topaz/WBNB dependencies or confirm the official testnet addresses.
-2. Deploy and verify the BNB/USD `GraduationOracle`.
+2. Deploy and verify the BNB/USD `GraduationOracle`, or confirm the configured existing oracle.
 3. Deploy and verify treasury, reward, registry, and routing contracts.
 4. Deploy `LaunchCampaign` implementation and confirm the implementation initializer is locked.
 5. Deploy `LaunchFactory` with production defaults.
 6. Configure route authority, registries, treasury routes, oracle, router, launch protection, and monitoring before any live campaign creation.
 7. Verify `requireRouteAuthorization == true` and `requireAuthorizedTrading == true`.
 8. If any campaign exists before locking, verify every campaign has `requireAuthorizedTrading == true`; correct insecure campaigns before treating the lock as complete.
-9. Call `lockSecurityDefaults()`.
+9. Call `lockSecurityDefaults()` only after the deployed addresses and route authority have been verified.
 10. Verify `securityDefaultsLocked == true`.
 11. Verify `createCampaign()` reverts with `RouteAuthorizationRequired`.
 12. Create the first campaign only through `createCampaignAuthorized()` and confirm the new campaign inherits `requireAuthorizedTrading == true`.
