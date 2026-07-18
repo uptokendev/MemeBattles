@@ -4,18 +4,7 @@ const { ethers } = hre;
 
 const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
-const REQUEST_HASH_TYPES = [
-  "bytes32",
-  "bytes32",
-  "bytes32",
-  "bytes32",
-  "bytes32",
-  "bytes32",
-  "uint256",
-  "uint256",
-  "uint256",
-  "address",
-];
+const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"];
 
 function normalizeAddress(value, label) {
   if (!value) throw new Error(`${label} is required`);
@@ -62,10 +51,6 @@ function hashCampaignRequest(req) {
       hashString(req.xAccount),
       hashString(req.website),
       hashString(req.extraLink),
-      req.basePrice,
-      req.priceSlope,
-      req.graduationTarget,
-      req.lpReceiver,
     ])
   );
 }
@@ -141,10 +126,6 @@ async function main() {
     xAccount: "",
     website: "",
     extraLink: "",
-    basePrice: 0n,
-    priceSlope: 0n,
-    graduationTarget: 0n,
-    lpReceiver: ethers.ZeroAddress,
   };
   const requestHash = hashCampaignRequest(sampleRequest);
   const sampleDeadline = BigInt(Math.floor(Date.now() / 1000) + 600);
@@ -184,7 +165,7 @@ async function main() {
     console.log("[route-authority] signer self-test skipped: set ROUTE_AUTHORITY_PRIVATE_KEY to verify signatures locally");
   }
 
-  console.log("[route-authority] OK");
+  console.log("[route-authority] EIP-191 digest compatibility self-test: OK");
 }
 
 module.exports = {

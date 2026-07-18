@@ -81,10 +81,6 @@ contract LaunchFactory is Ownable {
         string xAccount;
         string website;
         string extraLink;
-        uint256 basePrice;
-        uint256 priceSlope;
-        uint256 graduationTarget;
-        address lpReceiver;
     }
 
     struct RouteAuthorization {
@@ -231,9 +227,6 @@ contract LaunchFactory is Ownable {
         if (bytes(req.name).length == 0) revert NameEmpty();
         if (bytes(req.symbol).length == 0) revert SymbolEmpty();
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
-        if (req.basePrice != 0 && req.basePrice > MAX_BASE_PRICE) revert ParamTooHigh();
-        if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
-        if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
         address lockedLpReceiver = address(permanentLpLocker);
 
         (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
@@ -249,9 +242,9 @@ contract LaunchFactory is Ownable {
             totalSupply: config.totalSupply,
             curveBps: config.curveBps,
             liquidityTokenBps: config.liquidityTokenBps,
-            basePrice: req.basePrice == 0 ? config.basePrice : req.basePrice,
-            priceSlope: req.priceSlope == 0 ? config.priceSlope : req.priceSlope,
-            graduationTarget: req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget,
+            basePrice: config.basePrice,
+            priceSlope: config.priceSlope,
+            graduationTarget: config.graduationTarget,
             graduationOracle: graduationOracle,
             liquidityBps: config.liquidityBps,
             protocolFeeBps: protocolFeeBps,
@@ -329,11 +322,20 @@ contract LaunchFactory is Ownable {
         emit ConfigUpdated(newConfig);
     }
 
-    function setRouter(address newRouter) external onlyOwner whenMutable {
+    function setCoreRouting(address newRouter, address newTreasuryRouter) external onlyOwner whenMutable {
         if (newRouter == address(0)) revert RouterZero();
-        if (newRouter.code.length == 0) revert ContractCodeMissing();
+        if (newTreasuryRouter == address(0)) revert RecipientZero();
+        if (newRouter.code.length == 0 || newTreasuryRouter.code.length == 0) revert ContractCodeMissing();
+
+        address newPoolFactory = ITopazRouter02(newRouter).poolFactory();
+        if (newPoolFactory == address(0) || newPoolFactory.code.length == 0) revert ContractCodeMissing();
+
         router = newRouter;
+        feeRecipient = newTreasuryRouter;
+        permanentLpLocker.configureRevenue(newTreasuryRouter, newPoolFactory);
+
         emit RouterUpdated(newRouter);
+        emit FeeRecipientUpdated(newTreasuryRouter);
     }
 
     function setGraduationOracle(address newOracle) external onlyOwner whenMutable {
@@ -341,12 +343,6 @@ contract LaunchFactory is Ownable {
         if (newOracle.code.length == 0) revert ContractCodeMissing();
         graduationOracle = newOracle;
         emit GraduationOracleUpdated(newOracle);
-    }
-
-    function setFeeRecipient(address newRecipient) external onlyOwner whenMutable {
-        if (newRecipient == address(0)) revert RecipientZero();
-        feeRecipient = newRecipient;
-        emit FeeRecipientUpdated(newRecipient);
     }
 
     function setProtocolFee(uint256 newProtocolFeeBps) external onlyOwner whenMutable {
@@ -458,10 +454,7 @@ contract LaunchFactory is Ownable {
                 keccak256(bytes(req.logoURI)),
                 keccak256(bytes(req.xAccount)),
                 keccak256(bytes(req.website)),
-                keccak256(bytes(req.extraLink)),
-                req.basePrice,
-                req.priceSlope,
-                req.graduationTarget
+                keccak256(bytes(req.extraLink))
             )
         );
     }

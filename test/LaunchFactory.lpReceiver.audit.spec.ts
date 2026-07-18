@@ -3,24 +3,19 @@ import { ethers } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
 const baseReq = (overrides: Record<string, unknown> = {}) => ({
-  name: "LpReceiverToken",
-  symbol: "LPR",
-  logoURI: "ipfs://lp-receiver-logo",
+  name: "PermanentLockerToken",
+  symbol: "PLT",
+  logoURI: "ipfs://permanent-locker",
   xAccount: "",
   website: "",
   extraLink: "",
-  basePrice: 0n,
-  priceSlope: 0n,
-  graduationTarget: 0n,
-  lpReceiver: ethers.ZeroAddress,
   ...overrides,
 });
 
 function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
-  const coder = ethers.AbiCoder.defaultAbiCoder();
   return ethers.keccak256(
-    coder.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256"],
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         ethers.keccak256(ethers.toUtf8Bytes(req.name)),
         ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
@@ -28,90 +23,48 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
         ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(req.website)),
         ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
-        BigInt(req.basePrice as bigint),
-        BigInt(req.priceSlope as bigint),
-        BigInt(req.graduationTarget as bigint),
       ]
     )
   );
 }
 
-async function signCreateRoute(
-  factory: any,
-  creator: string,
-  signer: any,
-  req: ReturnType<typeof baseReq>,
-  tradeProfile: number,
-  finalizeProfile: number,
-  deadline: bigint
-) {
+async function signCreateRoute(factory: any, creator: string, signer: any, req: ReturnType<typeof baseReq>, deadline: bigint) {
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const digest = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
       ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
-      [
-        "MWZ_CREATE_ROUTE_AUTH",
-        chainId,
-        await factory.getAddress(),
-        creator,
-        hashCreateRouteRequest(req),
-        tradeProfile,
-        finalizeProfile,
-        deadline,
-      ]
+      ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), creator, hashCreateRouteRequest(req), 1, 1, deadline]
     )
   );
   return signer.signMessage(ethers.getBytes(digest));
 }
 
-describe("LaunchFactory LP receiver hardening", function () {
-  it("ignores the legacy request field and always injects the permanent LP locker", async () => {
-    const { factory, creator, alice } = await deployCoreFixture();
-    const locker = await factory.permanentLpLocker();
-    const suppliedReceiver = await alice.getAddress();
+describe("LaunchFactory permanent LP receiver", function () {
+  it("does not expose an LP receiver in the creator-facing request and always injects the permanent locker", async () => {
+    const { factory, creator } = await deployCoreFixture();
 
-    await expect(
-      factory.connect(creator).createCampaign(baseReq({ lpReceiver: suppliedReceiver }) as any)
-    ).to.emit(factory, "CampaignCreated");
+    await expect(factory.connect(creator).createCampaign(baseReq() as any)).to.emit(factory, "CampaignCreated");
 
     const info = await factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
-    expect(await campaign.lpReceiver()).to.eq(locker);
-    expect(await campaign.lpReceiver()).not.to.eq(suppliedReceiver);
+    expect(await campaign.lpReceiver()).to.eq(await factory.permanentLpLocker());
   });
 
-  it("does not bind route authorization signatures to the ignored legacy LP receiver field", async () => {
-    const { factory, creator, owner, alice } = await deployCoreFixture();
+  it("binds authorized creation to the complete public campaign request", async () => {
+    const { factory, creator, owner } = await deployCoreFixture();
     await factory.connect(owner).setRouteAuthority(await owner.getAddress());
 
-    const signedReq = baseReq({
-      name: "AuthorizedLpReceiver",
-      symbol: "ALPR",
-      lpReceiver: ethers.ZeroAddress,
-    });
-    const submittedReq = { ...signedReq, lpReceiver: await alice.getAddress() };
+    const signedReq = baseReq({ name: "AuthorizedCampaign", symbol: "AUTH" });
     const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
-    const signature = await signCreateRoute(
-      factory,
-      await creator.getAddress(),
-      owner,
-      signedReq,
-      1,
-      1,
-      deadline
-    );
+    const signature = await signCreateRoute(factory, await creator.getAddress(), owner, signedReq, deadline);
 
     await expect(
-      factory.connect(creator).createCampaignAuthorized(submittedReq as any, {
+      factory.connect(creator).createCampaignAuthorized(signedReq as any, {
         tradeRouteProfile: 1,
         finalizeRouteProfile: 1,
         deadline,
         signature,
       })
     ).to.emit(factory, "CampaignCreated");
-
-    const info = await factory.getCampaign(0n);
-    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
-    expect(await campaign.lpReceiver()).to.eq(await factory.permanentLpLocker());
   });
 });

@@ -15,22 +15,14 @@ const baseReq = (overrides: Record<string, unknown> = {}) => ({
   xAccount: "",
   website: "",
   extraLink: "",
-  basePrice: 0n,
-  priceSlope: 0n,
-  graduationTarget: 0n,
-  lpReceiver: ethers.ZeroAddress,
   ...overrides,
 });
-
-function asBigInt(value: unknown) {
-  return BigInt(value as string | number | bigint);
-}
 
 function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
   const coder = ethers.AbiCoder.defaultAbiCoder();
   return ethers.keccak256(
     coder.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256"],
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         ethers.keccak256(ethers.toUtf8Bytes(req.name)),
         ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
@@ -38,9 +30,6 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
         ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(req.website)),
         ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
-        asBigInt(req.basePrice),
-        asBigInt(req.priceSlope),
-        asBigInt(req.graduationTarget),
       ]
     )
   );
@@ -420,15 +409,15 @@ describe("LaunchFactory", function () {
   });
 
   it("owner-only setters with validation + events", async () => {
-    const { factory, owner, alice } = await deployCoreFixture();
+    const { factory, owner, alice, treasuryRouter } = await deployCoreFixture();
 
-    await expect(factory.connect(alice).setRouter(await alice.getAddress())).to.be.revertedWithCustomError(
+    await expect(factory.connect(alice).setCoreRouting(await alice.getAddress(), await alice.getAddress())).to.be.revertedWithCustomError(
       factory,
       "OwnableUnauthorizedAccount"
     );
-    await expect(factory.connect(owner).setRouter(ethers.ZeroAddress)).to.be.revertedWithCustomError(factory, "RouterZero");
+    await expect(factory.connect(owner).setCoreRouting(ethers.ZeroAddress, await alice.getAddress())).to.be.revertedWithCustomError(factory, "RouterZero");
     await expect(factory.connect(owner).setGraduationOracle(ethers.ZeroAddress)).to.be.revertedWithCustomError(factory, "GraduationOracleZero");
-    await expect(factory.connect(owner).setFeeRecipient(ethers.ZeroAddress)).to.be.revertedWithCustomError(
+    await expect(factory.connect(owner).setCoreRouting(await factory.router(), ethers.ZeroAddress)).to.be.revertedWithCustomError(
       factory,
       "RecipientZero"
     );
@@ -442,18 +431,20 @@ describe("LaunchFactory", function () {
     const topazFactory = await TopazFactory.deploy();
     await topazFactory.waitForDeployment();
     const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(await topazFactory.getAddress(), await owner.getAddress());
-    await expect(factory.connect(owner).setRouter(await newRouter.getAddress()))
+    await expect(factory.connect(owner).setCoreRouting(await newRouter.getAddress(), await treasuryRouter.getAddress()))
       .to.emit(factory, "RouterUpdated")
       .withArgs(await newRouter.getAddress());
+    expect(await factory.feeRecipient()).to.eq(await treasuryRouter.getAddress());
+    const locker = await ethers.getContractAt("PermanentLpLocker", await factory.permanentLpLocker());
+    expect(await locker.treasuryRouter()).to.eq(await treasuryRouter.getAddress());
+    expect(await locker.topazFactory()).to.eq(await topazFactory.getAddress());
 
     const { graduationOracle: newOracle } = await deployFactoryPrereqs();
     await expect(factory.connect(owner).setGraduationOracle(await newOracle.getAddress()))
       .to.emit(factory, "GraduationOracleUpdated")
       .withArgs(await newOracle.getAddress());
 
-    await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress()))
-      .to.emit(factory, "FeeRecipientUpdated")
-      .withArgs(await alice.getAddress());
+    
 
     await expect(
       factory.connect(owner).setConfig({
@@ -547,24 +538,18 @@ describe("LaunchFactory", function () {
     expect(await campaign.liquidityBps()).to.eq(MAX_BPS);
   });
 
-  it("createCampaign accepts documented override bounds and stores them on the campaign", async () => {
-    const { factory, creator } = await deployCoreFixture();
 
-    await factory.connect(creator).createCampaign(
-      baseReq({
-        name: "OverrideBounded",
-        symbol: "OBND",
-        basePrice: MAX_BASE_PRICE,
-        priceSlope: MAX_PRICE_SLOPE,
-        graduationTarget: MAX_GRADUATION_TARGET,
-      }) as any
-    );
+  it("always applies factory-configured economics to new campaigns", async () => {
+    const { factory, creator } = await deployCoreFixture();
+    const configured = await factory.config();
+
+    await factory.connect(creator).createCampaign(baseReq({ name: "FixedEconomics", symbol: "FIX" }) as any);
 
     const info = await factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
-    expect(await campaign.basePrice()).to.eq(MAX_BASE_PRICE);
-    expect(await campaign.priceSlope()).to.eq(MAX_PRICE_SLOPE);
-    expect(await campaign.graduationTarget()).to.eq(MAX_GRADUATION_TARGET);
+    expect(await campaign.basePrice()).to.eq(configured.basePrice);
+    expect(await campaign.priceSlope()).to.eq(configured.priceSlope);
+    expect(await campaign.graduationTarget()).to.eq(configured.graduationTarget);
   });
 
   it("locks economic and routing setters after the first campaign exists", async () => {
@@ -576,9 +561,8 @@ describe("LaunchFactory", function () {
     const topazFactory = await TopazFactory.deploy();
     await topazFactory.waitForDeployment();
     const newRouter = await (await ethers.getContractFactory("MockRouter")).deploy(await topazFactory.getAddress(), await owner.getAddress());
-    await expect(factory.connect(owner).setRouter(await newRouter.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
+    await expect(factory.connect(owner).setCoreRouting(await newRouter.getAddress(), await alice.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setGraduationOracle(await graduationOracle.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
-    await expect(factory.connect(owner).setFeeRecipient(await alice.getAddress())).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setProtocolFee(123n)).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setRouteProfiles(1, 1)).to.be.revertedWithCustomError(factory, "FactoryLocked");
     await expect(factory.connect(owner).setLaunchProtectionConfig(1, 1, 1)).to.be.revertedWithCustomError(factory, "FactoryLocked");
@@ -595,23 +579,4 @@ describe("LaunchFactory", function () {
     ).to.be.revertedWithCustomError(factory, "FactoryLocked");
   });
 
-  it("createCampaign: rejects override params above bounds", async () => {
-    const { factory, creator } = await deployCoreFixture();
-
-    const baseTooHigh = ethers.parseEther("1001");
-    const targetTooHigh = ethers.parseEther("1000001");
-    const slopeTooHigh = 10n ** 36n + 1n;
-
-    await expect(factory.connect(creator).createCampaign(baseReq({ basePrice: baseTooHigh }) as any)).to.be.revertedWithCustomError(
-      factory,
-      "ParamTooHigh"
-    );
-    await expect(factory.connect(creator).createCampaign(baseReq({ priceSlope: slopeTooHigh }) as any)).to.be.revertedWithCustomError(
-      factory,
-      "ParamTooHigh"
-    );
-    await expect(
-      factory.connect(creator).createCampaign(baseReq({ graduationTarget: targetTooHigh }) as any)
-    ).to.be.revertedWithCustomError(factory, "ParamTooHigh");
-  });
 });
