@@ -1,0 +1,84 @@
+name: Topaz Readiness Audit
+
+on:
+  pull_request:
+    branches: [devpostgrad]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    name: Protocol and rehearsal gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Compile and sync frontend ABIs
+        run: npm run compile:frontend-abis
+      - name: Reject stale generated ABIs
+        run: git diff --exit-code -- frontend/src/abi
+      - name: Full contract suite
+        run: npm test
+      - name: Contract sizes
+        run: npm run size
+      - name: Local protocol rehearsal
+        run: npm run protocol:rehearsal
+      - name: Focused rehearsal and hardening suite
+        run: npm run rehearsal:check
+      - name: Local deployment environment validation
+        run: npm run deploy:check-env
+      - name: Inventory Topaz deployment surfaces
+        shell: bash
+        run: |
+          echo 'Topaz contracts:'
+          find contracts -type f -iname '*topaz*' -print | sort
+          echo 'Topaz deployment scripts:'
+          find scripts -type f -iname '*topaz*' -print | sort
+          test -f scripts/deploy-topaz-rehearsal.ts
+
+  frontend:
+    name: Frontend and API gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Production build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
+      - name: Core API route check
+        run: npm run check:core-api
+      - name: Phase 3 core flow check
+        run: npm run check:phase3-core-flow
+      - name: API import check
+        run: npm run check:api-imports
+      - name: Post-grad routing readiness
+        run: npm run check:postgrad-routing
+      - name: Post-grad economics readiness
+        run: npm run check:postgrad-economics
+      - name: Local gateway readiness
+        run: npm run check:localdev-gateway
+      - name: Confirm centralized route signer usage
+        shell: bash
+        run: |
+          grep -q 'routeAuthorizationSigner.js' api/dev-fix/route-auth.js
+          grep -q 'routeAuthorizationSigner.js' ../scripts/local-protocol-rehearsal.ts
+          grep -q 'createCampaignAuthorized' src/lib/launchpadClient.ts
+          grep -q 'buyExactTokensAuthorized' src/lib/launchpadClient.ts
+          grep -q 'sellExactTokensAuthorized' src/lib/launchpadClient.ts
