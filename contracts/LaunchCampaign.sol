@@ -484,7 +484,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function graduateIfEligible(uint256 minTokens, uint256 minBnb) external nonReentrant returns (uint256 usedTokens, uint256 usedBnb) {
-        return _finalize(minTokens, minBnb, msg.sender);
+        uint256 nativeTarget = graduationNativeTarget();
+        return _finalizeWithTarget(minTokens, minBnb, msg.sender, nativeTarget);
     }
 
     function _buyExactTokens(address buyer, uint256 amountOut, uint256 maxCost, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 cost) {
@@ -615,19 +616,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
 
     function _autoFinalizeIfEligible(address caller) internal {
         try graduationOracle.nativeTargetForUsd(graduationTarget) returns (uint256 nativeTarget) {
-            if (netRaisedWei >= nativeTarget) _finalize(0, 0, caller);
+            if (netRaisedWei >= nativeTarget) _finalizeWithTarget(0, 0, caller, nativeTarget);
         } catch {}
     }
 
-    function _isGraduationReached() internal view returns (bool) {
-        return netRaisedWei >= graduationNativeTarget();
-    }
-
-    function _finalize(uint256 minTokens, uint256 minBnb, address caller) internal returns (uint256 usedTokens, uint256 usedBnb) {
+    function _finalizeWithTarget(uint256 minTokens, uint256 minBnb, address caller, uint256 nativeTarget) internal returns (uint256 usedTokens, uint256 usedBnb) {
         if (paused) revert CampaignPaused();
         if (graduationPaused) revert GraduationPaused();
         if (launched) revert Finalized();
-        uint256 nativeTarget = graduationNativeTarget();
         if (netRaisedWei < nativeTarget) revert ThresholdNotMet();
         launched = true;
         finalizedAt = block.timestamp;
