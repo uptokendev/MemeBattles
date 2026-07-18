@@ -54,6 +54,7 @@
     "deployment:summary:bsc-testnet": "node scripts/deployment-summary.cjs bscTestnet",
     "pretestnet:check": "node scripts/pretestnet-check.cjs",
     "testnet:acceptance": "node scripts/testnet-acceptance.cjs",
+    "testnet:topaz-graduation": "hardhat run scripts/test-topaz-graduation-flow.ts --network bscTestnet",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "gas": "REPORT_GAS=true hardhat test",
