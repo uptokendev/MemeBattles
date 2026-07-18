@@ -614,7 +614,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _autoFinalizeIfEligible(address caller) internal {
-        if (_isGraduationReached()) _finalize(0, 0, caller);
+        try graduationOracle.nativeTargetForUsd(graduationTarget) returns (uint256 nativeTarget) {
+            if (netRaisedWei >= nativeTarget) _finalize(0, 0, caller);
+        } catch {}
     }
 
     function _isGraduationReached() internal view returns (bool) {
