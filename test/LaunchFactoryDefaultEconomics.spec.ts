@@ -24,6 +24,42 @@ const baseReq = () => ({
   lpReceiver: ethers.ZeroAddress,
 });
 
+function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
+  const coder = ethers.AbiCoder.defaultAbiCoder();
+  return ethers.keccak256(
+    coder.encode(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
+      [
+        ethers.keccak256(ethers.toUtf8Bytes(req.name)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.logoURI)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.website)),
+        ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+      ]
+    )
+  );
+}
+
+async function signCreateRoute(
+  factory: any,
+  creator: string,
+  signer: any,
+  req: ReturnType<typeof baseReq>,
+  tradeProfile: number,
+  finalizeProfile: number,
+  deadline: bigint
+) {
+  const { chainId } = await ethers.provider.getNetwork();
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
+      ["MWZ_CREATE_ROUTE_AUTH", chainId, await factory.getAddress(), creator, hashCreateRouteRequest(req), tradeProfile, finalizeProfile, deadline]
+    )
+  );
+  return signer.signMessage(ethers.getBytes(digest));
+}
+
 async function latestTimestamp() {
   const block = await ethers.provider.getBlock("latest");
   return BigInt(block!.timestamp);
@@ -91,14 +127,25 @@ describe("LaunchFactory default economics", function () {
     expect(config.priceSlope).to.eq(DEFAULT_PRICE_SLOPE);
     expect(config.graduationTarget).to.eq(DEFAULT_GRADUATION_TARGET);
     expect(config.liquidityBps).to.eq(DEFAULT_LIQUIDITY_BPS);
+    expect(await factory.requireAuthorizedTrading()).to.eq(true);
+    expect(await factory.requireRouteAuthorization()).to.eq(true);
   });
 
   it("campaigns inherit the default split and route-authorization latch", async () => {
     const { deployer, factory } = await deployFactoryWithProductionDefaults();
 
-    await expect(factory.setRequireAuthorizedTrading(true)).to.emit(factory, "RequireAuthorizedTradingUpdated").withArgs(true);
+    await factory.setRouteAuthority(await deployer.getAddress());
     await factory.enableLive();
-    await factory.createCampaign(baseReq() as any);
+
+    const req = baseReq();
+    const deadline = (await latestTimestamp()) + 600n;
+    const signature = await signCreateRoute(factory, await deployer.getAddress(), deployer, req, 1, 1, deadline);
+    await factory.createCampaignAuthorized(req as any, {
+      tradeRouteProfile: 1,
+      finalizeRouteProfile: 1,
+      deadline,
+      signature,
+    });
 
     const info = await factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
