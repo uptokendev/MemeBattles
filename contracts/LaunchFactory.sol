@@ -49,7 +49,6 @@ contract LaunchFactory is Ownable {
     error CreatorNotEligible();
     error RiskNotEligible();
     error UnknownCampaign();
-    error InvalidLpReceiver();
 
     struct LaunchConfig {
         uint256 totalSupply;
@@ -236,7 +235,6 @@ contract LaunchFactory is Ownable {
         if (req.priceSlope != 0 && req.priceSlope > MAX_PRICE_SLOPE) revert ParamTooHigh();
         if (req.graduationTarget != 0 && req.graduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
         address lockedLpReceiver = address(permanentLpLocker);
-        if (req.lpReceiver != address(0) && req.lpReceiver != lockedLpReceiver) revert InvalidLpReceiver();
 
         (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
@@ -463,8 +461,7 @@ contract LaunchFactory is Ownable {
                 keccak256(bytes(req.extraLink)),
                 req.basePrice,
                 req.priceSlope,
-                req.graduationTarget,
-                req.lpReceiver
+                req.graduationTarget
             )
         );
     }
