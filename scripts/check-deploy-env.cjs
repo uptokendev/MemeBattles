@@ -8,7 +8,8 @@ const TARGET = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_RE = /^(0x)?[a-fA-F0-9]{64}$/;
 
-const TOPAZ_MANIFEST_ENVS = ["TOPAZ_MANIFEST"];
+const BSC_RPC_ENVS = ["BSC_TESTNET_RPC_URL", "BSC_TESTNET_RPC"];
+const DEPLOYER_PRIVATE_KEY_ENVS = ["PRIVATE_KEY_DEPLOY", "DEPLOYER_PK"];
 const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
 const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
 const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
@@ -45,10 +46,6 @@ function hasAny(names) {
   return names.some((name) => raw(name));
 }
 
-function requireEnv(name, message) {
-  if (!raw(name)) errors.push(`${name}: ${message || "missing"}`);
-}
-
 function normalizePrivateKey(value) {
   return value.toLowerCase().replace(/^0x/, "");
 }
@@ -69,6 +66,10 @@ function checkPrivateKey(name, required = false) {
     return;
   }
   if (!PRIVATE_KEY_RE.test(value)) errors.push(`${name}: expected 32-byte hex private key`);
+}
+
+function checkRequiredAny(names, message) {
+  if (!hasAny(names)) errors.push(`${names.join(" or ")}: ${message}`);
 }
 
 function checkNotLocalAddress(name) {
@@ -128,6 +129,11 @@ function configuredTopazManifestPath() {
   return raw("TOPAZ_MANIFEST") || (fs.existsSync(defaultTopazManifestPath()) ? defaultTopazManifestPath() : "");
 }
 
+function requireManifestAddress(manifest, key, manifestPath) {
+  const value = manifest.contracts && manifest.contracts[key];
+  if (!ADDRESS_RE.test(value || "")) errors.push(`TOPAZ_MANIFEST: contracts.${key} must be a 20-byte 0x address in ${manifestPath}`);
+}
+
 function checkTopazManifest(required = false) {
   const manifestPath = configuredTopazManifestPath();
   if (!manifestPath) {
@@ -143,10 +149,16 @@ function checkTopazManifest(required = false) {
 
   try {
     const manifest = JSON.parse(fs.readFileSync(resolved, "utf8"));
-    const router = manifest.contracts && manifest.contracts.Router;
+    requireManifestAddress(manifest, "Router", resolved);
+    requireManifestAddress(manifest, "PoolFactory", resolved);
+    requireManifestAddress(manifest, "WBNB", resolved);
+
+    const chainId = Number(manifest.chainId || 0);
     const fee = Number(manifest.configuration && manifest.configuration.volatileFeeBps);
-    if (!ADDRESS_RE.test(router || "")) errors.push(`TOPAZ_MANIFEST: contracts.Router must be a 20-byte 0x address`);
+    const graduationPoolStable = manifest.configuration && manifest.configuration.graduationPoolStable;
+    if (TARGET === "bscTestnet" && chainId !== 97) errors.push(`TOPAZ_MANIFEST: chainId must be 97 for bscTestnet, got ${chainId}`);
     if (fee !== 100) errors.push(`TOPAZ_MANIFEST: configuration.volatileFeeBps must be 100, got ${fee}`);
+    if (graduationPoolStable !== false) errors.push(`TOPAZ_MANIFEST: configuration.graduationPoolStable must be false, got ${graduationPoolStable}`);
     return true;
   } catch (error) {
     errors.push(`TOPAZ_MANIFEST: could not parse ${resolved}: ${error.message}`);
@@ -206,10 +218,11 @@ function checkLocal() {
 }
 
 function checkBscTestnet() {
-  requireEnv("BSC_TESTNET_RPC", "required for --network bscTestnet");
-  checkPrivateKey("DEPLOYER_PK", true);
+  checkRequiredAny(BSC_RPC_ENVS, "required for --network bscTestnet");
+  checkRequiredAny(DEPLOYER_PRIVATE_KEY_ENVS, "required for --network bscTestnet");
+  for (const name of DEPLOYER_PRIVATE_KEY_ENVS) checkPrivateKey(name);
   checkCommon({ requireTreasurySafe: true, warnMissingRouteAuthority: false });
-  checkNotLocalPrivateKey("DEPLOYER_PK");
+  for (const name of DEPLOYER_PRIVATE_KEY_ENVS) checkNotLocalPrivateKey(name);
   checkNotLocalPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   REAL_NETWORK_ADMIN_ENVS.forEach(checkNotLocalAddress);
 
@@ -243,6 +256,8 @@ if (TARGET === "bscTestnet") checkBscTestnet();
 else checkLocal();
 
 console.log(`[deploy-env] target=${TARGET}`);
+console.log(`[deploy-env] rpc=${firstConfigured(BSC_RPC_ENVS) || "unset"}`);
+console.log(`[deploy-env] deployerKey=${firstConfigured(DEPLOYER_PRIVATE_KEY_ENVS) || "unset"}`);
 console.log(`[deploy-env] router=${firstConfigured(ROUTER_ENVS) || (configuredTopazManifestPath() ? "TOPAZ_MANIFEST" : "unset")}`);
 console.log(`[deploy-env] graduation=${firstConfigured(PRICE_ENVS) || "unset"}`);
 console.log(`[deploy-env] treasurySafe=${raw("TREASURY_SAFE") || "fallback/deployer"}`);
