@@ -1,11 +1,61 @@
+import path from "path";
+import { pathToFileURL } from "url";
 import { ethers, network } from "hardhat";
 import { deployProtocol } from "./lib/deployProtocol";
 import { buildMonitoringSnapshot } from "./monitoring-snapshot";
 import { verifyDeployment } from "./verify-deployment";
 
 const MAX_BPS = 10_000n;
-const ROUTE_PROFILE_STANDARD_UNLINKED = 1;
 const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+
+type RouteAuthorizationSigner = {
+  signCreateAuthorization(options: {
+    signer: { signMessage(message: Uint8Array): Promise<string> };
+    chainId: bigint | number | string;
+    factoryAddress: string;
+    creator: string;
+    request: CampaignRequest;
+    tradeRouteProfileId: number;
+    finalizeRouteProfileId: number;
+    deadline: bigint | number | string;
+  }): Promise<string>;
+  signTradeAuthorization(options: {
+    signer: { signMessage(message: Uint8Array): Promise<string> };
+    chainId: bigint | number | string;
+    campaignAddress: string;
+    actor: string;
+    routeProfileId: number;
+    action: number;
+    amount: bigint | number | string;
+    limit: bigint | number | string;
+    deadline: bigint | number | string;
+  }): Promise<string>;
+};
+
+type CampaignRequest = {
+  name: string;
+  symbol: string;
+  logoURI: string;
+  xAccount: string;
+  website: string;
+  extraLink: string;
+};
+
+type CreateRouteAuthorization = {
+  tradeRouteProfile: number;
+  finalizeRouteProfile: number;
+  deadline: bigint;
+  signature: string;
+};
+
+const routeAuthorizationSignerUrl = pathToFileURL(
+  path.join(__dirname, "..", "frontend", "api", "dev-fix", "routeAuthorizationSigner.js"),
+).href;
+
+const routeAuthorizationSignerPromise: Promise<RouteAuthorizationSigner> = Function(
+  "specifier",
+  "return import(specifier)",
+)(routeAuthorizationSignerUrl);
 
 function logStep(label: string, value?: unknown) {
   if (value === undefined) console.log(`[rehearsal] ${label}`);
@@ -29,44 +79,41 @@ async function latestTimestamp() {
   return BigInt(block!.timestamp);
 }
 
-async function signTradeRoute(params: {
-  campaign: any;
-  actor: string;
-  signer: any;
-  routeProfile: number;
-  action: number;
-  amount: bigint;
-  limit: bigint;
-  deadline: bigint;
-}) {
-  const { chainId } = await ethers.provider.getNetwork();
-  const digest = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
-      [
-        "MWZ_ROUTE_TRADE_AUTH",
-        chainId,
-        await params.campaign.getAddress(),
-        params.actor,
-        params.routeProfile,
-        params.action,
-        params.amount,
-        params.limit,
-        params.deadline,
-      ]
-    )
-  );
-  return params.signer.signMessage(ethers.getBytes(digest));
-}
-
-async function expectRevert(promise: Promise<unknown>, expected: string) {
+async function expectRevert(promise: Promise<unknown>, expected?: string) {
   try {
     await promise;
   } catch (error: any) {
-    if (!String(error.message).includes(expected)) throw error;
+    if (expected && !String(error.message).includes(expected)) throw error;
     return;
   }
-  throw new Error(`Expected revert including ${expected}`);
+  throw new Error(`Expected revert${expected ? ` including ${expected}` : ""}`);
+}
+
+async function buildCreateAuthorization(params: {
+  factory: any;
+  creator: any;
+  routeAuthority: any;
+  request: CampaignRequest;
+  deadline: bigint;
+  tradeRouteProfile?: number;
+  finalizeRouteProfile?: number;
+}): Promise<CreateRouteAuthorization> {
+  const { signCreateAuthorization } = await routeAuthorizationSignerPromise;
+  const { chainId } = await ethers.provider.getNetwork();
+  const tradeRouteProfile = params.tradeRouteProfile ?? Number(await params.factory.tradeRouteProfile());
+  const finalizeRouteProfile = params.finalizeRouteProfile ?? Number(await params.factory.finalizeRouteProfile());
+  const signature = await signCreateAuthorization({
+    signer: params.routeAuthority,
+    chainId,
+    factoryAddress: await params.factory.getAddress(),
+    creator: await params.creator.getAddress(),
+    request: params.request,
+    tradeRouteProfileId: tradeRouteProfile,
+    finalizeRouteProfileId: finalizeRouteProfile,
+    deadline: params.deadline,
+  });
+
+  return { tradeRouteProfile, finalizeRouteProfile, deadline: params.deadline, signature };
 }
 
 async function authorizedBuyExactTokens(params: {
@@ -76,12 +123,16 @@ async function authorizedBuyExactTokens(params: {
   amountOut: bigint;
   maxCost: bigint;
 }) {
+  const { signTradeAuthorization } = await routeAuthorizationSignerPromise;
+  const { chainId } = await ethers.provider.getNetwork();
   const deadline = (await latestTimestamp()) + 3600n;
-  const signature = await signTradeRoute({
-    campaign: params.campaign,
-    actor: await params.buyer.getAddress(),
+  const routeProfileId = Number(await params.campaign.tradeRouteProfile());
+  const signature = await signTradeAuthorization({
     signer: params.routeAuthority,
-    routeProfile: ROUTE_PROFILE_STANDARD_UNLINKED,
+    chainId,
+    campaignAddress: await params.campaign.getAddress(),
+    actor: await params.buyer.getAddress(),
+    routeProfileId,
     action: TRADE_AUTH_BUY_EXACT_TOKENS,
     amount: params.amountOut,
     limit: params.maxCost,
@@ -89,11 +140,9 @@ async function authorizedBuyExactTokens(params: {
   });
 
   await (
-    await params.campaign
-      .connect(params.buyer)
-      .buyExactTokensAuthorized(params.amountOut, params.maxCost, ROUTE_PROFILE_STANDARD_UNLINKED, deadline, signature, {
-        value: params.maxCost,
-      })
+    await params.campaign.connect(params.buyer).buyExactTokensAuthorized(params.amountOut, params.maxCost, routeProfileId, deadline, signature, {
+      value: params.maxCost,
+    })
   ).wait();
 }
 
@@ -136,29 +185,105 @@ async function main() {
     await (await factory.setRequireAuthorizedTrading(true)).wait();
   }
 
+  if (!(await factory.requireRouteAuthorization())) {
+    logStep("requiring authorized campaign creation for rehearsal campaign");
+    await (await factory.setRequireRouteAuthorization(true)).wait();
+  }
+
   if (!(await factory.live())) {
     logStep("enabling live mode");
     await (await factory.enableLive()).wait();
   }
 
-  const request = {
+  const request: CampaignRequest = {
     name: "Rehearsal Token",
     symbol: "RHRSL",
     logoURI: "ipfs://local-protocol-rehearsal",
     xAccount: "",
     website: "",
     extraLink: "",
-    basePrice: 0n,
-    priceSlope: 0n,
-    graduationTarget: 0n,
-    lpReceiver: ethers.ZeroAddress,
   };
 
-  logStep("creating campaign");
-  await (await factory.connect(creator).createCampaign(request)).wait();
+  const tradeRouteProfile = Number(await factory.tradeRouteProfile());
+  const finalizeRouteProfile = Number(await factory.finalizeRouteProfile());
+  const validDeadline = (await latestTimestamp()) + 3600n;
+  const unsignedAuthorization = { tradeRouteProfile, finalizeRouteProfile, deadline: validDeadline, signature: "0x" };
+
+  await expectRevert(
+    factory.connect(creator).createCampaignAuthorized(request, unsignedAuthorization),
+  );
+  logStep("unsigned campaign creation blocked");
+
+  const invalidSigner = ethers.Wallet.createRandom();
+  const invalidAuthorization = await buildCreateAuthorization({
+    factory,
+    creator,
+    routeAuthority: invalidSigner,
+    request,
+    deadline: validDeadline,
+    tradeRouteProfile,
+    finalizeRouteProfile,
+  });
+  await expectRevert(
+    factory.connect(creator).createCampaignAuthorized(request, invalidAuthorization),
+    "InvalidRouteAuthorization",
+  );
+  logStep("invalid route-authority signer blocked");
+
+  const expiredAuthorization = await buildCreateAuthorization({
+    factory,
+    creator,
+    routeAuthority,
+    request,
+    deadline: (await latestTimestamp()) - 1n,
+    tradeRouteProfile,
+    finalizeRouteProfile,
+  });
+  await expectRevert(
+    factory.connect(creator).createCampaignAuthorized(request, expiredAuthorization),
+    "RouteAuthorizationExpired",
+  );
+  logStep("expired campaign authorization blocked");
+
+  const createAuthorization = await buildCreateAuthorization({
+    factory,
+    creator,
+    routeAuthority,
+    request,
+    deadline: validDeadline,
+    tradeRouteProfile,
+    finalizeRouteProfile,
+  });
+
+  logStep("creating campaign through signed route", {
+    tradeRouteProfile,
+    finalizeRouteProfile,
+    deadline: validDeadline.toString(),
+  });
+  await (await factory.connect(creator).createCampaignAuthorized(request, createAuthorization)).wait();
+  await expectRevert(
+    factory.connect(creator).createCampaignAuthorized(request, createAuthorization),
+    "RouteAuthorizationReplayed",
+  );
+  logStep("replayed campaign authorization blocked");
+
   const campaignInfo = await factory.getCampaign(0n);
+  if (campaignInfo.creator.toLowerCase() !== (await creator.getAddress()).toLowerCase()) throw new Error("campaign creator mismatch");
+  if (campaignInfo.campaign === ethers.ZeroAddress) throw new Error("campaign address missing");
+  if (campaignInfo.token === ethers.ZeroAddress) throw new Error("campaign token address missing");
+  if (campaignInfo.name !== request.name || campaignInfo.symbol !== request.symbol || campaignInfo.logoURI !== request.logoURI) {
+    throw new Error("campaign metadata mismatch");
+  }
+
   const campaign = await ethers.getContractAt("LaunchCampaign", campaignInfo.campaign);
   const token = await ethers.getContractAt("LaunchToken", campaignInfo.token);
+  if (Number(await campaign.tradeRouteProfile()) !== tradeRouteProfile) throw new Error("campaign trade route profile mismatch");
+  if (Number(await campaign.finalizeRouteProfile()) !== finalizeRouteProfile) throw new Error("campaign finalize route profile mismatch");
+  logStep("authorized campaign creation verified", {
+    campaign: campaignInfo.campaign,
+    token: campaignInfo.token,
+    creator: campaignInfo.creator,
+  });
 
   const probeAmount = ethers.parseEther("1");
   const probeCost = await campaign.quoteBuyExactTokens(probeAmount);
