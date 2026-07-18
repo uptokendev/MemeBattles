@@ -39,6 +39,7 @@ interface ILaunchProtectionConfigSource {
 
 /// @notice Pump.fun inspired bonding curve launch campaign that targets a Topaz v2 volatile pool for final liquidity.
 contract LaunchCampaign is ReentrancyGuard, Ownable {
+    using ECDSA for bytes32;
     using SafeERC20 for IERC20;
 
     struct InitParams {
@@ -578,7 +579,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         }
         if (buyer == creator) {
             if (block.timestamp < creatorBuyLockUntil) revert CreatorBuyLocked();
-            if (creatorBuyCapWei > 0 && creatorBoughtWei + costNoFee > creatorBuyCapWei) revert CreatorBuyCapExceeded();
+            if (creatorBuyCapWei > 0 && creatorBoughtWei + costNoFee > creatorBuyCapExceeded();
         }
     }
 
@@ -662,170 +663,5 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         tokenInterface.forceApprove(address(router), 0);
         if (usedTokens == 0 || usedBnb == 0) revert LiquidityZero();
 
-        g.graduatedLiquidityTokens = usedTokens;
-        g.graduatedLiquidityBnb = usedBnb;
-        g.initialDexPrice = Math.mulDiv(usedBnb, WAD, usedTokens);
-        _requirePriceWithinTolerance(g.initialDexPrice, g.finalCurvePrice);
-
-        g.dexPair = ITopazV2Factory(router.poolFactory()).getPool(address(token), router.WETH(), false);
-        if (g.dexPair == address(0)) revert PairMissing();
-
-        g.burnedUnusedLpTokens = liquiditySupply - usedTokens;
-        if (g.burnedUnusedLpTokens > 0) token.burn(address(this), g.burnedUnusedLpTokens);
-
-        g.burnedUnsoldTokens = curveSupply - sold;
-        if (g.burnedUnsoldTokens > 0) token.burn(address(this), g.burnedUnsoldTokens);
-        if (creatorReserve > 0) tokenInterface.safeTransfer(owner(), creatorReserve);
-        uint256 creatorPayout = remainingAfterFee > usedBnb ? remainingAfterFee - usedBnb : 0;
-        if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
-        g.postBurnTotalSupply = token.totalSupply();
-
-        if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator, g.dexPair);
-        emit CampaignFinalized(
-            caller,
-            g.dexPair,
-            g.graduationBalance,
-            g.graduationOvershoot,
-            usedTokens,
-            usedBnb,
-            g.graduatedLiquidityLp,
-            protocolFee,
-            creatorPayout,
-            g.burnedUnsoldTokens,
-            g.burnedUnusedLpTokens,
-            g.finalCurvePrice,
-            g.initialDexPrice,
-            g.postBurnTotalSupply
-        );
-    }
-
-    function _fee(uint256 amountWei) internal view returns (uint256) {
-        if (protocolFeeBps == 0) return 0;
-        return (amountWei * protocolFeeBps) / MAX_BPS;
-    }
-
-    function _feeSplit(uint256 amountWei) internal view returns (uint256 totalFeeWei, uint256 protocolNetFeeWei, uint256 leagueFeeWei) {
-        totalFeeWei = _fee(amountWei);
-        if (totalFeeWei == 0) return (0, 0, 0);
-        leagueFeeWei = (amountWei * leagueFeeBps) / MAX_BPS;
-        if (leagueReceiver == address(0) || leagueFeeWei == 0) return (totalFeeWei, totalFeeWei, 0);
-        if (leagueFeeWei > totalFeeWei) leagueFeeWei = totalFeeWei;
-        protocolNetFeeWei = totalFeeWei - leagueFeeWei;
-    }
-
-    function _useUnifiedRewardRouter() internal view returns (bool) {
-        address receiver = feeRecipient;
-        if (receiver == address(0) || receiver != leagueReceiver) return false;
-        uint256 size;
-        assembly {
-            size := extcodesize(receiver)
-        }
-        return size > 0;
-    }
-
-    function _routeFeeOrSendLegacy(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount) internal {
-        _routeFeeOrSendLegacyWithProfile(feeAmount, routeKind, feeBaseAmount, _routeProfileForKind(routeKind));
-    }
-
-    function _routeFeeOrSendLegacyWithProfile(uint256 feeAmount, uint8 routeKind, uint256 feeBaseAmount, uint8 routeProfile) internal {
-        if (feeAmount == 0) return;
-        if (_useUnifiedRewardRouter()) {
-            try IPhase1TreasuryRouter(payable(feeRecipient)).route{value: feeAmount}(routeKind, routeProfile) {
-                return;
-            } catch {
-                _escrowNativeFee(feeRecipient, feeAmount);
-                return;
-            }
-        }
-        if (routeKind == ROUTE_KIND_FINALIZE) {
-            if (feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), feeAmount);
-            return;
-        }
-        (, uint256 protocolNet, uint256 leagueFee) = _feeSplit(feeBaseAmount);
-        if (protocolNet > 0 && feeRecipient != address(0)) _sendNativeFee(payable(feeRecipient), protocolNet);
-        if (leagueFee > 0) _sendNativeFee(payable(leagueReceiver), leagueFee);
-    }
-
-    function _routeProfileForKind(uint8 routeKind) internal view returns (uint8) {
-        if (routeKind == ROUTE_KIND_FINALIZE) return finalizeRouteProfile;
-        return tradeRouteProfile;
-    }
-
-    function _verifyTradeRouteAuthorization(
-        address actor,
-        uint8 routeProfile,
-        uint8 action,
-        uint256 amount,
-        uint256 limit,
-        uint64 deadline,
-        bytes calldata signature
-    ) internal {
-        if (deadline < block.timestamp) revert RouteAuthExpired();
-        if (!_isValidRouteProfile(routeProfile)) revert InvalidTradeRouteProfile();
-        address authority = IRouteAuthoritySource(factory).routeAuthority();
-        if (authority == address(0)) revert RouteAuthUnavailable();
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
-            keccak256(abi.encode("MWZ_ROUTE_TRADE_AUTH", block.chainid, address(this), actor, routeProfile, action, amount, limit, deadline))
-        );
-        if (digest.recover(signature) != authority) revert BadRouteAuth();
-        if (usedRouteAuthorizations[digest]) revert RouteAuthReplayed();
-        usedRouteAuthorizations[digest] = true;
-    }
-
-    function _currentPrice() internal view returns (uint256) {
-        return basePrice + Math.mulDiv(priceSlope, sold, WAD);
-    }
-
-    function _requirePriceWithinTolerance(uint256 actualPrice, uint256 expectedPrice) internal pure {
-        uint256 diff = actualPrice > expectedPrice ? actualPrice - expectedPrice : expectedPrice - actualPrice;
-        if (Math.mulDiv(diff, MAX_BPS, expectedPrice) > GRADUATION_PRICE_TOLERANCE_BPS) revert DexPriceDrift();
-    }
-
-    function _quoteBuyNoFee(uint256 amountOut) internal view returns (uint256) {
-        return _area(sold + amountOut) - _area(sold);
-    }
-
-    function _quoteSellNoFee(uint256 amountIn) internal view returns (uint256) {
-        require(amountIn <= sold, "exceeds sold");
-        return _area(sold) - _area(sold - amountIn);
-    }
-
-    function _isValidRouteProfile(uint8 profile) internal pure returns (bool) {
-        return profile == ROUTE_PROFILE_STANDARD_LINKED || profile == ROUTE_PROFILE_STANDARD_UNLINKED || profile == ROUTE_PROFILE_OG_LINKED;
-    }
-
-    function _area(uint256 x) internal view returns (uint256) {
-        uint256 linear = Math.mulDiv(x, basePrice, WAD);
-        uint256 square;
-        unchecked {
-            square = x * x;
-        }
-        uint256 slopeTerm = Math.mulDiv(priceSlope, square, 2 * WAD * WAD);
-        return linear + slopeTerm;
-    }
-
-    function _sendNativeFee(address payable to, uint256 value) private {
-        if (value == 0) return;
-        (bool ok, ) = to.call{value: value}("");
-        if (!ok) _escrowNativeFee(to, value);
-    }
-
-    function _escrowNativeFee(address to, uint256 value) private {
-        pendingNative[to] += value;
-        pendingNativeTotal += value;
-        emit NativeEscrowed(to, value);
-    }
-
-    function _availableNativeBalance() internal view returns (uint256) {
-        uint256 balance = address(this).balance;
-        uint256 reserved = pendingNativeTotal;
-        if (reserved >= balance) return 0;
-        return balance - reserved;
-    }
-
-    function _sendNative(address to, uint256 value) private {
-        if (value == 0) return;
-        (bool success, ) = to.call{value: value}("");
-        if (!success) revert NativeTransferFailed();
-    }
-}
+    function _fee(uint256 amountWei) {
+Error: syntax error: line 611, column 104
