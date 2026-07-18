@@ -13,6 +13,10 @@ interface ITopazPoolFeeSource {
     function factory() external view returns (address);
 }
 
+interface ITopazPoolFactory {
+    function getFee(address pool, bool stable) external view returns (uint256);
+}
+
 interface ILpRevenueTreasuryRouter {
     function routeLpNative() external payable;
     function routeLpToken(address token, uint256 amount) external;
@@ -25,6 +29,7 @@ contract PermanentLpLocker is ReentrancyGuard {
 
     uint16 public constant CREATOR_FEE_BPS = 8_000;
     uint16 public constant PROTOCOL_FEE_BPS = 2_000;
+    uint16 public constant REQUIRED_POOL_FEE_BPS = 100;
     uint16 internal constant FEE_BPS = 10_000;
 
     struct PoolRegistration {
@@ -91,6 +96,7 @@ contract PermanentLpLocker is ReentrancyGuard {
     error RegisteredFeeAssetRecoveryBlocked();
     error InvalidTopazFactory();
     error StablePoolUnsupported();
+    error InvalidTradingFee();
     error TokenPairMismatch();
     error LockedLpMissing();
     error LpPrincipalChanged();
@@ -138,6 +144,9 @@ contract PermanentLpLocker is ReentrancyGuard {
         address configuredFactory = topazFactory;
         if (configuredFactory != address(0) && topazPool.factory() != configuredFactory) revert InvalidTopazFactory();
         if (topazPool.stable()) revert StablePoolUnsupported();
+        if (configuredFactory != address(0) && ITopazPoolFactory(configuredFactory).getFee(pool, false) != REQUIRED_POOL_FEE_BPS) {
+            revert InvalidTradingFee();
+        }
 
         address token0_ = topazPool.token0();
         address token1_ = topazPool.token1();
