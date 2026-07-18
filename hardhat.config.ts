@@ -6,16 +6,17 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC_URL || process.env.BSC_TESTNET_RPC || "";
+const deployerPrivateKey = process.env.PRIVATE_KEY_DEPLOY || process.env.DEPLOYER_PK || "";
+
 const config: HardhatUserConfig = {
   networks: {
     hardhat: {},
 
     // --- Added for deployments ---
     bscTestnet: {
-      url: process.env.BSC_TESTNET_RPC || "",
-      accounts: process.env.DEPLOYER_PK
-        ? [process.env.DEPLOYER_PK.startsWith("0x") ? process.env.DEPLOYER_PK : `0x${process.env.DEPLOYER_PK}`]
-        : [],
+      url: bscTestnetRpcUrl,
+      accounts: deployerPrivateKey ? [deployerPrivateKey.startsWith("0x") ? deployerPrivateKey : `0x${deployerPrivateKey}`] : [],
       chainId: 97,
     },
   },
