@@ -7,96 +7,8 @@ const STANDARD_UNLINKED = 1;
 const OG_LINKED = 2;
 const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
 
-function asBigInt(value: unknown) {
-  return BigInt(value as string | number | bigint);
-}
-
-function hashCreateRouteRequest(request: any) {
-  const coder = ethers.AbiCoder.defaultAbiCoder();
-  return ethers.keccak256(
-    coder.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256", "uint256", "uint256", "address"],
-      [
-        ethers.keccak256(ethers.toUtf8Bytes(request.name)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.symbol)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.logoURI)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.xAccount)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.website)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.extraLink)),
-        asBigInt(request.basePrice),
-        asBigInt(request.priceSlope),
-        asBigInt(request.graduationTarget),
-        request.lpReceiver,
-      ],
-    ),
-  );
-}
-
-async function signCreateRouteAuth({
-  signer,
-  chainId,
-  factory,
-  creator,
-  request,
-  tradeRouteProfile,
-  finalizeRouteProfile,
-  deadline,
-}: {
-  signer: any;
-  chainId: bigint;
-  factory: string;
-  creator: string;
-  request: any;
-  tradeRouteProfile: number;
-  finalizeRouteProfile: number;
-  deadline: bigint;
-}) {
-  const digest = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
-      [
-        "MWZ_CREATE_ROUTE_AUTH",
-        chainId,
-        factory,
-        creator,
-        hashCreateRouteRequest(request),
-        tradeRouteProfile,
-        finalizeRouteProfile,
-        deadline,
-      ],
-    ),
-  );
-  return signer.signMessage(ethers.getBytes(digest));
-}
-
-async function signTradeRouteAuth({
-  signer,
-  chainId,
-  campaign,
-  actor,
-  routeProfile,
-  action,
-  amount,
-  limit,
-  deadline,
-}: {
-  signer: any;
-  chainId: bigint;
-  campaign: string;
-  actor: string;
-  routeProfile: number;
-  action: number;
-  amount: bigint;
-  limit: bigint;
-  deadline: bigint;
-}) {
-  const digest = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"],
-      ["MWZ_ROUTE_TRADE_AUTH", chainId, campaign, actor, routeProfile, action, amount, limit, deadline],
-    ),
-  );
-  return signer.signMessage(ethers.getBytes(digest));
+async function signerHelpers() {
+  return import("../frontend/api/dev-fix/routeAuthorizationSigner.js");
 }
 
 async function currentDeadline(offset = 3600) {
@@ -107,13 +19,11 @@ async function currentDeadline(offset = 3600) {
 
 async function deployFixture() {
   const [admin, routeAuthority, creator, trader] = await ethers.getSigners();
-
   const { factory, treasuryRouter: treasury } = await deployRoutedLaunchFactory(admin);
   await factory.connect(admin).setRouteAuthority(routeAuthority.address);
   await factory.connect(admin).enableLive();
 
   const chainId = BigInt((await ethers.provider.getNetwork()).chainId);
-
   const request = {
     name: "MemeWarzone Test",
     symbol: "MWZT",
@@ -121,23 +31,38 @@ async function deployFixture() {
     xAccount: "",
     website: "",
     extraLink: "",
-    basePrice: 0,
-    priceSlope: 0,
-    graduationTarget: 0,
-    lpReceiver: ethers.ZeroAddress,
-    initialBuyBnbWei: 0,
   };
 
-  return {
-    admin,
-    routeAuthority,
-    creator,
-    trader,
-    factory,
-    treasury,
+  return { admin, routeAuthority, creator, trader, factory, treasury, chainId, request };
+}
+
+async function signCreateRouteAuth({ signer, chainId, factory, creator, request, tradeRouteProfile, finalizeRouteProfile, deadline }: any) {
+  const { signCreateAuthorization } = await signerHelpers();
+  return signCreateAuthorization({
+    signer,
     chainId,
+    factoryAddress: factory,
+    creator,
     request,
-  };
+    tradeRouteProfileId: tradeRouteProfile,
+    finalizeRouteProfileId: finalizeRouteProfile,
+    deadline,
+  });
+}
+
+async function signTradeRouteAuth({ signer, chainId, campaign, actor, routeProfile, action, amount, limit, deadline }: any) {
+  const { signTradeAuthorization } = await signerHelpers();
+  return signTradeAuthorization({
+    signer,
+    chainId,
+    campaignAddress: campaign,
+    actor,
+    routeProfileId: routeProfile,
+    action,
+    amount,
+    limit,
+    deadline,
+  });
 }
 
 async function createAuthorizedCampaign(fixture: Awaited<ReturnType<typeof deployFixture>>, tradeProfile: number, finalizeProfile: number) {
@@ -184,34 +109,15 @@ async function createAuthorizedCampaign(fixture: Awaited<ReturnType<typeof deplo
 
 describe("Phase 6 route authorization alignment", function () {
   it("uses the backend route-profile ID order in factory and treasury", async function () {
-    const fixture = await deployFixture();
-    const { factory, treasury } = fixture;
+    const { factory, treasury } = await deployFixture();
 
     expect(await factory.ROUTE_PROFILE_STANDARD_LINKED()).to.equal(STANDARD_LINKED);
     expect(await factory.ROUTE_PROFILE_STANDARD_UNLINKED()).to.equal(STANDARD_UNLINKED);
     expect(await factory.ROUTE_PROFILE_OG_LINKED()).to.equal(OG_LINKED);
 
-    expect(await treasury.previewRoute(10_000n, 0, STANDARD_LINKED)).to.deep.equal([
-      3750n,
-      1250n,
-      0n,
-      250n,
-      4750n,
-    ]);
-    expect(await treasury.previewRoute(10_000n, 0, STANDARD_UNLINKED)).to.deep.equal([
-      3750n,
-      0n,
-      1500n,
-      0n,
-      4750n,
-    ]);
-    expect(await treasury.previewRoute(10_000n, 0, OG_LINKED)).to.deep.equal([
-      3750n,
-      1500n,
-      0n,
-      250n,
-      4500n,
-    ]);
+    expect(await treasury.previewRoute(10_000n, 0, STANDARD_LINKED)).to.deep.equal([3750n, 1250n, 0n, 250n, 4750n]);
+    expect(await treasury.previewRoute(10_000n, 0, STANDARD_UNLINKED)).to.deep.equal([3750n, 0n, 1500n, 0n, 4750n]);
+    expect(await treasury.previewRoute(10_000n, 0, OG_LINKED)).to.deep.equal([3750n, 1500n, 0n, 250n, 4500n]);
   });
 
   for (const [label, tradeProfile, finalizeProfile] of [
@@ -222,7 +128,6 @@ describe("Phase 6 route authorization alignment", function () {
     it(`creates an authorized campaign with ${label} route profiles`, async function () {
       const fixture = await deployFixture();
       const { campaign } = await createAuthorizedCampaign(fixture, tradeProfile, finalizeProfile);
-
       expect(await campaign.tradeRouteProfile()).to.equal(tradeProfile);
       expect(await campaign.finalizeRouteProfile()).to.equal(finalizeProfile);
     });
