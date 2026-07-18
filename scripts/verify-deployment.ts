@@ -42,21 +42,38 @@ export async function assertCode(label: string, address: string) {
   console.log(`[verify] ${label} code: ok`);
 }
 
+async function readAddressGetter(label: string, address: string, candidates: string[]) {
+  const errors: string[] = [];
+  for (const candidate of candidates) {
+    const contract = new ethers.Contract(address, [`function ${candidate}() view returns (address)`], ethers.provider);
+    try {
+      const value = await contract[candidate]();
+      assertAddress(`${label}.${candidate}`, value);
+      console.log(`[verify] ${label}.${candidate}: ok`);
+      return { name: candidate, value };
+    } catch (error: any) {
+      errors.push(`${candidate}: ${error?.message ?? String(error)}`);
+    }
+  }
+  throw new Error(`${label}: ${address} does not expose any of ${candidates.join(", ")}. ${errors.join(" | ")}`);
+}
+
 export async function assertTopazRouter(label: string, address: string) {
   await assertCode(label, address);
-  const router = await ethers.getContractAt("ITopazRouter02", address);
-  let poolFactory: string;
-  let wrappedNative: string;
-  try {
-    poolFactory = await router.poolFactory();
-    wrappedNative = await router.WETH();
-  } catch {
-    throw new Error(`${label}: ${address} does not expose the Topaz router poolFactory()/WETH() interface`);
-  }
-  assertAddress(`${label}.poolFactory`, poolFactory);
-  assertAddress(`${label}.WETH`, wrappedNative);
-  await assertCode(`${label}.poolFactory`, poolFactory);
-  console.log(`[verify] ${label} Topaz interface: ok`);
+  const poolFactory = await readAddressGetter(label, address, ["defaultFactory", "poolFactory"]);
+  const wrappedNative = await readAddressGetter(label, address, ["weth", "WETH"]);
+
+  await assertCode(`${label}.${poolFactory.name}`, poolFactory.value);
+  await assertCode(`${label}.${wrappedNative.name}`, wrappedNative.value);
+
+  const factory = new ethers.Contract(
+    poolFactory.value,
+    ["function getFee(address pool, bool stable) view returns (uint256)"],
+    ethers.provider
+  );
+  const volatileFeeBps = await factory.getFee(ethers.ZeroAddress, false);
+  assertBigIntEq(`${label}.${poolFactory.name}.volatileFeeBps`, volatileFeeBps, 100n);
+  console.log(`[verify] ${label} Minimal Topaz interface: ok`);
 }
 
 export function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
