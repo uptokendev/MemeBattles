@@ -15,10 +15,6 @@ const sampleRequest = {
   xAccount: "x",
   website: "https://example.test",
   extraLink: "https://example.test/extra",
-  basePrice: 123n,
-  priceSlope: 456n,
-  graduationTarget: 789n,
-  lpReceiver: "0x0000000000000000000000000000000000000004",
 };
 
 describe("route authority verifier helpers", function () {
@@ -50,10 +46,6 @@ describe("route authority verifier helpers", function () {
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.website)),
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.extraLink)),
-        sampleRequest.basePrice,
-        sampleRequest.priceSlope,
-        sampleRequest.graduationTarget,
-        sampleRequest.lpReceiver,
       ])
     );
 
@@ -188,12 +180,7 @@ describe("route authority verifier helpers", function () {
 
     let message = "";
     try {
-      await verifier.assertSignerRoundTrip(
-        wallet,
-        "0x00000000000000000000000000000000000000AA",
-        digest,
-        "trade route auth"
-      );
+      await verifier.assertSignerRoundTrip(wallet, "0x00000000000000000000000000000000000000AA", digest, "trade route auth");
     } catch (error: any) {
       message = error.message;
     }
