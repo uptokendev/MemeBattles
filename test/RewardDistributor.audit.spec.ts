@@ -26,6 +26,7 @@ describe("RewardDistributor audit hardening", function () {
     const excessAmount = ethers.parseEther("0.25");
     const batchId = ethers.id("direct-excess");
     const root = leafFor(await user.getAddress(), batchAmount);
+    const recoveryAddress = await recovery.getAddress();
 
     await distributor.connect(owner).createBatch(batchId, root, 0, { value: batchAmount });
     await owner.sendTransaction({ to: await distributor.getAddress(), value: excessAmount });
@@ -37,12 +38,12 @@ describe("RewardDistributor audit hardening", function () {
       distributor,
       "ZeroAddress"
     );
-    await expect(distributor.connect(owner).rescueExcessNative(await recovery.getAddress(), excessAmount + 1n)).to.be.revertedWithCustomError(
+    await expect(distributor.connect(owner).rescueExcessNative(recoveryAddress, excessAmount + 1n)).to.be.revertedWithCustomError(
       distributor,
       "InsufficientExcessNative"
     );
 
-    await expect(() => distributor.connect(owner).rescueExcessNative(await recovery.getAddress(), excessAmount)).to.changeEtherBalances(
+    await expect(() => distributor.connect(owner).rescueExcessNative(recoveryAddress, excessAmount)).to.changeEtherBalances(
       [distributor, recovery],
       [-excessAmount, excessAmount]
     );
