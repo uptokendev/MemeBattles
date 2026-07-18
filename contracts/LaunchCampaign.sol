@@ -649,6 +649,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             emit GraduationLiquidityCapped(desiredLiquidityTokens, lpTokensDesired, desiredLiquidityValue, liquidityValue);
         }
 
+        // Production Topaz pulls from the adapter, so the launch token must allow the adapter-to-pool transfer during this atomic handoff.
+        token.enableTrading();
         tokenInterface.forceApprove(address(router), lpTokensDesired);
         (usedTokens, usedBnb, g.graduatedLiquidityLp) = router.addLiquidityETH{value: liquidityValue}(
             address(token),
@@ -679,7 +681,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint256 creatorPayout = remainingAfterFee > usedBnb ? remainingAfterFee - usedBnb : 0;
         if (creatorPayout > 0) _sendNative(owner(), creatorPayout);
         g.postBurnTotalSupply = token.totalSupply();
-        token.enableTrading();
 
         if (factory != address(0)) ILaunchFactoryGraduationNotify(factory).notifyCampaignGraduated(creator, g.dexPair);
         emit CampaignFinalized(
