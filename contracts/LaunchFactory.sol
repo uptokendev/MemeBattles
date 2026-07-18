@@ -41,6 +41,7 @@ contract LaunchFactory is Ownable {
     error FactoryLocked();
     error InvalidRouteProfile();
     error RouteAuthorityZero();
+    error RouteAuthorizationRequired();
     error RouteAuthorizationExpired();
     error InvalidRouteAuthorization();
     error RouteAuthorizationReplayed();
@@ -106,6 +107,7 @@ contract LaunchFactory is Ownable {
     bool public globalPaused;
     bool public createPaused;
     bool public requireAuthorizedTrading;
+    bool public requireRouteAuthorization;
     uint256 public launchProtectionBlocks;
     uint256 public launchProtectionMaxBuyWei;
     uint256 public launchProtectionMaxWalletWei;
@@ -154,6 +156,7 @@ contract LaunchFactory is Ownable {
     event CreatePauseUpdated(bool paused);
     event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
     event RequireAuthorizedTradingUpdated(bool required);
+    event RequireRouteAuthorizationUpdated(bool required);
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
     event CampaignGraduated(address indexed campaign, address indexed creator, address indexed lpToken, address locker);
 
@@ -193,7 +196,8 @@ contract LaunchFactory is Ownable {
         protocolFeeBps = 200;
         tradeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
         finalizeRouteProfile = ROUTE_PROFILE_STANDARD_UNLINKED;
-        requireAuthorizedTrading = false;
+        requireAuthorizedTrading = true;
+        requireRouteAuthorization = true;
     }
 
     function enableLive() external onlyOwner {
@@ -205,6 +209,7 @@ contract LaunchFactory is Ownable {
     receive() external payable {}
 
     function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
+        if (requireRouteAuthorization) revert RouteAuthorizationRequired();
         return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
     }
 
@@ -377,6 +382,8 @@ contract LaunchFactory is Ownable {
     }
 
     function setRegistries(address newCreatorRegistry, address newRiskRegistry) external onlyOwner {
+        if (newCreatorRegistry != address(0) && newCreatorRegistry.code.length == 0) revert ContractCodeMissing();
+        if (newRiskRegistry != address(0) && newRiskRegistry.code.length == 0) revert ContractCodeMissing();
         creatorRegistry = CreatorRegistry(newCreatorRegistry);
         riskRegistry = RiskRegistry(newRiskRegistry);
         emit RegistriesUpdated(newCreatorRegistry, newRiskRegistry);
@@ -395,6 +402,11 @@ contract LaunchFactory is Ownable {
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
         requireAuthorizedTrading = required;
         emit RequireAuthorizedTradingUpdated(required);
+    }
+
+    function setRequireRouteAuthorization(bool required) external onlyOwner {
+        requireRouteAuthorization = required;
+        emit RequireRouteAuthorizationUpdated(required);
     }
 
     function setCampaignPauses(address campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused) external onlyOwner {
