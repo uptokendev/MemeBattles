@@ -8,6 +8,7 @@ const checks = [
   ["bscTestnet deploy env", ["run", "deploy:check-env:bsc-testnet"]],
   ["deployment wiring", ["run", "verify:deployment:bsc-testnet"]],
   ["route authority", ["run", "verify:route-authority:bsc-testnet"]],
+  ["Topaz graduation acceptance report", ["run", "testnet:topaz-graduation"]],
   ["indexer schema", ["run", "indexer:schema"]],
   ["indexer manifest", ["run", "indexer:manifest:bsc-testnet"]],
   ["monitoring readiness", ["run", "monitor:readiness:bsc-testnet"]],
