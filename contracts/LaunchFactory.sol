@@ -42,6 +42,8 @@ contract LaunchFactory is Ownable {
     error InvalidRouteProfile();
     error RouteAuthorityZero();
     error RouteAuthorizationRequired();
+    error SecurityDefaultsDisabled();
+    error SecurityDefaultsLocked();
     error RouteAuthorizationExpired();
     error InvalidRouteAuthorization();
     error RouteAuthorizationReplayed();
@@ -108,6 +110,7 @@ contract LaunchFactory is Ownable {
     bool public createPaused;
     bool public requireAuthorizedTrading;
     bool public requireRouteAuthorization;
+    bool public securityDefaultsLocked;
     uint256 public launchProtectionBlocks;
     uint256 public launchProtectionMaxBuyWei;
     uint256 public launchProtectionMaxWalletWei;
@@ -157,6 +160,7 @@ contract LaunchFactory is Ownable {
     event RegistriesUpdated(address indexed creatorRegistry, address indexed riskRegistry);
     event RequireAuthorizedTradingUpdated(bool required);
     event RequireRouteAuthorizationUpdated(bool required);
+    event SecurityDefaultsLockedEnabled();
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
     event CampaignGraduated(address indexed campaign, address indexed creator, address indexed lpToken, address locker);
 
@@ -204,6 +208,13 @@ contract LaunchFactory is Ownable {
         if (live) revert AlreadyLive();
         live = true;
         emit LiveEnabled(uint64(block.timestamp));
+    }
+
+    function lockSecurityDefaults() external onlyOwner {
+        if (securityDefaultsLocked) revert SecurityDefaultsLocked();
+        if (!requireRouteAuthorization || !requireAuthorizedTrading) revert SecurityDefaultsDisabled();
+        securityDefaultsLocked = true;
+        emit SecurityDefaultsLockedEnabled();
     }
 
     receive() external payable {}
@@ -400,11 +411,13 @@ contract LaunchFactory is Ownable {
     }
 
     function setRequireAuthorizedTrading(bool required) external onlyOwner {
+        if (securityDefaultsLocked && !required) revert SecurityDefaultsLocked();
         requireAuthorizedTrading = required;
         emit RequireAuthorizedTradingUpdated(required);
     }
 
     function setRequireRouteAuthorization(bool required) external onlyOwner {
+        if (securityDefaultsLocked && !required) revert SecurityDefaultsLocked();
         requireRouteAuthorization = required;
         emit RequireRouteAuthorizationUpdated(required);
     }
@@ -415,6 +428,7 @@ contract LaunchFactory is Ownable {
     }
 
     function setCampaignRequireAuthorizedTrading(address campaign, bool required) external onlyOwner {
+        if (securityDefaultsLocked && !required) revert SecurityDefaultsLocked();
         LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
     }
 
