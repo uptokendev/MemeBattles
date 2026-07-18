@@ -11,6 +11,8 @@
     "deploy:verify": "hardhat run scripts/deploy-and-verify.ts",
     "deploy:verify:localhost": "hardhat run scripts/deploy-and-verify.ts --network localhost",
     "deploy:verify:bsc-testnet": "hardhat run scripts/deploy-and-verify.ts --network bscTestnet",
+    "deploy:with-topaz-manifest": "hardhat run scripts/deploy-with-topaz-manifest.ts",
+    "deploy:with-topaz-manifest:bsc-testnet": "hardhat run scripts/deploy-with-topaz-manifest.ts --network bscTestnet",
     "deploy:topaz-rehearsal": "hardhat run scripts/deploy-topaz-rehearsal.ts",
     "deploy:topaz-rehearsal:localhost": "hardhat run scripts/deploy-topaz-rehearsal.ts --network localhost",
     "deploy:topaz-rehearsal:bsc-testnet": "hardhat run scripts/deploy-topaz-rehearsal.ts --network bscTestnet",
