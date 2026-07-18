@@ -5,8 +5,12 @@ import { loadDeployment, resolveContracts } from "./verify-deployment";
 
 const REQUIRED_CHAIN_ID = 97n;
 const REQUIRED_VOLATILE_FEE_BPS = 100n;
+const BPS_DENOMINATOR = 10000n;
+const CREATOR_SHARE_BPS = 8000n;
+const PROTOCOL_SHARE_BPS = 2000n;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const TX_RE = /^0x[a-fA-F0-9]{64}$/;
+const UINT_RE = /^\d+$/;
 
 type AcceptanceReport = {
   chainId: number;
@@ -187,6 +191,28 @@ function expectTruthy(report: AcceptanceReport, label: string, value: unknown) {
   if (!ok) report.errors.push(`${label}: expected a value`);
 }
 
+function parseAmount(report: AcceptanceReport, label: string, value: string) {
+  const ok = UINT_RE.test(value);
+  report.checks[`amount.${label}.format`] = ok;
+  if (!ok) {
+    report.errors.push(`${label} must be an unsigned integer string in wei/base units: ${value || "<empty>"}`);
+    return null;
+  }
+  return BigInt(value);
+}
+
+function expectAmountEqual(report: AcceptanceReport, label: string, actual: bigint, expected: bigint) {
+  const ok = actual === expected;
+  report.checks[label] = ok;
+  if (!ok) report.errors.push(`${label}: expected ${expected.toString()}, got ${actual.toString()}`);
+}
+
+function expectAmountPositive(report: AcceptanceReport, label: string, value: bigint) {
+  const ok = value > 0n;
+  report.checks[label] = ok;
+  if (!ok) report.errors.push(`${label}: expected a value greater than zero`);
+}
+
 async function validateTx(report: AcceptanceReport, label: string, txHash: string) {
   if (!txHash) return;
   if (!TX_RE.test(txHash)) {
@@ -243,9 +269,11 @@ async function enrichPoolEvidence(report: AcceptanceReport) {
   if (token0.toLowerCase() === report.topazWbnb.toLowerCase()) {
     report.currentWbnbReserve = reserve0.toString();
     report.currentTokenReserve = reserve1.toString();
+    report.checks["pool.hasWbnb"] = true;
   } else if (token1.toLowerCase() === report.topazWbnb.toLowerCase()) {
     report.currentTokenReserve = reserve0.toString();
     report.currentWbnbReserve = reserve1.toString();
+    report.checks["pool.hasWbnb"] = true;
   } else {
     report.errors.push(`Graduated pool ${report.graduatedPool} does not pair with WBNB ${report.topazWbnb}`);
     report.checks["pool.hasWbnb"] = false;
@@ -294,9 +322,53 @@ function requireEvidenceFields(report: AcceptanceReport) {
     "creatorWbnbReceived",
     "protocolTokenReceived",
     "protocolWbnbReceived",
+    "finalCurvePrice",
+    "initialDexPrice",
   ] as Array<keyof AcceptanceReport>) {
     expectTruthy(report, `evidence.${String(key)}`, report[key]);
   }
+}
+
+function validateStrictEvidenceValues(report: AcceptanceReport) {
+  if (!report.evidenceRequired) return;
+
+  const lpBefore = parseAmount(report, "lockerLpBalanceBeforeTrades", report.lockerLpBalanceBeforeTrades);
+  const lpAfter = parseAmount(report, "lockerLpBalanceAfterHarvest", report.lockerLpBalanceAfterHarvest);
+  if (lpBefore !== null && lpAfter !== null) {
+    expectAmountPositive(report, "locker.lpBefore.positive", lpBefore);
+    expectAmountEqual(report, "locker.lpPrincipalPreserved", lpAfter, lpBefore);
+  }
+
+  if (report.currentLockerLpBalance && lpAfter !== null) {
+    const currentLp = parseAmount(report, "currentLockerLpBalance", report.currentLockerLpBalance);
+    if (currentLp !== null) expectAmountEqual(report, "locker.currentLpMatchesAfterHarvest", currentLp, lpAfter);
+  }
+
+  const claimedToken = parseAmount(report, "claimedToken", report.claimedToken);
+  const claimedWbnb = parseAmount(report, "claimedWbnb", report.claimedWbnb);
+  const creatorToken = parseAmount(report, "creatorTokenReceived", report.creatorTokenReceived);
+  const creatorWbnb = parseAmount(report, "creatorWbnbReceived", report.creatorWbnbReceived);
+  const protocolToken = parseAmount(report, "protocolTokenReceived", report.protocolTokenReceived);
+  const protocolWbnb = parseAmount(report, "protocolWbnbReceived", report.protocolWbnbReceived);
+
+  if (claimedToken !== null) expectAmountPositive(report, "fees.claimedToken.positive", claimedToken);
+  if (claimedWbnb !== null) expectAmountPositive(report, "fees.claimedWbnb.positive", claimedWbnb);
+
+  if (claimedToken !== null && creatorToken !== null && protocolToken !== null) {
+    const expectedCreator = (claimedToken * CREATOR_SHARE_BPS) / BPS_DENOMINATOR;
+    expectAmountEqual(report, "fees.creatorToken80Pct", creatorToken, expectedCreator);
+    expectAmountEqual(report, "fees.protocolToken20Pct", protocolToken, claimedToken - expectedCreator);
+    expectAmountEqual(report, "fees.tokenReceiptsSum", creatorToken + protocolToken, claimedToken);
+  }
+
+  if (claimedWbnb !== null && creatorWbnb !== null && protocolWbnb !== null) {
+    const expectedCreator = (claimedWbnb * CREATOR_SHARE_BPS) / BPS_DENOMINATOR;
+    expectAmountEqual(report, "fees.creatorWbnb80Pct", creatorWbnb, expectedCreator);
+    expectAmountEqual(report, "fees.protocolWbnb20Pct", protocolWbnb, claimedWbnb - expectedCreator);
+    expectAmountEqual(report, "fees.wbnbReceiptsSum", creatorWbnb + protocolWbnb, claimedWbnb);
+  }
+
+  expectEqual(report, "price.finalCurveMatchesInitialDex", report.finalCurvePrice, report.initialDexPrice);
 }
 
 async function main() {
@@ -349,6 +421,7 @@ async function main() {
 
     await enrichOptionalEvidence(report);
     requireEvidenceFields(report);
+    validateStrictEvidenceValues(report);
     report.passed = Object.values(report.checks).every(Boolean) && report.errors.length === 0;
   } catch (error: any) {
     report.errors.push(error?.message ?? String(error));
