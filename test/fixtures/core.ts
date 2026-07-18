@@ -90,6 +90,11 @@ export async function deployCoreFixture(): Promise<CoreFixture> {
   await factory.waitForDeployment();
   const permanentLpLocker = await ethers.getContractAt("PermanentLpLocker", await factory.permanentLpLocker());
 
+  // Most historical contract tests exercise direct campaign creation and direct trades.
+  // Production deployments keep both authorization gates enabled by default.
+  await factory.connect(owner).setRequireRouteAuthorization(false);
+  await factory.connect(owner).setRequireAuthorizedTrading(false);
+
   // Use small, test-friendly config. With the fixture oracle at $1/native,
   // the 1 USD threshold maps to the old 1 native graduation target.
   await factory.connect(owner).setConfig({
