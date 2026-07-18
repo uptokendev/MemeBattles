@@ -110,6 +110,36 @@ async function resolveRouterAddress(deployerAddress: string): Promise<string> {
   );
 }
 
+async function readAddressGetter(address: string, getter: string): Promise<string | null> {
+  const contract = new ethers.Contract(address, [`function ${getter}() view returns (address)`], ethers.provider);
+  try {
+    const value = await contract[getter]();
+    return value && value !== ethers.ZeroAddress && (await hasContractCode(value)) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLaunchRouter(topazRouterAddress: string) {
+  const productionFactory = await readAddressGetter(topazRouterAddress, "defaultFactory");
+  const productionWrapped = await readAddressGetter(topazRouterAddress, "weth");
+  if (productionFactory && productionWrapped) {
+    const Adapter = await ethers.getContractFactory("TopazRouterAdapter");
+    const adapter = await Adapter.deploy(topazRouterAddress);
+    await adapter.waitForDeployment();
+    const adapterAddress = await adapter.getAddress();
+    console.log("TopazRouterAdapter:", adapterAddress);
+    return { launchRouterAddress: adapterAddress, topazRouterAdapter: adapterAddress, productionTopazRouter: topazRouterAddress };
+  }
+
+  const legacyFactory = await readAddressGetter(topazRouterAddress, "poolFactory");
+  const legacyWrapped = await readAddressGetter(topazRouterAddress, "WETH");
+  if (!legacyFactory || !legacyWrapped) {
+    throw new Error(`Configured Topaz router ${topazRouterAddress} must expose either defaultFactory()/weth() or poolFactory()/WETH().`);
+  }
+  return { launchRouterAddress: topazRouterAddress, topazRouterAdapter: null as string | null, productionTopazRouter: topazRouterAddress };
+}
+
 async function deployLocalMockPriceFeed(): Promise<string> {
   console.warn("[deploy] Deploying MockUsdPriceFeed for local/testing use.");
   const mockPrice = process.env.MOCK_NATIVE_USD_PRICE ?? "600";
@@ -183,7 +213,9 @@ export async function deployProtocol() {
   const net = await ethers.provider.getNetwork();
   const deploymentStartBlock = await ethers.provider.getBlockNumber();
 
-  const routerAddress = await resolveRouterAddress(deployerAddress);
+  const productionTopazRouterAddress = await resolveRouterAddress(deployerAddress);
+  const launchRouter = await resolveLaunchRouter(productionTopazRouterAddress);
+  const routerAddress = launchRouter.launchRouterAddress;
   const graduationOracleConfig = await resolveGraduationOracle();
   const treasurySafe = mustEnv("TREASURY_SAFE", process.env.FEE_RECIPIENT ?? deployerAddress);
   const upgradeDelaySeconds = numEnv("UPGRADE_DELAY_SECONDS", 2 * 24 * 60 * 60);
@@ -209,7 +241,8 @@ export async function deployProtocol() {
   console.log(`Chain ID: ${net.chainId.toString()}`);
   console.log(`Deployment start block: ${deploymentStartBlock}`);
   console.log(`Deployer: ${deployerAddress}`);
-  console.log("Topaz Router:", routerAddress);
+  console.log("Topaz production router:", productionTopazRouterAddress);
+  console.log("Launch router:", routerAddress);
   console.log("GraduationOracle:", graduationOracleConfig.oracleAddress);
   console.log("Treasury Safe:", treasurySafe);
   console.log("Upgrade delay (seconds):", upgradeDelaySeconds);
@@ -419,6 +452,8 @@ export async function deployProtocol() {
     deployer: deployerAddress,
     router: routerAddress,
     topazRouter: routerAddress,
+    productionTopazRouter: productionTopazRouterAddress,
+    topazRouterAdapter: launchRouter.topazRouterAdapter,
     creatorRegistry: creatorRegistryAddress,
     riskRegistry: riskRegistryAddress,
     permanentLpLocker: permanentLpLockerAddress,
@@ -451,6 +486,7 @@ export async function deployProtocol() {
       CreatorRegistry: creatorRegistryAddress,
       RiskRegistry: riskRegistryAddress,
       GraduationOracle: graduationOracleConfig.oracleAddress,
+      TopazRouterAdapter: launchRouter.topazRouterAdapter,
       LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: factoryAddress,
       PermanentLpLocker: permanentLpLockerAddress,
@@ -472,6 +508,8 @@ export async function deployProtocol() {
       campaignImplementation: campaignImplementationAddress,
       graduationOracle: graduationOracleConfig.oracleAddress,
       topazRouter: routerAddress,
+      productionTopazRouter: productionTopazRouterAddress,
+      topazRouterAdapter: launchRouter.topazRouterAdapter,
       permanentLpLocker: permanentLpLockerAddress,
       unifiedRouterModeActive: true,
     },
@@ -498,6 +536,7 @@ export async function deployProtocol() {
   console.log(`VITE_RISK_REGISTRY_ADDRESS_${deployment.chainId}=${riskRegistryAddress}`);
   console.log(`VITE_GRADUATION_ORACLE_ADDRESS_${deployment.chainId}=${graduationOracleConfig.oracleAddress}`);
   console.log(`VITE_TOPAZ_ROUTER_ADDRESS_${deployment.chainId}=${routerAddress}`);
+  console.log(`VITE_TOPAZ_PRODUCTION_ROUTER_ADDRESS_${deployment.chainId}=${productionTopazRouterAddress}`);
   console.log(`VITE_PERMANENT_LP_LOCKER_ADDRESS_${deployment.chainId}=${permanentLpLockerAddress}`);
   console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
@@ -506,7 +545,8 @@ export async function deployProtocol() {
   console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
   console.log("- CreatorRegistry for tier/cooldown/live-count enforcement:", creatorRegistryAddress);
   console.log("- RiskRegistry for wallet/cluster enforcement:", riskRegistryAddress);
-  console.log("- Topaz volatile router for graduation liquidity:", routerAddress);
+  console.log("- Launch router for campaign graduation:", routerAddress);
+  console.log("- Topaz production router:", productionTopazRouterAddress);
   console.log("- Permanent LP locker:", permanentLpLockerAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
