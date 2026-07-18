@@ -58,6 +58,8 @@ async function deployRoutedSystem() {
   await treasuryRouter.connect(owner).setProtocolRevenueVault(await protocolVault.getAddress());
 
   const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await treasuryRouter.getAddress());
+  await factory.connect(owner).setRequireRouteAuthorization(false);
+  await factory.connect(owner).setRequireAuthorizedTrading(false);
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
     curveBps: 5000,
@@ -97,6 +99,8 @@ async function deployLegacySystem() {
   await leagueRouter.waitForDeployment();
 
   const { factory, priceFeed } = await deployLaunchFactory(await dexRouter.getAddress(), await leagueRouter.getAddress());
+  await factory.connect(owner).setRequireRouteAuthorization(false);
+  await factory.connect(owner).setRequireAuthorizedTrading(false);
   await factory.connect(owner).setCoreRouting(await dexRouter.getAddress(), await legacyFeeRecipient.getAddress());
   await factory.connect(owner).setConfig({
     totalSupply: ethers.parseEther("1000"),
