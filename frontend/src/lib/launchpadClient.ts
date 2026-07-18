@@ -7,8 +7,6 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { BNB_CHAIN_ID, getActiveChainId, getFactoryAddress, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
 import {
-  fetchCampaignCreateAuthorization,
-  fetchCampaignTradeAuthorization,
   fetchLaunchpadBuyPreflight,
   fetchLaunchpadCreatePreflight,
   fetchLaunchpadSellPreflight,
@@ -45,6 +43,8 @@ export type {
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
+const TRADE_AUTH_SELL_EXACT_TOKENS = 2;
 
 function envEnabled(value: unknown): boolean {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
@@ -53,7 +53,10 @@ function envEnabled(value: unknown): boolean {
 const ENABLE_ONCHAIN_CAMPAIGN_FALLBACK = envEnabled(import.meta.env.VITE_ENABLE_ONCHAIN_CAMPAIGN_FALLBACK);
 
 const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
-const FACTORY_ABI = toAbi(LaunchFactoryArtifact);
+const FACTORY_ABI = [
+  ...((toAbi(LaunchFactoryArtifact) as any[]) ?? []),
+  "function createCampaignAuthorized((string name,string symbol,string logoURI,string xAccount,string website,string extraLink) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
+] as ethers.InterfaceAbi;
 const CAMPAIGN_ABI = toAbi(LaunchCampaignArtifact);
 const TOKEN_ABI = toAbi(LaunchTokenArtifact);
 const GRADUATION_WRITE_ABI = [
@@ -65,6 +68,61 @@ const LEGACY_FACTORY_ABI = [
   "function campaignsCount() view returns (uint256)",
   "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
 ] as const;
+
+type CampaignRequestPayload = {
+  name: string;
+  symbol: string;
+  logoURI: string;
+  xAccount: string;
+  website: string;
+  extraLink: string;
+};
+
+async function parseApiJson(res: Response) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
+  return json as any;
+}
+
+async function postApiJson(path: string, body: any) {
+  return parseApiJson(await apiFetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+}
+
+async function requestCreateAuthorization(params: {
+  walletAddress: string;
+  chainId: number;
+  factoryAddress: string;
+  campaignRequest: CampaignRequestPayload;
+}) {
+  return postApiJson("/api/routing/create-authorization", {
+    walletAddress: params.walletAddress,
+    chainId: params.chainId,
+    factoryAddress: params.factoryAddress,
+    campaignRequest: params.campaignRequest,
+  });
+}
+
+async function requestTradeAuthorization(params: {
+  walletAddress: string;
+  campaignAddress: string;
+  chainId: number;
+  action: number;
+  amount: bigint;
+  limit: bigint;
+}) {
+  return postApiJson("/api/routing/trade-authorization", {
+    walletAddress: params.walletAddress,
+    campaignAddress: params.campaignAddress,
+    chainId: params.chainId,
+    action: params.action,
+    amount: params.amount.toString(),
+    limit: params.limit.toString(),
+  });
+}
 
 function normalizeAddress(value: unknown): string {
   const raw = String(value ?? "").trim();
@@ -421,24 +479,28 @@ export function useLaunchpad(): LaunchpadAdapter {
     const writer = getFactoryWrite();
     if (!writer) throw new Error("Wallet not connected");
     if (!wallet.account) throw new Error("Wallet not connected");
+    if (!factoryAddress) throw new Error(`Factory address missing for chain ${evmReadChainId}`);
+
+    const campaignRequest: CampaignRequestPayload = {
+      name: params.name,
+      symbol: params.symbol,
+      logoURI: params.logoURI,
+      xAccount: params.xAccount,
+      website: params.website,
+      extraLink: params.extraLink,
+    };
 
     await fetchLaunchpadCreatePreflight(wallet.account, activeChainId);
-    const authResponse = await fetchCampaignCreateAuthorization(wallet.account, activeChainId);
+    const authResponse = await requestCreateAuthorization({
+      walletAddress: wallet.account,
+      chainId: Number(activeChainId),
+      factoryAddress,
+      campaignRequest,
+    });
     const auth = authResponse.authorization;
 
     const tx = await writer.createCampaignAuthorized(
-      {
-        name: params.name,
-        symbol: params.symbol,
-        logoURI: params.logoURI,
-        xAccount: params.xAccount,
-        website: params.website,
-        extraLink: params.extraLink,
-        basePrice: params.basePriceWei ?? 0n,
-        priceSlope: params.priceSlopeWei ?? 0n,
-        graduationTarget: params.graduationTargetWei ?? 0n,
-        lpReceiver: params.lpReceiver || ethers.ZeroAddress,
-      },
+      campaignRequest,
       {
         tradeRouteProfile: auth.tradeRouteProfileId,
         finalizeRouteProfile: auth.finalizeRouteProfileId,
@@ -451,7 +513,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
-  }, [getFactoryWrite, wallet.account, activeChainId, signer, readProvider]);
+  }, [getFactoryWrite, wallet.account, activeChainId, evmReadChainId, factoryAddress, signer, readProvider]);
 
   const buyTokens = useCallback(async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
     const normalizedCampaign = normalizeAddress(campaignAddress);
@@ -461,7 +523,14 @@ export function useLaunchpad(): LaunchpadAdapter {
 
     const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
     await fetchLaunchpadBuyPreflight(wallet.account, normalizedCampaign, activeChainId);
-    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, normalizedCampaign, activeChainId);
+    const authResponse = await requestTradeAuthorization({
+      walletAddress: wallet.account,
+      campaignAddress: normalizedCampaign,
+      chainId: Number(activeChainId),
+      action: TRADE_AUTH_BUY_EXACT_TOKENS,
+      amount: amountWei,
+      limit: maxCostWei,
+    });
     const auth = authResponse.authorization;
 
     const tx = await campaign.buyExactTokensAuthorized(
@@ -485,7 +554,14 @@ export function useLaunchpad(): LaunchpadAdapter {
 
     const campaign = new Contract(normalizedCampaign, CAMPAIGN_ABI, signer) as any;
     await fetchLaunchpadSellPreflight(wallet.account, normalizedCampaign, activeChainId);
-    const authResponse = await fetchCampaignTradeAuthorization(wallet.account, normalizedCampaign, activeChainId);
+    const authResponse = await requestTradeAuthorization({
+      walletAddress: wallet.account,
+      campaignAddress: normalizedCampaign,
+      chainId: Number(activeChainId),
+      action: TRADE_AUTH_SELL_EXACT_TOKENS,
+      amount: amountWei,
+      limit: minAmountWei,
+    });
     const auth = authResponse.authorization;
 
     const tx = await campaign.sellExactTokensAuthorized(
