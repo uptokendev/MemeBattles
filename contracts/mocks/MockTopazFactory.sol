@@ -10,9 +10,18 @@ interface IPairTokenSetter {
 /// @dev Minimal Topaz v2 factory mock with stable/volatile pool separation.
 contract MockTopazFactory {
     mapping(bytes32 => address) public pools;
+    uint256 public feeBps = 100;
 
     function _key(address a, address b, bool stable) internal pure returns (bytes32) {
         return a < b ? keccak256(abi.encodePacked(a, b, stable)) : keccak256(abi.encodePacked(b, a, stable));
+    }
+
+    function setFeeBps(uint256 feeBps_) external {
+        feeBps = feeBps_;
+    }
+
+    function getFee(address, bool) external view returns (uint256) {
+        return feeBps;
     }
 
     function setPool(address tokenA, address tokenB, bool stable, address pool) external {
