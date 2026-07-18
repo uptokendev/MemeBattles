@@ -1,6 +1,4 @@
-const hre = require("hardhat");
-
-const { ethers } = hre;
+const { ethers } = require("ethers");
 
 const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
@@ -8,18 +6,24 @@ const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32
 
 function normalizeAddress(value, label) {
   if (!value) throw new Error(`${label} is required`);
-  return ethers.getAddress(value.trim());
+  return ethers.getAddress(String(value).trim());
 }
 
-function hardhatEphemeralHint(address) {
-  if (hre.network.name !== "hardhat") return "";
+function hardhatEphemeralHint(address, networkName = process.env.HARDHAT_NETWORK || "") {
+  if (networkName !== "hardhat") return "";
   return ` The hardhat network is ephemeral per command, so a factory deployed by a previous command no longer has code at ${address}. Use npm run deploy:verify for same-run checks, run against localhost with a persistent node, or use a real network such as bscTestnet.`;
 }
 
-async function requireContractCode(address, label) {
-  const code = await ethers.provider.getCode(address);
+function providerFromEnv() {
+  const rpcUrl = process.env.ROUTE_AUTHORITY_RPC_URL || process.env.RPC_URL || process.env.BSC_RPC_HTTP || process.env.BSC_TESTNET_RPC_URL;
+  if (!rpcUrl) throw new Error("Set ROUTE_AUTHORITY_RPC_URL or RPC_URL before running this check");
+  return new ethers.JsonRpcProvider(rpcUrl);
+}
+
+async function requireContractCode(address, label, provider = providerFromEnv(), networkName = process.env.HARDHAT_NETWORK || "") {
+  const code = await provider.getCode(address);
   if (code === "0x") {
-    throw new Error(`${label} ${address} has no code on ${hre.network.name}.${hardhatEphemeralHint(address)}`);
+    throw new Error(`${label} ${address} has no code on ${networkName || "the configured network"}.${hardhatEphemeralHint(address, networkName)}`);
   }
 }
 
@@ -39,7 +43,7 @@ function configuredRouteAuthority() {
 }
 
 function hashString(value) {
-  return ethers.keccak256(ethers.toUtf8Bytes(value));
+  return ethers.keccak256(ethers.toUtf8Bytes(String(value ?? "")));
 }
 
 function hashCampaignRequest(req) {
@@ -59,13 +63,13 @@ function createRouteAuthDigest({ chainId, factory, creator, requestHash, tradeRo
   return ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(CREATE_AUTH_TYPES, [
       "MWZ_CREATE_ROUTE_AUTH",
-      chainId,
+      BigInt(chainId),
       factory,
       creator,
       requestHash,
-      tradeRouteProfile,
-      finalizeRouteProfile,
-      deadline,
+      Number(tradeRouteProfile),
+      Number(finalizeRouteProfile),
+      BigInt(deadline),
     ])
   );
 }
@@ -74,14 +78,14 @@ function tradeRouteAuthDigest({ chainId, campaign, actor, routeProfile, action, 
   return ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(TRADE_AUTH_TYPES, [
       "MWZ_ROUTE_TRADE_AUTH",
-      chainId,
+      BigInt(chainId),
       campaign,
       actor,
-      routeProfile,
-      action,
-      amount,
-      limit,
-      deadline,
+      Number(routeProfile),
+      Number(action),
+      BigInt(amount),
+      BigInt(limit),
+      BigInt(deadline),
     ])
   );
 }
@@ -89,29 +93,32 @@ function tradeRouteAuthDigest({ chainId, campaign, actor, routeProfile, action, 
 async function assertSignerRoundTrip(wallet, expectedAuthority, digest, label) {
   const signature = await wallet.signMessage(ethers.getBytes(digest));
   const recovered = ethers.verifyMessage(ethers.getBytes(digest), signature);
-  if (ethers.getAddress(recovered) !== expectedAuthority) {
+  if (ethers.getAddress(recovered) !== ethers.getAddress(expectedAuthority)) {
     throw new Error(`${label} signer self-test failed: recovered ${recovered}`);
   }
   console.log(`[route-authority] ${label} signer self-test: ok`);
 }
 
 async function main() {
+  const provider = providerFromEnv();
+  const network = await provider.getNetwork();
+  const networkName = process.env.NETWORK_NAME || `chain-${network.chainId}`;
   const factoryAddress = normalizeAddress(
     process.env.LAUNCH_FACTORY_ADDRESS || process.env.FACTORY_ADDRESS,
     "LAUNCH_FACTORY_ADDRESS or FACTORY_ADDRESS"
   );
   const configured = configuredRouteAuthority();
   const expectedAuthority = ethers.getAddress(configured.address);
-  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const chainId = network.chainId;
 
-  console.log(`[route-authority] network=${hre.network.name}`);
+  console.log(`[route-authority] network=${networkName}`);
   console.log(`[route-authority] chainId=${chainId}`);
   console.log(`[route-authority] factory=${factoryAddress}`);
   console.log(`[route-authority] expected=${expectedAuthority}`);
 
-  await requireContractCode(factoryAddress, "LaunchFactory");
+  await requireContractCode(factoryAddress, "LaunchFactory", provider, networkName);
 
-  const factory = await ethers.getContractAt(["function routeAuthority() view returns (address)"], factoryAddress);
+  const factory = new ethers.Contract(factoryAddress, ["function routeAuthority() view returns (address)"], provider);
   const onChainAuthority = ethers.getAddress(await factory.routeAuthority());
   console.log(`[route-authority] on-chain=${onChainAuthority}`);
 
