@@ -55,6 +55,8 @@ describe("Topaz v2 mocks", function () {
     const routing = await deployConfiguredTreasuryRouter(await owner.getAddress());
     const { factory } = await deployLaunchFactory(await topazRouter.getAddress(), await routing.treasuryRouter.getAddress());
 
+    await factory.connect(owner).setRequireRouteAuthorization(false);
+    await factory.connect(owner).setRequireAuthorizedTrading(false);
     await factory.connect(owner).setConfig({
       totalSupply: ethers.parseEther("1000"),
       curveBps: 5000,
