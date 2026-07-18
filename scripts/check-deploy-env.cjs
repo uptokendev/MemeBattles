@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 require("dotenv").config();
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 const TARGET = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_RE = /^(0x)?[a-fA-F0-9]{64}$/;
 
+const TOPAZ_MANIFEST_ENVS = ["TOPAZ_MANIFEST"];
 const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
 const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
 const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
@@ -116,13 +120,47 @@ function firstConfigured(names) {
   return names.find((name) => raw(name));
 }
 
+function defaultTopazManifestPath() {
+  return path.join(process.cwd(), "deployments", TARGET, "minimal-topaz.json");
+}
+
+function configuredTopazManifestPath() {
+  return raw("TOPAZ_MANIFEST") || (fs.existsSync(defaultTopazManifestPath()) ? defaultTopazManifestPath() : "");
+}
+
+function checkTopazManifest(required = false) {
+  const manifestPath = configuredTopazManifestPath();
+  if (!manifestPath) {
+    if (required) errors.push("TOPAZ_MANIFEST: missing Minimal Topaz manifest or deployments/<network>/minimal-topaz.json");
+    return false;
+  }
+
+  const resolved = path.resolve(manifestPath);
+  if (!fs.existsSync(resolved)) {
+    errors.push(`TOPAZ_MANIFEST: file not found at ${resolved}`);
+    return false;
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(resolved, "utf8"));
+    const router = manifest.contracts && manifest.contracts.Router;
+    const fee = Number(manifest.configuration && manifest.configuration.volatileFeeBps);
+    if (!ADDRESS_RE.test(router || "")) errors.push(`TOPAZ_MANIFEST: contracts.Router must be a 20-byte 0x address`);
+    if (fee !== 100) errors.push(`TOPAZ_MANIFEST: configuration.volatileFeeBps must be 100, got ${fee}`);
+    return true;
+  } catch (error) {
+    errors.push(`TOPAZ_MANIFEST: could not parse ${resolved}: ${error.message}`);
+    return false;
+  }
+}
+
 function checkLegacyRouterAliases(isRealNetwork) {
   if (!hasAny(LEGACY_ROUTER_ENVS)) return;
   if (hasAny(TOPAZ_ROUTER_ENVS)) {
     warnings.push("Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are set but ignored in favor of Topaz router envs.");
     return;
   }
-  const message = "Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are not accepted for Topaz rollout; set TOPAZ_ROUTER, TOPAZ_V2_ROUTER, or ROUTER_ADDRESS.";
+  const message = "Legacy PANCAKE_ROUTER/PANCAKE_V2_ROUTER aliases are not accepted for Topaz rollout; set TOPAZ_ROUTER, TOPAZ_V2_ROUTER, ROUTER_ADDRESS, or TOPAZ_MANIFEST.";
   if (isRealNetwork) errors.push(message);
   else warnings.push(message);
 }
@@ -161,8 +199,9 @@ function checkCommon(options = {}) {
 function checkLocal() {
   checkCommon();
   checkLegacyRouterAliases(false);
+  checkTopazManifest(false);
   if (!raw("TREASURY_SAFE")) warnings.push("TREASURY_SAFE is unset; local deploy will fall back to the deployer address.");
-  if (!hasAny(ROUTER_ENVS)) warnings.push("No Topaz router configured; local deploy will use a mock router.");
+  if (!hasAny(ROUTER_ENVS) && !configuredTopazManifestPath()) warnings.push("No Topaz router or manifest configured; local deploy will use a mock router.");
   if (!hasAny(PRICE_ENVS)) warnings.push("No graduation oracle/price feed configured; local deploy will use a mock price feed.");
 }
 
@@ -178,8 +217,10 @@ function checkBscTestnet() {
     warnings.push("BSCSCAN_API_KEY is unset; deployment can run, but contract verification will be skipped or fail.");
   }
 
-  if (!hasAny(TOPAZ_ROUTER_ENVS)) {
-    errors.push(`Topaz router missing: set one of ${TOPAZ_ROUTER_ENVS.join(", ")}`);
+  const hasRouterEnv = hasAny(TOPAZ_ROUTER_ENVS);
+  const hasManifest = checkTopazManifest(false);
+  if (!hasRouterEnv && !hasManifest) {
+    errors.push(`Topaz router missing: set one of ${TOPAZ_ROUTER_ENVS.join(", ")} or TOPAZ_MANIFEST`);
   }
   checkLegacyRouterAliases(true);
   if (!hasAny(PRICE_ENVS)) {
@@ -202,7 +243,7 @@ if (TARGET === "bscTestnet") checkBscTestnet();
 else checkLocal();
 
 console.log(`[deploy-env] target=${TARGET}`);
-console.log(`[deploy-env] router=${firstConfigured(ROUTER_ENVS) || "unset"}`);
+console.log(`[deploy-env] router=${firstConfigured(ROUTER_ENVS) || (configuredTopazManifestPath() ? "TOPAZ_MANIFEST" : "unset")}`);
 console.log(`[deploy-env] graduation=${firstConfigured(PRICE_ENVS) || "unset"}`);
 console.log(`[deploy-env] treasurySafe=${raw("TREASURY_SAFE") || "fallback/deployer"}`);
 console.log(`[deploy-env] routeAuthority=${raw("ROUTE_AUTHORITY_ADDRESS") || (raw("ROUTE_AUTHORITY_PRIVATE_KEY") ? "private-key-derived" : "unset")}`);
