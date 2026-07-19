@@ -54,6 +54,7 @@
     "frontend:env:bsc-testnet": "node scripts/export-frontend-env.cjs bscTestnet",
     "frontend:contracts:check": "node scripts/check-frontend-contracts.cjs",
     "frontend:contracts:check:bsc-testnet": "node scripts/check-frontend-contracts.cjs 97",
+    "frontend:check:contracts": "npm --prefix frontend run check:contracts",
     "deployment:summary": "node scripts/deployment-summary.cjs",
     "deployment:summary:bsc-testnet": "node scripts/deployment-summary.cjs bscTestnet",
     "pretestnet:check": "node scripts/pretestnet-check.cjs",
