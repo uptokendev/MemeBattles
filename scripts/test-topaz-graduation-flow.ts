@@ -371,6 +371,120 @@ function validateStrictEvidenceValues(report: AcceptanceReport) {
   expectEqual(report, "price.finalCurveMatchesInitialDex", report.finalCurvePrice, report.initialDexPrice);
 }
 
+function displayValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "not provided";
+  return String(value);
+}
+
+function reportRow(label: string, value: unknown) {
+  return `| ${label} | \`${displayValue(value)}\` |`;
+}
+
+function renderCheckSummary(report: AcceptanceReport) {
+  const entries = Object.entries(report.checks).sort(([left], [right]) => left.localeCompare(right));
+  if (entries.length === 0) return "No checks were recorded.";
+  return entries.map(([name, passed]) => `| ${name} | ${passed ? "PASS" : "FAIL"} |`).join("\n");
+}
+
+function renderList(items: string[], fallback: string) {
+  if (items.length === 0) return fallback;
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
+function renderAcceptanceSummary(report: AcceptanceReport, jsonFile: string) {
+  const passedChecks = Object.values(report.checks).filter(Boolean).length;
+  const totalChecks = Object.keys(report.checks).length;
+  const status = report.passed ? "PASS" : "FAIL";
+
+  return [
+    "# Topaz Graduation Testnet Acceptance",
+    "",
+    `Status: **${status}**`,
+    "",
+    "## Run",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    reportRow("Generated at", report.generatedAt),
+    reportRow("Network", report.network),
+    reportRow("Chain ID", report.chainId),
+    reportRow("Evidence required", report.evidenceRequired),
+    reportRow("Acceptance input", report.acceptanceInput),
+    reportRow("JSON report", jsonFile),
+    "",
+    "## Core Contracts",
+    "",
+    "| Field | Address |",
+    "| --- | --- |",
+    reportRow("LaunchFactory", report.launchFactory),
+    reportRow("PermanentLpLocker", report.permanentLpLocker),
+    reportRow("Topaz router", report.topazRouter),
+    reportRow("Topaz pool factory", report.topazPoolFactory),
+    reportRow("Topaz WBNB", report.topazWbnb),
+    reportRow("Volatile fee bps", report.volatileFeeBps),
+    "",
+    "## Campaign Evidence",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    reportRow("Campaign", report.campaign),
+    reportRow("Token", report.token),
+    reportRow("Creator", report.creator),
+    reportRow("Graduated pool", report.graduatedPool),
+    reportRow("Graduation tx", report.graduationTx),
+    reportRow("Buy tx", report.buyTx),
+    reportRow("Sell tx", report.sellTx),
+    reportRow("Harvest tx", report.harvestTx),
+    "",
+    "## Pool Evidence",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    reportRow("Pool stable", report.poolStable),
+    reportRow("Pool token0", report.poolToken0),
+    reportRow("Pool token1", report.poolToken1),
+    reportRow("Initial token reserve", report.initialTokenReserve),
+    reportRow("Initial WBNB reserve", report.initialWbnbReserve),
+    reportRow("Current token reserve", report.currentTokenReserve),
+    reportRow("Current WBNB reserve", report.currentWbnbReserve),
+    reportRow("Final curve price", report.finalCurvePrice),
+    reportRow("Initial DEX price", report.initialDexPrice),
+    "",
+    "## Fee And Locker Evidence",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    reportRow("LP before trades", report.lockerLpBalanceBeforeTrades),
+    reportRow("LP after harvest", report.lockerLpBalanceAfterHarvest),
+    reportRow("Current locker LP", report.currentLockerLpBalance),
+    reportRow("Claimed token", report.claimedToken),
+    reportRow("Claimed WBNB", report.claimedWbnb),
+    reportRow("Creator token received", report.creatorTokenReceived),
+    reportRow("Creator WBNB received", report.creatorWbnbReceived),
+    reportRow("Protocol token received", report.protocolTokenReceived),
+    reportRow("Protocol WBNB received", report.protocolWbnbReceived),
+    reportRow("Creator share bps", report.creatorShareBps),
+    reportRow("Protocol share bps", report.protocolShareBps),
+    "",
+    "## Checks",
+    "",
+    `Passed checks: ${passedChecks}/${totalChecks}`,
+    "",
+    "| Check | Result |",
+    "| --- | --- |",
+    renderCheckSummary(report),
+    "",
+    "## Errors",
+    "",
+    renderList(report.errors, "No errors."),
+    "",
+    "## Notes",
+    "",
+    renderList(report.notes, "No notes."),
+    "",
+  ].join("\n");
+}
+
 async function main() {
   const chain = await ethers.provider.getNetwork();
   const report = blankReport(Number(chain.chainId));
@@ -430,9 +544,22 @@ async function main() {
 
   const outDir = path.join(__dirname, "..", "reports");
   fs.mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, `topaz-graduation-testnet-${Date.now()}.json`);
-  fs.writeFileSync(outFile, `${JSON.stringify(report, null, 2)}\n`);
+  const timestamp = Date.now();
+  const outFile = path.join(outDir, `topaz-graduation-testnet-${timestamp}.json`);
+  const latestFile = path.join(outDir, "topaz-graduation-testnet-latest.json");
+  const summaryFile = path.join(outDir, `topaz-graduation-testnet-${timestamp}.md`);
+  const latestSummaryFile = path.join(outDir, "topaz-graduation-testnet-latest.md");
+  const json = `${JSON.stringify(report, null, 2)}\n`;
+  const summary = renderAcceptanceSummary(report, outFile);
+
+  fs.writeFileSync(outFile, json);
+  fs.writeFileSync(latestFile, json);
+  fs.writeFileSync(summaryFile, summary);
+  fs.writeFileSync(latestSummaryFile, summary);
   console.log(`[topaz-graduation] wrote ${outFile}`);
+  console.log(`[topaz-graduation] wrote ${latestFile}`);
+  console.log(`[topaz-graduation] wrote ${summaryFile}`);
+  console.log(`[topaz-graduation] wrote ${latestSummaryFile}`);
 
   if (!report.passed) {
     console.error("[topaz-graduation] acceptance failed");
