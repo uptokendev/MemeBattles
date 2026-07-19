@@ -1,4 +1,4 @@
-import type { InterfaceAbi } from "ethers";
+import { ethers } from "ethers";
 import LaunchFactoryArtifact from "@/abi/LaunchFactory.json";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
@@ -17,14 +17,15 @@ import { isEvmChainId } from "@/lib/chainConfig";
 
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
-type Artifact = { abi?: InterfaceAbi; contractName?: string } | InterfaceAbi;
+type Artifact = { abi?: ethers.InterfaceAbi; contractName?: string } | ethers.InterfaceAbi;
 
-function toAbi(artifact: Artifact): InterfaceAbi {
-  return ((artifact as { abi?: InterfaceAbi })?.abi ?? artifact) as InterfaceAbi;
+function toAbi(artifact: Artifact): ethers.InterfaceAbi {
+  return ((artifact as { abi?: ethers.InterfaceAbi })?.abi ?? artifact) as ethers.InterfaceAbi;
 }
 
 function env(name: string): string {
-  return String(import.meta.env[name] ?? "").trim();
+  const viteEnv = import.meta.env as Record<string, unknown>;
+  return String(viteEnv[name] ?? "").trim();
 }
 
 function normalizeAddress(value: string): string {
