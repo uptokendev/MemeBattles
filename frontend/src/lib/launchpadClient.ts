@@ -51,6 +51,7 @@ function envEnabled(value: unknown): boolean {
 const ENABLE_ONCHAIN_CAMPAIGN_FALLBACK = envEnabled(import.meta.env.VITE_ENABLE_ONCHAIN_CAMPAIGN_FALLBACK);
 
 const FACTORY_ABI = bnbContractAbis.launchFactory as ethers.InterfaceAbi;
+const FACTORY_INTERFACE = new ethers.Interface(FACTORY_ABI);
 const CAMPAIGN_ABI = [
   ...((bnbContractAbis.launchCampaign as any[]) ?? []),
   "function buyExactTokensAuthorized(uint256 amountOut,uint256 maxCost,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) payable returns (uint256 cost)",
@@ -74,6 +75,11 @@ type CampaignRequestPayload = {
   xAccount: string;
   website: string;
   extraLink: string;
+};
+
+type CreatedCampaignReceipt = {
+  campaignAddress?: string;
+  tokenAddress?: string;
 };
 
 async function parseApiJson(res: Response) {
@@ -170,6 +176,22 @@ function formatBnbFromWei(wei: bigint): string {
   } catch {
     return `${wei.toString()} wei`;
   }
+}
+
+function extractCreatedCampaign(receipt: any): CreatedCampaignReceipt {
+  for (const log of receipt?.logs ?? []) {
+    try {
+      const parsed = FACTORY_INTERFACE.parseLog({ topics: [...log.topics], data: log.data });
+      if (parsed?.name !== "CampaignCreated") continue;
+      return {
+        campaignAddress: normalizeAddress(parsed.args?.campaign),
+        tokenAddress: normalizeAddress(parsed.args?.token),
+      };
+    } catch {
+      // Ignore logs from other contracts in the same transaction.
+    }
+  }
+  return {};
 }
 
 function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | null {
@@ -511,8 +533,9 @@ export function useLaunchpad(): LaunchpadAdapter {
     );
 
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash });
-    return receipt;
+    const created = extractCreatedCampaign(receipt);
+    emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash, ...created });
+    return Object.assign(receipt ?? {}, created);
   }, [getFactoryWrite, wallet.account, activeChainId, evmReadChainId, factoryAddress, signer, readProvider]);
 
   const buyTokens = useCallback(async (campaignAddress: string, amountWei: bigint, maxCostWei: bigint) => {
