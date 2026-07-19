@@ -123,8 +123,7 @@ export function loadDeployment() {
   return deployment;
 }
 
-async function main() {
-  const deployment = loadDeployment();
+export async function verifyDeployment(deployment: any) {
   const contracts = resolveContracts(deployment);
 
   for (const [name, address] of Object.entries(contracts)) {
@@ -156,6 +155,10 @@ async function main() {
   }
 
   console.log("[verify] deployment wiring OK");
+}
+
+async function main() {
+  await verifyDeployment(loadDeployment());
 }
 
 if (require.main === module) {
