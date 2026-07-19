@@ -51,14 +51,48 @@ function loadMinimalTopazManifest() {
   return { file, manifest, router };
 }
 
+function persistEnrichedDeployment(deployment: any, manifest: any, manifestFile: string) {
+  const repositoryRoot = path.join(__dirname, "..");
+  const deploymentFile = path.join(repositoryRoot, "deployments", `${network.name}.json`);
+  const manifestSource = path.relative(repositoryRoot, manifestFile).replace(/\\/g, "/");
+
+  const enrichedDeployment = {
+    ...deployment,
+    topazManifest: {
+      source: manifestSource,
+      upstreamRepository: manifest.upstreamRepository ?? null,
+      upstreamCommit: manifest.upstreamCommit ?? null,
+      deploymentCommit: manifest.deploymentCommit ?? null,
+    },
+    topazInfrastructure: {
+      contracts: {
+        WBNB: manifest.contracts.WBNB,
+        PoolImplementation: manifest.contracts.PoolImplementation ?? null,
+        PoolFactory: manifest.contracts.PoolFactory,
+        FactoryRegistry: manifest.contracts.FactoryRegistry ?? null,
+        Router: manifest.contracts.Router,
+      },
+      configuration: {
+        volatileFeeBps: Number(manifest.configuration.volatileFeeBps),
+        graduationPoolStable: manifest.configuration.graduationPoolStable,
+      },
+    },
+  };
+
+  fs.writeFileSync(deploymentFile, JSON.stringify(enrichedDeployment, null, 2));
+  console.log(`[deploy-topaz-manifest] enriched deployment metadata written to ${deploymentFile}`);
+  return enrichedDeployment;
+}
+
 async function main() {
-  const { file, router } = loadMinimalTopazManifest();
+  const { file, manifest, router } = loadMinimalTopazManifest();
   process.env.TOPAZ_ROUTER = router;
   console.log(`[deploy-topaz-manifest] using ${file}`);
   console.log(`[deploy-topaz-manifest] TOPAZ_ROUTER=${router}`);
 
   const deployment = await deployProtocol();
-  await verifyDeployment(deployment);
+  const enrichedDeployment = persistEnrichedDeployment(deployment, manifest, file);
+  await verifyDeployment(enrichedDeployment);
 }
 
 main().catch((error) => {
