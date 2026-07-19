@@ -30,7 +30,7 @@ const KNOWN_LOCAL_ADDRESSES = new Set([
   "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
 ]);
 const KNOWN_LOCAL_PRIVATE_KEYS = new Set([
-  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784f2ff80".replace("784f", "784d"),
+  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   "59c6995e998f97a5a0044966f0945389d8f4e2145e3ea535c9ea6d1cfef39d4",
   "5de4111a2f57843d4a54c1c7d2254141e70cdb4c5b4bc7d22477d90b4f0ad7a3",
 ]);
