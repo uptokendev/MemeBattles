@@ -10,6 +10,7 @@ import {
   loadDeployment,
   pickAddress,
   resolveContracts,
+  verifyDeployment,
 } from "../scripts/verify-deployment";
 
 const CANONICAL = "0x1111111111111111111111111111111111111111";
@@ -39,6 +40,10 @@ describe("verify-deployment helpers", function () {
     if (originalDeploymentFile === undefined) delete process.env.DEPLOYMENT_FILE;
     else process.env.DEPLOYMENT_FILE = originalDeploymentFile;
     if (tempDir && existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("exports the reusable deployment verifier used by local rehearsal", async () => {
+    expect(verifyDeployment).to.be.a("function");
   });
 
   it("loads a deployment from DEPLOYMENT_FILE and reports a missing file clearly", async () => {
