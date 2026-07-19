@@ -4,7 +4,6 @@ import "../api/load-local-env.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ethers } from "ethers";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, "..");
@@ -129,7 +128,7 @@ async function readContractCode(provider, item, failures) {
   }
 }
 
-async function readFactory(provider, factoryAddress, failures) {
+async function readFactory(ethers, provider, factoryAddress, failures) {
   if (!factoryAddress) return;
   try {
     const factory = new ethers.Contract(factoryAddress, loadAbi("LaunchFactory"), provider);
@@ -183,12 +182,13 @@ async function main() {
   }
 
   if (rpc && !skipRpc && failures.length === 0) {
+    const { ethers } = await import("ethers");
     const rpcUrl = getRpcUrl(chainId);
     console.log(`\nReading bytecode through ${rpcUrl}`);
     const network = ethers.Network.from(chainId);
     const provider = new ethers.JsonRpcProvider(rpcUrl, network, { staticNetwork: network, batchMaxCount: 1, batchStallTime: 0 });
     await Promise.all(items.map((item) => readContractCode(provider, item, failures)));
-    await readFactory(provider, items.find(([, , key]) => key === "launchFactory")?.[3], failures);
+    await readFactory(ethers, provider, items.find(([, , key]) => key === "launchFactory")?.[3], failures);
   }
 
   if (failures.length) {
