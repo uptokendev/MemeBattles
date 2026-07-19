@@ -140,6 +140,40 @@ function checkContractRegistry(failures) {
   }
 }
 
+function checkLaunchpadIntegration(failures) {
+  const launchpadClient = readIfExists(path.join(frontendRoot, "src", "lib", "launchpadClient.ts"));
+  if (!launchpadClient) {
+    fail(failures, "frontend/src/lib/launchpadClient.ts is missing.");
+  } else {
+    for (const expected of [
+      "@/lib/bnbContracts",
+      "bnbContractAbis",
+      "getBnbContractAddresses",
+      "getBnbContractReadiness",
+      "extractCreatedCampaign",
+      "CampaignCreated",
+      "contractReadiness: bnbReadiness",
+    ]) {
+      if (!launchpadClient.includes(expected)) fail(failures, `launchpadClient.ts missing ${expected}.`);
+    }
+  }
+
+  const createPage = readIfExists(path.join(frontendRoot, "src", "pages", "Create.tsx"));
+  if (!createPage) {
+    fail(failures, "frontend/src/pages/Create.tsx is missing.");
+  } else {
+    for (const expected of [
+      "VITE_ENABLE_DIRECT_BNB_DEPLOY",
+      "directDeployRouteReady",
+      "launchpad.createCampaign",
+      "campaignAddress",
+      "Deploy Coin",
+    ]) {
+      if (!createPage.includes(expected)) fail(failures, `Create.tsx missing ${expected}.`);
+    }
+  }
+}
+
 function checkEnvExample(failures) {
   const file = path.join(frontendRoot, ".env.example");
   const example = readIfExists(file);
@@ -185,6 +219,7 @@ const warnings = [];
 
 checkAbis(failures);
 checkContractRegistry(failures);
+checkLaunchpadIntegration(failures);
 checkEnvExample(failures);
 checkLocalEnvFiles(failures, warnings);
 
@@ -201,4 +236,4 @@ if (failures.length) {
 }
 
 console.log("Frontend contract readiness check passed.");
-console.log("ABIs are synced, the BNB contract registry is wired, contract env names are documented, and local env address values are valid when present.");
+console.log("ABIs are synced, the BNB contract registry is wired, direct deploy is gated, contract env names are documented, and local env address values are valid when present.");
