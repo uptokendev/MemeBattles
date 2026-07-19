@@ -4,7 +4,7 @@ export type LaunchpadProtocolStatus = "ready" | "protocol_pending" | "unavailabl
 export type LaunchpadTxReceipt = any;
 
 export type LaunchpadSafetyCheck = {
-  id: "routeAuth" | "signer" | "factory" | "program" | "protocol";
+  id: string;
   label: string;
   state: "ready" | "pending" | "blocked";
   detail: string;
