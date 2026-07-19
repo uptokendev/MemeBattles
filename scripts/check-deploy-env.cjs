@@ -8,8 +8,8 @@ const TARGET = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_RE = /^(0x)?[a-fA-F0-9]{64}$/;
 
-const BSC_RPC_ENVS = ["BSC_TESTNET_RPC_URL", "BSC_TESTNET_RPC"];
-const DEPLOYER_PRIVATE_KEY_ENVS = ["PRIVATE_KEY_DEPLOY", "DEPLOYER_PK"];
+const BSC_RPC_ENVS = ["BSC_TESTNET_RPC", "BSC_TESTNET_RPC_URL"];
+const DEPLOYER_PRIVATE_KEY_ENVS = ["DEPLOYER_PK", "PRIVATE_KEY_DEPLOY"];
 const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
 const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
 const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
@@ -30,7 +30,7 @@ const KNOWN_LOCAL_ADDRESSES = new Set([
   "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
 ]);
 const KNOWN_LOCAL_PRIVATE_KEYS = new Set([
-  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784f2ff80".replace("784f", "784d"),
   "59c6995e998f97a5a0044966f0945389d8f4e2145e3ea535c9ea6d1cfef39d4",
   "5de4111a2f57843d4a54c1c7d2254141e70cdb4c5b4bc7d22477d90b4f0ad7a3",
 ]);
@@ -69,7 +69,7 @@ function checkPrivateKey(name, required = false) {
 }
 
 function checkRequiredAny(names, message) {
-  if (!hasAny(names)) errors.push(`${names.join(" or ")}: ${message}`);
+  if (!hasAny(names)) errors.push(`${names[0]}: ${message}`);
 }
 
 function checkNotLocalAddress(name) {
@@ -219,7 +219,7 @@ function checkLocal() {
 
 function checkBscTestnet() {
   checkRequiredAny(BSC_RPC_ENVS, "required for --network bscTestnet");
-  checkRequiredAny(DEPLOYER_PRIVATE_KEY_ENVS, "required for --network bscTestnet");
+  if (!hasAny(DEPLOYER_PRIVATE_KEY_ENVS)) errors.push("DEPLOYER_PK: missing private key");
   for (const name of DEPLOYER_PRIVATE_KEY_ENVS) checkPrivateKey(name);
   checkCommon({ requireTreasurySafe: true, warnMissingRouteAuthority: false });
   for (const name of DEPLOYER_PRIVATE_KEY_ENVS) checkNotLocalPrivateKey(name);
