@@ -6,8 +6,8 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC_URL || process.env.BSC_TESTNET_RPC || "";
-const deployerPrivateKey = process.env.PRIVATE_KEY_DEPLOY || process.env.DEPLOYER_PK || "";
+const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC || process.env.BSC_TESTNET_RPC_URL || "";
+const deployerPrivateKey = process.env.DEPLOYER_PK || process.env.PRIVATE_KEY_DEPLOY || "";
 
 const config: HardhatUserConfig = {
   networks: {
