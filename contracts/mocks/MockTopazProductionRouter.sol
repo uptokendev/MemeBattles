@@ -7,7 +7,6 @@ import {MockTopazPool} from "./MockTopazPool.sol";
 
 /// @dev Test double that exposes the same getter names used by the production Topaz Router.
 contract MockTopazProductionRouter {
-    error Expired();
     error StablePoolUnsupported();
     error InsufficientTokenAmount();
     error InsufficientNativeAmount();
@@ -27,14 +26,13 @@ contract MockTopazProductionRouter {
         uint256 amountTokenMin,
         uint256 amountETHMin,
         address to,
-        uint256 deadline
+        uint256
     )
         external
         payable
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
         if (stable) revert StablePoolUnsupported();
-        if (deadline != 0 && deadline < block.timestamp) revert Expired();
         if (amountTokenDesired < amountTokenMin) revert InsufficientTokenAmount();
         if (msg.value < amountETHMin) revert InsufficientNativeAmount();
 
