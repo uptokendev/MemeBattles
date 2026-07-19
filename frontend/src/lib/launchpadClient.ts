@@ -1,10 +1,9 @@
 import { useCallback, useMemo } from "react";
 import { Contract, ethers } from "ethers";
-import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
-import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { BNB_CHAIN_ID, getActiveChainId, getFactoryAddress, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { BNB_CHAIN_ID, getActiveChainId, isSolanaChainId, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
+import { bnbContractAbis, getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContracts";
 import {
   fetchLaunchpadBuyPreflight,
   fetchLaunchpadCreatePreflight,
@@ -51,18 +50,13 @@ function envEnabled(value: unknown): boolean {
 
 const ENABLE_ONCHAIN_CAMPAIGN_FALLBACK = envEnabled(import.meta.env.VITE_ENABLE_ONCHAIN_CAMPAIGN_FALLBACK);
 
-const toAbi = (x: any) => (x?.abi ?? x) as ethers.InterfaceAbi;
-const FACTORY_ABI = [
-  "function campaignsCount() view returns (uint256)",
-  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string metadataURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
-  "function createCampaignAuthorized((string name,string symbol,string logoURI,string xAccount,string website,string extraLink) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
-] as ethers.InterfaceAbi;
+const FACTORY_ABI = bnbContractAbis.launchFactory as ethers.InterfaceAbi;
 const CAMPAIGN_ABI = [
-  ...((toAbi(LaunchCampaignArtifact) as any[]) ?? []),
+  ...((bnbContractAbis.launchCampaign as any[]) ?? []),
   "function buyExactTokensAuthorized(uint256 amountOut,uint256 maxCost,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) payable returns (uint256 cost)",
   "function sellExactTokensAuthorized(uint256 amountIn,uint256 minPayout,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) returns (uint256 payout)",
 ] as ethers.InterfaceAbi;
-const TOKEN_ABI = toAbi(LaunchTokenArtifact);
+const TOKEN_ABI = bnbContractAbis.launchToken as ethers.InterfaceAbi;
 const GRADUATION_WRITE_ABI = [
   ...((CAMPAIGN_ABI as any[]) ?? []),
   "function graduateIfEligible(uint256 minTokens, uint256 minBnb) returns (uint256 usedTokens, uint256 usedBnb)",
@@ -291,7 +285,9 @@ export function useLaunchpad(): LaunchpadAdapter {
     return isSolanaChainId(fallback) ? BNB_CHAIN_ID : fallback;
   }, [walletChainId]);
   const evmReadChainId = isSolanaChainId(activeChainId) ? evmFallbackChainId : activeChainId;
-  const factoryAddress = useMemo(() => getFactoryAddress(evmReadChainId), [evmReadChainId]);
+  const bnbAddresses = useMemo(() => getBnbContractAddresses(evmReadChainId), [evmReadChainId]);
+  const bnbReadiness = useMemo(() => getBnbContractReadiness(evmReadChainId), [evmReadChainId]);
+  const factoryAddress = bnbAddresses.launchFactory;
   const readProvider = useMemo(() => getReadProvider(evmReadChainId), [evmReadChainId]);
 
   const getFactoryRead = useCallback(() => {
@@ -597,11 +593,12 @@ export function useLaunchpad(): LaunchpadAdapter {
     factoryAddress,
     hasSigner: Boolean(signer),
     hasAccount: Boolean(wallet.account),
-  }), [activeChainId, factoryAddress, signer, wallet.account]);
+    contractReadiness: bnbReadiness,
+  }), [activeChainId, factoryAddress, signer, wallet.account, bnbReadiness]);
 
   const bnbAdapter = useMemo<LaunchpadAdapter>(() => ({
     adapterId: "bnb",
-    protocolStatus: factoryAddress ? "ready" : "unavailable",
+    protocolStatus: factoryAddress && bnbReadiness.ready ? "ready" : "unavailable",
     fetchCampaignsCount,
     fetchCampaignPage,
     fetchCampaigns,
@@ -620,6 +617,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     factoryAddress,
   }), [
     factoryAddress,
+    bnbReadiness.ready,
     fetchCampaignsCount,
     fetchCampaignPage,
     fetchCampaigns,
