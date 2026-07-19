@@ -35,6 +35,7 @@
     "check:core-api": "node scripts/check-core-api-routes.mjs",
     "check:phase3-core-flow": "node scripts/check-phase3-core-flow.mjs",
     "check:contracts": "node scripts/check-contract-readiness.mjs",
+    "check:bnb-contract-env": "node scripts/check-bnb-contract-env.mjs",
     "check:launchpad-drill": "node scripts/check-launchpad-drill.mjs"
   },
   "dependencies": {
@@ -84,7 +85,6 @@
     "next-themes": "^0.3.0",
     "pg": "^8.16.3",
     "react": "^18.3.1",
-    "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.61.1",
     "react-resizable-panels": "^2.1.9",
