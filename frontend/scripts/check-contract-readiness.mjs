@@ -25,6 +25,24 @@ const requiredAbis = [
   "PermanentLpLocker",
 ];
 
+const requiredRegistryKeys = [
+  "launchFactory",
+  "launchCampaignImplementation",
+  "treasuryRouter",
+  "treasuryVault",
+  "recruiterRewardsVault",
+  "communityRewardsVault",
+  "protocolRevenueVault",
+  "creatorRegistry",
+  "riskRegistry",
+  "graduationOracle",
+  "permanentLpLocker",
+  "voteTreasury",
+  "topazRouter",
+  "topazFactory",
+  "topazWbnb",
+];
+
 const documentedEnv = [
   "VITE_ALLOWED_CHAIN_IDS",
   "VITE_DEFAULT_CHAIN_ID",
@@ -48,7 +66,7 @@ const documentedEnv = [
   "VITE_TOPAZ_WBNB_ADDRESS_97",
 ];
 
-const addressEnvNames = documentedEnv.filter((name) => name.endsWith("_ADDRESS_97") || name.endsWith("_ADDRESS_56"));
+const addressEnvNames = documentedEnv.filter((name) => /_ADDRESS_(56|97)$/.test(name) || /^VITE_TOPAZ_FACTORY_ADDRESS_(56|97)$/.test(name));
 const envFiles = [".env", ".env.local", ".env.development", ".env.production"];
 
 function readIfExists(file) {
@@ -89,6 +107,34 @@ function checkAbis(failures) {
       }
     } catch (error) {
       fail(failures, `${path.relative(repoRoot, file)} is not valid JSON: ${error.message}`);
+    }
+  }
+}
+
+function checkContractRegistry(failures) {
+  const file = path.join(frontendRoot, "src", "lib", "bnbContracts.ts");
+  const source = readIfExists(file);
+  if (!source) {
+    fail(failures, "frontend/src/lib/bnbContracts.ts is missing.");
+    return;
+  }
+
+  for (const name of requiredAbis) {
+    if (!source.includes(`@/abi/${name}.json`)) {
+      fail(failures, `frontend/src/lib/bnbContracts.ts does not import ${name}.json.`);
+    }
+  }
+
+  for (const key of requiredRegistryKeys) {
+    if (!source.includes(key)) {
+      fail(failures, `frontend/src/lib/bnbContracts.ts does not expose ${key}.`);
+    }
+  }
+
+  for (const name of documentedEnv.filter((envName) => envName.startsWith("VITE_") && envName.includes("ADDRESS_97"))) {
+    const prefix = name.replace(/_97$/, "");
+    if (!source.includes(prefix)) {
+      fail(failures, `frontend/src/lib/bnbContracts.ts does not read ${prefix}_<chainId>.`);
     }
   }
 }
@@ -137,6 +183,7 @@ const failures = [];
 const warnings = [];
 
 checkAbis(failures);
+checkContractRegistry(failures);
 checkEnvExample(failures);
 checkLocalEnvFiles(failures, warnings);
 
@@ -153,4 +200,4 @@ if (failures.length) {
 }
 
 console.log("Frontend contract readiness check passed.");
-console.log("ABIs are synced, contract env names are documented, and local env address values are valid when present.");
+console.log("ABIs are synced, the BNB contract registry is wired, contract env names are documented, and local env address values are valid when present.");
