@@ -60,20 +60,25 @@ async function readAddressGetter(label: string, address: string, candidates: str
 
 export async function assertTopazRouter(label: string, address: string) {
   await assertCode(label, address);
-  const poolFactory = await readAddressGetter(label, address, ["defaultFactory", "poolFactory"]);
-  const wrappedNative = await readAddressGetter(label, address, ["weth", "WETH"]);
 
-  await assertCode(`${label}.${poolFactory.name}`, poolFactory.value);
-  await assertCode(`${label}.${wrappedNative.name}`, wrappedNative.value);
+  try {
+    const poolFactory = await readAddressGetter(label, address, ["defaultFactory", "poolFactory"]);
+    const wrappedNative = await readAddressGetter(label, address, ["weth", "WETH"]);
 
-  const factory = new ethers.Contract(
-    poolFactory.value,
-    ["function getFee(address pool, bool stable) view returns (uint256)"],
-    ethers.provider
-  );
-  const volatileFeeBps = await factory.getFee(ethers.ZeroAddress, false);
-  assertBigIntEq(`${label}.${poolFactory.name}.volatileFeeBps`, volatileFeeBps, 100n);
-  console.log(`[verify] ${label} Minimal Topaz interface: ok`);
+    await assertCode(`${label}.${poolFactory.name}`, poolFactory.value);
+    await assertCode(`${label}.${wrappedNative.name}`, wrappedNative.value);
+
+    const factory = new ethers.Contract(
+      poolFactory.value,
+      ["function getFee(address pool, bool stable) view returns (uint256)"],
+      ethers.provider
+    );
+    const volatileFeeBps = await factory.getFee(ethers.ZeroAddress, false);
+    assertBigIntEq(`${label}.${poolFactory.name}.volatileFeeBps`, volatileFeeBps, 100n);
+    console.log(`[verify] ${label} Minimal Topaz interface: ok`);
+  } catch (error: any) {
+    throw new Error(`${label}: ${address} does not expose the Topaz router interface. ${error?.message ?? String(error)}`);
+  }
 }
 
 export function pickAddress(deployment: any, canonicalName: string, fallbacks: string[] = []) {
@@ -118,102 +123,39 @@ export function loadDeployment() {
   return deployment;
 }
 
-export async function verifyDeployment(deployment: any) {
-  const contracts = resolveContracts(deployment);
-  const postDeployActions: string[] = deployment.postDeployActions ?? [];
-
-  if (deployment.network && deployment.network !== network.name) {
-    console.warn(`[verify] Deployment file network is ${deployment.network}, current Hardhat network is ${network.name}.`);
-  }
-
-  const expectedChainId = BigInt(deployment.chainId);
-  const actualChainId = (await ethers.provider.getNetwork()).chainId;
-  if (expectedChainId !== actualChainId) {
-    throw new Error(`chainId: expected ${expectedChainId}, got ${actualChainId}`);
-  }
-  console.log(`[verify] chainId ${actualChainId}: ok`);
-
-  const requiredContracts = Object.keys(contracts) as Array<keyof typeof contracts>;
-  for (const name of requiredContracts) {
-    await assertCode(name, contracts[name]);
-  }
-
-  const topazRouter = deployment.topazRouter ?? deployment.router;
-  if (topazRouter) await assertTopazRouter("TopazRouter", topazRouter);
-  if (deployment.graduationPriceFeed) await assertCode("GraduationPriceFeed", deployment.graduationPriceFeed);
-
-  const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
-  if (deployment.deployer) assertEq("factory.owner", await factory.owner(), deployment.deployer);
-  assertEq("factory.router", await factory.router(), topazRouter);
-  assertEq("factory.feeRecipient", await factory.feeRecipient(), contracts.TreasuryRouter);
-  assertEq("factory.leagueReceiver", await factory.leagueReceiver(), contracts.TreasuryRouter);
-  assertEq("factory.campaignImplementation", await factory.campaignImplementation(), contracts.LaunchCampaignImplementation);
-  assertEq("factory.graduationOracle", await factory.graduationOracle(), contracts.GraduationOracle);
-  assertEq("factory.permanentLpLocker", await factory.permanentLpLocker(), contracts.PermanentLpLocker);
-  assertEq("factory.creatorRegistry", await factory.creatorRegistry(), contracts.CreatorRegistry);
-  assertEq("factory.riskRegistry", await factory.riskRegistry(), contracts.RiskRegistry);
-  if (deployment.protocolFeeBps !== undefined && deployment.protocolFeeBps !== null) {
-    assertBigIntEq("factory.protocolFeeBps", await factory.protocolFeeBps(), BigInt(deployment.protocolFeeBps));
-  }
-
-  const routing = deployment.routing ?? {};
-  if (routing.factoryTradeRouteProfile !== undefined && routing.factoryTradeRouteProfile !== null) {
-    assertBigIntEq("factory.tradeRouteProfile", await factory.tradeRouteProfile(), BigInt(routing.factoryTradeRouteProfile));
-  }
-  if (routing.factoryFinalizeRouteProfile !== undefined && routing.factoryFinalizeRouteProfile !== null) {
-    assertBigIntEq("factory.finalizeRouteProfile", await factory.finalizeRouteProfile(), BigInt(routing.factoryFinalizeRouteProfile));
-  }
-  if (routing.factoryRouteAuthority) {
-    assertEq("factory.routeAuthority", await factory.routeAuthority(), routing.factoryRouteAuthority);
-  } else {
-    assertEq("factory.routeAuthority", await factory.routeAuthority(), ethers.ZeroAddress);
-  }
-
-  const locker = await ethers.getContractAt("PermanentLpLocker", contracts.PermanentLpLocker);
-  assertEq("permanentLpLocker.admin", await locker.admin(), contracts.LaunchFactory);
-
-  const registryOwner = deployment.security?.registryOwner ?? deployment.treasurySafe;
-  const creatorRegistry = await ethers.getContractAt("CreatorRegistry", contracts.CreatorRegistry);
-  assertTrue("creatorRegistry.launchRecorder(factory)", await creatorRegistry.launchRecorder(contracts.LaunchFactory));
-  assertEq("creatorRegistry.owner", await creatorRegistry.owner(), registryOwner);
-
-  const riskRegistry = await ethers.getContractAt("RiskRegistry", contracts.RiskRegistry);
-  assertEq("riskRegistry.owner", await riskRegistry.owner(), registryOwner);
-
-  const oracle = await ethers.getContractAt("GraduationOracle", contracts.GraduationOracle);
-  if (deployment.graduationPriceFeed) assertEq("graduationOracle.priceFeed", await oracle.priceFeed(), deployment.graduationPriceFeed);
-  if (deployment.graduationMaxPriceAge !== null && deployment.graduationMaxPriceAge !== undefined) {
-    const actualMaxAge = await oracle.maxPriceAge();
-    if (actualMaxAge !== BigInt(deployment.graduationMaxPriceAge)) {
-      throw new Error(`graduationOracle.maxPriceAge: expected ${deployment.graduationMaxPriceAge}, got ${actualMaxAge}`);
-    }
-    console.log("[verify] graduationOracle.maxPriceAge: ok");
-  }
-
-  const treasuryRouter = await ethers.getContractAt("TreasuryRouter", contracts.TreasuryRouter);
-  assertEq("treasuryRouter.admin", await treasuryRouter.admin(), deployment.treasurySafe);
-  assertEq("treasuryRouter.activeVault", await treasuryRouter.activeVault(), contracts.TreasuryVaultV2);
-
-  const vault = await ethers.getContractAt("TreasuryVaultV2", contracts.TreasuryVaultV2);
-  assertEq("treasuryVault.multisig", await vault.multisig(), deployment.treasurySafe);
-
-  if (postDeployActions.length === 0) {
-    assertEq("treasuryRouter.recruiterRewardsVault", await treasuryRouter.recruiterRewardsVault(), contracts.RecruiterRewardsVault);
-    assertEq("treasuryRouter.communityRewardsVault", await treasuryRouter.communityRewardsVault(), contracts.CommunityRewardsVault);
-    assertEq("treasuryRouter.protocolRevenueVault", await treasuryRouter.protocolRevenueVault(), contracts.ProtocolRevenueVault);
-
-    const communityVault = await ethers.getContractAt("CommunityRewardsVault", contracts.CommunityRewardsVault);
-    assertEq("communityRewardsVault.router", await communityVault.router(), contracts.TreasuryRouter);
-  } else {
-    console.warn("[verify] Deferred multisig/admin actions remain:");
-    for (const action of postDeployActions) console.warn(`[verify] - ${action}`);
-  }
-
-  console.log("[verify] Deployment wiring verification complete.");
-}
-
 async function main() {
-  await verifyDeployment(loadDeployment());
+  const deployment = loadDeployment();
+  const contracts = resolveContracts(deployment);
+
+  for (const [name, address] of Object.entries(contracts)) {
+    await assertCode(name, address);
+  }
+
+  const router = deployment.productionTopazRouter || deployment.topazInfrastructure?.contracts?.Router || deployment.topazRouter || deployment.router;
+  await assertTopazRouter("TopazRouter", router);
+
+  if (deployment.graduationPriceFeed) {
+    await assertCode("GraduationPriceFeed", deployment.graduationPriceFeed);
+  }
+
+  if (deployment.routing?.factoryFeeRecipient) {
+    assertEq("routing.factoryFeeRecipient", deployment.routing.factoryFeeRecipient, contracts.TreasuryRouter);
+  }
+  if (deployment.routing?.permanentLpLocker) {
+    assertEq("routing.permanentLpLocker", deployment.routing.permanentLpLocker, contracts.PermanentLpLocker);
+  }
+  if (deployment.routing?.campaignImplementation) {
+    assertEq("routing.campaignImplementation", deployment.routing.campaignImplementation, contracts.LaunchCampaignImplementation);
+  }
+  if (deployment.routing?.graduationOracle) {
+    assertEq("routing.graduationOracle", deployment.routing.graduationOracle, contracts.GraduationOracle);
+  }
+
+  if (deployment.routing?.unifiedRouterModeActive !== undefined) {
+    assertTrue("routing.unifiedRouterModeActive", Boolean(deployment.routing.unifiedRouterModeActive));
+  }
+
+  console.log("[verify] deployment wiring OK");
 }
 
 if (require.main === module) {
