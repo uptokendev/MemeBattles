@@ -33,8 +33,8 @@ contract MockTopazProductionRouter {
         payable
         returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)
     {
-        if (deadline < block.timestamp) revert Expired();
         if (stable) revert StablePoolUnsupported();
+        if (deadline != 0 && deadline < block.timestamp) revert Expired();
         if (amountTokenDesired < amountTokenMin) revert InsufficientTokenAmount();
         if (msg.value < amountETHMin) revert InsufficientNativeAmount();
 
