@@ -132,8 +132,12 @@ describe("verify-deployment helpers", function () {
     const topazFactory = await TopazFactory.deploy();
     await topazFactory.waitForDeployment();
 
+    const WBNB = await ethers.getContractFactory("MockWBNB");
+    const wbnb = await WBNB.deploy();
+    await wbnb.waitForDeployment();
+
     const TopazRouter = await ethers.getContractFactory("MockTopazRouter");
-    const topazRouter = await TopazRouter.deploy(await topazFactory.getAddress(), await owner.getAddress());
+    const topazRouter = await TopazRouter.deploy(await topazFactory.getAddress(), await wbnb.getAddress());
     await topazRouter.waitForDeployment();
 
     await assertTopazRouter("TopazRouter", await topazRouter.getAddress());
