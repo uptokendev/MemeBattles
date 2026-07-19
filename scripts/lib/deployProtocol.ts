@@ -57,9 +57,21 @@ async function requireContractCode(address: string, label: string) {
   if (!(await hasContractCode(address))) throw new Error(`${label} ${address} has no contract code on ${network.name}.`);
 }
 
-async function deployMockTopazRouter(deployerAddress: string): Promise<string> {
+async function resolveMockWrappedNative(): Promise<string> {
+  const configured = (process.env.MOCK_TOPAZ_WRAPPED ?? process.env.MOCK_ROUTER_WRAPPED ?? "").trim();
+  if (configured) return configured;
+
+  const WBNB = await ethers.getContractFactory("MockWBNB");
+  const wbnb = await WBNB.deploy();
+  await wbnb.waitForDeployment();
+  const wrapped = await wbnb.getAddress();
+  console.log("MockWBNB:", wrapped);
+  return wrapped;
+}
+
+async function deployMockTopazRouter(_deployerAddress: string): Promise<string> {
   console.warn("[deploy] Deploying MockTopazFactory + MockTopazRouter for local/testing use.");
-  const wrapped = (process.env.MOCK_TOPAZ_WRAPPED ?? process.env.MOCK_ROUTER_WRAPPED ?? deployerAddress).trim();
+  const wrapped = await resolveMockWrappedNative();
 
   const TopazFactory = await ethers.getContractFactory("MockTopazFactory");
   const topazFactory = await TopazFactory.deploy();
