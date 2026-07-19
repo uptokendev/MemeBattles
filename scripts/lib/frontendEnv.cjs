@@ -27,14 +27,12 @@ function buildFrontendEnv(deployment, sourceLabel = "deployment") {
 
   const suffix = String(chainId);
   const topazContracts = deployment.topazInfrastructure?.contracts || {};
-  const launchRouter = deployment.topazRouterAdapter || deployment.router || deployment.topazRouter;
   const productionTopazRouter =
     deployment.productionTopazRouter || topazContracts.Router || deployment.topazRouter || deployment.router;
 
   const lines = [
     `VITE_FACTORY_ADDRESS_${suffix}=${requireAddress("LaunchFactory", pickAddress(deployment, "LaunchFactory", ["factory", "factoryAddress"]), sourceLabel)}`,
     `VITE_VOTE_TREASURY_ADDRESS_${suffix}=${requireAddress("UPVoteTreasury", pickAddress(deployment, "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]), sourceLabel)}`,
-    `VITE_TREASURY_VAULT_ADDRESS_${suffix}=${requireAddress("TreasuryVaultV2", pickAddress(deployment, "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault"]), sourceLabel)}`,
     `VITE_TREASURY_ROUTER_ADDRESS_${suffix}=${requireAddress("TreasuryRouter", pickAddress(deployment, "TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]), sourceLabel)}`,
     `VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_${suffix}=${requireAddress("CommunityRewardsVault", pickAddress(deployment, "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]), sourceLabel)}`,
     `VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${suffix}=${requireAddress("RecruiterRewardsVault", pickAddress(deployment, "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]), sourceLabel)}`,
@@ -42,13 +40,14 @@ function buildFrontendEnv(deployment, sourceLabel = "deployment") {
     `VITE_CREATOR_REGISTRY_ADDRESS_${suffix}=${requireAddress("CreatorRegistry", pickAddress(deployment, "CreatorRegistry", ["creatorRegistry"]), sourceLabel)}`,
     `VITE_RISK_REGISTRY_ADDRESS_${suffix}=${requireAddress("RiskRegistry", pickAddress(deployment, "RiskRegistry", ["riskRegistry"]), sourceLabel)}`,
     `VITE_GRADUATION_ORACLE_ADDRESS_${suffix}=${requireAddress("GraduationOracle", pickAddress(deployment, "GraduationOracle", ["graduationOracle"]), sourceLabel)}`,
-    `VITE_LAUNCH_ROUTER_ADDRESS_${suffix}=${requireAddress("LaunchRouter", launchRouter, sourceLabel)}`,
     `VITE_TOPAZ_ROUTER_ADDRESS_${suffix}=${requireAddress("TopazRouter", productionTopazRouter, sourceLabel)}`,
     `VITE_PERMANENT_LP_LOCKER_ADDRESS_${suffix}=${requireAddress("PermanentLpLocker", pickAddress(deployment, "PermanentLpLocker", ["permanentLpLocker"]), sourceLabel)}`,
     `VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${suffix}=${requireAddress("LaunchCampaignImplementation", pickAddress(deployment, "LaunchCampaignImplementation", ["campaignImplementation"]), sourceLabel)}`,
   ];
 
   const optionalLines = [
+    optionalAddressLine(`VITE_TREASURY_VAULT_ADDRESS_${suffix}`, pickAddress(deployment, "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"])),
+    optionalAddressLine(`VITE_LAUNCH_ROUTER_ADDRESS_${suffix}`, deployment.topazRouterAdapter || deployment.router),
     optionalAddressLine(`VITE_TOPAZ_ROUTER_ADAPTER_ADDRESS_${suffix}`, deployment.topazRouterAdapter),
     optionalAddressLine(`VITE_TOPAZ_FACTORY_ADDRESS_${suffix}`, topazContracts.PoolFactory),
     optionalAddressLine(`VITE_TOPAZ_FACTORY_REGISTRY_ADDRESS_${suffix}`, topazContracts.FactoryRegistry),
