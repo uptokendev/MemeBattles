@@ -10,6 +10,21 @@ const NETWORK_BY_CHAIN_ID = new Map([
   ["97", "bscTestnet"],
 ]);
 
+const REQUIRED_DEPLOYMENT_CONTRACTS = [
+  ["LaunchFactory", ["factory", "factoryAddress"]],
+  ["LaunchCampaignImplementation", ["campaignImplementation"]],
+  ["TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]],
+  ["TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]],
+  ["RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]],
+  ["CommunityRewardsVault", ["communityRewardsVault", "communityVault"]],
+  ["ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]],
+  ["CreatorRegistry", ["creatorRegistry"]],
+  ["RiskRegistry", ["riskRegistry"]],
+  ["GraduationOracle", ["graduationOracle"]],
+  ["PermanentLpLocker", ["permanentLpLocker"]],
+  ["UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]],
+];
+
 const REQUIRED_ABIS = [
   "LaunchFactory",
   "LaunchCampaign",
@@ -30,6 +45,15 @@ function resolveTarget(rawTarget) {
   const raw = String(rawTarget || process.env.HARDHAT_NETWORK || "hardhat").trim();
   if (NETWORK_BY_CHAIN_ID.has(raw)) return { network: NETWORK_BY_CHAIN_ID.get(raw), chainId: Number(raw) };
   return { network: raw, chainId: raw === "bscTestnet" ? 97 : raw === "bscMainnet" ? 56 : null };
+}
+
+function pickAddress(deployment, canonicalName, fallbacks = []) {
+  const contracts = deployment.contracts || {};
+  for (const key of [canonicalName, ...fallbacks]) {
+    if (typeof contracts[key] === "string" && contracts[key]) return contracts[key];
+    if (typeof deployment[key] === "string" && deployment[key]) return deployment[key];
+  }
+  return "";
 }
 
 function parseEnvFile(file) {
@@ -59,6 +83,14 @@ function parseExpectedEnv(output) {
 
 function hasAddress(value) {
   return ADDRESS_RE.test(String(value || ""));
+}
+
+function checkDeploymentContracts(deployment, sourceLabel, errors) {
+  for (const [name, fallbacks] of REQUIRED_DEPLOYMENT_CONTRACTS) {
+    if (!hasAddress(pickAddress(deployment, name, fallbacks))) {
+      errors.push(`${sourceLabel}: ${name} missing or invalid in final deployment manifest.`);
+    }
+  }
 }
 
 function checkAbiFiles(root, errors) {
@@ -165,6 +197,7 @@ function main() {
   }
 
   if (deployment) {
+    checkDeploymentContracts(deployment, deploymentFile, errors);
     checkTopazMetadata(deployment, deploymentFile, errors, warnings);
     checkFrontendEnvFile(frontendEnvFile, expectedPairs, errors);
   }
