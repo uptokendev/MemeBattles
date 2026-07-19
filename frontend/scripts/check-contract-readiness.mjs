@@ -64,6 +64,7 @@ const documentedEnv = [
   "VITE_TOPAZ_ROUTER_ADDRESS_97",
   "VITE_TOPAZ_FACTORY_ADDRESS_97",
   "VITE_TOPAZ_WBNB_ADDRESS_97",
+  "VITE_ENABLE_DIRECT_BNB_DEPLOY",
 ];
 
 const addressEnvNames = documentedEnv.filter((name) => /_ADDRESS_(56|97)$/.test(name) || /^VITE_TOPAZ_FACTORY_ADDRESS_(56|97)$/.test(name));
