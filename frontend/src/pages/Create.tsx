@@ -22,6 +22,13 @@ import { ContentContainer } from "@/components/layout/ContentContainer";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
+const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+
+function readFlag(value: unknown, fallback = false) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return TRUE_VALUES.has(raw);
+}
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -79,6 +86,7 @@ const Create = () => {
   const launchpad = useLaunchpad();
   const navigate = useNavigate();
   const [isDrafting, setIsDrafting] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
@@ -91,10 +99,8 @@ const Create = () => {
   const creatorWalletLabel = creatorWallet ? `${creatorWallet.slice(0, 4)}...${creatorWallet.slice(-4)}` : "No wallet";
   const launchpadSafetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
   const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
-  const deployModeDescription = isSolanaProtocolPending
-    ? "Solana drafts are signed and saved through your Solana wallet. Direct Solana deploy, buy, sell, and finalize stay locked until the on-chain launch program is deployed."
-    : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.";
-  const deployButtonLabel = isSolanaProtocolPending ? "Solana Protocol Pending" : "Locked in Prepare Mode";
+  const bnbDirectDeployEnabled = !isSolanaCreator && readFlag(import.meta.env.VITE_ENABLE_DIRECT_BNB_DEPLOY, false);
+  const directDeployRouteReady = bnbDirectDeployEnabled && launchpadSafetyStatus.protocolStatus === "ready";
   const tickerConfirmedAvailable = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && tickerAvailability.available);
   const tickerBlocked = Boolean(normalizedTicker && tickerAvailability?.ticker === normalizedTicker && !tickerAvailability.available);
 
@@ -302,14 +308,69 @@ const Create = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    toast.error(isSolanaProtocolPending ? "Solana launch protocol is pending. Save a signed Solana draft for now." : "Deploy Mode is locked during Prepare Mode. Save a draft instead.");
+
+    if (isSolanaProtocolPending) {
+      toast.error("Solana launch protocol is pending. Save a signed Solana draft for now.");
+      return;
+    }
+
+    if (!bnbDirectDeployEnabled) {
+      toast.error("Direct BNB deploy is disabled for this environment. Save a draft instead.");
+      return;
+    }
+
+    if (!directDeployRouteReady) {
+      toast.error("Direct BNB deploy needs the final launchpad and Topaz contract env values first.");
+      return;
+    }
+
+    if (!validateCoreForm()) return;
+    setIsDeploying(true);
+
+    try {
+      const logoUrl = await uploadLogo();
+      const receipt: any = await launchpad.createCampaign({
+        name: formData.name,
+        symbol: normalizedTicker,
+        logoURI: logoUrl,
+        xAccount: formData.twitter || "",
+        website: formData.website || "",
+        extraLink: formData.otherLink || "",
+      });
+
+      const campaignAddress = String(receipt?.campaignAddress || "").trim();
+      toast.success("Campaign deployed on BNB.");
+      if (campaignAddress) navigate(`/token/${campaignAddress}?chainId=${chainId}`);
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || "Failed to deploy campaign");
+    } finally {
+      setIsDeploying(false);
+    }
   };
 
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
-  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
+  const isDraftDisabled = isProjectDisabled || isDrafting || isDeploying || checkingTicker || tickerUnavailableOrUnknown;
+  const isDeployDisabled = isProjectDisabled || isDrafting || isDeploying || checkingTicker || tickerUnavailableOrUnknown || !directDeployRouteReady || !wallet.signer;
+  const deployModeDescription = isSolanaProtocolPending
+    ? "Solana drafts are signed and saved through your Solana wallet. Direct Solana deploy, buy, sell, and finalize stay locked until the on-chain launch program is deployed."
+    : bnbDirectDeployEnabled
+      ? directDeployRouteReady
+        ? "Deploy directly to the configured BNB launchpad. This will upload the logo, request server route authorization, and send the LaunchFactory transaction from your wallet."
+        : "Direct deploy is enabled, but the final BNB launchpad and Topaz contract env values are not complete yet."
+      : "Direct on-chain deployment is locked during Prepare Mode. When live launch opens, this button will deploy immediately without the promotion page.";
+  const deployButtonLabel = isDeploying
+    ? "Deploying..."
+    : directDeployRouteReady
+      ? "Deploy Coin"
+      : isSolanaProtocolPending
+        ? "Solana Protocol Pending"
+        : bnbDirectDeployEnabled
+          ? "Contracts Required"
+          : "Locked in Prepare Mode";
 
   return (
     <ContentContainer className="flex min-h-[calc(100dvh-9rem)] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
@@ -459,7 +520,7 @@ const Create = () => {
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
               <p className="mt-1 text-xs text-muted-foreground">{deployModeDescription}</p>
             </div>
-            <Button type="submit" disabled className="h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none">
+            <Button type="submit" disabled={isDeployDisabled} className={directDeployRouteReady ? "mwz-button h-12 w-full font-retro text-base" : "h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none"}>
               <Rocket className="mr-2 h-5 w-5" />
               {deployButtonLabel}
             </Button>
