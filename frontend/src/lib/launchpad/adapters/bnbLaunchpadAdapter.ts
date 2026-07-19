@@ -1,5 +1,5 @@
 import type { BnbContractReadiness } from "@/lib/bnbContracts";
-import { summarizeMissingBnbContracts } from "@/lib/bnbContracts";
+import { getBnbContractReadiness, summarizeMissingBnbContracts } from "@/lib/bnbContracts";
 import type { SupportedChainId } from "@/lib/chainConfig";
 import type { LaunchpadSafetyCheck, LaunchpadSafetyStatus } from "./types";
 
@@ -9,8 +9,7 @@ function getBnbChainLabel(chainId: SupportedChainId) {
   return chainId === 97 ? "BNB Testnet" : "BNB Smart Chain";
 }
 
-function contractChecks(readiness?: BnbContractReadiness): LaunchpadSafetyCheck[] {
-  if (!readiness) return [];
+function contractChecks(readiness: BnbContractReadiness): LaunchpadSafetyCheck[] {
   const groups = [
     {
       id: "coreContracts",
@@ -56,8 +55,10 @@ export function getBnbLaunchpadSafetyStatus(params: {
   hasAccount: boolean;
   contractReadiness?: BnbContractReadiness;
 }): LaunchpadSafetyStatus {
-  const contractsReady = params.contractReadiness?.ready ?? Boolean(params.factoryAddress);
+  const readiness = params.contractReadiness ?? getBnbContractReadiness(params.chainId);
+  const contractsReady = readiness.ready;
   const protocolReady = Boolean(params.factoryAddress) && contractsReady;
+  const missingTopaz = readiness.missingRequired.some((item) => item.key.startsWith("topaz"));
 
   return {
     adapterId: BNB_LAUNCHPAD_ADAPTER_ID,
@@ -68,12 +69,7 @@ export function getBnbLaunchpadSafetyStatus(params: {
     primaryActionLabel: protocolReady ? "BNB Live Route" : "Contracts Required",
     description: protocolReady
       ? "BNB launches use route authorization, API preflight checks, the configured LaunchFactory, and the Topaz graduation route."
-      : summarizeMissingBnbContracts(params.contractReadiness ?? {
-          chainId: params.chainId,
-          ready: false,
-          items: [],
-          missingRequired: [],
-        }),
+      : summarizeMissingBnbContracts(readiness),
     checks: [
       {
         id: "routeAuth",
@@ -87,7 +83,7 @@ export function getBnbLaunchpadSafetyStatus(params: {
         state: params.hasSigner && params.hasAccount ? "ready" : "pending",
         detail: params.hasSigner && params.hasAccount ? "Signer connected." : "Connect a BNB-compatible wallet before launch actions.",
       },
-      ...contractChecks(params.contractReadiness),
+      ...contractChecks(readiness),
     ],
     milestones: [
       {
@@ -111,8 +107,8 @@ export function getBnbLaunchpadSafetyStatus(params: {
       {
         id: "graduation",
         label: "Topaz graduation",
-        state: params.contractReadiness?.missingRequired.some((item) => item.key.startsWith("topaz")) ? "blocked" : "ready",
-        detail: params.contractReadiness?.missingRequired.some((item) => item.key.startsWith("topaz"))
+        state: missingTopaz ? "blocked" : "ready",
+        detail: missingTopaz
           ? "Topaz router, pool factory, and WBNB addresses are required before final acceptance."
           : "Graduated tokens route into the configured Topaz volatile pool path.",
       },
