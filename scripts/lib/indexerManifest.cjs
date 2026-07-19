@@ -139,6 +139,11 @@ function requireAddress(label, value, sourceLabel) {
   return ethers.getAddress(value);
 }
 
+function optionalAddress(label, value, sourceLabel) {
+  if (!value) return null;
+  return requireAddress(label, value, sourceLabel);
+}
+
 function eventTopic(signature) {
   return ethers.id(signature);
 }
@@ -158,13 +163,20 @@ function buildIndexerManifest(deployment, sourceLabel = "deployment") {
     CONTRACTS.map(([name, fallbacks]) => [name, requireAddress(name, pickAddress(deployment, name, fallbacks), sourceLabel)])
   );
 
+  const topazContracts = deployment.topazInfrastructure?.contracts || {};
+  const launchRouter = deployment.topazRouterAdapter || deployment.router || deployment.topazRouter;
+  const productionTopazRouter = deployment.productionTopazRouter || topazContracts.Router || deployment.topazRouter || deployment.router;
+
   return {
     schemaVersion: 1,
     network: deployment.network || "unknown",
     chainId: Number(deployment.chainId),
     deploymentBlock: deployment.deploymentBlock ?? deployment.blockNumber ?? null,
     contracts,
-    topazRouter: requireAddress("TopazRouter", deployment.topazRouter || deployment.router, sourceLabel),
+    launchRouter: requireAddress("LaunchRouter", launchRouter, sourceLabel),
+    topazRouter: requireAddress("TopazRouter", productionTopazRouter, sourceLabel),
+    topazRouterAdapter: optionalAddress("TopazRouterAdapter", deployment.topazRouterAdapter, sourceLabel),
+    topazInfrastructure: deployment.topazInfrastructure || null,
     graduationPriceFeed: deployment.graduationPriceFeed
       ? requireAddress("GraduationPriceFeed", deployment.graduationPriceFeed, sourceLabel)
       : null,
