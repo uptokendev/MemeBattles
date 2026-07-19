@@ -93,7 +93,7 @@ describe("deployment-summary script", function () {
     expect(result.stdout).to.include("factoryTradeRouteProfile           1");
     expect(result.stdout).to.include("unifiedRouterModeActive            true");
     expect(result.stdout).to.include("status                             valid");
-    expect(result.stdout).to.include("entries                            12");
+    expect(result.stdout).to.include("entries                            13");
     expect(result.stdout).to.include("none");
   });
 
