@@ -174,6 +174,38 @@ function checkLaunchpadIntegration(failures) {
   }
 }
 
+function checkBnbEnvDrill(failures) {
+  const drillFile = path.join(frontendRoot, "scripts", "check-bnb-contract-env.mjs");
+  const drill = readIfExists(drillFile);
+  if (!drill) {
+    fail(failures, "frontend/scripts/check-bnb-contract-env.mjs is missing.");
+    return;
+  }
+
+  for (const expected of [
+    "--strict",
+    "--rpc",
+    "CHECK_BNB_CONTRACT_ENV_STRICT",
+    "CHECK_BNB_CONTRACT_RPC",
+    "VITE_TOPAZ_ROUTER_ADDRESS",
+    "VITE_TOPAZ_FACTORY_ADDRESS",
+    "VITE_TOPAZ_WBNB_ADDRESS",
+    "campaignsCount",
+  ]) {
+    if (!drill.includes(expected)) fail(failures, `check-bnb-contract-env.mjs missing ${expected}.`);
+  }
+
+  const frontendPackage = readIfExists(path.join(frontendRoot, "package.json"));
+  if (!frontendPackage.includes("check:bnb-contract-env")) {
+    fail(failures, "frontend/package.json missing check:bnb-contract-env script.");
+  }
+
+  const rootPackage = readIfExists(path.join(repoRoot, "package.json"));
+  if (!rootPackage.includes("frontend:check:bnb-contract-env")) {
+    fail(failures, "package.json missing frontend:check:bnb-contract-env script.");
+  }
+}
+
 function checkEnvExample(failures) {
   const file = path.join(frontendRoot, ".env.example");
   const example = readIfExists(file);
@@ -220,6 +252,7 @@ const warnings = [];
 checkAbis(failures);
 checkContractRegistry(failures);
 checkLaunchpadIntegration(failures);
+checkBnbEnvDrill(failures);
 checkEnvExample(failures);
 checkLocalEnvFiles(failures, warnings);
 
@@ -236,4 +269,4 @@ if (failures.length) {
 }
 
 console.log("Frontend contract readiness check passed.");
-console.log("ABIs are synced, the BNB contract registry is wired, direct deploy is gated, contract env names are documented, and local env address values are valid when present.");
+console.log("ABIs are synced, the BNB contract registry is wired, direct deploy is gated, the BNB env drill is available, contract env names are documented, and local env address values are valid when present.");
