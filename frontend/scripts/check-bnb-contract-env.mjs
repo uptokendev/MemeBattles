@@ -146,6 +146,17 @@ function printTable(items) {
   }
 }
 
+function addPartialEnvWarning(items, warnings) {
+  const configured = items.filter(([, , , address]) => Boolean(address));
+  const missing = items.filter(([, , , address]) => !address);
+  if (!configured.length || !missing.length) return;
+
+  const configuredLabels = configured.map(([label]) => label).join(", ");
+  warnings.unshift(
+    `Partial BNB contract env detected: ${configured.length}/${items.length} configured (${configuredLabels}). Treat this as stale/pre-final wiring until npm run frontend:env:bsc-testnet and npm run frontend:apply-env:bsc-testnet have populated the full set.`,
+  );
+}
+
 async function main() {
   const chainId = parseChainId();
   const strict = hasArg("--strict") || truthy(process.env.CHECK_BNB_CONTRACT_ENV_STRICT);
@@ -165,6 +176,8 @@ async function main() {
       failures.push(`${label}: ${prefix}_${chainId} must be a 20-byte 0x address, got ${address}.`);
     }
   }
+
+  addPartialEnvWarning(items, warnings);
 
   for (const legacy of ["VITE_PANCAKE_ROUTER_ADDRESS", "VITE_PANCAKE_ROUTER_ADDRESS_97", "VITE_PANCAKE_ROUTER_ADDRESS_56"]) {
     if (readEnv(legacy)) failures.push(`Remove stale ${legacy}; use VITE_TOPAZ_ROUTER_ADDRESS_${chainId}.`);
@@ -199,7 +212,7 @@ async function main() {
 
   console.log("\nBNB frontend contract env drill completed.");
   if (!strict && warnings.length) {
-    console.log("Missing addresses are expected before final BSC deployment. Re-run with --strict after npm run frontend:env:bsc-testnet creates final env values.");
+    console.log("Missing or partial addresses are expected before final BSC deployment. Re-run with --strict after npm run frontend:env:bsc-testnet creates final env values.");
   }
 }
 
