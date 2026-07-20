@@ -7,7 +7,15 @@ coverage
 coverage.json
 dist
 .env
+.env.*
+!.env.example
 .env.bsc-testnet
+
+frontend/.env
+frontend/.env.*
+frontend/.env.local
+frontend/.env.local.*
+frontend/.env.local.backup-*
 
 deployments/*.json
 deployments/*.frontend.env
@@ -15,6 +23,9 @@ deployments/*.activation.json
 deployments/*.retired.json
 output/*.json
 output/testnet-cycle-results*.json
+output/security-access-matrix.md
+reports/topaz-graduation-testnet-*.json
+reports/topaz-graduation-testnet-*.md
 
 # Local Netlify folder
 .netlify
