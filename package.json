@@ -85,6 +85,7 @@
     "dotenv": "^16.4.5"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^5.0.2"
+    "@openzeppelin/contracts": "^5.0.2",
+    "ethers": "^6.15.0"
   }
 }
