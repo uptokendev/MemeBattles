@@ -1,15 +1,100 @@
 {
   "network": "bscTestnet",
   "chainId": 97,
+  "deploymentBlock": 120237130,
   "deployer": "0x13AD79765e14927dF2c554d9662Bbe539e89C8e8",
-  "router": "0xD99D1c33F9fC3444f8101754aBC46c52416550D1",
-  "treasurySafe": "0x13ad79765e14927df2c554d9662bbe539e89c8e8",
+  "router": "0xB1829D387021c953c93C0dCAD23665E514733139",
+  "topazRouter": "0xB1829D387021c953c93C0dCAD23665E514733139",
+  "productionTopazRouter": "0xe559d93643631E9E8Cc7d10ADFA581Be4b5399C8",
+  "topazRouterAdapter": "0xB1829D387021c953c93C0dCAD23665E514733139",
+  "creatorRegistry": "0xfD452f6189c7214ea4167B1d36bbba96dcB187B5",
+  "riskRegistry": "0x12a1B56D9EC0ED53Bab1E874591334cfd2834f66",
+  "permanentLpLocker": "0xab6AF3B5eA8Dc4599b75aed39cf6f6eaB118526A",
+  "graduationOracle": "0x1624C1Cab364bfe5D71d778f39E345D6cf44b1fA",
+  "graduationPriceFeed": "0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526",
+  "graduationMaxPriceAge": 3600,
+  "treasurySafe": "0xAb2789a8B226bA0655E2Ce4824C572dF1208fdAA",
   "upgradeDelaySeconds": 172800,
   "protocolFeeBps": "200",
+  "leaguePayoutOperator": "0x0000000000000000000000000000000000000000",
+  "leagueRootPoster": "0x0000000000000000000000000000000000000000",
+  "leaguePayoutMaxPerTx": null,
+  "leaguePayoutDailyCap": null,
+  "leagueClaimMaxPerTx": null,
+  "leagueClaimMaxEpochTotal": null,
+  "enableLeaguePayouts": false,
+  "enableLeagueClaims": false,
+  "recruiterPayoutOperator": "0x0000000000000000000000000000000000000000",
+  "recruiterPayoutMaxPerTx": null,
+  "recruiterPayoutDailyCap": null,
+  "enableRecruiterPayouts": false,
+  "canAdminConfigure": false,
   "contracts": {
-    "TreasuryVault": "0xc9d3e1174983314490B32a7929ac82421E4e5707",
-    "TreasuryRouter": "0xf10909CA840b0C2212a0b15821b0a92Ba47ef769",
-    "LaunchFactory": "0xCCCa3f0daf3D3D6D063287a0FbFd90607Ca8B7F6",
-    "UPVoteTreasury": "0x58386c97B7AaE0738d50730cC59de8191eD1c816"
+    "LeagueTreasury": "0xAEB5d635010022925d4121B8150024c2a24297E7",
+    "TreasuryVaultV2": "0xAEB5d635010022925d4121B8150024c2a24297E7",
+    "TreasuryRouter": "0x01Fa34084654885310E33FaC6F50C128fcC753D3",
+    "RecruiterRewardsVault": "0x59A09Db493b323b585dd1e69D75c8E5cBdb02861",
+    "CommunityRewardsVault": "0x5456Ac531e5AE04b4F68f396355E558795F3ff38",
+    "ProtocolRevenueVault": "0x28Ee2819E034eB6E48e11AC4c2eA96Fb8DBE4F4F",
+    "CreatorRegistry": "0xfD452f6189c7214ea4167B1d36bbba96dcB187B5",
+    "RiskRegistry": "0x12a1B56D9EC0ED53Bab1E874591334cfd2834f66",
+    "GraduationOracle": "0x1624C1Cab364bfe5D71d778f39E345D6cf44b1fA",
+    "TopazRouterAdapter": "0xB1829D387021c953c93C0dCAD23665E514733139",
+    "LaunchCampaignImplementation": "0xAE476708efB6f2b9129CC59fc208e575c6523871",
+    "LaunchFactory": "0xa7fFFB7d2575427B143F76A68F41379d8DA168e7",
+    "PermanentLpLocker": "0xab6AF3B5eA8Dc4599b75aed39cf6f6eaB118526A",
+    "UPVoteTreasury": "0x1f944CEaD10B9B4380A7869869648F0c22b6ffcf"
+  },
+  "routing": {
+    "activeLeagueVault": "0xAEB5d635010022925d4121B8150024c2a24297E7",
+    "recruiterRewardsVault": null,
+    "recruiterPayoutOperator": null,
+    "recruiterPayoutMaxPerTx": null,
+    "recruiterPayoutDailyCap": null,
+    "recruiterPayoutsEnabled": null,
+    "communityRewardsVault": null,
+    "protocolRevenueVault": null,
+    "factoryFeeRecipient": "0x01Fa34084654885310E33FaC6F50C128fcC753D3",
+    "factoryTradeRouteProfile": 1,
+    "factoryFinalizeRouteProfile": 1,
+    "factoryRouteAuthority": "0xb989A99823eA96552c3E3198A40CdBF682EDf1aA",
+    "campaignImplementation": "0xAE476708efB6f2b9129CC59fc208e575c6523871",
+    "graduationOracle": "0x1624C1Cab364bfe5D71d778f39E345D6cf44b1fA",
+    "topazRouter": "0xB1829D387021c953c93C0dCAD23665E514733139",
+    "productionTopazRouter": "0xe559d93643631E9E8Cc7d10ADFA581Be4b5399C8",
+    "topazRouterAdapter": "0xB1829D387021c953c93C0dCAD23665E514733139",
+    "permanentLpLocker": "0xab6AF3B5eA8Dc4599b75aed39cf6f6eaB118526A",
+    "unifiedRouterModeActive": true
+  },
+  "security": {
+    "creatorRegistry": "0xfD452f6189c7214ea4167B1d36bbba96dcB187B5",
+    "riskRegistry": "0x12a1B56D9EC0ED53Bab1E874591334cfd2834f66",
+    "factoryLaunchRecorderEnabled": true,
+    "registryOwner": "0xAb2789a8B226bA0655E2Ce4824C572dF1208fdAA"
+  },
+  "postDeployActions": [
+    "TreasuryRouter.setRecruiterRewardsVault(0x59A09Db493b323b585dd1e69D75c8E5cBdb02861)",
+    "TreasuryRouter.setCommunityRewardsVault(0x5456Ac531e5AE04b4F68f396355E558795F3ff38)",
+    "TreasuryRouter.setProtocolRevenueVault(0x28Ee2819E034eB6E48e11AC4c2eA96Fb8DBE4F4F)",
+    "CommunityRewardsVault.setRouter(0x01Fa34084654885310E33FaC6F50C128fcC753D3)"
+  ],
+  "topazManifest": {
+    "source": "deployments/bscTestnet/minimal-topaz.json",
+    "upstreamRepository": "topazdex/topaz-contacts",
+    "upstreamCommit": "858d93c0e595777aef9564124f634f4138be8f6d",
+    "deploymentCommit": ""
+  },
+  "topazInfrastructure": {
+    "contracts": {
+      "WBNB": "0x4E7aF54D355684EF206DAb0b5Dca8695D1e75dA2",
+      "PoolImplementation": "0xD68Cc707566f09bb2dD1A79FeD56E49999945A56",
+      "PoolFactory": "0xE34346710cca352a3b69A080067d176C8ACA97D9",
+      "FactoryRegistry": "0x1D3a9664B9d61a6559B6FA6D6F98158d728e538B",
+      "Router": "0xe559d93643631E9E8Cc7d10ADFA581Be4b5399C8"
+    },
+    "configuration": {
+      "volatileFeeBps": 100,
+      "graduationPoolStable": false
+    }
   }
 }
