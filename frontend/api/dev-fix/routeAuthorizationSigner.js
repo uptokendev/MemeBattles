@@ -2,10 +2,10 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-async function loadEthers() {
+function loadEthers() {
   try {
-    const mod = await import("ethers");
-    return mod.ethers;
+    const mod = require("ethers");
+    return mod.ethers || mod;
   } catch (error) {
     const hardhat = require("hardhat");
     if (hardhat?.ethers) return hardhat.ethers;
@@ -13,7 +13,7 @@ async function loadEthers() {
   }
 }
 
-const ethers = await loadEthers();
+const ethers = loadEthers();
 
 export const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 export const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
