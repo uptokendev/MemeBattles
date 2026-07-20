@@ -191,6 +191,8 @@ function checkBnbEnvDrill(failures) {
     "VITE_TOPAZ_FACTORY_ADDRESS",
     "VITE_TOPAZ_WBNB_ADDRESS",
     "campaignsCount",
+    "Partial BNB contract env detected",
+    "frontend:apply-env:bsc-testnet",
   ]) {
     if (!drill.includes(expected)) fail(failures, `check-bnb-contract-env.mjs missing ${expected}.`);
   }
