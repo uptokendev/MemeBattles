@@ -34,3 +34,4 @@ jobs:
           test/PermanentLpLockerHarvest.spec.ts
           test/TreasuryRouterV2.spec.ts
           test/IndexerManifestTreasuryRouterV2.spec.ts
+          test/TreasuryRouterV2Tooling.spec.ts
