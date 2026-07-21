@@ -96,6 +96,9 @@ export function resolveContracts(deployment: any) {
   return {
     TreasuryVaultV2: pickAddress(deployment, "TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]),
     TreasuryRouter: pickAddress(deployment, "TreasuryRouter", ["TreasuryRouterV2", "treasuryRouterV2", "treasuryRouter", "leagueRouter", "routerAddress"]),
+    TreasuryRouterV2: pickAddress(deployment, "TreasuryRouterV2", ["treasuryRouterV2"]),
+    WeeklyLeagueVault: pickAddress(deployment, "WeeklyLeagueVault", ["weeklyLeagueVault", "activeLeagueVault"]),
+    MonthlyLeagueTreasury: pickAddress(deployment, "MonthlyLeagueTreasury", ["monthlyLeagueTreasury"]),
     RecruiterRewardsVault: pickAddress(deployment, "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]),
     CommunityRewardsVault: pickAddress(deployment, "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]),
     ProtocolRevenueVault: pickAddress(deployment, "ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]),
@@ -107,6 +110,15 @@ export function resolveContracts(deployment: any) {
     PermanentLpLocker: pickAddress(deployment, "PermanentLpLocker", ["permanentLpLocker"]),
     UPVoteTreasury: pickAddress(deployment, "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]),
   };
+}
+
+function isTreasuryRouterV2Deployment(deployment: any, contracts: ReturnType<typeof resolveContracts>) {
+  return (
+    deployment.treasuryRouterVersion === "v2" ||
+    Boolean(contracts.TreasuryRouterV2) ||
+    Boolean(deployment.routing?.monthlyLeagueTreasury) ||
+    Boolean(deployment.monthlyLeagueTreasury)
+  );
 }
 
 export function loadDeployment() {
@@ -123,10 +135,58 @@ export function loadDeployment() {
   return deployment;
 }
 
+async function verifyTreasuryRouterV2(deployment: any, contracts: ReturnType<typeof resolveContracts>) {
+  const routerAddress = contracts.TreasuryRouterV2 || contracts.TreasuryRouter;
+  const weeklyLeagueVault = contracts.WeeklyLeagueVault || deployment.routing?.weeklyLeagueVault || contracts.TreasuryVaultV2;
+  const monthlyLeagueTreasury = contracts.MonthlyLeagueTreasury || deployment.routing?.monthlyLeagueTreasury || deployment.monthlyLeagueTreasury;
+  const expectedWeeklyBps = BigInt(deployment.weeklyLeagueBps ?? deployment.routing?.weeklyLeagueBps ?? 3000);
+  const expectedMonthlyBps = BigInt(deployment.monthlyLeagueBps ?? deployment.routing?.monthlyLeagueBps ?? 7000);
+
+  await assertCode("TreasuryRouterV2", routerAddress);
+  await assertCode("WeeklyLeagueVault", weeklyLeagueVault);
+  await assertCode("MonthlyLeagueTreasury", monthlyLeagueTreasury);
+
+  const router = new ethers.Contract(
+    routerAddress,
+    [
+      "function weeklyLeagueVault() view returns (address)",
+      "function monthlyLeagueTreasury() view returns (address)",
+      "function weeklyLeagueBps() view returns (uint16)",
+      "function monthlyLeagueBps() view returns (uint16)",
+      "function recruiterRewardsVault() view returns (address)",
+      "function communityRewardsVault() view returns (address)",
+      "function protocolRevenueVault() view returns (address)",
+      "function permanentLpLocker() view returns (address)",
+      "function authorizedLpLocker(address locker) view returns (bool)",
+    ],
+    ethers.provider
+  );
+
+  assertEq("TreasuryRouterV2.weeklyLeagueVault", await router.weeklyLeagueVault(), weeklyLeagueVault);
+  assertEq("TreasuryRouterV2.monthlyLeagueTreasury", await router.monthlyLeagueTreasury(), monthlyLeagueTreasury);
+  assertBigIntEq("TreasuryRouterV2.weeklyLeagueBps", BigInt(await router.weeklyLeagueBps()), expectedWeeklyBps);
+  assertBigIntEq("TreasuryRouterV2.monthlyLeagueBps", BigInt(await router.monthlyLeagueBps()), expectedMonthlyBps);
+  assertEq("TreasuryRouterV2.recruiterRewardsVault", await router.recruiterRewardsVault(), contracts.RecruiterRewardsVault);
+  assertEq("TreasuryRouterV2.communityRewardsVault", await router.communityRewardsVault(), contracts.CommunityRewardsVault);
+  assertEq("TreasuryRouterV2.protocolRevenueVault", await router.protocolRevenueVault(), contracts.ProtocolRevenueVault);
+
+  if (deployment.routing?.permanentLpLockerAuthorized === true) {
+    assertEq("TreasuryRouterV2.permanentLpLocker", await router.permanentLpLocker(), contracts.PermanentLpLocker);
+    assertTrue("TreasuryRouterV2.authorizedLpLocker", await router.authorizedLpLocker(contracts.PermanentLpLocker));
+  }
+}
+
 export async function verifyDeployment(deployment: any) {
   const contracts = resolveContracts(deployment);
+  const v2Deployment = isTreasuryRouterV2Deployment(deployment, contracts);
 
-  for (const [name, address] of Object.entries(contracts)) {
+  const requiredContracts = Object.entries(contracts).filter(([name, address]) => {
+    if (!address) return false;
+    if (!v2Deployment && ["TreasuryRouterV2", "WeeklyLeagueVault", "MonthlyLeagueTreasury"].includes(name)) return false;
+    return true;
+  });
+
+  for (const [name, address] of requiredContracts) {
     await assertCode(name, address);
   }
 
@@ -152,6 +212,10 @@ export async function verifyDeployment(deployment: any) {
 
   if (deployment.routing?.unifiedRouterModeActive !== undefined) {
     assertTrue("routing.unifiedRouterModeActive", Boolean(deployment.routing.unifiedRouterModeActive));
+  }
+
+  if (v2Deployment) {
+    await verifyTreasuryRouterV2(deployment, contracts);
   }
 
   console.log("[verify] deployment wiring OK");
