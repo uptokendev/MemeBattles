@@ -13,16 +13,4 @@ contract TreasuryRouterReceiverMock {
 
 contract CommunityRewardsVaultMock {
     uint256 public airdropReceived;
-    uint256 public squadReceived;
-
-    function depositAirdrop() external payable {
-        airdropReceived += msg.value;
-    }
-
-    function depositSquadPool() external payable {
-        squadReceived += msg.value;
-    }
-}
-
-contract RevertingTreasuryReceiverMock {
-   
+    uint
