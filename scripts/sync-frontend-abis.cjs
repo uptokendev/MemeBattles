@@ -10,6 +10,7 @@ const contracts = [
   'CreatorRegistry',
   'RiskRegistry',
   'TreasuryRouter',
+  'TreasuryRouterV2',
   'RecruiterRewardsVault',
   'ProtocolRevenueVault',
   'CommunityRewardsVault',
