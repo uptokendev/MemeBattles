@@ -13,7 +13,7 @@ const NETWORK_BY_CHAIN_ID = new Map([
 const REQUIRED_DEPLOYMENT_CONTRACTS = [
   ["LaunchFactory", ["factory", "factoryAddress"]],
   ["LaunchCampaignImplementation", ["campaignImplementation"]],
-  ["TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]],
+  ["TreasuryRouter", ["TreasuryRouterV2", "treasuryRouterV2", "treasuryRouter", "leagueRouter", "routerAddress"]],
   ["TreasuryVaultV2", ["LeagueTreasury", "leagueTreasury", "treasuryVault", "vault"]],
   ["RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]],
   ["CommunityRewardsVault", ["communityRewardsVault", "communityVault"]],
@@ -56,6 +56,10 @@ function pickAddress(deployment, canonicalName, fallbacks = []) {
   return "";
 }
 
+function usesTreasuryRouterV2(deployment) {
+  return hasAddress(pickAddress(deployment, "TreasuryRouterV2", ["treasuryRouterV2"]));
+}
+
 function parseEnvFile(file) {
   const values = new Map();
   if (!fs.existsSync(file)) return values;
@@ -93,8 +97,9 @@ function checkDeploymentContracts(deployment, sourceLabel, errors) {
   }
 }
 
-function checkAbiFiles(root, errors) {
-  for (const name of REQUIRED_ABIS) {
+function checkAbiFiles(root, deployment, errors) {
+  const requiredAbis = usesTreasuryRouterV2(deployment) ? [...REQUIRED_ABIS, "TreasuryRouterV2"] : REQUIRED_ABIS;
+  for (const name of requiredAbis) {
     const file = path.join(root, "frontend", "src", "abi", `${name}.json`);
     if (!fs.existsSync(file)) {
       errors.push(`frontend ABI missing: ${path.relative(root, file)}. Run npm run compile:frontend-abis.`);
@@ -200,8 +205,8 @@ function main() {
     checkDeploymentContracts(deployment, deploymentFile, errors);
     checkTopazMetadata(deployment, deploymentFile, errors, warnings);
     checkFrontendEnvFile(frontendEnvFile, expectedPairs, errors);
+    checkAbiFiles(root, deployment, errors);
   }
-  checkAbiFiles(root, errors);
 
   console.log(`[frontend-contracts] deployment=${deploymentFile}`);
   console.log(`[frontend-contracts] frontendEnv=${frontendEnvFile}`);
