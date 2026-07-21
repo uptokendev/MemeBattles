@@ -219,6 +219,20 @@ async function resolveGraduationOracle(): Promise<{ oracleAddress: string; price
   return { oracleAddress, priceFeedAddress, maxPriceAge };
 }
 
+async function resolveMonthlyLeagueTreasury(vaultFactory: any, treasurySafe: string): Promise<{ address: string; deployed: boolean }> {
+  const configured = (process.env.MONTHLY_LEAGUE_TREASURY ?? process.env.MONTHLY_LEAGUE_TREASURY_ADDRESS ?? "").trim();
+  if (configured) {
+    await requireContractCode(configured, "Configured monthly league treasury");
+    return { address: configured, deployed: false };
+  }
+
+  const monthlyVault = await vaultFactory.deploy(treasurySafe, ethers.ZeroAddress, ethers.ZeroAddress);
+  await monthlyVault.waitForDeployment();
+  const monthlyVaultAddress = await monthlyVault.getAddress();
+  console.log("MonthlyLeagueTreasury (TreasuryVaultV2):", monthlyVaultAddress);
+  return { address: monthlyVaultAddress, deployed: true };
+}
+
 export async function deployProtocol() {
   const [deployer] = await ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
@@ -248,6 +262,10 @@ export async function deployProtocol() {
   const tradeRouteProfile = routeProfileEnv("PHASE1_TRADE_ROUTE_PROFILE", 1);
   const finalizeRouteProfile = routeProfileEnv("PHASE1_FINALIZE_ROUTE_PROFILE", 1);
   const routeAuthority = String(process.env.ROUTE_AUTHORITY_ADDRESS ?? "").trim();
+  const useTreasuryRouterV2 = boolEnv("DEPLOY_TREASURY_ROUTER_V2", boolEnv("USE_TREASURY_ROUTER_V2", false));
+  const weeklyLeagueBps = 3000;
+  const monthlyLeagueBps = 7000;
+  const treasuryRouterLabel = useTreasuryRouterV2 ? "TreasuryRouterV2" : "TreasuryRouter";
 
   console.log(`Network: ${network.name}`);
   console.log(`Chain ID: ${net.chainId.toString()}`);
@@ -274,6 +292,7 @@ export async function deployProtocol() {
   console.log("Factory trade route profile:", tradeRouteProfile);
   console.log("Factory finalize route profile:", finalizeRouteProfile);
   console.log("Route authority:", routeAuthority || "unset");
+  console.log("Deploy TreasuryRouterV2:", useTreasuryRouterV2);
 
   const canAdminConfigure = treasurySafe.toLowerCase() === deployerAddress.toLowerCase();
   console.log("Can configure admin-owned routing immediately:", canAdminConfigure);
@@ -309,11 +328,21 @@ export async function deployProtocol() {
     console.log("Unpaused Merkle claim lane");
   }
 
-  const Router = await ethers.getContractFactory("TreasuryRouter");
-  const leagueRouter = await Router.deploy(treasurySafe, vaultAddress, upgradeDelaySeconds);
+  const monthlyLeagueTreasury = useTreasuryRouterV2
+    ? await resolveMonthlyLeagueTreasury(Vault, treasurySafe)
+    : { address: null as string | null, deployed: false };
+  const monthlyLeagueTreasuryAddress = monthlyLeagueTreasury.address;
+
+  const Router = await ethers.getContractFactory(treasuryRouterLabel);
+  const leagueRouter = useTreasuryRouterV2
+    ? await Router.deploy(treasurySafe, vaultAddress, monthlyLeagueTreasuryAddress, upgradeDelaySeconds)
+    : await Router.deploy(treasurySafe, vaultAddress, upgradeDelaySeconds);
   await leagueRouter.waitForDeployment();
   const leagueRouterAddress = await leagueRouter.getAddress();
-  console.log("TreasuryRouter:", leagueRouterAddress);
+  console.log(`${treasuryRouterLabel}:`, leagueRouterAddress);
+  if (useTreasuryRouterV2) {
+    console.log("Weekly/monthly league split:", `${weeklyLeagueBps}/${monthlyLeagueBps}`);
+  }
 
   const RecruiterVault = await ethers.getContractFactory("RecruiterRewardsVault");
   const recruiterVault = await RecruiterVault.deploy(treasurySafe);
@@ -379,9 +408,9 @@ export async function deployProtocol() {
     await tx.wait();
     console.log("Router protocol vault set:", protocolVaultAddress);
   } else {
-    postDeployActions.push(`TreasuryRouter.setRecruiterRewardsVault(${recruiterVaultAddress})`);
-    postDeployActions.push(`TreasuryRouter.setCommunityRewardsVault(${communityVaultAddress})`);
-    postDeployActions.push(`TreasuryRouter.setProtocolRevenueVault(${protocolVaultAddress})`);
+    postDeployActions.push(`${treasuryRouterLabel}.setRecruiterRewardsVault(${recruiterVaultAddress})`);
+    postDeployActions.push(`${treasuryRouterLabel}.setCommunityRewardsVault(${communityVaultAddress})`);
+    postDeployActions.push(`${treasuryRouterLabel}.setProtocolRevenueVault(${protocolVaultAddress})`);
     postDeployActions.push(`CommunityRewardsVault.setRouter(${leagueRouterAddress})`);
     console.warn("[deploy] Treasury safe differs from deployer; router/community admin wiring left for multisig execution.");
   }
@@ -416,6 +445,21 @@ export async function deployProtocol() {
   const permanentLpLockerAddress = await factory.permanentLpLocker();
   console.log("LaunchFactory:", factoryAddress);
   console.log("PermanentLpLocker:", permanentLpLockerAddress);
+
+  if (useTreasuryRouterV2) {
+    if (canAdminConfigure) {
+      let tx = await leagueRouter.setAuthorizedLpLocker(permanentLpLockerAddress, true);
+      await tx.wait();
+      console.log("Router authorized LP locker:", permanentLpLockerAddress);
+
+      tx = await leagueRouter.setPrimaryLpLocker(permanentLpLockerAddress);
+      await tx.wait();
+      console.log("Router primary LP locker set:", permanentLpLockerAddress);
+    } else {
+      postDeployActions.push(`${treasuryRouterLabel}.setAuthorizedLpLocker(${permanentLpLockerAddress}, true)`);
+      postDeployActions.push(`${treasuryRouterLabel}.setPrimaryLpLocker(${permanentLpLockerAddress})`);
+    }
+  }
 
   let registryTx = await creatorRegistry.setLaunchRecorder(factoryAddress, true);
   await registryTx.wait();
@@ -473,6 +517,12 @@ export async function deployProtocol() {
     graduationPriceFeed: graduationOracleConfig.priceFeedAddress,
     graduationMaxPriceAge: graduationOracleConfig.maxPriceAge,
     treasurySafe,
+    treasuryRouterVersion: useTreasuryRouterV2 ? "v2" : "v1",
+    weeklyLeagueVault: vaultAddress,
+    monthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
+    monthlyLeagueTreasuryDeployed: monthlyLeagueTreasury.deployed,
+    weeklyLeagueBps: useTreasuryRouterV2 ? weeklyLeagueBps : null,
+    monthlyLeagueBps: useTreasuryRouterV2 ? monthlyLeagueBps : null,
     upgradeDelaySeconds,
     protocolFeeBps: protocolFeeBps.toString(),
     leaguePayoutOperator: operator,
@@ -492,6 +542,13 @@ export async function deployProtocol() {
       LeagueTreasury: vaultAddress,
       TreasuryVaultV2: vaultAddress,
       TreasuryRouter: leagueRouterAddress,
+      ...(useTreasuryRouterV2
+        ? {
+            TreasuryRouterV2: leagueRouterAddress,
+            WeeklyLeagueVault: vaultAddress,
+            MonthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
+          }
+        : {}),
       RecruiterRewardsVault: recruiterVaultAddress,
       CommunityRewardsVault: communityVaultAddress,
       ProtocolRevenueVault: protocolVaultAddress,
@@ -506,6 +563,10 @@ export async function deployProtocol() {
     },
     routing: {
       activeLeagueVault: vaultAddress,
+      weeklyLeagueVault: vaultAddress,
+      monthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
+      weeklyLeagueBps: useTreasuryRouterV2 ? weeklyLeagueBps : null,
+      monthlyLeagueBps: useTreasuryRouterV2 ? monthlyLeagueBps : null,
       recruiterRewardsVault: canAdminConfigure ? recruiterVaultAddress : null,
       recruiterPayoutOperator: recruiterPayoutOperator !== ethers.ZeroAddress ? recruiterPayoutOperator : null,
       recruiterPayoutMaxPerTx: recruiterPayoutMaxPerTx?.toString() ?? null,
@@ -523,6 +584,7 @@ export async function deployProtocol() {
       productionTopazRouter: productionTopazRouterAddress,
       topazRouterAdapter: launchRouter.topazRouterAdapter,
       permanentLpLocker: permanentLpLockerAddress,
+      permanentLpLockerAuthorized: useTreasuryRouterV2 ? canAdminConfigure : null,
       unifiedRouterModeActive: true,
     },
     security: {
@@ -552,7 +614,7 @@ export async function deployProtocol() {
   console.log(`VITE_PERMANENT_LP_LOCKER_ADDRESS_${deployment.chainId}=${permanentLpLockerAddress}`);
   console.log(`VITE_CAMPAIGN_IMPLEMENTATION_ADDRESS_${deployment.chainId}=${campaignImplementationAddress}`);
   console.log("\nPhase 1 routing topology:");
-  console.log("- LaunchFactory feeRecipient -> TreasuryRouter (unified mode trigger):", leagueRouterAddress);
+  console.log(`- LaunchFactory feeRecipient -> ${treasuryRouterLabel} (unified mode trigger):`, leagueRouterAddress);
   console.log("- LaunchCampaign implementation for clones:", campaignImplementationAddress);
   console.log("- GraduationOracle for USD threshold:", graduationOracleConfig.oracleAddress);
   console.log("- CreatorRegistry for tier/cooldown/live-count enforcement:", creatorRegistryAddress);
@@ -562,7 +624,20 @@ export async function deployProtocol() {
   console.log("- Permanent LP locker:", permanentLpLockerAddress);
   console.log("- Factory route profiles: trade=", tradeRouteProfile, "finalize=", finalizeRouteProfile);
   console.log("- Factory route authority:", routeAuthority || "(not set)");
-  console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
+  if (useTreasuryRouterV2) {
+    console.log(
+      "- League trade slice -> TreasuryRouterV2 -> weekly/monthly league treasuries:",
+      leagueRouterAddress,
+      "->",
+      vaultAddress,
+      "/",
+      monthlyLeagueTreasuryAddress,
+      `(${weeklyLeagueBps}/${monthlyLeagueBps})`
+    );
+    console.log("- LP locker revenue routes accepted from authorized PermanentLpLocker:", permanentLpLockerAddress);
+  } else {
+    console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
+  }
   console.log("- Recruiter-directed slices -> RecruiterRewardsVault:", recruiterVaultAddress);
   console.log("- Community slices -> CommunityRewardsVault:", communityVaultAddress);
   console.log("- Residual protocol share -> ProtocolRevenueVault:", protocolVaultAddress);
