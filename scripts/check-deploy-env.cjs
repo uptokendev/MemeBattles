@@ -14,6 +14,8 @@ const TOPAZ_ROUTER_ENVS = ["TOPAZ_ROUTER", "TOPAZ_V2_ROUTER", "ROUTER_ADDRESS"];
 const LEGACY_ROUTER_ENVS = ["PANCAKE_ROUTER", "PANCAKE_V2_ROUTER"];
 const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
 const PRICE_ENVS = ["GRADUATION_ORACLE_ADDRESS", "BNB_USD_PRICE_FEED", "NATIVE_USD_PRICE_FEED", "GRADUATION_PRICE_FEED"];
+const TREASURY_ROUTER_V2_FLAG_ENVS = ["DEPLOY_TREASURY_ROUTER_V2", "USE_TREASURY_ROUTER_V2"];
+const MONTHLY_LEAGUE_TREASURY_ENVS = ["MONTHLY_LEAGUE_TREASURY", "MONTHLY_LEAGUE_TREASURY_ADDRESS"];
 const REAL_NETWORK_ADMIN_ENVS = [
   "TREASURY_SAFE",
   "ROUTE_AUTHORITY_ADDRESS",
@@ -88,9 +90,16 @@ function checkNotLocalPrivateKey(name) {
   }
 }
 
-function isTruthyEnv(name) {
+function boolValue(name) {
   const value = raw(name).toLowerCase();
-  return ["1", "true", "yes", "on"].includes(value);
+  if (!value) return null;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  return null;
+}
+
+function isTruthyEnv(name) {
+  return boolValue(name) === true;
 }
 
 function checkBool(name) {
@@ -119,6 +128,28 @@ function checkBigInt(name) {
 
 function firstConfigured(names) {
   return names.find((name) => raw(name));
+}
+
+function useTreasuryRouterV2() {
+  const primary = boolValue("DEPLOY_TREASURY_ROUTER_V2");
+  return primary ?? boolValue("USE_TREASURY_ROUTER_V2") ?? false;
+}
+
+function checkTreasuryRouterV2Env() {
+  TREASURY_ROUTER_V2_FLAG_ENVS.forEach(checkBool);
+  MONTHLY_LEAGUE_TREASURY_ENVS.forEach((name) => checkAddress(name));
+
+  const deployFlag = boolValue("DEPLOY_TREASURY_ROUTER_V2");
+  const useFlag = boolValue("USE_TREASURY_ROUTER_V2");
+  if (deployFlag !== null && useFlag !== null && deployFlag !== useFlag) {
+    errors.push("DEPLOY_TREASURY_ROUTER_V2 and USE_TREASURY_ROUTER_V2 disagree; set only one or make them match");
+  }
+
+  if (useTreasuryRouterV2() && !hasAny(MONTHLY_LEAGUE_TREASURY_ENVS)) {
+    warnings.push(
+      "TreasuryRouterV2 enabled without MONTHLY_LEAGUE_TREASURY; deployProtocol will deploy a TreasuryVaultV2 monthly treasury placeholder."
+    );
+  }
 }
 
 function defaultTopazManifestPath() {
@@ -186,6 +217,7 @@ function checkCommon(options = {}) {
   checkPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   checkRouteProfile("PHASE1_TRADE_ROUTE_PROFILE");
   checkRouteProfile("PHASE1_FINALIZE_ROUTE_PROFILE");
+  checkTreasuryRouterV2Env();
 
   checkAddress("LEAGUE_PAYOUT_OPERATOR");
   checkAddress("LEAGUE_ROOT_POSTER");
@@ -201,7 +233,13 @@ function checkCommon(options = {}) {
     "RECRUITER_PAYOUT_DAILY_CAP",
   ].forEach(checkBigInt);
 
-  ["ENABLE_LEAGUE_PAYOUTS", "ENABLE_LEAGUE_CLAIMS", "ENABLE_RECRUITER_PAYOUTS", ...MOCK_FLAG_ENVS].forEach(checkBool);
+  [
+    "ENABLE_LEAGUE_PAYOUTS",
+    "ENABLE_LEAGUE_CLAIMS",
+    "ENABLE_RECRUITER_PAYOUTS",
+    ...MOCK_FLAG_ENVS,
+    ...TREASURY_ROUTER_V2_FLAG_ENVS,
+  ].forEach(checkBool);
 
   if (warnMissingRouteAuthority && !raw("ROUTE_AUTHORITY_ADDRESS") && !raw("ROUTE_AUTHORITY_PRIVATE_KEY")) {
     warnings.push("ROUTE_AUTHORITY_ADDRESS is not set; route-authorized launches/trades will be unavailable until set on-chain.");
@@ -261,6 +299,8 @@ console.log(`[deploy-env] deployerKey=${firstConfigured(DEPLOYER_PRIVATE_KEY_ENV
 console.log(`[deploy-env] router=${firstConfigured(ROUTER_ENVS) || (configuredTopazManifestPath() ? "TOPAZ_MANIFEST" : "unset")}`);
 console.log(`[deploy-env] graduation=${firstConfigured(PRICE_ENVS) || "unset"}`);
 console.log(`[deploy-env] treasurySafe=${raw("TREASURY_SAFE") || "fallback/deployer"}`);
+console.log(`[deploy-env] treasuryRouter=${useTreasuryRouterV2() ? "TreasuryRouterV2" : "TreasuryRouter"}`);
+console.log(`[deploy-env] monthlyLeagueTreasury=${firstConfigured(MONTHLY_LEAGUE_TREASURY_ENVS) || (useTreasuryRouterV2() ? "auto-deploy" : "n/a")}`);
 console.log(`[deploy-env] routeAuthority=${raw("ROUTE_AUTHORITY_ADDRESS") || (raw("ROUTE_AUTHORITY_PRIVATE_KEY") ? "private-key-derived" : "unset")}`);
 
 for (const warning of warnings) console.warn(`[deploy-env] warning: ${warning}`);
