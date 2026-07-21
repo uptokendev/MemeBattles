@@ -15,11 +15,20 @@ function v2Deployment() {
     router: addr(30),
     topazRouterAdapter: addr(13),
     productionTopazRouter: addr(14),
+    treasuryRouterVersion: "v2",
+    weeklyLeagueVault: addr(4),
+    monthlyLeagueTreasury: addr(15),
+    monthlyLeagueTreasuryDeployed: true,
+    weeklyLeagueBps: 3000,
+    monthlyLeagueBps: 7000,
     contracts: {
       LaunchFactory: addr(1),
       LaunchCampaignImplementation: addr(2),
+      TreasuryRouter: addr(3),
       TreasuryRouterV2: addr(3),
       TreasuryVaultV2: addr(4),
+      WeeklyLeagueVault: addr(4),
+      MonthlyLeagueTreasury: addr(15),
       RecruiterRewardsVault: addr(5),
       CommunityRewardsVault: addr(6),
       ProtocolRevenueVault: addr(7),
@@ -34,6 +43,8 @@ function v2Deployment() {
       monthlyLeagueTreasury: addr(15),
       weeklyLeagueBps: 3000,
       monthlyLeagueBps: 7000,
+      permanentLpLocker: addr(11),
+      permanentLpLockerAuthorized: true,
     },
     topazInfrastructure: {
       contracts: {
@@ -55,6 +66,21 @@ describe("TreasuryRouterV2 tooling support", function () {
     const env = buildFrontendEnv(deployment, "test deployment");
     expect(env).to.include(`VITE_TREASURY_ROUTER_ADDRESS_97=${expectedRouter}`);
     expect(env).to.include(`VITE_TOPAZ_ROUTER_ADDRESS_97=${addr(14)}`);
+  });
+
+  it("keeps the V2 deployment metadata needed by frontend, indexer, and revenue wiring", async () => {
+    const deployment = v2Deployment();
+
+    expect(deployment.treasuryRouterVersion).to.eq("v2");
+    expect(deployment.contracts.TreasuryRouter).to.eq(addr(3));
+    expect(deployment.contracts.TreasuryRouterV2).to.eq(addr(3));
+    expect(deployment.contracts.WeeklyLeagueVault).to.eq(addr(4));
+    expect(deployment.contracts.MonthlyLeagueTreasury).to.eq(addr(15));
+    expect(deployment.weeklyLeagueVault).to.eq(addr(4));
+    expect(deployment.monthlyLeagueTreasury).to.eq(addr(15));
+    expect(deployment.weeklyLeagueBps).to.eq(3000);
+    expect(deployment.monthlyLeagueBps).to.eq(7000);
+    expect(deployment.routing.permanentLpLockerAuthorized).to.eq(true);
   });
 
   it("exports V2 router address and V2-only event topics in the indexer manifest", async () => {
