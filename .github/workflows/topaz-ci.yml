@@ -36,3 +36,4 @@ jobs:
           test/IndexerManifestTreasuryRouterV2.spec.ts
           test/TreasuryRouterV2Tooling.spec.ts
           test/TreasuryRouterV2DeployProtocol.spec.ts
+          test/DeployEnvTreasuryRouterV2.spec.ts
