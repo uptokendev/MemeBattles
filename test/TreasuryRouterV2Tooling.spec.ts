@@ -2,6 +2,7 @@ import { expect } from "chai";
 
 const { buildFrontendEnv, pickTreasuryRouterAddress } = require("../scripts/lib/frontendEnv.cjs");
 const { buildIndexerManifest, eventTopic } = require("../scripts/lib/indexerManifest.cjs");
+const { buildMonitoringReadiness } = require("../scripts/monitoring-readiness.cjs");
 
 function addr(id: number) {
   return `0x${id.toString(16).padStart(40, "0")}`;
@@ -13,8 +14,11 @@ function v2Deployment() {
     chainId: 97,
     deploymentBlock: 12345,
     router: addr(30),
+    topazRouter: addr(30),
     topazRouterAdapter: addr(13),
     productionTopazRouter: addr(14),
+    graduationPriceFeed: addr(18),
+    graduationMaxPriceAge: 3600,
     treasuryRouterVersion: "v2",
     weeklyLeagueVault: addr(4),
     monthlyLeagueTreasury: addr(15),
@@ -43,8 +47,12 @@ function v2Deployment() {
       monthlyLeagueTreasury: addr(15),
       weeklyLeagueBps: 3000,
       monthlyLeagueBps: 7000,
+      factoryTradeRouteProfile: 1,
+      factoryFinalizeRouteProfile: 1,
+      factoryRouteAuthority: addr(19),
       permanentLpLocker: addr(11),
       permanentLpLockerAuthorized: true,
+      unifiedRouterModeActive: true,
     },
     topazInfrastructure: {
       contracts: {
@@ -53,6 +61,7 @@ function v2Deployment() {
         WBNB: addr(17),
       },
     },
+    postDeployActions: [],
   };
 }
 
@@ -105,5 +114,19 @@ describe("TreasuryRouterV2 tooling support", function () {
     expect(manifest.events.TreasuryRouter["LeagueRouted(uint256,uint256)"]).to.eq(
       eventTopic("LeagueRouted(uint256,uint256)")
     );
+  });
+
+  it("marks V2 deployment artifacts ready for monitoring when required split and locker metadata are present", async () => {
+    const readiness = buildMonitoringReadiness(v2Deployment(), { target: "bscTestnet" });
+
+    expect(readiness.ok).to.eq(true);
+    expect(readiness.errors).to.deep.eq([]);
+    expect(readiness.watch.treasuryRouterVersion).to.eq("v2");
+    expect(readiness.watch.contracts.TreasuryRouter).to.eq(addr(3));
+    expect(readiness.watch.contracts.TreasuryRouterV2).to.eq(addr(3));
+    expect(readiness.watch.contracts.WeeklyLeagueVault).to.eq(addr(4));
+    expect(readiness.watch.contracts.MonthlyLeagueTreasury).to.eq(addr(15));
+    expect(readiness.watch.routing.weeklyLeagueBps).to.eq(3000);
+    expect(readiness.watch.routing.monthlyLeagueBps).to.eq(7000);
   });
 });
