@@ -3,9 +3,22 @@ import { spawnSync } from "child_process";
 import { expect } from "chai";
 
 const SCRIPT = path.join(__dirname, "..", "scripts", "check-deploy-env.cjs");
+const SCRUBBED_ENV_KEYS = [
+  "DEPLOY_TREASURY_ROUTER_V2",
+  "USE_TREASURY_ROUTER_V2",
+  "MONTHLY_LEAGUE_TREASURY",
+  "MONTHLY_LEAGUE_TREASURY_ADDRESS",
+  "TOPAZ_MANIFEST",
+];
 
 function runCheck(extraEnv: Record<string, string | undefined>) {
-  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of SCRUBBED_ENV_KEYS) delete env[key];
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+
   return spawnSync(process.execPath, [SCRIPT, "hardhat"], {
     cwd: path.join(__dirname, ".."),
     env,
