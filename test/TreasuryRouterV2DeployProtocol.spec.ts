@@ -3,6 +3,7 @@ import path from "path";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { deployProtocol } from "../scripts/lib/deployProtocol";
+import { verifyDeployment } from "../scripts/verify-deployment";
 
 const ENV_KEYS = [
   "DEPLOY_TREASURY_ROUTER_V2",
@@ -105,5 +106,7 @@ describe("deployProtocol TreasuryRouterV2 path", function () {
     expect(await router.protocolRevenueVault()).to.equal(deployment.contracts.ProtocolRevenueVault);
     expect(await router.authorizedLpLocker(deployment.contracts.PermanentLpLocker)).to.equal(true);
     expect(await router.permanentLpLocker()).to.equal(deployment.contracts.PermanentLpLocker);
+
+    await verifyDeployment(deployment);
   });
 });
