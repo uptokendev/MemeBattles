@@ -10,6 +10,10 @@ function pickAddress(deployment, canonicalName, fallbacks = []) {
   return "";
 }
 
+function pickTreasuryRouterAddress(deployment) {
+  return pickAddress(deployment, "TreasuryRouter", ["TreasuryRouterV2", "treasuryRouterV2", "treasuryRouter", "leagueRouter", "routerAddress"]);
+}
+
 function requireAddress(label, value, sourceLabel) {
   if (!/^0x[a-fA-F0-9]{40}$/.test(value || "")) {
     throw new Error(`${label}: missing or invalid address in ${sourceLabel}`);
@@ -29,11 +33,12 @@ function buildFrontendEnv(deployment, sourceLabel = "deployment") {
   const topazContracts = deployment.topazInfrastructure?.contracts || {};
   const productionTopazRouter =
     deployment.productionTopazRouter || topazContracts.Router || deployment.topazRouter || deployment.router;
+  const treasuryRouter = pickTreasuryRouterAddress(deployment);
 
   const lines = [
     `VITE_FACTORY_ADDRESS_${suffix}=${requireAddress("LaunchFactory", pickAddress(deployment, "LaunchFactory", ["factory", "factoryAddress"]), sourceLabel)}`,
     `VITE_VOTE_TREASURY_ADDRESS_${suffix}=${requireAddress("UPVoteTreasury", pickAddress(deployment, "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]), sourceLabel)}`,
-    `VITE_TREASURY_ROUTER_ADDRESS_${suffix}=${requireAddress("TreasuryRouter", pickAddress(deployment, "TreasuryRouter", ["treasuryRouter", "leagueRouter", "routerAddress"]), sourceLabel)}`,
+    `VITE_TREASURY_ROUTER_ADDRESS_${suffix}=${requireAddress("TreasuryRouter", treasuryRouter, sourceLabel)}`,
     `VITE_COMMUNITY_REWARDS_VAULT_ADDRESS_${suffix}=${requireAddress("CommunityRewardsVault", pickAddress(deployment, "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]), sourceLabel)}`,
     `VITE_RECRUITER_REWARDS_VAULT_ADDRESS_${suffix}=${requireAddress("RecruiterRewardsVault", pickAddress(deployment, "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]), sourceLabel)}`,
     `VITE_PROTOCOL_REVENUE_VAULT_ADDRESS_${suffix}=${requireAddress("ProtocolRevenueVault", pickAddress(deployment, "ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]), sourceLabel)}`,
@@ -67,5 +72,6 @@ function writeFrontendEnv(deployment, outFile, sourceLabel = "deployment") {
 
 module.exports = {
   buildFrontendEnv,
+  pickTreasuryRouterAddress,
   writeFrontendEnv,
 };
