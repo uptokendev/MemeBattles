@@ -13,4 +13,27 @@ contract TreasuryRouterReceiverMock {
 
 contract CommunityRewardsVaultMock {
     uint256 public airdropReceived;
-    uint
+    uint256 public squadReceived;
+
+    function depositAirdrop() external payable {
+        airdropReceived += msg.value;
+    }
+
+    function depositSquadPool() external payable {
+        squadReceived += msg.value;
+    }
+}
+
+contract RevertingTreasuryReceiverMock {
+    receive() external payable {
+        revert("receiver reverted");
+    }
+}
+
+contract TreasuryRouterTokenMock is ERC20 {
+    constructor() ERC20("Treasury Router Token", "TRT") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
