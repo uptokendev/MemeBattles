@@ -25,10 +25,11 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      - name: Topaz adapter and locker tests
+      - name: Topaz adapter, locker, and TreasuryRouterV2 tests
         run: >-
           npx hardhat test
           test/TopazRouterAdapter.spec.ts
           test/LaunchCampaignTopazAdapter.spec.ts
           test/PermanentLpLockerTopazFee.spec.ts
           test/PermanentLpLockerHarvest.spec.ts
+          test/TreasuryRouterV2.spec.ts
