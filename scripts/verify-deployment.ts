@@ -179,14 +179,10 @@ async function verifyTreasuryRouterV2(deployment: any, contracts: ReturnType<typ
 export async function verifyDeployment(deployment: any) {
   const contracts = resolveContracts(deployment);
   const v2Deployment = isTreasuryRouterV2Deployment(deployment, contracts);
+  const optionalV2Contracts = new Set(["TreasuryRouterV2", "WeeklyLeagueVault", "MonthlyLeagueTreasury"]);
 
-  const requiredContracts = Object.entries(contracts).filter(([name, address]) => {
-    if (!address) return false;
-    if (!v2Deployment && ["TreasuryRouterV2", "WeeklyLeagueVault", "MonthlyLeagueTreasury"].includes(name)) return false;
-    return true;
-  });
-
-  for (const [name, address] of requiredContracts) {
+  for (const [name, address] of Object.entries(contracts)) {
+    if (!v2Deployment && optionalV2Contracts.has(name)) continue;
     await assertCode(name, address);
   }
 
