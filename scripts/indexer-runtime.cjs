@@ -87,12 +87,24 @@ function fallbackInterface(signatures) {
   return new ethers.Interface(signatures.map((signature) => `event ${signature}`));
 }
 
+function artifactCoversSignatures(iface, signatures) {
+  if (!iface) return false;
+  return signatures.every((signature) => {
+    try {
+      return Boolean(iface.getEvent(signature));
+    } catch {
+      return false;
+    }
+  });
+}
+
 function buildInterfaces(manifest) {
   const byContractTopic = new Map();
   for (const [contractName, events] of Object.entries(manifest.events || {})) {
     const signatures = Object.keys(events);
     if (signatures.length === 0) continue;
-    const iface = loadArtifactInterface(contractName) || fallbackInterface(signatures);
+    const artifactIface = loadArtifactInterface(contractName);
+    const iface = artifactCoversSignatures(artifactIface, signatures) ? artifactIface : fallbackInterface(signatures);
     for (const [signature, topic] of Object.entries(events)) {
       byContractTopic.set(`${contractName}:${String(topic).toLowerCase()}`, { contractName, signature, iface });
     }
@@ -292,6 +304,7 @@ async function main() {
 }
 
 module.exports = {
+  artifactCoversSignatures,
   buildInterfaces,
   contractFilters,
   decodeLog,
