@@ -64,8 +64,14 @@ async function inspectLpRevenueRouting(contracts: ReturnType<typeof resolveContr
   }
 
   const router = new ethers.Contract(configuredRouter, LP_REVENUE_ROUTER_ABI, ethers.provider);
+  let authorized: boolean | null = null;
   try {
-    const authorized = await router.authorizedLpLocker(contracts.PermanentLpLocker);
+    authorized = await router.authorizedLpLocker(contracts.PermanentLpLocker);
+  } catch {
+    authorized = null;
+  }
+
+  if (authorized !== null) {
     if (!authorized) {
       reportRoutingProblem("TreasuryRouterV2 has not authorized the PermanentLpLocker; run wire:lp-revenue before harvesting", dryRun);
     }
@@ -77,16 +83,16 @@ async function inspectLpRevenueRouting(contracts: ReturnType<typeof resolveContr
 
     console.log(`[lp-harvester] TreasuryRouterV2 LP revenue routing authorized=${authorized}`);
     return;
-  } catch {
-    const primaryLocker = await router.permanentLpLocker();
-    if (!sameAddress(primaryLocker, contracts.PermanentLpLocker)) {
-      reportRoutingProblem(
-        `TreasuryRouter permanentLpLocker mismatch: deployment=${contracts.PermanentLpLocker}, router=${primaryLocker}`,
-        dryRun
-      );
-    }
-    console.log("[lp-harvester] legacy TreasuryRouter LP revenue routing ready");
   }
+
+  const primaryLocker = await router.permanentLpLocker();
+  if (!sameAddress(primaryLocker, contracts.PermanentLpLocker)) {
+    reportRoutingProblem(
+      `TreasuryRouter permanentLpLocker mismatch: deployment=${contracts.PermanentLpLocker}, router=${primaryLocker}`,
+      dryRun
+    );
+  }
+  console.log("[lp-harvester] legacy TreasuryRouter LP revenue routing ready");
 }
 
 async function main() {
