@@ -9,6 +9,7 @@ anchor-lang = "0.30.1"
 # Keep Anchor 0.30 / Solana 1.18 SBF builds on pre-edition-2024 crate
 # manifests. The Solana SBF cargo path can be older than the shell cargo.
 blake3 = "=1.5.5"
+borsh = { version = "=1.5.7", features = ["derive"] }
 zeroize = "=1.3.0"
 zeroize_derive = "=1.4.2"
 toml = "=0.8.23"
