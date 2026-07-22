@@ -12,6 +12,7 @@ toml = "=0.8.23"
 toml_datetime = "=0.6.11"
 toml_edit = "=0.22.27"
 crypto-common = "=0.1.7"
+cpufeatures = "=0.2.17"
 
 [profile.release]
 overflow-checks = true
