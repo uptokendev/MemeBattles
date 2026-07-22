@@ -4,6 +4,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 
 const MAX_AGE = 3600n;
 const MONTHLY_CAP_USD = ethers.parseUnits("1500000", 18);
+const ORACLE_PRICE = ethers.parseUnits("600", 18);
 const CATEGORY = ethers.keccak256(ethers.toUtf8Bytes("monthly-overall"));
 
 async function latestTimestamp() {
@@ -89,6 +90,8 @@ describe("MonthlyLeagueTreasury", function () {
     expect(await monthly.oracle()).to.eq(await oracle.getAddress());
     expect(await monthly.charityTreasury()).to.eq(await charity.getAddress());
     expect(await monthly.monthlyCapUsd()).to.eq(MONTHLY_CAP_USD);
+    expect(await monthly.totalOutstandingClaims()).to.eq(0n);
+    expect(await monthly.unallocatedBalance()).to.eq(0n);
 
     await expect(Monthly.deploy(ethers.ZeroAddress, await rootPoster.getAddress(), await oracle.getAddress(), await charity.getAddress(), 0n)).to.be
       .revertedWithCustomError(Monthly, "ZeroAddress");
@@ -98,7 +101,7 @@ describe("MonthlyLeagueTreasury", function () {
       .revertedWithCustomError(Monthly, "ZeroAddress");
   });
 
-  it("seals a month once, caps player pool, and transfers overflow atomically to charity", async () => {
+  it("seals a month once, snapshots price, reserves claims, and transfers overflow atomically to charity", async () => {
     const { rootPoster, winner, charity, monthly } = await loadFixture(deployFixture);
     const monthId = 202607n;
     const winnerTotal = ethers.parseEther("2500");
@@ -112,16 +115,20 @@ describe("MonthlyLeagueTreasury", function () {
     const seal = await monthly.monthSeal(monthId);
     expect(seal.isSealed).to.eq(true);
     expect(seal.winnersRoot).to.eq(leaf);
+    expect(seal.oraclePrice).to.eq(ORACLE_PRICE);
     expect(seal.capNative).to.eq(ethers.parseEther("2500"));
     expect(seal.playerPool).to.eq(ethers.parseEther("2500"));
     expect(seal.overflow).to.eq(ethers.parseEther("500"));
+    expect(await monthly.monthOutstandingClaims(monthId)).to.eq(winnerTotal);
+    expect(await monthly.totalOutstandingClaims()).to.eq(winnerTotal);
+    expect(await monthly.unallocatedBalance()).to.eq(0n);
     expect(await ethers.provider.getBalance(await charity.getAddress())).to.eq(ethers.parseEther("500"));
     expect(await ethers.provider.getBalance(await monthly.getAddress())).to.eq(ethers.parseEther("2500"));
 
     await expect(monthly.connect(rootPoster).sealMonth(monthId, leaf, winnerTotal)).to.be.revertedWithCustomError(monthly, "MonthAlreadySealed");
   });
 
-  it("rejects winner totals above the oracle cap or funded player pool", async () => {
+  it("rejects winner totals above the oracle cap or funded unallocated player pool", async () => {
     const { rootPoster, winner, monthly } = await loadFixture(deployFixture);
     const monthId = 202608n;
     const cap = ethers.parseEther("2500");
@@ -138,6 +145,53 @@ describe("MonthlyLeagueTreasury", function () {
       monthly2,
       "WinnerTotalAbovePlayerPool"
     );
+  });
+
+  it("keeps prior-month unclaimed rewards reserved when sealing another month", async () => {
+    const { rootPoster, winner, other, charity, monthly } = await loadFixture(deployFixture);
+    const firstMonth = 202607n;
+    const secondMonth = 202608n;
+    const firstPrize = ethers.parseEther("100");
+    const secondPrize = ethers.parseEther("50");
+    const firstLeaf = claimLeaf(firstMonth, CATEGORY, 1, await winner.getAddress(), firstPrize);
+    const secondLeaf = claimLeaf(secondMonth, CATEGORY, 1, await other.getAddress(), secondPrize);
+
+    await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: firstPrize });
+    await monthly.connect(rootPoster).sealMonth(firstMonth, firstLeaf, firstPrize);
+    expect(await monthly.totalOutstandingClaims()).to.eq(firstPrize);
+
+    await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: ethers.parseEther("70") });
+    expect(await monthly.unallocatedBalance()).to.eq(ethers.parseEther("70"));
+
+    await monthly.connect(rootPoster).sealMonth(secondMonth, secondLeaf, secondPrize);
+
+    expect(await monthly.monthOutstandingClaims(firstMonth)).to.eq(firstPrize);
+    expect(await monthly.monthOutstandingClaims(secondMonth)).to.eq(secondPrize);
+    expect(await monthly.totalOutstandingClaims()).to.eq(firstPrize + secondPrize);
+    expect(await ethers.provider.getBalance(await charity.getAddress())).to.eq(ethers.parseEther("20"));
+    expect(await ethers.provider.getBalance(await monthly.getAddress())).to.eq(firstPrize + secondPrize);
+    expect(await monthly.unallocatedBalance()).to.eq(0n);
+  });
+
+  it("prevents multisig withdrawals from consuming sealed winner reserves", async () => {
+    const { multisig, rootPoster, winner, other, monthly } = await loadFixture(deployFixture);
+    const monthId = 202609n;
+    const prize = ethers.parseEther("10");
+    const leaf = claimLeaf(monthId, CATEGORY, 1, await winner.getAddress(), prize);
+
+    await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: prize + ethers.parseEther("3") });
+    await monthly.connect(rootPoster).sealMonth(monthId, leaf, prize);
+
+    expect(await monthly.unallocatedBalance()).to.eq(0n);
+    await expect(monthly.connect(multisig).withdrawNative(await other.getAddress(), 1n)).to.be.revertedWithCustomError(monthly, "InsufficientBalance");
+
+    await multisig.sendTransaction({ to: await monthly.getAddress(), value: ethers.parseEther("3") });
+    expect(await monthly.unallocatedBalance()).to.eq(ethers.parseEther("3"));
+    await expect(monthly.connect(multisig).withdrawNative(await other.getAddress(), ethers.parseEther("3"))).to.changeEtherBalances(
+      [monthly, other],
+      [-ethers.parseEther("3"), ethers.parseEther("3")]
+    );
+    expect(await monthly.totalOutstandingClaims()).to.eq(prize);
   });
 
   it("reverts sealing when oracle data is stale or charity overflow transfer fails", async () => {
@@ -178,9 +232,10 @@ describe("MonthlyLeagueTreasury", function () {
       revertingMonthly,
       "NativeTransferFailed"
     );
+    expect(await revertingMonthly.totalOutstandingClaims()).to.eq(0n);
   });
 
-  it("allows winners to claim from the sealed root and blocks duplicate or invalid claims", async () => {
+  it("allows winners to claim from the sealed root and releases their reserved balance", async () => {
     const { rootPoster, winner, other, monthly } = await loadFixture(deployFixture);
     const monthId = 202612n;
     const amount = ethers.parseEther("12.5");
@@ -188,12 +243,14 @@ describe("MonthlyLeagueTreasury", function () {
 
     await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: amount });
     await monthly.connect(rootPoster).sealMonth(monthId, leaf, amount);
+    expect(await monthly.monthOutstandingClaims(monthId)).to.eq(amount);
 
-    await expect(monthly.claim(monthId, CATEGORY, 1, await winner.getAddress(), amount, [])).to.changeEtherBalances(
-      [monthly, winner],
-      [-amount, amount]
-    );
+    await expect(monthly.claim(monthId, CATEGORY, 1, await winner.getAddress(), amount, []))
+      .to.emit(monthly, "ClaimReserveUpdated")
+      .withArgs(monthId, 0n, 0n);
     expect(await monthly.monthClaimedTotal(monthId)).to.eq(amount);
+    expect(await monthly.monthOutstandingClaims(monthId)).to.eq(0n);
+    expect(await monthly.totalOutstandingClaims()).to.eq(0n);
 
     await expect(monthly.claim(monthId, CATEGORY, 1, await winner.getAddress(), amount, [])).to.be.revertedWithCustomError(monthly, "AlreadyClaimed");
     await expect(monthly.claim(monthId, CATEGORY, 2, await other.getAddress(), 1n, [])).to.be.revertedWithCustomError(monthly, "BadProof");
