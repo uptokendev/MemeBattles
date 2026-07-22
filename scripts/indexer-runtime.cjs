@@ -13,6 +13,8 @@ const ARTIFACT_CANDIDATES = {
   LaunchCampaignImplementation: ["contracts/LaunchCampaign.sol/LaunchCampaign.json"],
   TreasuryRouter: ["contracts/TreasuryRouter.sol/TreasuryRouter.json"],
   TreasuryVaultV2: ["contracts/TreasuryVaultV2.sol/TreasuryVaultV2.json", "contracts/treasury/TreasuryVaultV2.sol/TreasuryVaultV2.json"],
+  MonthlyLeagueTreasury: ["contracts/MonthlyLeagueTreasury.sol/MonthlyLeagueTreasury.json"],
+  CharityTreasury: ["contracts/CharityTreasury.sol/CharityTreasury.json"],
   RecruiterRewardsVault: ["contracts/RecruiterRewardsVault.sol/RecruiterRewardsVault.json"],
   CommunityRewardsVault: ["contracts/CommunityRewardsVault.sol/CommunityRewardsVault.json"],
   ProtocolRevenueVault: ["contracts/ProtocolRevenueVault.sol/ProtocolRevenueVault.json"],
