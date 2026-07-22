@@ -153,7 +153,7 @@ function serializeArg(value) {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map(serializeArg);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).filter(([key]) => Number.isNaN(Number(key))).map(([key, item]) => [key, serializeArg(item)]));
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, serializeArg(item)]));
   }
   return value;
 }
