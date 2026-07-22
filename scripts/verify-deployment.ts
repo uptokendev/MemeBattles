@@ -99,6 +99,7 @@ export function resolveContracts(deployment: any) {
     TreasuryRouterV2: pickAddress(deployment, "TreasuryRouterV2", ["treasuryRouterV2"]),
     WeeklyLeagueVault: pickAddress(deployment, "WeeklyLeagueVault", ["weeklyLeagueVault", "activeLeagueVault"]),
     MonthlyLeagueTreasury: pickAddress(deployment, "MonthlyLeagueTreasury", ["monthlyLeagueTreasury"]),
+    CharityTreasury: pickAddress(deployment, "CharityTreasury", ["charityTreasury"]),
     RecruiterRewardsVault: pickAddress(deployment, "RecruiterRewardsVault", ["recruiterRewardsVault", "recruiterVault"]),
     CommunityRewardsVault: pickAddress(deployment, "CommunityRewardsVault", ["communityRewardsVault", "communityVault"]),
     ProtocolRevenueVault: pickAddress(deployment, "ProtocolRevenueVault", ["protocolRevenueVault", "protocolVault"]),
@@ -133,6 +134,40 @@ export function loadDeployment() {
   const deployment = JSON.parse(fs.readFileSync(file, "utf8"));
   console.log(`[verify] Loaded deployment: ${file}`);
   return deployment;
+}
+
+async function verifyMonthlyLeagueTreasury(deployment: any, contracts: ReturnType<typeof resolveContracts>) {
+  const monthlyLeagueTreasury = contracts.MonthlyLeagueTreasury || deployment.routing?.monthlyLeagueTreasury || deployment.monthlyLeagueTreasury;
+  const charityTreasury = contracts.CharityTreasury || deployment.routing?.charityTreasury || deployment.charityTreasury;
+
+  await assertCode("MonthlyLeagueTreasury", monthlyLeagueTreasury);
+  await assertCode("CharityTreasury", charityTreasury);
+
+  const monthly = new ethers.Contract(
+    monthlyLeagueTreasury,
+    [
+      "function multisig() view returns (address)",
+      "function rootPoster() view returns (address)",
+      "function oracle() view returns (address)",
+      "function charityTreasury() view returns (address)",
+      "function monthlyCapUsd() view returns (uint256)",
+    ],
+    ethers.provider
+  );
+
+  assertEq("MonthlyLeagueTreasury.multisig", await monthly.multisig(), deployment.treasurySafe);
+  if (deployment.leagueRootPoster && deployment.leagueRootPoster !== ethers.ZeroAddress) {
+    assertEq("MonthlyLeagueTreasury.rootPoster", await monthly.rootPoster(), deployment.leagueRootPoster);
+  }
+  assertEq("MonthlyLeagueTreasury.oracle", await monthly.oracle(), contracts.GraduationOracle);
+  assertEq("MonthlyLeagueTreasury.charityTreasury", await monthly.charityTreasury(), charityTreasury);
+
+  const configuredCap = BigInt(deployment.monthlyLeagueCapUsd ?? deployment.routing?.monthlyLeagueCapUsd ?? 0);
+  const expectedCap = configuredCap === 0n ? ethers.parseUnits("1500000", 18) : configuredCap;
+  assertBigIntEq("MonthlyLeagueTreasury.monthlyCapUsd", BigInt(await monthly.monthlyCapUsd()), expectedCap);
+
+  const charity = new ethers.Contract(charityTreasury, ["function multisig() view returns (address)"], ethers.provider);
+  assertEq("CharityTreasury.multisig", await charity.multisig(), deployment.treasurySafe);
 }
 
 async function verifyTreasuryRouterV2(deployment: any, contracts: ReturnType<typeof resolveContracts>) {
@@ -174,12 +209,14 @@ async function verifyTreasuryRouterV2(deployment: any, contracts: ReturnType<typ
     assertEq("TreasuryRouterV2.permanentLpLocker", await router.permanentLpLocker(), contracts.PermanentLpLocker);
     assertTrue("TreasuryRouterV2.authorizedLpLocker", await router.authorizedLpLocker(contracts.PermanentLpLocker));
   }
+
+  await verifyMonthlyLeagueTreasury(deployment, contracts);
 }
 
 export async function verifyDeployment(deployment: any) {
   const contracts = resolveContracts(deployment);
   const v2Deployment = isTreasuryRouterV2Deployment(deployment, contracts);
-  const optionalV2Contracts = new Set(["TreasuryRouterV2", "WeeklyLeagueVault", "MonthlyLeagueTreasury"]);
+  const optionalV2Contracts = new Set(["TreasuryRouterV2", "WeeklyLeagueVault", "MonthlyLeagueTreasury", "CharityTreasury"]);
 
   for (const [name, address] of Object.entries(contracts)) {
     if (!v2Deployment && optionalV2Contracts.has(name)) continue;
@@ -204,6 +241,9 @@ export async function verifyDeployment(deployment: any) {
   }
   if (deployment.routing?.graduationOracle) {
     assertEq("routing.graduationOracle", deployment.routing.graduationOracle, contracts.GraduationOracle);
+  }
+  if (deployment.routing?.charityTreasury) {
+    assertEq("routing.charityTreasury", deployment.routing.charityTreasury, contracts.CharityTreasury);
   }
 
   if (deployment.routing?.unifiedRouterModeActive !== undefined) {
