@@ -18,3 +18,8 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = "0.30.1"
+# Anchor 0.30 / Solana 1.18 builds use an older SBF Cargo path. Keep zeroize
+# on the pre-edition-2024 derive release so local and CI builds do not resolve
+# zeroize_derive 1.5.x with Cargo versions that cannot parse edition 2024.
+zeroize = "=1.3.0"
+zeroize_derive = "=1.4.2"
