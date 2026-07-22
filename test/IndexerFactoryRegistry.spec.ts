@@ -181,7 +181,7 @@ describe("Indexer factory registry support", function () {
     expect(decoded.eventSignature).to.eq("CampaignCreated(uint256,address,address,address,string,string,string,string)");
     expect(decoded.factoryAddress).to.eq(ethers.getAddress(addr(21)));
     expect(decoded.factoryGeneration).to.eq("previous");
-    expect(decoded.args.id).to.eq("7");
-    expect(decoded.args.campaign).to.eq(ethers.getAddress(addr(40)));
+    expect(decoded.args["0"]).to.eq("7");
+    expect(decoded.args["1"]).to.eq(ethers.getAddress(addr(40)));
   });
 });
