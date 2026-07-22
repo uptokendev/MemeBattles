@@ -25,7 +25,7 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      - name: Topaz, TreasuryRouterV2, and generation-indexer tests
+      - name: Topaz, TreasuryRouterV2, generation-indexer, and monthly treasury tests
         run: >-
           npx hardhat test
           test/TopazRouterAdapter.spec.ts
@@ -38,3 +38,4 @@ jobs:
           test/TreasuryRouterV2DeployProtocol.spec.ts
           test/DeployEnvTreasuryRouterV2.spec.ts
           test/IndexerFactoryRegistry.spec.ts
+          test/MonthlyLeagueTreasury.spec.ts
