@@ -142,6 +142,7 @@ describe("TreasuryRouterV2 tooling support", function () {
     expect(readiness.watch.contracts.TreasuryRouterV2).to.eq(addr(3));
     expect(readiness.watch.contracts.WeeklyLeagueVault).to.eq(addr(4));
     expect(readiness.watch.contracts.MonthlyLeagueTreasury).to.eq(addr(21));
+    expect(readiness.watch.contracts.CharityTreasury).to.eq(addr(20));
     expect(readiness.watch.routing.weeklyLeagueBps).to.eq(3000);
     expect(readiness.watch.routing.monthlyLeagueBps).to.eq(7000);
   });
