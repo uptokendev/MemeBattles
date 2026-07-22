@@ -12,7 +12,7 @@ contract MonthlyLeagueTreasury {
     uint256 public constant DEFAULT_MONTHLY_CAP_USD = 1_500_000 ether;
 
     struct MonthSeal {
-        bool sealed;
+        bool isSealed;
         bytes32 winnersRoot;
         uint256 capUsd;
         uint256 capNative;
@@ -89,7 +89,7 @@ contract MonthlyLeagueTreasury {
 
     function sealMonth(uint256 monthId, bytes32 winnersRoot, uint256 winnerTotal) external onlyRootPosterOrMultisig {
         if (winnersRoot == bytes32(0)) revert RootZero();
-        if (monthSeal[monthId].sealed) revert MonthAlreadySealed();
+        if (monthSeal[monthId].isSealed) revert MonthAlreadySealed();
 
         uint256 capNative = oracle.nativeTargetForUsd(monthlyCapUsd);
         if (winnerTotal > capNative) revert WinnerTotalAboveCap();
@@ -100,7 +100,7 @@ contract MonthlyLeagueTreasury {
 
         uint256 overflow = balance - playerPool;
         monthSeal[monthId] = MonthSeal({
-            sealed: true,
+            isSealed: true,
             winnersRoot: winnersRoot,
             capUsd: monthlyCapUsd,
             capNative: capNative,
@@ -127,7 +127,7 @@ contract MonthlyLeagueTreasury {
         bytes32[] calldata proof
     ) external {
         MonthSeal memory seal = monthSeal[monthId];
-        if (!seal.sealed) revert MonthNotSealed();
+        if (!seal.isSealed) revert MonthNotSealed();
         if (recipient == address(0)) revert ZeroAddress();
         if (amount == 0) revert AmountZero();
         if (amount > address(this).balance) revert InsufficientBalance();
