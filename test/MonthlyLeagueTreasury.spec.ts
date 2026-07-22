@@ -202,8 +202,9 @@ describe("MonthlyLeagueTreasury", function () {
 
     const leaf = claimLeaf(202610n, CATEGORY, 1, await winner.getAddress(), ethers.parseEther("1"));
     await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: ethers.parseEther("2") });
+    const monthlyOracle = await ethers.getContractAt("GraduationOracle", await monthly.oracle());
     await expect(monthly.connect(rootPoster).sealMonth(202610n, leaf, ethers.parseEther("1"))).to.be.revertedWithCustomError(
-      await ethers.getContractAt("GraduationOracle", await monthly.oracle()),
+      monthlyOracle,
       "StalePrice"
     );
 
