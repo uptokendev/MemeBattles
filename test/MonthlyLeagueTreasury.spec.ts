@@ -110,7 +110,7 @@ describe("MonthlyLeagueTreasury", function () {
       .withArgs(monthId, leaf, MONTHLY_CAP_USD, ethers.parseEther("2500"), ethers.parseEther("2500"), winnerTotal, ethers.parseEther("500"));
 
     const seal = await monthly.monthSeal(monthId);
-    expect(seal.sealed).to.eq(true);
+    expect(seal.isSealed).to.eq(true);
     expect(seal.winnersRoot).to.eq(leaf);
     expect(seal.capNative).to.eq(ethers.parseEther("2500"));
     expect(seal.playerPool).to.eq(ethers.parseEther("2500"));
@@ -210,7 +210,7 @@ describe("MonthlyLeagueTreasury", function () {
     await monthly.connect(multisig).setRootPoster(await other.getAddress());
     expect(await monthly.rootPoster()).to.eq(await other.getAddress());
     await monthly.connect(other).sealMonth(202613n, leaf, 1n);
-    expect((await monthly.monthSeal(202613n)).sealed).to.eq(true);
+    expect((await monthly.monthSeal(202613n)).isSealed).to.eq(true);
     expect(await monthly.rootPoster()).to.not.eq(await rootPoster.getAddress());
   });
 });
