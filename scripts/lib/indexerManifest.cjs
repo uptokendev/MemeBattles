@@ -165,6 +165,68 @@ function buildEventTopics() {
   );
 }
 
+function normalizeFactoryEntry(entry, index, sourceLabel, defaults = {}) {
+  if (!entry || typeof entry !== "object") throw new Error(`factoryRegistry.factories[${index}]: expected object in ${sourceLabel}`);
+  const generation = String(entry.generation ?? entry.id ?? entry.name ?? `generation-${index + 1}`);
+  const address = requireAddress(`factoryRegistry.factories[${index}].address`, entry.address || entry.factory || entry.LaunchFactory, sourceLabel);
+  const deploymentBlock = entry.deploymentBlock ?? entry.blockNumber ?? defaults.deploymentBlock ?? null;
+  return {
+    generation,
+    address,
+    deploymentBlock,
+    creationEnabled: Boolean(entry.creationEnabled),
+    tradingEnabled: entry.tradingEnabled !== false,
+    supportEnabled: entry.supportEnabled !== false,
+    routeAuthority: optionalAddress(`factoryRegistry.factories[${index}].routeAuthority`, entry.routeAuthority || defaults.routeAuthority, sourceLabel),
+    treasuryRouter: optionalAddress(`factoryRegistry.factories[${index}].treasuryRouter`, entry.treasuryRouter || defaults.treasuryRouter, sourceLabel),
+    permanentLpLocker: optionalAddress(`factoryRegistry.factories[${index}].permanentLpLocker`, entry.permanentLpLocker || defaults.permanentLpLocker, sourceLabel),
+    notes: entry.notes || "",
+  };
+}
+
+function buildFactoryRegistry(deployment, contracts, sourceLabel = "deployment") {
+  const sourceRegistry = deployment.factoryRegistry || {};
+  const defaults = {
+    deploymentBlock: deployment.deploymentBlock ?? deployment.blockNumber ?? null,
+    routeAuthority: deployment.routing?.factoryRouteAuthority || "",
+    treasuryRouter: contracts.TreasuryRouter,
+    permanentLpLocker: contracts.PermanentLpLocker,
+  };
+  const sourceFactories = Array.isArray(sourceRegistry.factories) ? sourceRegistry.factories : [];
+  const factories = sourceFactories.map((entry, index) => normalizeFactoryEntry(entry, index, sourceLabel, defaults));
+  const canonicalFactory = contracts.LaunchFactory;
+
+  if (!factories.some((factory) => factory.address.toLowerCase() === canonicalFactory.toLowerCase())) {
+    factories.unshift({
+      generation: sourceRegistry.activeGeneration || deployment.factoryGeneration || "current",
+      address: canonicalFactory,
+      deploymentBlock: defaults.deploymentBlock,
+      creationEnabled: true,
+      tradingEnabled: true,
+      supportEnabled: true,
+      routeAuthority: optionalAddress("factoryRegistry.active.routeAuthority", defaults.routeAuthority, sourceLabel),
+      treasuryRouter: optionalAddress("factoryRegistry.active.treasuryRouter", defaults.treasuryRouter, sourceLabel),
+      permanentLpLocker: optionalAddress("factoryRegistry.active.permanentLpLocker", defaults.permanentLpLocker, sourceLabel),
+      notes: "canonical deployment factory",
+    });
+  }
+
+  const activeFactory = requireAddress("factoryRegistry.activeFactory", sourceRegistry.activeFactory || canonicalFactory, sourceLabel);
+  const enabledCreationFactories = factories.filter((factory) => factory.creationEnabled);
+  if (enabledCreationFactories.length !== 1) {
+    throw new Error(`factoryRegistry: expected exactly one creationEnabled factory in ${sourceLabel}, got ${enabledCreationFactories.length}`);
+  }
+  if (enabledCreationFactories[0].address.toLowerCase() !== activeFactory.toLowerCase()) {
+    throw new Error(`factoryRegistry: activeFactory must match the creationEnabled factory in ${sourceLabel}`);
+  }
+
+  return {
+    activeFactory,
+    activeGeneration: enabledCreationFactories[0].generation,
+    factories,
+  };
+}
+
 function buildIndexerManifest(deployment, sourceLabel = "deployment") {
   if (!deployment.chainId) throw new Error(`chainId missing in ${sourceLabel}`);
   const contracts = Object.fromEntries(
@@ -174,6 +236,7 @@ function buildIndexerManifest(deployment, sourceLabel = "deployment") {
   const topazContracts = deployment.topazInfrastructure?.contracts || {};
   const launchRouter = deployment.topazRouterAdapter || deployment.router || deployment.topazRouter;
   const productionTopazRouter = deployment.productionTopazRouter || topazContracts.Router || deployment.topazRouter || deployment.router;
+  const factoryRegistry = buildFactoryRegistry(deployment, contracts, sourceLabel);
 
   return {
     schemaVersion: 1,
@@ -181,6 +244,7 @@ function buildIndexerManifest(deployment, sourceLabel = "deployment") {
     chainId: Number(deployment.chainId),
     deploymentBlock: deployment.deploymentBlock ?? deployment.blockNumber ?? null,
     contracts,
+    factoryRegistry,
     launchRouter: requireAddress("LaunchRouter", launchRouter, sourceLabel),
     topazRouter: requireAddress("TopazRouter", productionTopazRouter, sourceLabel),
     topazRouterAdapter: optionalAddress("TopazRouterAdapter", deployment.topazRouterAdapter, sourceLabel),
@@ -204,6 +268,7 @@ module.exports = {
   CONTRACTS,
   EVENT_SIGNATURES,
   buildEventTopics,
+  buildFactoryRegistry,
   buildIndexerManifest,
   eventTopic,
   pickAddress,
