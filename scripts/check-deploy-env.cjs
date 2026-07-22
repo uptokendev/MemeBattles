@@ -16,6 +16,7 @@ const ROUTER_ENVS = [...TOPAZ_ROUTER_ENVS, ...LEGACY_ROUTER_ENVS];
 const PRICE_ENVS = ["GRADUATION_ORACLE_ADDRESS", "BNB_USD_PRICE_FEED", "NATIVE_USD_PRICE_FEED", "GRADUATION_PRICE_FEED"];
 const TREASURY_ROUTER_V2_FLAG_ENVS = ["DEPLOY_TREASURY_ROUTER_V2", "USE_TREASURY_ROUTER_V2"];
 const MONTHLY_LEAGUE_TREASURY_ENVS = ["MONTHLY_LEAGUE_TREASURY", "MONTHLY_LEAGUE_TREASURY_ADDRESS"];
+const CHARITY_TREASURY_ENVS = ["CHARITY_TREASURY", "CHARITY_TREASURY_ADDRESS"];
 const REAL_NETWORK_ADMIN_ENVS = [
   "TREASURY_SAFE",
   "ROUTE_AUTHORITY_ADDRESS",
@@ -138,6 +139,7 @@ function useTreasuryRouterV2() {
 function checkTreasuryRouterV2Env() {
   TREASURY_ROUTER_V2_FLAG_ENVS.forEach(checkBool);
   MONTHLY_LEAGUE_TREASURY_ENVS.forEach((name) => checkAddress(name));
+  CHARITY_TREASURY_ENVS.forEach((name) => checkAddress(name));
 
   const deployFlag = boolValue("DEPLOY_TREASURY_ROUTER_V2");
   const useFlag = boolValue("USE_TREASURY_ROUTER_V2");
@@ -146,9 +148,10 @@ function checkTreasuryRouterV2Env() {
   }
 
   if (useTreasuryRouterV2() && !hasAny(MONTHLY_LEAGUE_TREASURY_ENVS)) {
-    warnings.push(
-      "TreasuryRouterV2 enabled without MONTHLY_LEAGUE_TREASURY; deployProtocol will deploy a TreasuryVaultV2 monthly treasury placeholder."
-    );
+    warnings.push("TreasuryRouterV2 enabled without MONTHLY_LEAGUE_TREASURY; deployProtocol will deploy MonthlyLeagueTreasury.");
+  }
+  if (useTreasuryRouterV2() && !hasAny(CHARITY_TREASURY_ENVS)) {
+    warnings.push("TreasuryRouterV2 enabled without CHARITY_TREASURY; deployProtocol will deploy CharityTreasury for monthly overflow.");
   }
 }
 
@@ -225,6 +228,7 @@ function checkCommon(options = {}) {
 
   [
     "GRADUATION_ORACLE_MAX_PRICE_AGE_SECONDS",
+    "MONTHLY_LEAGUE_CAP_USD",
     "LEAGUE_PAYOUT_MAX_PER_TX",
     "LEAGUE_PAYOUT_DAILY_CAP",
     "LEAGUE_CLAIM_MAX_PER_TX",
@@ -301,6 +305,7 @@ console.log(`[deploy-env] graduation=${firstConfigured(PRICE_ENVS) || "unset"}`)
 console.log(`[deploy-env] treasurySafe=${raw("TREASURY_SAFE") || "fallback/deployer"}`);
 console.log(`[deploy-env] treasuryRouter=${useTreasuryRouterV2() ? "TreasuryRouterV2" : "TreasuryRouter"}`);
 console.log(`[deploy-env] monthlyLeagueTreasury=${firstConfigured(MONTHLY_LEAGUE_TREASURY_ENVS) || (useTreasuryRouterV2() ? "auto-deploy" : "n/a")}`);
+console.log(`[deploy-env] charityTreasury=${firstConfigured(CHARITY_TREASURY_ENVS) || (useTreasuryRouterV2() ? "auto-deploy" : "n/a")}`);
 console.log(`[deploy-env] routeAuthority=${raw("ROUTE_AUTHORITY_ADDRESS") || (raw("ROUTE_AUTHORITY_PRIVATE_KEY") ? "private-key-derived" : "unset")}`);
 
 for (const warning of warnings) console.warn(`[deploy-env] warning: ${warning}`);
