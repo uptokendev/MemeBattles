@@ -21,7 +21,7 @@ function v2Deployment() {
     graduationMaxPriceAge: 3600,
     treasuryRouterVersion: "v2",
     weeklyLeagueVault: addr(4),
-    monthlyLeagueTreasury: addr(15),
+    monthlyLeagueTreasury: addr(21),
     monthlyLeagueTreasuryDeployed: true,
     monthlyLeagueCapUsd: "0",
     charityTreasury: addr(20),
@@ -35,7 +35,7 @@ function v2Deployment() {
       TreasuryRouterV2: addr(3),
       TreasuryVaultV2: addr(4),
       WeeklyLeagueVault: addr(4),
-      MonthlyLeagueTreasury: addr(15),
+      MonthlyLeagueTreasury: addr(21),
       CharityTreasury: addr(20),
       RecruiterRewardsVault: addr(5),
       CommunityRewardsVault: addr(6),
@@ -48,7 +48,7 @@ function v2Deployment() {
     },
     routing: {
       weeklyLeagueVault: addr(4),
-      monthlyLeagueTreasury: addr(15),
+      monthlyLeagueTreasury: addr(21),
       monthlyLeagueCapUsd: "0",
       charityTreasury: addr(20),
       weeklyLeagueBps: 3000,
@@ -90,10 +90,10 @@ describe("TreasuryRouterV2 tooling support", function () {
     expect(deployment.contracts.TreasuryRouter).to.eq(addr(3));
     expect(deployment.contracts.TreasuryRouterV2).to.eq(addr(3));
     expect(deployment.contracts.WeeklyLeagueVault).to.eq(addr(4));
-    expect(deployment.contracts.MonthlyLeagueTreasury).to.eq(addr(15));
+    expect(deployment.contracts.MonthlyLeagueTreasury).to.eq(addr(21));
     expect(deployment.contracts.CharityTreasury).to.eq(addr(20));
     expect(deployment.weeklyLeagueVault).to.eq(addr(4));
-    expect(deployment.monthlyLeagueTreasury).to.eq(addr(15));
+    expect(deployment.monthlyLeagueTreasury).to.eq(addr(21));
     expect(deployment.charityTreasury).to.eq(addr(20));
     expect(deployment.weeklyLeagueBps).to.eq(3000);
     expect(deployment.monthlyLeagueBps).to.eq(7000);
@@ -104,7 +104,7 @@ describe("TreasuryRouterV2 tooling support", function () {
     const manifest = buildIndexerManifest(v2Deployment(), "test deployment");
 
     expect(manifest.contracts.TreasuryRouter).to.eq(addr(3));
-    expect(manifest.contracts.MonthlyLeagueTreasury).to.eq(addr(15));
+    expect(manifest.contracts.MonthlyLeagueTreasury).to.eq(addr(21));
     expect(manifest.contracts.CharityTreasury).to.eq(addr(20));
     expect(manifest.events.TreasuryRouter["WeeklyLeagueVaultProposed(address,uint64)"]).to.eq(
       eventTopic("WeeklyLeagueVaultProposed(address,uint64)")
@@ -141,7 +141,7 @@ describe("TreasuryRouterV2 tooling support", function () {
     expect(readiness.watch.contracts.TreasuryRouter).to.eq(addr(3));
     expect(readiness.watch.contracts.TreasuryRouterV2).to.eq(addr(3));
     expect(readiness.watch.contracts.WeeklyLeagueVault).to.eq(addr(4));
-    expect(readiness.watch.contracts.MonthlyLeagueTreasury).to.eq(addr(15));
+    expect(readiness.watch.contracts.MonthlyLeagueTreasury).to.eq(addr(21));
     expect(readiness.watch.routing.weeklyLeagueBps).to.eq(3000);
     expect(readiness.watch.routing.monthlyLeagueBps).to.eq(7000);
   });
