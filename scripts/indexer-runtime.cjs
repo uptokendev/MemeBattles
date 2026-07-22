@@ -100,12 +100,40 @@ function buildInterfaces(manifest) {
   return byContractTopic;
 }
 
+function supportedFactories(manifest) {
+  const registryFactories = manifest.factoryRegistry?.factories;
+  if (Array.isArray(registryFactories) && registryFactories.length > 0) {
+    return registryFactories.filter((factory) => factory.supportEnabled !== false);
+  }
+  const address = manifest.contracts?.LaunchFactory;
+  return address ? [{ generation: "current", address, deploymentBlock: manifest.deploymentBlock ?? null, creationEnabled: true, tradingEnabled: true, supportEnabled: true }] : [];
+}
+
 function contractFilters(manifest) {
   const filters = [];
   for (const [contractName, address] of Object.entries(manifest.contracts || {})) {
+    if (contractName === "LaunchFactory") continue;
     const topics = Object.values(manifest.events?.[contractName] || {});
-    if (address && topics.length > 0) filters.push({ contractName, address, topics });
+    if (address && topics.length > 0) filters.push({ contractName, address, topics, scope: `${contractName}:${address}` });
   }
+
+  const factoryTopics = Object.values(manifest.events?.LaunchFactory || {});
+  if (factoryTopics.length > 0) {
+    for (const factory of supportedFactories(manifest)) {
+      filters.push({
+        contractName: "LaunchFactory",
+        address: factory.address,
+        topics: factoryTopics,
+        factoryGeneration: factory.generation,
+        factoryAddress: factory.address,
+        deploymentBlock: factory.deploymentBlock ?? manifest.deploymentBlock ?? null,
+        creationEnabled: Boolean(factory.creationEnabled),
+        tradingEnabled: factory.tradingEnabled !== false,
+        scope: `LaunchFactory:${factory.generation}:${factory.address}`,
+      });
+    }
+  }
+
   return filters;
 }
 
@@ -126,6 +154,8 @@ function decodeLog(log, topicMap) {
     chainId: log.chainId,
     contractName: meta.contractName,
     contractAddress: log.address,
+    factoryAddress: log.factoryAddress || (meta.contractName === "LaunchFactory" ? log.address : undefined),
+    factoryGeneration: log.factoryGeneration,
     eventSignature: meta.signature,
     eventName: parsed.name,
     blockNumber: Number(log.blockNumber),
@@ -148,12 +178,34 @@ function appendJsonl(file, rows) {
   fs.appendFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
 }
 
+function newScope(manifest, startOverride) {
+  const start = startOverride ?? manifest.deploymentBlock ?? 0;
+  return { lastFinalizedBlock: Math.max(0, Number(start) - 1), seen: {} };
+}
+
 function loadCursor(file, manifest) {
   if (!fs.existsSync(file)) {
-    const start = manifest.deploymentBlock || 0;
-    return { schemaVersion: 1, chainId: manifest.chainId, lastFinalizedBlock: Math.max(0, Number(start) - 1), seen: {} };
+    return { schemaVersion: 2, chainId: manifest.chainId, scopes: {} };
   }
-  return readJson(file);
+  const cursor = readJson(file);
+  if (cursor.scopes) return cursor;
+  return {
+    schemaVersion: 2,
+    chainId: cursor.chainId || manifest.chainId,
+    migratedFromSchemaVersion: cursor.schemaVersion || 1,
+    scopes: {
+      default: {
+        lastFinalizedBlock: Number(cursor.lastFinalizedBlock || 0),
+        seen: cursor.seen || {},
+      },
+    },
+  };
+}
+
+function getCursorScope(cursor, manifest, filter) {
+  const key = String(filter.scope || `${filter.contractName}:${filter.address}`).toLowerCase();
+  if (!cursor.scopes[key]) cursor.scopes[key] = newScope(manifest, filter.deploymentBlock);
+  return { key, scope: cursor.scopes[key] };
 }
 
 async function getLatestBlock(provider, rpcUrl) {
@@ -181,53 +233,75 @@ async function indexOnce(options = {}) {
   const cursor = loadCursor(cursorFile, manifest);
   const latest = await getLatestBlock(provider, rpcUrl);
   const finalizedTo = Math.max(0, latest - confirmations);
-  let fromBlock = Number(cursor.lastFinalizedBlock || 0) + 1;
+  let indexed = 0;
 
   if (latest === 0 && (manifest.chainId === 31337 || manifest.network === "localhost" || manifest.network === "hardhat")) {
     console.warn("[indexer] local node has no blocks yet. Run npm run deploy:verify:localhost against this same node, then rerun the indexer.");
   }
 
-  if (fromBlock > finalizedTo) {
-    console.log(`[indexer] up to date latest=${latest} finalized=${finalizedTo}`);
-    return { indexed: 0, fromBlock, toBlock: finalizedTo, outDir };
-  }
+  for (const filter of filters) {
+    const { key: scopeKey, scope } = getCursorScope(cursor, manifest, filter);
+    let fromBlock = Number(scope.lastFinalizedBlock || 0) + 1;
 
-  let indexed = 0;
-  while (fromBlock <= finalizedTo) {
-    const toBlock = Math.min(finalizedTo, fromBlock + batchBlocks - 1);
-    const decoded = [];
-
-    for (const filter of filters) {
-      const logs = await provider.getLogs({ address: filter.address, fromBlock, toBlock, topics: [filter.topics] });
-      for (const log of logs) {
-        const event = decodeLog({ ...log, chainId: manifest.chainId, contractName: filter.contractName }, topicMap);
-        if (!event) continue;
-        const key = eventKey(event);
-        if (cursor.seen[key]) continue;
-        cursor.seen[key] = event.blockHash;
-        decoded.push(event);
-      }
+    if (fromBlock > finalizedTo) {
+      console.log(`[indexer] up to date scope=${scopeKey} latest=${latest} finalized=${finalizedTo}`);
+      continue;
     }
 
-    decoded.sort((a, b) => a.blockNumber - b.blockNumber || a.txIndex - b.txIndex || a.logIndex - b.logIndex);
-    appendJsonl(eventsFile, decoded);
-    indexed += decoded.length;
-    cursor.lastFinalizedBlock = toBlock;
-    cursor.updatedAt = Math.floor(Date.now() / 1000);
-    writeJsonAtomic(cursorFile, cursor);
-    console.log(`[indexer] scanned ${fromBlock}-${toBlock} events=${decoded.length}`);
-    fromBlock = toBlock + 1;
+    while (fromBlock <= finalizedTo) {
+      const toBlock = Math.min(finalizedTo, fromBlock + batchBlocks - 1);
+      const decoded = [];
+      const logs = await provider.getLogs({ address: filter.address, fromBlock, toBlock, topics: [filter.topics] });
+
+      for (const log of logs) {
+        const event = decodeLog(
+          {
+            ...log,
+            chainId: manifest.chainId,
+            contractName: filter.contractName,
+            factoryAddress: filter.factoryAddress,
+            factoryGeneration: filter.factoryGeneration,
+          },
+          topicMap
+        );
+        if (!event) continue;
+        const key = eventKey(event);
+        if (scope.seen[key]) continue;
+        scope.seen[key] = event.blockHash;
+        decoded.push(event);
+      }
+
+      decoded.sort((a, b) => a.blockNumber - b.blockNumber || a.txIndex - b.txIndex || a.logIndex - b.logIndex);
+      appendJsonl(eventsFile, decoded);
+      indexed += decoded.length;
+      scope.lastFinalizedBlock = toBlock;
+      scope.updatedAt = Math.floor(Date.now() / 1000);
+      cursor.updatedAt = scope.updatedAt;
+      writeJsonAtomic(cursorFile, cursor);
+      console.log(`[indexer] scanned scope=${scopeKey} ${fromBlock}-${toBlock} events=${decoded.length}`);
+      fromBlock = toBlock + 1;
+    }
   }
 
-  return { indexed, fromBlock, toBlock: finalizedTo, outDir };
+  return { indexed, toBlock: finalizedTo, outDir, scopes: Object.keys(cursor.scopes).length };
 }
 
 async function main() {
   const result = await indexOnce({ target: process.argv[2] });
-  console.log(`[indexer] complete indexed=${result.indexed} out=${result.outDir}`);
+  console.log(`[indexer] complete indexed=${result.indexed} scopes=${result.scopes} out=${result.outDir}`);
 }
 
-module.exports = { buildInterfaces, contractFilters, decodeLog, defaultConfirmations, indexOnce, loadManifest };
+module.exports = {
+  buildInterfaces,
+  contractFilters,
+  decodeLog,
+  defaultConfirmations,
+  getCursorScope,
+  indexOnce,
+  loadCursor,
+  loadManifest,
+  supportedFactories,
+};
 
 if (require.main === module) {
   main().catch((error) => {
