@@ -10,12 +10,94 @@ async function deployLaunchToken(name: string, symbol: string, owner: any) {
   return token;
 }
 
+async function createRegisteredPool(params: {
+  owner: any;
+  creator: any;
+  creatorFeeRecipient: any;
+  campaign: any;
+  locker: any;
+  topazFactory: any;
+}) {
+  const token = await deployLaunchToken("Launch Token", "LAUNCH", params.owner);
+  const wbnb = await deployLaunchToken("Wrapped BNB", "WBNB", params.owner);
+  const tokenAddress = await token.getAddress();
+  const wbnbAddress = await wbnb.getAddress();
+  const poolAddress = await params.topazFactory.createPool.staticCall(tokenAddress, wbnbAddress, false);
+  await params.topazFactory.createPool(tokenAddress, wbnbAddress, false);
+  const pool = await ethers.getContractAt("MockTopazPool", poolAddress);
+
+  const lockedLp = ethers.parseEther("10");
+  await pool.mint(await params.locker.getAddress(), lockedLp);
+
+  await params.locker.registerGraduatedPool(
+    await params.campaign.getAddress(),
+    await params.creator.getAddress(),
+    await params.creatorFeeRecipient.getAddress(),
+    poolAddress,
+    tokenAddress,
+    wbnbAddress,
+    lockedLp
+  );
+
+  return { token, wbnb, tokenAddress, wbnbAddress, pool, poolAddress, lockedLp };
+}
+
+async function fundPoolFees(params: { owner: any; token: any; wbnb: any; pool: any; locker: any; tokenAddress: string; feeToken: bigint; feeWbnb: bigint }) {
+  const poolAddress = await params.pool.getAddress();
+  const poolToken0 = await params.pool.token0();
+  const amount0 = poolToken0.toLowerCase() === params.tokenAddress.toLowerCase() ? params.feeToken : params.feeWbnb;
+  const amount1 = poolToken0.toLowerCase() === params.tokenAddress.toLowerCase() ? params.feeWbnb : params.feeToken;
+
+  await params.token.approve(poolAddress, params.feeToken);
+  await params.wbnb.approve(poolAddress, params.feeWbnb);
+  await params.pool.fundFees(await params.locker.getAddress(), amount0, amount1);
+}
+
+async function expectHarvestSplit(params: {
+  locker: any;
+  pool: any;
+  poolAddress: string;
+  token: any;
+  wbnb: any;
+  tokenAddress: string;
+  wbnbAddress: string;
+  creatorFeeRecipient: any;
+  protocolRevenueVault: any;
+  lockedLp: bigint;
+  feeToken: bigint;
+  feeWbnb: bigint;
+}) {
+  const creatorTokenBefore = await params.token.balanceOf(await params.creatorFeeRecipient.getAddress());
+  const creatorWbnbBefore = await params.wbnb.balanceOf(await params.creatorFeeRecipient.getAddress());
+  const protocolTokenBefore = await params.token.balanceOf(await params.protocolRevenueVault.getAddress());
+  const protocolWbnbBefore = await params.wbnb.balanceOf(await params.protocolRevenueVault.getAddress());
+  const lpBefore = await params.pool.balanceOf(await params.locker.getAddress());
+
+  await expect(params.locker.harvest(params.poolAddress)).to.emit(params.locker, "FeesHarvested");
+
+  const expectedCreatorToken = (params.feeToken * 8000n) / 10000n;
+  const expectedProtocolToken = params.feeToken - expectedCreatorToken;
+  const expectedCreatorWbnb = (params.feeWbnb * 8000n) / 10000n;
+  const expectedProtocolWbnb = params.feeWbnb - expectedCreatorWbnb;
+
+  expect(await params.token.balanceOf(await params.creatorFeeRecipient.getAddress()) - creatorTokenBefore).to.equal(expectedCreatorToken);
+  expect(await params.token.balanceOf(await params.protocolRevenueVault.getAddress()) - protocolTokenBefore).to.equal(expectedProtocolToken);
+  expect(await params.wbnb.balanceOf(await params.creatorFeeRecipient.getAddress()) - creatorWbnbBefore).to.equal(expectedCreatorWbnb);
+  expect(await params.wbnb.balanceOf(await params.protocolRevenueVault.getAddress()) - protocolWbnbBefore).to.equal(expectedProtocolWbnb);
+
+  expect(await params.pool.balanceOf(await params.locker.getAddress())).to.equal(lpBefore);
+  expect(await params.locker.lockedBalance(params.poolAddress)).to.equal(params.lockedLp);
+  expect(await params.token.balanceOf(await params.locker.getAddress())).to.equal(0n);
+  expect(await params.wbnb.balanceOf(await params.locker.getAddress())).to.equal(0n);
+  expect(await params.locker.cumulativeCreatorPaid(params.poolAddress, params.tokenAddress)).to.equal(expectedCreatorToken);
+  expect(await params.locker.cumulativeProtocolRouted(params.poolAddress, params.tokenAddress)).to.equal(expectedProtocolToken);
+  expect(await params.locker.cumulativeCreatorPaid(params.poolAddress, params.wbnbAddress)).to.equal(expectedCreatorWbnb);
+  expect(await params.locker.cumulativeProtocolRouted(params.poolAddress, params.wbnbAddress)).to.equal(expectedProtocolWbnb);
+}
+
 describe("PermanentLpLocker Topaz fee harvest", function () {
   it("claims both Topaz fee assets, splits them 80/20, and preserves LP principal", async () => {
     const [owner, creator, creatorFeeRecipient, campaign, protocolRevenueVault] = await ethers.getSigners();
-
-    const token = await deployLaunchToken("Launch Token", "LAUNCH", owner);
-    const wbnb = await deployLaunchToken("Wrapped BNB", "WBNB", owner);
 
     const Factory = await ethers.getContractFactory("MockTopazFactory");
     const topazFactory = await Factory.deploy();
@@ -33,60 +115,61 @@ describe("PermanentLpLocker Topaz fee harvest", function () {
 
     await locker.configureRevenue(await treasuryRouter.getAddress(), await topazFactory.getAddress());
 
-    const tokenAddress = await token.getAddress();
-    const wbnbAddress = await wbnb.getAddress();
-    const poolAddress = await topazFactory.createPool.staticCall(tokenAddress, wbnbAddress, false);
-    await topazFactory.createPool(tokenAddress, wbnbAddress, false);
-    const pool = await ethers.getContractAt("MockTopazPool", poolAddress);
-
-    const lockedLp = ethers.parseEther("10");
-    await pool.mint(await locker.getAddress(), lockedLp);
-
-    await locker.registerGraduatedPool(
-      await campaign.getAddress(),
-      await creator.getAddress(),
-      await creatorFeeRecipient.getAddress(),
-      poolAddress,
-      tokenAddress,
-      wbnbAddress,
-      lockedLp
-    );
-
+    const poolSetup = await createRegisteredPool({ owner, creator, creatorFeeRecipient, campaign, locker, topazFactory });
     const feeToken = ethers.parseEther("100");
     const feeWbnb = ethers.parseEther("5");
-    const poolToken0 = await pool.token0();
-    const amount0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase() ? feeToken : feeWbnb;
-    const amount1 = poolToken0.toLowerCase() === tokenAddress.toLowerCase() ? feeWbnb : feeToken;
+    await fundPoolFees({ owner, locker, feeToken, feeWbnb, ...poolSetup });
 
-    await token.approve(poolAddress, feeToken);
-    await wbnb.approve(poolAddress, feeWbnb);
-    await pool.fundFees(await locker.getAddress(), amount0, amount1);
+    await expectHarvestSplit({
+      locker,
+      creatorFeeRecipient,
+      protocolRevenueVault,
+      feeToken,
+      feeWbnb,
+      ...poolSetup,
+    });
+  });
 
-    const creatorTokenBefore = await token.balanceOf(await creatorFeeRecipient.getAddress());
-    const creatorWbnbBefore = await wbnb.balanceOf(await creatorFeeRecipient.getAddress());
-    const protocolTokenBefore = await token.balanceOf(await protocolRevenueVault.getAddress());
-    const protocolWbnbBefore = await wbnb.balanceOf(await protocolRevenueVault.getAddress());
-    const lpBefore = await pool.balanceOf(await locker.getAddress());
+  it("routes protocol fee assets through an authorized TreasuryRouterV2 locker", async () => {
+    const [owner, creator, creatorFeeRecipient, campaign, protocolRevenueVault, weeklyVault, monthlyTreasury] = await ethers.getSigners();
 
-    await expect(locker.harvest(poolAddress)).to.emit(locker, "FeesHarvested");
+    const Factory = await ethers.getContractFactory("MockTopazFactory");
+    const topazFactory = await Factory.deploy();
+    await topazFactory.waitForDeployment();
 
-    const expectedCreatorToken = (feeToken * 8000n) / 10000n;
-    const expectedProtocolToken = feeToken - expectedCreatorToken;
-    const expectedCreatorWbnb = (feeWbnb * 8000n) / 10000n;
-    const expectedProtocolWbnb = feeWbnb - expectedCreatorWbnb;
+    const Locker = await ethers.getContractFactory("PermanentLpLocker");
+    const locker = await Locker.deploy(await owner.getAddress());
+    await locker.waitForDeployment();
 
-    expect(await token.balanceOf(await creatorFeeRecipient.getAddress()) - creatorTokenBefore).to.equal(expectedCreatorToken);
-    expect(await token.balanceOf(await protocolRevenueVault.getAddress()) - protocolTokenBefore).to.equal(expectedProtocolToken);
-    expect(await wbnb.balanceOf(await creatorFeeRecipient.getAddress()) - creatorWbnbBefore).to.equal(expectedCreatorWbnb);
-    expect(await wbnb.balanceOf(await protocolRevenueVault.getAddress()) - protocolWbnbBefore).to.equal(expectedProtocolWbnb);
+    const TreasuryRouterV2 = await ethers.getContractFactory("TreasuryRouterV2");
+    const treasuryRouter = await TreasuryRouterV2.deploy(
+      await owner.getAddress(),
+      await weeklyVault.getAddress(),
+      await monthlyTreasury.getAddress(),
+      3600
+    );
+    await treasuryRouter.waitForDeployment();
+    await treasuryRouter.setProtocolRevenueVault(await protocolRevenueVault.getAddress());
+    await treasuryRouter.setAuthorizedLpLocker(await locker.getAddress(), true);
+    await treasuryRouter.setPrimaryLpLocker(await locker.getAddress());
 
-    expect(await pool.balanceOf(await locker.getAddress())).to.equal(lpBefore);
-    expect(await locker.lockedBalance(poolAddress)).to.equal(lockedLp);
-    expect(await token.balanceOf(await locker.getAddress())).to.equal(0n);
-    expect(await wbnb.balanceOf(await locker.getAddress())).to.equal(0n);
-    expect(await locker.cumulativeCreatorPaid(poolAddress, tokenAddress)).to.equal(expectedCreatorToken);
-    expect(await locker.cumulativeProtocolRouted(poolAddress, tokenAddress)).to.equal(expectedProtocolToken);
-    expect(await locker.cumulativeCreatorPaid(poolAddress, wbnbAddress)).to.equal(expectedCreatorWbnb);
-    expect(await locker.cumulativeProtocolRouted(poolAddress, wbnbAddress)).to.equal(expectedProtocolWbnb);
+    await locker.configureRevenue(await treasuryRouter.getAddress(), await topazFactory.getAddress());
+
+    const poolSetup = await createRegisteredPool({ owner, creator, creatorFeeRecipient, campaign, locker, topazFactory });
+    const feeToken = ethers.parseEther("80");
+    const feeWbnb = ethers.parseEther("4");
+    await fundPoolFees({ owner, locker, feeToken, feeWbnb, ...poolSetup });
+
+    await expectHarvestSplit({
+      locker,
+      creatorFeeRecipient,
+      protocolRevenueVault,
+      feeToken,
+      feeWbnb,
+      ...poolSetup,
+    });
+
+    expect(await treasuryRouter.authorizedLpLocker(await locker.getAddress())).to.equal(true);
+    expect(await treasuryRouter.permanentLpLocker()).to.equal(await locker.getAddress());
   });
 });
