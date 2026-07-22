@@ -2,18 +2,22 @@
 pragma solidity ^0.8.24;
 
 import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IMonthlyCapOracle {
-    function nativeTargetForUsd(uint256 usdAmount) external view returns (uint256);
+    function nativeUsdPrice() external view returns (uint256);
 }
 
 /// @notice Seals monthly league prize pools against an oracle-derived cap and routes overflow to charity.
-contract MonthlyLeagueTreasury {
+contract MonthlyLeagueTreasury is ReentrancyGuard {
     uint256 public constant DEFAULT_MONTHLY_CAP_USD = 1_500_000 ether;
+    uint256 private constant WAD = 1e18;
 
     struct MonthSeal {
         bool isSealed;
         bytes32 winnersRoot;
+        uint256 oraclePrice;
         uint256 capUsd;
         uint256 capNative;
         uint256 playerPool;
@@ -30,7 +34,9 @@ contract MonthlyLeagueTreasury {
 
     mapping(uint256 => MonthSeal) public monthSeal;
     mapping(uint256 => uint256) public monthClaimedTotal;
+    mapping(uint256 => uint256) public monthOutstandingClaims;
     mapping(uint256 => mapping(bytes32 => bool)) public monthLeafClaimed;
+    uint256 public totalOutstandingClaims;
 
     event RootPosterUpdated(address indexed oldRootPoster, address indexed newRootPoster);
     event MonthSealed(
@@ -42,6 +48,7 @@ contract MonthlyLeagueTreasury {
         uint256 winnerTotal,
         uint256 overflow
     );
+    event ClaimReserveUpdated(uint256 indexed monthId, uint256 monthOutstanding, uint256 totalOutstanding);
     event Claimed(uint256 indexed monthId, address indexed recipient, uint256 amount, bytes32 indexed leaf);
     event NativeWithdrawn(address indexed to, uint256 amount);
 
@@ -58,6 +65,7 @@ contract MonthlyLeagueTreasury {
     error BadProof();
     error ClaimExceedsWinnerTotal();
     error InsufficientBalance();
+    error ReservedBalanceInvariant();
     error NativeTransferFailed();
 
     modifier onlyMultisig() {
@@ -87,21 +95,30 @@ contract MonthlyLeagueTreasury {
         rootPoster = newRootPoster;
     }
 
-    function sealMonth(uint256 monthId, bytes32 winnersRoot, uint256 winnerTotal) external onlyRootPosterOrMultisig {
+    /// @notice Native balance that is not reserved for already sealed, unclaimed winner roots.
+    function unallocatedBalance() public view returns (uint256) {
+        uint256 balance = address(this).balance;
+        if (balance < totalOutstandingClaims) revert ReservedBalanceInvariant();
+        return balance - totalOutstandingClaims;
+    }
+
+    function sealMonth(uint256 monthId, bytes32 winnersRoot, uint256 winnerTotal) external onlyRootPosterOrMultisig nonReentrant {
         if (winnersRoot == bytes32(0)) revert RootZero();
         if (monthSeal[monthId].isSealed) revert MonthAlreadySealed();
 
-        uint256 capNative = oracle.nativeTargetForUsd(monthlyCapUsd);
+        uint256 oraclePrice = oracle.nativeUsdPrice();
+        uint256 capNative = Math.mulDiv(monthlyCapUsd, WAD, oraclePrice, Math.Rounding.Ceil);
         if (winnerTotal > capNative) revert WinnerTotalAboveCap();
 
-        uint256 balance = address(this).balance;
-        uint256 playerPool = balance > capNative ? capNative : balance;
+        uint256 available = unallocatedBalance();
+        uint256 playerPool = available > capNative ? capNative : available;
         if (winnerTotal > playerPool) revert WinnerTotalAbovePlayerPool();
 
-        uint256 overflow = balance - playerPool;
+        uint256 overflow = available - playerPool;
         monthSeal[monthId] = MonthSeal({
             isSealed: true,
             winnersRoot: winnersRoot,
+            oraclePrice: oraclePrice,
             capUsd: monthlyCapUsd,
             capNative: capNative,
             playerPool: playerPool,
@@ -109,6 +126,8 @@ contract MonthlyLeagueTreasury {
             overflow: overflow,
             sealedAt: block.timestamp
         });
+        monthOutstandingClaims[monthId] = winnerTotal;
+        totalOutstandingClaims += winnerTotal;
 
         if (overflow != 0) {
             (bool ok, ) = payable(charityTreasury).call{value: overflow}("");
@@ -116,6 +135,7 @@ contract MonthlyLeagueTreasury {
         }
 
         emit MonthSealed(monthId, winnersRoot, monthlyCapUsd, capNative, playerPool, winnerTotal, overflow);
+        emit ClaimReserveUpdated(monthId, winnerTotal, totalOutstandingClaims);
     }
 
     function claim(
@@ -125,7 +145,7 @@ contract MonthlyLeagueTreasury {
         address payable recipient,
         uint256 amount,
         bytes32[] calldata proof
-    ) external {
+    ) external nonReentrant {
         MonthSeal memory seal = monthSeal[monthId];
         if (!seal.isSealed) revert MonthNotSealed();
         if (recipient == address(0)) revert ZeroAddress();
@@ -136,21 +156,25 @@ contract MonthlyLeagueTreasury {
         if (!MerkleProof.verify(proof, seal.winnersRoot, leaf)) revert BadProof();
 
         uint256 newClaimedTotal = monthClaimedTotal[monthId] + amount;
-        if (newClaimedTotal > seal.winnerTotal) revert ClaimExceedsWinnerTotal();
+        if (newClaimedTotal > seal.winnerTotal || amount > monthOutstandingClaims[monthId]) revert ClaimExceedsWinnerTotal();
         if (amount > address(this).balance) revert InsufficientBalance();
 
         monthClaimedTotal[monthId] = newClaimedTotal;
+        monthOutstandingClaims[monthId] -= amount;
+        totalOutstandingClaims -= amount;
         monthLeafClaimed[monthId][leaf] = true;
 
         (bool ok, ) = recipient.call{value: amount}("");
         if (!ok) revert NativeTransferFailed();
+        emit ClaimReserveUpdated(monthId, monthOutstandingClaims[monthId], totalOutstandingClaims);
         emit Claimed(monthId, recipient, amount, leaf);
     }
 
-    /// @notice Multisig-only emergency/manual withdrawal for unclaimed residuals or migration.
-    function withdrawNative(address payable to, uint256 amount) external onlyMultisig {
+    /// @notice Multisig-only emergency/manual withdrawal for unallocated residuals or migration.
+    /// @dev Sealed but unclaimed winner reserves cannot be withdrawn.
+    function withdrawNative(address payable to, uint256 amount) external onlyMultisig nonReentrant {
         if (to == address(0)) revert ZeroAddress();
-        if (amount > address(this).balance) revert InsufficientBalance();
+        if (amount > unallocatedBalance()) revert InsufficientBalance();
 
         (bool ok, ) = to.call{value: amount}("");
         if (!ok) revert NativeTransferFailed();
