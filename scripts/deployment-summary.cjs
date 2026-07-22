@@ -2,6 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { buildFrontendEnv } = require("./lib/frontendEnv.cjs");
+const { buildFactoryRegistry } = require("./lib/indexerManifest.cjs");
 
 const target = process.argv[2] || process.env.HARDHAT_NETWORK || "hardhat";
 const deploymentFile = process.env.DEPLOYMENT_FILE
@@ -35,6 +36,14 @@ function printAddress(deployment, label, canonicalName, fallbacks = []) {
   printValue(label, pickAddress(deployment, canonicalName, fallbacks));
 }
 
+function resolvedContracts(deployment) {
+  return {
+    LaunchFactory: pickAddress(deployment, "LaunchFactory", ["factory", "factoryAddress"]),
+    TreasuryRouter: pickAddress(deployment, "TreasuryRouter", ["TreasuryRouterV2", "treasuryRouterV2", "treasuryRouter", "leagueRouter", "routerAddress"]),
+    PermanentLpLocker: pickAddress(deployment, "PermanentLpLocker", ["permanentLpLocker"]),
+  };
+}
+
 const deployment = readDeployment();
 const routing = deployment.routing || {};
 const postDeployActions = deployment.postDeployActions || [];
@@ -63,6 +72,21 @@ printAddress(deployment, "RiskRegistry", "RiskRegistry", ["riskRegistry"]);
 printAddress(deployment, "GraduationOracle", "GraduationOracle", ["graduationOracle"]);
 printAddress(deployment, "PermanentLpLocker", "PermanentLpLocker", ["permanentLpLocker"]);
 printAddress(deployment, "UPVoteTreasury", "UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]);
+
+console.log("\n[deployment-summary] factory registry");
+try {
+  const factoryRegistry = buildFactoryRegistry(deployment, resolvedContracts(deployment), deploymentFile);
+  printValue("activeFactory", factoryRegistry.activeFactory);
+  printValue("activeGeneration", factoryRegistry.activeGeneration);
+  for (const factory of factoryRegistry.factories) {
+    console.log(
+      `- ${factory.generation} address=${factory.address} creation=${factory.creationEnabled} trading=${factory.tradingEnabled} support=${factory.supportEnabled} block=${factory.deploymentBlock ?? "unset"}`
+    );
+  }
+} catch (error) {
+  printValue("status", `invalid: ${error.message}`);
+  process.exitCode = 1;
+}
 
 console.log("\n[deployment-summary] routing");
 printValue("factoryTradeRouteProfile", routing.factoryTradeRouteProfile);
