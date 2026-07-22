@@ -24,6 +24,7 @@ const TREASURY_ROUTER_V2_CONTRACTS = [
   ["TreasuryRouterV2", ["treasuryRouterV2"]],
   ["WeeklyLeagueVault", ["weeklyLeagueVault", "activeLeagueVault"]],
   ["MonthlyLeagueTreasury", ["monthlyLeagueTreasury"]],
+  ["CharityTreasury", ["charityTreasury"]],
 ];
 
 function isAddress(value) {
@@ -179,6 +180,7 @@ function printReadiness(result, file) {
   console.log(`treasuryRouter=${result.watch.contracts.TreasuryRouter || "unset"}`);
   console.log(`weeklyLeagueVault=${result.watch.contracts.WeeklyLeagueVault || result.watch.contracts.TreasuryVaultV2 || "unset"}`);
   console.log(`monthlyLeagueTreasury=${result.watch.contracts.MonthlyLeagueTreasury || "unset"}`);
+  console.log(`charityTreasury=${result.watch.contracts.CharityTreasury || "unset"}`);
   console.log(`graduationOracle=${result.watch.contracts.GraduationOracle || "unset"}`);
   console.log(`priceFeed=${result.watch.graduationPriceFeed || "unset"}`);
   console.log(`topazRouter=${result.watch.topazRouter || "unset"}`);
