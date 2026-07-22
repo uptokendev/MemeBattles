@@ -12,6 +12,46 @@ export type RewardItem = {
   computedAt?: string;
 };
 
+export type MonthlyClaimReward = {
+  category: string;
+  categoryHash: string;
+  rank: number;
+  recipient: string;
+  amountRaw: string;
+  leaf: string;
+  proof: string[];
+  claimed: boolean;
+  claimable: boolean;
+  transaction: {
+    to: string;
+    value: string;
+    data: string;
+    functionName: "claim";
+  };
+};
+
+export type MonthlyClaimResponse = {
+  ok: boolean;
+  monthId: string;
+  status: "sealed" | "pending";
+  isSealed: boolean;
+  reconciliation: {
+    rootMatches: boolean;
+    winnerTotalMatches: boolean;
+    readyForClaims: boolean;
+  };
+  eligible: boolean;
+  claimableCount: number;
+  claimableAmountRaw: string;
+  rewards: MonthlyClaimReward[];
+};
+
+export function monthIdFromEpochStart(epochStart: string): string {
+  const date = new Date(epochStart);
+  if (Number.isNaN(date.getTime())) throw new Error("Invalid monthly epoch start");
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 export function buildLeagueClaimMessage(args: {
   chainId: number;
   recipient: string;
@@ -42,6 +82,22 @@ export async function fetchClaimableRewards(chainId: number, address: string): P
   return Array.isArray(j?.rewards) ? (j.rewards as RewardItem[]) : [];
 }
 
+export async function fetchMonthlyClaim(
+  chainId: number,
+  monthId: string,
+  address: string
+): Promise<MonthlyClaimResponse> {
+  const qs = new URLSearchParams({
+    chainId: String(chainId),
+    monthId,
+    wallet: address.toLowerCase(),
+  });
+  const r = await fetch(`/api/league?${qs.toString()}`);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j?.error || "Failed to load monthly claim");
+  return j as MonthlyClaimResponse;
+}
+
 export async function submitLeagueClaim(params: {
   chainId: number;
   period: "weekly" | "monthly";
@@ -52,7 +108,7 @@ export async function submitLeagueClaim(params: {
   nonce: string;
   signature: string;
 }): Promise<
-  | { ok: true; txHash: string; claimedAt?: string | null; amountRaw?: string } // already paid path
+  | { ok: true; txHash: string; claimedAt?: string | null; amountRaw?: string }
   | {
       ok: true;
       mode: "merkle";
@@ -84,6 +140,7 @@ export async function recordLeagueClaimTx(params: {
   category: string;
   rank: number;
   recipient: string;
+  nonce: string;
   signature: string;
   txHash: string;
 }): Promise<{ ok: boolean; txHash?: string | null }> {
