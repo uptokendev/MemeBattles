@@ -19,6 +19,13 @@ const CONTRACTS = [
   ["UPVoteTreasury", ["voteTreasury", "voteTreasuryAddress"]],
 ];
 
+const OPTIONAL_CONTRACTS = [
+  ["TreasuryRouterV2", ["treasuryRouterV2"]],
+  ["WeeklyLeagueVault", ["weeklyLeagueVault", "activeLeagueVault"]],
+  ["MonthlyLeagueTreasury", ["monthlyLeagueTreasury"]],
+  ["CharityTreasury", ["charityTreasury"]],
+];
+
 const NATIVE_TREASURY_VAULT_EVENTS = [
   "Deposit(address,uint256,uint256)",
   "Withdraw(address,uint256,uint256)",
@@ -85,6 +92,17 @@ const EVENT_SIGNATURES = {
     "EpochRootSet(uint256,bytes32,uint256)",
     "Claimed(uint256,address,uint256,bytes32)",
     "Withdraw(address,uint256)",
+  ],
+  MonthlyLeagueTreasury: [
+    "RootPosterUpdated(address,address)",
+    "MonthSealed(uint256,bytes32,uint256,uint256,uint256,uint256,uint256)",
+    "Claimed(uint256,address,uint256,bytes32)",
+    "NativeWithdrawn(address,uint256)",
+  ],
+  CharityTreasury: [
+    "NativeReceived(address,uint256)",
+    "NativeWithdrawn(address,uint256)",
+    "TokenWithdrawn(address,address,uint256)",
   ],
   RecruiterRewardsVault: [
     ...NATIVE_TREASURY_VAULT_EVENTS,
@@ -227,11 +245,22 @@ function buildFactoryRegistry(deployment, contracts, sourceLabel = "deployment")
   };
 }
 
-function buildIndexerManifest(deployment, sourceLabel = "deployment") {
-  if (!deployment.chainId) throw new Error(`chainId missing in ${sourceLabel}`);
+function buildContracts(deployment, sourceLabel) {
   const contracts = Object.fromEntries(
     CONTRACTS.map(([name, fallbacks]) => [name, requireAddress(name, pickAddress(deployment, name, fallbacks), sourceLabel)])
   );
+
+  for (const [name, fallbacks] of OPTIONAL_CONTRACTS) {
+    const address = optionalAddress(name, pickAddress(deployment, name, fallbacks), sourceLabel);
+    if (address) contracts[name] = address;
+  }
+
+  return contracts;
+}
+
+function buildIndexerManifest(deployment, sourceLabel = "deployment") {
+  if (!deployment.chainId) throw new Error(`chainId missing in ${sourceLabel}`);
+  const contracts = buildContracts(deployment, sourceLabel);
 
   const topazContracts = deployment.topazInfrastructure?.contracts || {};
   const launchRouter = deployment.topazRouterAdapter || deployment.router || deployment.topazRouter;
@@ -266,6 +295,7 @@ function writeIndexerManifest(deployment, outFile, sourceLabel = "deployment") {
 
 module.exports = {
   CONTRACTS,
+  OPTIONAL_CONTRACTS,
   EVENT_SIGNATURES,
   buildEventTopics,
   buildFactoryRegistry,
