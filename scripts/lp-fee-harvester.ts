@@ -8,6 +8,12 @@ const TOPAZ_POOL_ABI = [
   "function token1() view returns (address)",
 ];
 
+const LP_LOCKER_ROUTING_ABI = ["function treasuryRouter() view returns (address)"];
+const LP_REVENUE_ROUTER_ABI = [
+  "function permanentLpLocker() view returns (address)",
+  "function authorizedLpLocker(address locker) view returns (bool)",
+];
+
 function bigintEnv(name: string, fallback: bigint): bigint {
   const raw = (process.env[name] ?? "").trim();
   if (!raw) return fallback;
@@ -28,6 +34,61 @@ function boolEnv(name: string, fallback = false): boolean {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function sameAddress(a: string, b: string) {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+function reportRoutingProblem(message: string, dryRun: boolean) {
+  if (dryRun) {
+    console.warn(`[lp-harvester] warning: ${message}`);
+    return;
+  }
+  throw new Error(message);
+}
+
+async function inspectLpRevenueRouting(contracts: ReturnType<typeof resolveContracts>, dryRun: boolean) {
+  await assertCode("TreasuryRouter", contracts.TreasuryRouter);
+  const lockerRouting = new ethers.Contract(contracts.PermanentLpLocker, LP_LOCKER_ROUTING_ABI, ethers.provider);
+  const configuredRouter = await lockerRouting.treasuryRouter();
+
+  if (configuredRouter === ethers.ZeroAddress) {
+    reportRoutingProblem("PermanentLpLocker treasuryRouter is unset; run wire:lp-revenue before harvesting", dryRun);
+    return;
+  }
+
+  if (!sameAddress(configuredRouter, contracts.TreasuryRouter)) {
+    reportRoutingProblem(
+      `PermanentLpLocker treasuryRouter mismatch: deployment=${contracts.TreasuryRouter}, locker=${configuredRouter}`,
+      dryRun
+    );
+  }
+
+  const router = new ethers.Contract(configuredRouter, LP_REVENUE_ROUTER_ABI, ethers.provider);
+  try {
+    const authorized = await router.authorizedLpLocker(contracts.PermanentLpLocker);
+    if (!authorized) {
+      reportRoutingProblem("TreasuryRouterV2 has not authorized the PermanentLpLocker; run wire:lp-revenue before harvesting", dryRun);
+    }
+
+    const primaryLocker = await router.permanentLpLocker();
+    if (!sameAddress(primaryLocker, contracts.PermanentLpLocker)) {
+      console.warn(`[lp-harvester] warning: TreasuryRouterV2 primary LP locker is ${primaryLocker}; expected ${contracts.PermanentLpLocker}`);
+    }
+
+    console.log(`[lp-harvester] TreasuryRouterV2 LP revenue routing authorized=${authorized}`);
+    return;
+  } catch {
+    const primaryLocker = await router.permanentLpLocker();
+    if (!sameAddress(primaryLocker, contracts.PermanentLpLocker)) {
+      reportRoutingProblem(
+        `TreasuryRouter permanentLpLocker mismatch: deployment=${contracts.PermanentLpLocker}, router=${primaryLocker}`,
+        dryRun
+      );
+    }
+    console.log("[lp-harvester] legacy TreasuryRouter LP revenue routing ready");
+  }
+}
+
 async function main() {
   const dryRun = boolEnv("KEEPER_DRY_RUN", true);
   const offset = numberEnv("KEEPER_CAMPAIGN_OFFSET", 0);
@@ -40,6 +101,8 @@ async function main() {
   const contracts = resolveContracts(deployment);
   await assertCode("LaunchFactory", contracts.LaunchFactory);
   await assertCode("PermanentLpLocker", contracts.PermanentLpLocker);
+  await inspectLpRevenueRouting(contracts, dryRun);
+
   const factory = await ethers.getContractAt("LaunchFactory", contracts.LaunchFactory);
   const locker = await ethers.getContractAt("PermanentLpLocker", contracts.PermanentLpLocker);
   const total = Number(await factory.campaignsCount());
