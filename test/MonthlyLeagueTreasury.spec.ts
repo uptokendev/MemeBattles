@@ -168,9 +168,9 @@ describe("MonthlyLeagueTreasury", function () {
     expect(await monthly.monthOutstandingClaims(firstMonth)).to.eq(firstPrize);
     expect(await monthly.monthOutstandingClaims(secondMonth)).to.eq(secondPrize);
     expect(await monthly.totalOutstandingClaims()).to.eq(firstPrize + secondPrize);
-    expect(await ethers.provider.getBalance(await charity.getAddress())).to.eq(ethers.parseEther("20"));
-    expect(await ethers.provider.getBalance(await monthly.getAddress())).to.eq(firstPrize + secondPrize);
-    expect(await monthly.unallocatedBalance()).to.eq(0n);
+    expect(await ethers.provider.getBalance(await charity.getAddress())).to.eq(0n);
+    expect(await ethers.provider.getBalance(await monthly.getAddress())).to.eq(firstPrize + ethers.parseEther("70"));
+    expect(await monthly.unallocatedBalance()).to.eq(ethers.parseEther("20"));
   });
 
   it("prevents multisig withdrawals from consuming sealed winner reserves", async () => {
@@ -182,15 +182,16 @@ describe("MonthlyLeagueTreasury", function () {
     await rootPoster.sendTransaction({ to: await monthly.getAddress(), value: prize + ethers.parseEther("3") });
     await monthly.connect(rootPoster).sealMonth(monthId, leaf, prize);
 
-    expect(await monthly.unallocatedBalance()).to.eq(0n);
-    await expect(monthly.connect(multisig).withdrawNative(await other.getAddress(), 1n)).to.be.revertedWithCustomError(monthly, "InsufficientBalance");
-
-    await multisig.sendTransaction({ to: await monthly.getAddress(), value: ethers.parseEther("3") });
     expect(await monthly.unallocatedBalance()).to.eq(ethers.parseEther("3"));
+    await expect(monthly.connect(multisig).withdrawNative(await other.getAddress(), ethers.parseEther("4"))).to.be.revertedWithCustomError(
+      monthly,
+      "InsufficientBalance"
+    );
     await expect(monthly.connect(multisig).withdrawNative(await other.getAddress(), ethers.parseEther("3"))).to.changeEtherBalances(
       [monthly, other],
       [-ethers.parseEther("3"), ethers.parseEther("3")]
     );
+    expect(await monthly.unallocatedBalance()).to.eq(0n);
     expect(await monthly.totalOutstandingClaims()).to.eq(prize);
   });
 
