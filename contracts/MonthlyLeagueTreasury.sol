@@ -130,7 +130,6 @@ contract MonthlyLeagueTreasury {
         if (!seal.isSealed) revert MonthNotSealed();
         if (recipient == address(0)) revert ZeroAddress();
         if (amount == 0) revert AmountZero();
-        if (amount > address(this).balance) revert InsufficientBalance();
 
         bytes32 leaf = keccak256(abi.encode(monthId, category, rank, recipient, amount));
         if (monthLeafClaimed[monthId][leaf]) revert AlreadyClaimed();
@@ -138,6 +137,7 @@ contract MonthlyLeagueTreasury {
 
         uint256 newClaimedTotal = monthClaimedTotal[monthId] + amount;
         if (newClaimedTotal > seal.winnerTotal) revert ClaimExceedsWinnerTotal();
+        if (amount > address(this).balance) revert InsufficientBalance();
 
         monthClaimedTotal[monthId] = newClaimedTotal;
         monthLeafClaimed[monthId][leaf] = true;
