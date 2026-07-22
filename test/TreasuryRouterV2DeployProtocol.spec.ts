@@ -19,6 +19,9 @@ const ENV_KEYS = [
   "PANCAKE_V2_ROUTER",
   "MONTHLY_LEAGUE_TREASURY",
   "MONTHLY_LEAGUE_TREASURY_ADDRESS",
+  "MONTHLY_LEAGUE_CAP_USD",
+  "CHARITY_TREASURY",
+  "CHARITY_TREASURY_ADDRESS",
   "GRADUATION_ORACLE_ADDRESS",
   "BNB_USD_PRICE_FEED",
   "NATIVE_USD_PRICE_FEED",
@@ -83,16 +86,19 @@ describe("deployProtocol TreasuryRouterV2 path", function () {
     }
   });
 
-  it("deploys V2, records weekly/monthly metadata, and authorizes the factory LP locker", async () => {
+  it("deploys V2, records weekly/monthly/charity metadata, and authorizes the factory LP locker", async () => {
     const deployment: any = await deployProtocol();
 
     expect(deployment.treasuryRouterVersion).to.equal("v2");
     expect(deployment.contracts.TreasuryRouter).to.equal(deployment.contracts.TreasuryRouterV2);
     expect(deployment.contracts.WeeklyLeagueVault).to.equal(deployment.weeklyLeagueVault);
     expect(deployment.contracts.MonthlyLeagueTreasury).to.equal(deployment.monthlyLeagueTreasury);
+    expect(deployment.contracts.CharityTreasury).to.equal(deployment.charityTreasury);
     expect(deployment.weeklyLeagueBps).to.equal(3000);
     expect(deployment.monthlyLeagueBps).to.equal(7000);
     expect(deployment.monthlyLeagueTreasuryDeployed).to.equal(true);
+    expect(deployment.charityTreasuryDeployed).to.equal(true);
+    expect(deployment.routing.charityTreasury).to.equal(deployment.charityTreasury);
     expect(deployment.routing.permanentLpLockerAuthorized).to.equal(true);
     expect(deployment.postDeployActions).to.deep.equal([]);
 
@@ -106,6 +112,16 @@ describe("deployProtocol TreasuryRouterV2 path", function () {
     expect(await router.protocolRevenueVault()).to.equal(deployment.contracts.ProtocolRevenueVault);
     expect(await router.authorizedLpLocker(deployment.contracts.PermanentLpLocker)).to.equal(true);
     expect(await router.permanentLpLocker()).to.equal(deployment.contracts.PermanentLpLocker);
+
+    const monthly = await ethers.getContractAt("MonthlyLeagueTreasury", deployment.contracts.MonthlyLeagueTreasury);
+    expect(await monthly.multisig()).to.equal(deployment.treasurySafe);
+    expect(await monthly.rootPoster()).to.equal(deployment.leagueRootPoster);
+    expect(await monthly.oracle()).to.equal(deployment.contracts.GraduationOracle);
+    expect(await monthly.charityTreasury()).to.equal(deployment.contracts.CharityTreasury);
+    expect(await monthly.monthlyCapUsd()).to.equal(ethers.parseUnits("1500000", 18));
+
+    const charity = await ethers.getContractAt("CharityTreasury", deployment.contracts.CharityTreasury);
+    expect(await charity.multisig()).to.equal(deployment.treasurySafe);
 
     await verifyDeployment(deployment);
   });
