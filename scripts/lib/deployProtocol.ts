@@ -219,18 +219,40 @@ async function resolveGraduationOracle(): Promise<{ oracleAddress: string; price
   return { oracleAddress, priceFeedAddress, maxPriceAge };
 }
 
-async function resolveMonthlyLeagueTreasury(vaultFactory: any, treasurySafe: string): Promise<{ address: string; deployed: boolean }> {
-  const configured = (process.env.MONTHLY_LEAGUE_TREASURY ?? process.env.MONTHLY_LEAGUE_TREASURY_ADDRESS ?? "").trim();
+async function resolveCharityTreasury(treasurySafe: string): Promise<{ address: string; deployed: boolean }> {
+  const configured = (process.env.CHARITY_TREASURY ?? process.env.CHARITY_TREASURY_ADDRESS ?? "").trim();
   if (configured) {
-    await requireContractCode(configured, "Configured monthly league treasury");
+    await requireContractCode(configured, "Configured charity treasury");
     return { address: configured, deployed: false };
   }
 
-  const monthlyVault = await vaultFactory.deploy(treasurySafe, ethers.ZeroAddress, ethers.ZeroAddress);
-  await monthlyVault.waitForDeployment();
-  const monthlyVaultAddress = await monthlyVault.getAddress();
-  console.log("MonthlyLeagueTreasury (TreasuryVaultV2):", monthlyVaultAddress);
-  return { address: monthlyVaultAddress, deployed: true };
+  const Charity = await ethers.getContractFactory("CharityTreasury");
+  const charity = await Charity.deploy(treasurySafe);
+  await charity.waitForDeployment();
+  const charityAddress = await charity.getAddress();
+  console.log("CharityTreasury:", charityAddress);
+  return { address: charityAddress, deployed: true };
+}
+
+async function resolveMonthlyLeagueTreasury(
+  treasurySafe: string,
+  rootPoster: string,
+  oracleAddress: string,
+  charityTreasuryAddress: string
+): Promise<{ address: string; deployed: boolean; capUsd: bigint }> {
+  const configured = (process.env.MONTHLY_LEAGUE_TREASURY ?? process.env.MONTHLY_LEAGUE_TREASURY_ADDRESS ?? "").trim();
+  const monthlyCapUsd = bigintEnv("MONTHLY_LEAGUE_CAP_USD", 0n) ?? 0n;
+  if (configured) {
+    await requireContractCode(configured, "Configured monthly league treasury");
+    return { address: configured, deployed: false, capUsd: monthlyCapUsd };
+  }
+
+  const Monthly = await ethers.getContractFactory("MonthlyLeagueTreasury");
+  const monthlyTreasury = await Monthly.deploy(treasurySafe, rootPoster, oracleAddress, charityTreasuryAddress, monthlyCapUsd);
+  await monthlyTreasury.waitForDeployment();
+  const monthlyTreasuryAddress = await monthlyTreasury.getAddress();
+  console.log("MonthlyLeagueTreasury:", monthlyTreasuryAddress);
+  return { address: monthlyTreasuryAddress, deployed: true, capUsd: monthlyCapUsd };
 }
 
 export async function deployProtocol() {
@@ -328,9 +350,13 @@ export async function deployProtocol() {
     console.log("Unpaused Merkle claim lane");
   }
 
-  const monthlyLeagueTreasury = useTreasuryRouterV2
-    ? await resolveMonthlyLeagueTreasury(Vault, treasurySafe)
+  const charityTreasury = useTreasuryRouterV2
+    ? await resolveCharityTreasury(treasurySafe)
     : { address: null as string | null, deployed: false };
+  const charityTreasuryAddress = charityTreasury.address;
+  const monthlyLeagueTreasury = useTreasuryRouterV2
+    ? await resolveMonthlyLeagueTreasury(treasurySafe, rootPoster, graduationOracleConfig.oracleAddress, charityTreasuryAddress!)
+    : { address: null as string | null, deployed: false, capUsd: 0n };
   const monthlyLeagueTreasuryAddress = monthlyLeagueTreasury.address;
 
   const Router = await ethers.getContractFactory(treasuryRouterLabel);
@@ -521,6 +547,9 @@ export async function deployProtocol() {
     weeklyLeagueVault: vaultAddress,
     monthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
     monthlyLeagueTreasuryDeployed: monthlyLeagueTreasury.deployed,
+    monthlyLeagueCapUsd: useTreasuryRouterV2 ? monthlyLeagueTreasury.capUsd.toString() : null,
+    charityTreasury: charityTreasuryAddress,
+    charityTreasuryDeployed: charityTreasury.deployed,
     weeklyLeagueBps: useTreasuryRouterV2 ? weeklyLeagueBps : null,
     monthlyLeagueBps: useTreasuryRouterV2 ? monthlyLeagueBps : null,
     upgradeDelaySeconds,
@@ -547,6 +576,7 @@ export async function deployProtocol() {
             TreasuryRouterV2: leagueRouterAddress,
             WeeklyLeagueVault: vaultAddress,
             MonthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
+            CharityTreasury: charityTreasuryAddress,
           }
         : {}),
       RecruiterRewardsVault: recruiterVaultAddress,
@@ -565,6 +595,8 @@ export async function deployProtocol() {
       activeLeagueVault: vaultAddress,
       weeklyLeagueVault: vaultAddress,
       monthlyLeagueTreasury: monthlyLeagueTreasuryAddress,
+      monthlyLeagueCapUsd: useTreasuryRouterV2 ? monthlyLeagueTreasury.capUsd.toString() : null,
+      charityTreasury: charityTreasuryAddress,
       weeklyLeagueBps: useTreasuryRouterV2 ? weeklyLeagueBps : null,
       monthlyLeagueBps: useTreasuryRouterV2 ? monthlyLeagueBps : null,
       recruiterRewardsVault: canAdminConfigure ? recruiterVaultAddress : null,
@@ -634,6 +666,8 @@ export async function deployProtocol() {
       monthlyLeagueTreasuryAddress,
       `(${weeklyLeagueBps}/${monthlyLeagueBps})`
     );
+    console.log("- Monthly league cap oracle:", graduationOracleConfig.oracleAddress);
+    console.log("- Monthly league overflow charity treasury:", charityTreasuryAddress);
     console.log("- LP locker revenue routes accepted from authorized PermanentLpLocker:", permanentLpLockerAddress);
   } else {
     console.log("- League trade slice -> TreasuryRouter -> LeagueTreasury:", leagueRouterAddress, "->", vaultAddress);
