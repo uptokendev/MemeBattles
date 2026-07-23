@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Share2, Trophy } from "lucide-react";
+import { ChevronRight, Share2, Sparkles, Trophy } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { LeagueClaimRecordedDetail } from "@/hooks/profile/useProfileRewards";
 import type { LeagueCabinet, LeagueCabinetWin } from "@/lib/leagueCabinet";
 import {
   buildShareCardUrl,
@@ -15,6 +14,10 @@ import {
   getLeagueImage,
   getLeagueTitle,
 } from "@/lib/leagueCabinet";
+import {
+  REWARD_RECORDED_EVENT,
+  type RewardUnlockDetail,
+} from "@/lib/rewardUnlockEvents";
 import { LeagueWinsDialog } from "@/components/profile/LeagueWinsDialog";
 
 async function shareWin(
@@ -99,18 +102,27 @@ function PreviewWinCard({
     <div
       className={`group relative overflow-hidden rounded-2xl border bg-background/60 transition-all duration-700 ${
         highlighted
-          ? "scale-[1.015] border-accent shadow-[0_0_34px_rgba(249,115,22,0.42)]"
+          ? "animate-[pulse_700ms_ease-out_1] scale-[1.025] border-accent shadow-[0_0_48px_rgba(249,115,22,0.58)]"
           : "border-border"
       }`}
     >
       {highlighted ? (
-        <div className="pointer-events-none absolute inset-y-0 -left-1/2 z-20 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/35 to-transparent animate-[shine_1.2s_ease-out_1]" />
+        <>
+          <div className="pointer-events-none absolute inset-0 z-20 rounded-2xl ring-2 ring-accent/70 animate-[ping_900ms_cubic-bezier(0,0,0.2,1)_1]" />
+          <div className="pointer-events-none absolute inset-y-0 -left-1/2 z-20 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/55 to-transparent animate-[shine_1.2s_ease-out_1]" />
+          <Badge className="absolute right-3 top-3 z-30 gap-1 border-accent bg-accent text-accent-foreground font-retro text-[9px] uppercase tracking-[0.18em] shadow-[0_0_20px_rgba(249,115,22,0.55)]">
+            <Sparkles className="h-3 w-3" />
+            New trophy
+          </Badge>
+        </>
       ) : null}
       <div className="relative aspect-[16/10] overflow-hidden border-b border-border/80">
         <img
           src={getLeagueImage(item.category)}
           alt={getLeagueTitle(item.category)}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+          className={`h-full w-full object-cover transition-all duration-700 group-hover:scale-[1.03] ${
+            highlighted ? "scale-[1.04] brightness-110" : "scale-100"
+          }`}
           loading="lazy"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/15 to-transparent" />
@@ -179,19 +191,23 @@ export function LeagueCabinetCard({
     };
 
     const onFocusCabinet = () => revealCabinet();
-    const onClaimRecorded = (event: Event) => {
-      const detail = (event as CustomEvent<LeagueClaimRecordedDetail>).detail;
-      if (!detail?.reward) return;
+    const onRewardRecorded = (event: Event) => {
+      const detail = (event as CustomEvent<RewardUnlockDetail>).detail;
+      if (!detail?.reward || (detail.source ?? "league") !== "league") return;
 
       setNewTrophyId(
         `${detail.reward.period}:${detail.reward.epochStart}:${detail.reward.category}:${detail.reward.rank}`
       );
+      setFocused(true);
+
+      if (glowTimerRef.current) window.clearTimeout(glowTimerRef.current);
       if (trophyTimerRef.current) window.clearTimeout(trophyTimerRef.current);
+      glowTimerRef.current = window.setTimeout(() => setFocused(false), 1900);
       trophyTimerRef.current = window.setTimeout(() => setNewTrophyId(null), 4200);
     };
 
     window.addEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
-    window.addEventListener("memebattles:league-claim-recorded", onClaimRecorded);
+    window.addEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
 
     const hashTimer = window.setTimeout(() => {
       if (window.location.hash === "#league-cabinet") revealCabinet();
@@ -199,7 +215,7 @@ export function LeagueCabinetCard({
 
     return () => {
       window.removeEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
-      window.removeEventListener("memebattles:league-claim-recorded", onClaimRecorded);
+      window.removeEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
       window.clearTimeout(hashTimer);
       if (glowTimerRef.current) window.clearTimeout(glowTimerRef.current);
       if (trophyTimerRef.current) window.clearTimeout(trophyTimerRef.current);
@@ -221,12 +237,16 @@ export function LeagueCabinetCard({
       <div
         id="league-cabinet"
         ref={cabinetRef}
-        className={`scroll-mt-24 rounded-2xl border bg-background/40 p-4 transition-all duration-700 md:p-5 ${
+        className={`relative scroll-mt-24 overflow-hidden rounded-2xl border bg-background/40 p-4 transition-all duration-700 md:p-5 ${
           focused
-            ? "scale-[1.008] border-accent shadow-[0_0_42px_rgba(249,115,22,0.38)]"
+            ? "scale-[1.01] border-accent shadow-[0_0_52px_rgba(249,115,22,0.46)]"
             : "border-border"
         }`}
       >
+        {focused ? (
+          <div className="pointer-events-none absolute inset-y-0 -left-1/3 z-20 w-1/4 rotate-12 bg-gradient-to-r from-transparent via-accent/20 to-transparent animate-[shine_1.4s_ease-out_1]" />
+        ) : null}
+
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="font-retro text-lg text-foreground">League Cabinet</div>
