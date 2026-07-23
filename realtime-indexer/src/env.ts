@@ -6,6 +6,14 @@ function req(name: string): string {
   return v;
 }
 
+function firstEnv(...names: string[]): string {
+  for (const name of names) {
+    const v = String(process.env[name] || "").trim();
+    if (v) return v;
+  }
+  return "";
+}
+
 export const ENV = {
   DATABASE_URL: req("DATABASE_URL"),
   ABLY_API_KEY: req("ABLY_API_KEY"),
@@ -13,8 +21,8 @@ export const ENV = {
   BSC_RPC_HTTP_97: req("BSC_RPC_HTTP_97"),
   BSC_RPC_HTTP_56: process.env.BSC_RPC_HTTP_56 || "",
 
-  FACTORY_ADDRESS_97: process.env.FACTORY_ADDRESS_97 || "",
-  FACTORY_ADDRESS_56: process.env.FACTORY_ADDRESS_56 || "",
+  FACTORY_ADDRESS_97: firstEnv("FACTORY_ADDRESS_97", "VITE_FACTORY_ADDRESS_97", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
+  FACTORY_ADDRESS_56: firstEnv("FACTORY_ADDRESS_56", "VITE_FACTORY_ADDRESS_56", "FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS"),
 
   SOLANA_RPC_HTTP: process.env.SOLANA_RPC_HTTP || "",
   SOLANA_LAUNCHPAD_PROGRAM_ID: process.env.SOLANA_LAUNCHPAD_PROGRAM_ID || "",
@@ -25,8 +33,8 @@ export const ENV = {
   SOLANA_INDEXER_INTERVAL_MS: Number(process.env.SOLANA_INDEXER_INTERVAL_MS || 10_000),
 
   // UPVoteTreasury addresses (optional; if not set, vote indexing is disabled for that chain)
-  VOTE_TREASURY_ADDRESS_97: process.env.VOTE_TREASURY_ADDRESS_97 || "",
-  VOTE_TREASURY_ADDRESS_56: process.env.VOTE_TREASURY_ADDRESS_56 || "",
+  VOTE_TREASURY_ADDRESS_97: firstEnv("VOTE_TREASURY_ADDRESS_97", "VITE_VOTE_TREASURY_ADDRESS_97", "VOTE_TREASURY_ADDRESS", "VITE_VOTE_TREASURY_ADDRESS"),
+  VOTE_TREASURY_ADDRESS_56: firstEnv("VOTE_TREASURY_ADDRESS_56", "VITE_VOTE_TREASURY_ADDRESS_56", "VOTE_TREASURY_ADDRESS", "VITE_VOTE_TREASURY_ADDRESS"),
 
   // Indexing window controls
   // Set FACTORY_START_BLOCK_97 to the factory deployment block (BSC testnet: 83444786 in your current deployment).

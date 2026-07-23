@@ -4,7 +4,7 @@ import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
-import { runIndexerOnce } from "./indexer.js";
+import { runIndexerOnce, runRepairOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
@@ -302,6 +302,106 @@ app.get("/health", async (_req, res) => {
     res.status(500).json({ ok: false, error: e?.message || String(e) });
   }
 });
+
+app.get("/api/indexer/status", wrap(async (req, res) => {
+  const chainId = Number(req.query.chainId || 97);
+  const campaign = normalizeAddress(req.query.campaign || req.query.campaignAddress || "");
+
+  const cursorRows = await pool.query(
+    `select cursor,last_indexed_block,updated_at
+       from public.indexer_state
+      where chain_id=$1
+        and (
+          cursor in ('factory','votes','rewards-router')
+          or ($2 <> '' and cursor = $3)
+        )
+      order by cursor asc`,
+    [chainId, campaign, campaign ? `campaign:${campaign}` : ""]
+  );
+
+  const campaignRows = campaign
+    ? await pool.query(
+        `select
+           c.campaign_address,
+           c.factory_address,
+           c.token_address,
+           c.creator_address,
+           c.name,
+           c.symbol,
+           c.created_block,
+           c.created_at_chain,
+           c.graduated_block,
+           c.graduated_at_chain,
+           c.is_active,
+           count(t.*)::int as trade_count,
+           max(t.block_number)::int as last_trade_block,
+           max(t.block_time) as last_trade_at
+         from public.campaigns c
+         left join public.curve_trades t
+           on t.chain_id=c.chain_id and t.campaign_address=c.campaign_address
+        where c.chain_id=$1 and c.campaign_address=$2
+        group by
+          c.chain_id,
+          c.campaign_address,
+          c.factory_address,
+          c.token_address,
+          c.creator_address,
+          c.name,
+          c.symbol,
+          c.created_block,
+          c.created_at_chain,
+          c.graduated_block,
+          c.graduated_at_chain,
+          c.is_active`,
+        [chainId, campaign]
+      )
+    : null;
+
+  const totals = await pool.query(
+    `select
+       (select count(*)::int from public.campaigns where chain_id=$1) as campaigns,
+       (select count(*)::int from public.campaigns where chain_id=$1 and is_active=true) as active_campaigns,
+       (select count(*)::int from public.curve_trades where chain_id=$1) as trades,
+       (select max(block_number)::int from public.curve_trades where chain_id=$1) as last_trade_block`,
+    [chainId]
+  );
+
+  res.json({
+    ok: true,
+    chainId,
+    config: {
+      factoryConfigured: Boolean(ENV.FACTORY_ADDRESS_97 || ENV.FACTORY_ADDRESS_56),
+      factoryAddress:
+        chainId === 56
+          ? ENV.FACTORY_ADDRESS_56 || null
+          : ENV.FACTORY_ADDRESS_97 || null,
+      rpcConfigured: Boolean(chainId === 56 ? ENV.BSC_RPC_HTTP_56 : ENV.BSC_RPC_HTTP_97),
+      voteTreasuryConfigured: Boolean(chainId === 56 ? ENV.VOTE_TREASURY_ADDRESS_56 : ENV.VOTE_TREASURY_ADDRESS_97),
+      factoryStartBlock:
+        chainId === 56
+          ? ENV.FACTORY_START_BLOCK_56 || null
+          : ENV.FACTORY_START_BLOCK_97 || null,
+      lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
+      repairLookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
+    },
+    totals: totals.rows[0] || null,
+    cursors: cursorRows.rows,
+    campaign: campaign ? (campaignRows?.rows?.[0] || null) : null,
+  });
+}));
+
+app.post("/internal/indexer/run", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  const mode = String(req.query.mode || req.body?.mode || "normal").toLowerCase();
+  if (mode !== "normal" && mode !== "repair") {
+    return res.status(400).json({ ok: false, error: "mode must be normal or repair" });
+  }
+
+  const result = await runIndexerJob(mode as "normal" | "repair", "manual");
+  const status = result.ok ? 200 : result.skipped ? 409 : 500;
+  res.status(status).json(result);
+}));
 
 /**
  * Ably token auth endpoint
@@ -2149,17 +2249,31 @@ startTelemetryReporter(async () => {
 let running = false;
 const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 
-setInterval(async () => {
-  if (running) return;
+async function runIndexerJob(mode: "normal" | "repair", trigger: "loop" | "manual") {
+  if (running) {
+    return { ok: false, skipped: true, mode, trigger, error: "indexer already running" };
+  }
+
+  const startedAt = Date.now();
   running = true;
   try {
-    lastIndexerRunAt = Date.now();
-    await runIndexerOnce();
-  } catch (e) {
-    console.error("indexer loop error", e);
+    lastIndexerRunAt = startedAt;
+    if (mode === "repair") {
+      await runRepairOnce();
+    } else {
+      await runIndexerOnce();
+    }
+    return { ok: true, skipped: false, mode, trigger, durationMs: Date.now() - startedAt };
+  } catch (e: any) {
+    console.error(`${mode} indexer job error`, e);
     lastIndexerErrorAt = Date.now();
-    lastIndexerErrorMsg = String((e as any)?.message || e);
+    lastIndexerErrorMsg = String(e?.message || e);
+    return { ok: false, skipped: false, mode, trigger, durationMs: Date.now() - startedAt, error: lastIndexerErrorMsg };
   } finally {
     running = false;
   }
+}
+
+setInterval(async () => {
+  await runIndexerJob("normal", "loop");
 }, INTERVAL_MS);

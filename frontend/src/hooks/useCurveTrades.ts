@@ -8,6 +8,8 @@ import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
+const ENABLE_ONCHAIN_TRADE_FALLBACK =
+  import.meta.env.DEV || String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1";
 const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 50_000;
 const ONCHAIN_FALLBACK_CHUNK_SIZE = 700;
 
@@ -219,7 +221,7 @@ async function fetchOnChainTradeSnapshot(
 /**
  * Curve trades backed by:
  *  1) Snapshot: Railway realtime-indexer REST endpoint
- *  2) Fallback snapshot: recent on-chain campaign trade logs when Railway fails
+ *  2) Dev-only fallback snapshot: recent on-chain campaign trade logs when Railway fails
  *  3) Realtime: Ably channel updates
  *  4) Optional safety reconcile when VITE_ENABLE_TOKEN_POLLING=1
  */
@@ -293,9 +295,13 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       if (!initialLoadedRef.current) setLoading(true);
 
       if (!apiTradesUrl) {
-        const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-        applySnapshot(fallbackRows);
-        setError(null);
+        if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          applySnapshot(fallbackRows);
+          setError(null);
+        } else {
+          setError("Trade indexer API is not configured.");
+        }
         initialLoadedRef.current = true;
         return;
       }
@@ -304,21 +310,26 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         const rows = await fetchJson(apiTradesUrl, signal);
         const apiRows = Array.isArray(rows) ? rows : [];
         const applied = applySnapshot(apiRows);
-        if (applied === 0) {
+        if (applied === 0 && ENABLE_ONCHAIN_TRADE_FALLBACK) {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           applySnapshot(fallbackRows);
         }
         setError(null);
         initialLoadedRef.current = true;
       } catch (apiError: any) {
-        console.warn("[useCurveTrades] trade API failed; falling back to on-chain logs", apiError);
-        try {
-          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
-          applySnapshot(fallbackRows);
-        } catch (fallbackError) {
-          console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+        if (ENABLE_ONCHAIN_TRADE_FALLBACK) {
+          console.warn("[useCurveTrades] trade API failed; falling back to on-chain logs", apiError);
+          try {
+            const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+            applySnapshot(fallbackRows);
+          } catch (fallbackError) {
+            console.warn("[useCurveTrades] on-chain trade fallback failed", fallbackError);
+          }
+          setError(null);
+        } else {
+          console.warn("[useCurveTrades] trade API failed; indexer must repair/backfill", apiError);
+          setError(null);
         }
-        setError(null);
         initialLoadedRef.current = true;
       }
     } catch (e: any) {
