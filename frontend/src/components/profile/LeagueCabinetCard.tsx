@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Share2, Trophy } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import type { LeagueClaimRecordedDetail } from "@/hooks/profile/useProfileRewards";
 import type { LeagueCabinet, LeagueCabinetWin } from "@/lib/leagueCabinet";
 import {
   buildShareCardUrl,
@@ -85,15 +86,26 @@ function PreviewWinCard({
   item,
   onShare,
   sharing,
+  highlighted,
 }: {
   item: LeagueCabinet["items"][number];
   onShare: () => void;
   sharing: boolean;
+  highlighted: boolean;
 }) {
   const metric = formatMetric(item);
 
   return (
-    <div className="group overflow-hidden rounded-2xl border border-border bg-background/60">
+    <div
+      className={`group relative overflow-hidden rounded-2xl border bg-background/60 transition-all duration-700 ${
+        highlighted
+          ? "scale-[1.015] border-accent shadow-[0_0_34px_rgba(249,115,22,0.42)]"
+          : "border-border"
+      }`}
+    >
+      {highlighted ? (
+        <div className="pointer-events-none absolute inset-y-0 -left-1/2 z-20 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/35 to-transparent animate-[shine_1.2s_ease-out_1]" />
+      ) : null}
       <div className="relative aspect-[16/10] overflow-hidden border-b border-border/80">
         <img
           src={getLeagueImage(item.category)}
@@ -144,11 +156,55 @@ export function LeagueCabinetCard({
   loading: boolean;
   displayName?: string | null;
 }) {
+  const cabinetRef = useRef<HTMLDivElement | null>(null);
+  const glowTimerRef = useRef<number | null>(null);
+  const trophyTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [sharingWinId, setSharingWinId] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [newTrophyId, setNewTrophyId] = useState<string | null>(null);
 
   const latestWins = useMemo(() => cabinet?.items.slice(0, 3) ?? [], [cabinet]);
   const topMastery = useMemo(() => cabinet?.mastery.slice(0, 3) ?? [], [cabinet]);
+
+  useEffect(() => {
+    const revealCabinet = () => {
+      window.requestAnimationFrame(() => {
+        cabinetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setFocused(true);
+
+        if (glowTimerRef.current) window.clearTimeout(glowTimerRef.current);
+        glowTimerRef.current = window.setTimeout(() => setFocused(false), 2400);
+      });
+    };
+
+    const onFocusCabinet = () => revealCabinet();
+    const onClaimRecorded = (event: Event) => {
+      const detail = (event as CustomEvent<LeagueClaimRecordedDetail>).detail;
+      if (!detail?.reward) return;
+
+      setNewTrophyId(
+        `${detail.reward.period}:${detail.reward.epochStart}:${detail.reward.category}:${detail.reward.rank}`
+      );
+      if (trophyTimerRef.current) window.clearTimeout(trophyTimerRef.current);
+      trophyTimerRef.current = window.setTimeout(() => setNewTrophyId(null), 4200);
+    };
+
+    window.addEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
+    window.addEventListener("memebattles:league-claim-recorded", onClaimRecorded);
+
+    const hashTimer = window.setTimeout(() => {
+      if (window.location.hash === "#league-cabinet") revealCabinet();
+    }, 180);
+
+    return () => {
+      window.removeEventListener("memebattles:focus-league-cabinet", onFocusCabinet);
+      window.removeEventListener("memebattles:league-claim-recorded", onClaimRecorded);
+      window.clearTimeout(hashTimer);
+      if (glowTimerRef.current) window.clearTimeout(glowTimerRef.current);
+      if (trophyTimerRef.current) window.clearTimeout(trophyTimerRef.current);
+    };
+  }, []);
 
   const handleShare = async (item: LeagueCabinetWin) => {
     if (!cabinet || sharingWinId) return;
@@ -162,7 +218,15 @@ export function LeagueCabinetCard({
 
   return (
     <>
-      <div className="rounded-2xl border border-border bg-background/40 p-4 md:p-5">
+      <div
+        id="league-cabinet"
+        ref={cabinetRef}
+        className={`scroll-mt-24 rounded-2xl border bg-background/40 p-4 transition-all duration-700 md:p-5 ${
+          focused
+            ? "scale-[1.008] border-accent shadow-[0_0_42px_rgba(249,115,22,0.38)]"
+            : "border-border"
+        }`}
+      >
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="font-retro text-lg text-foreground">League Cabinet</div>
@@ -223,6 +287,7 @@ export function LeagueCabinetCard({
                   item={item}
                   onShare={() => void handleShare(item)}
                   sharing={sharingWinId === item.id}
+                  highlighted={newTrophyId === item.id}
                 />
               ))}
             </div>
