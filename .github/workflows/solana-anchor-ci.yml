@@ -17,6 +17,7 @@ env:
   SOLANA_VERSION: 1.18.26
   RUST_TOOLCHAIN: 1.79.0
   CARGO_NET_RETRY: 10
+  SOLANA_DEPENDENCY_PIN_SET: anchor-0.30-solana-1.18
 
 jobs:
   anchor-build:
