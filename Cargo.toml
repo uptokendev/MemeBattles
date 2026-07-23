@@ -10,7 +10,7 @@ anchor-lang = "0.30.1"
 # manifests. The Solana SBF cargo path can be older than the shell cargo.
 blake3 = "=1.5.5"
 borsh = { version = "=1.5.7", features = ["derive"] }
-proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+proc-macro2 = { version = "=1.0.94", features = ["span-locations"] }
 proc-macro-crate = "=3.2.0"
 indexmap = "=2.7.0"
 hashbrown = "=0.15.2"
