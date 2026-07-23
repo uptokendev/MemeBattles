@@ -4,7 +4,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { LeagueClaimRecordedDetail } from "@/hooks/profile/useProfileRewards";
+import {
+  REWARD_RECORDED_EVENT,
+  type RewardUnlockDetail,
+} from "@/lib/rewardUnlockEvents";
 import {
   buildShareCardUrl,
   formatEpochLabel,
@@ -15,7 +18,7 @@ import {
   type LeagueCabinetWin,
 } from "@/lib/leagueCabinet";
 
-function toWin(detail: LeagueClaimRecordedDetail): LeagueCabinetWin {
+function toWin(detail: RewardUnlockDetail): LeagueCabinetWin {
   const reward = detail.reward;
   return {
     id: `${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`,
@@ -36,19 +39,25 @@ function toWin(detail: LeagueClaimRecordedDetail): LeagueCabinetWin {
 export function VictoryUnlockModal() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [detail, setDetail] = useState<LeagueClaimRecordedDetail | null>(null);
+  const [detail, setDetail] = useState<RewardUnlockDetail | null>(null);
   const [open, setOpen] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
-    const onClaimRecorded = (event: Event) => {
-      const claimEvent = event as CustomEvent<LeagueClaimRecordedDetail>;
-      if (!claimEvent.detail?.reward) return;
-      setDetail(claimEvent.detail);
+    const onRewardRecorded = (event: Event) => {
+      const rewardEvent = event as CustomEvent<RewardUnlockDetail>;
+      if (!rewardEvent.detail?.reward || (rewardEvent.detail.source ?? "league") !== "league") return;
+
+      setDetail(rewardEvent.detail);
+      setRevealed(false);
       setOpen(true);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setRevealed(true));
+      });
     };
 
-    window.addEventListener("memebattles:league-claim-recorded", onClaimRecorded);
-    return () => window.removeEventListener("memebattles:league-claim-recorded", onClaimRecorded);
+    window.addEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
+    return () => window.removeEventListener(REWARD_RECORDED_EVENT, onRewardRecorded);
   }, []);
 
   const win = useMemo(() => (detail ? toWin(detail) : null), [detail]);
@@ -79,7 +88,13 @@ export function VictoryUnlockModal() {
   const leagueTitle = getLeagueTitle(win.category);
   const placement = formatWinPlacement(win);
   const rewardAmount = trimBnb(win.amountRaw);
-  const shareText = `Victory unlocked: ${placement} in ${leagueTitle} on MemeWarzone. ${rewardAmount} BNB claimed. Compete. Create. Conquer.`;
+  const title = detail.presentation?.title ?? "Victory Unlocked";
+  const subtitle =
+    detail.presentation?.subtitle ??
+    "Your reward is secured and your trophy is entering the League Cabinet.";
+  const currency = detail.presentation?.currency ?? "BNB";
+  const destinationLabel = detail.presentation?.destinationLabel ?? "View Cabinet";
+  const shareText = `Victory unlocked: ${placement} in ${leagueTitle} on MemeWarzone. ${rewardAmount} ${currency} claimed. Compete. Create. Conquer.`;
 
   const handleShare = () => {
     const url = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(imageUrl)}`;
@@ -93,42 +108,64 @@ export function VictoryUnlockModal() {
 
   const handleViewCabinet = () => {
     setOpen(false);
-    const profilePath = `/profile/${detail.recipient}`;
+    const profilePath = detail.presentation?.destinationPath ?? `/profile/${detail.recipient}`;
+    const destinationHash = detail.presentation?.destinationHash ?? "league-cabinet";
+    const focusEvent = detail.presentation?.destinationFocusEvent ?? "memebattles:focus-league-cabinet";
 
     if (location.pathname.toLowerCase() === profilePath.toLowerCase()) {
-      navigate(`${profilePath}#league-cabinet`, { replace: true });
+      navigate(`${profilePath}#${destinationHash}`, { replace: true });
       window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("memebattles:focus-league-cabinet"));
+        window.dispatchEvent(new CustomEvent(focusEvent));
       }, 80);
       return;
     }
 
-    navigate(`${profilePath}#league-cabinet`);
+    navigate(`${profilePath}#${destinationHash}`);
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setRevealed(false);
+      }}
+    >
       <DialogContent className="max-h-[94vh] max-w-3xl overflow-y-auto rounded-3xl border border-accent/40 bg-card/95 p-0 shadow-2xl shadow-accent/10">
         <div className="relative overflow-hidden rounded-3xl">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(249,115,22,0.22),transparent_48%)]" />
+          <div
+            className={`pointer-events-none absolute left-1/2 top-16 h-36 w-36 -translate-x-1/2 rounded-full border border-accent/40 transition-all duration-700 ${
+              revealed ? "scale-[2.4] opacity-0" : "scale-50 opacity-80"
+            }`}
+          />
           <div className="relative p-5 sm:p-7">
-            <DialogHeader className="items-center text-center">
+            <DialogHeader
+              className={`items-center text-center transition-all duration-500 ${
+                revealed ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+              }`}
+            >
               <div className="mb-2 inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-accent/50 bg-accent/15 shadow-lg shadow-accent/20">
-                <Trophy className="h-7 w-7 text-accent" />
+                <Trophy className={`h-7 w-7 text-accent transition-transform duration-700 ${revealed ? "rotate-0 scale-100" : "-rotate-12 scale-75"}`} />
               </div>
               <DialogTitle className="font-retro text-2xl uppercase tracking-[0.12em] text-foreground sm:text-3xl">
-                Victory Unlocked
+                {title}
               </DialogTitle>
               <DialogDescription className="font-retro text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                Your reward is secured and your trophy is entering the League Cabinet.
+                {subtitle}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="mx-auto mt-6 grid max-w-2xl gap-5 md:grid-cols-[0.95fr_1.05fr]">
+            <div
+              className={`mx-auto mt-6 grid max-w-2xl gap-5 transition-all delay-100 duration-500 md:grid-cols-[0.95fr_1.05fr] ${
+                revealed ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+              }`}
+            >
               <div className="overflow-hidden rounded-2xl border border-accent/30 bg-background/70 shadow-xl shadow-black/20">
                 <div className="relative aspect-square overflow-hidden">
                   <img src={imageUrl || getLeagueImage(win.category)} alt={`${leagueTitle} victory card`} className="h-full w-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
+                  <div className="absolute inset-y-0 -left-1/2 w-1/3 rotate-12 bg-gradient-to-r from-transparent via-white/45 to-transparent animate-[shine_1.1s_ease-out_1]" />
                   <div className="absolute bottom-4 left-4 right-4">
                     <div className="font-retro text-lg text-foreground drop-shadow">{leagueTitle}</div>
                     <div className="mt-1 font-retro text-[11px] uppercase tracking-[0.16em] text-accent">{placement}</div>
@@ -144,9 +181,11 @@ export function VictoryUnlockModal() {
                     <div className="mt-1 font-retro text-xs text-muted-foreground">{formatEpochLabel(win)}</div>
                   </div>
 
-                  <div className="rounded-2xl border border-accent/25 bg-accent/10 p-4">
+                  <div className="rounded-2xl border border-accent/25 bg-accent/10 p-4 shadow-[0_0_28px_rgba(249,115,22,0.12)]">
                     <div className="font-retro text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Reward claimed</div>
-                    <div className="mt-1 font-retro text-2xl text-accent">{rewardAmount} BNB</div>
+                    <div className={`mt-1 font-retro text-2xl text-accent transition-all delay-300 duration-500 ${revealed ? "scale-100 opacity-100" : "scale-90 opacity-0"}`}>
+                      {rewardAmount} {currency}
+                    </div>
                   </div>
 
                   <div className="space-y-2 font-retro text-xs text-muted-foreground">
@@ -156,7 +195,7 @@ export function VictoryUnlockModal() {
                     </div>
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-accent" />
-                      Cabinet synchronization started
+                      Trophy added to cabinet
                     </div>
                   </div>
                 </div>
@@ -174,7 +213,11 @@ export function VictoryUnlockModal() {
               </div>
             </div>
 
-            <div className="mx-auto mt-6 grid max-w-2xl gap-2 sm:grid-cols-3">
+            <div
+              className={`mx-auto mt-6 grid max-w-2xl gap-2 transition-all delay-200 duration-500 sm:grid-cols-3 ${
+                revealed ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+              }`}
+            >
               <Button type="button" className="font-retro" onClick={handleShare}>
                 <ExternalLink className="mr-2 h-4 w-4" />
                 Share on X
@@ -185,7 +228,7 @@ export function VictoryUnlockModal() {
               </Button>
               <Button type="button" variant="outline" className="font-retro" onClick={handleViewCabinet}>
                 <Trophy className="mr-2 h-4 w-4" />
-                View Cabinet
+                {destinationLabel}
               </Button>
             </div>
           </div>
