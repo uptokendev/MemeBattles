@@ -45,6 +45,60 @@
     "PermanentLpLocker": "0xab6AF3B5eA8Dc4599b75aed39cf6f6eaB118526A",
     "UPVoteTreasury": "0x1f944CEaD10B9B4380A7869869648F0c22b6ffcf"
   },
+  "factoryRegistry": {
+    "activeFactory": "0xa7fFFB7d2575427B143F76A68F41379d8DA168e7",
+    "activeGeneration": "bsc-testnet-current-2026-07-21",
+    "factories": [
+      {
+        "generation": "bsc-testnet-current-2026-07-21",
+        "address": "0xa7fFFB7d2575427B143F76A68F41379d8DA168e7",
+        "deploymentBlock": 120237130,
+        "campaignVersion": "launch-campaign-v1",
+        "campaignImplementation": "0xAE476708efB6f2b9129CC59fc208e575c6523871",
+        "treasuryRouter": "0x01Fa34084654885310E33FaC6F50C128fcC753D3",
+        "permanentLpLocker": "0xab6AF3B5eA8Dc4599b75aed39cf6f6eaB118526A",
+        "graduationOracle": "0x1624C1Cab364bfe5D71d778f39E345D6cf44b1fA",
+        "routeAuthority": "0xb989A99823eA96552c3E3198A40CdBF682EDf1aA",
+        "creationEnabled": true,
+        "tradingEnabled": true,
+        "supportEnabled": true,
+        "inventoryStatus": "current-manifest-pending-acceptance",
+        "notes": "Current BSC testnet manifest factory. Keep as the only creation-enabled factory until final V2 factory deployment."
+      },
+      {
+        "generation": "bsc-testnet-inventory-candidate-ccca",
+        "address": "0xCCCa3f0daf3D3D6D063287a0FbFd90607Ca8B7F6",
+        "deploymentBlock": null,
+        "campaignVersion": "unknown",
+        "campaignImplementation": null,
+        "treasuryRouter": null,
+        "permanentLpLocker": null,
+        "graduationOracle": null,
+        "routeAuthority": null,
+        "creationEnabled": false,
+        "tradingEnabled": false,
+        "supportEnabled": false,
+        "inventoryStatus": "pending-inventory",
+        "notes": "Historical testnet candidate from older manifest. Do not index, route, or expose until factory inventory proves bytecode, campaigns, ownership, and database reconciliation."
+      },
+      {
+        "generation": "bsc-testnet-inventory-candidate-0029",
+        "address": "0x00295F00672a49513972F582A4054356de6886cB",
+        "deploymentBlock": null,
+        "campaignVersion": "unknown",
+        "campaignImplementation": null,
+        "treasuryRouter": null,
+        "permanentLpLocker": null,
+        "graduationOracle": null,
+        "routeAuthority": null,
+        "creationEnabled": false,
+        "tradingEnabled": false,
+        "supportEnabled": false,
+        "inventoryStatus": "pending-inventory",
+        "notes": "Historical testnet candidate from indexer environment. Do not index, route, or expose until factory inventory proves bytecode, campaigns, ownership, and database reconciliation."
+      }
+    ]
+  },
   "routing": {
     "activeLeagueVault": "0xAEB5d635010022925d4121B8150024c2a24297E7",
     "recruiterRewardsVault": null,
