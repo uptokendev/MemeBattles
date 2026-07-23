@@ -12,16 +12,39 @@ on:
       - .github/workflows/solana-anchor-ci.yml
   workflow_dispatch:
 
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  CARGO_NET_RETRY: 10
+
 jobs:
   anchor-build:
     name: Anchor build and tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    container:
-      image: solanafoundation/anchor:v0.30.1
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
 
       - name: Show toolchain
         run: |
@@ -29,6 +52,9 @@ jobs:
           solana --version
           rustc --version
           cargo --version
+
+      - name: Remove local lockfiles
+        run: rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
 
       - name: Build Solana program
         run: anchor build
