@@ -31,13 +31,15 @@ function rewardKey(reward: RewardItem) {
   return `${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`;
 }
 
-function emitClaimRecorded(detail: LeagueClaimRecordedDetail) {
+function emitClaimEvent(name: string, detail: LeagueClaimRecordedDetail) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<LeagueClaimRecordedDetail>("memebattles:league-claim-recorded", {
-      detail,
-    })
-  );
+  window.dispatchEvent(new CustomEvent<LeagueClaimRecordedDetail>(name, { detail }));
+}
+
+function waitForUnlockFlight() {
+  if (typeof window === "undefined") return Promise.resolve();
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  return new Promise<void>((resolve) => window.setTimeout(resolve, reducedMotion ? 120 : 780));
 }
 
 export function useProfileRewards({
@@ -96,7 +98,6 @@ export function useProfileRewards({
             });
           }
         } catch {
-          // Keep the reward visible when reconciliation is temporarily unavailable.
           filtered.push(reward);
         }
       }
@@ -221,8 +222,10 @@ export function useProfileRewards({
           claimedAt: new Date().toISOString(),
         };
 
+        emitClaimEvent("memebattles:league-claim-unlocking", detail);
+        await waitForUnlockFlight();
         setRewards((current) => current.filter((item) => rewardKey(item) !== key));
-        emitClaimRecorded(detail);
+        emitClaimEvent("memebattles:league-claim-recorded", detail);
         toast.success(
           reward.period === "monthly" ? "Monthly league prize claimed." : "League prize claimed."
         );
