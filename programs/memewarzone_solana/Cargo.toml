@@ -36,3 +36,5 @@ crypto-common = { workspace = true }
 [build-dependencies]
 cc = { workspace = true }
 jobserver = { workspace = true }
+rayon = { workspace = true }
+rayon-core = { workspace = true }
