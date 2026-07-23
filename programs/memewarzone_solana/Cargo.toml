@@ -20,6 +20,7 @@ idl-build = ["anchor-lang/idl-build"]
 anchor-lang = { workspace = true }
 blake3 = { workspace = true }
 borsh = { workspace = true }
+proc-macro2 = { workspace = true }
 proc-macro-crate = { workspace = true }
 indexmap = { workspace = true }
 hashbrown = { workspace = true }
