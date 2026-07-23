@@ -14,7 +14,7 @@ on:
 
 jobs:
   anchor-build:
-    name: Anchor build
+    name: Anchor build and tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
@@ -32,3 +32,6 @@ jobs:
 
       - name: Build Solana program
         run: anchor build
+
+      - name: Test Solana program invariants
+        run: cargo test -p memewarzone_solana --lib

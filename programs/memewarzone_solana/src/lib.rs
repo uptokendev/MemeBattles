@@ -142,21 +142,14 @@ pub mod memewarzone_solana {
     ) -> Result<()> {
         let global = &mut ctx.accounts.global_config;
         require_generation_authority(global, ctx.accounts.authority.key())?;
-        require!(support_enabled || !active_creation, LaunchpadError::ActiveGenerationMustBeSupported);
 
         let generation = &mut ctx.accounts.generation_config;
-        let current_active = global.active_generation_id;
-
-        if active_creation {
-            require!(
-                is_empty_generation_id(current_active) || current_active == generation.generation_id,
-                LaunchpadError::ActiveCreationGenerationExists
-            );
-            global.active_generation_id = generation.generation_id;
-        } else if current_active == generation.generation_id {
-            global.active_generation_id = EMPTY_GENERATION_ID;
-        }
-
+        global.active_generation_id = resolve_generation_support_update(
+            global.active_generation_id,
+            generation.generation_id,
+            support_enabled,
+            active_creation,
+        )?;
         generation.support_enabled = support_enabled;
         generation.active_creation = active_creation;
 
@@ -398,12 +391,155 @@ fn validate_generation_settings(global: &GlobalConfig, settings: &GenerationSett
     Ok(())
 }
 
+fn resolve_generation_support_update(
+    current_active: [u8; 32],
+    generation_id: [u8; 32],
+    support_enabled: bool,
+    active_creation: bool,
+) -> Result<[u8; 32]> {
+    require!(support_enabled || !active_creation, LaunchpadError::ActiveGenerationMustBeSupported);
+
+    if active_creation {
+        require!(
+            is_empty_generation_id(current_active) || current_active == generation_id,
+            LaunchpadError::ActiveCreationGenerationExists
+        );
+        return Ok(generation_id);
+    }
+
+    if current_active == generation_id {
+        return Ok(EMPTY_GENERATION_ID);
+    }
+
+    Ok(current_active)
+}
+
 fn is_supported_dex_adapter(dex_adapter: u8) -> bool {
     dex_adapter == DEX_ADAPTER_METEORA_DAMM_V2 || dex_adapter == DEX_ADAPTER_RAYDIUM_CPMM
 }
 
 fn is_empty_generation_id(generation_id: [u8; 32]) -> bool {
     generation_id == EMPTY_GENERATION_ID
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_global_config() -> GlobalConfig {
+        GlobalConfig {
+            admin: Pubkey::new_unique(),
+            pauser: Pubkey::new_unique(),
+            tier_admin: Pubkey::new_unique(),
+            risk_admin: Pubkey::new_unique(),
+            route_signer: Pubkey::new_unique(),
+            reward_operator: Pubkey::new_unique(),
+            treasury_operator: Pubkey::new_unique(),
+            generation_operator: Pubkey::new_unique(),
+            active_generation_id: EMPTY_GENERATION_ID,
+            generation_count: 0,
+            paused: false,
+            create_paused: true,
+            buy_paused: true,
+            sell_paused: true,
+            graduation_paused: true,
+            claims_paused: true,
+            route_authorization_required: true,
+            authorized_trading_required: true,
+            security_defaults_locked: false,
+            bump: 255,
+        }
+    }
+
+    fn test_generation_settings() -> GenerationSettings {
+        GenerationSettings {
+            generation_id: [7; 32],
+            program_id: crate::id(),
+            config_pda: Pubkey::new_unique(),
+            start_slot: 42,
+            dex_adapter: DEX_ADAPTER_METEORA_DAMM_V2,
+            active_creation: false,
+            support_enabled: true,
+            manifest_hash: [9; 32],
+            route_authorization_required: true,
+            authorized_trading_required: true,
+        }
+    }
+
+    #[test]
+    fn generation_settings_accept_supported_dex_adapters() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+
+        settings.dex_adapter = DEX_ADAPTER_METEORA_DAMM_V2;
+        assert!(validate_generation_settings(&global, &settings).is_ok());
+
+        settings.dex_adapter = DEX_ADAPTER_RAYDIUM_CPMM;
+        assert!(validate_generation_settings(&global, &settings).is_ok());
+    }
+
+    #[test]
+    fn generation_settings_reject_weakened_route_defaults() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+
+        settings.route_authorization_required = false;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+
+        settings.route_authorization_required = true;
+        settings.authorized_trading_required = false;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_settings_reject_active_without_support() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.active_creation = true;
+        settings.support_enabled = false;
+
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn support_update_activates_empty_creation_slot() {
+        let generation_id = [1; 32];
+        let next_active = resolve_generation_support_update(EMPTY_GENERATION_ID, generation_id, true, true).unwrap();
+
+        assert_eq!(next_active, generation_id);
+    }
+
+    #[test]
+    fn support_update_rejects_second_active_generation() {
+        let current_active = [1; 32];
+        let second_generation = [2; 32];
+
+        assert!(resolve_generation_support_update(current_active, second_generation, true, true).is_err());
+    }
+
+    #[test]
+    fn support_update_rejects_active_generation_without_support() {
+        let generation_id = [1; 32];
+
+        assert!(resolve_generation_support_update(EMPTY_GENERATION_ID, generation_id, false, true).is_err());
+    }
+
+    #[test]
+    fn support_update_deactivation_clears_current_generation() {
+        let generation_id = [1; 32];
+        let next_active = resolve_generation_support_update(generation_id, generation_id, true, false).unwrap();
+
+        assert_eq!(next_active, EMPTY_GENERATION_ID);
+    }
+
+    #[test]
+    fn support_update_deactivation_keeps_other_generation_active() {
+        let current_active = [1; 32];
+        let inactive_generation = [2; 32];
+        let next_active = resolve_generation_support_update(current_active, inactive_generation, true, false).unwrap();
+
+        assert_eq!(next_active, current_active);
+    }
 }
 
 #[error_code]
