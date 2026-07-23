@@ -1,0 +1,89 @@
+name: Solana Anchor CI
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - programs/memewarzone_solana/**
+      - .github/workflows/solana-anchor-ci.yml
+  workflow_dispatch:
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  CARGO_NET_RETRY: 10
+  SOLANA_DEPENDENCY_PIN_SET: anchor-0.30-solana-1.18
+
+jobs:
+  anchor-build:
+    name: Anchor build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustup component add rustfmt --toolchain "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        run: |
+          set -euo pipefail
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+
+      - name: Show toolchain
+        run: |
+          anchor --version
+          solana --version
+          rustc --version
+          cargo --version
+
+      - name: Remove local lockfiles
+        run: rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+
+      - name: Build Solana program
+        run: anchor build --no-idl
+
+      - name: Diagnose edition-2024 dependency resolution
+        if: failure()
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable tree --target all -i getrandom@0.4.3 || true
+          cargo +stable tree --target all -i getrandom@0.3.4 || true
+          cargo +stable tree --target all -i getrandom@0.3.2 || true
+          cargo +stable tree --target all -i wasi@0.14.7+wasi-0.2.4 || true
+          cargo +stable tree --target all -i wasi@0.14.2+wasi-0.2.4 || true
+          cargo +stable tree --target all -i wasip2@1.0.4+wasi-0.2.12 || true
+          cargo +stable tree --target all -i wasip2@1.0.0+wasi-0.2.4 || true
+          cargo +stable tree --target all -i wit-bindgen@0.57.1 || true
+          cargo +stable tree --target all -i wit-bindgen@0.43.0 || true
+          cargo +stable tree --target all -i r-efi@6.0.0 || true
+          cargo +stable tree --target all -i zerocopy@0.8.55 || true
+          cargo +stable tree --target all -i borsh@1.8.0 || true
+
+      - name: Test Solana program invariants
+        run: cargo test -p memewarzone_solana --lib
