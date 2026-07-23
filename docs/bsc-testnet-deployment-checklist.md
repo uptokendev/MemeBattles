@@ -26,10 +26,11 @@ Use `config/bsc-testnet.env.example` as the fill-in template for the real deploy
 - `DEPLOYER_PK` is a funded BSC testnet deployer key and is not reused for production administration.
 - `TREASURY_SAFE` is the testnet treasury/admin safe or wallet; do not use default Hardhat accounts.
 - `ROUTE_AUTHORITY_ADDRESS` or `ROUTE_AUTHORITY_PRIVATE_KEY` is set so route-authorized launches/trades can be configured.
-- `BSCSCAN_API_KEY` is set for contract verification.
+- `ETHERSCAN_API_KEY` is set for Etherscan V2 contract verification.
 - Official Topaz testnet router, pool factory, and WBNB addresses are recorded.
 - Either `GRADUATION_ORACLE_ADDRESS` is set to an existing oracle, or a real BNB/USD feed is set through `BNB_USD_PRICE_FEED`, `NATIVE_USD_PRICE_FEED`, or `GRADUATION_PRICE_FEED`.
 - `GRADUATION_ORACLE_MAX_PRICE_AGE_SECONDS` is approved; the deployment script defaults to 3600 seconds when deploying a new oracle from a feed.
+- For a disposable end-to-end graduation rehearsal, set `GRADUATION_TARGET_USD` (for example `5`) before deploying the replacement factory. This setting cannot be changed after that factory creates its first campaign. Omit it for the production-candidate `$30,000` default.
 - TreasuryRouter, protocol revenue vault, creator registry, risk registry, and route authority addresses are finalized before campaign creation.
 - Keeper and monitoring wallets are separate from owner, route signer, and reward operator keys wherever possible.
 

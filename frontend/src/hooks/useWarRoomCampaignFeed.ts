@@ -4,10 +4,12 @@ import { apiFetch } from "@/lib/apiBase";
 import { fetchCampaignDraft, fetchPublicCampaignDrafts, type CampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
+import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
+import type { SupportedChainId } from "@/lib/chainConfig";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
-export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "empty";
+export type WarRoomCampaignFeedSource = "api" | "campaign-api" | "onchain" | "empty";
 
 const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
 
@@ -132,6 +134,15 @@ function modeToCampaignTab(mode: WarRoomMode) {
   return "trending";
 }
 
+function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, search: string) {
+  if (mode === "graduated" && !campaign.isDexTrading) return false;
+  if (mode !== "graduated" && mode !== "draft" && campaign.isDexTrading) return false;
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+  return [campaign.name, campaign.symbol, campaign.campaign, campaign.token, campaign.creator]
+    .some((value) => String(value ?? "").toLowerCase().includes(query));
+}
+
 async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, search: string, signal: AbortSignal): Promise<WarRoomCampaign[]> {
   const params = new URLSearchParams({
     chainId: String(chainId),
@@ -204,24 +215,45 @@ export function useWarRoomCampaignFeed({
           chainId,
           mode: activeMode,
           search,
+          includeTestnet: chainId === 97,
           signal: controller.signal,
         });
         if (cancelled) return;
         let feedSource: WarRoomCampaignFeedSource = "api";
         let apiItems = Array.isArray(json?.items) ? json.items.map((item: any, index: number) => normalizeApiCampaign(item, index)) : [];
 
-        if (!apiItems.length && (json?.disabled || json?.warning)) {
-          apiItems = await fetchCampaignApiFallback(chainId, activeMode, search, controller.signal);
-          feedSource = "campaign-api";
+        if (!apiItems.length) {
+          apiItems = await fetchCampaignApiFallback(chainId, activeMode, search, controller.signal).catch(() => []);
+          if (apiItems.length) feedSource = "campaign-api";
         }
+
+        const onChainPage = await fetchOnChainCampaignPage(chainId as SupportedChainId, { limit: 100 }).catch(() => ({
+          campaigns: [],
+          nextCursor: null,
+          total: 0,
+        }));
+        const onChainItems = onChainPage.campaigns
+          .map((campaign, index) => normalizeApiCampaign({
+            ...campaign,
+            chainId,
+            campaignAddress: campaign.campaign,
+            tokenAddress: campaign.token,
+            creatorAddress: campaign.creator,
+            logoUri: campaign.logoURI,
+            createdAtChain: campaign.createdAt,
+            status: "live",
+            isActive: true,
+            isDexTrading: false,
+          }, 500000 + index))
+          .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
 
         const draftItems = activeMode === "draft" ? await fetchDraftCampaignsForWarRoom(chainId) : [];
         if (cancelled) return;
-        const merged = [...apiItems, ...draftItems]
+        const merged = [...onChainItems, ...apiItems, ...draftItems]
           .filter((campaign: WarRoomCampaign) => campaign.campaign)
           .filter((campaign, index, all) => all.findIndex((other) => String(other.campaign) === String(campaign.campaign)) === index);
         setCampaigns(merged);
-        setSource(merged.length ? feedSource : "empty");
+        setSource(merged.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
       } catch (loadError) {
         if (controller.signal.aborted) return;
         console.error("[useWarRoomCampaignFeed] failed to load campaigns", loadError);

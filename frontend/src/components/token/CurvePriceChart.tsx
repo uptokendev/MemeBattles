@@ -6,8 +6,6 @@ import { ethers } from "ethers";
 
 import { useCurveTrades, type CurveTradePoint } from "@/hooks/useCurveTrades";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
-import { useLaunchpad } from "@/lib/launchpadClient";
-import type { CampaignMetrics } from "@/lib/launchpadClient";
 import { CurveTradesChart } from "@/lib/chart/CurveTradesChart";
 import type { CurveTradePoint as ChartPoint } from "@/lib/chart/buildCandles";
 
@@ -36,16 +34,6 @@ function tokensFromWeiSafe(wei: bigint | undefined | null): number {
   try {
     if (!wei) return 0;
     const n = Number(ethers.formatUnits(wei, 18));
-    return Number.isFinite(n) ? n : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function bnbFromWeiSafe(wei: bigint | undefined | null): number {
-  try {
-    if (!wei) return 0;
-    const n = Number(ethers.formatEther(wei));
     return Number.isFinite(n) ? n : 0;
   } catch {
     return 0;
@@ -88,22 +76,6 @@ function toMarketCapPointsUsd(trades: CurveTradePoint[], bnbUsd: number): ChartP
   return out;
 }
 
-function toCurrentMarketCapAnchor(metrics: CampaignMetrics | null, bnbUsd: number): ChartPoint[] {
-  if (!metrics || !Number.isFinite(bnbUsd) || bnbUsd <= 0) return [];
-
-  const circulating = tokensFromWeiSafe(metrics.launched ? metrics.curveSupply : metrics.sold);
-  const priceBnb = bnbFromWeiSafe(metrics.currentPrice);
-  const marketCapUsd = circulating * priceBnb * bnbUsd;
-
-  if (!Number.isFinite(marketCapUsd) || marketCapUsd <= 0) return [];
-
-  const now = Date.now();
-  return [
-    { ts: now - 5 * 60 * 1000, value: marketCapUsd },
-    { ts: now, value: marketCapUsd },
-  ];
-}
-
 export const CurvePriceChart = ({
   campaignAddress,
   curvePointsOverride,
@@ -112,19 +84,15 @@ export const CurvePriceChart = ({
 }: CurvePriceChartProps) => {
   // HOOKS MUST ALWAYS RUN BEFORE ANY RETURN
   const [tf, setTf] = useState<TimeframeKey>("1m");
-  const [metricsFallback, setMetricsFallback] = useState<CampaignMetrics | null>(null);
   const bucketSec = useMemo(
     () => TIMEFRAMES.find((t) => t.key === tf)?.seconds ?? 60,
     [tf]
   );
 
-  const { fetchCampaignMetrics } = useLaunchpad();
   const live = useCurveTrades(campaignAddress, { enabled: !curvePointsOverride });
   const livePoints = curvePointsOverride ?? live.points;
   const liveLoading = loadingOverride ?? live.loading;
   const liveError = errorOverride ?? live.error;
-  const canLoadMetricsFallback = Boolean(campaignAddress && ethers.isAddress(campaignAddress));
-
   const { price: bnbUsd, loading: bnbUsdLoading, error: bnbUsdError } = useBnbUsdPrice(true);
 
   // Keep last known-good USD so we never blank during refresh.
@@ -135,34 +103,10 @@ export const CurvePriceChart = ({
 
   const usd = (bnbUsd && Number.isFinite(bnbUsd) && bnbUsd > 0 ? bnbUsd : lastUsdRef.current) || 0;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!campaignAddress || !canLoadMetricsFallback || (livePoints?.length ?? 0) > 0) {
-      setMetricsFallback(null);
-      return;
-    }
-
-    (async () => {
-      try {
-        const metrics = await fetchCampaignMetrics(campaignAddress);
-        if (!cancelled) setMetricsFallback(metrics);
-      } catch (error) {
-        console.warn("[CurvePriceChart] metrics fallback failed", error);
-        if (!cancelled) setMetricsFallback(null);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [campaignAddress, canLoadMetricsFallback, fetchCampaignMetrics, livePoints?.length]);
-
   const chartPointsComputed: ChartPoint[] = useMemo(() => {
     if (!usd || usd <= 0) return [];
-    const tradePoints = toMarketCapPointsUsd(livePoints || [], usd);
-    return tradePoints.length ? tradePoints : toCurrentMarketCapAnchor(metricsFallback, usd);
-  }, [livePoints, metricsFallback, usd]);
+    return toMarketCapPointsUsd(livePoints || [], usd);
+  }, [livePoints, usd]);
 
   // Keep last non-empty points to avoid flicker on brief loading toggles.
   const lastPointsRef = useRef<ChartPoint[]>([]);

@@ -10,7 +10,7 @@ Set these before target-chain verification:
 - `DEPLOYER_PK`
 - `LAUNCH_FACTORY_ADDRESS` or `FACTORY_ADDRESS`
 - `ROUTE_AUTHORITY_ADDRESS` or `ROUTE_AUTHORITY_PRIVATE_KEY`
-- `BSCSCAN_API_KEY` when contract verification is part of the deployment pass
+- `ETHERSCAN_API_KEY` when Etherscan V2 contract verification is part of the deployment pass
 
 For the API-side security schema and contract sync worker, also set these in the `frontend` runtime environment:
 

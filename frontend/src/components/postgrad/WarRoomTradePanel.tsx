@@ -101,7 +101,7 @@ export function WarRoomTradePanel({ campaign }: { campaign: CampaignInfo }) {
           (typeof (metrics as any)?.finalizedAt === "bigint"
             ? (metrics as any).finalizedAt > 0n
             : Number((metrics as any)?.finalizedAt ?? 0) > 0)
-      : Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
+      : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
   }, [metrics]);
 
   const { baseUrl: dexBaseUrl } = useDexScreenerChart(isDexStage ? campaign.token : "");

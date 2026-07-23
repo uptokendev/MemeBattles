@@ -17,6 +17,7 @@ import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
 import { getActiveChainId } from "@/lib/chainConfig";
+import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { useTokenStatsRealtime } from "@/hooks/useTokenStatsRealtime";
@@ -38,6 +39,35 @@ const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_DECIMALS = 18;
 const SLIPPAGE_PCT = 5;
 const MAX_UINT256 = (1n << 256n) - 1n;
+
+function findEthersErrorData(error: any): string | null {
+  const candidates = [
+    error?.data,
+    error?.error?.data,
+    error?.info?.error?.data,
+    error?.cause?.data,
+    error?.revert?.data,
+  ];
+  return candidates.find((value) => typeof value === "string" && value.startsWith("0x")) ?? null;
+}
+
+function describeTradeError(error: any): string {
+  const data = findEthersErrorData(error);
+  if (data) {
+    try {
+      const parsed = new ethers.Interface(CAMPAIGN_ABI).parseError(data);
+      if (parsed?.name === "CreatorBuyLocked") {
+        return "Creator-wallet buys are temporarily locked after launch. Use a different wallet for this test or wait until the creator lock expires.";
+      }
+      if (parsed?.name === "CreatorBuyCapExceeded") {
+        return "This buy exceeds the creator wallet's launch-period buy cap. Use a smaller amount or a different wallet.";
+      }
+    } catch {
+      // Fall through to the provider's message for unknown errors.
+    }
+  }
+  return error?.shortMessage || error?.reason || error?.message || "Transaction failed.";
+}
 
 // This is the UI table row shape (NOT the on-chain CurveTrade shape)
 type TxRow = {
@@ -170,6 +200,7 @@ const TokenDetails = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const chainIdForStorage = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
+  const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
 
   const campaignAddr = useMemo(() => (campaignAddress ?? "").trim().toLowerCase(), [campaignAddress]);
 
@@ -576,7 +607,10 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     enabled: hasValidCampaignAddress,
   },
 );
-  const liveCurvePointsSafe: CurveTradePoint[] = Array.isArray(liveCurvePoints) ? liveCurvePoints : [];
+  const liveCurvePointsSafe = useMemo<CurveTradePoint[]>(
+    () => (Array.isArray(liveCurvePoints) ? liveCurvePoints : []),
+    [liveCurvePoints],
+  );
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
   const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
@@ -613,10 +647,6 @@ const toSeconds = (ts: number): number => {
     const endPrice =
       (rtStats?.lastPriceBnb != null ? Number(rtStats.lastPriceBnb) : undefined) ??
       (metrics?.currentPrice ? Number(ethers.formatUnits(metrics.currentPrice, 18)) : undefined);
-
-    const isGraduated = Boolean(
-  metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget
-);
 
     // IMPORTANT:
     // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
@@ -673,7 +703,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [campaign?.symbol, liveCurvePointsSafe, metrics]);
+  }, [liveCurvePointsSafe, metrics, rtStats?.lastPriceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -828,8 +858,7 @@ const bnbUsd = useMemo(() => {
 
     const holdersBal = holders.reduce((acc, x) => acc + x.bal, 0n);
 
-    // Liquidity pool allocation (token wei) from on-chain metrics (if present).
-    // This is the amount intended for the LP at graduation.
+    // Reserved token allocation intended for the LP at graduation.
     const lpBal = metrics?.liquiditySupply ?? 0n;
 
     const totalBal = holdersBal + lpBal;
@@ -850,7 +879,7 @@ const bnbUsd = useMemo(() => {
         ? [
             {
               address: "liquidity-pool",
-              label: "Liquidity pool",
+              label: metrics?.launched || (metrics?.finalizedAt ?? 0n) > 0n ? "Liquidity pool" : "Reserved liquidity",
               pct: pct(lpBal),
               isLp: true as const,
             },
@@ -865,7 +894,7 @@ const bnbUsd = useMemo(() => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [liveCurvePointsSafe, metrics?.liquiditySupply]);
+  }, [liveCurvePointsSafe, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
@@ -874,11 +903,11 @@ const bnbUsd = useMemo(() => {
 
     const loadReserve = async () => {
       try {
-          if (!wallet.provider || !campaign?.campaign) {
+        if (!campaign?.campaign) {
           setCurveReserveWei(null);
           return;
         }
-        const bal = await wallet.provider.getBalance(campaign.campaign);
+        const bal = await readProvider.getBalance(campaign.campaign);
         if (!cancelled) setCurveReserveWei(bal);
       } catch (e) {
         console.warn("[TokenDetails] Failed to load campaign reserve", e);
@@ -890,7 +919,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [wallet.provider, campaign?.campaign]);
+  }, [readProvider, campaign?.campaign]);
 
   // Campaign activity counters (buy/sell volume, buyers). Used for Flywheel and related panels.
   useEffect(() => {
@@ -924,18 +953,18 @@ const bnbUsd = useMemo(() => {
 
     const loadBalances = async () => {
       try {
-        if (!wallet.provider || !wallet.account) {
+        if (!wallet.account) {
           setBnbBalanceWei(null);
           setTokenBalanceWei(null);
           return;
         }
 
         const [bnbBal, tokenBal] = await Promise.all([
-          wallet.provider.getBalance(wallet.account),
+          readProvider.getBalance(wallet.account),
           (async () => {
             try {
               if (!campaign?.token) return 0n;
-              const t = new Contract(campaign.token, TOKEN_ABI, wallet.provider) as any;
+              const t = new Contract(campaign.token, TOKEN_ABI, readProvider) as any;
               return (await t.balanceOf(wallet.account)) as bigint;
             } catch {
               return 0n;
@@ -961,7 +990,7 @@ const bnbUsd = useMemo(() => {
     return () => {
       cancelled = true;
     };
-  }, [wallet.provider, wallet.account, campaign?.token]);
+  }, [readProvider, wallet.account, campaign?.token]);
 
   // Build transactions table rows.
   useEffect(() => {
@@ -1005,11 +1034,11 @@ setTxs(next);
   }, [campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
 
   // DexScreener gating: only show external DEX chart after graduation / finalize.
-  // Prefer explicit flags when available; fall back to sold >= graduationTarget for older deployments.
+  // Prefer explicit flags when available; older deployments can fall back to sold supply.
   const hasLaunchFlag = (metrics as any)?.launched !== undefined || (metrics as any)?.finalizedAt !== undefined;
   const isGraduated = hasLaunchFlag
     ? Boolean((metrics as any)?.launched) || (typeof (metrics as any)?.finalizedAt === "bigint" ? (metrics as any).finalizedAt > 0n : Number((metrics as any)?.finalizedAt ?? 0) > 0)
-    : Boolean(metrics && metrics.graduationTarget > 0n && metrics.sold >= metrics.graduationTarget);
+    : Boolean(metrics && metrics.curveSupply > 0n && metrics.sold >= metrics.curveSupply);
 
   const dexTokenAddress = isGraduated ? (campaign?.token ?? "") : "";
 
@@ -1021,13 +1050,13 @@ setTxs(next);
     // IMPORTANT:
     // - metrics.sold is TOKEN wei sold on the bonding curve.
     // - metrics.curveSupply is TOKEN wei available to sell on the curve.
-    // - metrics.graduationTarget is BNB wei required (reserve) to unlock DEX stage.
+    // - metrics.graduationNativeTarget is the oracle-converted BNB reserve target.
     // The contract graduates when either:
     //   sold >= curveSupply   OR   reserve >= graduationTarget
 
     const sold = metrics?.sold ?? 0n;
     const curveSupply = metrics?.curveSupply ?? 0n;
-    const targetWei = metrics?.graduationTarget ?? 0n;
+    const targetWei = metrics?.graduationNativeTarget ?? 0n;
     const reserveWei = curveReserveWei ?? 0n;
 
     const soldPct =
@@ -1069,7 +1098,7 @@ setTxs(next);
       soldPct: Math.max(0, Math.min(100, soldPct)),
       raisedPct: Math.max(0, Math.min(100, raisedPct)),
     };
-  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationTarget, curveReserveWei]);
+  }, [isDexStage, metrics?.sold, metrics?.curveSupply, metrics?.graduationNativeTarget, curveReserveWei]);
 
     const remainingCurveWei = useMemo(() => {
     // Remaining BNB needed to reach the graduation target (reserve-based trigger).
@@ -1167,21 +1196,23 @@ setTxs(next);
 
         setQuoteLoading(true);
 
-        if (!wallet.provider) {
-          if (!cancelled) {
-            setQuoteWei(null);
-            setQuoteError("Wallet provider not available");
-          }
-          return;
-        }
-
-        const c = new Contract(campaign.campaign, CAMPAIGN_ABI, wallet.provider) as any;
+        const c = new Contract(campaign.campaign, CAMPAIGN_ABI, readProvider) as any;
         if (tradeInputDenom === "BNB") {
-          // Invert the quote function so the user can input BNB.
           const targetWei = inputBnbWei;
+          if (tradeTab === "buy") {
+            const [tokensOut, totalCostWei] = await c.quoteBuyExactBnb(targetWei);
+            if (!cancelled) {
+              setEffectiveTokenWei(tokensOut);
+              setQuoteWei(totalCostWei);
+            }
+            return;
+          }
+
+          // A BNB-denominated sell still needs inversion because the contract
+          // accepts an exact token input.
           const priceWei = metrics?.currentPrice ?? 0n;
           let hi: bigint;
-          if (tradeTab === "sell" && tokenBalanceWei != null && tokenBalanceWei > 0n) {
+          if (tokenBalanceWei != null && tokenBalanceWei > 0n) {
             hi = tokenBalanceWei;
           } else if (priceWei > 0n) {
             const est = (targetWei * 10n ** 18n) / priceWei;
@@ -1197,18 +1228,10 @@ setTxs(next);
               lo = 0n;
               continue;
             }
-            const q: bigint = tradeTab === "buy"
-              ? await c.quoteBuyExactTokens(mid)
-              : await c.quoteSellExactTokens(mid);
-            if (tradeTab === "buy") {
-              // Max tokens such that cost <= target
-              if (q <= targetWei) lo = mid; else hi = mid;
-            } else {
-              // Min tokens such that payout >= target
-              if (q >= targetWei) hi = mid; else lo = mid;
-            }
+            const q: bigint = await c.quoteSellExactTokens(mid);
+            if (q >= targetWei) hi = mid; else lo = mid;
           }
-          const solved = tradeTab === "buy" ? lo : hi;
+          const solved = hi;
           if (!cancelled) {
             setEffectiveTokenWei(solved);
             setQuoteWei(targetWei);
@@ -1235,7 +1258,7 @@ setTxs(next);
       cancelled = true;
       clearTimeout(t);
     };
-  }, [wallet.provider, campaign?.campaign, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage]);
+  }, [readProvider, campaign?.campaign, metrics?.currentPrice, tradeTab, tradeAmount, tradeInputDenom, tokenBalanceWei, isDexStage]);
 
   const handlePlaceTrade = async () => {
     if (!campaign?.campaign) return;
@@ -1274,7 +1297,9 @@ setTxs(next);
       if (!isDexStage && tradeTab === "buy" && bnbBalanceWei != null) {
         const baseCostWei = tradeInputDenom === "BNB" ? inputBnbWei : (quoteWei ?? 0n);
         if (baseCostWei > 0n) {
-          const maxCostWei = (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+          const maxCostWei = tradeInputDenom === "BNB"
+            ? baseCostWei
+            : (baseCostWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
           if (maxCostWei > bnbBalanceWei) {
           toast({
             title: "Insufficient BNB",
@@ -1306,12 +1331,14 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
     const c = new Contract(
       campaign.campaign,
       CAMPAIGN_ABI,
-      wallet.provider ?? wallet.signer
+      readProvider
     ) as any;
 
     costWei = await c.quoteBuyExactTokens(amountWei);
   }
-        const maxCostWei = (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
+        const maxCostWei = tradeInputDenom === "BNB"
+          ? costWei
+          : (costWei * BigInt(100 + SLIPPAGE_PCT)) / 100n;
 
         toast({
           title: "Submitting buy",
@@ -1330,7 +1357,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
   const c = new Contract(
     campaign.campaign,
     CAMPAIGN_ABI,
-    wallet.provider ?? wallet.signer
+    readProvider
   ) as any;
 
   payoutWei = await c.quoteSellExactTokens(amountWei);
@@ -1379,8 +1406,8 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
       }
 
       try {
-        if (!wallet.provider && campaign?.campaign) {
-          const bal = await wallet.provider.getBalance(campaign.campaign);
+        if (campaign?.campaign) {
+          const bal = await readProvider.getBalance(campaign.campaign);
           setCurveReserveWei(bal);
         }
       } catch {
@@ -1388,12 +1415,12 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
       }
 
       try {
-        if (wallet.provider && wallet.account && campaign?.token) {
+        if (wallet.account && campaign?.token) {
           const [bnbBal, tokenBal] = await Promise.all([
-            wallet.provider.getBalance(wallet.account),
+            readProvider.getBalance(wallet.account),
             (async () => {
               try {
-                const t = new Contract(campaign.token, TOKEN_ABI, wallet.provider) as any;
+                const t = new Contract(campaign.token, TOKEN_ABI, readProvider) as any;
                 return (await t.balanceOf(wallet.account)) as bigint;
               } catch {
                 return 0n;
@@ -1412,7 +1439,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
       console.error("[TokenDetails] Trade failed", e);
       toast({
         title: "Trade failed",
-        description: e?.reason || e?.message || "Transaction failed.",
+        description: describeTradeError(e),
         variant: "destructive",
       });
     } finally {
@@ -1467,6 +1494,9 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
             <img
               src={tokenData.image}
               alt={tokenData.ticker}
+              onError={(event) => {
+                event.currentTarget.src = "/placeholder.svg";
+              }}
               className="h-full w-full object-contain object-center"
             />
           </div>
@@ -2162,7 +2192,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           : `${formatTokenFromWei(tokenBalanceWei)} ${tokenData.ticker}`}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        Cost: {tradeInputDenom === "BNB" ? formatBnbFromWei(effectiveBnbWei) : (quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—")}
+                        Cost: {quoteLoading ? "…" : quoteWei != null ? formatBnbFromWei(quoteWei) : "—"}
                       </span>
                     </div>
                     {tradeInputDenom === "BNB" && effectiveTokenWei > 0n ? (
@@ -2178,7 +2208,12 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                       <p>Token is graduated. Trade on DEX.</p>
                     ) : quoteWei != null ? (
                       <p>
-                        You will pay ~{formatBnbFromWei(quoteWei)} (max {formatBnbFromWei((quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n)})
+                        You will pay ~{formatBnbFromWei(quoteWei)} (max{" "}
+                        {formatBnbFromWei(
+                          tradeInputDenom === "BNB"
+                            ? effectiveBnbWei
+                            : (quoteWei * BigInt(100 + SLIPPAGE_PCT)) / 100n,
+                        )})
                       </p>
                     ) : (
                       <p>Enter an amount to see the buy quote.</p>
@@ -2187,7 +2222,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <Button
                     onClick={handlePlaceTrade}
-                    disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    disabled={tradePending || approvePending || quoteLoading || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
                     {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Buy"}
@@ -2298,7 +2333,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                   <Button
                     onClick={handlePlaceTrade}
-                    disabled={tradePending || approvePending || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
+                    disabled={tradePending || approvePending || quoteLoading || (!isDexStage && (tradeInputDenom === "BNB" ? effectiveBnbWei <= 0n || effectiveTokenWei <= 0n : parseTokenAmountWei(tradeAmount) <= 0n))}
                     className={`w-full ${topbarButtonClass} py-5`}
                   >
                     {tradePending ? "Processing..." : isDexStage ? "Trade on DEX" : "Sell"}

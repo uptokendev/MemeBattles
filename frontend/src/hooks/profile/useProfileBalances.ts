@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserProvider, Contract, ethers } from "ethers";
+import { Contract, ethers } from "ethers";
 import type { CampaignSummary } from "@/lib/launchpadClient";
 import type { TokenBalanceRow } from "@/types/profilePage";
 import { pickTokenAddressFromSummary } from "@/lib/profile/profileFormatters";
@@ -10,6 +10,8 @@ import {
   calculateHoldingValueUsd,
   type PortfolioMetrics,
 } from "@/lib/profile/portfolioCalculations";
+import { getReadProvider } from "@/lib/readProvider";
+import { getActiveChainId, isEvmChainId } from "@/lib/chainConfig";
 
 const ERC20_ABI_MIN = [
   {
@@ -38,82 +40,13 @@ const ERC20_ABI_MIN = [
 type FetchCampaigns = () => Promise<any[]>;
 type FetchCampaignSummary = (campaign: any) => Promise<CampaignSummary>;
 
-/**
- * Finds the approximate timestamp of the first on-chain activity for an address.
- * Uses binary search + getLogs (Transfer events) + balance checks.
- * This is the preferred source for real "Wallet Age".
- */
-async function getFirstOnChainActivityTimestamp(
-  address: string,
-  provider: ethers.Provider,
-  latestBlock: number
-): Promise<number | null> {
-  if (!address || !provider) return null;
-
-  let low = 0;
-  let high = latestBlock;
-  let firstBlock: number | null = null;
-
-  const addrTopic = ethers.zeroPadValue(address.toLowerCase(), 32);
-
-  // Limit search depth to avoid excessive RPC calls on public endpoints
-  const MAX_ITERATIONS = 40;
-
-  for (let i = 0; i < MAX_ITERATIONS && low <= high; i++) {
-    const mid = Math.floor((low + high) / 2);
-
-    try {
-      // Check for Transfer events involving this address
-      const logs = await provider.getLogs({
-        fromBlock: Math.max(0, mid - 3000),
-        toBlock: Math.min(latestBlock, mid + 3000),
-        topics: [null, [addrTopic, addrTopic]],
-      });
-
-      if (logs.length > 0) {
-        firstBlock = Math.min(firstBlock ?? mid, mid);
-        high = mid - 1;
-        continue;
-      }
-
-      // Fallback: check balance at this block (archive support varies)
-      try {
-        const bal = await provider.getBalance(address, mid);
-        if (bal > 0n) {
-          firstBlock = Math.min(firstBlock ?? mid, mid);
-          high = mid - 1;
-          continue;
-        }
-      } catch {
-        // Archive node may not support historical balance on this RPC
-      }
-
-      low = mid + 1;
-    } catch {
-      // Rate limit or error → search higher
-      low = mid + 1;
-    }
-  }
-
-  if (firstBlock !== null) {
-    try {
-      const block = await provider.getBlock(firstBlock);
-      return block?.timestamp ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
 interface UseProfileBalancesArgs {
   viewedAddress: string | null;
   account: string | null;
   wallet: any;
   fetchCampaigns: FetchCampaigns;
   fetchCampaignSummary: FetchCampaignSummary;
-  /** Optional fallback: createdAt from user_profiles. Prefer on-chain first activity. */
+  /** Wallet-age timestamp from the profile service. */
   profileCreatedAt?: string | null;
 }
 
@@ -136,23 +69,14 @@ export function useProfileBalances({
   // New additive state for portfolio metrics (reuses loadingBalances for simplicity).
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
   const [loadingPortfolioMetrics, setLoadingPortfolioMetrics] = useState(false);
+  const walletChainId = wallet?.chainId ?? wallet?.network?.chainId;
 
   useEffect(() => {
     let cancelled = false;
 
     const resolveReadProvider = (): ethers.Provider | null => {
-      // 1) If the wallet hook already gives us an ethers provider, use it directly.
-      //    Do not wrap it in BrowserProvider again.
-      const p = wallet?.provider;
-      if (p && typeof p.getBalance === "function") return p as ethers.Provider;
-
-      // 2) Fallback to injected provider if it's a real EIP-1193 provider.
-      const injected = (window as any)?.ethereum;
-      if (injected && typeof injected.request === "function") {
-        return new BrowserProvider(injected);
-      }
-
-      return null;
+      const chainId = getActiveChainId(walletChainId);
+      return isEvmChainId(chainId) ? getReadProvider(chainId) as ethers.Provider : null;
     };
 
     const loadBalances = async () => {
@@ -254,16 +178,11 @@ export function useProfileBalances({
             };
           });
 
-          // Real on-chain first activity for wallet age (preferred over profile createdAt)
-          let firstActivityTs: number | null = null;
-          try {
-            const latest = await readProvider.getBlockNumber();
-            firstActivityTs = await getFirstOnChainActivityTimestamp(account, readProvider, latest);
-          } catch (e) {
-            console.warn("[Profile] On-chain first activity lookup failed, falling back to profileCreatedAt", e);
-          }
-
-          const effectiveTimestamp = firstActivityTs ?? (profileCreatedAt ? Math.floor(new Date(profileCreatedAt).getTime() / 1000) : null);
+          // Avoid browser-side chain-history scans. They previously issued
+          // dozens of wide eth_getLogs requests and could freeze MetaMask.
+          const effectiveTimestamp = profileCreatedAt
+            ? Math.floor(new Date(profileCreatedAt).getTime() / 1000)
+            : null;
 
           const metrics = derivePortfolioMetrics({
             nativeBnb: nativeBnbForMetrics,
@@ -299,7 +218,7 @@ export function useProfileBalances({
     return () => {
       cancelled = true;
     };
-  }, [viewedAddress, account, fetchCampaigns, fetchCampaignSummary, wallet, profileCreatedAt]);
+  }, [viewedAddress, account, fetchCampaigns, fetchCampaignSummary, walletChainId, profileCreatedAt, bnbUsd]);
 
   return {
     nativeBalance,

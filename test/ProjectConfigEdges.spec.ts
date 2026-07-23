@@ -7,15 +7,6 @@ function reloadConfig() {
   return require("../hardhat.config").default;
 }
 
-function resolveBscScanApiKey(value: unknown) {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object") {
-    const keyed = value as Record<string, unknown>;
-    return keyed.bscTestnet ?? keyed.bsc;
-  }
-  return undefined;
-}
-
 describe("project hardhat config edges", function () {
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
@@ -35,18 +26,15 @@ describe("project hardhat config edges", function () {
     expect((config.networks as any).bscTestnet.accounts).to.deep.eq([`0x${"2".repeat(64)}`]);
   });
 
-  it("wires bscTestnet RPC and BscScan API key from environment variables", async () => {
+  it("wires bscTestnet RPC and the Etherscan V2 API key as a single string", async () => {
     process.env.BSC_TESTNET_RPC = "https://rpc.example.invalid";
-    process.env.BSCSCAN_API_KEY = "scan-key";
+    process.env.ETHERSCAN_API_KEY = "etherscan-v2-key";
+    process.env.BSCSCAN_API_KEY = "legacy-fallback-key";
 
     const config = reloadConfig();
-    const configuredApiKey = resolveBscScanApiKey((config.etherscan as any).apiKey);
 
     expect((config.networks as any).bscTestnet.url).to.eq("https://rpc.example.invalid");
-    expect(configuredApiKey).to.be.oneOf([
-      "scan-key",
-      ORIGINAL_ENV.BSCSCAN_API_KEY,
-    ].filter((value): value is string => Boolean(value)));
+    expect((config.etherscan as any).apiKey).to.eq("etherscan-v2-key");
   });
 
   it("enables the gas reporter only when REPORT_GAS is exactly true", async () => {

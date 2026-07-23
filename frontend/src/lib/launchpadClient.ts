@@ -248,7 +248,7 @@ function mapOnChainCampaign(c: any, idx: number, offset: number, chainId: number
     creator: c.creator,
     name: c.name,
     symbol: c.symbol,
-    logoURI: c.logoURI,
+    logoURI: normalizeLogoUri(c.logoURI),
     metadataURI: c.metadataURI ?? buildMetadataURI(chainId, c.token || c.campaign),
     xAccount: c.xAccount,
     website: c.website,
@@ -260,7 +260,9 @@ function mapOnChainCampaign(c: any, idx: number, offset: number, chainId: number
 function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignInfo[] {
   const seen = new Set<string>();
   const merged: CampaignInfo[] = [];
-  for (const item of [...db, ...onChain]) {
+  // Prefer canonical factory metadata. The indexer can briefly contain a partial
+  // row (for example, without logoURI/createdAt) while it catches up.
+  for (const item of [...onChain, ...db]) {
     const key = normalizeAddress(item?.campaign);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -407,6 +409,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       basePrice,
       priceSlope,
       graduationTarget,
+      graduationNativeTarget,
       liquidityBps,
       protocolFeeBps,
       currentPrice,
@@ -418,6 +421,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       campaign.basePrice(),
       campaign.priceSlope(),
       campaign.graduationTarget(),
+      campaign.graduationNativeTarget(),
       campaign.liquidityBps(),
       campaign.protocolFeeBps(),
       campaign.currentPrice(),
@@ -428,7 +432,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       campaign.finalizedAt().catch(() => 0n),
     ]);
 
-    return { sold, curveSupply, liquiditySupply, creatorReserve, basePrice, priceSlope, graduationTarget, liquidityBps, protocolFeeBps, currentPrice, launched, finalizedAt };
+    return { sold, curveSupply, liquiditySupply, creatorReserve, basePrice, priceSlope, graduationTarget, graduationNativeTarget, liquidityBps, protocolFeeBps, currentPrice, launched, finalizedAt };
   }, [getCampaignRead]);
 
   const fetchCampaignActivity = useCallback(async (campaignAddress: string): Promise<CampaignActivity | null> => {

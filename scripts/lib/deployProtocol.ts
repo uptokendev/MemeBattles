@@ -21,6 +21,14 @@ function bigintEnv(name: string, fallback?: bigint): bigint | undefined {
   return BigInt(raw);
 }
 
+function decimalUnitsEnv(name: string, decimals = 18): bigint | undefined {
+  const raw = (process.env[name] ?? "").trim();
+  if (!raw) return undefined;
+  const value = ethers.parseUnits(raw, decimals);
+  if (value <= 0n) throw new Error(`Invalid ${name}: expected a positive decimal value`);
+  return value;
+}
+
 function boolEnv(name: string, fallback = false): boolean {
   const raw = (process.env[name] ?? "").trim().toLowerCase();
   if (!raw) return fallback;
@@ -268,6 +276,7 @@ export async function deployProtocol() {
   const treasurySafe = mustEnv("TREASURY_SAFE", process.env.FEE_RECIPIENT ?? deployerAddress);
   const upgradeDelaySeconds = numEnv("UPGRADE_DELAY_SECONDS", 2 * 24 * 60 * 60);
   const protocolFeeBps = BigInt(numEnv("PROTOCOL_FEE_BPS", 200));
+  const graduationTargetUsd = decimalUnitsEnv("GRADUATION_TARGET_USD");
   const operator = String(process.env.LEAGUE_PAYOUT_OPERATOR ?? ethers.ZeroAddress).trim();
   const rootPoster = String(process.env.LEAGUE_ROOT_POSTER ?? ethers.ZeroAddress).trim();
 
@@ -299,6 +308,10 @@ export async function deployProtocol() {
   console.log("Treasury Safe:", treasurySafe);
   console.log("Upgrade delay (seconds):", upgradeDelaySeconds);
   console.log("Protocol fee bps:", protocolFeeBps.toString());
+  console.log(
+    "Graduation target USD:",
+    graduationTargetUsd === undefined ? "factory default" : ethers.formatUnits(graduationTargetUsd, 18),
+  );
   console.log("League payout operator:", operator);
   console.log("League root poster:", rootPoster);
   console.log("League payout max/tx:", payoutMaxPerTx?.toString() ?? "unset");
@@ -472,6 +485,21 @@ export async function deployProtocol() {
   console.log("LaunchFactory:", factoryAddress);
   console.log("PermanentLpLocker:", permanentLpLockerAddress);
 
+  if (graduationTargetUsd !== undefined) {
+    const currentConfig = await factory.config();
+    const tx = await factory.setConfig({
+      totalSupply: currentConfig.totalSupply,
+      curveBps: currentConfig.curveBps,
+      liquidityTokenBps: currentConfig.liquidityTokenBps,
+      basePrice: currentConfig.basePrice,
+      priceSlope: currentConfig.priceSlope,
+      graduationTarget: graduationTargetUsd,
+      liquidityBps: currentConfig.liquidityBps,
+    });
+    await tx.wait();
+    console.log("Factory graduation target USD set:", ethers.formatUnits(graduationTargetUsd, 18));
+  }
+
   if (useTreasuryRouterV2) {
     if (canAdminConfigure) {
       let tx = await leagueRouter.setAuthorizedLpLocker(permanentLpLockerAddress, true);
@@ -554,6 +582,7 @@ export async function deployProtocol() {
     monthlyLeagueBps: useTreasuryRouterV2 ? monthlyLeagueBps : null,
     upgradeDelaySeconds,
     protocolFeeBps: protocolFeeBps.toString(),
+    graduationTargetUsd: (graduationTargetUsd ?? (await factory.config()).graduationTarget).toString(),
     leaguePayoutOperator: operator,
     leagueRootPoster: rootPoster,
     leaguePayoutMaxPerTx: payoutMaxPerTx?.toString() ?? null,

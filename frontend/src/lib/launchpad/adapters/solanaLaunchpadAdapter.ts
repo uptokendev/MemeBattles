@@ -387,6 +387,7 @@ function mapMetrics(campaign: CampaignAccount, vault?: FeeVaultAccount | null): 
     basePrice: campaign.basePriceLamports,
     priceSlope: campaign.priceSlopeLamports,
     graduationTarget: campaign.graduationTargetLamports,
+    graduationNativeTarget: campaign.graduationTargetLamports,
     liquidityBps: 0n,
     protocolFeeBps: 0n,
     currentPrice,

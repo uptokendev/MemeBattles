@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { BNB_CHAIN_ID, BNB_TESTNET_CHAIN_ID, SOLANA_CHAIN_ID, type SupportedChainId } from "@/lib/chainConfig";
-import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
+import { getCampaignFeedChainId } from "@/lib/feedChainConfig";
 
 const FEED_CHAIN_KEY = "mwz:selected_feed_chain_id";
 const FEED_CHAIN_EVENT = "memewarzone:feedChainChanged";
 
 function resolveBnbFeedChainId(): SupportedChainId {
-  return isTestnetCampaignsEnabled() ? BNB_TESTNET_CHAIN_ID : BNB_CHAIN_ID;
+  const configured = getCampaignFeedChainId();
+  return configured === BNB_TESTNET_CHAIN_ID ? BNB_TESTNET_CHAIN_ID : BNB_CHAIN_ID;
 }
 
 function normalizeFeedChainId(value: unknown): SupportedChainId {

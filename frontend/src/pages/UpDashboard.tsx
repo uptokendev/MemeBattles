@@ -141,12 +141,12 @@ const toTokenFromSummary = (s: CampaignSummary, fallbackId: number): Token => {
 
 const classifyTab = (m: CampaignMetrics | null): Tab => {
   // Live data currently doesn't have market-cap stages in the UI.
-  // We classify by bonding progress (sold / graduationTarget)
+  // We classify by bonding progress (token supply sold).
   if (!m) return "up";
 
   try {
-    if (m.graduationTarget <= 0n) return "up";
-    const bps = (m.sold * 10_000n) / m.graduationTarget; // 0..10000
+    if (m.curveSupply <= 0n) return "up";
+    const bps = (m.sold * 10_000n) / m.curveSupply; // 0..10000
 
     if (bps < 3333n) return "up";
     if (bps < 6666n) return "higher";
@@ -179,7 +179,7 @@ const isGraduatedFromMetrics = (m: CampaignMetrics | null): boolean => {
   }
 
   try {
-    return m.graduationTarget > 0n && m.sold >= m.graduationTarget;
+    return m.curveSupply > 0n && m.sold >= m.curveSupply;
   } catch {
     return false;
   }

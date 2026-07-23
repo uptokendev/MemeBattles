@@ -62,6 +62,7 @@ export type CampaignMetrics = {
   basePrice: bigint;
   priceSlope: bigint;
   graduationTarget: bigint;
+  graduationNativeTarget: bigint;
   liquidityBps: bigint;
   protocolFeeBps: bigint;
   launched?: boolean;

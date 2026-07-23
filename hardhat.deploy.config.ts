@@ -6,6 +6,7 @@ dotenv.config();
 const pk = process.env.DEPLOYER_PK
   ? [process.env.DEPLOYER_PK.startsWith("0x") ? process.env.DEPLOYER_PK : `0x${process.env.DEPLOYER_PK}`]
   : [];
+const explorerApiKey = process.env.ETHERSCAN_API_KEY || "";
 
 const config: HardhatUserConfig = {
   networks: {
@@ -26,7 +27,8 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: { bscTestnet: process.env.BSCSCAN_API_KEY || "" },
+    // A single string uses Etherscan API V2 with chainId=97.
+    apiKey: explorerApiKey,
   },
 };
 

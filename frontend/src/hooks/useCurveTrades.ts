@@ -58,6 +58,7 @@ function mergeTrades(prev: CurveTradePoint[], next: CurveTradePoint[]) {
 }
 
 function toBigIntWei(amount: unknown, kind: "ether" | "token"): bigint {
+  if (typeof amount === "bigint") return amount;
   const s = typeof amount === "string" ? amount : typeof amount === "number" ? String(amount) : "0";
   try {
     if (kind === "ether") return ethers.parseEther(s);

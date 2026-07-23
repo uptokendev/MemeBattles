@@ -268,8 +268,8 @@ function checkBscTestnet() {
   checkNotLocalPrivateKey("ROUTE_AUTHORITY_PRIVATE_KEY");
   REAL_NETWORK_ADMIN_ENVS.forEach(checkNotLocalAddress);
 
-  if (!raw("BSCSCAN_API_KEY")) {
-    warnings.push("BSCSCAN_API_KEY is unset; deployment can run, but contract verification will be skipped or fail.");
+  if (!raw("ETHERSCAN_API_KEY")) {
+    warnings.push("ETHERSCAN_API_KEY is unset; deployment can run, but Etherscan V2 contract verification will fail.");
   }
 
   const hasRouterEnv = hasAny(TOPAZ_ROUTER_ENVS);

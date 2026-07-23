@@ -8,6 +8,7 @@ dotenv.config();
 
 const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC || process.env.BSC_TESTNET_RPC_URL || "";
 const deployerPrivateKey = process.env.DEPLOYER_PK || process.env.PRIVATE_KEY_DEPLOY || "";
+const explorerApiKey = process.env.ETHERSCAN_API_KEY || "";
 
 const config: HardhatUserConfig = {
   networks: {
@@ -23,10 +24,9 @@ const config: HardhatUserConfig = {
 
   // --- Added for contract verification ---
   etherscan: {
-    apiKey: {
-      // hardhat-toolbox uses this key name for BNB Chain testnet verification
-      bscTestnet: process.env.BSCSCAN_API_KEY || "",
-    },
+    // A single string opts @nomicfoundation/hardhat-verify into Etherscan API V2.
+    // The old per-network object selects the retired BscScan V1 endpoint.
+    apiKey: explorerApiKey,
   },
 
   solidity: {

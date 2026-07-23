@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Contract } from "ethers";
 import { cn } from "@/lib/utils";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -7,8 +6,8 @@ import { useLeagueRealtime } from "@/hooks/useLeagueRealtime";
 import { CampaignCard, type CampaignCardVM } from "./CampaignCard";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
-import { getFactoryAddress } from "@/lib/chainConfig";
-import { getReadProvider } from "@/lib/readProvider";
+import { type SupportedChainId } from "@/lib/chainConfig";
+import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import { isTestnetCampaignsEnabled } from "@/features/postgrad/apiClient";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
 
@@ -60,11 +59,6 @@ type CampaignFeedResponse = {
   source?: string;
 };
 
-const LEGACY_FACTORY_ABI = [
-  "function campaignsCount() view returns (uint256)",
-  "function getCampaignPage(uint256 offset, uint256 limit) view returns ((address campaign,address token,address creator,string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint64 createdAt)[] page)",
-] as const;
-
 function safeUnixSeconds(ts: any): number | null {
   if (ts == null) return null;
   if (typeof ts === "number" && Number.isFinite(ts)) return ts > 1e12 ? Math.floor(ts / 1000) : Math.floor(ts);
@@ -115,7 +109,10 @@ function mergeCampaignItems(primary: CampaignFeedItemApi[], fallback: CampaignFe
     const key = String(item.campaignAddress ?? "").toLowerCase();
     if (!key) continue;
     const existing = map.get(key);
-    map.set(key, { ...(existing || {}), ...item });
+    const presentValues = Object.fromEntries(
+      Object.entries(item).filter(([, value]) => value !== null && value !== undefined && value !== ""),
+    ) as Partial<CampaignFeedItemApi>;
+    map.set(key, { ...(existing || {}), ...presentValues } as CampaignFeedItemApi);
   }
   return Array.from(map.values());
 }
@@ -124,32 +121,20 @@ async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<Ca
   const chainId = Number(params.chainId || 97);
   const limit = Math.max(1, Math.min(100, Number(params.limit || 24)));
   const cursor = Math.max(0, Number(params.cursor || 0));
-  const factoryAddress = getFactoryAddress(chainId as any);
-  if (!factoryAddress) return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
-
-  const provider = getReadProvider(chainId as any);
-  const factory = new Contract(factoryAddress, LEGACY_FACTORY_ABI, provider) as any;
-  const totalRaw: bigint = await factory.campaignsCount();
-  const total = Number(totalRaw ?? 0n);
-  if (!Number.isFinite(total) || total <= 0) return { items: [], nextCursor: null, pageSize: 0, updatedAt: new Date().toISOString(), source: "onchain-empty" };
-
-  const readLimit = Math.min(100, Math.max(limit, 48));
-  const endExclusive = Math.max(0, total - cursor);
-  const offset = Math.max(0, endExclusive - readLimit);
-  const actualLimit = Math.max(0, endExclusive - offset);
-  if (actualLimit <= 0) return { items: [], nextCursor: null, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain" };
-
-  const rows = await factory.getCampaignPage(offset, actualLimit);
-  const mapped: CampaignFeedItemApi[] = Array.from(rows ?? [])
-    .map((row: any) => ({
+  const page = await fetchOnChainCampaignPage(chainId as SupportedChainId, {
+    limit: Math.min(100, Math.max(limit, 48)),
+    cursor,
+  });
+  const mapped: CampaignFeedItemApi[] = page.campaigns
+    .map((row) => ({
       chainId,
-      campaignAddress: String(row?.campaign ?? "").toLowerCase(),
-      tokenAddress: row?.token ? String(row.token).toLowerCase() : null,
-      creatorAddress: row?.creator ? String(row.creator).toLowerCase() : null,
-      name: row?.name ? String(row.name) : null,
-      symbol: row?.symbol ? String(row.symbol) : null,
-      logoUri: row?.logoURI ? String(row.logoURI) : null,
-      createdAtChain: row?.createdAt ? String(Number(row.createdAt)) : null,
+      campaignAddress: row.campaign,
+      tokenAddress: row.token || null,
+      creatorAddress: row.creator || null,
+      name: row.name || null,
+      symbol: row.symbol || null,
+      logoUri: row.logoURI || null,
+      createdAtChain: row.createdAt ? String(row.createdAt) : null,
       graduatedAtChain: null,
       isDexTrading: false,
       marketcapBnb: null,
@@ -157,14 +142,11 @@ async function fetchOnChainCampaignFeed(params: Record<string, any>): Promise<Ca
       progressPct: null,
       etaSec: null,
     }))
-    .reverse()
     .filter((item) => /^0x[a-f0-9]{40}$/.test(item.campaignAddress))
     .filter((item) => matchesSearch(item, params.search));
 
   const items = mapped.slice(0, limit);
-  const nextCursor = cursor + actualLimit < total ? cursor + actualLimit : null;
-
-  return { items, nextCursor, pageSize: limit, updatedAt: new Date().toISOString(), source: "onchain-factory-fallback" };
+  return { items, nextCursor: page.nextCursor, pageSize: limit, updatedAt: new Date().toISOString(), source: items.length ? "onchain-factory-fallback" : "onchain-empty" };
 }
 
 async function fetchCampaignFeed(params: Record<string, any>): Promise<CampaignFeedResponse> {
@@ -199,7 +181,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
   const { fetchCampaignLogoURI } = useLaunchpad();
   const [selectedChainId] = useSelectedFeedChainId();
   const activeChainId = selectedChainId;
-  const includeTestnet = isTestnetCampaignsEnabled();
+  const includeTestnet = activeChainId === 97 || isTestnetCampaignsEnabled();
   const [refetchNonce, setRefetchNonce] = useState(0);
 
   const { patchByCampaign, created } = useLeagueRealtime({

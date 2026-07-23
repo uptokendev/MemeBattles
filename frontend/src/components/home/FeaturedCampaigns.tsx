@@ -167,6 +167,20 @@ function getResponseItems(json: any) {
   return [];
 }
 
+function mergeFeaturedItems(primary: FeaturedItemApi[], fallback: FeaturedItemApi[]) {
+  const map = new Map<string, FeaturedItemApi>();
+  for (const item of [...fallback, ...primary]) {
+    const key = String(item.campaignAddress || "").toLowerCase();
+    if (!key) continue;
+    const existing = map.get(key);
+    const presentValues = Object.fromEntries(
+      Object.entries(item).filter(([, value]) => value !== null && value !== undefined && value !== ""),
+    ) as Partial<FeaturedItemApi>;
+    map.set(key, { ...(existing || {}), ...presentValues } as FeaturedItemApi);
+  }
+  return Array.from(map.values());
+}
+
 async function safeString(fn: () => Promise<unknown>, fallback = "") {
   try {
     const value = await fn();
@@ -192,7 +206,7 @@ function buildFeedQuery(chainId: number, refetchNonce: number, path: "campaigns"
     params.set("sort", "activity");
   }
 
-  if (isTestnetCampaignsEnabled()) {
+  if (chainId === 97 || isTestnetCampaignsEnabled()) {
     params.set("includeTestnet", "true");
     params.set("testnet", "true");
     params.set("includeDrafts", "true");
@@ -250,9 +264,11 @@ async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promis
   const campaigns = await apiFetch(`/api/campaigns?${buildFeedQuery(chainId, refetchNonce, "campaigns")}`, { cache: "no-store" as RequestCache });
   const campaignJson = await campaigns.json().catch(() => null);
   const campaignItems = getResponseItems(campaignJson);
+  const normalizedCampaigns = campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+  const onChain = await fetchOnChainFeaturedItems(chainId);
 
-  if (campaigns.ok && campaignItems.length) {
-    return campaignItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
+  if (campaigns.ok && (normalizedCampaigns.length || onChain.length)) {
+    return mergeFeaturedItems(normalizedCampaigns, onChain).slice(0, 20);
   }
 
   const featured = await apiFetch(`/api/featured?${buildFeedQuery(chainId, refetchNonce, "featured")}`, { cache: "no-store" as RequestCache });
@@ -263,7 +279,6 @@ async function fetchFeaturedItems(chainId: number, refetchNonce: number): Promis
     return featuredItems.map(normalizeFeaturedItem).filter(Boolean) as FeaturedItemApi[];
   }
 
-  const onChain = await fetchOnChainFeaturedItems(chainId);
   if (onChain.length) return onChain;
 
   if (!campaigns.ok || !featured.ok) {
