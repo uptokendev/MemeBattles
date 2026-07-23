@@ -99,16 +99,20 @@ describe("verify-deployment helpers", function () {
     });
 
     expect(resolved).to.deep.eq({
-      LaunchFactory: "0x0000000000000000000000000000000000000001",
-      LaunchCampaignImplementation: "0x0000000000000000000000000000000000000002",
-      TreasuryRouter: "0x0000000000000000000000000000000000000003",
       TreasuryVaultV2: "0x0000000000000000000000000000000000000004",
+      TreasuryRouter: "0x0000000000000000000000000000000000000003",
+      TreasuryRouterV2: "",
+      WeeklyLeagueVault: "",
+      MonthlyLeagueTreasury: "",
+      CharityTreasury: "",
       RecruiterRewardsVault: "0x0000000000000000000000000000000000000005",
       CommunityRewardsVault: "0x0000000000000000000000000000000000000006",
       ProtocolRevenueVault: "0x0000000000000000000000000000000000000007",
       CreatorRegistry: "0x0000000000000000000000000000000000000008",
       RiskRegistry: "0x0000000000000000000000000000000000000009",
       GraduationOracle: "0x000000000000000000000000000000000000000a",
+      LaunchCampaignImplementation: "0x0000000000000000000000000000000000000002",
+      LaunchFactory: "0x0000000000000000000000000000000000000001",
       PermanentLpLocker: "0x000000000000000000000000000000000000000b",
       UPVoteTreasury: "0x000000000000000000000000000000000000000c",
     });
@@ -151,6 +155,6 @@ describe("verify-deployment helpers", function () {
     const distributor = await RewardDistributor.deploy(await owner.getAddress());
     await distributor.waitForDeployment();
 
-    await expectRejects(assertTopazRouter("TopazRouter", await distributor.getAddress()), "does not expose the Topaz router");
+    await expectRejects(assertTopazRouter("BadRouter", await distributor.getAddress()), "does not expose the Topaz router interface");
   });
 });
