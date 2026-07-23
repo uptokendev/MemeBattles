@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, ExternalLink, ShieldCheck, Trophy } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +34,8 @@ function toWin(detail: LeagueClaimRecordedDetail): LeagueCabinetWin {
 }
 
 export function VictoryUnlockModal() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [detail, setDetail] = useState<LeagueClaimRecordedDetail | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -90,13 +93,17 @@ export function VictoryUnlockModal() {
 
   const handleViewCabinet = () => {
     setOpen(false);
-    const target = `/profile/${detail.recipient}#league-cabinet`;
-    if (window.location.pathname === `/profile/${detail.recipient}`) {
-      window.location.hash = "league-cabinet";
-      window.dispatchEvent(new CustomEvent("memebattles:focus-league-cabinet"));
+    const profilePath = `/profile/${detail.recipient}`;
+
+    if (location.pathname.toLowerCase() === profilePath.toLowerCase()) {
+      navigate(`${profilePath}#league-cabinet`, { replace: true });
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("memebattles:focus-league-cabinet"));
+      }, 80);
       return;
     }
-    window.location.assign(target);
+
+    navigate(`${profilePath}#league-cabinet`);
   };
 
   return (
