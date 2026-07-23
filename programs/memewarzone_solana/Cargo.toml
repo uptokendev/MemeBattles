@@ -32,7 +32,6 @@ toml = { workspace = true }
 toml_datetime = { workspace = true }
 toml_edit = { workspace = true }
 crypto-common = { workspace = true }
-cpufeatures = { workspace = true }
 
 [build-dependencies]
 cc = { workspace = true }
