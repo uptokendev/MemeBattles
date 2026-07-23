@@ -53,6 +53,7 @@ import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay"
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
+import { RewardUnlockFlight } from "@/components/profile/RewardUnlockFlight";
 import { VictoryUnlockModal } from "@/components/profile/VictoryUnlockModal";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
@@ -155,6 +156,7 @@ function AppShellLayout({
       <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} leftSidebarWidth={currentSidebarWidth} />
       <RankPromotionListener />
       <LiveStreamOverlay />
+      <RewardUnlockFlight />
       <VictoryUnlockModal />
 
       <main
