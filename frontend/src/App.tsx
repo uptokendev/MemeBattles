@@ -53,6 +53,7 @@ import { TokenSocialLinksOverlay } from "@/components/social/SocialLinksOverlay"
 import { CommandCenterShell } from "@/components/command-center/CommandCenterShell";
 import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyCommandCenterRedirect";
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
+import { VictoryUnlockModal } from "@/components/profile/VictoryUnlockModal";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
@@ -151,11 +152,10 @@ function AppShellLayout({
       </div>
 
       <Sidebar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
-
       <TopBar mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} leftSidebarWidth={currentSidebarWidth} />
-
       <RankPromotionListener />
       <LiveStreamOverlay />
+      <VictoryUnlockModal />
 
       <main
         className="flex-1 overflow-auto scroll-pt-2 md:scroll-pt-3 pt-2 md:pt-3 pb-4 md:pb-6 lg:pb-8 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]"
