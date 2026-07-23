@@ -5,7 +5,7 @@ Branch: agent/solana-phase0-source-of-truth
 
 ## What This Slice Adds
 
-This slice starts Phase 4 by adding the on-chain foundation for authorized Solana campaign creation. It does not enable public Solana create, buy, sell, or graduation flows.
+This slice starts Phase 4 by adding the on-chain foundation for authorized Solana campaign creation and hardening the frontend adapter so stale Solana transaction code cannot accidentally become live. It does not enable public Solana create, buy, sell, or graduation flows.
 
 Updated files:
 
@@ -13,6 +13,7 @@ Updated files:
 | --- | --- |
 | `programs/memewarzone_solana/src/lib.rs` | Wires the `create_campaign` instruction into the Anchor program and extends shared launchpad errors. |
 | `programs/memewarzone_solana/src/authorized_create.rs` | Adds Campaign and CreateAuthorization PDAs, create args, route-signer authorization checks, creator/risk/generation launch checks, replay-resistant nonce PDA shape, and tests. |
+| `frontend/src/lib/launchpad/adapters/solanaLaunchpadAdapter.ts` | Keeps Solana in protocol_pending unless explicit Phase 4 live-transaction and authorized-create-client env gates are set; removes the older experimental transaction builder from the active adapter path. |
 
 ## Implemented Phase 4 Requirements
 
@@ -26,15 +27,16 @@ Updated files:
 | Creator eligibility | Started | Creation rejects restricted/manual-review creators, live bonding count at tier limit, and active cooldowns. Successful create increments live bonding count and total launches. |
 | Wallet and cluster risk | Started | Creation rejects restricted wallets, manual-review wallets, empty/mismatched clusters, and restricted clusters. |
 | Campaign state | Started | Campaign stores creator, mint, generation ID/config, metadata hash, route profile hash, created timestamp, volume counters, net raised, creator-bought counter, and graduation flag. |
+| Frontend gating | Started | Solana adapter now remains protocol_pending even when a program ID is configured, until `VITE_ENABLE_SOLANA_LAUNCHPAD_TRANSACTIONS` and `VITE_SOLANA_AUTHORIZED_CREATE_CLIENT_READY` are explicitly true. |
 
 ## Still Pending In Phase 4
 
 - Backend Solana create preflight endpoint and exact signed payload format.
 - Ed25519 instruction/sysvar verification for detached route authorization signatures, if we choose signature verification instead of route-authority transaction signing.
-- Frontend Solana create client that submits metadata-only create requests.
+- Frontend Solana create client that submits metadata-only create requests through the new Campaign/CreateAuthorization account shape.
 - Real vault/mint account wiring for the future bonding curve slice.
 - Integration tests proving unauthorized create and replayed nonce fail at the transaction level.
 
 ## Gate Status
 
-Solana create remains protocol_pending. This slice only adds the guarded program state path that later backend and frontend work can call after the launchpad is ready for devnet proof.
+Solana create remains protocol_pending. This slice only adds the guarded program state path and frontend safety gate that later backend and frontend work can call after the launchpad is ready for devnet proof.
