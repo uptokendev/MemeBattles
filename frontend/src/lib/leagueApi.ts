@@ -7,6 +7,8 @@ import {
   type LeagueKey,
   type LeaguePeriod,
 } from "@/lib/leagues";
+import { fetchOnChainLeagueSummary } from "@/lib/onChainLeagueSummary";
+import { type SupportedChainId } from "@/lib/chainConfig";
 
 export type LeagueStatus = "loading" | "ready" | "empty" | "pending" | "error" | "claimable" | "finalized" | "expired" | "rolled_over";
 
@@ -277,6 +279,67 @@ function normalizeHistoryItems(history: any): LeagueWinnerHistoryItem[] {
   return items;
 }
 
+function rawToBigInt(value: unknown): bigint {
+  try {
+    return BigInt(String(value ?? "0"));
+  } catch {
+    return 0n;
+  }
+}
+
+function prizeHasValue(prize?: LeaguePrizeMeta) {
+  return rawToBigInt(prize?.availablePotRaw ?? prize?.potRaw ?? prize?.totalLeagueFeeRaw) > 0n;
+}
+
+function shouldUseOnChainCard(card?: LeagueSummaryCard) {
+  if (!card) return false;
+  return !Array.isArray(card.rows) || card.rows.length === 0 || card.status === "empty" || card.status === "error";
+}
+
+function mergeOnChainLeagueFallback(summary: LeagueSummaryResponse, onChain: Awaited<ReturnType<typeof fetchOnChainLeagueSummary>>): LeagueSummaryResponse {
+  if (!onChain) return summary;
+
+  const nextLeagues = summary.leagues.map((card) => {
+    const fallback = onChain.cards[card.key as keyof typeof onChain.cards];
+    if (!fallback) {
+      return prizeHasValue(card.prize) ? card : { ...card, prize: onChain.prize };
+    }
+    if (!shouldUseOnChainCard(card)) {
+      return prizeHasValue(card.prize) ? card : { ...card, prize: onChain.prize };
+    }
+    return {
+      ...card,
+      ...fallback,
+      title: card.title || fallback.title,
+      warning: card.warning || fallback.warning,
+    };
+  });
+
+  const currentLeaders = nextLeagues
+    .map((card) => {
+      const def = LEAGUES.find((league) => league.key === card.key);
+      const top = card.rows?.[0] as any;
+      if (!def || !top) return undefined;
+      return { leagueKey: def.key, leagueTitle: def.title, label: leaderLabel(top), metric: metricFor(def, top) } satisfies CurrentLeagueLeader;
+    })
+    .filter(Boolean) as CurrentLeagueLeader[];
+
+  return {
+    ...summary,
+    prize: prizeHasValue(summary.prize) ? summary.prize : onChain.prize,
+    leagues: nextLeagues,
+    currentLeaders: summary.currentLeaders.length ? summary.currentLeaders : currentLeaders,
+    trendMetrics: summary.trendMetrics?.basis === "frontend_empty" && prizeHasValue(onChain.prize)
+      ? {
+          basis: "onchain_live_campaign_counters",
+          changeVsPreviousEpoch: { entrants: onChain.prize.leagueCount ?? 0, playerPrizePoolUsd: 0 },
+          entrantsGrowthPct: null,
+          prizePoolGrowthPct: null,
+        }
+      : summary.trendMetrics,
+  };
+}
+
 function solanaPendingSummary(chain: LeagueChain, period: LeaguePeriod, epochOffset: number): LeagueSummaryResponse {
   const seasonId = `${chain}-pending-${period}-${epochOffset}`;
   return {
@@ -435,7 +498,13 @@ async function loadLegacySummary({ chain, chainId, period, epochOffset }: LoadLe
 
 export async function loadLeagueSummary(options: LoadLeagueSummaryOptions): Promise<LeagueSummaryResponse> {
   const futureSummary = await tryLoadFutureSummary(options);
-  if (futureSummary) return futureSummary;
+  if (futureSummary) {
+    if (options.chain === "solana") return futureSummary;
+    const onChain = await fetchOnChainLeagueSummary(options.chainId as SupportedChainId, options.period).catch(() => null);
+    return mergeOnChainLeagueFallback(futureSummary, onChain);
+  }
   if (options.chain === "solana") return solanaPendingSummary(options.chain, options.period, options.epochOffset);
-  return loadLegacySummary(options);
+  const legacySummary = await loadLegacySummary(options);
+  const onChain = await fetchOnChainLeagueSummary(options.chainId as SupportedChainId, options.period).catch(() => null);
+  return mergeOnChainLeagueFallback(legacySummary, onChain);
 }

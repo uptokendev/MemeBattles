@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useWallet } from "@/contexts/WalletContext";
 import { getDefaultChainId, isAllowedChainId } from "@/lib/chainConfig";
+import { loadLeagueSummary } from "@/lib/leagueApi";
 import { LEAGUES, getLimit, periodLabel, type LeagueKey, type Period } from "@/lib/leagues";
 
 const isAddress = (s?: string) => /^0x[a-fA-F0-9]{40}$/.test(String(s ?? "").trim());
@@ -168,6 +169,14 @@ function formatEndsIn(epoch?: EpochMeta, nowMs?: number) {
   }
 }
 
+function rawHasValue(value?: string | null) {
+  try {
+    return BigInt(String(value ?? "0")) > 0n;
+  } catch {
+    return false;
+  }
+}
+
 
 function RowToken({ logo, name, symbol, address }: { logo?: string | null; name?: string | null; symbol?: string | null; address: string }) {
   const title = (name ? String(name) : "") || "Unknown";
@@ -287,12 +296,30 @@ useEffect(() => {
         )}&limit=${encodeURIComponent(String(limit))}&category=${encodeURIComponent(def.key)}`;
 
         const r = (await fetch(`/api/league?${qs}`).then((x) => x.json())) as LeagueResponse<unknown>;
+        const apiItems = Array.isArray(r?.items) ? r.items : [];
+        let nextItems = apiItems;
+        let nextPrize = r?.prize;
+        let nextWarning = r?.warning;
+        let nextEpoch = r?.epoch;
+        let nextStats = r?.stats;
+
+        if (!apiItems.length || !rawHasValue(r?.prize?.potRaw ?? r?.prize?.totalLeagueFeeRaw)) {
+          const bnbChainId = activeChainId === 56 ? 56 : 97;
+          const fallback = await loadLeagueSummary({ chain: "bnb", chainId: bnbChainId, period: effectivePeriod, epochOffset }).catch(() => null);
+          const fallbackCard = fallback?.leagues.find((card) => card.key === def.key);
+          if (!nextItems.length && fallbackCard?.rows?.length) nextItems = fallbackCard.rows;
+          if (!rawHasValue(nextPrize?.potRaw ?? nextPrize?.totalLeagueFeeRaw) && fallbackCard?.prize) nextPrize = fallbackCard.prize as PrizeMeta;
+          if (!nextWarning && fallbackCard?.warning) nextWarning = fallbackCard.warning;
+          if (!nextEpoch && fallback?.epoch) nextEpoch = fallback.epoch as EpochMeta;
+          if (!nextStats && fallbackCard?.entrants !== undefined) nextStats = { campaignsCreated: fallbackCard.entrants };
+        }
+
         if (cancelled) return;
-        setItems(Array.isArray(r?.items) ? r.items : []);
-        setWarning(r?.warning);
-        setPrize(r?.prize);
-        setEpochInfo(r?.epoch);
-        setStats(r?.stats);
+        setItems(nextItems);
+        setWarning(nextWarning);
+        setPrize(nextPrize);
+        setEpochInfo(nextEpoch);
+        setStats(nextStats);
       } catch (e) {
         console.error("[LeagueDetail] failed to load /api/league", e);
         if (!cancelled) {
