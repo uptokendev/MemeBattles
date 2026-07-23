@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { syncWalletRecruiterAttribution } from "@/lib/recruiterApi";
 import { isAllowedChainId } from "@/lib/chainConfig";
+import { watchInjectedProviderAvailability } from "@/lib/injectedProviderDiscovery";
 
 export type WalletType =
   | "metamask"
@@ -30,6 +31,9 @@ export type Eip1193Provider = {
   removeListener?: (eventName: string, listener: (...args: unknown[]) => void) => void;
   selectedAddress?: string | null;
   providers?: Eip1193Provider[];
+  selectedProvider?: Eip1193Provider;
+  providerMap?: Map<unknown, Eip1193Provider>;
+  detected?: Eip1193Provider[];
   isMetaMask?: boolean;
   isCoinbaseWallet?: boolean;
   isRabby?: boolean;
@@ -37,6 +41,10 @@ export type Eip1193Provider = {
   isBinanceChain?: boolean;
   isTrust?: boolean;
   isTrustWallet?: boolean;
+  isCryptoCom?: boolean;
+  isCryptoComWallet?: boolean;
+  isDeFiWallet?: boolean;
+  isDeficonnectProvider?: boolean;
   isOkxWallet?: boolean;
   isOKExWallet?: boolean;
   isPhantom?: boolean;
@@ -149,6 +157,14 @@ function walletBrand(provider: Eip1193Provider, info?: Partial<Eip6963ProviderIn
   if (flag("isBinance") || flag("isBinanceChain") || hasAny(name, ["binance"]) || hasAny(rdns, ["binance"])) return { id: "binance" as WalletType, name: meta.name || "Binance Wallet", description: "BNB Chain-native EVM wallet.", score: 96 };
   if (flag("isCoinbaseWallet") || hasAny(name, ["coinbase"]) || hasAny(rdns, ["coinbase"])) return { id: "coinbase" as WalletType, name: meta.name || "Coinbase Wallet", description: "Coinbase self-custody wallet.", score: 94 };
   if (flag("isTrust") || flag("isTrustWallet") || hasAny(name, ["trust"]) || hasAny(rdns, ["trust"])) return { id: "trust" as WalletType, name: meta.name || "Trust Wallet", description: "Mobile-first EVM wallet.", score: 92 };
+  if (
+    flag("isCryptoCom") ||
+    flag("isCryptoComWallet") ||
+    flag("isDeFiWallet") ||
+    flag("isDeficonnectProvider") ||
+    hasAny(name, ["crypto.com", "crypto com", "defi wallet", "deficonnect"]) ||
+    hasAny(rdns, ["crypto.com", "cryptocom", "com.crypto"])
+  ) return { id: "cryptocom" as WalletType, name: meta.name || "Crypto.com DeFi Wallet", description: "Crypto.com self-custody EVM wallet.", score: 93 };
   if (flag("isOkxWallet") || flag("isOKExWallet") || hasAny(name, ["okx", "okex"]) || hasAny(rdns, ["okx", "okex"])) return { id: "okx" as WalletType, name: meta.name || "OKX Wallet", description: "Multi-chain EVM wallet.", score: 88 };
   if (flag("isPhantom") || hasAny(name, ["phantom"]) || hasAny(rdns, ["phantom"])) return { id: "phantom" as WalletType, name: meta.name || "Phantom", description: "Multi-chain wallet. Use Solana rows for Solana; EVM only for BNB.", score: 70 };
   if (flag("isBraveWallet") || hasAny(name, ["brave"]) || hasAny(rdns, ["brave"])) return { id: "brave" as WalletType, name: meta.name || "Brave Wallet", description: "Built-in Brave wallet.", score: 82 };
@@ -170,9 +186,17 @@ function dedupeProviders(candidates: Array<Eip1193Provider | null | undefined>) 
 
 function legacyProviders() {
   if (typeof window === "undefined") return [];
+  const ethereum = window.ethereum;
+  const providerMap = ethereum?.providerMap;
+  const mappedProviders = providerMap && typeof providerMap.values === "function"
+    ? Array.from(providerMap.values())
+    : [];
   const candidates = dedupeProviders([
-    ...(Array.isArray(window.ethereum?.providers) ? window.ethereum.providers : []),
-    window.ethereum,
+    ...(Array.isArray(ethereum?.providers) ? ethereum.providers : []),
+    ethereum?.selectedProvider,
+    ...mappedProviders,
+    ...(Array.isArray(ethereum?.detected) ? ethereum.detected : []),
+    ethereum,
     window.BinanceChain,
     window.binanceChain,
   ]);
@@ -504,19 +528,18 @@ export function useWallet(): WalletHook {
   }, [applyProviderState, resetWalletState]);
 
   useEffect(() => {
-    clearPersistedWalletSelection();
     startEip6963Discovery();
     const onDiscovery = () => setDetectedWalletSnapshot();
     EIP6963_SUBSCRIBERS.add(onDiscovery);
 
-    const timers = [0, 250, 800, 1600].map((delay) => window.setTimeout(() => {
+    const stopWatching = watchInjectedProviderAvailability(() => {
       requestEip6963Providers();
       setDetectedWalletSnapshot();
-    }, delay));
+    });
 
     return () => {
       EIP6963_SUBSCRIBERS.delete(onDiscovery);
-      timers.forEach((timer) => window.clearTimeout(timer));
+      stopWatching();
       cleanupRef.current?.();
       cleanupRef.current = null;
     };

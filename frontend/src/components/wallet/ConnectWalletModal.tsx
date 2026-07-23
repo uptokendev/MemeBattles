@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 
 import { useWallet } from "@/contexts/WalletContext";
+import { WAKE_PROVIDER_DISCOVERY_DELAYS_MS } from "@/lib/injectedProviderDiscovery";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 
 import type { DetectedWallet, WalletType } from "@/contexts/WalletContext";
@@ -308,7 +309,9 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
     setMoreWalletsOpen(false);
     detectWallets();
 
-    const timers = [80, 250, 700, 1400].map((delay) => window.setTimeout(() => detectWallets(), delay));
+    const timers = WAKE_PROVIDER_DISCOVERY_DELAYS_MS.map((delay) =>
+      window.setTimeout(() => detectWallets(), delay),
+    );
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 

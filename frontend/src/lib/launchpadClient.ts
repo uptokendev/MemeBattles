@@ -616,8 +616,9 @@ export function useLaunchpad(): LaunchpadAdapter {
     factoryAddress,
     hasSigner: Boolean(signer),
     hasAccount: Boolean(wallet.account),
+    walletChainId,
     contractReadiness: bnbReadiness,
-  }), [activeChainId, factoryAddress, signer, wallet.account, bnbReadiness]);
+  }), [activeChainId, factoryAddress, signer, wallet.account, walletChainId, bnbReadiness]);
 
   const bnbAdapter = useMemo<LaunchpadAdapter>(() => ({
     adapterId: "bnb",

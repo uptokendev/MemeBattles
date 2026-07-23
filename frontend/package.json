@@ -31,6 +31,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "test:wallet-discovery": "node --test src/lib/injectedProviderDiscovery.test.mjs",
     "preview": "vite preview",
     "check:core-api": "node scripts/check-core-api-routes.mjs",
     "check:phase3-core-flow": "node scripts/check-phase3-core-flow.mjs",

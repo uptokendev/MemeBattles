@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { socialLinks } from "@/constants/navigation";
-import { postGradFlags } from "@/features/postgrad/config";
+import { warRoomEnabled } from "@/features/postgrad/config";
 import { useWallet } from "@/contexts/WalletContext";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
@@ -146,7 +146,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen, leftSidebarWidth = 0
   const navLinks = useMemo<NavLinkItem[]>(
     () => [
       { label: "Launchpad", path: "/", priority: "primary" },
-      ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ label: "Trade War Room", path: "/war-room", priority: "primary" as const }] : []),
+      ...(warRoomEnabled ? [{ label: "Trade War Room", path: "/war-room", priority: "primary" as const }] : []),
       { label: "Profile", path: "/profile?tab=balances", priority: "secondary" },
       { label: "Docs", path: "https://docs.memewar.zone", priority: "secondary" },
     ],

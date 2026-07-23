@@ -9,11 +9,13 @@ import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
+import { getBnbContractAddresses, getBnbContractReadiness } from "@/lib/bnbContracts";
 import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { signSolanaDraftAction } from "@/lib/solanaWallet";
 import { apiFetch } from "@/lib/apiBase";
-import { getActiveChainId, getChainLabel, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { BNB_CHAIN_ID, getActiveChainId, getChainLabel, getDefaultChainId, isEvmChainId, SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { getBnbLaunchpadSafetyStatus } from "@/lib/launchpad/adapters/bnbLaunchpadAdapter";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -95,9 +97,25 @@ const Create = () => {
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
   const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
   const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
+  const configuredBnbChainId = useMemo(() => {
+    const configured = getDefaultChainId();
+    return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
+  }, []);
   const creatorChainLabel = isSolanaCreator ? "Solana" : getChainLabel(chainId);
   const creatorWalletLabel = creatorWallet ? `${creatorWallet.slice(0, 4)}...${creatorWallet.slice(-4)}` : "No wallet";
-  const launchpadSafetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
+  const launchpadSafetyStatus = useMemo(() => {
+    if (isSolanaCreator) return launchpad.getSafetyStatus();
+    const contractReadiness = getBnbContractReadiness(configuredBnbChainId);
+    const addresses = getBnbContractAddresses(configuredBnbChainId);
+    return getBnbLaunchpadSafetyStatus({
+      chainId: configuredBnbChainId,
+      factoryAddress: addresses.launchFactory,
+      hasSigner: Boolean(wallet.signer),
+      hasAccount: Boolean(wallet.account),
+      walletChainId: wallet.chainId,
+      contractReadiness,
+    });
+  }, [configuredBnbChainId, isSolanaCreator, launchpad, wallet.account, wallet.chainId, wallet.signer]);
   const isSolanaProtocolPending = launchpadSafetyStatus.protocolStatus === "protocol_pending";
   const bnbDirectDeployEnabled = !isSolanaCreator && readFlag(import.meta.env.VITE_ENABLE_DIRECT_BNB_DEPLOY, false);
   const directDeployRouteReady = bnbDirectDeployEnabled && launchpadSafetyStatus.protocolStatus === "ready";
@@ -373,7 +391,7 @@ const Create = () => {
           : "Locked in Prepare Mode";
 
   return (
-    <ContentContainer className="flex min-h-[calc(100dvh-9rem)] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
+    <ContentContainer className="flex min-h-[calc(100dvh-9rem)] flex-col px-2 pb-3 md:px-3 md:pb-2 lg:px-4">
       <div className="mb-3 flex flex-col gap-3 md:mb-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="font-retro text-xs uppercase tracking-[0.22em] text-accent">Create Coin</p>
@@ -393,8 +411,8 @@ const Create = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="mwz-card grid flex-1 gap-3 overflow-visible p-3 md:min-h-0 md:grid-cols-[0.9fr_1.25fr_0.85fr] md:overflow-hidden md:p-4 lg:grid-cols-[0.86fr_1.28fr_0.86fr]">
-        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+      <form onSubmit={handleSubmit} className="mwz-card grid flex-1 items-start gap-3 overflow-visible p-3 md:grid-cols-[0.9fr_1.25fr_0.85fr] md:p-4 lg:grid-cols-[0.86fr_1.28fr_0.86fr]">
+        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-retro text-xs uppercase tracking-[0.16em] text-muted-foreground">Logo</p>
@@ -437,7 +455,7 @@ const Create = () => {
           </div>
         </section>
 
-        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
+        <section className="space-y-3 rounded-xl border border-border/50 bg-background/20 p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block font-retro text-sm text-foreground">Token name</label>
@@ -501,32 +519,32 @@ const Create = () => {
           </div>
         </section>
 
-        <section className="flex flex-col gap-3 rounded-xl border border-border/50 bg-background/20 p-3 md:min-h-0 md:overflow-hidden">
-          <div className="rounded-xl border border-border/50 bg-background/25 p-3">
-            <div className="mb-3">
+        <section className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background/20 p-3">
+          <div className="rounded-xl border border-border/50 bg-background/25 p-2.5">
+            <div className="mb-2">
               <div className="font-retro text-sm text-foreground">Draft Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">{isSolanaCreator ? "Sign with your Solana wallet, reserve the ticker, and open the promotion setup page. No SOL is spent in Prepare Mode." : "Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare."}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{isSolanaCreator ? "Sign with your Solana wallet, reserve the ticker, and open the promotion setup page. No SOL is spent in Prepare Mode." : "Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare."}</p>
             </div>
-            <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
-              <FileText className="mr-2 h-5 w-5" />
+            <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-10 w-full font-retro text-sm">
+              <FileText className="mr-2 h-4 w-4" />
               {isDrafting ? "Saving Draft..." : isSolanaCreator ? "Sign Solana Draft" : "Save Draft"}
             </Button>
           </div>
 
-          <LaunchpadSafetyStatus status={launchpadSafetyStatus} />
+          <LaunchpadSafetyStatus status={launchpadSafetyStatus} compact />
 
-          <div className="rounded-xl border border-border/50 bg-background/25 p-3 opacity-80">
-            <div className="mb-3">
+          <div className="rounded-xl border border-border/50 bg-background/25 p-2.5">
+            <div className="mb-2">
               <div className="font-retro text-sm text-foreground">Deploy Mode</div>
-              <p className="mt-1 text-xs text-muted-foreground">{deployModeDescription}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{deployModeDescription}</p>
             </div>
-            <Button type="submit" disabled={isDeployDisabled} className={directDeployRouteReady ? "mwz-button h-12 w-full font-retro text-base" : "h-12 w-full cursor-not-allowed bg-muted font-retro text-base text-muted-foreground shadow-none"}>
-              <Rocket className="mr-2 h-5 w-5" />
+            <Button type="submit" disabled={isDeployDisabled} className={directDeployRouteReady ? "mwz-button h-10 w-full font-retro text-sm" : "h-10 w-full cursor-not-allowed bg-muted font-retro text-sm text-muted-foreground shadow-none"}>
+              <Rocket className="mr-2 h-4 w-4" />
               {deployButtonLabel}
             </Button>
           </div>
 
-          <div className="mt-auto rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground">
+          <div className="mt-auto rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-muted-foreground md:hidden">
             <div className="mb-1 font-retro text-foreground">Official links</div>
             Website, X (formally Twitter), Telegram, Discord, and Other are captured before promotion setup.
           </div>

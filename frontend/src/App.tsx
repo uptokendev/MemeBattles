@@ -8,8 +8,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState, type CSSProperties } from "react";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
+import { useState, type CSSProperties } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { SolanaWalletProvider } from "@/contexts/SolanaWalletContext";
@@ -63,61 +63,9 @@ import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
 import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
-import { isPostGradRouteEnabled, postGradFlags } from "@/features/postgrad/config";
+import { isPostGradRouteEnabled, postGradFlags, warRoomEnabled } from "@/features/postgrad/config";
 
 const queryClient = new QueryClient();
-
-function InternalLinkInterceptor() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  useEffect(() => {
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.button !== 0) return;
-      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return;
-
-      const target = event.target as Element | null;
-      const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
-      if (!anchor) return;
-
-      const rawHref = anchor.getAttribute("href") || "";
-      if (!rawHref) return;
-      if (rawHref.startsWith("#")) return;
-      if (/^(mailto:|tel:|sms:)/i.test(rawHref)) return;
-      if (anchor.target && anchor.target !== "_self") return;
-      if (anchor.hasAttribute("download")) return;
-
-      let url: URL;
-      try {
-        url = new URL(anchor.href, window.location.href);
-      } catch {
-        return;
-      }
-
-      if (url.origin !== window.location.origin) return;
-      if (
-        url.pathname.startsWith("/api/") ||
-        url.pathname.startsWith("/assets/") ||
-        url.pathname.startsWith("/favicon") ||
-        url.pathname.startsWith("/robots.txt")
-      ) {
-        return;
-      }
-
-      const next = `${url.pathname}${url.search}${url.hash}`;
-      const current = `${location.pathname}${location.search}${location.hash}`;
-
-      event.preventDefault();
-      if (next !== current) navigate(next);
-    };
-
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
-  }, [navigate, location.pathname, location.search, location.hash]);
-
-  return null;
-}
 
 function AppShellLayout({
   mobileMenuOpen,
@@ -127,6 +75,8 @@ function AppShellLayout({
   setMobileMenuOpen: (open: boolean) => void;
 }) {
   const postGradEnabled = isPostGradRouteEnabled();
+  const location = useLocation();
+  const isShowcaseRoute = location.pathname === "/";
 
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -160,7 +110,12 @@ function AppShellLayout({
       <VictoryUnlockModal />
 
       <main
-        className="flex-1 overflow-auto scroll-pt-2 md:scroll-pt-3 pt-2 md:pt-3 pb-4 md:pb-6 lg:pb-8 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]"
+        className={[
+          "flex-1 overflow-auto pb-4 md:pb-6 lg:pb-8 lg:pl-[calc(var(--mwz-left-sidebar-width)+0.75rem)]",
+          isShowcaseRoute
+            ? "scroll-pt-2 pt-2 md:scroll-pt-3 md:pt-3"
+            : "scroll-pt-5 pt-5 md:scroll-pt-[4.5rem] md:pt-[4.5rem] [&>:first-child]:!pt-0",
+        ].join(" ")}
         style={mainStyle}
       >
         <Routes>
@@ -170,7 +125,7 @@ function AppShellLayout({
           {postGradEnabled && postGradFlags.league ? <Route path="/arena/major-war-league" element={<PostGradLeague />} /> : null}
           {postGradEnabled && postGradFlags.league ? <Route path="/arena/leagues" element={<Navigate to="/arena/major-war-league" replace />} /> : null}
           {postGradEnabled && postGradFlags.events ? <Route path="/arena/events" element={<PostGradEvents />} /> : null}
-          {postGradEnabled && postGradFlags.warRoom ? <Route path="/war-room" element={<WarRoom />} /> : null}
+          {warRoomEnabled ? <Route path="/war-room" element={<WarRoom />} /> : null}
           {postGradEnabled && postGradFlags.battle ? <Route path="/battle/:id" element={<BattleDetails />} /> : null}
           <Route path="/sponsorships/apply" element={<SponsorshipApplication />} />
           {postGradEnabled && postGradFlags.events ? <Route path="/events" element={<Navigate to="/arena/events" replace />} /> : null}
@@ -249,8 +204,7 @@ const App = () => {
             <Sonner />
             {isLoading && <LoadingScreen onLoadComplete={handleLoadComplete} />}
             {showContent && (
-              <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-                <InternalLinkInterceptor />
+              <BrowserRouter future={{ v7_relativeSplatPath: true }}>
                 <AppShellLayout mobileMenuOpen={mobileMenuOpen} setMobileMenuOpen={setMobileMenuOpen} />
               </BrowserRouter>
             )}

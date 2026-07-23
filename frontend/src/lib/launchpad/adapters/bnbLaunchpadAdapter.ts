@@ -53,24 +53,40 @@ export function getBnbLaunchpadSafetyStatus(params: {
   factoryAddress: string;
   hasSigner: boolean;
   hasAccount: boolean;
+  walletChainId?: number;
   contractReadiness?: BnbContractReadiness;
 }): LaunchpadSafetyStatus {
   const readiness = params.contractReadiness ?? getBnbContractReadiness(params.chainId);
   const contractsReady = readiness.ready;
-  const protocolReady = Boolean(params.factoryAddress) && contractsReady;
+  const walletChainMatches = !params.hasAccount || params.walletChainId === params.chainId;
+  const protocolReady = Boolean(params.factoryAddress) && contractsReady && walletChainMatches;
   const missingTopaz = readiness.missingRequired.some((item) => item.key.startsWith("topaz"));
+  const wrongWalletNetwork = params.hasAccount && !walletChainMatches;
 
   return {
     adapterId: BNB_LAUNCHPAD_ADAPTER_ID,
     chainId: params.chainId,
     chainLabel: getBnbChainLabel(params.chainId),
     protocolStatus: protocolReady ? "ready" : "unavailable",
-    title: protocolReady ? "BNB launch route ready" : "BNB contract wiring incomplete",
-    primaryActionLabel: protocolReady ? "BNB Live Route" : "Contracts Required",
-    description: protocolReady
+    protocolLabel: protocolReady ? "Live" : wrongWalletNetwork ? "Switch Network" : "Config Required",
+    title: protocolReady ? "BNB launch route ready" : wrongWalletNetwork ? "Switch wallet network" : "BNB contract wiring incomplete",
+    primaryActionLabel: protocolReady ? "BNB Live Route" : wrongWalletNetwork ? "Switch Network" : "Contracts Required",
+    description: wrongWalletNetwork
+      ? `${getBnbChainLabel(params.chainId)} contracts are configured. Switch your wallet from chain ${params.walletChainId} to chain ${params.chainId} before an on-chain launch.`
+      : protocolReady
       ? "BNB launches use route authorization, API preflight checks, the configured LaunchFactory, and the Topaz graduation route."
       : summarizeMissingBnbContracts(readiness),
     checks: [
+      {
+        id: "network",
+        label: "Wallet network",
+        state: wrongWalletNetwork ? "blocked" : params.hasAccount ? "ready" : "pending",
+        detail: wrongWalletNetwork
+          ? `Wallet is on chain ${params.walletChainId}; this launch route uses chain ${params.chainId}.`
+          : params.hasAccount
+            ? `Wallet is connected to chain ${params.chainId}.`
+            : `Connect a wallet on chain ${params.chainId}.`,
+      },
       {
         id: "routeAuth",
         label: "Route authorization",

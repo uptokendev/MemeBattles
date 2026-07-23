@@ -22,6 +22,7 @@ export type LaunchpadSafetyStatus = {
   chainId: SupportedChainId;
   chainLabel: string;
   protocolStatus: LaunchpadProtocolStatus;
+  protocolLabel?: string;
   title: string;
   description: string;
   primaryActionLabel: string;

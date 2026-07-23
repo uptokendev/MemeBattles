@@ -4,7 +4,7 @@ import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, Rocket, Swords, Targe
 import { socialLinks } from "@/constants/navigation";
 import { SocialTooltip } from "@/components/ui/social-media";
 import { cn } from "@/lib/utils";
-import { isPostGradNavEnabled, postGradFlags } from "@/features/postgrad/config";
+import { isPostGradNavEnabled, warRoomEnabled } from "@/features/postgrad/config";
 
 const brandLogo = "/assets/navbar-logo.png";
 const smallLogo = "/images/mw.png";
@@ -39,7 +39,7 @@ export function LeftBattleSidebar({ collapsed, onToggleCollapse }: LeftBattleSid
       { icon: Rocket, label: "Launchpad", path: "/" },
       { icon: Trophy, label: "Leagues", path: "/league" },
       ...(showArenaNav ? [{ icon: Swords, label: "Arena", path: "/arena", hasSubmenu: true }] : []),
-      ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Target, label: "War Trade Room", path: "/war-room" }] : []),
+      ...(warRoomEnabled ? [{ icon: Target, label: "War Trade Room", path: "/war-room" }] : []),
       { icon: User, label: "Profile", path: "/profile" },
       { icon: BookOpen, label: "Docs", path: "https://docs.memewar.zone", external: true },
     ],

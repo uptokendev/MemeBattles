@@ -15,7 +15,12 @@ const ROUTES = [
   { pattern: /^\/arena\/war-pools(?:\/.*)?$/, flag: "POSTGRAD_WAR_POOLS_ENABLED", handler: arenaWarPools },
   { pattern: /^\/sponsored$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsored },
   { pattern: /^\/sponsorship-applications$/, flag: "POSTGRAD_SPONSORSHIPS_ENABLED", handler: sponsorshipApplications },
-  { pattern: /^\/war-room(?:\/.*)?$/, flag: "POSTGRAD_WAR_ROOM_ENABLED", handler: warRoom },
+  {
+    pattern: /^\/war-room(?:\/.*)?$/,
+    flag: "WAR_ROOM_ENABLED",
+    legacyFlag: "POSTGRAD_WAR_ROOM_ENABLED",
+    handler: warRoom,
+  },
 ];
 
 function truthy(value) {
@@ -24,6 +29,10 @@ function truthy(value) {
 
 function enabled(name) {
   return truthy(process.env[name]);
+}
+
+function routeEnabled(route) {
+  return enabled(route.flag) || Boolean(route.legacyFlag && enabled(route.legacyFlag));
 }
 
 function routePath(req) {
@@ -92,7 +101,7 @@ export default async function handler(req, res) {
   const route = ROUTES.find((candidate) => candidate.pattern.test(path));
   if (!route) return res.status(404).json({ error: `Unknown postgrad route: ${path}` });
 
-  if (!enabled(route.flag)) {
+  if (!routeEnabled(route)) {
     if (warRoomTestnetReadEnabled(req, path)) {
       return route.handler(req, res);
     }

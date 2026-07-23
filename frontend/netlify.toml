@@ -3,6 +3,18 @@
   publish = "dist"
   functions = "netlify/no-functions"
 
+[build.environment]
+  VITE_ENABLE_WAR_ROOM = "true"
+  VITE_ENABLE_POSTGRAD = "false"
+  VITE_ENABLE_POSTGRAD_ARENA = "false"
+  VITE_ENABLE_POSTGRAD_BATTLE = "false"
+  VITE_ENABLE_POSTGRAD_EVENTS = "false"
+  VITE_ENABLE_POSTGRAD_LEAGUE = "false"
+  VITE_ENABLE_POSTGRAD_MOCKS = "false"
+  VITE_ENABLE_POSTGRAD_TOURNAMENT = "false"
+  VITE_ENABLE_DIRECT_BNB_DEPLOY = "true"
+  VITE_LAUNCHPAD_WRITES_ENABLED = "true"
+
 [[headers]]
   for = "/*"
   [headers.values]

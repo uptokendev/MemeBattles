@@ -9,7 +9,7 @@ import twitterIcon from "@/assets/social/twitter.png";
 import discordIcon from "@/assets/social/discord.png";
 import telegramIcon from "@/assets/social/telegram.png";
 import { SocialItem } from "@/components/ui/social-media";
-import { isPostGradNavEnabled, postGradFlags } from "@/features/postgrad/config";
+import { isPostGradNavEnabled, warRoomEnabled } from "@/features/postgrad/config";
 
 export interface NavItem {
   icon: string | typeof Plus;
@@ -34,7 +34,7 @@ export const arenaSubNavItems: ArenaSubNavItem[] = isPostGradNavEnabled()
 export const navItems: NavItem[] = [
   { icon: carouselIcon, label: "Launchpad", path: "/" },
   { icon: Trophy, label: "Leagues", path: "/league" },
-  ...(postGradFlags.enabled && postGradFlags.warRoom ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
+  ...(warRoomEnabled ? [{ icon: Eye, label: "Trade War Room", path: "/war-room" }] : []),
   { icon: Plus, label: "Create Coin", path: "/create" },
   { icon: userIcon, label: "Creator tools", path: "/command" },
   { icon: User, label: "Profile", path: "/profile" },

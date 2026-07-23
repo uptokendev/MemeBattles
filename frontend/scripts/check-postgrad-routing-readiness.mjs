@@ -60,7 +60,7 @@ const requiredArenaNav = [
 ];
 for (const item of requiredArenaNav) assertIncludes(navigation, item, "Arena navigation", failures);
 
-assertIncludes(config, "mocks: readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, false)", "mock-data opt-in", failures);
+assertIncludes(config, "mocks: postGradEnabled && readFlag(import.meta.env.VITE_ENABLE_POSTGRAD_MOCKS, false)", "mock-data post-grad gate", failures);
 
 const backendFlags = [
   "POSTGRAD_ARENA_OPS_ENABLED",
@@ -69,8 +69,10 @@ const backendFlags = [
   "POSTGRAD_LEAGUE_ENABLED",
   "POSTGRAD_WAR_POOLS_ENABLED",
   "POSTGRAD_SPONSORSHIPS_ENABLED",
-  "POSTGRAD_WAR_ROOM_ENABLED",
 ];
+
+assertIncludes(server, "WAR_ROOM_ENABLED", "War Room backend readiness gate", failures);
+assertIncludes(envExample, "WAR_ROOM_ENABLED=true", "War Room backend release flag", failures);
 
 const gatewayMode =
   server.includes("devpostgrad API gateway") &&
@@ -84,9 +86,9 @@ if (!gatewayMode) {
 for (const flag of backendFlags) assertIncludes(envExample, `${flag}=false`, "env example backend flags", failures);
 
 const frontendFlags = [
+  "VITE_ENABLE_WAR_ROOM=true",
   "VITE_ENABLE_POSTGRAD=false",
   "VITE_ENABLE_POSTGRAD_ARENA=false",
-  "VITE_ENABLE_POSTGRAD_WAR_ROOM=false",
   "VITE_ENABLE_POSTGRAD_BATTLE=false",
   "VITE_ENABLE_POSTGRAD_EVENTS=false",
   "VITE_ENABLE_POSTGRAD_LEAGUE=false",
