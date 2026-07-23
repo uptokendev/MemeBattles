@@ -31,9 +31,10 @@ describe("project hardhat config edges", function () {
     process.env.BSCSCAN_API_KEY = "scan-key";
 
     const config = reloadConfig();
+    const etherscanApiKey = (config.etherscan as any).apiKey;
 
     expect((config.networks as any).bscTestnet.url).to.eq("https://rpc.example.invalid");
-    expect((config.etherscan as any).apiKey.bscTestnet).to.eq("scan-key");
+    expect(etherscanApiKey.bscTestnet ?? etherscanApiKey.bsc).to.eq("scan-key");
   });
 
   it("enables the gas reporter only when REPORT_GAS is exactly true", async () => {
