@@ -11,6 +11,7 @@ import type {
   LaunchpadTxReceipt,
 } from "./types";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
+import { requestSolanaCreateAuthorizationPreview } from "@/lib/solanaCreateAuthorization";
 
 export const SOLANA_LAUNCHPAD_ADAPTER_ID = "solana" as const;
 
@@ -61,6 +62,11 @@ function createSolanaClientPendingError(): Error {
 
 function createUnavailableReceipt(): Promise<LaunchpadTxReceipt> {
   return Promise.reject(createSolanaClientPendingError());
+}
+
+function attachPreviewAndReject(error: Error, preview: unknown): Promise<LaunchpadTxReceipt> {
+  (error as any).solanaCreateAuthorizationPreview = preview;
+  return Promise.reject(error);
 }
 
 const emptyStats: CampaignCardStats = {
@@ -186,7 +192,24 @@ export function createSolanaLaunchpadAdapter(params: {
       metrics: null,
       stats: emptyStats,
     }),
-    createCampaign: async (_createParams: CreateCampaignParams) => createUnavailableReceipt(),
+    createCampaign: async (createParams: CreateCampaignParams) => {
+      if (!params.solanaAccount) return createUnavailableReceipt();
+
+      const preview = await requestSolanaCreateAuthorizationPreview({
+        creatorWallet: params.solanaAccount,
+        metadata: {
+          name: createParams.name,
+          symbol: createParams.symbol,
+          logoURI: createParams.logoURI,
+          website: createParams.website,
+          xAccount: createParams.xAccount,
+          extraLink: createParams.extraLink,
+          category: "meme",
+        },
+      });
+
+      return attachPreviewAndReject(createSolanaClientPendingError(), preview);
+    },
     buyTokens: async (_campaignAddress: string, _amountLamports: bigint, _maxCostLamports: bigint) => createUnavailableReceipt(),
     sellTokens: async (_campaignAddress: string, _tokenAmount: bigint, _minLamports: bigint) => createUnavailableReceipt(),
     finalizeCampaign: async (_campaignAddress: string, _minTokens: bigint, _minBnb: bigint) => createUnavailableReceipt(),
