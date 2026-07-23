@@ -10,6 +10,14 @@ import {
   submitLeagueClaim,
   type RewardItem,
 } from "@/lib/rewardsApi";
+import {
+  emitRewardRecorded,
+  emitRewardUnlocking,
+  LEAGUE_CLAIM_RECORDED_EVENT,
+  LEAGUE_CLAIM_UNLOCKING_EVENT,
+  waitForRewardUnlockFlight,
+  type RewardUnlockDetail,
+} from "@/lib/rewardUnlockEvents";
 
 interface UseProfileRewardsArgs {
   activeTab: string;
@@ -19,27 +27,10 @@ interface UseProfileRewardsArgs {
   wallet: any;
 }
 
-export type LeagueClaimRecordedDetail = {
-  reward: RewardItem;
-  chainId: number;
-  recipient: string;
-  txHash: string | null;
-  claimedAt: string;
-};
+export type LeagueClaimRecordedDetail = RewardUnlockDetail;
 
 function rewardKey(reward: RewardItem) {
   return `${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`;
-}
-
-function emitClaimEvent(name: string, detail: LeagueClaimRecordedDetail) {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<LeagueClaimRecordedDetail>(name, { detail }));
-}
-
-function waitForUnlockFlight() {
-  if (typeof window === "undefined") return Promise.resolve();
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  return new Promise<void>((resolve) => window.setTimeout(resolve, reducedMotion ? 120 : 780));
 }
 
 export function useProfileRewards({
@@ -214,18 +205,29 @@ export function useProfileRewards({
           }
         }
 
-        const detail: LeagueClaimRecordedDetail = {
+        const detail: RewardUnlockDetail = {
+          source: "league",
           reward,
           chainId,
           recipient: account,
           txHash,
           claimedAt: new Date().toISOString(),
+          presentation: {
+            eyebrow: "Reward secured",
+            title: "Victory Unlocked",
+            subtitle: "Your reward is secured and your trophy is entering the League Cabinet.",
+            currency: "BNB",
+            destinationLabel: "View Cabinet",
+            destinationPath: `/profile/${account}`,
+            destinationHash: "league-cabinet",
+            destinationFocusEvent: "memebattles:focus-league-cabinet",
+          },
         };
 
-        emitClaimEvent("memebattles:league-claim-unlocking", detail);
-        await waitForUnlockFlight();
+        emitRewardUnlocking(detail, LEAGUE_CLAIM_UNLOCKING_EVENT);
+        await waitForRewardUnlockFlight();
         setRewards((current) => current.filter((item) => rewardKey(item) !== key));
-        emitClaimEvent("memebattles:league-claim-recorded", detail);
+        emitRewardRecorded(detail, LEAGUE_CLAIM_RECORDED_EVENT);
         toast.success(
           reward.period === "monthly" ? "Monthly league prize claimed." : "League prize claimed."
         );
