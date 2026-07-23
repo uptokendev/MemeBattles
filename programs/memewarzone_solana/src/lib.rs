@@ -4,10 +4,30 @@ declare_id!("Fg6PaFpoGXkYsidMpWxTWqjRZ6LkZXoC3XgXvAqUixG");
 
 pub const GLOBAL_CONFIG_SEED: &[u8] = b"global";
 pub const GENERATION_CONFIG_SEED: &[u8] = b"generation";
+pub const CREATOR_PROFILE_SEED: &[u8] = b"creator";
+pub const RISK_PROFILE_SEED: &[u8] = b"risk";
+pub const CLUSTER_PROFILE_SEED: &[u8] = b"cluster";
 pub const EMPTY_GENERATION_ID: [u8; 32] = [0; 32];
+pub const EMPTY_CLUSTER_ID: [u8; 32] = [0; 32];
 
 pub const DEX_ADAPTER_METEORA_DAMM_V2: u8 = 1;
 pub const DEX_ADAPTER_RAYDIUM_CPMM: u8 = 2;
+
+pub const CREATOR_TIER_1: u8 = 1;
+pub const CREATOR_TIER_2: u8 = 2;
+pub const CREATOR_TIER_3: u8 = 3;
+pub const TRUST_SCORE_MAX: u16 = 10_000;
+pub const CREATOR_BUY_CAP_BPS_MAX: u16 = 10_000;
+pub const RISK_LEVEL_MIN: u8 = 0;
+pub const RISK_LEVEL_MAX: u8 = 3;
+
+pub const TIER_COOLDOWN_SECONDS: u32 = 86_400;
+pub const TIER_1_MAX_LIVE_BONDING: u16 = 3;
+pub const TIER_2_MAX_LIVE_BONDING: u16 = 5;
+pub const TIER_3_MAX_LIVE_BONDING: u16 = 10;
+pub const TIER_1_CREATOR_LOCK_SECONDS: u32 = 86_400;
+pub const TIER_2_CREATOR_LOCK_SECONDS: u32 = 21_600;
+pub const TIER_3_CREATOR_LOCK_SECONDS: u32 = 3_600;
 
 #[program]
 pub mod memewarzone_solana {
@@ -160,6 +180,91 @@ pub mod memewarzone_solana {
         });
         Ok(())
     }
+
+    pub fn sync_creator_profile(
+        ctx: Context<SyncCreatorProfile>,
+        update: CreatorProfileUpdate,
+    ) -> Result<()> {
+        let global = &ctx.accounts.global_config;
+        require_tier_authority(global, ctx.accounts.authority.key())?;
+        validate_creator_profile_update(&update)?;
+
+        let limits = tier_limits(update.tier)?;
+        let creator_profile = &mut ctx.accounts.creator_profile;
+        creator_profile.wallet = update.wallet;
+        creator_profile.tier = update.tier;
+        creator_profile.trust_score = update.trust_score;
+        creator_profile.live_bonding_count = update.live_bonding_count;
+        creator_profile.last_launch_timestamp = update.last_launch_timestamp;
+        creator_profile.total_launches = update.total_launches;
+        creator_profile.successful_graduations = update.successful_graduations;
+        creator_profile.restricted = update.restricted;
+        creator_profile.manual_review_required = update.manual_review_required;
+        creator_profile.creator_buy_cap_bps = update.creator_buy_cap_bps;
+        creator_profile.max_live_bonding_count = limits.max_live_bonding_count;
+        creator_profile.cooldown_seconds = limits.cooldown_seconds;
+        creator_profile.creator_buy_lock_seconds = limits.creator_buy_lock_seconds;
+        creator_profile.bump = ctx.bumps.creator_profile;
+
+        emit!(CreatorProfileSynced {
+            wallet: creator_profile.wallet,
+            tier: creator_profile.tier,
+            live_bonding_count: creator_profile.live_bonding_count,
+            restricted: creator_profile.restricted,
+            manual_review_required: creator_profile.manual_review_required,
+        });
+        Ok(())
+    }
+
+    pub fn sync_risk_profile(
+        ctx: Context<SyncRiskProfile>,
+        update: RiskProfileUpdate,
+    ) -> Result<()> {
+        let global = &ctx.accounts.global_config;
+        require_risk_authority(global, ctx.accounts.authority.key())?;
+        validate_risk_profile_update(&update)?;
+
+        let risk_profile = &mut ctx.accounts.risk_profile;
+        risk_profile.wallet = update.wallet;
+        risk_profile.risk_level = update.risk_level;
+        risk_profile.restricted = update.restricted;
+        risk_profile.cluster_id = update.cluster_id;
+        risk_profile.manual_review_required = update.manual_review_required;
+        risk_profile.bump = ctx.bumps.risk_profile;
+
+        emit!(RiskProfileSynced {
+            wallet: risk_profile.wallet,
+            risk_level: risk_profile.risk_level,
+            restricted: risk_profile.restricted,
+            cluster_id: risk_profile.cluster_id,
+            manual_review_required: risk_profile.manual_review_required,
+        });
+        Ok(())
+    }
+
+    pub fn sync_cluster_profile(
+        ctx: Context<SyncClusterProfile>,
+        update: ClusterProfileUpdate,
+    ) -> Result<()> {
+        let global = &ctx.accounts.global_config;
+        require_risk_authority(global, ctx.accounts.authority.key())?;
+        validate_cluster_profile_update(&update)?;
+
+        let cluster_profile = &mut ctx.accounts.cluster_profile;
+        cluster_profile.cluster_id = update.cluster_id;
+        cluster_profile.size = update.size;
+        cluster_profile.risk_level = update.risk_level;
+        cluster_profile.restricted = update.restricted;
+        cluster_profile.bump = ctx.bumps.cluster_profile;
+
+        emit!(ClusterProfileSynced {
+            cluster_id: cluster_profile.cluster_id,
+            size: cluster_profile.size,
+            risk_level: cluster_profile.risk_level,
+            restricted: cluster_profile.restricted,
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -238,6 +343,69 @@ pub struct SetGenerationSupport<'info> {
     pub generation_config: Account<'info, GenerationConfig>,
 }
 
+#[derive(Accounts)]
+#[instruction(update: CreatorProfileUpdate)]
+pub struct SyncCreatorProfile<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + CreatorProfile::INIT_SPACE,
+        seeds = [CREATOR_PROFILE_SEED, update.wallet.as_ref()],
+        bump
+    )]
+    pub creator_profile: Account<'info, CreatorProfile>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(update: RiskProfileUpdate)]
+pub struct SyncRiskProfile<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + RiskProfile::INIT_SPACE,
+        seeds = [RISK_PROFILE_SEED, update.wallet.as_ref()],
+        bump
+    )]
+    pub risk_profile: Account<'info, RiskProfile>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(update: ClusterProfileUpdate)]
+pub struct SyncClusterProfile<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump = global_config.bump
+    )]
+    pub global_config: Account<'info, GlobalConfig>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + ClusterProfile::INIT_SPACE,
+        seeds = [CLUSTER_PROFILE_SEED, update.cluster_id.as_ref()],
+        bump
+    )]
+    pub cluster_profile: Account<'info, ClusterProfile>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct GlobalConfig {
@@ -279,6 +447,46 @@ pub struct GenerationConfig {
     pub bump: u8,
 }
 
+#[account]
+#[derive(InitSpace)]
+pub struct CreatorProfile {
+    pub wallet: Pubkey,
+    pub tier: u8,
+    pub trust_score: u16,
+    pub live_bonding_count: u16,
+    pub last_launch_timestamp: i64,
+    pub total_launches: u64,
+    pub successful_graduations: u64,
+    pub restricted: bool,
+    pub manual_review_required: bool,
+    pub creator_buy_cap_bps: u16,
+    pub max_live_bonding_count: u16,
+    pub cooldown_seconds: u32,
+    pub creator_buy_lock_seconds: u32,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RiskProfile {
+    pub wallet: Pubkey,
+    pub risk_level: u8,
+    pub restricted: bool,
+    pub cluster_id: [u8; 32],
+    pub manual_review_required: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct ClusterProfile {
+    pub cluster_id: [u8; 32],
+    pub size: u32,
+    pub risk_level: u8,
+    pub restricted: bool,
+    pub bump: u8,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct GlobalAuthorities {
     pub admin: Pubkey,
@@ -313,6 +521,44 @@ pub struct GenerationSettings {
     pub manifest_hash: [u8; 32],
     pub route_authorization_required: bool,
     pub authorized_trading_required: bool,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct CreatorProfileUpdate {
+    pub wallet: Pubkey,
+    pub tier: u8,
+    pub trust_score: u16,
+    pub live_bonding_count: u16,
+    pub last_launch_timestamp: i64,
+    pub total_launches: u64,
+    pub successful_graduations: u64,
+    pub restricted: bool,
+    pub manual_review_required: bool,
+    pub creator_buy_cap_bps: u16,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct RiskProfileUpdate {
+    pub wallet: Pubkey,
+    pub risk_level: u8,
+    pub restricted: bool,
+    pub cluster_id: [u8; 32],
+    pub manual_review_required: bool,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
+pub struct ClusterProfileUpdate {
+    pub cluster_id: [u8; 32],
+    pub size: u32,
+    pub risk_level: u8,
+    pub restricted: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct CreatorTierLimits {
+    pub max_live_bonding_count: u16,
+    pub cooldown_seconds: u32,
+    pub creator_buy_lock_seconds: u32,
 }
 
 #[event]
@@ -358,6 +604,32 @@ pub struct GenerationSupportUpdated {
     pub active_creation: bool,
 }
 
+#[event]
+pub struct CreatorProfileSynced {
+    pub wallet: Pubkey,
+    pub tier: u8,
+    pub live_bonding_count: u16,
+    pub restricted: bool,
+    pub manual_review_required: bool,
+}
+
+#[event]
+pub struct RiskProfileSynced {
+    pub wallet: Pubkey,
+    pub risk_level: u8,
+    pub restricted: bool,
+    pub cluster_id: [u8; 32],
+    pub manual_review_required: bool,
+}
+
+#[event]
+pub struct ClusterProfileSynced {
+    pub cluster_id: [u8; 32],
+    pub size: u32,
+    pub risk_level: u8,
+    pub restricted: bool,
+}
+
 fn require_admin(global: &GlobalConfig, authority: Pubkey) -> Result<()> {
     require_keys_eq!(global.admin, authority, LaunchpadError::Unauthorized);
     Ok(())
@@ -377,6 +649,20 @@ fn require_generation_authority(global: &GlobalConfig, authority: Pubkey) -> Res
     err!(LaunchpadError::Unauthorized)
 }
 
+fn require_tier_authority(global: &GlobalConfig, authority: Pubkey) -> Result<()> {
+    if authority == global.admin || authority == global.tier_admin {
+        return Ok(());
+    }
+    err!(LaunchpadError::Unauthorized)
+}
+
+fn require_risk_authority(global: &GlobalConfig, authority: Pubkey) -> Result<()> {
+    if authority == global.admin || authority == global.risk_admin {
+        return Ok(());
+    }
+    err!(LaunchpadError::Unauthorized)
+}
+
 fn validate_generation_settings(global: &GlobalConfig, settings: &GenerationSettings) -> Result<()> {
     require!(settings.generation_id != EMPTY_GENERATION_ID, LaunchpadError::InvalidGeneration);
     require_keys_eq!(settings.program_id, crate::id(), LaunchpadError::InvalidGenerationProgram);
@@ -389,6 +675,58 @@ fn validate_generation_settings(global: &GlobalConfig, settings: &GenerationSett
         require!(global.authorized_trading_required, LaunchpadError::SecurityDefaultsCannotBeWeakened);
     }
     Ok(())
+}
+
+fn validate_creator_profile_update(update: &CreatorProfileUpdate) -> Result<()> {
+    require_keys_neq!(update.wallet, Pubkey::default(), LaunchpadError::InvalidCreatorProfile);
+    require!(update.trust_score <= TRUST_SCORE_MAX, LaunchpadError::InvalidCreatorProfile);
+    require!(update.creator_buy_cap_bps <= CREATOR_BUY_CAP_BPS_MAX, LaunchpadError::CreatorBuyCapTooHigh);
+
+    let limits = tier_limits(update.tier)?;
+    require!(
+        update.live_bonding_count <= limits.max_live_bonding_count,
+        LaunchpadError::CreatorLiveBondingLimitExceeded
+    );
+    Ok(())
+}
+
+fn validate_risk_profile_update(update: &RiskProfileUpdate) -> Result<()> {
+    require_keys_neq!(update.wallet, Pubkey::default(), LaunchpadError::InvalidRiskProfile);
+    validate_risk_level(update.risk_level)?;
+    Ok(())
+}
+
+fn validate_cluster_profile_update(update: &ClusterProfileUpdate) -> Result<()> {
+    require!(update.cluster_id != EMPTY_CLUSTER_ID, LaunchpadError::InvalidCluster);
+    require!(update.size > 0, LaunchpadError::InvalidCluster);
+    validate_risk_level(update.risk_level)?;
+    Ok(())
+}
+
+fn validate_risk_level(risk_level: u8) -> Result<()> {
+    require!(risk_level >= RISK_LEVEL_MIN && risk_level <= RISK_LEVEL_MAX, LaunchpadError::InvalidRiskLevel);
+    Ok(())
+}
+
+fn tier_limits(tier: u8) -> Result<CreatorTierLimits> {
+    match tier {
+        CREATOR_TIER_1 => Ok(CreatorTierLimits {
+            max_live_bonding_count: TIER_1_MAX_LIVE_BONDING,
+            cooldown_seconds: TIER_COOLDOWN_SECONDS,
+            creator_buy_lock_seconds: TIER_1_CREATOR_LOCK_SECONDS,
+        }),
+        CREATOR_TIER_2 => Ok(CreatorTierLimits {
+            max_live_bonding_count: TIER_2_MAX_LIVE_BONDING,
+            cooldown_seconds: TIER_COOLDOWN_SECONDS,
+            creator_buy_lock_seconds: TIER_2_CREATOR_LOCK_SECONDS,
+        }),
+        CREATOR_TIER_3 => Ok(CreatorTierLimits {
+            max_live_bonding_count: TIER_3_MAX_LIVE_BONDING,
+            cooldown_seconds: TIER_COOLDOWN_SECONDS,
+            creator_buy_lock_seconds: TIER_3_CREATOR_LOCK_SECONDS,
+        }),
+        _ => err!(LaunchpadError::InvalidCreatorTier),
+    }
 }
 
 fn resolve_generation_support_update(
@@ -466,6 +804,40 @@ mod tests {
         }
     }
 
+    fn test_creator_update(tier: u8, live_bonding_count: u16) -> CreatorProfileUpdate {
+        CreatorProfileUpdate {
+            wallet: Pubkey::new_unique(),
+            tier,
+            trust_score: 7_500,
+            live_bonding_count,
+            last_launch_timestamp: 1_700_000_000,
+            total_launches: 10,
+            successful_graduations: 2,
+            restricted: false,
+            manual_review_required: false,
+            creator_buy_cap_bps: 1_000,
+        }
+    }
+
+    fn test_risk_update(risk_level: u8) -> RiskProfileUpdate {
+        RiskProfileUpdate {
+            wallet: Pubkey::new_unique(),
+            risk_level,
+            restricted: false,
+            cluster_id: [4; 32],
+            manual_review_required: false,
+        }
+    }
+
+    fn test_cluster_update(risk_level: u8, size: u32) -> ClusterProfileUpdate {
+        ClusterProfileUpdate {
+            cluster_id: [5; 32],
+            size,
+            risk_level,
+            restricted: false,
+        }
+    }
+
     #[test]
     fn generation_settings_accept_supported_dex_adapters() {
         let global = test_global_config();
@@ -540,6 +912,90 @@ mod tests {
 
         assert_eq!(next_active, current_active);
     }
+
+    #[test]
+    fn creator_tiers_apply_plan_limits() {
+        let tier_1 = tier_limits(CREATOR_TIER_1).unwrap();
+        assert_eq!(tier_1.max_live_bonding_count, 3);
+        assert_eq!(tier_1.cooldown_seconds, 86_400);
+        assert_eq!(tier_1.creator_buy_lock_seconds, 86_400);
+
+        let tier_2 = tier_limits(CREATOR_TIER_2).unwrap();
+        assert_eq!(tier_2.max_live_bonding_count, 5);
+        assert_eq!(tier_2.creator_buy_lock_seconds, 21_600);
+
+        let tier_3 = tier_limits(CREATOR_TIER_3).unwrap();
+        assert_eq!(tier_3.max_live_bonding_count, 10);
+        assert_eq!(tier_3.creator_buy_lock_seconds, 3_600);
+    }
+
+    #[test]
+    fn creator_profile_rejects_invalid_tier() {
+        let update = test_creator_update(4, 0);
+
+        assert!(validate_creator_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn creator_profile_rejects_oversized_live_count() {
+        let update = test_creator_update(CREATOR_TIER_1, TIER_1_MAX_LIVE_BONDING + 1);
+
+        assert!(validate_creator_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn creator_profile_rejects_over_cap_buy_bps() {
+        let mut update = test_creator_update(CREATOR_TIER_2, TIER_2_MAX_LIVE_BONDING);
+        update.creator_buy_cap_bps = CREATOR_BUY_CAP_BPS_MAX + 1;
+
+        assert!(validate_creator_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn creator_profile_accepts_supported_tiers_at_limit() {
+        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_1, TIER_1_MAX_LIVE_BONDING)).is_ok());
+        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_2, TIER_2_MAX_LIVE_BONDING)).is_ok());
+        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_3, TIER_3_MAX_LIVE_BONDING)).is_ok());
+    }
+
+    #[test]
+    fn risk_profile_rejects_invalid_risk_level() {
+        let update = test_risk_update(RISK_LEVEL_MAX + 1);
+
+        assert!(validate_risk_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn risk_profile_accepts_restricted_manual_review_state() {
+        let mut update = test_risk_update(RISK_LEVEL_MAX);
+        update.restricted = true;
+        update.manual_review_required = true;
+
+        assert!(validate_risk_profile_update(&update).is_ok());
+    }
+
+    #[test]
+    fn cluster_profile_rejects_empty_cluster() {
+        let mut update = test_cluster_update(RISK_LEVEL_MAX, 12);
+        update.cluster_id = EMPTY_CLUSTER_ID;
+
+        assert!(validate_cluster_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn cluster_profile_rejects_zero_size() {
+        let update = test_cluster_update(RISK_LEVEL_MAX, 0);
+
+        assert!(validate_cluster_profile_update(&update).is_err());
+    }
+
+    #[test]
+    fn cluster_profile_accepts_restricted_cluster() {
+        let mut update = test_cluster_update(RISK_LEVEL_MAX, 100);
+        update.restricted = true;
+
+        assert!(validate_cluster_profile_update(&update).is_ok());
+    }
 }
 
 #[error_code]
@@ -562,6 +1018,20 @@ pub enum LaunchpadError {
     ActiveGenerationMustBeSupported,
     #[msg("Unsupported Solana DEX adapter mode.")]
     InvalidDexAdapter,
+    #[msg("Creator tier must be 1, 2, or 3.")]
+    InvalidCreatorTier,
+    #[msg("Creator profile data is invalid.")]
+    InvalidCreatorProfile,
+    #[msg("Creator live bonding count exceeds the configured tier limit.")]
+    CreatorLiveBondingLimitExceeded,
+    #[msg("Creator buy cap exceeds the maximum basis-point value.")]
+    CreatorBuyCapTooHigh,
+    #[msg("Wallet risk profile data is invalid.")]
+    InvalidRiskProfile,
+    #[msg("Risk level is outside the supported range.")]
+    InvalidRiskLevel,
+    #[msg("Cluster profile data is invalid.")]
+    InvalidCluster,
     #[msg("Arithmetic overflow while updating Solana launchpad state.")]
     MathOverflow,
 }
