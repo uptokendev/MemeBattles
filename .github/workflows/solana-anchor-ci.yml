@@ -72,9 +72,10 @@ jobs:
         if: failure()
         run: |
           rustup toolchain install stable --profile minimal
-          cargo +stable tree -i getrandom@0.4.3 || true
-          cargo +stable tree -i zerocopy@0.8.55 || true
-          cargo +stable tree -i borsh@1.8.0 || true
+          cargo +stable tree --target all -i getrandom@0.4.3 || true
+          cargo +stable tree --target all -i r-efi@6.0.0 || true
+          cargo +stable tree --target all -i zerocopy@0.8.55 || true
+          cargo +stable tree --target all -i borsh@1.8.0 || true
 
       - name: Test Solana program invariants
         run: cargo test -p memewarzone_solana --lib
