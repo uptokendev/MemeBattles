@@ -237,7 +237,11 @@ pub struct SetGenerationSupport<'info> {
         bump = global_config.bump
     )]
     pub global_config: Account<'info, GlobalConfig>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
+        bump = generation_config.bump
+    )]
     pub generation_config: Account<'info, GenerationConfig>,
 }
 
