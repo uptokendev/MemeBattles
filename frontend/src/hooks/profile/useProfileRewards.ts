@@ -19,8 +19,25 @@ interface UseProfileRewardsArgs {
   wallet: any;
 }
 
+export type LeagueClaimRecordedDetail = {
+  reward: RewardItem;
+  chainId: number;
+  recipient: string;
+  txHash: string | null;
+  claimedAt: string;
+};
+
 function rewardKey(reward: RewardItem) {
   return `${reward.period}:${reward.epochStart}:${reward.category}:${reward.rank}`;
+}
+
+function emitClaimRecorded(detail: LeagueClaimRecordedDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<LeagueClaimRecordedDetail>("memebattles:league-claim-recorded", {
+      detail,
+    })
+  );
 }
 
 export function useProfileRewards({
@@ -101,17 +118,19 @@ export function useProfileRewards({
     async (reward: RewardItem) => {
       if (!chainId || !account || !isOwnProfile) {
         toast.error("Connect the winning wallet to claim this prize.");
-        return;
+        return null;
       }
       if (!wallet?.signer) {
         toast.error("Wallet signer is unavailable. Reconnect and try again.");
-        return;
+        return null;
       }
 
       const key = rewardKey(reward);
       setClaimingKey(key);
 
       try {
+        let txHash: string | null = null;
+
         if (reward.period === "monthly") {
           const monthId = monthIdFromEpochStart(reward.epochStart);
           const monthly = await fetchMonthlyClaim(chainId, monthId, account);
@@ -123,7 +142,7 @@ export function useProfileRewards({
           if (claim?.claimed) {
             setRewards((current) => current.filter((item) => rewardKey(item) !== key));
             toast.success("This monthly prize was already claimed.");
-            return;
+            return null;
           }
           if (!monthly.isSealed || !monthly.reconciliation?.readyForClaims) {
             throw new Error("This monthly league is not finalized for claims yet.");
@@ -136,53 +155,20 @@ export function useProfileRewards({
             value: BigInt(claim.transaction.value || "0"),
           });
           await tx.wait();
-
-          setRewards((current) => current.filter((item) => rewardKey(item) !== key));
-          window.dispatchEvent(new CustomEvent("memebattles:league-claim-recorded"));
-          toast.success("Monthly league prize claimed.");
-          return;
-        }
-
-        const nonce = await requestNonce(chainId, account.toLowerCase());
-        const message = buildLeagueClaimMessage({
-          chainId,
-          recipient: account,
-          period: reward.period,
-          epochStart: reward.epochStart,
-          category: reward.category,
-          rank: reward.rank,
-          nonce,
-        });
-        const signature = await wallet.signer.signMessage(message);
-        const prepared = await submitLeagueClaim({
-          chainId,
-          period: reward.period,
-          epochStart: reward.epochStart,
-          category: reward.category,
-          rank: reward.rank,
-          recipient: account,
-          nonce,
-          signature,
-        });
-
-        if ("mode" in prepared && prepared.mode === "merkle") {
-          const treasury = new (await import("ethers")).ethers.Contract(
-            prepared.vaultAddress,
-            [
-              "function claim(uint256 epochId, bytes32 categoryHash, uint8 rank, address recipient, uint256 amount, bytes32[] proof)",
-            ],
-            wallet.signer
-          );
-          const tx = await treasury.claim(
-            prepared.epochId,
-            prepared.categoryHash,
-            prepared.rank,
-            prepared.recipient,
-            prepared.amountRaw,
-            prepared.proof
-          );
-          await tx.wait();
-          await recordLeagueClaimTx({
+          txHash = tx.hash;
+        } else {
+          const nonce = await requestNonce(chainId, account.toLowerCase());
+          const message = buildLeagueClaimMessage({
+            chainId,
+            recipient: account,
+            period: reward.period,
+            epochStart: reward.epochStart,
+            category: reward.category,
+            rank: reward.rank,
+            nonce,
+          });
+          const signature = await wallet.signer.signMessage(message);
+          const prepared = await submitLeagueClaim({
             chainId,
             period: reward.period,
             epochStart: reward.epochStart,
@@ -191,15 +177,59 @@ export function useProfileRewards({
             recipient: account,
             nonce,
             signature,
-            txHash: tx.hash,
           });
+
+          if ("mode" in prepared && prepared.mode === "merkle") {
+            const treasury = new (await import("ethers")).ethers.Contract(
+              prepared.vaultAddress,
+              [
+                "function claim(uint256 epochId, bytes32 categoryHash, uint8 rank, address recipient, uint256 amount, bytes32[] proof)",
+              ],
+              wallet.signer
+            );
+            const tx = await treasury.claim(
+              prepared.epochId,
+              prepared.categoryHash,
+              prepared.rank,
+              prepared.recipient,
+              prepared.amountRaw,
+              prepared.proof
+            );
+            await tx.wait();
+            txHash = tx.hash;
+            await recordLeagueClaimTx({
+              chainId,
+              period: reward.period,
+              epochStart: reward.epochStart,
+              category: reward.category,
+              rank: reward.rank,
+              recipient: account,
+              nonce,
+              signature,
+              txHash,
+            });
+          } else {
+            txHash = prepared.txHash || null;
+          }
         }
 
+        const detail: LeagueClaimRecordedDetail = {
+          reward,
+          chainId,
+          recipient: account,
+          txHash,
+          claimedAt: new Date().toISOString(),
+        };
+
         setRewards((current) => current.filter((item) => rewardKey(item) !== key));
-        window.dispatchEvent(new CustomEvent("memebattles:league-claim-recorded"));
-        toast.success("League prize claimed.");
+        emitClaimRecorded(detail);
+        toast.success(
+          reward.period === "monthly" ? "Monthly league prize claimed." : "League prize claimed."
+        );
+        return detail;
       } catch (error: any) {
         toast.error(error?.shortMessage || error?.message || "Claim failed.");
+        return null;
       } finally {
         setClaimingKey(null);
       }
