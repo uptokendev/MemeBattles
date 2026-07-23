@@ -14,6 +14,8 @@ Solana CLI 1.18.26
 Anchor CLI 0.30.1
 ```
 
+Solana is installed from the `solana-labs/solana` GitHub release tarball with retries. Anchor is installed from the `@coral-xyz/anchor-cli` npm package, which works on the GitHub Linux runner.
+
 This keeps Solana build checks isolated from BNB/Topaz work and avoids asking developers to resolve live crates.io edition-2024 compatibility issues by hand.
 
 ## What To Run Locally
@@ -64,4 +66,4 @@ Once the build lane is green:
 
 ## Why This Changed
 
-Local WSL reached repeated failures where old Solana SBF Cargo tooling tried to parse newly published crates using Rust edition 2024. The first CI attempt also proved that `solanafoundation/anchor:v0.30.1` is not a valid Docker tag. The durable response is a pinned GitHub Actions build lane that installs the exact Rust, Solana, and Anchor versions instead of relying on a missing container image or local terminal babysitting.
+Local WSL reached repeated failures where old Solana SBF Cargo tooling tried to parse newly published crates using Rust edition 2024. The first CI attempt also proved that `solanafoundation/anchor:v0.30.1` is not a valid Docker tag. A second attempt proved that the old `release.solana.com` installer script can fail before installing the `solana` binary. The durable response is a pinned GitHub Actions build lane that installs Rust, Solana, and Anchor from explicit versioned sources instead of relying on a missing container image, brittle installer script, or local terminal babysitting.
