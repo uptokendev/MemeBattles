@@ -68,5 +68,13 @@ jobs:
       - name: Build Solana program
         run: anchor build
 
+      - name: Diagnose edition-2024 dependency resolution
+        if: failure()
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable tree -i getrandom@0.4.3 || true
+          cargo +stable tree -i zerocopy@0.8.55 || true
+          cargo +stable tree -i borsh@1.8.0 || true
+
       - name: Test Solana program invariants
         run: cargo test -p memewarzone_solana --lib
