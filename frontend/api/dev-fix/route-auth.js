@@ -10,6 +10,7 @@ import {
   ROUTE_PROFILE_OG_LINKED,
 } from "./route-decision.js";
 import { signCreateAuthorization, signTradeAuthorization } from "./routeAuthorizationSigner.js";
+import { solanaLaunchpadStatus, solanaRoutingCreateAuthorization } from "./solana-launchpad.js";
 
 const VALID_PROFILES = new Set([
   ROUTE_PROFILE_STANDARD_LINKED,
@@ -18,6 +19,7 @@ const VALID_PROFILES = new Set([
 ]);
 
 const FACTORY_ROUTE_AUTHORITY_ABI = ["function routeAuthority() view returns (address)"];
+const SOLANA_CHAIN_ID = 101;
 
 function methodAllowed(req, res, allowed) {
   if (allowed.includes(req.method)) return true;
@@ -184,6 +186,8 @@ export async function routingStatus(req, res) {
 
   const q = getQuery(req);
   const chainId = parsePositiveInt(q.chainId || process.env.VITE_DEFAULT_CHAIN_ID || process.env.VITE_TARGET_CHAIN_ID, 97);
+  if (chainId === SOLANA_CHAIN_ID) return solanaLaunchpadStatus(req, res);
+
   const signer = getSigner();
   const routeAuthority = signer?.address || null;
   const factoryAddress = normalizeAddress(q.factoryAddress) || getFactoryAddressFromEnv(chainId);
@@ -233,12 +237,17 @@ export async function routingCreateAuthorization(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
 
   const body = await readJson(req);
+  const chainId = parsePositiveInt(body.chainId, 0);
+  if (chainId === SOLANA_CHAIN_ID) {
+    req.body = body;
+    return solanaRoutingCreateAuthorization(req, res);
+  }
+
   const signer = getSigner();
   if (!signer) return routeSignerUnavailable(res);
 
   const walletAddress = normalizeAddress(body.walletAddress);
   const factoryAddress = normalizeAddress(body.factoryAddress);
-  const chainId = parsePositiveInt(body.chainId, 0);
 
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
   if (!factoryAddress) return json(res, 400, { error: "Invalid or missing factoryAddress" });
