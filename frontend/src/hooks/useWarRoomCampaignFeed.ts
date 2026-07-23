@@ -6,6 +6,7 @@ import type { CampaignInfo } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 import type { SupportedChainId } from "@/lib/chainConfig";
+import { fetchOnChainCampaignStats } from "@/lib/onChainCampaignStats";
 
 export type WarRoomCampaign = CampaignInfo & Record<string, unknown>;
 export type WarRoomMode = "trending" | "new" | "graduated" | "draft";
@@ -143,6 +144,26 @@ function matchesModeAndSearch(campaign: WarRoomCampaign, mode: WarRoomMode, sear
     .some((value) => String(value ?? "").toLowerCase().includes(query));
 }
 
+function hasValue(value: unknown) {
+  const raw = String(value ?? "").trim();
+  return Boolean(raw && raw !== "0" && raw !== "-" && raw !== "—" && raw !== "/placeholder.svg");
+}
+
+function mergeWarRoomCampaign(base: WarRoomCampaign, incoming: WarRoomCampaign): WarRoomCampaign {
+  const merged: WarRoomCampaign = { ...base, ...incoming };
+  for (const key of ["name", "symbol", "logoURI", "metadataURI", "xAccount", "website", "extraLink"] as const) {
+    if (hasValue((base as any)[key])) (merged as any)[key] = (base as any)[key];
+    else if (hasValue((incoming as any)[key])) (merged as any)[key] = (incoming as any)[key];
+  }
+  merged.createdAt = base.createdAt || incoming.createdAt;
+  merged.marketCapBnb = toNumber((base as any).marketCapBnb) || toNumber((incoming as any).marketCapBnb);
+  merged.volumeBnb = toNumber((base as any).volumeBnb) || toNumber((incoming as any).volumeBnb);
+  merged.raisedTotalBnb = toNumber((base as any).raisedTotalBnb) || toNumber((incoming as any).raisedTotalBnb);
+  merged.holdersCount = toNumber((base as any).holdersCount) || toNumber((incoming as any).holdersCount);
+  merged.athMarketCapBnb = toNumber((base as any).athMarketCapBnb) || toNumber((incoming as any).athMarketCapBnb);
+  return merged;
+}
+
 async function fetchCampaignApiFallback(chainId: number, mode: WarRoomMode, search: string, signal: AbortSignal): Promise<WarRoomCampaign[]> {
   const params = new URLSearchParams({
     chainId: String(chainId),
@@ -232,7 +253,7 @@ export function useWarRoomCampaignFeed({
           nextCursor: null,
           total: 0,
         }));
-        const onChainItems = onChainPage.campaigns
+        const onChainBaseItems = onChainPage.campaigns
           .map((campaign, index) => normalizeApiCampaign({
             ...campaign,
             chainId,
@@ -246,12 +267,28 @@ export function useWarRoomCampaignFeed({
             isDexTrading: false,
           }, 500000 + index))
           .filter((campaign) => matchesModeAndSearch(campaign, activeMode, search));
+        const onChainItems = await Promise.all(
+          onChainBaseItems.map(async (campaign) => {
+            const stats = await fetchOnChainCampaignStats({
+              chainId: chainId as SupportedChainId,
+              campaignAddress: campaign.campaign,
+              tokenAddress: campaign.token,
+            }).catch(() => null);
+            return stats ? ({ ...campaign, ...stats } as WarRoomCampaign) : campaign;
+          }),
+        );
 
         const draftItems = activeMode === "draft" ? await fetchDraftCampaignsForWarRoom(chainId) : [];
         if (cancelled) return;
-        const merged = [...onChainItems, ...apiItems, ...draftItems]
+        const mergedMap = new Map<string, WarRoomCampaign>();
+        for (const campaign of [...onChainItems, ...apiItems, ...draftItems]) {
+          if (!campaign.campaign) continue;
+          const key = String(campaign.campaign).toLowerCase();
+          const current = mergedMap.get(key);
+          mergedMap.set(key, current ? mergeWarRoomCampaign(current, campaign) : campaign);
+        }
+        const merged = Array.from(mergedMap.values())
           .filter((campaign: WarRoomCampaign) => campaign.campaign)
-          .filter((campaign, index, all) => all.findIndex((other) => String(other.campaign) === String(campaign.campaign)) === index);
         setCampaigns(merged);
         setSource(merged.length ? (onChainItems.length ? "onchain" : feedSource) : "empty");
       } catch (loadError) {

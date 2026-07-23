@@ -33,6 +33,7 @@ import { Contract, ethers } from "ethers";
 import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
+import { resolveImageUri } from "@/lib/media";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -715,7 +716,7 @@ const toSeconds = (ts: number): number => {
     const rtPrice = rtStats?.lastPriceBnb;
 
     return {
-      image: campaign?.logoURI || "/placeholder.svg",
+      image: resolveImageUri(campaign?.logoURI) || "/placeholder.svg",
       ticker,
       name,
       hasWebsite: Boolean(campaign?.website && campaign.website.length > 0),

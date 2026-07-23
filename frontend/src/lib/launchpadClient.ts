@@ -258,17 +258,35 @@ function mapOnChainCampaign(c: any, idx: number, offset: number, chainId: number
 }
 
 function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignInfo[] {
-  const seen = new Set<string>();
-  const merged: CampaignInfo[] = [];
-  // Prefer canonical factory metadata. The indexer can briefly contain a partial
-  // row (for example, without logoURI/createdAt) while it catches up.
+  const mergedByAddress = new Map<string, CampaignInfo>();
+  const isUseful = (value: unknown) => {
+    const raw = String(value ?? "").trim();
+    return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
+  };
+  const mergeOne = (base: CampaignInfo, incoming: CampaignInfo): CampaignInfo => ({
+    ...base,
+    ...incoming,
+    name: isUseful(base.name) ? base.name : incoming.name,
+    symbol: isUseful(base.symbol) ? base.symbol : incoming.symbol,
+    logoURI: isUseful(base.logoURI) ? base.logoURI : incoming.logoURI,
+    metadataURI: isUseful(base.metadataURI) ? base.metadataURI : incoming.metadataURI,
+    xAccount: isUseful(base.xAccount) ? base.xAccount : incoming.xAccount,
+    website: isUseful(base.website) ? base.website : incoming.website,
+    extraLink: isUseful(base.extraLink) ? base.extraLink : incoming.extraLink,
+    createdAt: base.createdAt || incoming.createdAt,
+    dexPairAddress: base.dexPairAddress || incoming.dexPairAddress,
+    dexScreenerUrl: base.dexScreenerUrl || incoming.dexScreenerUrl,
+  });
+
+  // Keep canonical factory addresses/order, but backfill partial direct-deploy
+  // metadata from the API row while the indexer catches up.
   for (const item of [...onChain, ...db]) {
     const key = normalizeAddress(item?.campaign);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
+    if (!key) continue;
+    const current = mergedByAddress.get(key);
+    mergedByAddress.set(key, current ? mergeOne(current, item) : item);
   }
-  return merged;
+  return Array.from(mergedByAddress.values());
 }
 
 async function legacyGasOverrides(signer: any, readProvider: ethers.AbstractProvider, extra: any = {}) {

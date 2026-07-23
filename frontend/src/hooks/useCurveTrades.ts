@@ -302,7 +302,12 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
 
       try {
         const rows = await fetchJson(apiTradesUrl, signal);
-        applySnapshot(Array.isArray(rows) ? rows : []);
+        const apiRows = Array.isArray(rows) ? rows : [];
+        const applied = applySnapshot(apiRows);
+        if (applied === 0) {
+          const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
+          applySnapshot(fallbackRows);
+        }
         setError(null);
         initialLoadedRef.current = true;
       } catch (apiError: any) {

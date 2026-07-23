@@ -37,6 +37,9 @@ const ERC20_ABI_MIN = [
   },
 ] as const;
 
+const MAX_BALANCE_SCAN_CAMPAIGNS = 120;
+const MAX_VALUED_HOLDINGS = 24;
+
 type FetchCampaigns = () => Promise<any[]>;
 type FetchCampaignSummary = (campaign: any) => Promise<CampaignSummary>;
 
@@ -104,22 +107,16 @@ export function useProfileBalances({
         const nativeBnbForMetrics = Number.parseFloat(bnb) || 0;
         if (!cancelled) setNativeBalance(`${bnb} BNB`);
 
-        // Launchpad token balances.
-        const campaigns = (await fetchCampaigns()) ?? [];
-        const summaries = await Promise.allSettled(
-          campaigns.map((c) => fetchCampaignSummary(c))
-        );
-
-        const fulfilled = summaries
-          .filter(
-            (r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled"
-          )
-          .map((r) => r.value);
-
+        // Launchpad token balances. Keep this lightweight: first read balances
+        // from campaign token addresses, then summarize only tokens the wallet owns.
+        const campaigns = ((await fetchCampaigns()) ?? [])
+          .filter((campaign) => ethers.isAddress(String(campaign?.token ?? "")))
+          .slice(0, MAX_BALANCE_SCAN_CAMPAIGNS);
         const rows: TokenBalanceRow[] = [];
+        const ownedCampaigns: any[] = [];
 
-        for (const s of fulfilled) {
-          const tokenAddr = pickTokenAddressFromSummary(s);
+        for (const campaign of campaigns) {
+          const tokenAddr = String(campaign?.token ?? "").trim().toLowerCase();
           if (!tokenAddr) continue;
 
           try {
@@ -140,14 +137,15 @@ export function useProfileBalances({
             );
 
             rows.push({
-              campaignAddress: s.campaign.campaign,
+              campaignAddress: campaign.campaign,
               tokenAddress: tokenAddr,
-              image: s.campaign.logoURI || "/placeholder.svg",
-              name: s.campaign.name,
-              ticker: s.campaign.symbol || symbolMaybe || "",
+              image: campaign.logoURI || "/placeholder.svg",
+              name: campaign.name,
+              ticker: campaign.symbol || symbolMaybe || "",
               balanceRaw: rawBal,
               balanceFormatted: formatted,
             });
+            ownedCampaigns.push(campaign);
           } catch {
             continue;
           }
@@ -160,6 +158,15 @@ export function useProfileBalances({
         // === Portfolio metrics derivation (additive) ===
         // Now prefers real on-chain first activity over profile createdAt.
         try {
+          const valuedSummaries = await Promise.allSettled(
+            ownedCampaigns.slice(0, MAX_VALUED_HOLDINGS).map((campaign) => fetchCampaignSummary(campaign))
+          );
+          const fulfilled = valuedSummaries
+            .filter(
+              (r): r is PromiseFulfilledResult<CampaignSummary> => r.status === "fulfilled"
+            )
+            .map((r) => r.value);
+
           const tokenHoldingsWithValues = rows.map((row) => {
             const matchingSummary = fulfilled.find(
               (s) => pickTokenAddressFromSummary(s) === row.tokenAddress
