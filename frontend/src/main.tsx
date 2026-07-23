@@ -3,6 +3,7 @@
  * Initializes and mounts the React application to the DOM
  */
 
+import "./lib/walletProviderBootstrap";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
