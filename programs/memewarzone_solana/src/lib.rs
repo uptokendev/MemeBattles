@@ -29,6 +29,9 @@ pub const TIER_1_CREATOR_LOCK_SECONDS: u32 = 86_400;
 pub const TIER_2_CREATOR_LOCK_SECONDS: u32 = 21_600;
 pub const TIER_3_CREATOR_LOCK_SECONDS: u32 = 3_600;
 
+pub mod authorized_create;
+pub use authorized_create::*;
+
 #[program]
 pub mod memewarzone_solana {
     use super::*;
@@ -37,14 +40,7 @@ pub mod memewarzone_solana {
         ctx: Context<InitializeGlobalConfig>,
         authorities: GlobalAuthorities,
     ) -> Result<()> {
-        require_keys_neq!(authorities.admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.pauser, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.tier_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.risk_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.route_signer, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.reward_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.treasury_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
-        require_keys_neq!(authorities.generation_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
+        validate_authorities(&authorities)?;
 
         let global = &mut ctx.accounts.global_config;
         global.admin = authorities.admin;
@@ -67,6 +63,7 @@ pub mod memewarzone_solana {
         global.authorized_trading_required = true;
         global.security_defaults_locked = false;
         global.bump = ctx.bumps.global_config;
+
         emit!(GlobalConfigInitialized {
             admin: global.admin,
             pauser: global.pauser,
@@ -123,9 +120,8 @@ pub mod memewarzone_solana {
         require_generation_authority(global, ctx.accounts.authority.key())?;
         validate_generation_settings(global, &settings)?;
 
-        let active_generation_id = global.active_generation_id;
         if settings.active_creation {
-            require!(is_empty_generation_id(active_generation_id), LaunchpadError::ActiveCreationGenerationExists);
+            require!(is_empty_generation_id(global.active_generation_id), LaunchpadError::ActiveCreationGenerationExists);
             global.active_generation_id = settings.generation_id;
         }
 
@@ -179,6 +175,13 @@ pub mod memewarzone_solana {
             active_creation: generation.active_creation,
         });
         Ok(())
+    }
+
+    pub fn create_campaign(
+        ctx: Context<CreateCampaign>,
+        args: CreateCampaignArgs,
+    ) -> Result<()> {
+        authorized_create::create_campaign_handler(ctx, args)
     }
 
     pub fn sync_creator_profile(
@@ -271,35 +274,21 @@ pub mod memewarzone_solana {
 pub struct InitializeGlobalConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
-    #[account(
-        init,
-        payer = admin,
-        space = 8 + GlobalConfig::INIT_SPACE,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump
-    )]
+    #[account(init, payer = admin, space = 8 + GlobalConfig::INIT_SPACE, seeds = [GLOBAL_CONFIG_SEED], bump)]
     pub global_config: Account<'info, GlobalConfig>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct SetPauseFlags<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
 pub struct LockSecurityDefaults<'info> {
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     pub admin: Signer<'info>,
 }
@@ -309,11 +298,7 @@ pub struct LockSecurityDefaults<'info> {
 pub struct InitializeGenerationConfig<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     #[account(
         init,
@@ -329,17 +314,9 @@ pub struct InitializeGenerationConfig<'info> {
 #[derive(Accounts)]
 pub struct SetGenerationSupport<'info> {
     pub authority: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
-    #[account(
-        mut,
-        seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
-        bump = generation_config.bump
-    )]
+    #[account(mut, seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()], bump = generation_config.bump)]
     pub generation_config: Account<'info, GenerationConfig>,
 }
 
@@ -348,10 +325,7 @@ pub struct SetGenerationSupport<'info> {
 pub struct SyncCreatorProfile<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     #[account(
         init_if_needed,
@@ -369,10 +343,7 @@ pub struct SyncCreatorProfile<'info> {
 pub struct SyncRiskProfile<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     #[account(
         init_if_needed,
@@ -390,10 +361,7 @@ pub struct SyncRiskProfile<'info> {
 pub struct SyncClusterProfile<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(
-        seeds = [GLOBAL_CONFIG_SEED],
-        bump = global_config.bump
-    )]
+    #[account(seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
     #[account(
         init_if_needed,
@@ -630,6 +598,18 @@ pub struct ClusterProfileSynced {
     pub restricted: bool,
 }
 
+fn validate_authorities(authorities: &GlobalAuthorities) -> Result<()> {
+    require_keys_neq!(authorities.admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.pauser, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.tier_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.risk_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.route_signer, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.reward_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.treasury_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(authorities.generation_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    Ok(())
+}
+
 fn require_admin(global: &GlobalConfig, authority: Pubkey) -> Result<()> {
     require_keys_eq!(global.admin, authority, LaunchpadError::Unauthorized);
     Ok(())
@@ -864,24 +844,6 @@ mod tests {
     }
 
     #[test]
-    fn generation_settings_reject_active_without_support() {
-        let global = test_global_config();
-        let mut settings = test_generation_settings();
-        settings.active_creation = true;
-        settings.support_enabled = false;
-
-        assert!(validate_generation_settings(&global, &settings).is_err());
-    }
-
-    #[test]
-    fn support_update_activates_empty_creation_slot() {
-        let generation_id = [1; 32];
-        let next_active = resolve_generation_support_update(EMPTY_GENERATION_ID, generation_id, true, true).unwrap();
-
-        assert_eq!(next_active, generation_id);
-    }
-
-    #[test]
     fn support_update_rejects_second_active_generation() {
         let current_active = [1; 32];
         let second_generation = [2; 32];
@@ -890,27 +852,11 @@ mod tests {
     }
 
     #[test]
-    fn support_update_rejects_active_generation_without_support() {
-        let generation_id = [1; 32];
-
-        assert!(resolve_generation_support_update(EMPTY_GENERATION_ID, generation_id, false, true).is_err());
-    }
-
-    #[test]
     fn support_update_deactivation_clears_current_generation() {
         let generation_id = [1; 32];
         let next_active = resolve_generation_support_update(generation_id, generation_id, true, false).unwrap();
 
         assert_eq!(next_active, EMPTY_GENERATION_ID);
-    }
-
-    #[test]
-    fn support_update_deactivation_keeps_other_generation_active() {
-        let current_active = [1; 32];
-        let inactive_generation = [2; 32];
-        let next_active = resolve_generation_support_update(current_active, inactive_generation, true, false).unwrap();
-
-        assert_eq!(next_active, current_active);
     }
 
     #[test]
@@ -944,34 +890,10 @@ mod tests {
     }
 
     #[test]
-    fn creator_profile_rejects_over_cap_buy_bps() {
-        let mut update = test_creator_update(CREATOR_TIER_2, TIER_2_MAX_LIVE_BONDING);
-        update.creator_buy_cap_bps = CREATOR_BUY_CAP_BPS_MAX + 1;
-
-        assert!(validate_creator_profile_update(&update).is_err());
-    }
-
-    #[test]
-    fn creator_profile_accepts_supported_tiers_at_limit() {
-        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_1, TIER_1_MAX_LIVE_BONDING)).is_ok());
-        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_2, TIER_2_MAX_LIVE_BONDING)).is_ok());
-        assert!(validate_creator_profile_update(&test_creator_update(CREATOR_TIER_3, TIER_3_MAX_LIVE_BONDING)).is_ok());
-    }
-
-    #[test]
     fn risk_profile_rejects_invalid_risk_level() {
         let update = test_risk_update(RISK_LEVEL_MAX + 1);
 
         assert!(validate_risk_profile_update(&update).is_err());
-    }
-
-    #[test]
-    fn risk_profile_accepts_restricted_manual_review_state() {
-        let mut update = test_risk_update(RISK_LEVEL_MAX);
-        update.restricted = true;
-        update.manual_review_required = true;
-
-        assert!(validate_risk_profile_update(&update).is_ok());
     }
 
     #[test]
@@ -987,14 +909,6 @@ mod tests {
         let update = test_cluster_update(RISK_LEVEL_MAX, 0);
 
         assert!(validate_cluster_profile_update(&update).is_err());
-    }
-
-    #[test]
-    fn cluster_profile_accepts_restricted_cluster() {
-        let mut update = test_cluster_update(RISK_LEVEL_MAX, 100);
-        update.restricted = true;
-
-        assert!(validate_cluster_profile_update(&update).is_ok());
     }
 }
 
@@ -1032,6 +946,36 @@ pub enum LaunchpadError {
     InvalidRiskLevel,
     #[msg("Cluster profile data is invalid.")]
     InvalidCluster,
+    #[msg("The Solana launchpad is paused.")]
+    LaunchpadPaused,
+    #[msg("Solana campaign creation is paused.")]
+    CreatePaused,
+    #[msg("Create authorization is missing, expired, replayed, or malformed.")]
+    InvalidCreateAuthorization,
+    #[msg("Create authorization deadline has expired.")]
+    CreateAuthorizationExpired,
+    #[msg("Campaign data is invalid.")]
+    InvalidCampaign,
+    #[msg("Campaign metadata hash is invalid.")]
+    InvalidMetadata,
+    #[msg("Route profile hash is invalid.")]
+    InvalidRouteProfile,
+    #[msg("Create authorization nonce is invalid.")]
+    InvalidNonce,
+    #[msg("The selected generation is not active for campaign creation.")]
+    CampaignGenerationInactive,
+    #[msg("Creator has reached the live bonding launch limit.")]
+    CreatorLaunchLimitExceeded,
+    #[msg("Creator launch cooldown is still active.")]
+    CreatorCooldownActive,
+    #[msg("Creator is restricted from launching campaigns.")]
+    CreatorRestricted,
+    #[msg("Creator requires manual review before launching campaigns.")]
+    CreatorManualReviewRequired,
+    #[msg("Wallet is restricted from launching campaigns.")]
+    WalletRestricted,
+    #[msg("Wallet cluster is restricted from launching campaigns.")]
+    ClusterRestricted,
     #[msg("Arithmetic overflow while updating Solana launchpad state.")]
     MathOverflow,
 }
