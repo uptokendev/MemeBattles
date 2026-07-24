@@ -62,6 +62,11 @@ function makeNonce() {
 }
 
 function publicState({ walletAddress, state = null, recruiter = null }) {
+  const rawSquadState = String(state?.squad_state || "").trim().toLowerCase();
+  const normalizedSquadState = ["in_squad", "linked_squad", "active_squad", "squad_member", "member"].includes(rawSquadState)
+    ? "in_squad"
+    : "solo";
+
   return {
     walletAddress,
     hasActivity: Boolean(state?.has_activity),
@@ -69,7 +74,7 @@ function publicState({ walletAddress, state = null, recruiter = null }) {
     recruiterCode: state?.recruiter_code || recruiter?.code || null,
     recruiterDisplayName: state?.recruiter_display_name || recruiter?.display_name || null,
     recruiterIsOg: Boolean(state?.recruiter_is_og ?? recruiter?.is_og),
-    squadState: state?.squad_state || "solo",
+    squadState: normalizedSquadState,
   };
 }
 

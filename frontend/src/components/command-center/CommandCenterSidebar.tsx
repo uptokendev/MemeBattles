@@ -14,12 +14,11 @@ const menuItems = [
   { label: "Settings", path: "settings", icon: Settings },
 ];
 
-const NO_SQUAD_STATES = new Set(["", "none", "solo", "not_in_squad", "inactive", "unlinked", "missing"]);
+const ACTIVE_SQUAD_STATES = new Set(["in_squad", "linked_squad", "active_squad", "squad_member", "member"]);
 
 function hasSquadAccess(squadState?: string | null) {
   const state = String(squadState || "").trim().toLowerCase();
-  if (state.includes("self_recruiter")) return false;
-  return !NO_SQUAD_STATES.has(state);
+  return ACTIVE_SQUAD_STATES.has(state);
 }
 
 type CommandCenterSidebarProps = {

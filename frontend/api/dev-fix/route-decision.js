@@ -85,6 +85,13 @@ function activeAttribution(state) {
   return linkState === "linked_unlocked" || linkState === "linked_locked";
 }
 
+function normalizeSquadState(value) {
+  const state = String(value || "").trim().toLowerCase();
+  return ["in_squad", "linked_squad", "active_squad", "squad_member", "member"].includes(state)
+    ? "in_squad"
+    : "solo";
+}
+
 function linkedDecision(walletAddress, state) {
   const routeProfileId = state.recruiter_is_og
     ? ROUTE_PROFILE_OG_LINKED
@@ -105,7 +112,7 @@ function linkedDecision(walletAddress, state) {
       recruiterIsOg: Boolean(state.recruiter_is_og),
       recruiterStatus: state.recruiter_status,
       recruiterLinkState: state.recruiter_link_state,
-      squadState: state.squad_state,
+      squadState: normalizeSquadState(state.squad_state),
       source: "wallet_attribution_states",
       reason: state.recruiter_is_og
         ? "Wallet is linked to an active OG recruiter; using OgLinked."
@@ -159,7 +166,7 @@ function unlinkedDecision(walletAddress, state = null, recruiter = null, reason 
       recruiterIsOg: Boolean(state?.recruiter_is_og ?? recruiter?.is_og),
       recruiterStatus: state?.recruiter_status || recruiter?.status || null,
       recruiterLinkState: state?.recruiter_link_state || (recruiter ? "self_recruiter_inactive" : "unlinked"),
-      squadState: state?.squad_state || "solo",
+      squadState: normalizeSquadState(state?.squad_state),
       source: recruiter ? "recruiters.wallet_address" : "wallet_attribution_states",
       reason: reason || "Wallet has no active recruiter link; using StandardUnlinked.",
     },
