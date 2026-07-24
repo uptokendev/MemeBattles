@@ -151,6 +151,12 @@ function normalizeLogoUri(value: unknown): string {
   return resolved || "/placeholder.svg";
 }
 
+function hasLogo(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "/placeholder.svg" || raw === "-") return false;
+  return Boolean(resolveImageUri(raw));
+}
+
 function toUnixSeconds(value: unknown): number | undefined {
   if (value == null || value === "") return undefined;
   const n = Number(value);
@@ -289,6 +295,34 @@ function mergeCampaigns(onChain: CampaignInfo[], db: CampaignInfo[]): CampaignIn
   return Array.from(mergedByAddress.values());
 }
 
+async function hydrateMissingLogosFromContract(
+  campaigns: CampaignInfo[],
+  fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>,
+): Promise<CampaignInfo[]> {
+  const targets = campaigns.filter((campaign) => !hasLogo(campaign.logoURI)).slice(0, 25);
+  if (!targets.length) return campaigns;
+
+  const hydrated = new Map<string, string>();
+
+  await Promise.all(
+    targets.map(async (campaign) => {
+      try {
+        const logo = normalizeLogoUri(await fetchCampaignLogoURI(campaign.campaign));
+        if (hasLogo(logo)) hydrated.set(campaign.campaign.toLowerCase(), logo);
+      } catch {
+        // Best-effort image hydration only; never block the campaign feed.
+      }
+    }),
+  );
+
+  if (!hydrated.size) return campaigns;
+
+  return campaigns.map((campaign) => {
+    const logoURI = hydrated.get(campaign.campaign.toLowerCase());
+    return logoURI ? { ...campaign, logoURI } : campaign;
+  });
+}
+
 async function legacyGasOverrides(signer: any, readProvider: ethers.AbstractProvider, extra: any = {}) {
   try {
     const p: any = signer?.provider ?? readProvider;
@@ -401,19 +435,20 @@ export function useLaunchpad(): LaunchpadAdapter {
   const fetchCampaigns = useCallback(async (): Promise<CampaignInfo[]> => {
     const chainId = Number(activeChainId || 56);
     const db = await fetchDbCampaigns(chainId);
-    if (isSolanaChainId(activeChainId) || !ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) return db;
+    if (isSolanaChainId(activeChainId)) return db;
+    if (!ENABLE_ONCHAIN_CAMPAIGN_FALLBACK) return hydrateMissingLogosFromContract(db, fetchCampaignLogoURI);
 
     try {
       const total = await fetchCampaignsCount();
       const limit = Math.min(total, 25);
       const offset = Math.max(0, total - limit);
       const onChain = limit > 0 ? await fetchCampaignPage(offset, limit, { newestFirst: true }) : [];
-      return mergeCampaigns(onChain, db);
+      return hydrateMissingLogosFromContract(mergeCampaigns(onChain, db), fetchCampaignLogoURI);
     } catch (error) {
       console.warn("[launchpadClient] on-chain campaign page failed; using DB campaigns", error);
-      return db;
+      return hydrateMissingLogosFromContract(db, fetchCampaignLogoURI);
     }
-  }, [activeChainId, fetchCampaignsCount, fetchCampaignPage]);
+  }, [activeChainId, fetchCampaignLogoURI, fetchCampaignsCount, fetchCampaignPage]);
 
   const fetchCampaignMetrics = useCallback(async (campaignAddress: string): Promise<CampaignMetrics | null> => {
     const campaign = getCampaignRead(campaignAddress);

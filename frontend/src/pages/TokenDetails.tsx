@@ -202,7 +202,7 @@ const TokenDetails = () => {
   }, [displayDenom]);
 
   // Launchpad hooks + state for the on-chain data
-  const { fetchCampaigns, fetchCampaignSummary, fetchCampaignMetrics, fetchCampaignActivity, buyTokens, sellTokens } = useLaunchpad();
+  const { fetchCampaigns, fetchCampaignLogoURI, fetchCampaignSummary, fetchCampaignMetrics, fetchCampaignActivity, buyTokens, sellTokens } = useLaunchpad();
   const wallet = useWallet();
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
@@ -418,6 +418,17 @@ if (!hasUsefulImage(displayMatch.logoURI)) {
   }
 }
 
+if (!hasUsefulImage(displayMatch.logoURI)) {
+  try {
+    const contractImage = resolveImageUri(await fetchCampaignLogoURI(displayMatch.campaign));
+    if (hasUsefulImage(contractImage)) {
+      displayMatch = { ...displayMatch, logoURI: contractImage };
+    }
+  } catch {
+    // Best-effort image hydration; keep rendering the token page.
+  }
+}
+
 setCampaign(displayMatch);
 
 // Unified token stats + metrics are best-effort. The page should still render
@@ -452,7 +463,7 @@ try {
     };
 
     load();
-  }, [campaignAddress, chainIdForStorage, fetchCampaigns, fetchCampaignSummary]);
+  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
