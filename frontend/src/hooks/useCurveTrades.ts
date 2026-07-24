@@ -5,7 +5,7 @@ import { getActiveChainId, isEvmChainId, type SupportedChainId } from "@/lib/cha
 import { getReadProvider } from "@/lib/readProvider";
 import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 
-// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production.up.railway.app
+// Realtime-indexer HTTP base (Railway). Example: https://memebattles-production-dca0.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
 const ENABLE_ONCHAIN_TRADE_FALLBACK =

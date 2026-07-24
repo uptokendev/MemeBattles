@@ -44,10 +44,10 @@ SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_BUCKET=UPMEME
 PG_SSL_ALLOW_SELF_SIGNED=1
 ABLY_API_KEY=
-RAILWAY_INDEXER_URL=https://memebattles-production.up.railway.app
-RAILWAY_API_BASE_URL=https://memebattles-production.up.railway.app
+RAILWAY_INDEXER_URL=https://memebattles-production-dca0.up.railway.app
+RAILWAY_API_BASE_URL=https://memebattles-production-dca0.up.railway.app
 API_RAILWAY_PROXY=1
-VITE_REALTIME_API_BASE=https://memebattles-production.up.railway.app
+VITE_REALTIME_API_BASE=https://memebattles-production-dca0.up.railway.app
 VITE_TARGET_CHAIN_ID=97
 VITE_FACTORY_ADDRESS_97=
 VITE_BSC_TESTNET_RPC=
@@ -119,13 +119,13 @@ Only after local and Railway checks pass:
 
 ```env
 # Main app API gateway: profile, drafts, prepare mode, upload, routing, accounts.
-VITE_API_BASE_URL=https://memewarzonefrontend-production.up.railway.app
+VITE_API_BASE_URL=https://memebattles-frontend-7dcf.up.railway.app
 
 # Existing token/realtime/indexer Railway service.
-VITE_REALTIME_API_BASE=https://memebattles-production.up.railway.app
+VITE_REALTIME_API_BASE=https://memebattles-production-dca0.up.railway.app
 
 # Ably auth can be served by the frontend API gateway.
-VITE_ABLY_AUTH_BASE=https://memewarzonefrontend-production.up.railway.app
+VITE_ABLY_AUTH_BASE=https://memebattles-frontend-7dcf.up.railway.app
 ```
 
 2. Test with a Netlify deploy preview.

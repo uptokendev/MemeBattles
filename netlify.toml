@@ -39,7 +39,7 @@
 # through to /index.html.
 [[redirects]]
   from = "/api/*"
-  to = "https://memewarzonefrontend-production.up.railway.app/api/:splat"
+  to = "https://memebattles-frontend-7dcf.up.railway.app/api/:splat"
   status = 200
   force = true
 

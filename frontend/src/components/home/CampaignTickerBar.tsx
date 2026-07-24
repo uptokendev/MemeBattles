@@ -35,7 +35,7 @@ const FACTORY_ABI = [
 ] as const;
 
 const REALTIME_API_BASE = String(
-  import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production.up.railway.app"
+  import.meta.env.VITE_REALTIME_API_BASE || "https://memebattles-production-dca0.up.railway.app"
 ).replace(/\/$/, "");
 
 const MIN_TICKER_RENDERED_ITEMS = 18;
