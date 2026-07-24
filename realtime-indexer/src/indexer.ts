@@ -397,16 +397,22 @@ async function setCampaignFeeRecipient(
 }
 
 
-async function listActiveCampaigns(chainId: number, factoryAddress?: string): Promise<Array<{ campaign: string; createdBlock: number }>> {
+async function listActiveCampaigns(
+  chainId: number,
+  factoryAddress?: string,
+  campaignAddress?: string
+): Promise<Array<{ campaign: string; createdBlock: number }>> {
   const normalizedFactory = factoryAddress ? factoryAddress.toLowerCase() : "";
+  const normalizedCampaign = campaignAddress ? campaignAddress.toLowerCase() : "";
   const r = await pool.query(
     `select campaign_address, coalesce(created_block, 0) as created_block
      from public.campaigns
      where chain_id=$1
        and is_active=true
-       and ($2::text = '' or factory_address is null or lower(factory_address) = $2)
+       and ($2::text = '' or lower(factory_address) = $2)
+       and ($3::text = '' or lower(campaign_address) = $3)
      order by coalesce(created_at_chain, updated_at, now()) desc`,
-    [chainId, normalizedFactory]
+    [chainId, normalizedFactory, normalizedCampaign]
   );
   return r.rows.map((x) => ({
     campaign: String(x.campaign_address),
@@ -1333,12 +1339,13 @@ export async function runRepairOnce() {
 // Focused recovery for TokenDetails chart/trade data. This skips factory/vote/
 // reward-route event scans and only repairs LaunchCampaign trade/finalize logs
 // for campaigns already discovered in the DB.
-export async function runTradeRepairOnce() {
+export async function runTradeRepairOnce(campaignAddress?: string) {
   await runIndexerCore({
     mode: "repair",
     lookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
     rewindBlocks: ENV.REPAIR_REWIND_BLOCKS,
-    scope: "campaigns"
+    scope: "campaigns",
+    campaignAddress
   });
 }
 
@@ -1357,7 +1364,7 @@ export async function runDiscoveryOnce() {
 
 type IndexerScope = "full" | "core" | "factory" | "campaigns";
 
-async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: IndexerScope }) {
+async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: IndexerScope; campaignAddress?: string }) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
@@ -1381,8 +1388,10 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     const withProviderRetry = async <T>(fn: (p: ethers.JsonRpcProvider) => Promise<T>): Promise<T> => {
       let lastErr: any;
 
-      // try up to 2 full rotations
-      for (let attempt = 0; attempt < rpcList.length * 2; attempt++) {
+      // Try up to 2 full rotations when multiple endpoints exist. With a
+      // single endpoint, do not "rotate" back into the same rate-limited URL.
+      const maxAttempts = rpcList.length > 1 ? rpcList.length * 2 : 1;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const p = makeProvider();
         const url = rpcList[rpcIdx];
 
@@ -1392,15 +1401,17 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
           lastErr = e;
 
           if (isRateLimitError(e) || isRpcTransportError(e) || isPrunedHistoryError(e)) {
-            console.warn("RPC error; rotating endpoint", {
+            console.warn(rpcList.length > 1 ? "RPC error; rotating endpoint" : "RPC error; single endpoint exhausted", {
               chainId: chain.chainId,
               rpc: url,
               err: e?.shortMessage || e?.message || e
             });
 
-            rotate();
-            await sleep(500 + Math.floor(Math.random() * 500));
-            continue;
+            if (attempt + 1 < maxAttempts) {
+              rotate();
+              await sleep(500 + Math.floor(Math.random() * 500));
+              continue;
+            }
           }
 
           // Non-transient error: bubble up
@@ -1465,7 +1476,7 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     // ---------------- Campaign scans ----------------
     let campaigns: Array<{ campaign: string; createdBlock: number }> = [];
     try {
-      campaigns = await listActiveCampaigns(chain.chainId, chain.factoryAddress);
+      campaigns = await listActiveCampaigns(chain.chainId, chain.factoryAddress, opts.campaignAddress);
     } catch (e) {
       console.error("listActiveCampaigns error", { chainId: chain.chainId }, e);
       continue;

@@ -406,7 +406,12 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
     return res.status(400).json({ ok: false, error: "mode must be normal, repair, discover, trades, or campaigns" });
   }
 
-  const result = await runIndexerJob(mode as "normal" | "repair" | "discover" | "trades" | "campaigns", "manual");
+  const campaign = normalizeAddress(req.query.campaign || req.query.campaignAddress || req.body?.campaign || req.body?.campaignAddress || "");
+  if (campaign && !/^0x[a-f0-9]{40}$/.test(campaign)) {
+    return res.status(400).json({ ok: false, error: "Invalid campaign address" });
+  }
+
+  const result = await runIndexerJob(mode as "normal" | "repair" | "discover" | "trades" | "campaigns", "manual", { campaignAddress: campaign || undefined });
   const status = result.ok ? 200 : result.skipped ? 409 : 500;
   res.status(status).json(result);
 }));
@@ -2258,7 +2263,11 @@ let running = false;
 let runningStartedAt = 0;
 const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 
-async function runIndexerJob(mode: "normal" | "repair" | "discover" | "trades" | "campaigns", trigger: "loop" | "manual") {
+async function runIndexerJob(
+  mode: "normal" | "repair" | "discover" | "trades" | "campaigns",
+  trigger: "loop" | "manual",
+  opts: { campaignAddress?: string } = {}
+) {
   const allowConcurrentRecovery = mode === "discover" || mode === "trades" || mode === "campaigns";
   const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
   const isStaleManualTakeover =
@@ -2289,7 +2298,7 @@ async function runIndexerJob(mode: "normal" | "repair" | "discover" | "trades" |
     if (mode === "discover") {
       await runDiscoveryOnce();
     } else if (mode === "trades" || mode === "campaigns") {
-      await runTradeRepairOnce();
+      await runTradeRepairOnce(opts.campaignAddress);
     } else if (mode === "repair") {
       await runRepairOnce();
     } else {
