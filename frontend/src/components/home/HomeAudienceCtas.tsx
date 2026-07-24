@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/contexts/WalletContext";
+import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { normalizeRouteWallet } from "@/lib/address";
 import creatorBg from "@/assets/home/cta-creators-bg.png";
 import recruiterBg from "@/assets/home/cta-recruiters-bg.png";
 import creatorSoldier from "@/assets/home/cta-creator-soldier.png";
@@ -171,32 +172,20 @@ function AudienceCard({
 export function HomeAudienceCtas() {
   const navigate = useNavigate();
   const wallet = useWallet();
-  const [pendingRecruiterRedirect, setPendingRecruiterRedirect] = useState(false);
+  const { solanaAccount, isSolanaConnected } = useSolanaWallet();
+  const recruiterWallet = normalizeRouteWallet(
+    isSolanaConnected && solanaAccount ? solanaAccount : wallet.account,
+  );
 
-  const recruiterPath = wallet.account
-    ? `/profile/${wallet.account.toLowerCase()}/command/recruiter`
-    : "";
-
-  useEffect(() => {
-    if (!pendingRecruiterRedirect || !wallet.account) return;
-
-    setPendingRecruiterRedirect(false);
-    navigate(`/profile/${wallet.account.toLowerCase()}/command/recruiter`);
-  }, [pendingRecruiterRedirect, wallet.account, navigate]);
-
-  const handleRecruiterClick = async () => {
-    if (wallet.account) {
-      navigate(recruiterPath);
+  const handleRecruiterClick = () => {
+    if (recruiterWallet) {
+      navigate(`/profile/${recruiterWallet}/command/recruiter`);
       return;
     }
 
-    setPendingRecruiterRedirect(true);
-
-    try {
-      await wallet.connect();
-    } catch {
-      setPendingRecruiterRedirect(false);
-    }
+    window.dispatchEvent(new CustomEvent("memebattles:openWalletModal", {
+      detail: { commandSection: "recruiter" },
+    }));
   };
 
   return (

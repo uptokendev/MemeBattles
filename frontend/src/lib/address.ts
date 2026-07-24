@@ -42,6 +42,17 @@ export function normalizeEvmWallet(value?: string | null): string | null {
 }
 
 /**
+ * Normalize a wallet route parameter while preserving Solana's case-sensitive
+ * base58 representation.
+ */
+export function normalizeRouteWallet(value?: string | null): string | null {
+  const raw = String(value ?? "").trim();
+  const evm = normalizeEvmWallet(raw);
+  if (evm) return evm;
+  return isSolanaAddress(raw) ? raw : null;
+}
+
+/**
  * Check if two addresses match, respecting Solana case-sensitivity.
  */
 export function addressesMatch(a?: string | null, b?: string | null, chainId?: number | string | null): boolean {

@@ -95,12 +95,11 @@ export function useRecruiterWallet(): RecruiterWalletController {
 
   const connect = useCallback(async (chain?: RecruiterWalletChain) => {
     if (chain === "solana") {
-      await solanaWallet.connectSolana();
-      return String(solanaWallet.solanaAccount || "").trim();
+      const result = await solanaWallet.connectSolana();
+      return result.publicKey;
     }
-    await bnbWallet.connect();
-    return bnbAddress;
-  }, [bnbAddress, bnbWallet, solanaWallet]);
+    return bnbWallet.connect();
+  }, [bnbWallet, solanaWallet]);
 
   const disconnect = useCallback(async (chain?: RecruiterWalletChain) => {
     if (chain === "solana") {

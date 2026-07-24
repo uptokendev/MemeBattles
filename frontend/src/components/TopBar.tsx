@@ -15,6 +15,7 @@ import { socialLinks } from "@/constants/navigation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
 import { isSupportedChainId, getChainLabel } from "@/lib/chainConfig";
+import { normalizeRouteWallet } from "@/lib/address";
 import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics } from "@/lib/launchpadClient";
@@ -82,6 +83,7 @@ export const TopBar = ({ mobileMenuOpen, setMobileMenuOpen }: TopBarProps) => {
   const { solanaAccount, isSolanaConnected, disconnectSolana } = useSolanaWallet();
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [walletModalFilter, setWalletModalFilter] = useState<'evm' | 'solana' | null>(null);
+  const [walletConnectCommandSection, setWalletConnectCommandSection] = useState<string | null>(null);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [draftNotifications, setDraftNotifications] = useState<DraftNotification[]>([]);
@@ -314,8 +316,9 @@ tickerInitialLoadedRef.current = true;
   }, [location.pathname, setMobileMenuOpen]);
 
   useEffect(() => {
-    const onOpenWalletModal = (e: CustomEvent<{ only?: 'evm' | 'solana' }>) => {
+    const onOpenWalletModal = (e: CustomEvent<{ only?: 'evm' | 'solana'; commandSection?: string }>) => {
       if (e?.detail?.only) setWalletModalFilter(e.detail.only);
+      setWalletConnectCommandSection(e?.detail?.commandSection || null);
       setWalletModalOpen(true);
     };
     window.addEventListener("memebattles:openWalletModal", onOpenWalletModal as EventListener);
@@ -562,9 +565,14 @@ tickerInitialLoadedRef.current = true;
                   Change wallet
                 </button>
                 <button className="w-full text-left text-xs px-3 py-2 hover:bg-success/10" onClick={async () => {
-                  if (isSolanaConnected) await disconnectSolana();
-                  if (wallet.isConnected) await wallet.disconnect();
-                  setDisconnectOpen(false);
+                  try {
+                    await Promise.allSettled([
+                      isSolanaConnected ? disconnectSolana() : Promise.resolve(),
+                      wallet.isConnected ? wallet.disconnect() : Promise.resolve(),
+                    ]);
+                  } finally {
+                    setDisconnectOpen(false);
+                  }
                 }}>
                   Disconnect
                 </button>
@@ -577,8 +585,17 @@ tickerInitialLoadedRef.current = true;
 
       <ConnectWalletModal
         open={walletModalOpen}
+        onConnected={(address) => {
+          if (!walletConnectCommandSection) return;
+          const routeWallet = normalizeRouteWallet(address);
+          if (!routeWallet) return;
+          navigate(`/profile/${routeWallet}/command/${walletConnectCommandSection}`);
+        }}
         onOpenChange={(open) => {
-          if (!open) setWalletModalFilter(null);
+          if (!open) {
+            setWalletModalFilter(null);
+            setWalletConnectCommandSection(null);
+          }
           setWalletModalOpen(open);
         }}
         filter={walletModalFilter}

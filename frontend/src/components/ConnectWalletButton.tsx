@@ -115,16 +115,11 @@ export const ConnectWalletButton = () => {
 
   const handleDisconnect = async () => {
     try {
-      // Prefer disconnecting the Solana side first if it is (or was) the active one shown.
-      // Then also disconnect EVM if it is connected (so a full "disconnect wallet" clears both).
       ensureSolanaListeners();
-      if (solanaAccount || getStoredSolanaWallet()) {
-        await disconnectSolana();
-      }
-      if (isConnected) {
-        await disconnect();
-      }
-      // After full disconnect, clear active type. Next connect will decide fresh.
+      await Promise.allSettled([
+        solanaAccount || getStoredSolanaWallet() ? disconnectSolana() : Promise.resolve(),
+        isConnected ? disconnect() : Promise.resolve(),
+      ]);
       setActiveWalletType(null);
     } finally {
       setShowDropdown(false);

@@ -17,8 +17,14 @@ type SolanaWalletContextType = {
   isSolanaConnected: boolean;
   connectingSolana: boolean;
   availableSolanaWallets: DetectedSolanaWallet[];
-  connectSolana: (walletId?: string) => Promise<void>;
+  connectSolana: (walletId?: string) => Promise<SolanaConnectResult>;
   disconnectSolana: () => Promise<void>;
+};
+
+type SolanaConnectResult = {
+  publicKey: string;
+  walletId: string;
+  walletName: string;
 };
 
 const SolanaWalletContext = createContext<SolanaWalletContextType | null>(null);
@@ -44,17 +50,21 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       setSolanaAccount(result.publicKey);
       setSolanaWalletName(result.walletName);
       sync();
+      return result;
     } finally {
       setConnectingSolana(false);
     }
   }, [sync]);
 
   const disconnectSolana = useCallback(async () => {
-    await disconnectSolanaFn();
-    setSolanaAccount("");
-    setSolanaWalletName("");
-    sync();
-  }, [sync]);
+    try {
+      await disconnectSolanaFn();
+    } finally {
+      setSolanaAccount("");
+      setSolanaWalletName("");
+      setAvailableSolanaWallets(detectSolanaWallets());
+    }
+  }, []);
 
   useEffect(() => {
     sync();
@@ -66,15 +76,30 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       }, delay)
     );
 
-    const onEvent = () => sync();
+    const onEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ publicKey?: string; walletName?: string }>).detail;
+      if (!detail?.publicKey) {
+        setSolanaAccount("");
+        setSolanaWalletName("");
+        return;
+      }
+      setSolanaAccount(String(detail.publicKey));
+      setSolanaWalletName(String(detail.walletName || ""));
+      setAvailableSolanaWallets(detectSolanaWallets());
+    };
+
+    const onFocus = () => {
+      refreshSolanaWalletFromProvider();
+      sync();
+    };
 
     window.addEventListener(SOLANA_WALLET_EVENT, onEvent as EventListener);
-    window.addEventListener("focus", onEvent as EventListener);
+    window.addEventListener("focus", onFocus);
 
     return () => {
       timers.forEach((timer) => window.clearTimeout(timer));
       window.removeEventListener(SOLANA_WALLET_EVENT, onEvent as EventListener);
-      window.removeEventListener("focus", onEvent as EventListener);
+      window.removeEventListener("focus", onFocus);
     };
   }, [sync]);
 

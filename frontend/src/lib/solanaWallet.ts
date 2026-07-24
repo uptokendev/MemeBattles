@@ -4,6 +4,7 @@ import { apiFetch } from "@/lib/apiBase";
 export const SOLANA_WALLET_STORAGE_KEY = "mwz:solana_wallet";
 export const SOLANA_WALLET_NAME_STORAGE_KEY = "mwz:solana_wallet_name";
 export const SOLANA_WALLET_ID_STORAGE_KEY = "mwz:solana_wallet_id";
+export const SOLANA_WALLET_DISCONNECTED_KEY = "mwz:solana_wallet_disconnected";
 export const SOLANA_WALLET_EVENT = "memewarzone:solana-wallet-changed";
 
 export type SolanaProvider = {
@@ -28,8 +29,34 @@ function normalizePublicKey(value: string) {
   return String(value || "").trim();
 }
 
+function normalizeEventPublicKey(value: unknown) {
+  if (typeof value === "string") return normalizePublicKey(value);
+  if (!value || typeof (value as { toString?: unknown }).toString !== "function") return "";
+  const candidate = normalizePublicKey((value as { toString: () => string }).toString());
+  return candidate === "[object Object]" ? "" : candidate;
+}
+
 function getWindowAny() {
   return typeof window === "undefined" ? {} : (window as any);
+}
+
+function solanaDisconnected() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SOLANA_WALLET_DISCONNECTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setSolanaDisconnected(value: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    if (value) window.localStorage.setItem(SOLANA_WALLET_DISCONNECTED_KEY, "1");
+    else window.localStorage.removeItem(SOLANA_WALLET_DISCONNECTED_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function addWallet(
@@ -115,6 +142,7 @@ function notifySolanaWalletChanged(publicKey: string, wallet?: DetectedSolanaWal
 
   try {
     if (publicKey) {
+      if (solanaDisconnected()) return;
       window.localStorage.setItem(SOLANA_WALLET_STORAGE_KEY, publicKey);
       if (wallet?.name) window.localStorage.setItem(SOLANA_WALLET_NAME_STORAGE_KEY, wallet.name);
       if (wallet?.id) window.localStorage.setItem(SOLANA_WALLET_ID_STORAGE_KEY, wallet.id);
@@ -137,7 +165,7 @@ function notifySolanaWalletChanged(publicKey: string, wallet?: DetectedSolanaWal
 }
 
 export function getStoredSolanaWallet(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined" || solanaDisconnected()) return "";
 
   const provider = getSolanaProvider();
   const liveKey = normalizePublicKey(provider?.publicKey?.toString?.() || "");
@@ -151,7 +179,7 @@ export function getStoredSolanaWallet(): string {
 }
 
 export function getStoredSolanaWalletName(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined" || solanaDisconnected()) return "";
   try {
     return window.localStorage.getItem(SOLANA_WALLET_NAME_STORAGE_KEY) || "";
   } catch {
@@ -160,7 +188,7 @@ export function getStoredSolanaWalletName(): string {
 }
 
 export function getStoredSolanaWalletId(): string {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined" || solanaDisconnected()) return "";
   try {
     return window.localStorage.getItem(SOLANA_WALLET_ID_STORAGE_KEY) || "";
   } catch {
@@ -169,6 +197,7 @@ export function getStoredSolanaWalletId(): string {
 }
 
 export function refreshSolanaWalletFromProvider(walletId?: string | null): string {
+  if (solanaDisconnected()) return "";
   const wallets = detectSolanaWallets();
   const selected =
     (walletId ? wallets.find((wallet) => wallet.id === walletId || wallet.name === walletId) : null) ||
@@ -192,6 +221,7 @@ export function ensureSolanaListeners(): void {
     attachedSolanaProviders.add(provider as object);
 
     const sync = (clearIfEmpty = false) => {
+      if (solanaDisconnected()) return;
       const key = normalizePublicKey(provider.publicKey?.toString?.() || "");
       if (key || clearIfEmpty) {
         notifySolanaWalletChanged(key, wallet);
@@ -200,7 +230,13 @@ export function ensureSolanaListeners(): void {
 
     try { provider.on?.("connect", () => sync(true)); } catch {}
     try { provider.on?.("disconnect", () => notifySolanaWalletChanged("")); } catch {}
-    try { provider.on?.("accountChanged", () => sync(true)); } catch {}
+    try {
+      provider.on?.("accountChanged", (nextPublicKey: unknown) => {
+        const key = normalizeEventPublicKey(nextPublicKey);
+        if (key || nextPublicKey === null) notifySolanaWalletChanged(key, wallet);
+        else sync(true);
+      });
+    } catch {}
 
     // Read an existing publicKey only. Never do a trusted-only connect here
     // because some injected wallets may open or focus on reload.
@@ -211,6 +247,7 @@ export function ensureSolanaListeners(): void {
 export async function connectSolanaWallet(
   walletId?: string,
 ): Promise<{ publicKey: string; walletId: string; walletName: string }> {
+  setSolanaDisconnected(false);
   const wallets = detectSolanaWallets();
   const wallet =
     wallets.find((item) => item.id === walletId || item.name === walletId) ||
@@ -253,6 +290,7 @@ export async function connectSolanaWallet(
 
 export async function disconnectSolanaWallet(): Promise<void> {
   const provider = getSolanaProvider();
+  setSolanaDisconnected(true);
   try {
     await provider?.disconnect?.();
   } finally {

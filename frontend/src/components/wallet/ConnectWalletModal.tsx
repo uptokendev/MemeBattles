@@ -22,6 +22,7 @@ import type { DetectedWallet, WalletType } from "@/contexts/WalletContext";
 type ConnectWalletModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onConnected?: (address: string) => void;
   filter?: 'evm' | 'solana' | null;
 };
 
@@ -125,7 +126,7 @@ function WalletCard({
   );
 }
 
-export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWalletModalProps) {
+export function ConnectWalletModal({ open, onOpenChange, onConnected, filter }: ConnectWalletModalProps) {
   const {
     account,
     chainId,
@@ -162,7 +163,8 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
       setSelectedWalletId(detectedWallet.id);
 
       try {
-        await connect(detectedWallet.id);
+        const connectedAddress = await connect(detectedWallet.id);
+        if (connectedAddress) onConnected?.(connectedAddress);
         toast.success(`Connected ${detectedWallet.name}`);
         onOpenChange(false);
       } catch (error) {
@@ -171,7 +173,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
         setSelectedWalletId(null);
       }
     },
-    [connect, onOpenChange],
+    [connect, onConnected, onOpenChange],
   );
 
   const handleDisconnect = useCallback(async () => {
@@ -189,7 +191,8 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
       setSelectedSolanaWalletId(walletId);
 
       try {
-        await connectSolana(walletId);
+        const result = await connectSolana(walletId);
+        onConnected?.(result.publicKey);
         toast.success(`Connected ${walletName}`);
         onOpenChange(false);
       } catch (error: any) {
@@ -198,7 +201,7 @@ export function ConnectWalletModal({ open, onOpenChange, filter }: ConnectWallet
         setSelectedSolanaWalletId(null);
       }
     },
-    [connectSolana, onOpenChange],
+    [connectSolana, onConnected, onOpenChange],
   );
 
   const statusCopy = useMemo(() => {

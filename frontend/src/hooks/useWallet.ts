@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { syncWalletRecruiterAttribution } from "@/lib/recruiterApi";
 import { isAllowedChainId, isSupportedChainId } from "@/lib/chainConfig";
+import {
+  normalizeEvmAccounts,
+  selectEvmAccount,
+} from "@/lib/walletAccountSelection.mjs";
 
 export type WalletType =
   | "metamask"
@@ -77,7 +81,7 @@ export type WalletHook = {
   connectingWalletId: WalletType | null;
   detectedWallets: DetectedWallet[];
   hasInjectedWallets: boolean;
-  connect: (wallet?: WalletType) => Promise<void>;
+  connect: (wallet?: WalletType) => Promise<string>;
   disconnect: () => Promise<void>;
   detectWallets: () => DetectedWallet[];
   isConnected: boolean;
@@ -89,7 +93,10 @@ declare global {
   interface WindowEventMap {
     "eip6963:announceProvider": CustomEvent<Eip6963ProviderDetail>;
     "eip6963:requestProvider": Event;
-    "memebattles:openWalletModal": CustomEvent<void>;
+    "memebattles:openWalletModal": CustomEvent<{
+      only?: "evm" | "solana";
+      commandSection?: string;
+    }>;
   }
 
   interface Window {
@@ -107,16 +114,6 @@ const EIP6963_WALLETS = new Map<string, Eip6963ProviderDetail>();
 const EIP6963_SUBSCRIBERS = new Set<() => void>();
 let eip6963ListenerStarted = false;
 let eip6963RequestInFlight = false;
-
-function normalizeHexAddress(value?: string | null): string {
-  const v = String(value ?? "").trim();
-  return /^0x[a-fA-F0-9]{40}$/.test(v) ? v.toLowerCase() : "";
-}
-
-function normalizeAccounts(accounts: unknown): string[] {
-  if (!Array.isArray(accounts)) return [];
-  return accounts.map((account) => normalizeHexAddress(String(account))).filter(Boolean);
-}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -288,17 +285,17 @@ function parseChainId(value: unknown): number | undefined {
 }
 
 async function chooseAccount(provider: Eip1193Provider, accounts: string[]) {
-  const selectedAddress = normalizeHexAddress(provider.selectedAddress);
-  const normalized = accounts.map(normalizeHexAddress).filter(Boolean);
-  if (selectedAddress && normalized.includes(selectedAddress)) return selectedAddress;
+  const normalized = normalizeEvmAccounts(accounts);
+  if (normalized[0]) return normalized[0];
   try {
-    const active = normalizeAccounts(await provider.request({ method: "eth_accounts" }));
-    if (selectedAddress && active.includes(selectedAddress)) return selectedAddress;
-    if (active[0]) return active[0];
+    return selectEvmAccount(
+      normalized,
+      provider.selectedAddress,
+      await provider.request({ method: "eth_accounts" }),
+    );
   } catch {
-    // ignore
+    return "";
   }
-  return normalized[0] || "";
 }
 
 function clearWarRoomSessionCache() {
@@ -462,7 +459,7 @@ export function useWallet(): WalletHook {
 
     const rebuild = async () => {
       try {
-        const chosen = await chooseAccount(selectedProvider, normalizeAccounts(await selectedProvider.request({ method: "eth_accounts" })));
+        const chosen = await chooseAccount(selectedProvider, normalizeEvmAccounts(await selectedProvider.request({ method: "eth_accounts" })));
         if (!chosen) {
           resetWalletState(false);
           return;
@@ -492,7 +489,10 @@ export function useWallet(): WalletHook {
     };
 
     const onAccountsChanged = async (accounts: unknown) => {
-      const chosen = await chooseAccount(selectedProvider, normalizeAccounts(accounts));
+      const reportedAccounts = normalizeEvmAccounts(accounts);
+      const chosen = Array.isArray(accounts)
+        ? reportedAccounts[0] || ""
+        : await chooseAccount(selectedProvider, reportedAccounts);
       setAccount((previous) => {
         if (previous && chosen && previous.toLowerCase() !== chosen.toLowerCase()) clearWarRoomSessionCache();
         return chosen;
@@ -554,7 +554,7 @@ export function useWallet(): WalletHook {
         }
         return;
       }
-      const chosen = await chooseAccount(selectedWallet.provider, normalizeAccounts(await selectedWallet.provider.request({ method: "eth_accounts" })));
+      const chosen = await chooseAccount(selectedWallet.provider, normalizeEvmAccounts(await selectedWallet.provider.request({ method: "eth_accounts" })));
       if (!chosen) return;
       const connected = connectedEvmRef.current;
       if (
@@ -610,7 +610,7 @@ export function useWallet(): WalletHook {
     if (typeof window === "undefined") throw new Error("No browser environment detected.");
     if (!wallet) {
       dispatchOpenWalletModal();
-      return;
+      return "";
     }
 
     requestEip6963Providers();
@@ -633,12 +633,13 @@ export function useWallet(): WalletHook {
       } catch (error) {
         if (isRejected(error)) throw error;
       }
-      const chosen = await chooseAccount(selectedProvider, normalizeAccounts(await selectedProvider.request({ method: "eth_requestAccounts" })));
+      const chosen = await chooseAccount(selectedProvider, normalizeEvmAccounts(await selectedProvider.request({ method: "eth_requestAccounts" })));
       if (!chosen) throw new Error("No wallet account returned.");
       // CRITICAL: block Ethereum / non-BNB. Switch if possible (user interaction expected here).
       await ensureBnbChainOnly(selectedProvider);
       bindListeners(selectedProvider);
       await applyProviderState(selectedProvider, chosen, selectedWallet.id);
+      return chosen;
     } catch (error) {
       throw new Error(getErrorMessage(error));
     } finally {
