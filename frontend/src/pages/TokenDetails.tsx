@@ -76,6 +76,89 @@ function hasUsefulImage(value: unknown): boolean {
   return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
 }
 
+function isLikelyMetadataUri(value: unknown): boolean {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return false;
+  return raw.includes("/api/token-metadata/") || raw.includes("token-metadata") || raw.endsWith(".json");
+}
+
+function extractMetadataImage(metadata: any): string | undefined {
+  return resolveImageUri(
+    metadata?.image ||
+      metadata?.image_url ||
+      metadata?.imageUrl ||
+      metadata?.logo_uri ||
+      metadata?.logoUri ||
+      metadata?.logoURI ||
+      metadata?.metadata?.image ||
+      metadata?.metadata?.image_url ||
+      metadata?.tokenMetadata?.image ||
+      metadata?.tokenMetadata?.image_url,
+  );
+}
+
+async function fetchImageFromMetadataUri(uri: string): Promise<string | undefined> {
+  const raw = String(uri ?? "").trim();
+  if (!raw) return undefined;
+
+  try {
+    const res = raw.startsWith("/api/") ? await apiFetch(raw, { cache: "no-store" }) : await fetch(raw, { cache: "no-store" });
+    const metadata = await res.json().catch(() => null);
+    if (!res.ok) return undefined;
+    return extractMetadataImage(metadata);
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchRegisteredImage(chainId: number, address?: string | null): Promise<string | undefined> {
+  const raw = String(address ?? "").trim();
+  if (!ethers.isAddress(raw)) return undefined;
+
+  try {
+    const metadataRes = await apiFetch(`/api/token-metadata/${chainId}/${raw}`, { cache: "no-store" });
+    const metadata = await metadataRes.json().catch(() => null);
+    if (!metadataRes.ok) return undefined;
+    return extractMetadataImage(metadata);
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveCampaignDisplayImage(campaign: CampaignInfo, chainId: number, fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>): Promise<string | undefined> {
+  const candidates = [campaign.logoURI, campaign.metadataURI].map((value) => String(value ?? "").trim()).filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (isLikelyMetadataUri(candidate)) {
+      const metadataImage = await fetchImageFromMetadataUri(candidate);
+      if (hasUsefulImage(metadataImage)) return metadataImage;
+      continue;
+    }
+
+    const resolved = resolveImageUri(candidate);
+    if (hasUsefulImage(resolved)) return resolved;
+  }
+
+  for (const address of [campaign.campaign, campaign.token]) {
+    const registeredImage = await fetchRegisteredImage(chainId, address);
+    if (hasUsefulImage(registeredImage)) return registeredImage;
+  }
+
+  try {
+    const contractLogo = String((await fetchCampaignLogoURI(campaign.campaign)) ?? "").trim();
+    if (isLikelyMetadataUri(contractLogo)) {
+      const metadataImage = await fetchImageFromMetadataUri(contractLogo);
+      if (hasUsefulImage(metadataImage)) return metadataImage;
+    }
+    const resolved = resolveImageUri(contractLogo);
+    if (hasUsefulImage(resolved)) return resolved;
+  } catch {
+    // Best-effort only.
+  }
+
+  return undefined;
+}
+
 async function safeContractRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
   try {
     const value = await read();
@@ -447,29 +530,13 @@ const TokenDetails = () => {
         }
 
 let displayMatch = match;
-if (!hasUsefulImage(displayMatch.logoURI)) {
-  const metadataAddress = displayMatch.token || displayMatch.campaign;
-  try {
-    const metadataRes = await apiFetch(`/api/token-metadata/${chainIdForStorage}/${metadataAddress}`, { cache: "no-store" });
-    const metadata = await metadataRes.json().catch(() => null);
-    const metadataImage = resolveImageUri(metadata?.image || metadata?.image_url || metadata?.logo_uri || metadata?.logoUri);
-    if (metadataRes.ok && hasUsefulImage(metadataImage)) {
-      displayMatch = { ...displayMatch, logoURI: metadataImage };
-    }
-  } catch {
-    // Best-effort image hydration; keep rendering the token page.
+try {
+  const displayImage = await resolveCampaignDisplayImage(displayMatch, chainIdForStorage, fetchCampaignLogoURI);
+  if (hasUsefulImage(displayImage)) {
+    displayMatch = { ...displayMatch, logoURI: displayImage };
   }
-}
-
-if (!hasUsefulImage(displayMatch.logoURI)) {
-  try {
-    const contractImage = resolveImageUri(await fetchCampaignLogoURI(displayMatch.campaign));
-    if (hasUsefulImage(contractImage)) {
-      displayMatch = { ...displayMatch, logoURI: contractImage };
-    }
-  } catch {
-    // Best-effort image hydration; keep rendering the token page.
-  }
+} catch {
+  // Best-effort image hydration; keep rendering the token page.
 }
 
 setCampaign(displayMatch);

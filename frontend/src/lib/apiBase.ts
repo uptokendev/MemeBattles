@@ -43,12 +43,12 @@ const REALTIME_INDEXER_API_PREFIXES = [
   "/api/recruiters",
   "/api/rewards",
   "/api/token/",
-  "/api/token-metadata",
   "/api/votes",
   "/api/vote_counts",
 ];
 
 const FRONTEND_API_PREFIXES = [
+  "/api/token-metadata",
   "/api/recruiters/signup",
   "/api/recruiter-auth-nonce",
   "/api/recruiter-auth-verify",
@@ -221,27 +221,6 @@ function buildPublicCompatibilityFallback(path: string, init?: RequestInit): Res
   if (url.pathname === "/api/rewards/wallet") {
     const walletAddress = normalizeWallet(url.searchParams.get("walletAddress"));
     return jsonResponse({ summary: emptyWalletRewardSummary(walletAddress) });
-  }
-
-  const tokenMetadataMatch = url.pathname.match(/^\/api\/token-metadata\/(\d+)\/(0x[a-fA-F0-9]{40})$/);
-  if (tokenMetadataMatch) {
-    const [, chainId, tokenAddress] = tokenMetadataMatch;
-    return jsonResponse(
-      {
-        chainId: Number(chainId),
-        tokenAddress: tokenAddress.toLowerCase(),
-        metadata: null,
-        tokenMetadata: null,
-        website: null,
-        xAccount: null,
-        xUrl: null,
-        telegram: null,
-        discord: null,
-        source: "client-compatibility",
-      },
-      200,
-      "token-metadata-compatibility",
-    );
   }
 
   return null;
