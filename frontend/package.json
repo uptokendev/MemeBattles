@@ -16,6 +16,7 @@
     "test:wallet-accounts": "node --test src/lib/walletAccountSelection.test.mjs",
     "test:railway-proxy": "node --test server/railwayProxy.test.mjs",
     "test:upload": "node --test api/upload.test.mjs",
+    "test:draft-create": "node --test api/dev-fix/drafts.test.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

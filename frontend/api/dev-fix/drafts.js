@@ -110,6 +110,26 @@ function defaultPromotion(draftId, now = new Date().toISOString()) {
   };
 }
 
+export function initialPromotionFromCreateInput(draftId, body, now = new Date().toISOString()) {
+  return {
+    draftId,
+    missionStatement: "",
+    roadmap: [],
+    launchStrategy: "",
+    telegramUrl: cleanUrl(body?.telegramUrl),
+    discordUrl: cleanUrl(body?.discordUrl),
+    xUrl: cleanUrl(body?.xUrl),
+    websiteUrl: cleanUrl(body?.websiteUrl),
+    docs: cleanStringArray(body?.docs, 8, 500),
+    creatorNote: "",
+    bannerUrl: "",
+    shareMessage: "",
+    publishedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function memoryStore() {
   if (!globalThis.__mwz_prepare_mode_store) {
     const now = new Date().toISOString();
@@ -398,9 +418,24 @@ export async function drafts(req, res) {
     );
 
     const draft = mapDraftRow(inserted.rows[0]);
-    await pool.query("insert into campaign_draft_promotion (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]).catch(() => {});
+    const initialPromotion = initialPromotionFromCreateInput(draft.id, body, now);
+    await pool.query(
+      `insert into campaign_draft_promotion
+         (draft_id, telegram_url, discord_url, x_url, website_url, docs)
+       values ($1, $2, $3, $4, $5, $6::jsonb)
+       on conflict (draft_id) do nothing`,
+      [
+        draft.id,
+        initialPromotion.telegramUrl,
+        initialPromotion.discordUrl,
+        initialPromotion.xUrl,
+        initialPromotion.websiteUrl,
+        JSON.stringify(initialPromotion.docs),
+      ],
+    );
     await pool.query("insert into campaign_draft_metrics (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]).catch(() => {});
-    return json(res, 201, { draft });
+    const bundle = await getDraftBundleById(draft.id, "", { bypassVisibility: true });
+    return json(res, 201, bundle || { draft, promotion: initialPromotion, popularity: popularityFromMetrics(ZERO) });
   }
 
   const store = memoryStore();
@@ -433,10 +468,11 @@ export async function drafts(req, res) {
     createdAt: now,
     updatedAt: now,
   };
+  const initialPromotion = initialPromotionFromCreateInput(draft.id, body, now);
   store.drafts.set(draft.id, draft);
-  store.promotions.set(draft.id, defaultPromotion(draft.id, now));
+  store.promotions.set(draft.id, initialPromotion);
   store.metrics.set(draft.id, { ...ZERO });
-  return json(res, 201, { draft });
+  return json(res, 201, { draft, promotion: initialPromotion, popularity: popularityFromMetrics(ZERO) });
 }
 
 export async function draftById(req, res) {

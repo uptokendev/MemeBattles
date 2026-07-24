@@ -8,7 +8,7 @@ import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { checkTickerAvailability, createCampaignDraft, saveDraftPromotion, type TickerAvailability } from "@/lib/draftApi";
+import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
 import { getActiveChainId, isAllowedChainId } from "@/lib/chainConfig";
@@ -19,7 +19,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
-const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
 
 function formatFileSize(bytes: number): string {
   const mb = bytes / (1024 * 1024);
@@ -39,15 +38,6 @@ function cacheDraftLogo(draftId: string, logoUrl: string) {
   if (typeof window === "undefined" || !draftId || !logoUrl) return;
   try {
     window.sessionStorage.setItem(`mwz:draft-logo:${draftId}`, logoUrl);
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function clearJustCreatedDraftCache(draftId: string) {
-  if (typeof window === "undefined" || !draftId) return;
-  try {
-    window.sessionStorage.removeItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`);
   } catch {
     // Ignore storage failures.
   }
@@ -256,7 +246,7 @@ const Create = () => {
           });
 
       const logoUrl = await uploadLogo();
-      const draft = await createCampaignDraft({
+      const created = await createCampaignDraft({
         auth: auth as any,
         chainId,
         creatorWallet,
@@ -269,40 +259,12 @@ const Create = () => {
         xUrl: formData.twitter || null,
         telegramUrl: formData.telegram || null,
         discordUrl: formData.discord || null,
+        docs: formData.otherLink ? [formData.otherLink] : [],
         otherUrl: formData.otherLink || null,
         visibility: "private",
-      } as any);
+      });
+      const draft = created.draft;
 
-      try {
-        const promotionAuth = isSolanaDraft
-          ? await signSolanaDraftAction({
-              walletAddress: creatorWallet,
-              chainId,
-              action: "save_promotion" as any,
-              draftId: draft.id,
-            })
-          : await signDraftAction({
-              signer: wallet.signer,
-              walletAddress: creatorWallet,
-              chainId,
-              action: "save_promotion" as any,
-              draftId: draft.id,
-            } as any);
-
-        await saveDraftPromotion(draft.id, {
-          auth: promotionAuth as any,
-          websiteUrl: formData.website || "",
-          xUrl: formData.twitter || "",
-          telegramUrl: formData.telegram || "",
-          discordUrl: formData.discord || "",
-          docs: formData.otherLink ? [formData.otherLink] : [],
-          visibility: "private",
-        });
-      } catch (promotionError) {
-        console.warn("[Create] Failed to seed promotion social links", promotionError);
-      }
-
-      clearJustCreatedDraftCache(draft.id);
       cacheDraftLogo(draft.id, logoUrl);
       toast.success("Draft saved. No gas spent.");
       navigate(`/drafts/${draft.id}/promotion`);

@@ -662,10 +662,13 @@ function emptyPopularity(): DraftPopularity {
   return { views: 0, follows: 0, comments: 0, reactions: 0, shares: 0, signedActions: 0, armedCount: 0, popularityPercentage: 0, heatLabel: "Cold", rankingScore: 0 };
 }
 
-function cacheJustCreatedDraft(draft: CampaignDraft) {
-  if (typeof window === "undefined" || !draft?.id) return;
+function cacheJustCreatedDraft(bundle: PrepareDraftBundle) {
+  if (typeof window === "undefined" || !bundle?.draft?.id) return;
   try {
-    window.sessionStorage.setItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draft.id}`, JSON.stringify({ draft, cachedAt: Date.now() }));
+    window.sessionStorage.setItem(
+      `${JUST_CREATED_DRAFT_CACHE_PREFIX}${bundle.draft.id}`,
+      JSON.stringify({ bundle, cachedAt: Date.now() }),
+    );
   } catch {}
 }
 
@@ -677,10 +680,10 @@ function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null 
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
     window.sessionStorage.removeItem(key);
-    const parsed = JSON.parse(raw) as { draft?: CampaignDraft; cachedAt?: number };
-    if (!parsed?.draft || parsed.draft.id !== draftId) return null;
+    const parsed = JSON.parse(raw) as { bundle?: PrepareDraftBundle; cachedAt?: number };
+    if (!parsed?.bundle?.draft || parsed.bundle.draft.id !== draftId) return null;
     if (!parsed.cachedAt || Date.now() - parsed.cachedAt > JUST_CREATED_DRAFT_CACHE_TTL_MS) return null;
-    return { draft: parsed.draft, promotion: emptyPromotion(draftId), popularity: emptyPopularity() };
+    return parsed.bundle;
   } catch {
     try {
       window.sessionStorage.removeItem(key);
@@ -700,6 +703,9 @@ export type CreateDraftInput = {
   logoUrl?: string | null;
   websiteUrl?: string | null;
   xUrl?: string | null;
+  telegramUrl?: string | null;
+  discordUrl?: string | null;
+  docs?: string[];
   otherUrl?: string | null;
   visibility?: DraftVisibility;
 };
@@ -734,7 +740,7 @@ export async function checkTickerAvailability(input: { ticker: string; chainId?:
   return parseJson(res) as Promise<TickerAvailability>;
 }
 
-export async function createCampaignDraft(input: CreateDraftInput): Promise<CampaignDraft> {
+export async function createCampaignDraft(input: CreateDraftInput): Promise<PrepareDraftBundle> {
   const res = await apiFetch("/api/drafts", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -742,8 +748,13 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
   });
   const json = await parseJson(res);
   const draft = json.draft as CampaignDraft;
-  cacheJustCreatedDraft(draft);
-  return draft;
+  const bundle: PrepareDraftBundle = {
+    draft,
+    promotion: (json.promotion as CampaignDraftPromotion | undefined) || emptyPromotion(draft.id),
+    popularity: (json.popularity as DraftPopularity | undefined) || emptyPopularity(),
+  };
+  cacheJustCreatedDraft(bundle);
+  return bundle;
 }
 
 export async function fetchPublicCampaignDrafts(input: { chainId?: number; limit?: number } = {}): Promise<CampaignDraft[]> {
