@@ -81,6 +81,7 @@ export async function ensureAuthNonceSchema() {
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS used_at timestamptz`);
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS expires_at timestamptz`);
   await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS nonce text`);
+  await pool.query(`ALTER TABLE public.auth_nonces ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
 }
 
 export async function ensureChatSchema() {
@@ -101,6 +102,11 @@ export async function ensureChatSchema() {
     )
   `);
 
+  await pool.query(`ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS display_name text`);
+  await pool.query(`ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS avatar_url text`);
+  await pool.query(`ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'trader'`);
+  await pool.query(`ALTER TABLE public.chat_sessions ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.chat_messages (
       id bigserial PRIMARY KEY,
@@ -116,6 +122,10 @@ export async function ensureChatSchema() {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS display_name text`);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS avatar_url text`);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'trader'`);
+  await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS client_nonce text`);
   await pool.query(`ALTER TABLE public.chat_messages ADD COLUMN IF NOT EXISTS is_hidden boolean NOT NULL DEFAULT false`);
 
 await pool.query(`

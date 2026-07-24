@@ -112,17 +112,52 @@ async function fetchImageFromMetadataUri(uri: string): Promise<string | undefine
 }
 
 async function fetchRegisteredImage(chainId: number, address?: string | null): Promise<string | undefined> {
+  const metadata = await fetchRegisteredMetadata(chainId, address);
+  return metadata ? extractMetadataImage(metadata) : undefined;
+}
+
+async function fetchRegisteredMetadata(chainId: number, address?: string | null): Promise<any | null> {
   const raw = String(address ?? "").trim();
-  if (!ethers.isAddress(raw)) return undefined;
+  if (!ethers.isAddress(raw)) return null;
 
   try {
     const metadataRes = await apiFetch(`/api/token-metadata/${chainId}/${raw}`, { cache: "no-store" });
     const metadata = await metadataRes.json().catch(() => null);
-    if (!metadataRes.ok) return undefined;
-    return extractMetadataImage(metadata);
+    if (!metadataRes.ok) return null;
+    return metadata;
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+function normalizeMetadataSocials(metadata: any): Partial<CampaignInfo> {
+  const props = metadata?.properties || {};
+  return {
+    website: String(props.website || metadata?.website || "").trim(),
+    xAccount: String(props.x || metadata?.xAccount || metadata?.xUrl || "").trim(),
+    telegram: String(props.telegram || metadata?.telegram || "").trim(),
+    discord: String(props.discord || metadata?.discord || "").trim(),
+    extraLink: String(metadata?.external_url || "").trim(),
+  };
+}
+
+async function hydrateCampaignMetadata(campaign: CampaignInfo, chainId: number): Promise<CampaignInfo> {
+  for (const address of [campaign.campaign, campaign.token]) {
+    const metadata = await fetchRegisteredMetadata(chainId, address);
+    if (!metadata) continue;
+    const socials = normalizeMetadataSocials(metadata);
+    const image = extractMetadataImage(metadata);
+    return {
+      ...campaign,
+      logoURI: hasUsefulImage(campaign.logoURI) ? campaign.logoURI : image || campaign.logoURI,
+      website: campaign.website || socials.website || "",
+      xAccount: campaign.xAccount || socials.xAccount || "",
+      telegram: campaign.telegram || socials.telegram || "",
+      discord: campaign.discord || socials.discord || "",
+      extraLink: campaign.extraLink || socials.extraLink || "",
+    };
+  }
+  return campaign;
 }
 
 async function resolveCampaignDisplayImage(campaign: CampaignInfo, chainId: number, fetchCampaignLogoURI: (campaignAddress: string) => Promise<string | null>): Promise<string | undefined> {
@@ -247,6 +282,37 @@ function formatTimeAgo(ts?: number | null): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
   return `${Math.floor(diff / 604800)}w ago`;
+}
+
+function formatDeployedDate(ts?: number | null, fallback?: string | null): string {
+  const raw = Number(ts ?? 0);
+  const seconds = raw > 1e11 ? Math.floor(raw / 1000) : Math.floor(raw);
+
+  // Guard against bad indexer defaults like unix epoch / tiny placeholder timestamps.
+  if (Number.isFinite(seconds) && seconds > 1_577_836_800) {
+    const absolute = new Date(seconds * 1000).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+    const relative = formatTimeAgo(seconds);
+    return relative && relative !== "—" ? `${absolute} · ${relative}` : absolute;
+  }
+
+  const timeAgo = String(fallback ?? "").trim();
+  if (!timeAgo) return "—";
+  return timeAgo.includes("ago") ? timeAgo : `${timeAgo} ago`;
+}
+
+function normalizeSocialUrl(raw: string | null | undefined, kind: "x" | "telegram" | "discord" | "website" | "other"): string {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  const cleaned = value.replace(/^@+/, "").replace(/^\/+/, "");
+  if (kind === "x") return `https://x.com/${cleaned.replace(/^(twitter\.com|x\.com)\//i, "").split("/")[0]}`;
+  if (kind === "telegram") return `https://t.me/${cleaned.replace(/^(t\.me|telegram\.me|telegram\.dog)\//i, "").split("/")[0]}`;
+  if (kind === "discord") return cleaned.toLowerCase().includes("discord") ? `https://${cleaned}` : value;
+  return `https://${cleaned}`;
 }
 
 function readStoredString<T extends string>(key: string, fallback: T): T {
@@ -530,6 +596,7 @@ const TokenDetails = () => {
         }
 
 let displayMatch = match;
+displayMatch = await hydrateCampaignMetadata(displayMatch, chainIdForStorage);
 try {
   const displayImage = await resolveCampaignDisplayImage(displayMatch, chainIdForStorage, fetchCampaignLogoURI);
   if (hasUsefulImage(displayImage)) {
@@ -863,6 +930,9 @@ const toSeconds = (ts: number): number => {
       name,
       hasWebsite: Boolean(campaign?.website && campaign.website.length > 0),
       hasTwitter: Boolean(campaign?.xAccount && campaign.xAccount.length > 0),
+      hasTelegram: Boolean(campaign?.telegram && campaign.telegram.length > 0),
+      hasDiscord: Boolean(campaign?.discord && campaign.discord.length > 0),
+      hasOtherLink: Boolean(campaign?.extraLink && campaign.extraLink.length > 0),
 
       // Unified headline stats
       marketCap:
@@ -1755,6 +1825,49 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                   </Button>
                 )}
 
+                {tokenData.hasTelegram && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
+                    onClick={() => {
+                      const url = normalizeSocialUrl(campaign?.telegram, "telegram");
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    TG
+                  </Button>
+                )}
+
+                {tokenData.hasDiscord && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
+                    onClick={() => {
+                      const url = normalizeSocialUrl(campaign?.discord, "discord");
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    DC
+                  </Button>
+                )}
+
+                {tokenData.hasOtherLink && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
+                    onClick={() => {
+                      const url = normalizeSocialUrl(campaign?.extraLink, "other");
+                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    <ExternalLink className="mr-1 h-3 w-3" />
+                    Link
+                  </Button>
+                )}
+
                 {campaignAddr ? (
                   <>
                     <Button
@@ -1988,7 +2101,7 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                         <div className="rounded-2xl border border-border bg-muted/20 p-3">
                           <p className="text-xs text-muted-foreground">Deployed</p>
                           <p className="mt-1 text-sm font-retro text-foreground">
-                            {campaign?.createdAt ? formatTimeAgo(campaign.createdAt) : campaign?.timeAgo ? `${campaign.timeAgo}${String(campaign.timeAgo).includes("ago") ? "" : " ago"}` : "—"}
+                            {formatDeployedDate(campaign?.createdAt, campaign?.timeAgo)}
                           </p>
                         </div>
                         <div className="rounded-2xl border border-border bg-muted/20 p-3">

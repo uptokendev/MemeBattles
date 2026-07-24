@@ -325,9 +325,6 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const deferredFallback = deferCompatibilityFallback(path);
   if (compatibilityFallback && !deferredFallback) return compatibilityFallback;
 
-  const preemptiveFallback = await buildTokenDetailsCampaignFallback(path);
-  if (preemptiveFallback) return preemptiveFallback;
-
   const url = apiUrl(path);
 
   try {
