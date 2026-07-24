@@ -76,6 +76,50 @@ function hasUsefulImage(value: unknown): boolean {
   return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
 }
 
+async function safeContractRead<T>(read: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    const value = await read();
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function buildCampaignFromAddress(
+  campaignAddress: string,
+  provider: ethers.AbstractProvider,
+  chainId: number,
+): Promise<CampaignInfo | null> {
+  const campaignAddr = String(campaignAddress ?? "").trim().toLowerCase();
+  if (!ethers.isAddress(campaignAddr)) return null;
+
+  const campaign = new Contract(campaignAddr, CAMPAIGN_ABI, provider) as any;
+  const tokenAddress = String(await safeContractRead(() => campaign.token(), "") || "").toLowerCase();
+  if (!ethers.isAddress(tokenAddress)) return null;
+
+  const token = new Contract(tokenAddress, TOKEN_ABI, provider) as any;
+  const [name, symbol, creator, logo] = await Promise.all([
+    safeContractRead(() => token.name(), "Unknown"),
+    safeContractRead(() => token.symbol(), ""),
+    safeContractRead(() => campaign.owner(), ""),
+    safeContractRead(() => campaign.logoURI(), ""),
+  ]);
+
+  return {
+    id: 0,
+    campaign: campaignAddr,
+    token: tokenAddress,
+    creator: ethers.isAddress(String(creator)) ? String(creator).toLowerCase() : "",
+    name: String(name || "Unknown"),
+    symbol: String(symbol || ""),
+    logoURI: resolveImageUri(String(logo || "")) || "/placeholder.svg",
+    metadataURI: `/api/token-metadata/${chainId}/${tokenAddress}`,
+    xAccount: "",
+    website: "",
+    extraLink: "",
+  };
+}
+
 // This is the UI table row shape (NOT the on-chain CurveTrade shape)
 type TxRow = {
   id: string;
@@ -378,25 +422,24 @@ const TokenDetails = () => {
         setLoading(true);
         setError(null);
 
-        const campaigns = await fetchCampaigns();
-
-        if (!campaigns || campaigns.length === 0) {
-          setError("No token data");
-          setCampaign(null);
-          setMetrics(null);
-          setSummary(null);
-          return;
-        }
+        const campaigns = await fetchCampaigns().catch((campaignError) => {
+          console.warn("[TokenDetails] campaign feed failed; trying direct campaign load", campaignError);
+          return [] as CampaignInfo[];
+        });
 
         const param = campaignAddress.trim();
         const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
 
-        const match = isAddress
+        let match = isAddress
           ? campaigns.find((c) => (c.campaign ?? "").toLowerCase() === param.toLowerCase())
           : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
 
+        if (!match && isAddress) {
+          match = await buildCampaignFromAddress(param, readProvider, chainIdForStorage);
+        }
+
         if (!match) {
-          setError("Token not found");
+          setError(campaigns.length === 0 && !isAddress ? "No token data" : "Token not found");
           setCampaign(null);
           setMetrics(null);
           setSummary(null);
@@ -463,7 +506,7 @@ try {
     };
 
     load();
-  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary]);
+  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary, readProvider]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
