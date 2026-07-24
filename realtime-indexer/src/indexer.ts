@@ -297,7 +297,8 @@ async function upsertCampaign(
   name: string,
   symbol: string,
   createdBlock: number,
-  createdAtChain: Date | null = null
+  createdAtChain: Date | null = null,
+  logoURI: string | null = null
 ) {
   const normalizedCampaign = campaign.toLowerCase();
   const existed = await pool.query(
@@ -310,15 +311,16 @@ async function upsertCampaign(
   // Current schema expects creator_address to be NOT NULL.
   await pool.query(
     `insert into public.campaigns(
-        chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,is_active
+        chain_id,factory_address,campaign_address,token_address,creator_address,name,symbol,created_block,created_at_chain,logo_uri,is_active
      )
-     values($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
      on conflict (chain_id,campaign_address) do update
        set token_address=coalesce(excluded.token_address, public.campaigns.token_address),
            factory_address=coalesce(public.campaigns.factory_address, excluded.factory_address),
            creator_address=coalesce(excluded.creator_address, public.campaigns.creator_address),
            name=coalesce(excluded.name, public.campaigns.name),
            symbol=coalesce(excluded.symbol, public.campaigns.symbol),
+           logo_uri=coalesce(nullif(public.campaigns.logo_uri, ''), nullif(excluded.logo_uri, '')),
            created_block=(
              case
                -- Treat 0 as "unknown" (older migrations used DEFAULT 0).
@@ -344,7 +346,8 @@ async function upsertCampaign(
       name,
       symbol,
       createdBlock,
-      createdAtChain
+      createdAtChain,
+      logoURI
     ]
   );
 
@@ -767,7 +770,8 @@ async function scanFactoryRange(
         name,
         symbol,
         log.blockNumber,
-        blockTime
+        blockTime,
+        null
       );
 
       // Realtime: announce newly created campaigns so Home "New" can insert instantly.
@@ -1055,21 +1059,22 @@ async function syncFactoryCampaignsByCall(
     if (!campaign || campaign === ethers.ZeroAddress) continue;
 
     const key = campaign.toLowerCase();
-    if (known.has(key)) continue;
 
     const token = String(info?.token ?? info?.[1] ?? "").trim();
     const creator = String(info?.creator ?? info?.[2] ?? "").trim();
     const name = String(info?.name ?? info?.[3] ?? "").trim();
     const symbol = String(info?.symbol ?? info?.[4] ?? "").trim();
+    const logoURI = String(info?.logoURI ?? info?.logoUri ?? info?.[5] ?? "").trim();
 
     const createdAtRaw = info?.createdAt ?? info?.[9];
     const createdAtSec = createdAtRaw !== undefined && createdAtRaw !== null ? Number(createdAtRaw) : 0;
     const createdAt = createdAtSec > 0 ? new Date(createdAtSec * 1000) : null;
 
-    await upsertCampaign(chain.chainId, chain.factoryAddress ?? null, campaign, token, creator, name, symbol, 0, createdAt);
+    await upsertCampaign(chain.chainId, chain.factoryAddress ?? null, campaign, token, creator, name, symbol, 0, createdAt, logoURI || null);
+    const wasKnown = known.has(key);
     known.add(key);
 
-    console.log("Discovered missing campaign via factory registry", {
+    console.log(wasKnown ? "Refreshed campaign via factory registry" : "Discovered missing campaign via factory registry", {
       chainId: chain.chainId,
       id: i,
       campaign: key

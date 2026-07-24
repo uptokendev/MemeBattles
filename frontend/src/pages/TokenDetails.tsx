@@ -34,6 +34,7 @@ import LaunchCampaignArtifact from "@/abi/LaunchCampaign.json";
 import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
+import { apiFetch } from "@/lib/apiBase";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -68,6 +69,11 @@ function describeTradeError(error: any): string {
     }
   }
   return error?.shortMessage || error?.reason || error?.message || "Transaction failed.";
+}
+
+function hasUsefulImage(value: unknown): boolean {
+  const raw = String(value ?? "").trim();
+  return Boolean(raw && raw !== "/placeholder.svg" && raw !== "-");
 }
 
 // This is the UI table row shape (NOT the on-chain CurveTrade shape)
@@ -397,12 +403,27 @@ const TokenDetails = () => {
           return;
         }
 
-setCampaign(match);
+let displayMatch = match;
+if (!hasUsefulImage(displayMatch.logoURI)) {
+  const metadataAddress = displayMatch.token || displayMatch.campaign;
+  try {
+    const metadataRes = await apiFetch(`/api/token-metadata/${chainIdForStorage}/${metadataAddress}`, { cache: "no-store" });
+    const metadata = await metadataRes.json().catch(() => null);
+    const metadataImage = resolveImageUri(metadata?.image || metadata?.image_url || metadata?.logo_uri || metadata?.logoUri);
+    if (metadataRes.ok && hasUsefulImage(metadataImage)) {
+      displayMatch = { ...displayMatch, logoURI: metadataImage };
+    }
+  } catch {
+    // Best-effort image hydration; keep rendering the token page.
+  }
+}
+
+setCampaign(displayMatch);
 
 // Unified token stats + metrics are best-effort. The page should still render
 // from Railway/realtime data when public RPC reads fail.
 try {
-  const s = await fetchCampaignSummary(match);
+  const s = await fetchCampaignSummary(displayMatch);
   setSummary(s);
   setMetrics(s.metrics ?? null);
 } catch (summaryErr) {
@@ -412,7 +433,7 @@ try {
   );
 
   setSummary({
-    campaign: match,
+    campaign: displayMatch,
     metrics: null,
     stats: {
       holders: "—",
@@ -431,7 +452,7 @@ try {
     };
 
     load();
-  }, [campaignAddress, fetchCampaigns, fetchCampaignSummary]);
+  }, [campaignAddress, chainIdForStorage, fetchCampaigns, fetchCampaignSummary]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
