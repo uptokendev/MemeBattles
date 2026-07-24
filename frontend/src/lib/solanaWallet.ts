@@ -312,7 +312,8 @@ async function fetchNonce(chainId: number, walletAddress: string) {
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok || !json?.nonce) {
-    throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+    const detail = String(json?.message || json?.error || `Request failed (${res.status})`);
+    throw new Error(`Solana nonce request failed: ${detail}`);
   }
 
   return String(json.nonce);

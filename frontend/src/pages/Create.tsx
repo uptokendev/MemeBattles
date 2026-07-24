@@ -309,12 +309,7 @@ const Create = () => {
     } catch (error: any) {
       console.error(error);
       const msg = error?.message || "Failed to create draft";
-      // If it's the server/nonce error for Solana, give guidance per branch rules (no API changes on staging).
-      if (msg.includes("Server error") || msg.includes("nonce") || msg.includes("Could not create Solana auth nonce")) {
-        toast.error("Failed to sign with Solana (nonce from server). The dev backend may not support Solana auth yet — ensure the real dev branch (not this frontend staging) has the nonce/normalize fixes deployed to Railway.");
-      } else {
-        toast.error(msg);
-      }
+      toast.error(msg);
     } finally {
       setIsDrafting(false);
     }

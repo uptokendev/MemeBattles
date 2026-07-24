@@ -95,20 +95,33 @@ function normalizeProxyPath(req, { prefixApiWhenMissing = false } = {}) {
   return path;
 }
 
-function shouldProxyToRailway(path) {
-  let pathname = path;
+function proxyPathname(path) {
   try {
-    pathname = new URL(path, "http://localhost").pathname;
+    return new URL(path, "http://localhost").pathname;
   } catch {
-    pathname = String(path || "").split("?")[0] || "/";
+    return String(path || "").split("?")[0] || "/";
   }
+}
+
+export function shouldHandleLocally(path) {
+  const pathname = proxyPathname(path);
+
+  // These routes are owned by the frontend API gateway. In particular, the
+  // token indexer does not have the Solana-aware nonce storage used by drafts.
+  return (
+    /\/upload(?:$|\/)/.test(pathname) ||
+    pathname === "/api/auth/nonce" ||
+    /^\/api\/drafts(?:\/|$)/.test(pathname) ||
+    pathname === "/api/campaigns" ||
+    pathname === "/api/featured"
+  );
+}
+
+function shouldProxyToRailway(path) {
+  const pathname = proxyPathname(path);
 
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
-  if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
-  if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
-  if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
-  if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
-  if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
+  if (shouldHandleLocally(pathname)) return false;
 
   return RAILWAY_PATH_PREFIXES.some((prefix) => {
     if (prefix.endsWith("/")) return pathname.startsWith(prefix);
@@ -140,6 +153,8 @@ export function createRailwayProxyMiddleware(options = {}) {
     if (!railwayProxyEnabled()) return next();
 
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
+    if (shouldHandleLocally(path)) return next();
+
     const isDevIP = isDevAllowedIP(req);
     if (!isDevIP && !shouldProxyToRailway(path)) return next();
 
