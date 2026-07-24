@@ -4,7 +4,7 @@ import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
-import { runIndexerOnce, runRepairOnce } from "./indexer.js";
+import { runDiscoveryOnce, runIndexerOnce, runRepairOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
@@ -387,6 +387,14 @@ app.get("/api/indexer/status", wrap(async (req, res) => {
     totals: totals.rows[0] || null,
     cursors: cursorRows.rows,
     campaign: campaign ? (campaignRows?.rows?.[0] || null) : null,
+    runtime: {
+      running,
+      runningForMs: running && runningStartedAt ? Date.now() - runningStartedAt : null,
+      staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
+      lastIndexerRunAt: lastIndexerRunAt ? new Date(lastIndexerRunAt).toISOString() : null,
+      lastIndexerErrorAt: lastIndexerErrorAt ? new Date(lastIndexerErrorAt).toISOString() : null,
+      lastIndexerErrorMsg,
+    },
   });
 }));
 
@@ -394,11 +402,11 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
 
   const mode = String(req.query.mode || req.body?.mode || "normal").toLowerCase();
-  if (mode !== "normal" && mode !== "repair") {
-    return res.status(400).json({ ok: false, error: "mode must be normal or repair" });
+  if (mode !== "normal" && mode !== "repair" && mode !== "discover") {
+    return res.status(400).json({ ok: false, error: "mode must be normal, repair, or discover" });
   }
 
-  const result = await runIndexerJob(mode as "normal" | "repair", "manual");
+  const result = await runIndexerJob(mode as "normal" | "repair" | "discover", "manual");
   const status = result.ok ? 200 : result.skipped ? 409 : 500;
   res.status(status).json(result);
 }));
@@ -2247,18 +2255,34 @@ startTelemetryReporter(async () => {
 // Indexer loop
 // NOTE: Keep this conservative for public RPCs. We also avoid overlap.
 let running = false;
+let runningStartedAt = 0;
 const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 
-async function runIndexerJob(mode: "normal" | "repair", trigger: "loop" | "manual") {
-  if (running) {
-    return { ok: false, skipped: true, mode, trigger, error: "indexer already running" };
+async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "loop" | "manual") {
+  const allowConcurrentDiscovery = mode === "discover";
+  if (running && !allowConcurrentDiscovery) {
+    const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
+    return {
+      ok: false,
+      skipped: true,
+      mode,
+      trigger,
+      runningForMs,
+      staleAfterMs: ENV.INDEXER_STALE_AFTER_MS,
+      error: "indexer already running"
+    };
   }
 
   const startedAt = Date.now();
-  running = true;
+  if (!allowConcurrentDiscovery) {
+    running = true;
+    runningStartedAt = startedAt;
+  }
   try {
     lastIndexerRunAt = startedAt;
-    if (mode === "repair") {
+    if (mode === "discover") {
+      await runDiscoveryOnce();
+    } else if (mode === "repair") {
       await runRepairOnce();
     } else {
       await runIndexerOnce();
@@ -2270,7 +2294,10 @@ async function runIndexerJob(mode: "normal" | "repair", trigger: "loop" | "manua
     lastIndexerErrorMsg = String(e?.message || e);
     return { ok: false, skipped: false, mode, trigger, durationMs: Date.now() - startedAt, error: lastIndexerErrorMsg };
   } finally {
-    running = false;
+    if (!allowConcurrentDiscovery) {
+      running = false;
+      runningStartedAt = 0;
+    }
   }
 }
 

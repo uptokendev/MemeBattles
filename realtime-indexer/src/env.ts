@@ -59,6 +59,7 @@ export const ENV = {
   // Poll interval for the always-on indexer loop in server.ts
   // NOTE: Testnet UX benefits from lower latency; tune up for mainnet.
   INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 5000),
+  INDEXER_STALE_AFTER_MS: Number(process.env.INDEXER_STALE_AFTER_MS || 120000),
 
   // Lower default confirmations for faster UI updates (especially on testnet).
   CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),

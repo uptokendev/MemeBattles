@@ -1299,7 +1299,8 @@ export async function runIndexerOnce() {
   await runIndexerCore({
     mode: "normal",
     lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
-    rewindBlocks: 0
+    rewindBlocks: 0,
+    scope: "full"
   });
 }
 
@@ -1308,11 +1309,25 @@ export async function runRepairOnce() {
   await runIndexerCore({
     mode: "repair",
     lookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
-    rewindBlocks: ENV.REPAIR_REWIND_BLOCKS
+    rewindBlocks: ENV.REPAIR_REWIND_BLOCKS,
+    scope: "full"
   });
 }
 
-async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number }) {
+// Lightweight operator recovery: refresh factory-created campaigns without
+// waiting behind expensive per-campaign log scans. This is safe to run when the
+// full scanner is wedged on an RPC range because it only performs factory calls
+// and a bounded factory event scan.
+export async function runDiscoveryOnce() {
+  await runIndexerCore({
+    mode: "normal",
+    lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
+    rewindBlocks: 0,
+    scope: "factory"
+  });
+}
+
+async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: "full" | "factory" }) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
@@ -1385,6 +1400,10 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
       await withProviderRetry((p) => syncFactoryCampaignsByCall(p, chain));
     } catch (e) {
       console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
+    }
+
+    if (opts.scope === "factory") {
+      continue;
     }
 
     // ---------------- VoteTreasury scan ----------------
