@@ -1417,7 +1417,7 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
         const startHint = chain.voteTreasuryStartBlock || 0;
         const from = opts.mode === "repair"
           ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : (state > 0 ? state : (startHint > 0 ? startHint : windowStart));
+          : Math.max(windowStart, state > 0 ? state : (startHint > 0 ? startHint : windowStart));
 
         await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, from, target));
       }
@@ -1448,11 +1448,14 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
           ? c.createdBlock
           : (chain.factoryStartBlock || 0);
 
-        // In normal mode, campaign scans should start from their cursor state.
-        // In repair mode, rewind the cursor slightly but never earlier than windowStart.
+        // In normal mode, never let stale per-campaign cursors replay months of
+        // logs. A deployment that points the indexer at a newer factory may
+        // still have old campaign cursors in the shared DB; clamping to the
+        // rolling window keeps the always-on loop responsive. Use repair mode
+        // for intentional bounded backfills.
         const from = opts.mode === "repair"
           ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : (state > 0 ? state : (campaignStart > 0 ? campaignStart : windowStart));
+          : Math.max(windowStart, state > 0 ? state : (campaignStart > 0 ? campaignStart : windowStart));
 
         await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, target));
       } catch (e) {
