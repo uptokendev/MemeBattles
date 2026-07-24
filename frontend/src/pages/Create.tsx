@@ -8,6 +8,7 @@ import { useTokenForm } from "@/hooks/useTokenForm";
 import { tokenSchema, TOKEN_VALIDATION_LIMITS } from "@/constants/validation";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
+import { ConnectWalletModal } from "@/components/wallet/ConnectWalletModal";
 import { checkTickerAvailability, createCampaignDraft, type TickerAvailability } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
 import { apiFetch } from "@/lib/apiBase";
@@ -15,7 +16,7 @@ import { getActiveChainId, isAllowedChainId } from "@/lib/chainConfig";
 import { SOLANA_MAINNET_CHAIN_ID } from "@/lib/draftChains";
 import { signSolanaDraftAction, getStoredSolanaWallet } from "@/lib/solanaWallet";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -69,6 +70,9 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [resumeDraftAfterConnect, setResumeDraftAfterConnect] = useState(false);
+  const saveDraftButtonRef = useRef<HTMLButtonElement | null>(null);
   const isSolanaDraft = !!solanaAccount;
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
@@ -140,7 +144,7 @@ const Create = () => {
     return true;
   };
 
-  const validateCoreForm = () => {
+  const validateCoreForm = ({ requireWallet = true }: { requireWallet?: boolean } = {}) => {
     if (formData.category === "project") {
       toast.error("Project tokens coming soon!");
       return false;
@@ -175,6 +179,8 @@ const Create = () => {
       toast.error(`Token image is too large (${formatFileSize(formData.image.size)}). Please upload an image under 5 MB.`);
       return false;
     }
+
+    if (!requireWallet) return true;
 
     // Support pure-Solana (Phantom) or EVM flows transparently.
     // activeCreatorWallet already encodes the preference (solanaAccount wins when present).
@@ -227,6 +233,12 @@ const Create = () => {
   };
 
   const handleCreateDraft = async () => {
+    if (!activeCreatorWallet) {
+      if (!validateCoreForm({ requireWallet: false })) return;
+      setWalletModalOpen(true);
+      return;
+    }
+
     if (!validateCoreForm()) return;
     setIsDrafting(true);
 
@@ -285,7 +297,19 @@ const Create = () => {
   const isProjectDisabled = formData.category === "project";
   const tickerUnavailableOrUnknown = Boolean(normalizedTicker && !tickerConfirmedAvailable);
   const missingWallet = isSolanaDraft ? !solanaAccount : !wallet.account;
-  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown || missingWallet;
+  const walletReady = Boolean(solanaAccount || (wallet.account && wallet.signer));
+  const isDraftDisabled = isProjectDisabled || isDrafting || checkingTicker || tickerUnavailableOrUnknown;
+
+  useEffect(() => {
+    if (!resumeDraftAfterConnect || !walletReady) return;
+
+    const timer = window.setTimeout(() => {
+      setResumeDraftAfterConnect(false);
+      saveDraftButtonRef.current?.click();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [resumeDraftAfterConnect, walletReady]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full max-w-[96rem] flex-col px-2 py-3 md:h-[calc(100dvh-9rem)] md:min-h-0 md:overflow-hidden md:px-3 md:py-2 lg:px-4">
@@ -368,8 +392,8 @@ const Create = () => {
               <button type="button" onClick={() => setCategory("meme")} className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "meme" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}>
                 Meme
               </button>
-              <button type="button" onClick={() => setCategory("project")} className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "project" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}>
-                Project
+              <button type="button" disabled aria-disabled="true" className="cursor-not-allowed rounded-lg border border-border bg-muted px-4 py-2.5 font-retro text-sm text-muted-foreground opacity-55">
+                Projects (coming soon)
               </button>
             </div>
           </div>
@@ -413,9 +437,9 @@ const Create = () => {
                 Save the coin as a draft, reserve the ticker, and open the promotion setup page. No gas is spent until you deploy from Prepare.
               </p>
             </div>
-            <Button type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
+            <Button ref={saveDraftButtonRef} type="button" onClick={handleCreateDraft} disabled={isDraftDisabled} className="mwz-button h-12 w-full font-retro text-base">
               <FileText className="mr-2 h-5 w-5" />
-              {isDrafting ? "Saving Draft..." : "Save Draft"}
+              {isDrafting ? "Saving Draft..." : missingWallet ? "Connect Wallet & Save Draft" : "Save Draft"}
             </Button>
           </div>
 
@@ -435,6 +459,11 @@ const Create = () => {
           
         </section>
       </form>
+      <ConnectWalletModal
+        open={walletModalOpen}
+        onOpenChange={setWalletModalOpen}
+        onConnected={() => setResumeDraftAfterConnect(true)}
+      />
     </div>
   );
 };
