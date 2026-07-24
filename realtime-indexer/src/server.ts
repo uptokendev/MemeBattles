@@ -412,8 +412,23 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
   if (campaign && !/^0x[a-f0-9]{40}$/.test(campaign)) {
     return res.status(400).json({ ok: false, error: "Invalid campaign address" });
   }
+  const fromBlock = Number(req.query.fromBlock || req.body?.fromBlock || 0);
+  const toBlock = Number(req.query.toBlock || req.body?.toBlock || 0);
+  if (fromBlock && (!Number.isFinite(fromBlock) || fromBlock < 0)) {
+    return res.status(400).json({ ok: false, error: "Invalid fromBlock" });
+  }
+  if (toBlock && (!Number.isFinite(toBlock) || toBlock < 0)) {
+    return res.status(400).json({ ok: false, error: "Invalid toBlock" });
+  }
+  if (fromBlock && toBlock && fromBlock > toBlock) {
+    return res.status(400).json({ ok: false, error: "fromBlock must be <= toBlock" });
+  }
 
-  const result = await runIndexerJob(mode as "normal" | "repair" | "discover" | "trades" | "campaigns", "manual", { campaignAddress: campaign || undefined });
+  const result = await runIndexerJob(mode as "normal" | "repair" | "discover" | "trades" | "campaigns", "manual", {
+    campaignAddress: campaign || undefined,
+    fromBlock: fromBlock || undefined,
+    toBlock: toBlock || undefined,
+  });
   const status = result.ok ? 200 : result.skipped ? 409 : 500;
   res.status(status).json(result);
 }));
@@ -2268,7 +2283,7 @@ const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 async function runIndexerJob(
   mode: "normal" | "repair" | "discover" | "trades" | "campaigns",
   trigger: "loop" | "manual",
-  opts: { campaignAddress?: string } = {}
+  opts: { campaignAddress?: string; fromBlock?: number; toBlock?: number } = {}
 ) {
   const allowConcurrentRecovery = mode === "discover" || mode === "trades" || mode === "campaigns";
   const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
@@ -2300,7 +2315,7 @@ async function runIndexerJob(
     if (mode === "discover") {
       await runDiscoveryOnce();
     } else if (mode === "trades" || mode === "campaigns") {
-      await runTradeRepairOnce(opts.campaignAddress);
+      await runTradeRepairOnce(opts.campaignAddress, { fromBlock: opts.fromBlock, toBlock: opts.toBlock });
     } else if (mode === "repair") {
       await runRepairOnce();
     } else {

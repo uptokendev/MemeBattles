@@ -1339,14 +1339,16 @@ export async function runRepairOnce() {
 // Focused recovery for TokenDetails chart/trade data. This skips factory/vote/
 // reward-route event scans and only repairs LaunchCampaign trade/finalize logs
 // for campaigns already discovered in the DB.
-export async function runTradeRepairOnce(campaignAddress?: string) {
+export async function runTradeRepairOnce(campaignAddress?: string, range?: { fromBlock?: number; toBlock?: number }) {
   await runIndexerCore({
     mode: "repair",
     lookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
     rewindBlocks: ENV.REPAIR_REWIND_BLOCKS,
     scope: "campaigns",
     campaignAddress,
-    forceCampaignStart: Boolean(campaignAddress)
+    forceCampaignStart: Boolean(campaignAddress),
+    fromBlock: range?.fromBlock,
+    toBlock: range?.toBlock
   });
 }
 
@@ -1372,6 +1374,8 @@ async function runIndexerCore(opts: {
   scope: IndexerScope;
   campaignAddress?: string;
   forceCampaignStart?: boolean;
+  fromBlock?: number;
+  toBlock?: number;
 }) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
@@ -1432,7 +1436,10 @@ async function runIndexerCore(opts: {
 
     // Compute scanning head for this pass
     const head = await withProviderRetry((p) => p.getBlockNumber());
-    const target = Math.max(0, head - ENV.CONFIRMATIONS);
+    const requestedToBlock = Number(opts.toBlock || 0);
+    const target = requestedToBlock > 0
+      ? Math.min(requestedToBlock, Math.max(0, head - ENV.CONFIRMATIONS))
+      : Math.max(0, head - ENV.CONFIRMATIONS);
     const deploymentFloor = Number(chain.factoryStartBlock || 0);
     if (deploymentFloor > 0 && target < deploymentFloor) {
       console.warn("Indexer RPC head is behind configured factory start block; skipping scans", {
@@ -1530,6 +1537,23 @@ async function runIndexerCore(opts: {
           // current deployment, replay this one campaign from its deterministic
           // launch floor rather than the small rolling repair window.
           from = Math.min(from, campaignStart);
+        }
+
+        const requestedFromBlock = Number(opts.fromBlock || 0);
+        if (requestedFromBlock > 0) {
+          from = Math.max(0, requestedFromBlock);
+        }
+
+        if (from > target) {
+          console.warn("Skipping campaign scan because fromBlock is after target", {
+            chainId: chain.chainId,
+            campaign: campaign.toLowerCase(),
+            from,
+            target,
+            requestedFromBlock: requestedFromBlock || null,
+            requestedToBlock: requestedToBlock || null
+          });
+          continue;
         }
 
         await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, target));
