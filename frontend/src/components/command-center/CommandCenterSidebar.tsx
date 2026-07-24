@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Coins, Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
+import { Gift, Home, Menu, Settings, Shield, Trophy, Users, X } from "lucide-react";
 
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 
 const menuItems = [
   { label: "Overview", path: "", icon: Home, end: true },
-  { label: "Coins", path: "coins", icon: Coins },
-  { label: "Recruiter", path: "recruiter", icon: Shield },
+  { label: "Recruiter", path: "recruiter", icon: Shield, requiresRecruiter: true },
   { label: "Squad", path: "squad", icon: Users, requiresSquad: true },
   { label: "Warzone Airdrops", path: "airdrops", icon: Gift },
   { label: "Rewards / Claims", path: "claims", icon: Trophy },
@@ -20,6 +19,11 @@ function hasSquadAccess(squadState?: string | null) {
   return !NO_SQUAD_STATES.has(String(squadState || "").trim().toLowerCase());
 }
 
+function hasRecruiterAccess(recruiterLinkState?: string | null) {
+  const state = String(recruiterLinkState || "").trim().toLowerCase();
+  return state.includes("self_recruiter") || state.includes("recruiter_wallet") || state.includes("recruiter_owner");
+}
+
 type CommandCenterSidebarProps = {
   basePath: string;
 };
@@ -29,8 +33,12 @@ export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
   const { attribution } = useCommandCenterData();
 
   const visibleMenuItems = useMemo(
-    () => menuItems.filter((item) => !item.requiresSquad || hasSquadAccess(attribution?.squadState)),
-    [attribution?.squadState],
+    () => menuItems.filter((item) => {
+      if (item.requiresSquad && !hasSquadAccess(attribution?.squadState)) return false;
+      if (item.requiresRecruiter && !hasRecruiterAccess(attribution?.recruiterLinkState)) return false;
+      return true;
+    }),
+    [attribution?.recruiterLinkState, attribution?.squadState],
   );
 
   return (

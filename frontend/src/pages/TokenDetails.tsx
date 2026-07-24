@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import twitterIcon from "@/assets/social/twitter.png";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import type { CampaignInfo, CampaignMetrics, CampaignSummary, CampaignActivity } from "@/lib/launchpadClient";
-import { getActiveChainId } from "@/lib/chainConfig";
+import { getActiveChainId, type SupportedChainId } from "@/lib/chainConfig";
 import { getReadProvider } from "@/lib/readProvider";
 import { useDexScreenerChart } from "@/hooks/useDexScreenerChart";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
@@ -35,6 +35,7 @@ import LaunchTokenArtifact from "@/abi/LaunchToken.json";
 import { fetchUserProfile, type UserProfile } from "@/lib/profileApi";
 import { resolveImageUri } from "@/lib/media";
 import { apiFetch } from "@/lib/apiBase";
+import { fetchOnChainCampaignPage } from "@/lib/onChainCampaignFeed";
 
 const CAMPAIGN_ABI = LaunchCampaignArtifact.abi as ethers.InterfaceAbi;
 const TOKEN_ABI = LaunchTokenArtifact.abi as ethers.InterfaceAbi;
@@ -137,7 +138,7 @@ function normalizeMetadataSocials(metadata: any): Partial<CampaignInfo> {
     xAccount: String(props.x || metadata?.xAccount || metadata?.xUrl || "").trim(),
     telegram: String(props.telegram || metadata?.telegram || "").trim(),
     discord: String(props.discord || metadata?.discord || "").trim(),
-    extraLink: String(metadata?.external_url || "").trim(),
+    extraLink: String(props.extraLink || props.extra_link || metadata?.extraLink || metadata?.extra_link || "").trim(),
   };
 }
 
@@ -157,6 +158,29 @@ async function hydrateCampaignMetadata(campaign: CampaignInfo, chainId: number):
       extraLink: campaign.extraLink || socials.extraLink || "",
     };
   }
+  return campaign;
+}
+
+async function hydrateCampaignCreatedAtFromFactory(campaign: CampaignInfo, chainId: SupportedChainId): Promise<CampaignInfo> {
+  if (campaign.createdAt && campaign.createdAt > 1_577_836_800) return campaign;
+  const target = String(campaign.campaign || "").toLowerCase();
+  if (!target) return campaign;
+
+  let cursor = 0;
+  for (let pageIndex = 0; pageIndex < 10; pageIndex += 1) {
+    const page = await fetchOnChainCampaignPage(chainId, { limit: 100, cursor });
+    const found = page.campaigns.find((item) => String(item.campaign || "").toLowerCase() === target);
+    if (found?.createdAt && found.createdAt > 1_577_836_800) {
+      return {
+        ...campaign,
+        createdAt: found.createdAt,
+        timeAgo: campaign.timeAgo || found.timeAgo,
+      };
+    }
+    if (page.nextCursor == null) break;
+    cursor = page.nextCursor;
+  }
+
   return campaign;
 }
 
@@ -274,6 +298,7 @@ function formatTimeAgo(ts?: number | null): string {
 
   // tolerate ms timestamps
   const seconds = raw > 1e11 ? Math.floor(raw / 1000) : Math.floor(raw);
+  if (seconds <= 1_577_836_800) return "—";
   const nowSec = Math.floor(Date.now() / 1000);
   const diff = Math.max(0, nowSec - seconds);
 
@@ -300,7 +325,7 @@ function formatDeployedDate(ts?: number | null, fallback?: string | null): strin
   }
 
   const timeAgo = String(fallback ?? "").trim();
-  if (!timeAgo) return "—";
+  if (!timeAgo || /^295\d+w\s+ago$/i.test(timeAgo)) return "—";
   return timeAgo.includes("ago") ? timeAgo : `${timeAgo} ago`;
 }
 
@@ -597,6 +622,7 @@ const TokenDetails = () => {
 
 let displayMatch = match;
 displayMatch = await hydrateCampaignMetadata(displayMatch, chainIdForStorage);
+displayMatch = await hydrateCampaignCreatedAtFromFactory(displayMatch, chainIdForStorage);
 try {
   const displayImage = await resolveCampaignDisplayImage(displayMatch, chainIdForStorage, fetchCampaignLogoURI);
   if (hasUsefulImage(displayImage)) {

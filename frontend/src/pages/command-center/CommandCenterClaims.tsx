@@ -5,7 +5,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
-import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
@@ -139,15 +138,23 @@ function getRewardStateCopy(state: RewardCardState, solanaDisabled: boolean) {
   }
 }
 
-function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null): RewardCardConfig[] {
+function hasRecruiterAccess(recruiterLinkState?: string | null) {
+  const state = String(recruiterLinkState || "").trim().toLowerCase();
+  return state.includes("self_recruiter") || state.includes("recruiter_wallet") || state.includes("recruiter_owner");
+}
+
+function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null, recruiterLinkState?: string | null): RewardCardConfig[] {
   const grouped = new Map<string, RewardLedgerItem[]>();
   for (const item of items) {
     const type = String(item.rewardType || "future").toLowerCase();
+    if (type === "squad" && !hasActiveSquad(squadState)) continue;
+    if (type === "recruiter" && !hasRecruiterAccess(recruiterLinkState)) continue;
     if (!grouped.has(type)) grouped.set(type, []);
     grouped.get(type)!.push(item);
   }
 
-  const baseline = ["league", "airdrop", "recruiter"];
+  const baseline = ["league", "airdrop"];
+  if (hasRecruiterAccess(recruiterLinkState)) baseline.push("recruiter");
   if (hasActiveSquad(squadState)) baseline.push("squad");
 
   const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()]));
@@ -191,7 +198,10 @@ export default function CommandCenterClaims() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletAddress, chainId]);
 
-  const rewardCards = useMemo(() => buildRewardCards(items, attribution?.squadState), [items, attribution?.squadState]);
+  const rewardCards = useMemo(
+    () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState),
+    [items, attribution?.recruiterLinkState, attribution?.squadState],
+  );
 
   async function claimRewards(card: RewardCardConfig) {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
@@ -304,8 +314,6 @@ export default function CommandCenterClaims() {
           })}
         </div>
       </CommandCenterCard>
-
-      <RecruiterNativePayoutsPanel />
     </div>
   );
 }

@@ -28,7 +28,7 @@ function absoluteUrl(req, path) {
 }
 
 function campaignUrl(req, chainId, campaignAddress, tokenAddress) {
-  const identifier = tokenAddress || campaignAddress || "";
+  const identifier = campaignAddress || tokenAddress || "";
   return absoluteUrl(req, `/token/${identifier}?chainId=${chainId}`);
 }
 

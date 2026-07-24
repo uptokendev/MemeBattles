@@ -54,6 +54,8 @@ const FACTORY_ABI = bnbContractAbis.launchFactory as ethers.InterfaceAbi;
 const FACTORY_INTERFACE = new ethers.Interface(FACTORY_ABI);
 const CAMPAIGN_ABI = [
   ...((bnbContractAbis.launchCampaign as any[]) ?? []),
+  "function buyExactTokens(uint256 amountOut,uint256 maxCost) payable returns (uint256 cost)",
+  "function sellExactTokens(uint256 amountIn,uint256 minPayout) returns (uint256 payout)",
   "function buyExactTokensAuthorized(uint256 amountOut,uint256 maxCost,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) payable returns (uint256 cost)",
   "function sellExactTokensAuthorized(uint256 amountIn,uint256 minPayout,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) returns (uint256 payout)",
 ] as ethers.InterfaceAbi;
@@ -160,9 +162,26 @@ function hasLogo(value: unknown): boolean {
 function toUnixSeconds(value: unknown): number | undefined {
   if (value == null || value === "") return undefined;
   const n = Number(value);
-  if (Number.isFinite(n) && n > 0) return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+  if (Number.isFinite(n) && n > 0) {
+    const seconds = n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+    return seconds > 1_577_836_800 ? seconds : undefined;
+  }
   const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+  if (!Number.isFinite(ms)) return undefined;
+  const seconds = Math.floor(ms / 1000);
+  return seconds > 1_577_836_800 ? seconds : undefined;
+}
+
+function isUnsupportedContractMethod(error: unknown): boolean {
+  const text = String((error as any)?.shortMessage || (error as any)?.reason || (error as any)?.message || error || "").toLowerCase();
+  return (
+    text.includes("no data present") ||
+    text.includes("could not decode result data") ||
+    text.includes("missing revert data") ||
+    text.includes("execution reverted") ||
+    text.includes("function selector was not recognized") ||
+    text.includes("invalid opcode")
+  );
 }
 
 function buildMetadataURI(chainId: number, tokenOrCampaignAddress?: string): string {
@@ -220,6 +239,7 @@ function mapDbCampaign(item: any, idx: number, chainId: number): CampaignInfo | 
     website: String(item?.website ?? item?.websiteUrl ?? item?.website_url ?? ""),
     extraLink: String(item?.extraLink ?? item?.extraUrl ?? item?.otherUrl ?? item?.other_url ?? ""),
     createdAt: toUnixSeconds(item?.createdAtChain ?? item?.created_at_chain ?? item?.createdAt ?? item?.created_at),
+    timeAgo: String(item?.timeAgo ?? item?.time_ago ?? item?.ageLabel ?? item?.age_label ?? "").trim() || undefined,
     dexPairAddress: item?.dexPairAddress ?? item?.dex_pair_address ?? undefined,
     dexScreenerUrl: item?.dexScreenerUrl ?? item?.dex_screener_url ?? undefined,
   };
@@ -259,7 +279,7 @@ function mapOnChainCampaign(c: any, idx: number, offset: number, chainId: number
     xAccount: c.xAccount,
     website: c.website,
     extraLink: c.extraLink,
-    createdAt: c.createdAt ? Number(c.createdAt) : undefined,
+    createdAt: toUnixSeconds(c.createdAt),
   };
 }
 
@@ -454,6 +474,19 @@ export function useLaunchpad(): LaunchpadAdapter {
     const campaign = getCampaignRead(campaignAddress);
     if (!campaign) return null;
 
+    const readBig = async (method: string, fallback = 0n): Promise<bigint> => {
+      try {
+        const fn = campaign?.[method];
+        if (typeof fn !== "function") return fallback;
+        return (await fn()) as bigint;
+      } catch (error) {
+        if (!isUnsupportedContractMethod(error)) {
+          console.warn(`[fetchCampaignMetrics] ${method} read failed`, error);
+        }
+        return fallback;
+      }
+    };
+
     const [
       sold,
       curveSupply,
@@ -462,23 +495,22 @@ export function useLaunchpad(): LaunchpadAdapter {
       basePrice,
       priceSlope,
       graduationTarget,
-      graduationNativeTarget,
       liquidityBps,
       protocolFeeBps,
       currentPrice,
     ] = await Promise.all([
-      campaign.sold(),
-      campaign.curveSupply(),
-      campaign.liquiditySupply(),
-      campaign.creatorReserve(),
-      campaign.basePrice(),
-      campaign.priceSlope(),
-      campaign.graduationTarget(),
-      campaign.graduationNativeTarget(),
-      campaign.liquidityBps(),
-      campaign.protocolFeeBps(),
-      campaign.currentPrice(),
+      readBig("sold"),
+      readBig("curveSupply"),
+      readBig("liquiditySupply"),
+      readBig("creatorReserve"),
+      readBig("basePrice"),
+      readBig("priceSlope"),
+      readBig("graduationTarget"),
+      readBig("liquidityBps"),
+      readBig("protocolFeeBps"),
+      readBig("currentPrice"),
     ]);
+    const graduationNativeTarget = await readBig("graduationNativeTarget", graduationTarget);
 
     const [launched, finalizedAt] = await Promise.all([
       campaign.launched().catch(() => false),
@@ -613,14 +645,22 @@ export function useLaunchpad(): LaunchpadAdapter {
     });
     const auth = authResponse.authorization;
 
-    const tx = await campaign.buyExactTokensAuthorized(
-      amountWei,
-      maxCostWei,
-      auth.routeProfileId,
-      Math.floor(new Date(auth.validUntil).getTime() / 1000),
-      auth.signature,
-      await legacyGasOverrides(signer, readProvider, { value: maxCostWei }),
-    );
+    const overrides = await legacyGasOverrides(signer, readProvider, { value: maxCostWei });
+    let tx;
+    try {
+      tx = await campaign.buyExactTokensAuthorized(
+        amountWei,
+        maxCostWei,
+        auth.routeProfileId,
+        Math.floor(new Date(auth.validUntil).getTime() / 1000),
+        auth.signature,
+        overrides,
+      );
+    } catch (error) {
+      if (!isUnsupportedContractMethod(error)) throw error;
+      console.warn("[launchpadClient] Authorized buy unavailable; retrying legacy buyExactTokens", error);
+      tx = await campaign.buyExactTokens(amountWei, maxCostWei, overrides);
+    }
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
@@ -644,14 +684,22 @@ export function useLaunchpad(): LaunchpadAdapter {
     });
     const auth = authResponse.authorization;
 
-    const tx = await campaign.sellExactTokensAuthorized(
-      amountWei,
-      minAmountWei,
-      auth.routeProfileId,
-      Math.floor(new Date(auth.validUntil).getTime() / 1000),
-      auth.signature,
-      await legacyGasOverrides(signer, readProvider),
-    );
+    const overrides = await legacyGasOverrides(signer, readProvider);
+    let tx;
+    try {
+      tx = await campaign.sellExactTokensAuthorized(
+        amountWei,
+        minAmountWei,
+        auth.routeProfileId,
+        Math.floor(new Date(auth.validUntil).getTime() / 1000),
+        auth.signature,
+        overrides,
+      );
+    } catch (error) {
+      if (!isUnsupportedContractMethod(error)) throw error;
+      console.warn("[launchpadClient] Authorized sell unavailable; retrying legacy sellExactTokens", error);
+      tx = await campaign.sellExactTokens(amountWei, minAmountWei, overrides);
+    }
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
     return receipt;
