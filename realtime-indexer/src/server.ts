@@ -2260,8 +2260,14 @@ const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 
 async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "loop" | "manual") {
   const allowConcurrentDiscovery = mode === "discover";
-  if (running && !allowConcurrentDiscovery) {
-    const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
+  const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
+  const isStaleManualTakeover =
+    trigger === "manual" &&
+    running &&
+    runningForMs != null &&
+    runningForMs > ENV.INDEXER_STALE_AFTER_MS;
+
+  if (running && !allowConcurrentDiscovery && !isStaleManualTakeover) {
     return {
       ok: false,
       skipped: true,

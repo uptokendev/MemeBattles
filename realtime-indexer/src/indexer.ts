@@ -1387,17 +1387,20 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
 
     // ---------------- Factory scan ----------------
     try {
-      const cursor = "factory";
-      const state = await getState(chain.chainId, cursor);
-      const baselineStart = computeStartBlock(chain, target, state);
-      const windowStart = Math.max(0, target - opts.lookbackBlocks);
-      const from = opts.mode === "repair"
-        ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-        : Math.max(baselineStart, windowStart);
-
-      await withProviderRetry((p) => scanFactoryRange(p, chain, from, target));
       // Deterministic discovery: pull campaigns directly from the factory registry
       await withProviderRetry((p) => syncFactoryCampaignsByCall(p, chain));
+
+      if (opts.scope !== "factory") {
+        const cursor = "factory";
+        const state = await getState(chain.chainId, cursor);
+        const baselineStart = computeStartBlock(chain, target, state);
+        const windowStart = Math.max(0, target - opts.lookbackBlocks);
+        const from = opts.mode === "repair"
+          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+          : Math.max(baselineStart, windowStart);
+
+        await withProviderRetry((p) => scanFactoryRange(p, chain, from, target));
+      }
     } catch (e) {
       console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
     }
