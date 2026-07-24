@@ -187,6 +187,10 @@ async function insertActivityEvent(row: {
 }
 
 async function getLogsSafe(provider: ethers.JsonRpcProvider, filter: any, depth = 0): Promise<ethers.Log[]> {
+  if (ENV.INDEXER_LOG_CALL_DELAY_MS > 0 && depth === 0) {
+    await sleep(ENV.INDEXER_LOG_CALL_DELAY_MS + Math.floor(Math.random() * 100));
+  }
+
   try {
     return await provider.getLogs(filter);
   } catch (e: any) {
@@ -393,12 +397,16 @@ async function setCampaignFeeRecipient(
 }
 
 
-async function listActiveCampaigns(chainId: number): Promise<Array<{ campaign: string; createdBlock: number }>> {
+async function listActiveCampaigns(chainId: number, factoryAddress?: string): Promise<Array<{ campaign: string; createdBlock: number }>> {
+  const normalizedFactory = factoryAddress ? factoryAddress.toLowerCase() : "";
   const r = await pool.query(
     `select campaign_address, coalesce(created_block, 0) as created_block
      from public.campaigns
-     where chain_id=$1 and is_active=true`,
-    [chainId]
+     where chain_id=$1
+       and is_active=true
+       and ($2::text = '' or factory_address is null or lower(factory_address) = $2)
+     order by coalesce(created_at_chain, updated_at, now()) desc`,
+    [chainId, normalizedFactory]
   );
   return r.rows.map((x) => ({
     campaign: String(x.campaign_address),
@@ -1296,11 +1304,19 @@ function computeStartBlock(chain: ChainCfg, headTarget: number, existingState: n
 // ---------------------------------------------------------------------------
 
 export async function runIndexerOnce() {
+  const scope = ENV.INDEXER_NORMAL_SCOPE === "full"
+    ? "full"
+    : ENV.INDEXER_NORMAL_SCOPE === "factory"
+    ? "factory"
+    : ENV.INDEXER_NORMAL_SCOPE === "campaigns"
+    ? "campaigns"
+    : "core";
+
   await runIndexerCore({
     mode: "normal",
     lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
     rewindBlocks: 0,
-    scope: "full"
+    scope
   });
 }
 
@@ -1339,7 +1355,9 @@ export async function runDiscoveryOnce() {
   });
 }
 
-async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: "full" | "factory" | "campaigns" }) {
+type IndexerScope = "full" | "core" | "factory" | "campaigns";
+
+async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: IndexerScope }) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
@@ -1403,7 +1421,7 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
         // Deterministic discovery: pull campaigns directly from the factory registry
         await withProviderRetry((p) => syncFactoryCampaignsByCall(p, chain));
 
-        if (opts.scope !== "factory") {
+        if (opts.scope === "full") {
           const cursor = "factory";
           const state = await getState(chain.chainId, cursor);
           const baselineStart = computeStartBlock(chain, target, state);
@@ -1447,7 +1465,7 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     // ---------------- Campaign scans ----------------
     let campaigns: Array<{ campaign: string; createdBlock: number }> = [];
     try {
-      campaigns = await listActiveCampaigns(chain.chainId);
+      campaigns = await listActiveCampaigns(chain.chainId, chain.factoryAddress);
     } catch (e) {
       console.error("listActiveCampaigns error", { chainId: chain.chainId }, e);
       continue;

@@ -60,6 +60,10 @@ export const ENV = {
   // NOTE: Testnet UX benefits from lower latency; tune up for mainnet.
   INDEXER_INTERVAL_MS: Number(process.env.INDEXER_INTERVAL_MS || 5000),
   INDEXER_STALE_AFTER_MS: Number(process.env.INDEXER_STALE_AFTER_MS || 120000),
+  // "core" is the launch-safe default: factory registry calls + campaign trade logs.
+  // "full" also scans factory/vote/router logs and should use a paid/indexed RPC.
+  INDEXER_NORMAL_SCOPE: process.env.INDEXER_NORMAL_SCOPE || "core",
+  INDEXER_LOG_CALL_DELAY_MS: Number(process.env.INDEXER_LOG_CALL_DELAY_MS || 250),
 
   // Lower default confirmations for faster UI updates (especially on testnet).
   CONFIRMATIONS: Number(process.env.CONFIRMATIONS || "1"),
