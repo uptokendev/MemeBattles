@@ -15,6 +15,7 @@
     "check:api-migration": "node scripts/check-api-migration-readiness.mjs",
     "test:wallet-accounts": "node --test src/lib/walletAccountSelection.test.mjs",
     "test:railway-proxy": "node --test server/railwayProxy.test.mjs",
+    "test:upload": "node --test api/upload.test.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",

@@ -43,6 +43,12 @@ function pickExt(mimetype) {
   }
 }
 
+export function buildUploadObjectName({ kind, chainId, address, uuid, ext }) {
+  return kind === "avatar" && address
+    ? `avatars/${chainId}/${address}/${uuid}.${ext}`
+    : `logos/${chainId}/${uuid}.${ext}`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
@@ -50,7 +56,7 @@ export default async function handler(req, res) {
   const kind = String(q.kind || "avatar"); // "avatar" | "logo"
   const chainIdNum = Number(q.chainId || 97);
   const raw = String(q.address || "").trim();
-  const address = normalizeAddress(raw, chainIdNum) || raw.toLowerCase();
+  const address = normalizeAddress(raw, chainIdNum);
 
   const maxBytes = 5 * 1024 * 1024;
   const form = formidable({
@@ -114,10 +120,13 @@ export default async function handler(req, res) {
       (crypto && typeof crypto.randomUUID === "function" && crypto.randomUUID()) ||
       `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    const name =
-      kind === "avatar" && address
-        ? `avatars/${chainId}/${address}/${uuid}.${ext}`
-        : `logos/${chainId}/${uuid}.${ext}`;
+    const name = buildUploadObjectName({
+      kind,
+      chainId: chainIdNum,
+      address,
+      uuid,
+      ext,
+    });
 
     const { error: upErr } = await supabase.storage.from(bucket).upload(name, buf, {
       contentType: mimetype,
