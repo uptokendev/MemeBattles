@@ -87,11 +87,11 @@ export function CommandCenterHero({ walletAddress }: CommandCenterHeroProps) {
             <div className="font-retro text-lg text-foreground">{loadingFollows ? "..." : followingCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Following</div>
           </Link>
-          <Link to={commandBase} className={statLinkClass}>
+          <Link to={`${commandBase}/coins`} className={statLinkClass}>
             <div className="font-retro text-lg text-foreground">{createdCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Coins</div>
           </Link>
-          <Link to={commandBase} className={statLinkClass}>
+          <Link to={`${commandBase}/coins`} className={statLinkClass}>
             <div className="font-retro text-lg text-foreground">{loadingDraftCount ? "..." : draftCount}</div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Drafts</div>
           </Link>

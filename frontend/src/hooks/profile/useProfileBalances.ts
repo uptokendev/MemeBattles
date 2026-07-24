@@ -37,8 +37,9 @@ const ERC20_ABI_MIN = [
   },
 ] as const;
 
-const MAX_BALANCE_SCAN_CAMPAIGNS = 120;
-const MAX_VALUED_HOLDINGS = 24;
+const MAX_BALANCE_SCAN_CAMPAIGNS = 40;
+const MAX_VALUED_HOLDINGS = 12;
+const BALANCE_BATCH_SIZE = 8;
 
 type FetchCampaigns = () => Promise<any[]>;
 type FetchCampaignSummary = (campaign: any) => Promise<CampaignSummary>;
@@ -115,20 +116,21 @@ export function useProfileBalances({
         const rows: TokenBalanceRow[] = [];
         const ownedCampaigns: any[] = [];
 
-        for (const campaign of campaigns) {
-          const tokenAddr = String(campaign?.token ?? "").trim().toLowerCase();
-          if (!tokenAddr) continue;
+        for (let start = 0; start < campaigns.length; start += BALANCE_BATCH_SIZE) {
+          if (cancelled) return;
+          const batch = campaigns.slice(start, start + BALANCE_BATCH_SIZE);
+          const settled = await Promise.allSettled(batch.map(async (campaign) => {
+            const tokenAddr = String(campaign?.token ?? "").trim().toLowerCase();
+            if (!tokenAddr) return null;
 
-          try {
             const erc20 = new Contract(tokenAddr as any, ERC20_ABI_MIN as any, readProvider);
+            const rawBal = await erc20.balanceOf(account) as bigint;
+            if (typeof rawBal !== "bigint" || rawBal <= 0n) return null;
 
-            const [rawBal, decimalsAny, symbolMaybe] = await Promise.all([
-              erc20.balanceOf(account) as Promise<bigint>,
+            const [decimalsAny, symbolMaybe] = await Promise.all([
               (erc20.decimals() as Promise<any>).catch(() => 18),
               (erc20.symbol() as Promise<string>).catch(() => null) as Promise<string | null>,
             ]);
-
-            if (typeof rawBal !== "bigint" || rawBal <= 0n) continue;
 
             const decimals = Number(decimalsAny);
             const formatted = ethers.formatUnits(
@@ -136,18 +138,24 @@ export function useProfileBalances({
               Number.isFinite(decimals) ? decimals : 18
             );
 
-            rows.push({
-              campaignAddress: campaign.campaign,
-              tokenAddress: tokenAddr,
-              image: campaign.logoURI || "/placeholder.svg",
-              name: campaign.name,
-              ticker: campaign.symbol || symbolMaybe || "",
-              balanceRaw: rawBal,
-              balanceFormatted: formatted,
-            });
-            ownedCampaigns.push(campaign);
-          } catch {
-            continue;
+            return {
+              campaign,
+              row: {
+                campaignAddress: campaign.campaign,
+                tokenAddress: tokenAddr,
+                image: campaign.logoURI || "/placeholder.svg",
+                name: campaign.name,
+                ticker: campaign.symbol || symbolMaybe || "",
+                balanceRaw: rawBal,
+                balanceFormatted: formatted,
+              } as TokenBalanceRow,
+            };
+          }));
+
+          for (const result of settled) {
+            if (result.status !== "fulfilled" || !result.value) continue;
+            rows.push(result.value.row);
+            ownedCampaigns.push(result.value.campaign);
           }
         }
 

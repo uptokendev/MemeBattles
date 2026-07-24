@@ -65,11 +65,11 @@ function publicState({ walletAddress, state = null, recruiter = null }) {
   return {
     walletAddress,
     hasActivity: Boolean(state?.has_activity),
-    recruiterLinkState: state?.recruiter_link_state || (recruiter ? "linked_unlocked" : "unlinked"),
+    recruiterLinkState: state?.recruiter_link_state || (recruiter ? "self_recruiter_wallet" : "unlinked"),
     recruiterCode: state?.recruiter_code || recruiter?.code || null,
     recruiterDisplayName: state?.recruiter_display_name || recruiter?.display_name || null,
     recruiterIsOg: Boolean(state?.recruiter_is_og ?? recruiter?.is_og),
-    squadState: state?.squad_state || (recruiter ? "in_squad" : "solo"),
+    squadState: state?.squad_state || "solo",
   };
 }
 

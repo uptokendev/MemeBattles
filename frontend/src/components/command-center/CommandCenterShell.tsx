@@ -34,6 +34,7 @@ function getCommandSection(pathname: string): string {
     "settings",
     "followers",
     "following",
+    "coins",
   ]);
   return allowed.has(suffix) ? `/${suffix}` : "";
 }
@@ -82,7 +83,7 @@ export function CommandCenterShell({ children }: CommandCenterShellProps) {
 
   const section = getCommandSection(location.pathname);
   if (!routeWalletsMatch(requestedWallet, connectedWallet) || walletAddress !== requestedWallet) {
-    return <Navigate to={`/profile/${walletAddress}/command${section}`} replace />;
+    return <Navigate to={`/profile/${connectedWallet}/command${section}`} replace />;
   }
 
   return (

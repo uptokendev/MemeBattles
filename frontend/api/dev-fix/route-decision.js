@@ -134,7 +134,7 @@ function selfRecruiterDecision(walletAddress, recruiter) {
       recruiterIsOg: Boolean(recruiter.is_og),
       recruiterStatus: recruiter.status,
       recruiterLinkState: "self_recruiter_wallet",
-      squadState: "self_recruiter_wallet",
+      squadState: "solo",
       source: "recruiters.wallet_address",
       reason: recruiter.is_og
         ? "Wallet owns an active OG recruiter code; using OgLinked."

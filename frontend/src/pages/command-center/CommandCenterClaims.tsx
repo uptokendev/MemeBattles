@@ -81,7 +81,9 @@ const REWARD_COPY: Record<string, { title: string; description: string; icon: Lu
 };
 
 function hasActiveSquad(value?: string | null) {
-  return !NO_SQUAD_STATES.has(String(value || "").trim().toLowerCase());
+  const state = String(value || "").trim().toLowerCase();
+  if (state.includes("self_recruiter")) return false;
+  return !NO_SQUAD_STATES.has(state);
 }
 
 function isSolana(chainId?: number | null) {

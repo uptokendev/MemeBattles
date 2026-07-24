@@ -61,6 +61,7 @@ import CommandCenterAirdrops from "@/pages/command-center/CommandCenterAirdrops"
 import CommandCenterClaims from "@/pages/command-center/CommandCenterClaims";
 import CommandCenterSettings from "@/pages/command-center/CommandCenterSettings";
 import CommandCenterSocial from "@/pages/command-center/CommandCenterSocial";
+import CommandCenterCoins from "@/pages/command-center/CommandCenterCoins";
 import { isPostGradRouteEnabled, postGradFlags, warRoomEnabled } from "@/features/postgrad/config";
 
 const queryClient = new QueryClient();
@@ -145,7 +146,7 @@ function AppShellLayout({
           <Route path="/command/settings" element={<LegacyCommandCenterRedirect section="settings" />} />
           <Route path="/command/followers" element={<LegacyCommandCenterRedirect section="followers" />} />
           <Route path="/command/following" element={<LegacyCommandCenterRedirect section="following" />} />
-          <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="overview" />} />
+          <Route path="/command/coins" element={<LegacyCommandCenterRedirect section="coins" />} />
           <Route path="/command/*" element={<LegacyCommandCenterRedirect section="overview" />} />
           <Route path="/profile/:wallet/command" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/overview" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
@@ -156,7 +157,7 @@ function AppShellLayout({
           <Route path="/profile/:wallet/command/settings" element={<CommandCenterShell><CommandCenterSettings /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/followers" element={<CommandCenterShell><CommandCenterSocial mode="followers" /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/following" element={<CommandCenterShell><CommandCenterSocial mode="following" /></CommandCenterShell>} />
-          <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
+          <Route path="/profile/:wallet/command/coins" element={<CommandCenterShell><CommandCenterCoins /></CommandCenterShell>} />
           <Route path="/profile/:wallet/command/*" element={<CommandCenterShell><CommandCenterOverview /></CommandCenterShell>} />
           <Route path="/profile/:identifier" element={<ProfilePage />} />
           <Route path="/profile/:wallet/*" element={<ProfileWalletFallbackRedirect />} />
