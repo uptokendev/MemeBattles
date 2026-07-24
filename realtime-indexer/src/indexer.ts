@@ -1314,6 +1314,18 @@ export async function runRepairOnce() {
   });
 }
 
+// Focused recovery for TokenDetails chart/trade data. This skips factory/vote/
+// reward-route event scans and only repairs LaunchCampaign trade/finalize logs
+// for campaigns already discovered in the DB.
+export async function runTradeRepairOnce() {
+  await runIndexerCore({
+    mode: "repair",
+    lookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
+    rewindBlocks: ENV.REPAIR_REWIND_BLOCKS,
+    scope: "campaigns"
+  });
+}
+
 // Lightweight operator recovery: refresh factory-created campaigns without
 // waiting behind expensive per-campaign log scans. This is safe to run when the
 // full scanner is wedged on an RPC range because it only performs factory calls
@@ -1327,7 +1339,7 @@ export async function runDiscoveryOnce() {
   });
 }
 
-async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: "full" | "factory" }) {
+async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: "full" | "factory" | "campaigns" }) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
@@ -1385,47 +1397,51 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     const head = await withProviderRetry((p) => p.getBlockNumber());
     const target = Math.max(0, head - ENV.CONFIRMATIONS);
 
-    // ---------------- Factory scan ----------------
-    try {
-      // Deterministic discovery: pull campaigns directly from the factory registry
-      await withProviderRetry((p) => syncFactoryCampaignsByCall(p, chain));
+    if (opts.scope !== "campaigns") {
+      // ---------------- Factory scan ----------------
+      try {
+        // Deterministic discovery: pull campaigns directly from the factory registry
+        await withProviderRetry((p) => syncFactoryCampaignsByCall(p, chain));
 
-      if (opts.scope !== "factory") {
-        const cursor = "factory";
-        const state = await getState(chain.chainId, cursor);
-        const baselineStart = computeStartBlock(chain, target, state);
-        const windowStart = Math.max(0, target - opts.lookbackBlocks);
-        const from = opts.mode === "repair"
-          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : Math.max(baselineStart, windowStart);
+        if (opts.scope !== "factory") {
+          const cursor = "factory";
+          const state = await getState(chain.chainId, cursor);
+          const baselineStart = computeStartBlock(chain, target, state);
+          const windowStart = Math.max(0, target - opts.lookbackBlocks);
+          const from = opts.mode === "repair"
+            ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+            : Math.max(baselineStart, windowStart);
 
-        await withProviderRetry((p) => scanFactoryRange(p, chain, from, target));
+          await withProviderRetry((p) => scanFactoryRange(p, chain, from, target));
+        }
+      } catch (e) {
+        console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
       }
-    } catch (e) {
-      console.error("scanFactory error (all RPCs failed)", { chainId: chain.chainId }, e);
-    }
 
-    if (opts.scope === "factory") {
-      continue;
+      if (opts.scope === "factory") {
+        continue;
+      }
     }
 
     // ---------------- VoteTreasury scan ----------------
-    try {
-      if (chain.voteTreasuryAddress) {
-        const cursor = "votes";
-        const state = await getState(chain.chainId, cursor);
-        const windowStart = Math.max(0, target - opts.lookbackBlocks);
-
-        // Prefer configured start block, otherwise fallback to rolling lookback.
-        const startHint = chain.voteTreasuryStartBlock || 0;
-        const from = opts.mode === "repair"
-          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : Math.max(windowStart, state > 0 ? state : (startHint > 0 ? startHint : windowStart));
-
-        await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, from, target));
+    if (opts.scope === "full") {
+      try {
+        if (chain.voteTreasuryAddress) {
+          const cursor = "factory";
+          const state = await getState(chain.chainId, "votes");
+          const windowStart = Math.max(0, target - opts.lookbackBlocks);
+  
+          // Prefer configured start block, otherwise fallback to rolling lookback.
+          const startHint = chain.voteTreasuryStartBlock || 0;
+          const from = opts.mode === "repair"
+            ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+            : Math.max(windowStart, state > 0 ? state : (startHint > 0 ? startHint : windowStart));
+  
+          await withProviderRetry((p) => scanVoteTreasuryRange(p, chain, from, target));
+        }
+      } catch (e) {
+        console.error("scanVoteTreasury error (all RPCs failed)", { chainId: chain.chainId }, e);
       }
-    } catch (e) {
-      console.error("scanVoteTreasury error (all RPCs failed)", { chainId: chain.chainId }, e);
     }
 
     // ---------------- Campaign scans ----------------
@@ -1467,21 +1483,23 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     }
 
     // ---------------- Reward routing scan ----------------
-    try {
-      const routerAddress = await withProviderRetry((p) => resolveTreasuryRouterAddress(p, chain));
-      if (routerAddress) {
-        const cursor = "rewards-router";
-        const state = await getState(chain.chainId, cursor);
-        const baselineStart = computeStartBlock(chain, target, state);
-        const windowStart = Math.max(0, target - opts.lookbackBlocks);
-        const from = opts.mode === "repair"
-          ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
-          : Math.max(baselineStart, windowStart);
+    if (opts.scope === "full") {
+      try {
+        const routerAddress = await withProviderRetry((p) => resolveTreasuryRouterAddress(p, chain));
+        if (routerAddress) {
+          const cursor = "rewards-router";
+          const state = await getState(chain.chainId, cursor);
+          const baselineStart = computeStartBlock(chain, target, state);
+          const windowStart = Math.max(0, target - opts.lookbackBlocks);
+          const from = opts.mode === "repair"
+            ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
+            : Math.max(baselineStart, windowStart);
 
-        await withProviderRetry((p) => scanRouterRange(p, chain, routerAddress, from, target));
+          await withProviderRetry((p) => scanRouterRange(p, chain, routerAddress, from, target));
+        }
+      } catch (e) {
+        console.error("scanRewardRoutes error (all RPCs failed)", { chainId: chain.chainId }, e);
       }
-    } catch (e) {
-      console.error("scanRewardRoutes error (all RPCs failed)", { chainId: chain.chainId }, e);
     }
   }
 }

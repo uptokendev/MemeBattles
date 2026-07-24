@@ -4,7 +4,7 @@ import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
-import { runDiscoveryOnce, runIndexerOnce, runRepairOnce } from "./indexer.js";
+import { runDiscoveryOnce, runIndexerOnce, runRepairOnce, runTradeRepairOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
@@ -402,11 +402,11 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
   if (!requireInternalAuth(req, res)) return;
 
   const mode = String(req.query.mode || req.body?.mode || "normal").toLowerCase();
-  if (mode !== "normal" && mode !== "repair" && mode !== "discover") {
-    return res.status(400).json({ ok: false, error: "mode must be normal, repair, or discover" });
+  if (mode !== "normal" && mode !== "repair" && mode !== "discover" && mode !== "trades" && mode !== "campaigns") {
+    return res.status(400).json({ ok: false, error: "mode must be normal, repair, discover, trades, or campaigns" });
   }
 
-  const result = await runIndexerJob(mode as "normal" | "repair" | "discover", "manual");
+  const result = await runIndexerJob(mode as "normal" | "repair" | "discover" | "trades" | "campaigns", "manual");
   const status = result.ok ? 200 : result.skipped ? 409 : 500;
   res.status(status).json(result);
 }));
@@ -2258,8 +2258,8 @@ let running = false;
 let runningStartedAt = 0;
 const INTERVAL_MS = ENV.INDEXER_INTERVAL_MS;
 
-async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "loop" | "manual") {
-  const allowConcurrentDiscovery = mode === "discover";
+async function runIndexerJob(mode: "normal" | "repair" | "discover" | "trades" | "campaigns", trigger: "loop" | "manual") {
+  const allowConcurrentRecovery = mode === "discover" || mode === "trades" || mode === "campaigns";
   const runningForMs = runningStartedAt ? Date.now() - runningStartedAt : null;
   const isStaleManualTakeover =
     trigger === "manual" &&
@@ -2267,7 +2267,7 @@ async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "l
     runningForMs != null &&
     runningForMs > ENV.INDEXER_STALE_AFTER_MS;
 
-  if (running && !allowConcurrentDiscovery && !isStaleManualTakeover) {
+  if (running && !allowConcurrentRecovery && !isStaleManualTakeover) {
     return {
       ok: false,
       skipped: true,
@@ -2280,7 +2280,7 @@ async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "l
   }
 
   const startedAt = Date.now();
-  if (!allowConcurrentDiscovery) {
+  if (!allowConcurrentRecovery) {
     running = true;
     runningStartedAt = startedAt;
   }
@@ -2288,6 +2288,8 @@ async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "l
     lastIndexerRunAt = startedAt;
     if (mode === "discover") {
       await runDiscoveryOnce();
+    } else if (mode === "trades" || mode === "campaigns") {
+      await runTradeRepairOnce();
     } else if (mode === "repair") {
       await runRepairOnce();
     } else {
@@ -2300,7 +2302,7 @@ async function runIndexerJob(mode: "normal" | "repair" | "discover", trigger: "l
     lastIndexerErrorMsg = String(e?.message || e);
     return { ok: false, skipped: false, mode, trigger, durationMs: Date.now() - startedAt, error: lastIndexerErrorMsg };
   } finally {
-    if (!allowConcurrentDiscovery) {
+    if (!allowConcurrentRecovery) {
       running = false;
       runningStartedAt = 0;
     }
