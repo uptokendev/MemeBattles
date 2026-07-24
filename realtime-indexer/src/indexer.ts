@@ -1345,7 +1345,8 @@ export async function runTradeRepairOnce(campaignAddress?: string) {
     lookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
     rewindBlocks: ENV.REPAIR_REWIND_BLOCKS,
     scope: "campaigns",
-    campaignAddress
+    campaignAddress,
+    forceCampaignStart: Boolean(campaignAddress)
   });
 }
 
@@ -1364,7 +1365,14 @@ export async function runDiscoveryOnce() {
 
 type IndexerScope = "full" | "core" | "factory" | "campaigns";
 
-async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks: number; rewindBlocks: number; scope: IndexerScope; campaignAddress?: string }) {
+async function runIndexerCore(opts: {
+  mode: "normal" | "repair";
+  lookbackBlocks: number;
+  rewindBlocks: number;
+  scope: IndexerScope;
+  campaignAddress?: string;
+  forceCampaignStart?: boolean;
+}) {
   for (const chain of CHAINS) {
     const rpcList = parseRpcList(chain.rpcHttp);
     if (rpcList.length === 0) {
@@ -1512,9 +1520,17 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
         // still have old campaign cursors in the shared DB; clamping to the
         // rolling window keeps the always-on loop responsive. Use repair mode
         // for intentional bounded backfills.
-        const from = opts.mode === "repair"
+        let from = opts.mode === "repair"
           ? Math.max(windowStart, Math.max(0, state - opts.rewindBlocks))
           : Math.max(windowStart, state > 0 ? state : (campaignStart > 0 ? campaignStart : windowStart));
+
+        if (opts.forceCampaignStart && campaignStart > 0) {
+          // Targeted manual repair is intentionally operator-driven. If a prior
+          // bad RPC advanced or created a stale campaign cursor below the
+          // current deployment, replay this one campaign from its deterministic
+          // launch floor rather than the small rolling repair window.
+          from = Math.min(from, campaignStart);
+        }
 
         await withProviderRetry((p) => scanCampaignRange(p, chain.chainId, campaign, from, target));
       } catch (e) {
