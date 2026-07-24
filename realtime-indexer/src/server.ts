@@ -365,6 +365,7 @@ app.get("/api/indexer/status", wrap(async (req, res) => {
        (select max(block_number)::int from public.curve_trades where chain_id=$1) as last_trade_block`,
     [chainId]
   );
+  const rpc = await getRpcDiagnostics(chainId, campaign || null);
 
   res.json({
     ok: true,
@@ -384,6 +385,7 @@ app.get("/api/indexer/status", wrap(async (req, res) => {
       lookbackBlocks: ENV.FACTORY_LOOKBACK_BLOCKS,
       repairLookbackBlocks: ENV.REPAIR_LOOKBACK_BLOCKS,
     },
+    rpc,
     totals: totals.rows[0] || null,
     cursors: cursorRows.rows,
     campaign: campaign ? (campaignRows?.rows?.[0] || null) : null,
@@ -2316,6 +2318,51 @@ async function runIndexerJob(
       runningStartedAt = 0;
     }
   }
+}
+
+async function rpcCall(method: string, params: any[] = []): Promise<any> {
+  const first = String(ENV.BSC_RPC_HTTP_97 || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)[0];
+  if (!first) return null;
+  try {
+    const resp = await fetch(first, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    if (!resp.ok) return null;
+    const j: any = await resp.json();
+    return j?.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getRpcDiagnostics(chainId: number, campaign?: string | null) {
+  if (chainId !== 97) return null;
+  const factory = ENV.FACTORY_ADDRESS_97 || "";
+  const [chainHex, blockHex, factoryCode, campaignCode] = await Promise.all([
+    rpcCall("eth_chainId"),
+    rpcCall("eth_blockNumber"),
+    factory ? rpcCall("eth_getCode", [factory, "latest"]) : Promise.resolve(null),
+    campaign ? rpcCall("eth_getCode", [campaign, "latest"]) : Promise.resolve(null),
+  ]);
+  const headBlock = typeof blockHex === "string" && blockHex.startsWith("0x") ? parseInt(blockHex, 16) : null;
+  const rpcChainId = typeof chainHex === "string" && chainHex.startsWith("0x") ? parseInt(chainHex, 16) : null;
+  const factoryStartBlock = ENV.FACTORY_START_BLOCK_97 || null;
+
+  return {
+    chainId: rpcChainId,
+    headBlock,
+    factoryStartBlock,
+    headBehindFactoryStart: Boolean(factoryStartBlock && headBlock != null && headBlock < factoryStartBlock),
+    factoryCodePresent: typeof factoryCode === "string" && factoryCode !== "0x",
+    factoryCodeBytes: typeof factoryCode === "string" && factoryCode.startsWith("0x") ? Math.max(0, (factoryCode.length - 2) / 2) : null,
+    campaignCodePresent: campaign ? typeof campaignCode === "string" && campaignCode !== "0x" : null,
+    campaignCodeBytes: campaign && typeof campaignCode === "string" && campaignCode.startsWith("0x") ? Math.max(0, (campaignCode.length - 2) / 2) : null,
+  };
 }
 
 setInterval(async () => {

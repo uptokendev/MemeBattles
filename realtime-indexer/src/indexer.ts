@@ -1425,6 +1425,17 @@ async function runIndexerCore(opts: { mode: "normal" | "repair"; lookbackBlocks:
     // Compute scanning head for this pass
     const head = await withProviderRetry((p) => p.getBlockNumber());
     const target = Math.max(0, head - ENV.CONFIRMATIONS);
+    const deploymentFloor = Number(chain.factoryStartBlock || 0);
+    if (deploymentFloor > 0 && target < deploymentFloor) {
+      console.warn("Indexer RPC head is behind configured factory start block; skipping scans", {
+        chainId: chain.chainId,
+        head,
+        target,
+        factoryStartBlock: deploymentFloor,
+        factoryAddress: chain.factoryAddress ? chain.factoryAddress.toLowerCase() : null
+      });
+      continue;
+    }
 
     if (opts.scope !== "campaigns") {
       // ---------------- Factory scan ----------------
