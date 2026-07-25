@@ -130,10 +130,12 @@ import {
   rewardsEligibility,
   rewardsHistory,
   rewardsMe,
+} from "./dev-fix/stubs.js";
+import {
   squadMembers,
   squadSummary,
   squadsLeaderboard,
-} from "./dev-fix/stubs.js";
+} from "./dev-fix/squads.js";
 import {
   internalAirdropsCalculate,
   internalAirdropsPublish,

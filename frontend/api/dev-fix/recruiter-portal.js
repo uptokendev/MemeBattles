@@ -239,7 +239,9 @@ async function getSquadRows(recruiterId) {
   const { rows } = await pool.query(
     `select s.wallet_address, s.recruiter_id, coalesce(nullif(s.member_role, ''), 'member') as role, coalesce(nullif(s.link_source, ''), 'recruiter') as source, coalesce(s.joined_at, s.created_at) as bound_at
        from public.wallet_squad_memberships s
+       join public.recruiters r on r.id = s.recruiter_id
       where s.recruiter_id = $1 and s.is_active = true
+        and lower(s.wallet_address) <> lower(r.wallet_address)
       order by coalesce(s.joined_at, s.created_at) desc
       limit 250`,
     [recruiterId],

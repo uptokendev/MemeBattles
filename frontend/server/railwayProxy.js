@@ -40,7 +40,6 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/profileCabinet",
   "/api/rewards",
   "/api/airdrops",
-  "/api/squads",
   "/api/recruiters",
   "/api/recruiter-auth",
   "/api/recruiter-logout",

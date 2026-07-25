@@ -61,8 +61,8 @@ function makeNonce() {
   return crypto.randomBytes(16).toString("hex");
 }
 
-function publicState({ walletAddress, state = null, recruiter = null }) {
-  const rawSquadState = String(state?.squad_state || "").trim().toLowerCase();
+function publicState({ walletAddress, state = null, recruiter = null, membership = null }) {
+  const rawSquadState = String(membership ? "in_squad" : state?.squad_state || "").trim().toLowerCase();
   const normalizedSquadState = ["in_squad", "linked_squad", "active_squad", "squad_member", "member"].includes(rawSquadState)
     ? "in_squad"
     : "solo";
@@ -71,9 +71,9 @@ function publicState({ walletAddress, state = null, recruiter = null }) {
     walletAddress,
     hasActivity: Boolean(state?.has_activity),
     recruiterLinkState: state?.recruiter_link_state || (recruiter ? "self_recruiter_wallet" : "unlinked"),
-    recruiterCode: state?.recruiter_code || recruiter?.code || null,
-    recruiterDisplayName: state?.recruiter_display_name || recruiter?.display_name || null,
-    recruiterIsOg: Boolean(state?.recruiter_is_og ?? recruiter?.is_og),
+    recruiterCode: state?.recruiter_code || membership?.recruiter_code || recruiter?.code || null,
+    recruiterDisplayName: state?.recruiter_display_name || membership?.recruiter_display_name || recruiter?.display_name || null,
+    recruiterIsOg: Boolean(state?.recruiter_is_og ?? membership?.recruiter_is_og ?? recruiter?.is_og),
     squadState: normalizedSquadState,
   };
 }
@@ -213,10 +213,20 @@ async function findWalletAttributionState(walletAddress) {
 async function findActiveSquadMembership(walletAddress) {
   const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
-    `select wallet_address, recruiter_id, member_role, link_source, joined_at, is_active
-       from public.wallet_squad_memberships
-      where case when $2::boolean then wallet_address = $1 else lower(wallet_address) = lower($1) end
-        and is_active = true
+    `select s.wallet_address,
+            s.recruiter_id,
+            r.code as recruiter_code,
+            r.display_name as recruiter_display_name,
+            r.is_og as recruiter_is_og,
+            s.member_role,
+            s.link_source,
+            s.joined_at,
+            s.is_active
+       from public.wallet_squad_memberships s
+       join public.recruiters r on r.id = s.recruiter_id
+      where case when $2::boolean then s.wallet_address = $1 else lower(s.wallet_address) = lower($1) end
+        and s.is_active = true
+        and lower(s.wallet_address) <> lower(r.wallet_address)
       limit 1`,
     [walletAddress, solana],
   );
@@ -438,8 +448,11 @@ export async function attributionWallet(req, res) {
   try {
     const walletAddress = normalizeAddress(req.params?.wallet);
     if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
-    const state = await findWalletAttributionState(walletAddress);
-    return json(res, 200, { state: publicState({ walletAddress, state }), materializedAt: new Date().toISOString() });
+    const [state, membership] = await Promise.all([
+      findWalletAttributionState(walletAddress),
+      findActiveSquadMembership(walletAddress).catch(() => null),
+    ]);
+    return json(res, 200, { state: publicState({ walletAddress, state, membership }), materializedAt: new Date().toISOString() });
   } catch (error) {
     console.error("[api/attribution wallet]", error);
     if (schemaMissing(error)) {
