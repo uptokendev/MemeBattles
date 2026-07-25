@@ -4,7 +4,7 @@ import { ENV } from "./env.js";
 import "dotenv/config";
 import { pool } from "./db.js";
 import { ablyRest, tokenChannel, leagueChannel, publishUserRankUpdated } from "./ably.js";
-import { runDiscoveryOnce, runIndexerOnce, runRepairOnce, runTradeRepairOnce } from "./indexer.js";
+import { ingestCampaignTransaction, runDiscoveryOnce, runIndexerOnce, runRepairOnce, runTradeRepairOnce } from "./indexer.js";
 import { startTelemetryReporter, type TelemetrySnapshot } from "./telemetry.js";
 import { applyRecruiterDisputeOverride, captureReferralWindow, createOrUpdateRecruiter, getWalletAttributionState, linkWalletOnConnect, linkWalletToRecruiter, resolveRecruiterByCode, setRecruiterOgStatus, setRecruiterStatus } from "./rewards/attribution.js";
 import { getCurrentWeeklyRewardEpoch, listRewardEpochs, listRewardEvents } from "./rewards/ingest.js";
@@ -431,6 +431,27 @@ app.post("/internal/indexer/run", wrap(async (req, res) => {
   });
   const status = result.ok ? 200 : result.skipped ? 409 : 500;
   res.status(status).json(result);
+}));
+
+app.post("/internal/indexer/ingest-tx", wrap(async (req, res) => {
+  if (!requireInternalAuth(req, res)) return;
+
+  const chainId = Number(req.query.chainId || req.body?.chainId || 97);
+  const campaign = normalizeAddress(req.query.campaign || req.query.campaignAddress || req.body?.campaign || req.body?.campaignAddress || "");
+  const txHash = String(req.query.txHash || req.query.tx || req.body?.txHash || req.body?.tx || "").trim().toLowerCase();
+
+  if (!Number.isFinite(chainId) || chainId <= 0) {
+    return res.status(400).json({ ok: false, error: "Invalid chainId" });
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(campaign)) {
+    return res.status(400).json({ ok: false, error: "Invalid campaign address" });
+  }
+  if (!/^0x[a-f0-9]{64}$/.test(txHash)) {
+    return res.status(400).json({ ok: false, error: "Invalid tx hash" });
+  }
+
+  const result = await ingestCampaignTransaction({ chainId, campaignAddress: campaign, txHash });
+  res.json(result);
 }));
 
 /**

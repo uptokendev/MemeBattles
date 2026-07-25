@@ -423,6 +423,18 @@ async function listActiveCampaigns(
   }));
 }
 
+async function listScannableCampaigns(
+  chainId: number,
+  campaignAddress?: string
+): Promise<Array<{ campaign: string; createdBlock: number }>> {
+  // Campaign contracts are durable even when the launch factory changes.
+  // Factory addresses are discovery sources, not liveness filters. Filtering
+  // campaign scans by the currently configured factory silently strands legacy
+  // campaigns: their buys/sells still work on-chain, but charts, leagues, and
+  // War Room metrics stop updating.
+  return listActiveCampaigns(chainId, undefined, campaignAddress);
+}
+
 async function insertTrade(row: {
   chainId: number;
   campaign: string;
@@ -472,7 +484,7 @@ async function insertTrade(row: {
 
   await touchCampaignActivity(row.chainId, row.campaign, row.blockTime);
 
-  return { tokenAmount, bnbAmount, priceBnb };
+  return { inserted: (inserted.rowCount ?? 0) > 0, tokenAmount, bnbAmount, priceBnb };
 }
 
 async function insertVote(row: {
@@ -1157,7 +1169,7 @@ async function scanCampaignRange(
         const amountOut = (parsed.args as any).amountOut as bigint;
         const cost = (parsed.args as any).cost as bigint;
 
-        const { tokenAmount, bnbAmount, priceBnb } = await insertTrade({
+        const { inserted, tokenAmount, bnbAmount, priceBnb } = await insertTrade({
           chainId,
           campaign,
           txHash,
@@ -1170,41 +1182,43 @@ async function scanCampaignRange(
           bnbRaw: cost
         });
 
-        await publishTrade(chainId, campaign, {
-          type: "trade",
-          chainId,
-          token: campaign.toLowerCase(),
-          txHash,
-          logIndex,
-          side: "buy",
-          wallet: buyer.toLowerCase(),
-          tokenAmount: String(tokenAmount),
-          bnbAmount: String(bnbAmount),
-          priceBnb: priceBnb !== null ? String(priceBnb) : null,
-          ts: tsSec,
-          blockNumber: log.blockNumber
-        });
+        if (inserted) {
+          await publishTrade(chainId, campaign, {
+            type: "trade",
+            chainId,
+            token: campaign.toLowerCase(),
+            txHash,
+            logIndex,
+            side: "buy",
+            wallet: buyer.toLowerCase(),
+            tokenAmount: String(tokenAmount),
+            bnbAmount: String(bnbAmount),
+            priceBnb: priceBnb !== null ? String(priceBnb) : null,
+            ts: tsSec,
+            blockNumber: log.blockNumber
+          });
 
-        await insertActivityEvent({
-          chainId,
-          eventType: "BUY",
-          txHash,
-          logIndex,
-          blockNumber: log.blockNumber,
-          blockTime: new Date(tsSec * 1000),
-          actor: buyer,
-          campaign,
-          token: tokenAddr,
-          amountInWei: cost,
-          amountOutWei: amountOut,
-          costWei: cost,
-          meta: { priceBnb },
-        });
+          await insertActivityEvent({
+            chainId,
+            eventType: "BUY",
+            txHash,
+            logIndex,
+            blockNumber: log.blockNumber,
+            blockTime: new Date(tsSec * 1000),
+            actor: buyer,
+            campaign,
+            token: tokenAddr,
+            amountInWei: cost,
+            amountOutWei: amountOut,
+            costWei: cost,
+            meta: { priceBnb },
+          });
 
-        if (priceBnb !== null) {
-          for (const tf of TIMEFRAMES) {
-            const b = bucketStart(tsSec, tf);
-            await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+          if (priceBnb !== null) {
+            for (const tf of TIMEFRAMES) {
+              const b = bucketStart(tsSec, tf);
+              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+            }
           }
         }
       } else if (name === "TokensSold") {
@@ -1212,7 +1226,7 @@ async function scanCampaignRange(
         const amountIn = (parsed.args as any).amountIn as bigint;
         const payout = (parsed.args as any).payout as bigint;
 
-        const { tokenAmount, bnbAmount, priceBnb } = await insertTrade({
+        const { inserted, tokenAmount, bnbAmount, priceBnb } = await insertTrade({
           chainId,
           campaign,
           txHash,
@@ -1225,44 +1239,46 @@ async function scanCampaignRange(
           bnbRaw: payout
         });
 
-        // Home feed progress: sells subtract from raisedTotalBnb
-        leagueFeed.queueRaisedDelta(chainId, campaign, -bnbAmount);
+        if (inserted) {
+          // Home feed progress: sells subtract from raisedTotalBnb
+          leagueFeed.queueRaisedDelta(chainId, campaign, -bnbAmount);
 
-        await publishTrade(chainId, campaign, {
-          type: "trade",
-          chainId,
-          token: campaign.toLowerCase(),
-          txHash,
-          logIndex,
-          side: "sell",
-          wallet: seller.toLowerCase(),
-          tokenAmount: String(tokenAmount),
-          bnbAmount: String(bnbAmount),
-          priceBnb: priceBnb !== null ? String(priceBnb) : null,
-          ts: tsSec,
-          blockNumber: log.blockNumber
-        });
+          await publishTrade(chainId, campaign, {
+            type: "trade",
+            chainId,
+            token: campaign.toLowerCase(),
+            txHash,
+            logIndex,
+            side: "sell",
+            wallet: seller.toLowerCase(),
+            tokenAmount: String(tokenAmount),
+            bnbAmount: String(bnbAmount),
+            priceBnb: priceBnb !== null ? String(priceBnb) : null,
+            ts: tsSec,
+            blockNumber: log.blockNumber
+          });
 
-        await insertActivityEvent({
-          chainId,
-          eventType: "SELL",
-          txHash,
-          logIndex,
-          blockNumber: log.blockNumber,
-          blockTime: new Date(tsSec * 1000),
-          actor: seller,
-          campaign,
-          token: tokenAddr,
-          amountInWei: amountIn,
-          amountOutWei: payout,
-          payoutWei: payout,
-          meta: { priceBnb },
-        });
+          await insertActivityEvent({
+            chainId,
+            eventType: "SELL",
+            txHash,
+            logIndex,
+            blockNumber: log.blockNumber,
+            blockTime: new Date(tsSec * 1000),
+            actor: seller,
+            campaign,
+            token: tokenAddr,
+            amountInWei: amountIn,
+            amountOutWei: payout,
+            payoutWei: payout,
+            meta: { priceBnb },
+          });
 
-        if (priceBnb !== null) {
-          for (const tf of TIMEFRAMES) {
-            const b = bucketStart(tsSec, tf);
-            await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+          if (priceBnb !== null) {
+            for (const tf of TIMEFRAMES) {
+              const b = bucketStart(tsSec, tf);
+              await upsertCandle(chainId, campaign, tf, b, priceBnb, bnbAmount);
+            }
           }
         }
       } else if (name === "CampaignFinalized") {
@@ -1298,6 +1314,187 @@ async function scanCampaignRange(
     await setStateMax(chainId, cursor, end + 1);
     if (logs.length > 0) await patchStats(chainId, campaign);
   }
+}
+
+function parseTradeLog(
+  iface: ethers.Interface,
+  log: ethers.Log
+): null | {
+  side: "buy" | "sell";
+  wallet: string;
+  tokenRaw: bigint;
+  bnbRaw: bigint;
+} {
+  const parsed = iface.parseLog(log);
+  if (!parsed) return null;
+
+  if (parsed.name === "TokensPurchased") {
+    return {
+      side: "buy",
+      wallet: String((parsed.args as any).buyer),
+      tokenRaw: (parsed.args as any).amountOut as bigint,
+      bnbRaw: (parsed.args as any).cost as bigint,
+    };
+  }
+
+  if (parsed.name === "TokensSold") {
+    return {
+      side: "sell",
+      wallet: String((parsed.args as any).seller),
+      tokenRaw: (parsed.args as any).amountIn as bigint,
+      bnbRaw: (parsed.args as any).payout as bigint,
+    };
+  }
+
+  return null;
+}
+
+function providerForChain(chain: ChainCfg): ethers.JsonRpcProvider {
+  const rpcList = parseRpcList(chain.rpcHttp);
+  if (rpcList.length === 0) {
+    throw new Error(`No RPC URLs configured for chain ${chain.chainId}`);
+  }
+  return new ethers.JsonRpcProvider(rpcList[0], undefined, {
+    batchMaxCount: 1,
+    batchStallTime: 0
+  });
+}
+
+export async function ingestCampaignTransaction(input: {
+  chainId: number;
+  campaignAddress: string;
+  txHash: string;
+}) {
+  const chain = CHAINS.find((c) => c.chainId === Number(input.chainId));
+  if (!chain) throw new Error(`Unsupported chainId: ${input.chainId}`);
+
+  const campaign = String(input.campaignAddress || "").trim().toLowerCase();
+  const txHash = String(input.txHash || "").trim().toLowerCase();
+  if (!ethers.isAddress(campaign)) throw new Error("Invalid campaign address");
+  if (!/^0x[a-f0-9]{64}$/i.test(txHash)) throw new Error("Invalid tx hash");
+
+  const known = await listScannableCampaigns(chain.chainId, campaign);
+  if (!known.length) {
+    throw new Error("Campaign is not known or active in the indexer database");
+  }
+
+  const provider = providerForChain(chain);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) throw new Error("Transaction receipt not found");
+  if (receipt.status === 0) throw new Error("Transaction reverted; nothing to ingest");
+
+  const block = await provider.getBlock(receipt.blockNumber);
+  const tsSec = Number(block?.timestamp ?? Math.floor(Date.now() / 1000));
+  const blockTime = new Date(tsSec * 1000);
+  const iface = new ethers.Interface(LAUNCH_CAMPAIGN_ABI);
+  const campaignInfo = await getCampaignInfo(chain.chainId, campaign);
+  const tokenAddr = campaignInfo?.tokenAddress ?? null;
+  const ingested: Array<{
+    side: "buy" | "sell";
+    wallet: string;
+    tokenAmount: string;
+    bnbAmount: string;
+    priceBnb: string | null;
+    txHash: string;
+    logIndex: number;
+    blockNumber: number;
+  }> = [];
+
+  for (const log of receipt.logs) {
+    if (String(log.address || "").toLowerCase() !== campaign) continue;
+
+    let trade: ReturnType<typeof parseTradeLog>;
+    try {
+      trade = parseTradeLog(iface, log);
+    } catch {
+      continue;
+    }
+    if (!trade) continue;
+
+    const logIndex = Number(log.index ?? 0);
+    const { inserted, tokenAmount, bnbAmount, priceBnb } = await insertTrade({
+      chainId: chain.chainId,
+      campaign,
+      txHash,
+      logIndex,
+      blockNumber: Number(receipt.blockNumber),
+      blockTime,
+      side: trade.side,
+      wallet: trade.wallet,
+      tokenRaw: trade.tokenRaw,
+      bnbRaw: trade.bnbRaw,
+    });
+
+    if (inserted) {
+      if (trade.side === "sell") {
+        leagueFeed.queueRaisedDelta(chain.chainId, campaign, -bnbAmount);
+      }
+
+      await publishTrade(chain.chainId, campaign, {
+        type: "trade",
+        chainId: chain.chainId,
+        token: campaign,
+        txHash,
+        logIndex,
+        side: trade.side,
+        wallet: trade.wallet.toLowerCase(),
+        tokenAmount: String(tokenAmount),
+        bnbAmount: String(bnbAmount),
+        priceBnb: priceBnb !== null ? String(priceBnb) : null,
+        ts: tsSec,
+        blockNumber: Number(receipt.blockNumber)
+      });
+
+      await insertActivityEvent({
+        chainId: chain.chainId,
+        eventType: trade.side === "sell" ? "SELL" : "BUY",
+        txHash,
+        logIndex,
+        blockNumber: Number(receipt.blockNumber),
+        blockTime,
+        actor: trade.wallet,
+        campaign,
+        token: tokenAddr,
+        amountInWei: trade.side === "sell" ? trade.tokenRaw : trade.bnbRaw,
+        amountOutWei: trade.side === "sell" ? trade.bnbRaw : trade.tokenRaw,
+        costWei: trade.side === "buy" ? trade.bnbRaw : null,
+        payoutWei: trade.side === "sell" ? trade.bnbRaw : null,
+        meta: { priceBnb },
+      });
+
+      if (priceBnb !== null) {
+        for (const tf of TIMEFRAMES) {
+          const b = bucketStart(tsSec, tf);
+          await upsertCandle(chain.chainId, campaign, tf, b, priceBnb, bnbAmount);
+        }
+      }
+    }
+
+    ingested.push({
+      side: trade.side,
+      wallet: trade.wallet.toLowerCase(),
+      tokenAmount: String(tokenAmount),
+      bnbAmount: String(bnbAmount),
+      priceBnb: priceBnb !== null ? String(priceBnb) : null,
+      txHash,
+      logIndex,
+      blockNumber: Number(receipt.blockNumber),
+    });
+  }
+
+  if (ingested.length > 0) {
+    await patchStats(chain.chainId, campaign);
+  }
+
+  return {
+    ok: true,
+    chainId: chain.chainId,
+    campaign,
+    txHash,
+    blockNumber: Number(receipt.blockNumber),
+    ingestedCount: ingested.length,
+    trades: ingested,
+  };
 }
 
 function computeStartBlock(chain: ChainCfg, headTarget: number, existingState: number): number {
@@ -1507,7 +1704,7 @@ async function runIndexerCore(opts: {
     // ---------------- Campaign scans ----------------
     let campaigns: Array<{ campaign: string; createdBlock: number }> = [];
     try {
-      campaigns = await listActiveCampaigns(chain.chainId, chain.factoryAddress, opts.campaignAddress);
+      campaigns = await listScannableCampaigns(chain.chainId, opts.campaignAddress);
     } catch (e) {
       console.error("listActiveCampaigns error", { chainId: chain.chainId }, e);
       continue;
