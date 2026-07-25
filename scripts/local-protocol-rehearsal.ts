@@ -39,6 +39,7 @@ type CampaignRequest = {
   xAccount: string;
   website: string;
   extraLink: string;
+  graduationTarget: bigint;
 };
 
 type CreateRouteAuthorization = {
@@ -202,6 +203,7 @@ async function main() {
     xAccount: "",
     website: "",
     extraLink: "",
+    graduationTarget: 0n,
   };
 
   const tradeRouteProfile = Number(await factory.tradeRouteProfile());

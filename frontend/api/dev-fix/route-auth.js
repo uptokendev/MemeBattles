@@ -120,6 +120,38 @@ function getFactoryAddressFromEnv(chainId) {
   );
 }
 
+const WAD = 10n ** 18n;
+const STANDARD_GRADUATION_TARGETS = new Set([
+  (15_000n * WAD).toString(),
+  (30_000n * WAD).toString(),
+  (50_000n * WAD).toString(),
+]);
+const TEST_GRADUATION_TARGET = (6n * WAD).toString();
+
+function isTruthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function normalizeUintString(value, fallback = "0") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = BigInt(raw);
+    if (parsed < 0n) throw new Error("negative");
+    return parsed.toString();
+  } catch {
+    throw new Error("graduationTarget must be a uint-compatible value");
+  }
+}
+
+function validateGraduationTarget(chainId, graduationTarget) {
+  if (graduationTarget === "0") return;
+  if (STANDARD_GRADUATION_TARGETS.has(graduationTarget)) return;
+  const testThresholdEnabled = isTruthy(process.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD || process.env.ENABLE_TEST_GRADUATION_THRESHOLD);
+  if (Number(chainId) === 97 && testThresholdEnabled && graduationTarget === TEST_GRADUATION_TARGET) return;
+  throw new Error("Unsupported graduation target");
+}
+
 function normalizeCampaignRequest(body) {
   const source = body.campaignRequest || body.request || body;
   const request = {
@@ -129,6 +161,7 @@ function normalizeCampaignRequest(body) {
     xAccount: String(source.xAccount || ""),
     website: String(source.website || ""),
     extraLink: String(source.extraLink || ""),
+    graduationTarget: normalizeUintString(source.graduationTarget ?? source.graduationTargetWei ?? 0),
   };
   if (!request.name.trim()) throw new Error("Campaign request name is required");
   if (!request.symbol.trim()) throw new Error("Campaign request symbol is required");
@@ -247,6 +280,7 @@ export async function routingCreateAuthorization(req, res) {
   let campaignRequest;
   try {
     campaignRequest = normalizeCampaignRequest(body);
+    validateGraduationTarget(chainId, campaignRequest.graduationTarget);
   } catch (error) {
     return json(res, 400, { error: error.message });
   }

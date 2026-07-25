@@ -84,6 +84,7 @@ contract LaunchFactory is Ownable {
         string xAccount;
         string website;
         string extraLink;
+        uint256 graduationTarget;
     }
 
     struct RouteAuthorization {
@@ -248,6 +249,9 @@ contract LaunchFactory is Ownable {
         (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
+        uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
+        if (campaignGraduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
             symbol: req.symbol,
@@ -260,7 +264,7 @@ contract LaunchFactory is Ownable {
             liquidityTokenBps: config.liquidityTokenBps,
             basePrice: config.basePrice,
             priceSlope: config.priceSlope,
-            graduationTarget: config.graduationTarget,
+            graduationTarget: campaignGraduationTarget,
             graduationOracle: graduationOracle,
             liquidityBps: config.liquidityBps,
             protocolFeeBps: protocolFeeBps,
@@ -480,7 +484,8 @@ contract LaunchFactory is Ownable {
                 keccak256(bytes(req.logoURI)),
                 keccak256(bytes(req.xAccount)),
                 keccak256(bytes(req.website)),
-                keccak256(bytes(req.extraLink))
+                keccak256(bytes(req.extraLink)),
+                req.graduationTarget
             )
         );
     }

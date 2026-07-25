@@ -115,7 +115,7 @@ describe("LaunchCampaign quote edge behavior", function () {
       graduationTarget: 1n,
       liquidityBps: 8000,
     });
-    await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest() as any);
+    await fx.factory.connect(fx.creator).createCampaign(baseCampaignRequest({ graduationTarget: 0n }) as any);
     const info = await fx.factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     const curveSupply = await campaign.curveSupply();

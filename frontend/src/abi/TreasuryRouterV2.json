@@ -1,0 +1,943 @@
+{
+  "contractName": "TreasuryRouterV2",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_admin",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_weeklyLeagueVault",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "_monthlyLeagueTreasury",
+          "type": "address"
+        },
+        {
+          "internalType": "uint64",
+          "name": "_upgradeDelaySeconds",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "SafeERC20FailedOperation",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "locker",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "AuthorizedLpLockerUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldVault",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "CommunityRewardsVaultUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "ForwardFailed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Forwarded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "name": "ForwardingPaused",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "weeklyAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "monthlyAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "LeagueRouted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "weeklyBps",
+          "type": "uint16"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "monthlyBps",
+          "type": "uint16"
+        }
+      ],
+      "name": "LeagueSplitUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "locker",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "protocolRevenueVault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "LpNativeRouted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "locker",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "protocolRevenueVault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "LpTokenRouted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldTreasury",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newTreasury",
+          "type": "address"
+        }
+      ],
+      "name": "MonthlyLeagueTreasuryActivated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newTreasury",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "executeAfter",
+          "type": "uint64"
+        }
+      ],
+      "name": "MonthlyLeagueTreasuryProposed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldLocker",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newLocker",
+          "type": "address"
+        }
+      ],
+      "name": "PrimaryLpLockerUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldVault",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "ProtocolRevenueVaultUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldVault",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "RecruiterRewardsVaultUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "enum TreasuryRouterV2.RouteKind",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "enum TreasuryRouterV2.RouteProfile",
+          "name": "profile",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "leagueAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "recruiterAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "airdropAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "squadAmount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "protocolAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "RouteExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldVault",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "WeeklyLeagueVaultActivated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "executeAfter",
+          "type": "uint64"
+        }
+      ],
+      "name": "WeeklyLeagueVaultProposed",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "acceptMonthlyLeagueTreasury",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "acceptWeeklyLeagueVault",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "admin",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "authorizedLpLocker",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "communityRewardsVault",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "forward",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "forwardingPaused",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "monthlyLeagueBps",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "monthlyLeagueTreasury",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pendingMonthlyLeagueTreasury",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pendingMonthlyLeagueTreasurySince",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pendingWeeklyLeagueVault",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pendingWeeklyLeagueVaultSince",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "permanentLpLocker",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "leagueAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "previewLeagueSplit",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "weekly",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "monthly",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct TreasuryRouterV2.LeagueSplit",
+          "name": "split",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "enum TreasuryRouterV2.RouteKind",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum TreasuryRouterV2.RouteProfile",
+          "name": "profile",
+          "type": "uint8"
+        }
+      ],
+      "name": "previewRoute",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "league",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "recruiter",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "airdrop",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "squad",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "protocol",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct TreasuryRouterV2.RouteAmounts",
+          "name": "amounts",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newTreasury",
+          "type": "address"
+        }
+      ],
+      "name": "proposeMonthlyLeagueTreasury",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "proposeWeeklyLeagueVault",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "protocolRevenueVault",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "recruiterRewardsVault",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "enum TreasuryRouterV2.RouteKind",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum TreasuryRouterV2.RouteProfile",
+          "name": "profile",
+          "type": "uint8"
+        }
+      ],
+      "name": "route",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "league",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "recruiter",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "airdrop",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "squad",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "protocol",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct TreasuryRouterV2.RouteAmounts",
+          "name": "amounts",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "routeLpNative",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "routeLpToken",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "locker",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "setAuthorizedLpLocker",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "setCommunityRewardsVault",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "paused",
+          "type": "bool"
+        }
+      ],
+      "name": "setForwardingPaused",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint16",
+          "name": "newWeeklyBps",
+          "type": "uint16"
+        },
+        {
+          "internalType": "uint16",
+          "name": "newMonthlyBps",
+          "type": "uint16"
+        }
+      ],
+      "name": "setLeagueSplit",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newLocker",
+          "type": "address"
+        }
+      ],
+      "name": "setPrimaryLpLocker",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "setProtocolRevenueVault",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newVault",
+          "type": "address"
+        }
+      ],
+      "name": "setRecruiterRewardsVault",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "upgradeDelay",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "weeklyLeagueBps",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "weeklyLeagueVault",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "stateMutability": "payable",
+      "type": "receive"
+    }
+  ],
+  "bytecode": "0x60c0346200022d57601f62001cc738819003918201601f19168301926001600160401b0392909183851183861017620002325781608092849260409788528339810103126200022d57620000538162000248565b90620000626020820162000248565b9160606200007286840162000248565b920151938416928385036200022d576006805463ffffffff60a01b191663036b017760a31b1790556001600160a01b039082821615620001ff578116928315620001d05716928315620001a057610e10116200016a5760805260018060a01b031990816000541617600055600254161760025560a05251611a6990816200025e82396080518181816102070152818161029501528181610412015281816108bb015281816109af01528181610ae901528181610de701528181610ec501528181610f520152818161106c01528181611139015261125a015260a05181818161091d01528181610d1c01528181610e490152610fae0152f35b845162461bcd60e51b815260206004820152600f60248201526e19195b185e481d1bdbc81cdb585b1b608a1b6044820152606490fd5b855162461bcd60e51b815260206004820152600960248201526806d6f6e74686c793d360bc1b6044820152606490fd5b865162461bcd60e51b815260206004820152600860248201526707765656b6c793d360c41b6044820152606490fd5b865162461bcd60e51b8152602060048201526007602482015266061646d696e3d360cc1b6044820152606490fd5b600080fd5b634e487b7160e01b600052604160045260246000fd5b51906001600160a01b03821682036200022d5756fe60406080815260049081361015610029575b5050361561001e57600080fd5b610027346119f1565b005b600091823560e01c9081623f3df3146112ca5781631ab904b21461122f57816329d62eb7146111f157816329e4d547146111a957816333485e221461110e578163454d9b051461104d57816348d858f3146110275781634cd53c4214610f335781634d6a75af14610e995781636321208314610e705781636f4b95df14610d9a57816378a5c9ee14610d745781637dd1279214610d4b5781637e48d4ea14610d075781638408bab214610b9857816386afb2f614610abc5781638e8c669114610a98578163929b9e4c14610a7057816395a666ba14610a47578163acb9fef61461094e578163bcc5ac8f1461086e578163be064997146107da578163c2e372aa146107ad578163c47636e514610784578163c5ed733d14610457578163ce606356146103c8578163d264e05e146103a8578163d2a0c2721461037c578163e3272af31461025e57508063f6eadb0114610236578063f851a440146101f3578063fa29e2bf146101cb5763fa93dac80361001157346101c757816003193601126101c757600354905160a09190911c6001600160401b03168152602090f35b5080fd5b50346101c757816003193601126101c75760015490516001600160a01b039091168152602090f35b50346101c757816003193601126101c757517f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03168152602090f35b50346101c757816003193601126101c75760025490516001600160a01b039091168152602090f35b8383346101c757806003193601126101c757823561ffff93848216918281036103785760243595861691828703610374576102c3337f00000000000000000000000000000000000000000000000000000000000000006001600160a01b031614611405565b828401808511610361576127100361033257507fe4623ac60769347e27ac0babac681b13af959c6a4a5acc0ced773212ee99a98b94956006549061ffff60b01b9060b01b169161ffff60a01b9060a01b169063ffffffff60a01b1916171760065582519182526020820152a180f35b606490602086519162461bcd60e51b83528201526009602482015268189859081cdc1b1a5d60ba1b6044820152fd5b634e487b7160e01b875260118252602487fd5b8580fd5b8480fd5b9050346103a457826003193601126103a4575490516001600160a01b03909116815260209150f35b8280fd5b83346103c557806003193601126103c5576103c2476119f1565b80f35b80fd5b9050346103a45760203660031901126103a45735908115158092036103a4577f77931a4b47db78545305ad5b4bf71028f486d6ec695d5dbdc458bc05bca859dc91602091610440337f00000000000000000000000000000000000000000000000000000000000000006001600160a01b031614611405565b60ff196009541660ff83161760095551908152a180f35b918091506003193601126103a457813560028110156107805760243590600382101561037857610485611473565b5061049560ff60095416156117a1565b6104a03415156114ae565b83546001600160a01b03949085161561074a57846005541615610714576104cc856006541615156117de565b6104d78383346114e5565b9485518581610697575b505060209687870192835180610684575b50868801908282518061060c575b50506060890192835180610596575b5050509260c09261057e99927ff4d3007fcb5943e7297b8f754520795f1826511eae46442cd8c89c5a18ce12519560808b0192835180610582575b50508a519351905191519251938a5195348752860152898501526060840152608083015260a0820152a35191829182611316565b0390f35b61058f9160065416611918565b388061054a565b81908c8760055416918c5191820191630951477160e21b83528681526105bb8161134a565b51925af16105c7611853565b50156105d457808061050f565b875162461bcd60e51b81529081018a905260126024820152711cdc5d5859081c9bdd5d194819985a5b195960721b6044820152606490fd5b81908c8760055416918c5191820191631143ad5760e21b83528681526106318161134a565b51925af161063d611853565b501561064a578238610500565b875162461bcd60e51b81529081018a90526014602482015273185a5c991c9bdc081c9bdd5d194819985a5b195960621b6044820152606490fd5b6106919084835416611918565b386104f2565b6106c17fee9de52879baab977100c4e0cbe960be3cea56f90568fc1087adb6424d41f802926113b1565b805180610701575b5060208101908151806106ed575b5051905182519182526020820152a138856104e1565b6106fb908660025416611918565b386106d7565b61070e90858c5416611918565b386106c9565b606490602085519162461bcd60e51b8352820152601060248201526f0636f6d6d756e6974795661756c743d360841b6044820152fd5b606490602085519162461bcd60e51b8352820152601060248201526f07265637275697465725661756c743d360841b6044820152fd5b8380fd5b5050346101c757816003193601126101c75760075490516001600160a01b039091168152602090f35b5050346101c757816003193601126101c757600154905160a09190911c6001600160401b03168152602090f35b5050816003193601126101c75733825260086020526107fe60ff8284205416611765565b61080d60ff60095416156117a1565b6108183415156114ae565b6006546001600160a01b039061083c9082166108358115156117de565b3490611918565b6006541690513481527f041900f6a0eca84d9502f8b77f342bf450901fc73a2332960182d1cb16662b8860203392a380f35b5050346101c75760203660031901126101c7577fff0e53e4121da76698eee54cee5585cf03b44e0df154d7a179c4468453fec83460206108ac6112fb565b6001600160a01b03906108e2337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b6108eb8161189d565b169260015460018060401b039085600160a01b600160e01b034260a01b169163ffffffff60e01b1617176001556109447f0000000000000000000000000000000000000000000000000000000000000000824216611718565b915191168152a280f35b5050346101c757806003193601126101c7576109686112fb565b90602435918215928315809103610378577f5aca4defce1d72ba0bc2ec0c14d6224756f753969cf53b4667e9d12dd581e93e926020926001600160a01b039081906109d6337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b16956109e387151561181c565b8688526008855282882060ff1981541660ff861617905580610a3a575b610a0e575b5051908152a280f35b86600754918216600080516020611a1d8339815191528280a36001600160a01b03191660075538610a05565b5085816007541614610a00565b5050346101c757816003193601126101c75760055490516001600160a01b039091168152602090f35b5050346101c757816003193601126101c757905490516001600160a01b039091168152602090f35b5050346101c757816003193601126101c75760209060ff6009541690519015158152f35b9050346103a45760203660031901126103a457610ad76112fb565b6001600160a01b0391908290610b10337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b1692610b1d84151561181c565b838552600860205260ff818620541615610b5d57505081600754918216600080516020611a1d8339815191528580a36001600160a01b0319161760075580f35b906020606492519162461bcd60e51b835282015260156024820152741b1bd8dad95c881b9bdd08185d5d1a1bdc9a5e9959605a1b6044820152fd5b9050346103a457816003193601126103a457610bb26112fb565b602435903385526008602052610bcd60ff8587205416611765565b610bdc60ff60095416156117a1565b6001600160a01b03908116928315610cda57610bf98315156114ae565b8160065416610c098115156117de565b85516323b872dd60e01b6020820190815233602483015260448201929092526064808201869052815260a081016001600160401b03811182821017610cc75787525160209188919082885af115610cbd5785513d610cb45750833b155b610c9d57506006541692519081527f4181fc73ba8d182d012665baaea9123d0274b101cece7c197a5eeb588e392e3060203392a480f35b8451635274afe760e01b8152908101849052602490fd5b60011415610c66565b84513d87823e3d90fd5b634e487b7160e01b895260418452602489fd5b606490602086519162461bcd60e51b835282015260076024820152660746f6b656e3d360cc1b6044820152fd5b5050346101c757816003193601126101c757517f00000000000000000000000000000000000000000000000000000000000000006001600160401b03168152602090f35b5050346101c757816003193601126101c75760035490516001600160a01b039091168152602090f35b5050346101c757816003193601126101c75760209061ffff60065460b01c169051908152f35b5050346101c75760203660031901126101c7577fb8eb6e425f0e00ee3cef5e5f02215bf68a621910312c70f4cf62bd35e28624fd6020610dd86112fb565b6001600160a01b0390610e0e337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b610e178161189d565b169260035460018060401b039085600160a01b600160e01b034260a01b169163ffffffff60e01b1617176003556109447f0000000000000000000000000000000000000000000000000000000000000000824216611718565b5050346101c757816003193601126101c75760065490516001600160a01b039091168152602090f35b8390346101c75760203660031901126101c757610eb46112fb565b6001600160a01b03908190610eec337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b1690610ef982151561143d565b8183549182167f4a1f675239ed88e78dd64f923caf16697c7827fc45ff56a110f045e5748cf1db8680a36001600160a01b03191617905580f35b83346103c557806003193601126103c5576001600160a01b03610f79337f0000000000000000000000000000000000000000000000000000000000000000831614611405565b6003549080821691610f8c8315156116df565b610fdc6001600160401b03610fd360a084901c8216610fac8115156116df565b7f000000000000000000000000000000000000000000000000000000000000000090611718565b16421015611731565b600280546001600160a01b0319811685179091556001600160e01b0319909116600355167f748ba5b59846ac60c0a4346b8fcd77b4da179070c07f448383b9a5dba4ed502f8380a380f35b5050346101c757816003193601126101c75760209061ffff60065460a01c169051908152f35b83346103c557806003193601126103c5576001600160a01b03611093337f0000000000000000000000000000000000000000000000000000000000000000831614611405565b60015490808216916110a68315156116df565b6110c66001600160401b03610fd360a084901c8216610fac8115156116df565b83546001600160a01b03198116841785556001600160e01b0319909116600155167fed6b7dd8db180fd5aeb60e1d26beb53734422bcff07df574b330998cda7823f58380a380f35b83346103c55760203660031901126103c5576111286112fb565b6001600160a01b03908190611160337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b169061116d82151561143d565b816006549182167f0f332f71ab1839b5bc79a2a72bcd23d70ff2b253395ce682e66346fedd0abf418580a36001600160a01b0319161760065580f35b9050346103a45760603660031901126103a457602435906002821015610780576044359360038510156103c55750926111e69161057e94356114e5565b905191829182611316565b5050346101c75760203660031901126101c75760209160ff9082906001600160a01b0361121c6112fb565b1681526008855220541690519015158152f35b83346103c55760203660031901126103c5576112496112fb565b6001600160a01b03908190611281337f0000000000000000000000000000000000000000000000000000000000000000841614611405565b169061128e82151561143d565b816005549182167fbf98049ca429ebf1bd9f6a67b706fb05fe97b996aadc415a3de4e5bec9daf6ae8580a36001600160a01b0319161760055580f35b905082346103c55760203660031901126103c557506112e990356113b1565b60208251918051835201516020820152f35b600435906001600160a01b038216820361131157565b600080fd5b91909160808060a0830194805184526020810151602085015260408101516040850152606081015160608501520151910152565b604081019081106001600160401b0382111761136557604052565b634e487b7160e01b600052604160045260246000fd5b8181029291811591840414171561138e57565b634e487b7160e01b600052601160045260246000fd5b9190820391821161138e57565b604080519192919081016001600160401b03811182821017611365576040526000815261140160208201916000835280946127106113f861ffff60065460a01c168361137b565b048092526113a4565b9052565b1561140c57565b60405162461bcd60e51b81526020600482015260096024820152683737ba1030b236b4b760b91b6044820152606490fd5b1561144457565b60405162461bcd60e51b815260206004820152600760248201526607661756c743d360cc1b6044820152606490fd5b6040519060a082016001600160401b038111838210176113655760405260006080838281528260208201528260408201528260608201520152565b156114b557565b60405162461bcd60e51b81526020600482015260086024820152670616d6f756e743d360c41b6044820152606490fd5b9291926114f0611473565b936114fc8215156114ae565b60009283908491859160028110156116cb5761161a5750600383101561160457868461159f968561159796156000146115a6575050611597925061159790611586611563611577610ea69760206104e29961156b60fa9b5b6127109889809881958361137b565b048c5261137b565b0497019687528a61137b565b049560408c019687528861137b565b049560608a019687528951906113a4565b9051906113a4565b6080830152565b600190959192939495146000146115db57506115979291611586611563611577611597946020610ea661156b6105dc93611554565b9350509061159761159792611586611563611577610ea69760206105dc9961156b60fa9b611554565b634e487b7160e01b600052602160045260246000fd5b939490919260038110156116b7578561159f9695936115979593838b941560001461166457505050611597906115866115636115776115979660206105dc9961156b60fa9b611554565b91949091600103611691575090611586611563611577611597946020611597989961156b6106d693611554565b61159794506115979291506115636115776115869260206106d69961156b60fa9b611554565b634e487b7160e01b82526021600452602482fd5b634e487b7160e01b87526021600452602487fd5b156116e657565b60405162461bcd60e51b815260206004820152600a6024820152696e6f2070656e64696e6760b01b6044820152606490fd5b6001600160401b03918216908216019190821161138e57565b1561173857565b60405162461bcd60e51b815260206004820152600560248201526464656c617960d81b6044820152606490fd5b1561176c57565b60405162461bcd60e51b815260206004820152600d60248201526c3737ba103638103637b1b5b2b960991b6044820152606490fd5b156117a857565b60405162461bcd60e51b815260206004820152600e60248201526d1c9bdd5d1a5b99c81c185d5cd95960921b6044820152606490fd5b156117e557565b60405162461bcd60e51b815260206004820152600f60248201526e070726f746f636f6c5661756c743d3608c1b6044820152606490fd5b1561182357565b60405162461bcd60e51b815260206004820152600860248201526706c6f636b65723d360c41b6044820152606490fd5b3d15611898576001600160401b03903d8281116113655760405192601f8201601f19908116603f01168401908111848210176113655760405282523d6000602084013e565b606090565b6001600160a01b038116156118e8573b156118b457565b60405162461bcd60e51b815260206004820152600c60248201526b1b9bdd0818dbdb9d1c9858dd60a21b6044820152606490fd5b60405162461bcd60e51b815260206004820152600860248201526707461726765743d360c41b6044820152606490fd5b6001600160a01b031690600080808084865af1611933611853565b5015611954576020600080516020611a3d83398151915291604051908152a2565b60405162461bcd60e51b815260206004820152600c60248201526b1c9bdd5d194819985a5b195960a21b6044820152606490fd5b6001600160a01b031690600080808084865af16119a3611853565b50156119c4576020600080516020611a3d83398151915291604051908152a2565b60207f8936c63f7941213ec179a97cdc6c377a9ca1413f1c446afcd31722e61986a37791604051908152a2565b60ff60095416611a19578015611a1957600054611a1791906001600160a01b0316611988565b565b5056fee8f47e16eadbb2ed7c91883c7768a2a72b717bd3e51c658897e6e5f1daec11a96f1deddfc28100c291fae8f1064e4a91e844f0841993bb8fba9a913c3b801d80a164736f6c6343000818000a"
+}

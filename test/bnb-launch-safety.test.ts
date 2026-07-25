@@ -15,6 +15,7 @@ function campaignRequest(overrides: Record<string, unknown> = {}) {
     xAccount: "@safety",
     website: "https://memewarzone.example/safety",
     extraLink: "https://memewarzone.example/docs",
+    graduationTarget: 0n,
     ...overrides,
   };
 }

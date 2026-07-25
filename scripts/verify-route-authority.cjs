@@ -2,7 +2,7 @@ const { ethers } = require("ethers");
 
 const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
-const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"];
+const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"];
 
 function normalizeAddress(value, label) {
   if (!value) throw new Error(`${label} is required`);
@@ -55,6 +55,7 @@ function hashCampaignRequest(req) {
       hashString(req.xAccount),
       hashString(req.website),
       hashString(req.extraLink),
+      BigInt(req.graduationTarget ?? 0),
     ])
   );
 }

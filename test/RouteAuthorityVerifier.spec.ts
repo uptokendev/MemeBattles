@@ -15,6 +15,7 @@ const sampleRequest = {
   xAccount: "x",
   website: "https://example.test",
   extraLink: "https://example.test/extra",
+  graduationTarget: ethers.parseEther("30000"),
 };
 
 describe("route authority verifier helpers", function () {
@@ -46,6 +47,7 @@ describe("route authority verifier helpers", function () {
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.website)),
         ethers.keccak256(ethers.toUtf8Bytes(sampleRequest.extraLink)),
+        sampleRequest.graduationTarget,
       ])
     );
 

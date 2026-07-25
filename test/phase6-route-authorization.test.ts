@@ -31,6 +31,7 @@ async function deployFixture() {
     xAccount: "",
     website: "",
     extraLink: "",
+    graduationTarget: 0n,
   };
 
   return { admin, routeAuthority, creator, trader, factory, treasury, chainId, request };

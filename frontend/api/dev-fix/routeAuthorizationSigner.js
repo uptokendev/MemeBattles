@@ -17,7 +17,7 @@ const ethers = loadEthers();
 
 export const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
 export const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
-export const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"];
+export const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"];
 
 const coder = ethers.AbiCoder.defaultAbiCoder();
 
@@ -42,6 +42,7 @@ export function hashCampaignRequest(request) {
       textHash(request?.xAccount),
       textHash(request?.website),
       textHash(request?.extraLink),
+      toBigInt(request?.graduationTarget ?? 0, "graduationTarget"),
     ]),
   );
 }

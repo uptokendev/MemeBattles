@@ -28,7 +28,7 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
   const coder = ethers.AbiCoder.defaultAbiCoder();
   return ethers.keccak256(
     coder.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
       [
         ethers.keccak256(ethers.toUtf8Bytes(req.name)),
         ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
@@ -36,6 +36,7 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
         ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(req.website)),
         ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+        req.graduationTarget,
       ]
     )
   );

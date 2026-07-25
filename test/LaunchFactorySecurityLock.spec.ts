@@ -9,6 +9,7 @@ type CampaignRequest = {
   xAccount: string;
   website: string;
   extraLink: string;
+  graduationTarget: bigint;
 };
 
 const baseReq = (overrides: Partial<CampaignRequest> = {}): CampaignRequest => ({
@@ -18,6 +19,7 @@ const baseReq = (overrides: Partial<CampaignRequest> = {}): CampaignRequest => (
   xAccount: "",
   website: "",
   extraLink: "",
+  graduationTarget: 0n,
   ...overrides,
 });
 
@@ -30,7 +32,7 @@ async function signCreateRouteAuthorization(factory: any, routeAuthority: any, c
 
   const requestHash = ethers.keccak256(
     abi.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
       [
         ethers.keccak256(ethers.toUtf8Bytes(req.name)),
         ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
@@ -38,6 +40,7 @@ async function signCreateRouteAuthorization(factory: any, routeAuthority: any, c
         ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(req.website)),
         ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+        req.graduationTarget,
       ]
     )
   );

@@ -25,6 +25,37 @@ import { ContentContainer } from "@/components/layout/ContentContainer";
 const MAX_LOGO_UPLOAD_BYTES = 5 * 1024 * 1024;
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
+const WAD = 10n ** 18n;
+const STANDARD_GRADUATION_OPTIONS = [
+  {
+    id: "fast",
+    label: "$15K",
+    title: "Fast grad",
+    description: "Shortest bonding phase for quick graduation tests and high-velocity launches.",
+    targetWei: 15_000n * WAD,
+  },
+  {
+    id: "normal",
+    label: "$30K",
+    title: "Normal bond",
+    description: "Default balanced curve with enough room for launch discovery.",
+    targetWei: 30_000n * WAD,
+  },
+  {
+    id: "deep",
+    label: "$50K",
+    title: "Deep liquidity",
+    description: "Longer bonding phase designed to seed stronger DEX liquidity.",
+    targetWei: 50_000n * WAD,
+  },
+] as const;
+const TEST_GRADUATION_OPTION = {
+  id: "test",
+  label: "$6",
+  title: "Test grad",
+  description: "BNB testnet only. Use this to rehearse graduation, LP lock, DEX trading, and fees.",
+  targetWei: 6n * WAD,
+} as const;
 
 function readFlag(value: unknown, fallback = false) {
   const raw = String(value ?? "").trim().toLowerCase();
@@ -92,11 +123,21 @@ const Create = () => {
   const [checkingTicker, setCheckingTicker] = useState(false);
   const [tickerAvailability, setTickerAvailability] = useState<TickerAvailability | null>(null);
   const [tickerCheckError, setTickerCheckError] = useState<string | null>(null);
+  const [graduationTargetWei, setGraduationTargetWei] = useState<bigint>(30_000n * WAD);
 
   const normalizedTicker = useMemo(() => normalizeTicker(formData.ticker), [formData.ticker]);
   const isSolanaCreator = Boolean(solanaWallet.isSolanaConnected && solanaWallet.solanaAccount && !wallet.isConnected);
   const creatorWallet = isSolanaCreator ? solanaWallet.solanaAccount : wallet.account || "";
   const chainId = isSolanaCreator ? SOLANA_CHAIN_ID : getActiveChainId(wallet.chainId);
+  const testGraduationThresholdEnabled = readFlag(import.meta.env.VITE_ENABLE_TEST_GRADUATION_THRESHOLD, false);
+  const graduationOptions = useMemo(
+    () => (
+      chainId === 97 && testGraduationThresholdEnabled
+        ? [...STANDARD_GRADUATION_OPTIONS, TEST_GRADUATION_OPTION]
+        : [...STANDARD_GRADUATION_OPTIONS]
+    ),
+    [chainId, testGraduationThresholdEnabled],
+  );
   const configuredBnbChainId = useMemo(() => {
     const configured = getDefaultChainId();
     return isEvmChainId(configured) ? configured : BNB_CHAIN_ID;
@@ -158,6 +199,11 @@ const Create = () => {
       window.clearTimeout(timer);
     };
   }, [normalizedTicker, chainId]);
+
+  useEffect(() => {
+    const selectedStillAvailable = graduationOptions.some((option) => option.targetWei === graduationTargetWei);
+    if (!selectedStillAvailable) setGraduationTargetWei(30_000n * WAD);
+  }, [graduationOptions, graduationTargetWei]);
 
   const ensureTickerAvailable = () => {
     if (!normalizedTicker) {
@@ -356,6 +402,7 @@ const Create = () => {
         xAccount: formData.twitter || "",
         website: formData.website || "",
         extraLink: formData.otherLink || "",
+        graduationTargetWei,
       });
 
       const campaignAddress = String(receipt?.campaignAddress || "").trim();
@@ -486,6 +533,48 @@ const Create = () => {
               <button type="button" onClick={() => setCategory("project")} className={`rounded-lg px-4 py-2.5 font-retro text-sm transition-all ${formData.category === "project" ? "bg-accent text-accent-foreground shadow-lg shadow-accent/20" : "border border-border bg-muted text-muted-foreground hover:bg-muted/80"}`}>
                 Project
               </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/50 bg-background/25 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <label className="font-retro text-sm text-foreground">Graduation threshold</label>
+                <p className="mt-1 text-xs text-muted-foreground">Choose how much bonding volume is needed before the campaign graduates to DEX liquidity.</p>
+              </div>
+              {chainId === 97 && testGraduationThresholdEnabled ? (
+                <span className="rounded-full border border-orange-400/40 bg-orange-400/10 px-2 py-1 font-retro text-[10px] uppercase tracking-[0.12em] text-orange-200">
+                  Test mode
+                </span>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-4">
+              {graduationOptions.map((option) => {
+                const selected = graduationTargetWei === option.targetWei;
+                const isTest = option.id === "test";
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setGraduationTargetWei(option.targetWei)}
+                    disabled={isProjectDisabled}
+                    className={`rounded-lg border px-3 py-2 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                      selected
+                        ? isTest
+                          ? "border-orange-300 bg-orange-400/15 text-orange-100 shadow-lg shadow-orange-400/15"
+                          : "border-accent bg-accent/15 text-foreground shadow-lg shadow-accent/10"
+                        : "border-border bg-muted/30 text-muted-foreground hover:border-accent/60 hover:text-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-retro text-sm">{option.label}</span>
+                      <span className="font-retro text-[10px] uppercase tracking-[0.12em]">{option.title}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[0.68rem] leading-4">{option.description}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

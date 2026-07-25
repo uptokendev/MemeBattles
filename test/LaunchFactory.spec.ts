@@ -15,6 +15,7 @@ const baseReq = (overrides: Record<string, unknown> = {}) => ({
   xAccount: "",
   website: "",
   extraLink: "",
+  graduationTarget: 0n,
   ...overrides,
 });
 
@@ -22,7 +23,7 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
   const coder = ethers.AbiCoder.defaultAbiCoder();
   return ethers.keccak256(
     coder.encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
+      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
       [
         ethers.keccak256(ethers.toUtf8Bytes(req.name)),
         ethers.keccak256(ethers.toUtf8Bytes(req.symbol)),
@@ -30,6 +31,7 @@ function hashCreateRouteRequest(req: ReturnType<typeof baseReq>) {
         ethers.keccak256(ethers.toUtf8Bytes(req.xAccount)),
         ethers.keccak256(ethers.toUtf8Bytes(req.website)),
         ethers.keccak256(ethers.toUtf8Bytes(req.extraLink)),
+        req.graduationTarget,
       ]
     )
   );
@@ -565,6 +567,20 @@ describe("LaunchFactory", function () {
     expect(await campaign.basePrice()).to.eq(configured.basePrice);
     expect(await campaign.priceSlope()).to.eq(configured.priceSlope);
     expect(await campaign.graduationTarget()).to.eq(configured.graduationTarget);
+  });
+
+  it("allows each campaign request to override the graduation target", async () => {
+    const { factory, creator } = await deployCoreFixture();
+    const configured = await factory.config();
+    const fastTarget = ethers.parseEther("15000");
+
+    await factory.connect(creator).createCampaign(baseReq({ name: "FastGrad", symbol: "FAST", graduationTarget: fastTarget }) as any);
+
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    expect(await campaign.basePrice()).to.eq(configured.basePrice);
+    expect(await campaign.priceSlope()).to.eq(configured.priceSlope);
+    expect(await campaign.graduationTarget()).to.eq(fastTarget);
   });
 
   it("locks economic and routing setters after the first campaign exists", async () => {

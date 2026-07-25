@@ -31,6 +31,7 @@ describe("backend route-authorization integration", function () {
       xAccount: "",
       website: "",
       extraLink: "",
+      graduationTarget: 0n,
     };
     const deadline = await currentDeadline();
     const createSignature = await signCreateAuthorization({
@@ -91,6 +92,7 @@ describe("backend route-authorization integration", function () {
       xAccount: "",
       website: "",
       extraLink: "",
+      graduationTarget: 0n,
     };
     const createDeadline = await currentDeadline();
     const createSignature = await signCreateAuthorization({

@@ -82,6 +82,7 @@ type CampaignRequestPayload = {
   xAccount: string;
   website: string;
   extraLink: string;
+  graduationTarget: string;
 };
 
 type CreatedCampaignReceipt = {
@@ -694,6 +695,7 @@ export function useLaunchpad(): LaunchpadAdapter {
       xAccount: params.xAccount,
       website: params.website,
       extraLink: params.extraLink,
+      graduationTarget: (params.graduationTargetWei ?? 0n).toString(),
     };
 
     await fetchLaunchpadCreatePreflight(wallet.account, activeChainId);
