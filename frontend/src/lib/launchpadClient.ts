@@ -43,6 +43,8 @@ const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const SOLANA_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const TRADE_AUTH_BUY_EXACT_TOKENS = 0;
 const TRADE_AUTH_SELL_EXACT_TOKENS = 2;
+const LEGACY_BUY_GAS_LIMIT = 650_000n;
+const LEGACY_SELL_GAS_LIMIT = 650_000n;
 
 function envEnabled(value: unknown): boolean {
   return TRUE_VALUES.has(String(value || "").trim().toLowerCase());
@@ -659,7 +661,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     } catch (error) {
       if (!isUnsupportedContractMethod(error)) throw error;
       console.warn("[launchpadClient] Authorized buy unavailable; retrying legacy buyExactTokens", error);
-      tx = await campaign.buyExactTokens(amountWei, maxCostWei, overrides);
+      tx = await campaign.buyExactTokens(amountWei, maxCostWei, { ...overrides, gasLimit: LEGACY_BUY_GAS_LIMIT });
     }
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
@@ -698,7 +700,7 @@ export function useLaunchpad(): LaunchpadAdapter {
     } catch (error) {
       if (!isUnsupportedContractMethod(error)) throw error;
       console.warn("[launchpadClient] Authorized sell unavailable; retrying legacy sellExactTokens", error);
-      tx = await campaign.sellExactTokens(amountWei, minAmountWei, overrides);
+      tx = await campaign.sellExactTokens(amountWei, minAmountWei, { ...overrides, gasLimit: LEGACY_SELL_GAS_LIMIT });
     }
     const receipt = await tx.wait();
     emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
