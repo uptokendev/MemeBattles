@@ -1799,14 +1799,13 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
     }
   };
 
-  const copyAddress = () => {
-    const address = campaign?.token ?? "";
+  const copyAddress = (address?: string, label = "Address") => {
     if (!address) return;
 
     navigator.clipboard.writeText(address);
     toast({
       title: "Copied!",
-      description: "Contract address copied to clipboard",
+      description: `${label} copied to clipboard`,
     });
   };
 
@@ -1908,6 +1907,86 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                         <span className="text-[11px] md:text-xs text-foreground/90 truncate">{display}</span>
                       </Link>
 
+                      {tokenData.hasWebsite && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 p-0 hover:bg-muted/50 flex-shrink-0"
+                          onClick={() => {
+                            const url = normalizeSocialUrl(campaign?.website, "website");
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                          title="Website"
+                          aria-label="Open website"
+                        >
+                          <Globe className="h-4 w-4" />
+                        </Button>
+                      )}
+
+                      {tokenData.hasTwitter && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 p-0 hover:bg-muted/50 flex-shrink-0"
+                          onClick={() => {
+                            const url = normalizeSocialUrl(campaign?.xAccount, "x");
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                          title="X"
+                          aria-label="Open X profile"
+                        >
+                          <img
+                            src={twitterIcon}
+                            alt="X"
+                            className="h-4 w-4"
+                          />
+                        </Button>
+                      )}
+
+                      {tokenData.hasTelegram && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
+                          onClick={() => {
+                            const url = normalizeSocialUrl(campaign?.telegram, "telegram");
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          TG
+                        </Button>
+                      )}
+
+                      {tokenData.hasDiscord && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
+                          onClick={() => {
+                            const url = normalizeSocialUrl(campaign?.discord, "discord");
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          DC
+                        </Button>
+                      )}
+
+                      {tokenData.hasOtherLink && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 p-0 hover:bg-muted/50 flex-shrink-0"
+                          onClick={() => {
+                            const url = normalizeSocialUrl(campaign?.extraLink, "other");
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                          title="External link"
+                          aria-label="Open external link"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+
                       <span className="text-[11px] md:text-xs text-muted-foreground whitespace-nowrap">
                         {createdLabel}
                       </span>
@@ -1917,94 +1996,29 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                 <button
                   type="button"
-                  onClick={copyAddress}
+                  onClick={() => copyAddress(campaign?.campaign, "Launch contract address")}
                   className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors flex-shrink-0"
-                  title="Copy contract address"
+                  title="Copy launch campaign contract address"
                 >
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Launch</span>
+                  <span className="font-mono text-[11px] md:text-xs whitespace-nowrap">
+                    {shortenAddress(campaign?.campaign ?? "") || "—"}
+                  </span>
+                  <Copy className="h-3 w-3" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => copyAddress(campaign?.token, "Token contract address")}
+                  className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors flex-shrink-0"
+                  title="Copy ERC-20 token contract address"
+                >
+                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Token</span>
                   <span className="font-mono text-[11px] md:text-xs whitespace-nowrap">
                     {shortenAddress(campaign?.token ?? "") || "—"}
                   </span>
                   <Copy className="h-3 w-3" />
                 </button>
-
-                {tokenData.hasWebsite && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0 hover:bg-muted/50 flex-shrink-0"
-                    onClick={() => {
-                      const url = campaign?.website;
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    <Globe className="h-4 w-4" />
-                  </Button>
-                )}
-
-                {tokenData.hasTwitter && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0 hover:bg-muted/50 flex-shrink-0"
-                    onClick={() => {
-                      const handle = campaign?.xAccount;
-                      if (!handle) return;
-                      const url = handle.startsWith("http")
-                        ? handle
-                        : `https://x.com/${handle.replace(/^@/, "")}`;
-                      window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    <img
-                      src={twitterIcon}
-                      alt="Twitter"
-                      className="h-4 w-4"
-                    />
-                  </Button>
-                )}
-
-                {tokenData.hasTelegram && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
-                    onClick={() => {
-                      const url = normalizeSocialUrl(campaign?.telegram, "telegram");
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    TG
-                  </Button>
-                )}
-
-                {tokenData.hasDiscord && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
-                    onClick={() => {
-                      const url = normalizeSocialUrl(campaign?.discord, "discord");
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    DC
-                  </Button>
-                )}
-
-                {tokenData.hasOtherLink && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 font-retro text-[10px] hover:bg-muted/50 flex-shrink-0"
-                    onClick={() => {
-                      const url = normalizeSocialUrl(campaign?.extraLink, "other");
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    <ExternalLink className="mr-1 h-3 w-3" />
-                    Link
-                  </Button>
-                )}
 
                 {campaignAddr ? (
                   <>
@@ -2247,10 +2261,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           <p className="mt-1 text-sm font-retro text-foreground">{stagePill}</p>
                         </div>
                         <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                          <p className="text-xs text-muted-foreground">Contract</p>
+                          <p className="text-xs text-muted-foreground">Launch contract</p>
                           <div className="mt-1 flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-mono text-foreground truncate">{shortenAddress(campaign?.token ?? "") || "—"}</span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={copyAddress}>
+                            <span className="text-sm font-mono text-foreground truncate">{shortenAddress(campaign?.campaign ?? "") || "—"}</span>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => copyAddress(campaign?.campaign, "Launch contract address")}>
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
                           </div>

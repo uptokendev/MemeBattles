@@ -718,6 +718,28 @@ export function useLaunchpad(): LaunchpadAdapter {
 
     const receipt = await tx.wait();
     const created = extractCreatedCampaign(receipt);
+    try {
+      if (created.campaignAddress && created.tokenAddress) {
+        await apiFetch("/api/campaigns/upsert", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chainId: Number(activeChainId),
+            campaignAddress: created.campaignAddress,
+            tokenAddress: created.tokenAddress,
+            creatorAddress: wallet.account,
+            name: params.name,
+            symbol: params.symbol,
+            logoURI: params.logoURI,
+            xAccount: params.xAccount,
+            website: params.website,
+            extraLink: params.extraLink,
+          }),
+        });
+      }
+    } catch (error) {
+      console.warn("[launchpadClient] Campaign metadata mirror failed", error);
+    }
     emitTxConfirmed({ kind: "create", chainId: activeChainId, txHash: receipt?.hash ?? tx?.hash, ...created });
     return Object.assign(receipt ?? {}, created);
   }, [getFactoryWrite, wallet.account, activeChainId, evmReadChainId, factoryAddress, signer, readProvider]);

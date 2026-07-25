@@ -64,6 +64,7 @@ function metadataPayload(req, row) {
       x: row.x_account || null,
       telegram: row.telegram || null,
       discord: row.discord || null,
+      extraLink: metadata.extraLink || metadata.extra_link || null,
       source: row.source || "memewarzone",
     },
   };

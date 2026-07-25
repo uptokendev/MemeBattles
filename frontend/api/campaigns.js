@@ -67,6 +67,9 @@ function mapCampaignRow(row, gradTargetBnb) {
     name: row.name ?? null,
     symbol: row.symbol ?? null,
     logoUri: row.logo_uri ?? null,
+    website: row.website ?? null,
+    xAccount: row.x_account ?? null,
+    extraLink: row.extra_link ?? null,
     createdAtChain: row.created_at_chain ? String(row.created_at_chain) : null,
     graduatedAtChain: graduatedAt,
     isDexTrading: Boolean(graduatedAt),
@@ -140,6 +143,9 @@ async function fetchBasicCampaignRows({ chainId, limit, cursor, effectiveStatus,
        c.name,
        c.symbol,
        c.logo_uri,
+       null::text as website,
+       null::text as x_account,
+       null::text as extra_link,
        c.created_block,
        c.created_at_chain,
        c.graduated_block,
@@ -232,7 +238,10 @@ export default async function handler(req, res) {
           c.creator_address,
           c.name,
           c.symbol,
-          c.logo_uri,
+          coalesce(tm.logo_uri, c.logo_uri) as logo_uri,
+          tm.website,
+          tm.x_account,
+          coalesce(tm.metadata ->> 'extraLink', tm.metadata ->> 'extra_link') as extra_link,
           c.created_block,
           c.created_at_chain,
           c.graduated_block,
@@ -247,6 +256,23 @@ export default async function handler(req, res) {
         from public.campaigns c
         left join public.token_stats ts
           on ts.chain_id = c.chain_id and ts.campaign_address = c.campaign_address
+        left join lateral (
+          select
+            m.logo_uri,
+            m.website,
+            m.x_account,
+            m.metadata
+          from public.token_metadata_registry m
+          where m.chain_id = c.chain_id
+            and (
+              lower(m.campaign_address) = lower(c.campaign_address)
+              or lower(m.token_address) = lower(c.token_address)
+            )
+          order by
+            case when lower(m.campaign_address) = lower(c.campaign_address) then 0 else 1 end,
+            m.id asc
+          limit 1
+        ) tm on true
         left join public.vote_aggregates va
           on va.chain_id = c.chain_id and va.campaign_address = c.campaign_address
         where c.chain_id = $1

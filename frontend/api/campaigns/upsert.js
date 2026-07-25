@@ -28,6 +28,7 @@ async function mirrorTokenMetadata(req, body) {
   const logoUri = cleanText(body.logoURI ?? body.logoUri ?? body.logo_url, 1000) || null;
   const website = cleanText(body.website, 500) || null;
   const xAccount = cleanText(body.xAccount ?? body.twitter, 500) || null;
+  const extraLink = cleanText(body.extraLink ?? body.extra_link ?? body.otherUrl ?? body.other_url, 1000) || null;
   const telegram = cleanText(body.telegram, 500) || null;
   const discord = cleanText(body.discord, 500) || null;
   const externalUrl = cleanText(body.externalUrl ?? body.external_url, 1000) || null;
@@ -40,6 +41,7 @@ async function mirrorTokenMetadata(req, body) {
   const metadata = JSON.stringify({
     mirroredAt: new Date().toISOString(),
     rawSource: "campaigns_upsert",
+    ...(extraLink ? { extraLink } : {}),
   });
 
   try {
