@@ -62,6 +62,9 @@ const CAMPAIGN_ABI = [
   "function sellExactTokensAuthorized(uint256 amountIn,uint256 minPayout,uint8 routeProfile,uint64 routeDeadline,bytes routeSignature) returns (uint256 payout)",
 ] as ethers.InterfaceAbi;
 const TOKEN_ABI = bnbContractAbis.launchToken as ethers.InterfaceAbi;
+const CAMPAIGN_INTERFACE = new ethers.Interface(CAMPAIGN_ABI);
+const ACTIVITY_LOG_LOOKBACK_BLOCKS = 10_000;
+const ACTIVITY_LOG_CHUNK_SIZE = 1_000;
 const GRADUATION_WRITE_ABI = [
   ...((CAMPAIGN_ABI as any[]) ?? []),
   "function graduateIfEligible(uint256 minTokens, uint256 minBnb) returns (uint256 usedTokens, uint256 usedBnb)",
@@ -367,6 +370,62 @@ function emitTxConfirmed(detail: any) {
   }
 }
 
+async function blockTimestamp(provider: ethers.AbstractProvider, blockNumber?: number | null) {
+  if (!blockNumber) return Math.floor(Date.now() / 1000);
+  try {
+    const block = await provider.getBlock(blockNumber);
+    return Number(block?.timestamp || 0) || Math.floor(Date.now() / 1000);
+  } catch {
+    return Math.floor(Date.now() / 1000);
+  }
+}
+
+async function extractReceiptTrades(receipt: any, campaignAddress: string, provider: ethers.AbstractProvider) {
+  const normalizedCampaign = normalizeAddress(campaignAddress);
+  if (!normalizedCampaign) return [];
+  const timestamp = await blockTimestamp(provider, Number(receipt?.blockNumber || 0));
+  const trades: any[] = [];
+
+  for (const log of receipt?.logs ?? []) {
+    if (normalizeAddress(log?.address) !== normalizedCampaign) continue;
+    try {
+      const parsed = CAMPAIGN_INTERFACE.parseLog({ topics: [...(log.topics || [])], data: log.data });
+      if (!parsed || (parsed.name !== "TokensPurchased" && parsed.name !== "TokensSold")) continue;
+      const isSell = parsed.name === "TokensSold";
+      trades.push({
+        side: isSell ? "sell" : "buy",
+        wallet: String(isSell ? parsed.args?.seller : parsed.args?.buyer || "").toLowerCase(),
+        token_amount: String(isSell ? parsed.args?.amountIn : parsed.args?.amountOut || "0"),
+        bnb_amount: String(isSell ? parsed.args?.payout : parsed.args?.cost || "0"),
+        tx_hash: String(receipt?.hash || receipt?.transactionHash || "").toLowerCase(),
+        block_number: Number(receipt?.blockNumber || log?.blockNumber || 0),
+        log_index: Number(log?.index ?? log?.logIndex ?? 0),
+        timestamp,
+      });
+    } catch {
+      // Ignore unrelated logs in the same transaction.
+    }
+  }
+
+  return trades;
+}
+
+async function getCampaignLogsChunked(
+  provider: ethers.AbstractProvider,
+  campaignAddress: string,
+  topics: (string | string[] | null)[],
+  fromBlock: number,
+  toBlock: number,
+) {
+  const logs: ethers.Log[] = [];
+  for (let start = fromBlock; start <= toBlock; start += ACTIVITY_LOG_CHUNK_SIZE) {
+    const end = Math.min(toBlock, start + ACTIVITY_LOG_CHUNK_SIZE - 1);
+    const chunk = await provider.getLogs({ address: campaignAddress, topics, fromBlock: start, toBlock: end } as any);
+    logs.push(...chunk);
+  }
+  return logs;
+}
+
 export function useLaunchpad(): LaunchpadAdapter {
   const wallet = useWallet() as any;
   const solanaWallet = useSolanaWallet();
@@ -536,7 +595,41 @@ export function useLaunchpad(): LaunchpadAdapter {
       return { buyers: Number(buyersCount), sellers: 0, buyVolumeWei: totalBuyVolumeWei as bigint, sellVolumeWei: totalSellVolumeWei as bigint, fromBlock: latest, toBlock: latest };
     } catch (error) {
       console.warn("[fetchCampaignActivity] counters unavailable", error);
-      return null;
+      try {
+        const normalizedCampaign = normalizeAddress(campaignAddress);
+        if (!normalizedCampaign || !latest) return null;
+        const buyTopic = CAMPAIGN_INTERFACE.getEvent("TokensPurchased")?.topicHash;
+        const sellTopic = CAMPAIGN_INTERFACE.getEvent("TokensSold")?.topicHash;
+        if (!buyTopic || !sellTopic) return null;
+
+        const fromBlock = Math.max(0, latest - ACTIVITY_LOG_LOOKBACK_BLOCKS);
+        const logs = await getCampaignLogsChunked(readProvider, normalizedCampaign, [[buyTopic, sellTopic]], fromBlock, latest);
+        const buyers = new Set<string>();
+        const sellers = new Set<string>();
+        let buyVolumeWei = 0n;
+        let sellVolumeWei = 0n;
+
+        for (const log of logs) {
+          try {
+            const parsed = CAMPAIGN_INTERFACE.parseLog(log);
+            if (!parsed) continue;
+            if (parsed.name === "TokensPurchased") {
+              buyers.add(String(parsed.args?.buyer || "").toLowerCase());
+              buyVolumeWei += BigInt(String(parsed.args?.cost || 0));
+            } else if (parsed.name === "TokensSold") {
+              sellers.add(String(parsed.args?.seller || "").toLowerCase());
+              sellVolumeWei += BigInt(String(parsed.args?.payout || 0));
+            }
+          } catch {
+            // Ignore malformed legacy logs.
+          }
+        }
+
+        return { buyers: buyers.size, sellers: sellers.size, buyVolumeWei, sellVolumeWei, fromBlock, toBlock: latest };
+      } catch (fallbackError) {
+        console.warn("[fetchCampaignActivity] log fallback unavailable", fallbackError);
+        return null;
+      }
     }
   }, [getCampaignRead, readProvider]);
 
@@ -664,7 +757,8 @@ export function useLaunchpad(): LaunchpadAdapter {
       tx = await campaign.buyExactTokens(amountWei, maxCostWei, { ...overrides, gasLimit: LEGACY_BUY_GAS_LIMIT });
     }
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
+    const trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);
 
@@ -703,7 +797,8 @@ export function useLaunchpad(): LaunchpadAdapter {
       tx = await campaign.sellExactTokens(amountWei, minAmountWei, { ...overrides, gasLimit: LEGACY_SELL_GAS_LIMIT });
     }
     const receipt = await tx.wait();
-    emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash });
+    const trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);
 

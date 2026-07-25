@@ -8,10 +8,10 @@ import { useAblyTokenChannel } from "@/hooks/useAblyTokenChannel";
 // Realtime-indexer HTTP base (Railway). Example: https://memebattles-production-dca0.up.railway.app
 const API_BASE = String(import.meta.env.VITE_REALTIME_API_BASE || "").replace(/\/$/, "");
 const ENABLE_TOKEN_POLLING = String(import.meta.env.VITE_ENABLE_TOKEN_POLLING || "").trim() === "1";
-const ENABLE_ONCHAIN_TRADE_FALLBACK =
-  import.meta.env.DEV || String(import.meta.env.VITE_ENABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1";
-const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 50_000;
-const ONCHAIN_FALLBACK_CHUNK_SIZE = 700;
+const DISABLE_ONCHAIN_TRADE_FALLBACK = String(import.meta.env.VITE_DISABLE_ONCHAIN_TRADE_FALLBACK || "").trim() === "1";
+const ENABLE_ONCHAIN_TRADE_FALLBACK = !DISABLE_ONCHAIN_TRADE_FALLBACK;
+const ONCHAIN_FALLBACK_LOOKBACK_BLOCKS = 5_000;
+const ONCHAIN_FALLBACK_CHUNK_SIZE = 1_000;
 
 type RealtimeChannel = any;
 
@@ -62,9 +62,17 @@ function mergeTrades(prev: CurveTradePoint[], next: CurveTradePoint[]) {
 function toBigIntWei(amount: unknown, kind: "ether" | "token"): bigint {
   if (typeof amount === "bigint") return amount;
   const s = typeof amount === "string" ? amount : typeof amount === "number" ? String(amount) : "0";
+  const trimmed = s.trim();
+  if (/^\d+$/.test(trimmed) && trimmed.length > (kind === "ether" ? 12 : 18)) {
+    try {
+      return BigInt(trimmed);
+    } catch {
+      return 0n;
+    }
+  }
   try {
-    if (kind === "ether") return ethers.parseEther(s);
-    return ethers.parseUnits(s, 18);
+    if (kind === "ether") return ethers.parseEther(trimmed);
+    return ethers.parseUnits(trimmed, 18);
   } catch {
     return 0n;
   }
@@ -281,7 +289,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
     return next.length;
   }, [campaignAddress]);
 
-  const pullSnapshot = useCallback(async (signal?: AbortSignal) => {
+  const pullSnapshot = useCallback(async (signal?: AbortSignal, forceOnChainReconcile = false) => {
     if (!canLoadTrades || !campaignAddress) {
       setPoints([]);
       setLoading(false);
@@ -310,7 +318,7 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
         const rows = await fetchJson(apiTradesUrl, signal);
         const apiRows = Array.isArray(rows) ? rows : [];
         const applied = applySnapshot(apiRows);
-        if (applied === 0 && ENABLE_ONCHAIN_TRADE_FALLBACK) {
+        if ((applied === 0 || forceOnChainReconcile) && ENABLE_ONCHAIN_TRADE_FALLBACK) {
           const fallbackRows = await fetchOnChainTradeSnapshot(campaignAddress, chainId, limit, signal);
           applySnapshot(fallbackRows);
         }
@@ -369,6 +377,25 @@ export function useCurveTrades(campaignAddress?: string, opts?: UseCurveTradesOp
       ac.abort();
     };
   }, [canLoadTrades, campaignAddress, pullSnapshot, reconcileMs]);
+
+  useEffect(() => {
+    if (!canLoadTrades || !campaignAddress) return;
+    const current = campaignAddress.toLowerCase();
+    const onConfirmed = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const kind = String(detail?.kind || "").toLowerCase();
+      const confirmedCampaign = String(detail?.campaignAddress || "").toLowerCase();
+      if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== current) return;
+      if (Array.isArray(detail?.trades) && detail.trades.length) {
+        applySnapshot(detail.trades);
+      }
+      const ac = new AbortController();
+      void pullSnapshot(ac.signal, true);
+    };
+
+    window.addEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+    return () => window.removeEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+  }, [canLoadTrades, campaignAddress, applySnapshot, pullSnapshot]);
 
   const ably = useAblyTokenChannel({ enabled: canLoadTrades, chainId, campaignAddress });
   useEffect(() => {
