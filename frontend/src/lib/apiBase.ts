@@ -257,7 +257,7 @@ async function buildTokenDetailsCampaignFallback(path: string): Promise<Response
       safeString(() => token.name(), "Unknown"),
       safeString(() => token.symbol(), ""),
       safeString(() => campaign.logoURI(), "/placeholder.svg"),
-      safeString(() => campaign.owner()),
+      safeString(() => campaign.creator()),
       safeString(() => campaign.website()),
       safeString(() => campaign.xAccount()),
       safeString(() => campaign.extraLink()),
