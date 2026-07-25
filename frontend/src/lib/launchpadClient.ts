@@ -757,7 +757,19 @@ export function useLaunchpad(): LaunchpadAdapter {
       tx = await campaign.buyExactTokens(amountWei, maxCostWei, { ...overrides, gasLimit: LEGACY_BUY_GAS_LIMIT });
     }
     const receipt = await tx.wait();
-    const trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    let trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    if (!trades.length) {
+      trades = [{
+        side: "buy",
+        wallet: String(wallet.account || "").toLowerCase(),
+        token_amount: amountWei.toString(),
+        bnb_amount: maxCostWei.toString(),
+        tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
+        block_number: Number(receipt?.blockNumber || 0),
+        log_index: 0,
+        timestamp: Math.floor(Date.now() / 1000),
+      }];
+    }
     emitTxConfirmed({ kind: "buy", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);
@@ -797,7 +809,19 @@ export function useLaunchpad(): LaunchpadAdapter {
       tx = await campaign.sellExactTokens(amountWei, minAmountWei, { ...overrides, gasLimit: LEGACY_SELL_GAS_LIMIT });
     }
     const receipt = await tx.wait();
-    const trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    let trades = await extractReceiptTrades(receipt, normalizedCampaign, readProvider);
+    if (!trades.length) {
+      trades = [{
+        side: "sell",
+        wallet: String(wallet.account || "").toLowerCase(),
+        token_amount: amountWei.toString(),
+        bnb_amount: minAmountWei.toString(),
+        tx_hash: String(receipt?.hash || tx?.hash || "").toLowerCase(),
+        block_number: Number(receipt?.blockNumber || 0),
+        log_index: 0,
+        timestamp: Math.floor(Date.now() / 1000),
+      }];
+    }
     emitTxConfirmed({ kind: "sell", chainId: activeChainId, campaignAddress: normalizedCampaign, txHash: receipt?.hash ?? tx?.hash, trades });
     return receipt;
   }, [signer, wallet.account, activeChainId, readProvider]);

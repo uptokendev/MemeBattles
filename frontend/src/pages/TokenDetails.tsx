@@ -276,6 +276,62 @@ type TxRow = {
   txHash: string;
 };
 
+function curveTradeKey(t: Pick<CurveTradePoint, "txHash" | "logIndex">) {
+  return `${String(t.txHash || "").toLowerCase()}:${Number(t.logIndex ?? 0)}`;
+}
+
+function parseRawOrDecimalWei(value: unknown, kind: "ether" | "token"): bigint {
+  if (typeof value === "bigint") return value;
+  const raw = String(value ?? "0").trim();
+  if (/^\d+$/.test(raw) && raw.length > (kind === "ether" ? 12 : 18)) {
+    try {
+      return BigInt(raw);
+    } catch {
+      return 0n;
+    }
+  }
+  try {
+    return kind === "ether" ? ethers.parseEther(raw || "0") : ethers.parseUnits(raw || "0", TOKEN_DECIMALS);
+  } catch {
+    return 0n;
+  }
+}
+
+function mergeCurveTradePoints(prev: CurveTradePoint[], next: CurveTradePoint[]) {
+  const map = new Map<string, CurveTradePoint>();
+  for (const point of prev) map.set(curveTradeKey(point), point);
+  for (const point of next) map.set(curveTradeKey(point), point);
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) return a.blockNumber - b.blockNumber;
+    return Number(a.logIndex ?? 0) - Number(b.logIndex ?? 0);
+  });
+}
+
+function confirmedRowsToCurvePoints(rows: any[], campaignAddress: string): CurveTradePoint[] {
+  const campaign = String(campaignAddress || "").toLowerCase();
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const type = String(row?.side || row?.type || "").toLowerCase() === "sell" ? "sell" : "buy";
+      const tokensWei = parseRawOrDecimalWei(row?.token_amount ?? row?.tokensWei ?? row?.tokens, "token");
+      const nativeWei = parseRawOrDecimalWei(row?.bnb_amount ?? row?.nativeWei ?? row?.native, "ether");
+      const tokens = Number(ethers.formatUnits(tokensWei, TOKEN_DECIMALS));
+      const bnb = Number(ethers.formatEther(nativeWei));
+      return {
+        type,
+        from: String(row?.wallet || row?.trader || row?.from || "").toLowerCase(),
+        to: campaign,
+        tokensWei,
+        nativeWei,
+        pricePerToken: tokens > 0 ? bnb / tokens : 0,
+        timestamp: Number(row?.timestamp ?? row?.block_time ?? Math.floor(Date.now() / 1000)),
+        txHash: String(row?.tx_hash || row?.txHash || "").toLowerCase(),
+        blockNumber: Number(row?.block_number ?? row?.blockNumber ?? 0),
+        logIndex: Number(row?.log_index ?? row?.logIndex ?? 0),
+      } satisfies CurveTradePoint;
+    })
+    .filter((point) => /^0x[a-f0-9]{64}$/i.test(point.txHash) && point.tokensWei > 0n && point.nativeWei >= 0n);
+}
+
 function getExplorerBase(chainId?: number): string {
   const id = Number(chainId ?? 0);
   if (id === 56) return "https://bscscan.com";
@@ -471,6 +527,7 @@ const TokenDetails = () => {
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [activity, setActivity] = useState<CampaignActivity | null>(null);
+  const [confirmedCurvePoints, setConfirmedCurvePoints] = useState<CurveTradePoint[]>([]);
   const [activityTab, setActivityTab] = useState<"overview" | "comments" | "trades">(() => readStoredString("mwz:token:workspace-tab", "overview"));
   const [communityTab, setCommunityTab] = useState<"comments" | "updates">(() => {
     const stored = readStoredString("mwz:token:community-tab", "comments" as "comments" | "updates" | "chat");
@@ -847,16 +904,71 @@ const { points: liveCurvePoints, loading: liveCurveLoading, error: liveCurveErro
     () => (Array.isArray(liveCurvePoints) ? liveCurvePoints : []),
     [liveCurvePoints],
   );
+  const combinedCurvePointsSafe = useMemo<CurveTradePoint[]>(
+    () => mergeCurveTradePoints(liveCurvePointsSafe, confirmedCurvePoints),
+    [confirmedCurvePoints, liveCurvePointsSafe],
+  );
+
+  useEffect(() => {
+    setConfirmedCurvePoints([]);
+  }, [resolvedCampaignAddress]);
+
+  useEffect(() => {
+    if (!hasValidCampaignAddress) return;
+    const onConfirmed = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const kind = String(detail?.kind || "").toLowerCase();
+      const confirmedCampaign = String(detail?.campaignAddress || "").toLowerCase();
+      if ((kind !== "buy" && kind !== "sell") || confirmedCampaign !== resolvedCampaignAddress) return;
+
+      const points = confirmedRowsToCurvePoints(detail?.trades || [], resolvedCampaignAddress);
+      if (!points.length) return;
+
+      setConfirmedCurvePoints((prev) => mergeCurveTradePoints(prev, points));
+      setActivity((prev) => {
+        let buyers = prev?.buyers ?? 0;
+        let sellers = prev?.sellers ?? 0;
+        let buyVolumeWei = prev?.buyVolumeWei ?? 0n;
+        let sellVolumeWei = prev?.sellVolumeWei ?? 0n;
+        const buyerSet = new Set<string>();
+        const sellerSet = new Set<string>();
+
+        for (const point of points) {
+          if (point.type === "sell") {
+            if (point.from) sellerSet.add(point.from);
+            sellVolumeWei += point.nativeWei;
+          } else {
+            if (point.from) buyerSet.add(point.from);
+            buyVolumeWei += point.nativeWei;
+          }
+        }
+
+        buyers += buyerSet.size;
+        sellers += sellerSet.size;
+        return {
+          buyers,
+          sellers,
+          buyVolumeWei,
+          sellVolumeWei,
+          fromBlock: prev?.fromBlock ?? points[0]?.blockNumber ?? 0,
+          toBlock: Math.max(prev?.toBlock ?? 0, ...points.map((point) => point.blockNumber || 0)),
+        };
+      });
+    };
+
+    window.addEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+    return () => window.removeEventListener("memebattles:txConfirmed", onConfirmed as EventListener);
+  }, [hasValidCampaignAddress, resolvedCampaignAddress]);
 
   // Prevent chart flicker: keep last non-empty curve points while the live hook briefly refreshes/resets.
   const lastCurvePointsRef = useRef<CurveTradePoint[]>([]);
   useEffect(() => {
-    if (liveCurvePointsSafe.length) lastCurvePointsRef.current = liveCurvePointsSafe;
-  }, [liveCurvePointsSafe]);
+    if (combinedCurvePointsSafe.length) lastCurvePointsRef.current = combinedCurvePointsSafe;
+  }, [combinedCurvePointsSafe]);
 
   const curvePointsForUi: CurveTradePoint[] = useMemo(() => {
-    return liveCurvePointsSafe.length ? liveCurvePointsSafe : lastCurvePointsRef.current;
-  }, [liveCurvePointsSafe]);
+    return combinedCurvePointsSafe.length ? combinedCurvePointsSafe : lastCurvePointsRef.current;
+  }, [combinedCurvePointsSafe]);
 
   // Realtime stats from Railway (price/marketcap/24h vol), patched via Ably.
 const { stats: rtStats } = useTokenStatsRealtime(
@@ -888,7 +1000,7 @@ const toSeconds = (ts: number): number => {
     // - In live mode, useCurveTrades already provides pricePerToken as a NUMBER (BNB per token)
     // - Do NOT ethers.formatEther(pricePerToken) here.
     const points: Array<{ timestamp: number; pricePerToken: number; nativeWei?: bigint }> =
-  liveCurvePointsSafe.map((p: any) => ({
+  combinedCurvePointsSafe.map((p: any) => ({
     timestamp: Number(p.timestamp ?? 0),
     pricePerToken: typeof p.pricePerToken === "number" ? p.pricePerToken : Number(p.pricePerToken ?? 0),
     nativeWei: p.nativeWei,
@@ -939,7 +1051,7 @@ const toSeconds = (ts: number): number => {
     }
 
     return out;
-  }, [liveCurvePointsSafe, metrics, rtStats?.lastPriceBnb]);
+  }, [combinedCurvePointsSafe, metrics, rtStats?.lastPriceBnb]);
 
   // Token view-model used throughout the page
   const tokenData = useMemo(() => {
@@ -1080,7 +1192,7 @@ const bnbUsd = useMemo(() => {
     // NOTE: This is a best-effort view and does not include transfers.
     const balances = new Map<string, bigint>();
 
-    for (const p of liveCurvePointsSafe) {
+    for (const p of combinedCurvePointsSafe) {
       const addr = (p.from || "").toLowerCase();
       if (!addr) continue;
 
@@ -1133,7 +1245,7 @@ const bnbUsd = useMemo(() => {
       totalHolders: holders.length,
       hasLp: lpBal > 0n,
     };
-  }, [liveCurvePointsSafe, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
+  }, [combinedCurvePointsSafe, metrics?.liquiditySupply, metrics?.launched, metrics?.finalizedAt]);
 
 
   // Reserve / "liquidity" shown on the page: BNB held by the campaign contract (pre-graduation)
@@ -1240,7 +1352,7 @@ const bnbUsd = useMemo(() => {
     // LIVE MODE: useCurveTrades() points are CurveTrade objects (type/from/tokensWei/nativeWei/pricePerToken/timestamp/txHash)
     const mcap = tokenData.marketCap ?? "—";
 
-    const next: TxRow[] = [...liveCurvePointsSafe]
+    const next: TxRow[] = [...combinedCurvePointsSafe]
   .slice(-50)
   .reverse()
   .map((p: any, idx: number) => {
@@ -1270,7 +1382,7 @@ const bnbUsd = useMemo(() => {
   });
 
 setTxs(next);
-  }, [campaign, liveCurvePointsSafe, tokenData.marketCap, metrics]);
+  }, [campaign, combinedCurvePointsSafe, tokenData.marketCap, metrics]);
 
   // DexScreener gating: only show external DEX chart after graduation / finalize.
   // Prefer explicit flags when available; older deployments can fall back to sold supply.

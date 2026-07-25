@@ -16,15 +16,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useWallet } from "@/contexts/WalletContext";
 import { useBnbUsdPrice } from "@/hooks/useBnbUsdPrice";
 import { getActiveChainId, getVoteTreasuryAddress } from "@/lib/chainConfig";
+import { getBnbContractAddresses } from "@/lib/bnbContracts";
 
-// Client-side minimum guardrails (in addition to any on-chain minAmount)
-// Requirement: minimum is 0.005 BNB OR ~$2 worth of BNB (whichever is higher).
-const ABS_MIN_BNB = 0.005;
-const USD_MIN = 2;
+const UPVOTE_USD_TARGET = 3;
 
 const UPVOTE_ABI = [
   "function voteWithBNB(address campaign, bytes32 meta) payable",
   "function assetConfig(address asset) view returns (bool enabled, uint256 minAmount)",
+];
+const GRADUATION_ORACLE_ABI = [
+  "function nativeTargetForUsd(uint256 usdAmount) view returns (uint256)",
 ];
 
 function safeLowerHex(s?: string | null): string {
@@ -61,10 +62,14 @@ export function UpvoteDialog({
   const treasuryAddress = useMemo(() => {
     return safeLowerHex(getVoteTreasuryAddress(chainId));
   }, [chainId]);
+  const oracleAddress = useMemo(() => {
+    return safeLowerHex(getBnbContractAddresses(chainId).graduationOracle);
+  }, [chainId]);
 
   const [open, setOpen] = useState(false);
   const [loadingCfg, setLoadingCfg] = useState(false);
   const [minAmountWei, setMinAmountWei] = useState<bigint | null>(null);
+  const [oracleTargetWei, setOracleTargetWei] = useState<bigint | null>(null);
   const [enabled, setEnabled] = useState<boolean>(true);
   const [hasContractCode, setHasContractCode] = useState<boolean | null>(null);
   const [balanceWei, setBalanceWei] = useState<bigint | null>(null);
@@ -78,18 +83,10 @@ export function UpvoteDialog({
   // Prevent the dialog from closing while the wallet prompt / tx is in-flight.
   const lockDialog = submitting;
 
-  const absMinWei = useMemo(() => {
-    try {
-      return ethers.parseEther(String(ABS_MIN_BNB));
-    } catch {
-      return 0n;
-    }
-  }, []);
-
-  const usdMinWei = useMemo(() => {
+  const fallbackUsdTargetWei = useMemo(() => {
     const p = Number(priceUsd ?? 0);
     if (!Number.isFinite(p) || p <= 0) return 0n;
-    const bnb = USD_MIN / p;
+    const bnb = UPVOTE_USD_TARGET / p;
     if (!Number.isFinite(bnb) || bnb <= 0) return 0n;
     try {
       // Use a string round-trip to avoid BigInt overflow/precision issues.
@@ -101,10 +98,10 @@ export function UpvoteDialog({
 
   const effectiveMinWei = useMemo(() => {
     let m = minAmountWei ?? 0n;
-    if (absMinWei > m) m = absMinWei;
-    if (usdMinWei > m) m = usdMinWei;
+    const usdTarget = oracleTargetWei ?? fallbackUsdTargetWei;
+    if (usdTarget > m) m = usdTarget;
     return m;
-  }, [minAmountWei, absMinWei, usdMinWei]);
+  }, [minAmountWei, oracleTargetWei, fallbackUsdTargetWei]);
 
   const humanEffectiveMin = useMemo(() => {
     try {
@@ -221,7 +218,39 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, [open, treasuryAddress, wallet.provider]);
+}, [open, treasuryAddress, wallet.provider]);
+
+  // Load the oracle-converted native amount for the fixed $3 vote target.
+  useEffect(() => {
+    if (!open) return;
+    if (!wallet.provider) return;
+    if (!oracleAddress) {
+      setOracleTargetWei(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const code = await wallet.provider.getCode(oracleAddress);
+        if (cancelled) return;
+        if (!code || code === "0x") {
+          setOracleTargetWei(null);
+          return;
+        }
+
+        const oracle = new ethers.Contract(oracleAddress, GRADUATION_ORACLE_ABI, wallet.provider);
+        const target = await oracle.nativeTargetForUsd(ethers.parseEther(String(UPVOTE_USD_TARGET)));
+        if (!cancelled) setOracleTargetWei(BigInt(target));
+      } catch {
+        if (!cancelled) setOracleTargetWei(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, wallet.provider, oracleAddress]);
 
   // One-time prefill: set the input to the effective minimum when the dialog opens.
   useEffect(() => {
@@ -377,7 +406,7 @@ useEffect(() => {
       if (valueWei < effectiveMinWei) {
         fail(
           "Amount too low",
-          `Minimum is ${humanEffectiveMin} BNB${minUsdLabel ? ` (~${minUsdLabel})` : ""} for 1 vote.`
+          `Minimum is ${humanEffectiveMin} BNB${minUsdLabel ? ` (~${minUsdLabel})` : ""} for 1 vote. UP Votes are priced at $${UPVOTE_USD_TARGET}.`
         );
       }
 
@@ -482,7 +511,7 @@ if (balanceWei != null) {
         <DialogHeader>
           <DialogTitle>UP Vote</DialogTitle>
           <DialogDescription>
-            Pay a small BNB fee to upvote this campaign. 1 transaction = 1 vote.
+            Pay the native-chain equivalent of $3 to upvote this campaign. 1 transaction = 1 vote.
           </DialogDescription>
         </DialogHeader>
 
@@ -499,7 +528,7 @@ if (balanceWei != null) {
                     {" "}• <span className="text-foreground">{minUsdLabel}</span>
                   </>
                 ) : null}
-                <span className="ml-2">(min: max(0.005 BNB, ~$2))</span>
+                <span className="ml-2">(fixed target: $3 via oracle)</span>
               </>
             ) : !treasuryAddress ? (
               "UP Vote treasury is not configured for this chain."
