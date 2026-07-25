@@ -281,7 +281,7 @@ export default function PushDraftLive() {
       });
 
       toast.success("Draft pushed live and linked to the campaign.");
-      navigate(`/token/${campaignAddress}`);
+      navigate(`/token/${tokenAddress || campaignAddress}`);
     } catch (err: any) {
       toast.error(err?.shortMessage || err?.reason || err?.message || "Failed to push draft live.");
     } finally {

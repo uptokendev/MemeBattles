@@ -77,7 +77,7 @@ export default function CommandCenterOverview() {
                   {tokenBalances.slice(0, 6).map((token) => (
                     <Link
                       key={`${token.tokenAddress}-${token.campaignAddress}`}
-                      to={`/token/${token.campaignAddress}`}
+                      to={`/token/${token.tokenAddress || token.campaignAddress}`}
                       className="flex items-center justify-between gap-3 rounded-xl border border-border/40 bg-card/25 p-3 transition hover:border-accent/50 hover:bg-card/45"
                     >
                       <div className="flex min-w-0 items-center gap-3">

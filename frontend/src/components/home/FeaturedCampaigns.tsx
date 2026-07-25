@@ -55,6 +55,7 @@ type FeaturedCardVM = {
   idx: number;
   chainId: number;
   addr: string;
+  tokenAddr?: string | null;
   name: string;
   symbol: string;
   createdAt?: number;
@@ -303,7 +304,7 @@ async function hydrateFeaturedMetadata(items: FeaturedItemApi[], chainId: number
           item.name && item.name !== "Unknown" ? Promise.resolve(item.name) : token ? safeString(() => token.name(), item.name || "Unknown") : Promise.resolve(item.name || "Unknown"),
           item.symbol ? Promise.resolve(item.symbol) : token ? safeString(() => token.symbol(), "") : Promise.resolve(""),
           item.logoUri ? Promise.resolve(item.logoUri) : safeString(() => campaign.logoURI(), "/placeholder.svg"),
-          item.creatorAddress ? Promise.resolve(item.creatorAddress) : safeString(() => campaign.owner(), ""),
+          item.creatorAddress ? Promise.resolve(item.creatorAddress) : safeString(() => campaign.creator(), ""),
         ]);
         return {
           ...item,
@@ -417,10 +418,12 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
       const rawLogo = it.logoUri || logoCache[addr] || null;
       const resolved = resolveFeaturedImageUri(rawLogo);
       const chainId = Number(it.chainId ?? 0) || featuredChainId;
+      const tokenAddr = it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null;
       return {
         idx: idx + 1,
         chainId,
         addr,
+        tokenAddr,
         name: String(it.name || "Unknown"),
         symbol: String(it.symbol ?? ""),
         createdAt,
@@ -515,8 +518,8 @@ export function FeaturedCampaigns({ className, bare = false }: { className?: str
                   className="mwz-hud-frame group flex h-[150px] w-full snap-start overflow-hidden rounded-none border border-orange-400/30 bg-black/70 transition hover:border-orange-400/80 hover:shadow-[0_0_18px_rgba(240,106,26,0.22)]"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/token/${c.addr}?chainId=${c.chainId}`)}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.addr}?chainId=${c.chainId}`); }}
+                  onClick={() => navigate(`/token/${c.tokenAddr || c.addr}?chainId=${c.chainId}`)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/token/${c.tokenAddr || c.addr}?chainId=${c.chainId}`); }}
                 >
                   <div className="relative h-[150px] w-[150px] shrink-0 overflow-hidden border-r border-orange-400/30 bg-black">
                     <div className="absolute inset-0 mwz-stat-grid opacity-20 z-10 pointer-events-none" />

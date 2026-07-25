@@ -587,7 +587,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                   <div
                     key={`${t.tokenAddress}-${t.campaignAddress}`}
                     className="flex items-center justify-between p-3 md:p-4 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/token/${t.campaignAddress.toLowerCase()}`)}
+                    onClick={() => navigate(`/token/${String(t.tokenAddress || t.campaignAddress).toLowerCase()}`)}
                     title="Open token page"
                   >
                     <div className="flex items-center gap-3 md:gap-4 min-w-0">
@@ -634,7 +634,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                   <div
                     key={coin.id}
                     className="flex items-center justify-between p-3 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/token/${coin.campaignAddress.toLowerCase()}`)}
+                    onClick={() => navigate(`/token/${String(coin.tokenAddress || coin.campaignAddress).toLowerCase()}`)}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <img
@@ -854,7 +854,7 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                 <div
                   key={`${t.tokenAddress}-${t.campaignAddress}-coins`}
                   className="p-4 bg-background/50 rounded-xl border border-border hover:border-accent/50 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/token/${t.campaignAddress.toLowerCase()}`)}
+                  onClick={() => navigate(`/token/${String(t.tokenAddress || t.campaignAddress).toLowerCase()}`)}
                 >
                   <div className="flex items-center gap-3">
                     <img
@@ -1260,8 +1260,8 @@ const [draftsError, setDraftsError] = useState<string | null>(null);
                                     {followedCards.map((campaign: any) => {
                     const href =
                       campaign.href ||
-                      (campaign.campaignAddress
-                        ? `/token/${String(campaign.campaignAddress).toLowerCase()}`
+                      (campaign.tokenAddress || campaign.campaignAddress
+                        ? `/token/${String(campaign.tokenAddress || campaign.campaignAddress).toLowerCase()}`
                         : "");
 
                     const isDraft = campaign.kind === "draft";

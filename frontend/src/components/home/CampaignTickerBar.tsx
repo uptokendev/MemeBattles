@@ -10,6 +10,7 @@ import { useWallet } from "@/contexts/WalletContext";
 
 type CampaignTickerItem = {
   campaignAddress: string;
+  tokenAddress?: string;
   symbol: string;
   name: string;
   marketcapBnb: number | null;
@@ -112,6 +113,7 @@ async function fetchTickerItems(chainId: number): Promise<CampaignTickerItem[]> 
       if (!isAddress(campaignAddress)) return null;
       return {
         campaignAddress,
+        tokenAddress: isAddress(row?.token) ? normalizeAddress(row?.token) : undefined,
         symbol: String(row?.symbol ?? "").trim() || "???",
         name: String(row?.name ?? "").trim() || "Unknown",
         marketcapBnb: null,
@@ -193,7 +195,7 @@ export function CampaignTickerBar({ className }: { className?: string }) {
         {loopItems.map((item, index) => (
           <Link
             key={`${item.campaignAddress}-${index}`}
-            to={`/token/${item.campaignAddress}`}
+            to={`/token/${item.tokenAddress || item.campaignAddress}`}
             className="inline-flex shrink-0 items-center gap-2 border border-success/25 bg-black/45 px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-success/80 transition hover:border-orange-400/60 hover:text-orange-300"
           >
             <span className="font-retro text-success">${item.symbol}</span>

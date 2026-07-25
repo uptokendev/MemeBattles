@@ -372,6 +372,7 @@ export function CampaignGrid({ className, query }: { className?: string; query: 
       if (Number.isFinite(raised)) progressPct = Math.max(0, Math.min(100, (raised / GRAD_TARGET_BNB) * 100));
       return {
         campaignAddress: addr,
+        tokenAddress: it.tokenAddress ? String(it.tokenAddress).toLowerCase() : null,
         name: String(it.name ?? "Unknown"),
         symbol: String(it.symbol ?? ""),
         logoURI: resolveImageUri(rawLogo) ?? undefined,

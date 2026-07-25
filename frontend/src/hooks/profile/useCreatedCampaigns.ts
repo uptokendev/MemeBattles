@@ -14,6 +14,7 @@ export interface CreatedCampaignCard {
   name: string;
   ticker: string;
   campaignAddress: string;
+  tokenAddress?: string;
   marketCap: string;
   timeAgo: string;
   buyersCount?: number;
@@ -139,6 +140,7 @@ export function useCreatedCampaigns({
               name: s.campaign.name,
               ticker: s.campaign.symbol,
               campaignAddress: s.campaign.campaign,
+              tokenAddress: s.campaign.token,
               marketCap: s.stats.marketCap,
               timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
               buyersCount: (s.stats as any)?.buyersCount ?? undefined,

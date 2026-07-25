@@ -359,8 +359,9 @@ const Create = () => {
       });
 
       const campaignAddress = String(receipt?.campaignAddress || "").trim();
+      const tokenAddress = String(receipt?.tokenAddress || "").trim();
       toast.success("Campaign deployed on BNB.");
-      if (campaignAddress) navigate(`/token/${campaignAddress}?chainId=${chainId}`);
+      if (tokenAddress || campaignAddress) navigate(`/token/${tokenAddress || campaignAddress}?chainId=${chainId}`);
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Failed to deploy campaign");

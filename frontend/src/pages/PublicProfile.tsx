@@ -31,6 +31,7 @@ type PublicCoin = {
   name: string;
   ticker: string;
   campaignAddress: string;
+  tokenAddress?: string | null;
   marketCap: string;
   progress?: string | null;
   status?: string | null;
@@ -98,6 +99,7 @@ function coinFromSummary(summary: CampaignSummary, index: number): PublicCoin {
     name: summary.campaign.name || "Unnamed coin",
     ticker: summary.campaign.symbol || "???",
     campaignAddress: summary.campaign.campaign,
+    tokenAddress: summary.campaign.token || null,
     marketCap: summary.stats.marketCap || "—",
     progress: progress == null ? null : `${Number(progress).toFixed(0)}%`,
     status: graduated ? "graduated" : "live",
@@ -675,7 +677,7 @@ export default function PublicProfile({
               {createdCoins.map((coin) => (
                 <button
                   key={coin.campaignAddress}
-                  onClick={() => navigate(`/token/${coin.campaignAddress}`)}
+                  onClick={() => navigate(`/token/${coin.tokenAddress || coin.campaignAddress}`)}
                   className="rounded-xl border border-border/40 bg-background/30 p-4 text-left transition hover:border-accent/50 hover:bg-background/50"
                 >
                   <div className="flex items-center gap-3">

@@ -4,7 +4,7 @@
  * chart, trading interface, transactions, and holder distribution
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Copy, ExternalLink, Globe, Star } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -243,7 +243,7 @@ async function buildCampaignFromAddress(
   const [name, symbol, creator, logo] = await Promise.all([
     safeContractRead(() => token.name(), "Unknown"),
     safeContractRead(() => token.symbol(), ""),
-    safeContractRead(() => campaign.owner(), ""),
+    safeContractRead(() => campaign.creator(), ""),
     safeContractRead(() => campaign.logoURI(), ""),
   ]);
 
@@ -260,6 +260,26 @@ async function buildCampaignFromAddress(
     website: "",
     extraLink: "",
   };
+}
+
+async function hydrateCampaignCreatorFromContract(
+  campaign: CampaignInfo,
+  provider: ethers.AbstractProvider,
+): Promise<CampaignInfo> {
+  const campaignAddress = String(campaign.campaign ?? "").trim();
+  if (!ethers.isAddress(campaignAddress)) return campaign;
+
+  try {
+    const contract = new Contract(campaignAddress, CAMPAIGN_ABI, provider) as any;
+    const creator = String(await safeContractRead(() => contract.creator(), "") || "").toLowerCase();
+    if (ethers.isAddress(creator) && creator !== String(campaign.creator ?? "").toLowerCase()) {
+      return { ...campaign, creator };
+    }
+  } catch {
+    // Best-effort only. Keep API/indexer creator if contract read is unavailable.
+  }
+
+  return campaign;
 }
 
 // This is the UI table row shape (NOT the on-chain CurveTrade shape)
@@ -417,8 +437,12 @@ function readStoredStringArray(key: string, fallback: string[]): string[] {
 }
 
 const TokenDetails = () => {
-  // URL param: /token/:campaignAddress  (address-based)
+  // URL param: /token/:campaignAddress is legacy-named, but accepts either:
+  // - the ERC-20 token address (canonical public URL), or
+  // - the LaunchCampaign address (legacy/backward-compatible URL).
   const { campaignAddress } = useParams<{ campaignAddress: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const { toast } = useToast();
   const [tradeAmount, setTradeAmount] = useState("0");
@@ -483,7 +507,11 @@ const TokenDetails = () => {
   const chainIdForStorage = useMemo(() => getActiveChainId(wallet.chainId), [wallet.chainId]);
   const readProvider = useMemo(() => getReadProvider(chainIdForStorage), [chainIdForStorage]);
 
-  const campaignAddr = useMemo(() => (campaignAddress ?? "").trim().toLowerCase(), [campaignAddress]);
+  const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
+  const campaignAddr = useMemo(
+    () => String(campaign?.campaign ?? campaignAddress ?? "").trim().toLowerCase(),
+    [campaign?.campaign, campaignAddress],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -523,7 +551,6 @@ const TokenDetails = () => {
       setFollowBusy(false);
     }
   };
-  const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
   const [metrics, setMetrics] = useState<CampaignMetrics | null>(null);
   const [summary, setSummary] = useState<CampaignSummary | null>(null);
   const [activity, setActivity] = useState<CampaignActivity | null>(null);
@@ -662,7 +689,13 @@ const TokenDetails = () => {
         const isAddress = /^0x[a-fA-F0-9]{40}$/.test(param);
 
         let match = isAddress
-          ? campaigns.find((c) => (c.campaign ?? "").toLowerCase() === param.toLowerCase())
+          ? campaigns.find((c) => {
+              const needle = param.toLowerCase();
+              return (
+                (c.campaign ?? "").toLowerCase() === needle ||
+                (c.token ?? "").toLowerCase() === needle
+              );
+            })
           : campaigns.find((c) => (c.symbol ?? "").toLowerCase() === param.toLowerCase());
 
         if (!match && isAddress) {
@@ -678,6 +711,7 @@ const TokenDetails = () => {
         }
 
 let displayMatch = match;
+displayMatch = await hydrateCampaignCreatorFromContract(displayMatch, readProvider);
 displayMatch = await hydrateCampaignMetadata(displayMatch, chainIdForStorage);
 displayMatch = await hydrateCampaignCreatedAtFromFactory(displayMatch, chainIdForStorage);
 try {
@@ -690,6 +724,11 @@ try {
 }
 
 setCampaign(displayMatch);
+
+const canonicalTokenAddress = String(displayMatch.token ?? "").trim().toLowerCase();
+if (isAddress && ethers.isAddress(canonicalTokenAddress) && param.toLowerCase() !== canonicalTokenAddress) {
+  navigate(`/token/${canonicalTokenAddress}${location.search || ""}`, { replace: true });
+}
 
 // Unified token stats + metrics are best-effort. The page should still render
 // from Railway/realtime data when public RPC reads fail.
@@ -723,7 +762,7 @@ try {
     };
 
     load();
-  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary, readProvider]);
+  }, [campaignAddress, chainIdForStorage, fetchCampaignLogoURI, fetchCampaigns, fetchCampaignSummary, location.search, navigate, readProvider]);
 
   const formatPriceFromWei = (wei?: bigint | null): string => {
     if (wei == null) return "—";
@@ -1996,24 +2035,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
 
                 <button
                   type="button"
-                  onClick={() => copyAddress(campaign?.campaign, "Launch contract address")}
-                  className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors flex-shrink-0"
-                  title="Copy launch campaign contract address"
-                >
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Launch</span>
-                  <span className="font-mono text-[11px] md:text-xs whitespace-nowrap">
-                    {shortenAddress(campaign?.campaign ?? "") || "—"}
-                  </span>
-                  <Copy className="h-3 w-3" />
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => copyAddress(campaign?.token, "Token contract address")}
                   className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/20 px-2 py-1 hover:bg-muted/35 transition-colors flex-shrink-0"
                   title="Copy ERC-20 token contract address"
                 >
-                  <span className="text-[9px] uppercase tracking-wide text-muted-foreground">Token</span>
                   <span className="font-mono text-[11px] md:text-xs whitespace-nowrap">
                     {shortenAddress(campaign?.token ?? "") || "—"}
                   </span>
@@ -2261,10 +2286,10 @@ if (!wallet.signer || !wallet.account) throw new Error("Wallet not connected");
                           <p className="mt-1 text-sm font-retro text-foreground">{stagePill}</p>
                         </div>
                         <div className="rounded-2xl border border-border bg-muted/20 p-3">
-                          <p className="text-xs text-muted-foreground">Launch contract</p>
+                          <p className="text-xs text-muted-foreground">Token contract</p>
                           <div className="mt-1 flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-mono text-foreground truncate">{shortenAddress(campaign?.campaign ?? "") || "—"}</span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => copyAddress(campaign?.campaign, "Launch contract address")}>
+                            <span className="text-sm font-mono text-foreground truncate">{shortenAddress(campaign?.token ?? "") || "—"}</span>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => copyAddress(campaign?.token, "Token contract address")}>
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
                           </div>

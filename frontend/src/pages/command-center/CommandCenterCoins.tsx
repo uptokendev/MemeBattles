@@ -57,6 +57,10 @@ function getCreatedCoinIdentity(coin: any) {
   return normalizeIdentity(coin?.campaignAddress || coin?.campaign?.campaign || coin?.campaign || coin?.tokenAddress || coin?.token);
 }
 
+function getCreatedCoinTokenIdentity(coin: any) {
+  return normalizeIdentity(coin?.tokenAddress || coin?.campaign?.token || coin?.token || coin?.campaignAddress || coin?.campaign?.campaign || coin?.campaign);
+}
+
 function getCreatedCoinName(coin: any) {
   return String(coin?.name || coin?.campaign?.name || "Unnamed coin");
 }
@@ -91,10 +95,12 @@ export default function CommandCenterCoins() {
     return created
       .map((coin: any) => {
         const campaignAddress = getCreatedCoinIdentity(coin);
+        const tokenAddress = getCreatedCoinTokenIdentity(coin);
         if (!campaignAddress) return null;
         return {
           raw: coin,
           campaignAddress,
+          tokenAddress,
           name: getCreatedCoinName(coin),
           ticker: getCreatedCoinTicker(coin),
           image: resolveImageUri(logoCache[campaignAddress?.toLowerCase?.()] || getCreatedCoinImage(coin)) || "/placeholder.svg",
@@ -105,6 +111,7 @@ export default function CommandCenterCoins() {
       .filter(Boolean) as Array<{
         raw: any;
         campaignAddress: string;
+        tokenAddress: string;
         name: string;
         ticker: string;
         image: string;
@@ -184,7 +191,7 @@ export default function CommandCenterCoins() {
 
     createdCoins.forEach((coin) => {
       const creatorState = coin.status === "draft" ? "unavailable" : "eligible";
-      const tokenRoute = getPostGradTokenDetailRoute(coin.campaignAddress);
+      const tokenRoute = getPostGradTokenDetailRoute(coin.tokenAddress || coin.campaignAddress);
 
       items.push({
         id: coin.campaignAddress,

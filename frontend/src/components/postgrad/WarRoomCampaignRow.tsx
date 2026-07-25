@@ -79,7 +79,7 @@ function DraftTextBlock({ label, value }: { label: string; value: string }) {
 export function WarRoomCampaignRow({ campaign, bnbUsd = 0 }: { campaign: CampaignInfo; bnbUsd?: number }) {
   const [expanded, setExpanded] = useState(false);
 
-  const tokenRoute = getPostGradTokenDetailRoute(campaign.campaign);
+  const tokenRoute = getPostGradTokenDetailRoute(campaign.token || campaign.campaign);
   const websiteHref = resolveExternalHref(campaign.website);
   const xHref = campaign.xAccount ? `https://x.com/${campaign.xAccount.replace(/^@/, "")}` : null;
   const extraHref = resolveExternalHref(campaign.extraLink);

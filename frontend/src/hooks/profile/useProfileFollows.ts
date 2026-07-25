@@ -168,7 +168,7 @@ useEffect(() => {
             name: s.campaign.name,
             ticker: s.campaign.symbol,
             campaignAddress: s.campaign.campaign,
-            href: `/token/${String(s.campaign.campaign).toLowerCase()}`,
+            href: `/token/${String(s.campaign.token || s.campaign.campaign).toLowerCase()}`,
             marketCap: s.stats.marketCap,
             timeAgo: (s.campaign as any).timeAgo || formatTimeAgo(s.campaign.createdAt),
             buyersCount: (s.stats as any)?.buyersCount ?? undefined,
