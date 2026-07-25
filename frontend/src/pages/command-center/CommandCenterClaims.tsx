@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
+import { RecruiterNativePayoutsPanel } from "@/components/command-center/RecruiterNativePayoutsPanel";
 import { useWallet } from "@/contexts/WalletContext";
 import { SOLANA_CHAIN_ID } from "@/lib/chainConfig";
 import { fetchRewardClaims, type RewardLedgerItem } from "@/lib/rewardProgramsApi";
@@ -205,6 +206,7 @@ export default function CommandCenterClaims() {
     () => buildRewardCards(items, attribution?.squadState, attribution?.recruiterLinkState),
     [items, attribution?.recruiterLinkState, attribution?.squadState],
   );
+  const showRecruiterRewards = hasRecruiterAccess(attribution?.recruiterLinkState);
 
   async function claimRewards(card: RewardCardConfig) {
     const claimable = card.items.filter((item) => item.status === "claimable" || item.status === "failed");
@@ -317,6 +319,8 @@ export default function CommandCenterClaims() {
           })}
         </div>
       </CommandCenterCard>
+
+      {showRecruiterRewards ? <RecruiterNativePayoutsPanel /> : null}
     </div>
   );
 }

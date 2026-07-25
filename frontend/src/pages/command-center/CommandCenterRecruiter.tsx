@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
 import { CommandCenterPageHeader } from "@/components/command-center/CommandCenterPageHeader";
 import { useCommandCenterData } from "@/components/command-center/CommandCenterContext";
-import { ProfileRecruiterPanel } from "@/components/profile/ProfileRecruiterPanel";
 import { useRecruiterWallet, type RecruiterWalletCandidate } from "@/hooks/useRecruiterWallet";
 import { apiFetch } from "@/lib/apiBase";
 import { fetchRecruiterSignupStatus, type RecruiterSignupStatus } from "@/lib/recruiterApi";
@@ -364,7 +363,7 @@ export default function CommandCenterRecruiter() {
 
   return (
     <div className="space-y-4">
-      <CommandCenterPageHeader title="Recruiter Management" description="Manage your recruiter link, public recruiter profile, rewards, squad growth, and account settings from Command Center.">
+      <CommandCenterPageHeader title="Recruiter Management" description="Manage your recruiter link, public recruiter profile, squad growth, and account settings from Command Center.">
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="font-retro"><Link to="/recruiters">Public leaderboard<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
           <Button asChild className="font-retro"><Link to={`/recruiters/${encodeURIComponent(activeCode)}`}>Public page</Link></Button>
@@ -471,8 +470,6 @@ export default function CommandCenterRecruiter() {
           </div>
         </CommandCenterCard>
       )}
-
-      <ProfileRecruiterPanel account={walletAddress} isConnected={true} isOwnProfile={true} />
     </div>
   );
 }
