@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Coins, FileText, Rocket } from "lucide-react";
-import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 
 import { CommandCenterCard } from "@/components/command-center/CommandCenterCard";
@@ -83,8 +82,6 @@ export default function CommandCenterCoins() {
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [draftsError, setDraftsError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<CoinFilter>("all");
-  const { fetchCampaignLogoURI } = useLaunchpad();
-  const [logoCache, setLogoCache] = useState<Record<string, string>>({});
 
   const visibleFilters = useMemo(
     () => (BATTLE_FEATURES_ENABLED ? [...baseFilters, ...battleFilters] : baseFilters),
@@ -103,7 +100,7 @@ export default function CommandCenterCoins() {
           tokenAddress,
           name: getCreatedCoinName(coin),
           ticker: getCreatedCoinTicker(coin),
-          image: resolveImageUri(logoCache[campaignAddress?.toLowerCase?.()] || getCreatedCoinImage(coin)) || "/placeholder.svg",
+          image: resolveImageUri(getCreatedCoinImage(coin)) || "/placeholder.svg",
           marketCap: getCreatedCoinMarketCap(coin),
           status: String(coin?.status || coin?.campaign?.status || "live").toLowerCase(),
         };
@@ -118,34 +115,7 @@ export default function CommandCenterCoins() {
         marketCap: string;
         status: string;
       }>;
-  }, [created, logoCache]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const missing = (createdCoins || [])
-      .map((c) => c.campaignAddress?.toLowerCase())
-      .filter((addr): addr is string => !!addr && !logoCache[addr]);
-
-    if (!missing.length) return;
-
-    (async () => {
-      try {
-        const pairs = await Promise.all(
-          missing.map(async (addr) => [addr, await fetchCampaignLogoURI(addr).catch(() => null)] as const)
-        );
-        if (cancelled) return;
-        setLogoCache((prev) => {
-          const next = { ...prev };
-          for (const [addr, uri] of pairs) {
-            if (uri) next[addr] = uri;
-          }
-          return next;
-        });
-      } catch {}
-    })();
-
-    return () => { cancelled = true; };
-  }, [createdCoins, logoCache, fetchCampaignLogoURI]);
+  }, [created]);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,7 +168,7 @@ export default function CommandCenterCoins() {
         type: "coin",
         name: coin.name,
         ticker: coin.ticker,
-        image: resolveImageUri(logoCache[coin.campaignAddress?.toLowerCase?.()] || coin.image) || "/placeholder.svg",
+        image: resolveImageUri(coin.image) || "/placeholder.svg",
         marketCap: coin.marketCap,
         statusLabel: getCreatorStateLabel(creatorState),
         statusTone: getCreatorStateTone(creatorState),
@@ -211,7 +181,7 @@ export default function CommandCenterCoins() {
     });
 
     return items;
-  }, [drafts, createdCoins, logoCache]);
+  }, [drafts, createdCoins]);
 
   const filteredItems = useMemo(() => {
     if (activeFilter === "all") return unifiedItems;
