@@ -65,6 +65,7 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
   const [attribution, setAttribution] = useState<WalletAttributionPublicState | null>(null);
   const [squad, setSquad] = useState<SquadSummary | null>(null);
   const [member, setMember] = useState<SquadMemberItem | null>(null);
+  const [members, setMembers] = useState<SquadMemberItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +76,7 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
       setAttribution(null);
       setSquad(null);
       setMember(null);
+      setMembers([]);
       return;
     }
 
@@ -90,13 +92,19 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
 
         const firstMember = Array.isArray(squadMembers?.items) ? squadMembers.items[0] ?? null : null;
         const recruiterCode = attributionState?.recruiterCode || firstMember?.recruiterCode || null;
-        const squadSummary = recruiterCode ? await fetchSquadSummary(recruiterCode).catch(() => null) : null;
+        const [squadSummary, roster] = recruiterCode
+          ? await Promise.all([
+              fetchSquadSummary(recruiterCode).catch(() => null),
+              fetchSquadMembers({ recruiterCode, limit: 100 }).catch(() => ({ items: [] })),
+            ])
+          : [null, { items: [] }];
 
         if (cancelled) return;
         setSummary(walletSummary);
         setAttribution(attributionState);
         setSquad(squadSummary);
         setMember(firstMember);
+        setMembers(Array.isArray(roster?.items) ? roster.items : []);
       } catch (err: any) {
         if (!cancelled) setError(String(err?.message || err || "Failed to load squad state"));
       } finally {
@@ -166,6 +174,9 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
     return <LockedSquadState />;
   }
 
+  const squadImageUrl = String((squad as any)?.squadImageUrl || (squad as any)?.squad_image_url || "").trim();
+  const recruiterCode = squad?.recruiterCode || member?.recruiterCode || attribution?.recruiterCode || "";
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-3">
@@ -182,6 +193,41 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
           <p className="mt-4 font-retro text-3xl text-foreground">{formatBnb(member?.estimatedPayoutAmount ?? "0")} BNB</p>
         </Card>
       </div>
+
+      <Card className="border-border/60 bg-card/70 p-5">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            {squadImageUrl ? (
+              <img src={squadImageUrl} alt={`${recruiterCode || "Squad"} squad`} className="h-20 w-20 rounded-2xl border border-accent/35 bg-accent/10 object-cover" />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-accent/35 bg-accent/10">
+                <Users className="h-8 w-8 text-accent" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Your squad</p>
+              <h3 className="mt-1 truncate font-retro text-2xl text-foreground">
+                {squad?.recruiterDisplayName || member?.recruiterDisplayName || recruiterCode || "Recruiter squad"}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                You are linked as {member?.memberRole || "member"} in recruiter code {recruiterCode || "unknown"}.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recruiterCode ? (
+              <>
+                <Button asChild variant="outline" className="font-retro">
+                  <Link to={`/recruiters/${encodeURIComponent(recruiterCode)}`}>Squad page</Link>
+                </Button>
+                <Button asChild variant="outline" className="font-retro">
+                  <Link to={`/r/${encodeURIComponent(recruiterCode)}`}>Invite link</Link>
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
         <Card className="border-border/60 bg-card/65 p-6">
@@ -255,6 +301,10 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
                 <p className="mt-2 font-retro text-lg text-foreground">{squad.eligibleMemberCount}</p>
               </div>
               <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Active members</p>
+                <p className="mt-2 font-retro text-lg text-foreground">{squad.activeMemberCount}</p>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/35 p-4">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Estimated pending pool</p>
                 <p className="mt-2 font-retro text-lg text-foreground">{formatBnb(squad.estimatedPendingPoolAmount)} BNB</p>
               </div>
@@ -268,6 +318,43 @@ export function ProfileSquadPanel({ account, isConnected, isOwnProfile }: Profil
           )}
         </Card>
       </div>
+
+      <Card className="border-border/60 bg-card/65 p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-retro text-xs uppercase tracking-[0.2em] text-muted-foreground">Squad roster</p>
+            <h3 className="mt-1 font-retro text-xl text-foreground">Wallets in this squad</h3>
+          </div>
+          <span className="rounded-full border border-border/40 bg-card/25 px-3 py-1 text-xs text-muted-foreground">
+            {members.length} shown
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {members.length === 0 ? (
+            <div className="rounded-2xl border border-border/50 bg-background/25 p-4 text-sm text-muted-foreground">
+              No roster rows returned yet, but this wallet membership is active.
+            </div>
+          ) : members.map((row) => (
+            <div key={`${row.walletAddress}-${row.createdAt || ""}`} className="rounded-2xl border border-border/50 bg-background/25 p-4">
+              <div className="font-retro text-sm text-foreground">
+                {row.walletAddress.length > 10 ? `${row.walletAddress.slice(0, 6)}...${row.walletAddress.slice(-4)}` : row.walletAddress}
+              </div>
+              <div className="mt-1 text-xs capitalize text-muted-foreground">{row.memberRole || "member"}</div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl border border-border/40 bg-card/25 p-2">
+                  <div className="text-muted-foreground">Score</div>
+                  <div className="mt-1 font-retro text-foreground">{formatBnb(row.rawScore ?? "0")}</div>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-card/25 p-2">
+                  <div className="text-muted-foreground">Est. payout</div>
+                  <div className="mt-1 font-retro text-foreground">{formatBnb(row.estimatedPayoutAmount ?? "0")}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

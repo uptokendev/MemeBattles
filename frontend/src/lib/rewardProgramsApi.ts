@@ -1,4 +1,5 @@
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { apiFetch } from "@/lib/apiBase";
 
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
@@ -140,6 +141,7 @@ export type SquadMemberItem = {
   recruiterId: number;
   recruiterCode: string | null;
   recruiterDisplayName: string | null;
+  memberRole?: string | null;
   isEligible: boolean;
   reasonCodes: string[];
   rawScore: string;
@@ -244,6 +246,20 @@ export async function fetchSquadMembers(params: {
   walletAddress?: string | null;
   limit?: number;
 }) {
-  const res = await fetch(buildRealtimeApiUrl(`/api/squads/members${buildQuery(params)}`));
-  return parseJson(res);
+  const query = buildQuery(params);
+
+  if (params.walletAddress) {
+    const canonical = await apiFetch(`/api/squads/members${query}`, { cache: "no-store" as RequestCache })
+      .then(parseJson)
+      .catch(() => null);
+    if (Array.isArray(canonical?.items) && canonical.items.length > 0) return canonical;
+  }
+
+  const realtime = await fetch(buildRealtimeApiUrl(`/api/squads/members${query}`))
+    .then(parseJson)
+    .catch(() => null);
+  if (Array.isArray(realtime?.items) && realtime.items.length > 0) return realtime;
+
+  const canonical = await apiFetch(`/api/squads/members${query}`, { cache: "no-store" as RequestCache });
+  return parseJson(canonical);
 }

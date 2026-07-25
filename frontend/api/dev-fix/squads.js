@@ -39,6 +39,8 @@ function summaryFromRows(recruiter, rows) {
     recruiterWalletAddress: recruiter.wallet_address,
     recruiterCode: recruiter.code,
     recruiterDisplayName: recruiter.display_name || null,
+    squadImageUrl: recruiter.squad_image_url || null,
+    squad_image_url: recruiter.squad_image_url || null,
     recruiterIsOg: Boolean(recruiter.is_og),
     recruiterStatus: recruiter.status || "active",
     activeMemberCount: activeRows.length,
@@ -62,7 +64,7 @@ function summaryFromRows(recruiter, rows) {
 
 async function findRecruiterByCode(code) {
   const { rows } = await pool.query(
-    `select id, wallet_address, code, display_name, is_og, status, created_at, updated_at
+    `select id, wallet_address, code, display_name, is_og, status, squad_image_url, created_at, updated_at
        from public.recruiters
       where lower(code) = lower($1)
       limit 1`,

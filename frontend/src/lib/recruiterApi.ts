@@ -318,6 +318,8 @@ export type SquadSummary = {
   recruiterWalletAddress: string;
   recruiterCode: string;
   recruiterDisplayName: string | null;
+  squadImageUrl?: string | null;
+  squad_image_url?: string | null;
   recruiterIsOg: boolean;
   recruiterStatus: string;
   activeMemberCount: number;
