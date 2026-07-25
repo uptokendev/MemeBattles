@@ -16,7 +16,9 @@ const menuItems = [
 
 const ACTIVE_SQUAD_STATES = new Set(["in_squad", "linked_squad", "active_squad", "squad_member", "member"]);
 
-function hasSquadAccess(squadState?: string | null) {
+function hasSquadAccess(squadState?: string | null, recruiterLinkState?: string | null) {
+  const recruiterState = String(recruiterLinkState || "").trim().toLowerCase();
+  if (recruiterState.includes("self_recruiter") || recruiterState.includes("recruiter_wallet")) return false;
   const state = String(squadState || "").trim().toLowerCase();
   return ACTIVE_SQUAD_STATES.has(state);
 }
@@ -31,10 +33,10 @@ export function CommandCenterSidebar({ basePath }: CommandCenterSidebarProps) {
 
   const visibleMenuItems = useMemo(
     () => menuItems.filter((item) => {
-      if (item.requiresSquad && !hasSquadAccess(attribution?.squadState)) return false;
+      if (item.requiresSquad && !hasSquadAccess(attribution?.squadState, attribution?.recruiterLinkState)) return false;
       return true;
     }),
-    [attribution?.squadState],
+    [attribution?.recruiterLinkState, attribution?.squadState],
   );
 
   return (

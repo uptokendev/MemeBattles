@@ -62,7 +62,8 @@ function makeNonce() {
 }
 
 function publicState({ walletAddress, state = null, recruiter = null, membership = null }) {
-  const rawSquadState = String(membership ? "in_squad" : state?.squad_state || "").trim().toLowerCase();
+  const isRecruiterWallet = Boolean(recruiter);
+  const rawSquadState = String(!isRecruiterWallet && membership ? "in_squad" : state?.squad_state || "").trim().toLowerCase();
   const normalizedSquadState = ["in_squad", "linked_squad", "active_squad", "squad_member", "member"].includes(rawSquadState)
     ? "in_squad"
     : "solo";
@@ -74,7 +75,7 @@ function publicState({ walletAddress, state = null, recruiter = null, membership
     recruiterCode: state?.recruiter_code || membership?.recruiter_code || recruiter?.code || null,
     recruiterDisplayName: state?.recruiter_display_name || membership?.recruiter_display_name || recruiter?.display_name || null,
     recruiterIsOg: Boolean(state?.recruiter_is_og ?? membership?.recruiter_is_og ?? recruiter?.is_og),
-    squadState: normalizedSquadState,
+    squadState: isRecruiterWallet ? "solo" : normalizedSquadState,
   };
 }
 
@@ -280,22 +281,32 @@ async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress
   return rows[0] || null;
 }
 
-async function getRecruiterStats(recruiterId) {
+async function getRecruiterStats(recruiterId, recruiterWalletAddress = "") {
   const [{ rows: linkRows }, { rows: squadRows }] = await Promise.all([
     pool.query(
       `select count(*)::int as linked_wallet_count,
               max(linked_at) as latest_linked_activity_at
-         from public.wallet_recruiter_links
-        where recruiter_id = $1 and is_active = true`,
-      [recruiterId],
+         from public.wallet_recruiter_links l
+         left join public.wallet_risk_profiles lwr on lower(lwr.wallet_address) = lower(l.wallet_address)
+         left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower($2)
+        where l.recruiter_id = $1
+          and l.is_active = true
+          and lower(l.wallet_address) <> lower($2)
+          and not (lwr.cluster_id is not null and rwr.cluster_id is not null and lwr.cluster_id = rwr.cluster_id)`,
+      [recruiterId, recruiterWalletAddress || ""],
     ),
     pool.query(
       `select count(*)::int as active_squad_member_count,
               count(*) filter (where member_role = 'creator')::int as linked_creators_count,
               count(*) filter (where member_role = 'trader')::int as linked_traders_count
-         from public.wallet_squad_memberships
-        where recruiter_id = $1 and is_active = true`,
-      [recruiterId],
+         from public.wallet_squad_memberships s
+         left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+         left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower($2)
+        where s.recruiter_id = $1
+          and s.is_active = true
+          and lower(s.wallet_address) <> lower($2)
+          and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)`,
+      [recruiterId, recruiterWalletAddress || ""],
     ),
   ]);
 
@@ -393,7 +404,7 @@ export async function attributionWalletConnect(req, res) {
     const recruiterWallet = await findRecruiterByWallet(walletAddress);
     if (recruiterWallet) {
       const existingState = await findWalletAttributionState(walletAddress);
-      return json(res, 200, { linked: false, blocked: true, state: publicState({ walletAddress, state: existingState }), reason: "Recruiter wallets cannot be added as squad members through recruiter referral cookies." });
+      return json(res, 200, { linked: false, blocked: true, state: publicState({ walletAddress, state: existingState, recruiter: recruiterWallet }), reason: "Recruiter wallets cannot be added as squad members through recruiter referral cookies." });
     }
 
     const existingState = await findWalletAttributionState(walletAddress);
@@ -485,11 +496,12 @@ export async function attributionWallet(req, res) {
   try {
     const walletAddress = normalizeAddress(req.params?.wallet);
     if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
-    const [state, membership] = await Promise.all([
+    const [state, membership, recruiter] = await Promise.all([
       findWalletAttributionState(walletAddress),
       findActiveSquadMembership(walletAddress).catch(() => null),
+      findRecruiterByWallet(walletAddress).catch(() => null),
     ]);
-    return json(res, 200, { state: publicState({ walletAddress, state, membership }), materializedAt: new Date().toISOString() });
+    return json(res, 200, { state: publicState({ walletAddress, state, membership, recruiter }), materializedAt: new Date().toISOString() });
   } catch (error) {
     console.error("[api/attribution wallet]", error);
     if (schemaMissing(error)) {
@@ -507,7 +519,7 @@ export async function recruiterWalletSummary(req, res) {
     if (!wallet) return json(res, 400, { error: "Invalid wallet address" });
     const recruiter = await findRecruiterByWallet(wallet);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
-    const stats = await getRecruiterStats(recruiter.id);
+    const stats = await getRecruiterStats(recruiter.id, recruiter.wallet_address);
     return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
     console.error("[api/recruiter wallet summary]", error);
@@ -523,7 +535,7 @@ export async function recruiterSummary(req, res) {
     if (!code) return json(res, 400, { error: "Missing recruiter code" });
     const recruiter = await findRecruiterByCode(code);
     if (!recruiter) return json(res, 404, { error: "Recruiter not found", code: "RECRUITER_NOT_FOUND" });
-    const stats = await getRecruiterStats(recruiter.id);
+    const stats = await getRecruiterStats(recruiter.id, recruiter.wallet_address);
     return json(res, 200, recruiterSummaryShape(recruiter, stats));
   } catch (error) {
     console.error("[api/recruiter summary]", error);
@@ -546,9 +558,14 @@ export async function recruiters(req, res) {
               count(distinct s.wallet_address) filter (where s.member_role = 'trader')::int as linked_traders_count,
               max(l.linked_at) as latest_linked_activity_at
          from public.recruiters r
-         left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true
-         left join public.wallet_squad_memberships s on s.recruiter_id = r.id and s.is_active = true
+         left join public.wallet_recruiter_links l on l.recruiter_id = r.id and l.is_active = true and lower(l.wallet_address) <> lower(r.wallet_address)
+         left join public.wallet_squad_memberships s on s.recruiter_id = r.id and s.is_active = true and lower(s.wallet_address) <> lower(r.wallet_address)
+         left join public.wallet_risk_profiles lwr on lower(lwr.wallet_address) = lower(l.wallet_address)
+         left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+         left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower(r.wallet_address)
         where ($1::text = 'all' or r.status = $1::text)
+          and not (lwr.cluster_id is not null and rwr.cluster_id is not null and lwr.cluster_id = rwr.cluster_id)
+          and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)
         group by r.id
         order by r.is_og desc, linked_wallet_count desc, r.created_at asc
         limit $2`,
@@ -574,7 +591,7 @@ export async function recruiterSignupStatus(req, res) {
     const walletAddress = normalizeAddress(q.walletAddress);
     if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
     const recruiter = await findRecruiterByWallet(walletAddress);
-    return json(res, 200, { walletAddress, isRecruiter: Boolean(recruiter), recruiter: recruiter ? recruiterSummaryShape(recruiter, await getRecruiterStats(recruiter.id)) : null, canStartSignup: !recruiter, signupApiAvailable: true });
+    return json(res, 200, { walletAddress, isRecruiter: Boolean(recruiter), recruiter: recruiter ? recruiterSummaryShape(recruiter, await getRecruiterStats(recruiter.id, recruiter.wallet_address)) : null, canStartSignup: !recruiter, signupApiAvailable: true });
   } catch (error) {
     console.error("[api/recruiter signup status]", error);
     if (schemaMissing(error)) {

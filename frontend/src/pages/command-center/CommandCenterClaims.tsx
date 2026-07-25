@@ -80,7 +80,9 @@ const REWARD_COPY: Record<string, { title: string; description: string; icon: Lu
   },
 };
 
-function hasActiveSquad(value?: string | null) {
+function hasActiveSquad(value?: string | null, recruiterLinkState?: string | null) {
+  const recruiterState = String(recruiterLinkState || "").trim().toLowerCase();
+  if (recruiterState.includes("self_recruiter") || recruiterState.includes("recruiter_wallet")) return false;
   const state = String(value || "").trim().toLowerCase();
   return ACTIVE_SQUAD_STATES.has(state);
 }
@@ -148,7 +150,7 @@ function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null,
   const grouped = new Map<string, RewardLedgerItem[]>();
   for (const item of items) {
     const type = String(item.rewardType || "future").toLowerCase();
-    if (type === "squad" && !hasActiveSquad(squadState)) continue;
+    if (type === "squad" && !hasActiveSquad(squadState, recruiterLinkState)) continue;
     if (type === "recruiter" && !hasRecruiterAccess(recruiterLinkState)) continue;
     if (!grouped.has(type)) grouped.set(type, []);
     grouped.get(type)!.push(item);
@@ -156,7 +158,7 @@ function buildRewardCards(items: RewardLedgerItem[], squadState?: string | null,
 
   const baseline = ["league", "airdrop"];
   if (hasRecruiterAccess(recruiterLinkState)) baseline.push("recruiter");
-  if (hasActiveSquad(squadState)) baseline.push("squad");
+  if (hasActiveSquad(squadState, recruiterLinkState)) baseline.push("squad");
 
   const orderedTypes = Array.from(new Set([...baseline, ...grouped.keys()]));
   return orderedTypes.map((rewardType) => {
