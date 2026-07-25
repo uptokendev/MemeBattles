@@ -1999,7 +1999,50 @@ app.get("/api/token/:campaign/summary", wrap(async (req, res) => {
   const chainId = Number(req.query.chainId || 97);
 
   const r = await pool.query(
-    `select * from public.token_stats where chain_id=$1 and campaign_address=$2`,
+    `with stored as (
+       select *
+       from public.token_stats
+       where chain_id=$1 and campaign_address=$2
+     ),
+     latest as (
+       select price_bnb, block_time
+       from public.curve_trades
+       where chain_id=$1 and campaign_address=$2
+       order by block_number desc, log_index desc
+       limit 1
+     ),
+     agg as (
+       select
+         count(*)::int as trade_count,
+         coalesce(sum(case when side='buy' then token_amount else 0 end),0) -
+           coalesce(sum(case when side='sell' then token_amount else 0 end),0) as sold_tokens,
+         coalesce(sum(case when block_time >= now() - interval '24 hours' then bnb_amount else 0 end),0) as vol_24h_bnb,
+         max(block_time) as last_trade_at
+       from public.curve_trades
+       where chain_id=$1 and campaign_address=$2
+     )
+     select
+       $1::int as chain_id,
+       $2::text as campaign_address,
+       case when coalesce(agg.trade_count,0) > 0 then latest.price_bnb else stored.last_price_bnb end as last_price_bnb,
+       case when coalesce(agg.trade_count,0) > 0 then agg.sold_tokens else stored.sold_tokens end as sold_tokens,
+       stored.reserve_bnb,
+       case
+         when coalesce(agg.trade_count,0) > 0 and latest.price_bnb is not null then latest.price_bnb * agg.sold_tokens
+         else stored.marketcap_bnb
+       end as marketcap_bnb,
+       case when coalesce(agg.trade_count,0) > 0 then agg.vol_24h_bnb else stored.vol_24h_bnb end as vol_24h_bnb,
+       stored.change_5m,
+       stored.change_1h,
+       stored.change_24h,
+       case
+         when coalesce(agg.trade_count,0) > 0 then greatest(coalesce(stored.updated_at, to_timestamp(0)), coalesce(agg.last_trade_at, to_timestamp(0)))
+         else stored.updated_at
+       end as updated_at
+     from agg
+     left join stored on true
+     left join latest on true
+     where stored.chain_id is not null or coalesce(agg.trade_count,0) > 0`,
     [chainId, campaign]
   );
   res.json(r.rows[0] || null);
