@@ -240,8 +240,11 @@ async function getSquadRows(recruiterId) {
     `select s.wallet_address, s.recruiter_id, coalesce(nullif(s.member_role, ''), 'member') as role, coalesce(nullif(s.link_source, ''), 'recruiter') as source, coalesce(s.joined_at, s.created_at) as bound_at
        from public.wallet_squad_memberships s
        join public.recruiters r on r.id = s.recruiter_id
+       left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+       left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower(r.wallet_address)
       where s.recruiter_id = $1 and s.is_active = true
         and lower(s.wallet_address) <> lower(r.wallet_address)
+        and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)
       order by coalesce(s.joined_at, s.created_at) desc
       limit 250`,
     [recruiterId],

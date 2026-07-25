@@ -233,6 +233,33 @@ async function findActiveSquadMembership(walletAddress) {
   return rows[0] || null;
 }
 
+async function findWalletClusterId(walletAddress) {
+  const wallet = normalizeAddress(walletAddress);
+  if (!wallet) return null;
+  try {
+    const { rows } = await pool.query(
+      `select cluster_id
+         from public.wallet_risk_profiles
+        where lower(wallet_address) = lower($1)
+        limit 1`,
+      [wallet],
+    );
+    return rows[0]?.cluster_id ? String(rows[0].cluster_id) : null;
+  } catch (error) {
+    if (schemaMissing(error)) return null;
+    console.error("[api/attribution cluster lookup]", error);
+    return null;
+  }
+}
+
+async function isSameWalletCluster(leftWallet, rightWallet) {
+  const [leftCluster, rightCluster] = await Promise.all([
+    findWalletClusterId(leftWallet),
+    findWalletClusterId(rightWallet),
+  ]);
+  return Boolean(leftCluster && rightCluster && leftCluster === rightCluster);
+}
+
 async function findLatestWindow({ sessionToken, clientFingerprint, walletAddress }) {
   const solana = isSolanaWallet(walletAddress);
   const { rows } = await pool.query(
@@ -396,6 +423,16 @@ export async function attributionWalletConnect(req, res) {
     const window = await findLatestWindow({ sessionToken, clientFingerprint, walletAddress });
     const recruiter = window?.recruiter_id ? await findRecruiterByCode(window.code) : null;
     if (!window || !recruiter || recruiter.status !== "active") return json(res, 200, { linked: false, state: publicState({ walletAddress }), reason: "No active referral attribution window found for this wallet." });
+
+    if (await isSameWalletCluster(walletAddress, recruiter.wallet_address)) {
+      return json(res, 409, {
+        linked: false,
+        blocked: true,
+        code: "RECRUITER_CLUSTER_SELF_REFERRAL_BLOCKED",
+        state: publicState({ walletAddress }),
+        reason: "This wallet is in the same security cluster as the recruiter wallet and cannot join that recruiter squad.",
+      });
+    }
 
     if (!memberRole) {
       return json(res, 200, {

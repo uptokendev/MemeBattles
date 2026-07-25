@@ -86,10 +86,13 @@ async function loadSquadRows({ recruiterId, recruiterCode, walletAddress, limit 
             coalesce(s.is_active, true) as is_active
        from public.wallet_squad_memberships s
        join public.recruiters r on r.id = s.recruiter_id
+       left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+       left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower(r.wallet_address)
       where ($1::bigint is null or s.recruiter_id = $1::bigint)
         and ($2::text is null or lower(r.code) = lower($2::text))
         and ($3::text is null or s.wallet_address = lower($3::text))
         and lower(s.wallet_address) <> lower(r.wallet_address)
+        and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)
       order by coalesce(s.joined_at, s.created_at) desc nulls last
       limit $4`,
     [recruiterId || null, recruiterCode || null, walletAddress || null, limit],
@@ -180,7 +183,10 @@ export async function squadsLeaderboard(req, res) {
          from public.recruiters r
          left join public.wallet_squad_memberships s on s.recruiter_id = r.id
           and lower(s.wallet_address) <> lower(r.wallet_address)
+         left join public.wallet_risk_profiles swr on lower(swr.wallet_address) = lower(s.wallet_address)
+         left join public.wallet_risk_profiles rwr on lower(rwr.wallet_address) = lower(r.wallet_address)
         where r.status = 'active'
+          and not (swr.cluster_id is not null and rwr.cluster_id is not null and swr.cluster_id = rwr.cluster_id)
         group by r.id
         order by active_member_count desc, r.created_at asc
         limit $1`,
