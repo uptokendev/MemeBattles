@@ -594,10 +594,10 @@ async function markWalletActivityDb(
         created_campaign_count, trade_count,
         last_campaign_created_at, last_trade_at, updated_at
      ) values (
-        $1, $2, $2, true,
-        greatest($3, 0), greatest($4, 0),
-        case when $3 > 0 then $2 else null end,
-        case when $4 > 0 then $2 else null end,
+        $1::text, $2::timestamptz, $2::timestamptz, true,
+        greatest($3::int, 0), greatest($4::int, 0),
+        case when $3::int > 0 then $2::timestamptz else null end,
+        case when $4::int > 0 then $2::timestamptz else null end,
         now()
      )
      on conflict (wallet_address) do update set
@@ -607,14 +607,14 @@ async function markWalletActivityDb(
          else least(public.wallet_profiles.first_activity_at, excluded.first_activity_at)
        end,
        has_activity = true,
-       created_campaign_count = public.wallet_profiles.created_campaign_count + greatest($3, 0),
-       trade_count = public.wallet_profiles.trade_count + greatest($4, 0),
+       created_campaign_count = public.wallet_profiles.created_campaign_count + greatest($3::int, 0),
+       trade_count = public.wallet_profiles.trade_count + greatest($4::int, 0),
        last_campaign_created_at = case
-         when $3 > 0 then greatest(coalesce(public.wallet_profiles.last_campaign_created_at, to_timestamp(0)), excluded.last_campaign_created_at)
+         when $3::int > 0 then greatest(coalesce(public.wallet_profiles.last_campaign_created_at, to_timestamp(0)), excluded.last_campaign_created_at)
          else public.wallet_profiles.last_campaign_created_at
        end,
        last_trade_at = case
-         when $4 > 0 then greatest(coalesce(public.wallet_profiles.last_trade_at, to_timestamp(0)), excluded.last_trade_at)
+         when $4::int > 0 then greatest(coalesce(public.wallet_profiles.last_trade_at, to_timestamp(0)), excluded.last_trade_at)
          else public.wallet_profiles.last_trade_at
        end,
        updated_at = now()`,
