@@ -226,6 +226,33 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
         on t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
       group by b.chain_id, b.campaign_address
     ),
+    trade_stats as (
+      select
+        b.chain_id,
+        b.campaign_address,
+        latest.price_bnb as latest_price_bnb,
+        stats.sold_tokens as indexed_sold_tokens,
+        stats.vol_24h_bnb as indexed_vol_24h_bnb,
+        case
+          when latest.price_bnb is not null then latest.price_bnb * stats.sold_tokens
+          else null
+        end as indexed_marketcap_bnb
+      from base b
+      left join lateral (
+        select t.price_bnb
+        from public.curve_trades t
+        where t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+        order by t.block_number desc, t.log_index desc
+        limit 1
+      ) latest on true
+      left join lateral (
+        select
+          coalesce(sum(case when t.side = 'buy' then t.token_amount else -t.token_amount end), 0) as sold_tokens,
+          coalesce(sum(t.bnb_amount) filter (where t.block_time >= now() - interval '24 hours'), 0) as vol_24h_bnb
+        from public.curve_trades t
+        where t.chain_id = b.chain_id and t.campaign_address = b.campaign_address
+      ) stats on true
+    ),
     ath as (
       select
         b.chain_id,
@@ -241,12 +268,16 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
     calc as (
       select
         b.*,
+        coalesce(trade_stats.latest_price_bnb, b.last_price_bnb) as current_price_bnb,
+        coalesce(trade_stats.indexed_sold_tokens, b.sold_tokens) as current_sold_tokens,
+        coalesce(trade_stats.indexed_marketcap_bnb, b.marketcap_bnb) as current_marketcap_bnb,
+        coalesce(trade_stats.indexed_vol_24h_bnb, b.vol_24h_bnb) as current_vol_24h_bnb,
         rt.raised_total_bnb,
         rt.raised_10m_bnb,
         rt.holder_count,
         case
-          when ath.ath_price_bnb is not null and b.sold_tokens is not null then ath.ath_price_bnb * b.sold_tokens
-          else b.marketcap_bnb
+          when ath.ath_price_bnb is not null and coalesce(trade_stats.indexed_sold_tokens, b.sold_tokens) is not null then ath.ath_price_bnb * coalesce(trade_stats.indexed_sold_tokens, b.sold_tokens)
+          else coalesce(trade_stats.indexed_marketcap_bnb, b.marketcap_bnb)
         end as ath_marketcap_bnb,
         case
           when $2::numeric <= 0 then null
@@ -258,13 +289,14 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
           else (($2::numeric - rt.raised_total_bnb) / (rt.raised_10m_bnb / 600.0))
         end as eta_sec,
         (
-          coalesce(b.vol_24h_bnb, 0) * 1000
+          coalesce(trade_stats.indexed_vol_24h_bnb, b.vol_24h_bnb, 0) * 1000
           + coalesce(b.votes_24h, 0) * 10
           + coalesce(rt.holder_count, 0) * 2
           + coalesce(b.vote_trending_score, 0)
         ) as trending_score
       from base b
       join rt on rt.chain_id = b.chain_id and rt.campaign_address = b.campaign_address
+      left join trade_stats on trade_stats.chain_id = b.chain_id and trade_stats.campaign_address = b.campaign_address
       left join ath on ath.chain_id = b.chain_id and ath.campaign_address = b.campaign_address
     )
     select
@@ -281,10 +313,10 @@ async function fetchWarRoomRows({ chainIds, mode, search, detailAddress, limit, 
       graduated_at_chain as "graduatedAtChain",
       is_active as "isActive",
       last_activity_at as "lastActivityAt",
-      last_price_bnb as "lastPriceBnb",
-      sold_tokens as "soldTokens",
-      marketcap_bnb as "marketcapBnb",
-      vol_24h_bnb as "vol24hBnb",
+      current_price_bnb as "lastPriceBnb",
+      current_sold_tokens as "soldTokens",
+      current_marketcap_bnb as "marketcapBnb",
+      current_vol_24h_bnb as "vol24hBnb",
       holder_count as "holderCount",
       ath_marketcap_bnb as "athMarketcapBnb",
       raised_total_bnb as "raisedTotalBnb",
