@@ -6,19 +6,37 @@ types/ethers-contracts
 coverage
 coverage.json
 dist
+
+# Environment files - local only
 .env
 .env.*
+**/.env
+**/.env.*
+
+# Sanitized templates are allowed
 !.env.example
-.env.bsc-testnet
+!**/.env.example
 
-frontend/.env
-frontend/.env.*
-frontend/.env.local
-frontend/.env.local.*
-frontend/.env.local.backup-*
+# Private keys, certificates, credentials and local secret files
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.mnemonic
+secrets.*
+credentials.*
+**/secrets.*
+**/credentials.*
 
-deployments/*.json
+# Local deployment configuration
+deployments/*.env
 deployments/*.frontend.env
+config/*.local
+config/*.secret
+
+# Generated deployment and report outputs
+deployments/*.json
 deployments/*.activation.json
 deployments/*.retired.json
 output/*.json
