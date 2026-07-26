@@ -14,8 +14,7 @@ dist
 **/.env.*
 
 # Sanitized templates are allowed
-!.env.example
-!**/.env.example
+!**/.env*.example
 
 # Private keys, certificates, credentials and local secret files
 *.pem
