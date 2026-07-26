@@ -119,13 +119,13 @@ Only after local and Railway checks pass:
 
 ```env
 # Main app API gateway: profile, drafts, prepare mode, upload, routing, accounts.
-VITE_API_BASE_URL=https://memewarzonefrontend-production.up.railway.app
+VITE_API_BASE_URL=https://memebattles-frontend-7dcf.up.railway.app
 
 # Existing token/realtime/indexer Railway service.
 VITE_REALTIME_API_BASE=https://memebattles-production.up.railway.app
 
 # Ably auth can be served by the frontend API gateway.
-VITE_ABLY_AUTH_BASE=https://memewarzonefrontend-production.up.railway.app
+VITE_ABLY_AUTH_BASE=https://memebattles-frontend-7dcf.up.railway.app
 ```
 
 2. Test with a Netlify deploy preview.

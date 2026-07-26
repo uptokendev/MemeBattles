@@ -21,14 +21,12 @@
     Cache-Control = "public, max-age=31536000, immutable"
 
 # Proxy /api/* to the Railway API gateway. Netlify must stay static-only (see AGENTS.md).
-# Split services (per current production reality):
-# - memebattles-production.up.railway.app : token data, summaries, metadata, indexer-style reads, some wallet connect/token flows.
-# - memewarzonefrontend-production.up.railway.app : frontend-related flows (Command Center, War Room, drafts/Prepare, campaigns list, auth nonces for draft actions, promotion, etc.).
-# The redirect target below is the fallback when no VITE_API_BASE* is set in the Netlify env.
-# Most draft/campaign/auth traffic in prod uses the explicit base (unchanged envs) pointing at the frontend gateway.
+# Fallback target when no VITE_API_BASE* is set in the Netlify env.
+# Keep this on the active frontend API gateway; the legacy frontend API
+# service is deprecated and can return stale data.
 [[redirects]]
   from = "/api/*"
-  to = "https://memewarzonefrontend-production.up.railway.app/api/:splat"
+  to = "https://memebattles-frontend-7dcf.up.railway.app/api/:splat"
   status = 200
   force = true
 
