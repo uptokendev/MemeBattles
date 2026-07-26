@@ -83,6 +83,16 @@ async function getPool() {
   }
 }
 
+function isDraftSchemaUnavailableError(err) {
+  const code = String(err?.code || "").trim();
+  return (
+    code === "42P01" || // undefined_table
+    code === "42703" || // undefined_column
+    code === "42883" || // undefined_function/operator mismatch on older schemas
+    /campaign_drafts|campaign_draft_/i.test(String(err?.message || ""))
+  );
+}
+
 function defaultPromotion(draftId, now = new Date().toISOString()) {
   return {
     draftId,
@@ -350,22 +360,28 @@ export async function drafts(req, res) {
     const pool = await getPool();
 
     if (pool) {
-      if (owner) {
-        const result = await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner]);
+      try {
+        if (owner) {
+          const result = await pool.query("select * from campaign_drafts where creator_wallet = $1 order by created_at desc limit 50", [owner]);
+          return json(res, 200, { items: result.rows.map(mapDraftRow) });
+        }
+        const chainId = q.chainId ? Number(q.chainId) : null;
+        const where = ["visibility = 'public'", "status = any($1::text[])"];
+        const params = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
+        if (chainId) {
+          where.push(`chain_id = $${params.length + 1}`);
+          params.push(chainId);
+        }
+        const result = await pool.query(
+          `select * from campaign_drafts where ${where.join(" and ")} order by created_at desc limit 50`,
+          params,
+        );
         return json(res, 200, { items: result.rows.map(mapDraftRow) });
+      } catch (err) {
+        if (!isDraftSchemaUnavailableError(err)) throw err;
+        console.warn("[drafts] campaign draft schema unavailable; returning safe empty draft list", err?.message || err);
+        return json(res, 200, { items: [], warning: "Draft storage is not available in this environment." });
       }
-      const chainId = q.chainId ? Number(q.chainId) : null;
-      const where = ["visibility = 'public'", "status = any($1::text[])"];
-      const params = [Array.from(PUBLIC_DISCOVERY_STATUSES)];
-      if (chainId) {
-        where.push(`chain_id = $${params.length + 1}`);
-        params.push(chainId);
-      }
-      const result = await pool.query(
-        `select * from campaign_drafts where ${where.join(" and ")} order by created_at desc limit 50`,
-        params,
-      );
-      return json(res, 200, { items: result.rows.map(mapDraftRow) });
     }
 
     const store = memoryStore();

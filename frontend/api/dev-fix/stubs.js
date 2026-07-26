@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isAddress, isSolanaAddress, json, readJson } from "../../server/http.js";
 
 const ZERO_AMOUNT = "0";
 const INTERNAL_TOKEN_ENV_KEYS = ["INTERNAL_REWARDS_TOKEN", "RANK_EVENTS_TOKEN", "REWARD_OPS_TOKEN"];
@@ -12,6 +12,12 @@ function methodAllowed(req, res, allowed) {
 function normalizeAddress(value) {
   const raw = String(value || "").trim().toLowerCase();
   return isAddress(raw) ? raw : "";
+}
+
+function normalizeWallet(value) {
+  const raw = String(value || "").trim();
+  if (isSolanaAddress(raw)) return raw;
+  return normalizeAddress(raw);
 }
 
 function parseLimit(value, fallback = 50, max = 100) {
@@ -63,7 +69,7 @@ function emptyRewardSummary(address) {
 export async function rewardsMe(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const address = normalizeAddress(q.address);
+  const address = normalizeWallet(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
   return json(res, 200, emptyRewardSummary(address));
 }
@@ -71,7 +77,7 @@ export async function rewardsMe(req, res) {
 export async function rewardsHistory(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const address = normalizeAddress(q.address);
+  const address = normalizeWallet(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
   return json(res, 200, {
     address,
@@ -85,7 +91,7 @@ export async function rewardsHistory(req, res) {
 export async function rewardsClaims(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const address = normalizeAddress(q.address);
+  const address = normalizeWallet(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
   return json(res, 200, {
     address,
@@ -99,7 +105,7 @@ export async function rewardsClaims(req, res) {
 export async function rewardsEligibility(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const q = getQuery(req);
-  const address = normalizeAddress(q.address);
+  const address = normalizeWallet(q.address);
   if (!address) return json(res, 400, { error: "Invalid or missing address" });
   return json(res, 200, {
     address,
@@ -186,7 +192,7 @@ export async function recruiterSummary(req, res) {
 
 export async function recruiterWalletSummary(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-  const wallet = normalizeAddress(req.params?.wallet);
+  const wallet = normalizeWallet(req.params?.wallet);
   if (!wallet) return json(res, 400, { error: "Invalid wallet address" });
   return json(res, 200, {
     recruiter: null,
@@ -215,7 +221,7 @@ export async function recruiterReferralCapture(req, res) {
   return json(res, 200, {
     captured: false,
     recruiterCode: code,
-    walletAddress: normalizeAddress(body.walletAddress) || null,
+    walletAddress: normalizeWallet(body.walletAddress) || null,
     sessionToken: body.sessionToken || null,
     clientFingerprint: body.clientFingerprint || null,
     reason: "Recruiter referral capture route is wired, but attribution persistence is not implemented in this environment yet.",
@@ -225,7 +231,7 @@ export async function recruiterReferralCapture(req, res) {
 export async function attributionWalletConnect(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
-  const walletAddress = normalizeAddress(body.walletAddress);
+  const walletAddress = normalizeWallet(body.walletAddress);
   if (!walletAddress) return json(res, 400, { error: "Invalid or missing walletAddress" });
   return json(res, 200, {
     state: {
@@ -244,7 +250,7 @@ export async function attributionWalletConnect(req, res) {
 
 export async function attributionWallet(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
-  const walletAddress = normalizeAddress(req.params?.wallet);
+  const walletAddress = normalizeWallet(req.params?.wallet);
   if (!walletAddress) return json(res, 400, { error: "Invalid wallet address" });
   return json(res, 200, {
     state: {

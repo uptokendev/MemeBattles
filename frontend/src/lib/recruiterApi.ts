@@ -1,6 +1,6 @@
 import { getActiveChainId, getFactoryAddress } from "@/lib/chainConfig";
 import { apiFetch } from "@/lib/apiBase";
-import { isSolanaAddress, normalizeAddress as centralNormalize } from "./address";
+import { isSolanaAddress, normalizeAddress as centralNormalize, normalizeEvmWallet } from "./address";
 
 const SESSION_KEY = "mwz:recruiter:session";
 const FINGERPRINT_KEY = "mwz:recruiter:fingerprint";
@@ -240,6 +240,31 @@ export type WalletRewardSummary = {
   materializedAt: string | null;
 };
 
+function emptyWalletRewardSummary(walletAddress: string): WalletRewardSummary {
+  return {
+    walletAddress,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
+  };
+}
+
+function soloWalletAttributionState(walletAddress: string): WalletAttributionPublicState {
+  return {
+    walletAddress,
+    hasActivity: false,
+    recruiterLinkState: "unlinked",
+    recruiterCode: null,
+    recruiterDisplayName: null,
+    recruiterIsOg: false,
+    squadState: "solo",
+  };
+}
+
 export type RecruiterSignupStatus = {
   walletAddress: string;
   isRecruiter: boolean;
@@ -305,20 +330,27 @@ export async function fetchSquadSummary(recruiterCode: string): Promise<SquadSum
 }
 
 export async function fetchWalletAttributionState(walletAddress: string): Promise<WalletAttributionPublicState> {
+  if (!normalizeEvmWallet(walletAddress)) {
+    return soloWalletAttributionState(normalizeWalletAddress(walletAddress));
+  }
   const json = await getJson(`/api/attribution/wallet/${encodeURIComponent(walletAddress)}`);
   return json?.state as WalletAttributionPublicState;
 }
 
 export async function fetchWalletRewardSummary(walletAddress: string): Promise<WalletRewardSummary> {
+  const normalized = normalizeEvmWallet(walletAddress);
+  if (!normalized) return emptyWalletRewardSummary(normalizeWalletAddress(walletAddress));
   return getJson(`/api/rewards/me${buildQuery({ address: walletAddress })}`);
 }
 
 export async function fetchWalletRewardHistory(walletAddress: string, limit = 50, program?: string | null) {
+  if (!normalizeEvmWallet(walletAddress)) return [];
   const json = await getJson(`/api/rewards/me/history${buildQuery({ address: walletAddress, limit, program })}`);
   return Array.isArray(json?.items) ? json.items : [];
 }
 
 export async function fetchWalletRewardClaims(walletAddress: string, limit = 50, program?: string | null) {
+  if (!normalizeEvmWallet(walletAddress)) return [];
   const json = await getJson(`/api/rewards/me/claims${buildQuery({ address: walletAddress, limit, program })}`);
   return Array.isArray(json?.claims) ? json.claims : [];
 }

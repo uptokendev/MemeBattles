@@ -1,4 +1,5 @@
 import { buildRealtimeApiUrl } from "@/lib/realtimeApi";
+import { normalizeEvmWallet } from "@/lib/address";
 
 type InternalHeaders = {
   authorization?: string;
@@ -10,6 +11,11 @@ async function parseJson(res: Response) {
     throw new Error(String((json as any)?.error || (json as any)?.message || `Request failed (${res.status})`));
   }
   return json as any;
+}
+
+async function parseJsonOrFallback(res: Response, fallback: any) {
+  if (res.ok) return parseJson(res);
+  return fallback;
 }
 
 function buildQuery(params: Record<string, string | number | null | undefined>) {
@@ -107,6 +113,7 @@ export type RewardPublicationState = {
 };
 
 export async function fetchWalletRewardEligibility(walletAddress: string, limit = 20, program?: string | null): Promise<WalletEligibilityItem[]> {
+  if (!normalizeEvmWallet(walletAddress)) return [];
   const res = await fetch(buildRealtimeApiUrl(`/api/rewards/me/eligibility${buildQuery({ address: walletAddress, limit, program })}`));
   const json = await parseJson(res);
   return Array.isArray(json?.items) ? json.items as WalletEligibilityItem[] : [];
@@ -125,7 +132,14 @@ export async function fetchAirdropWinners(params: {
 
 export async function fetchSquadLeaderboard(epochId?: number | null) {
   const res = await fetch(buildRealtimeApiUrl(`/api/squads${buildQuery({ epochId })}`));
-  return parseJson(res);
+  return parseJsonOrFallback(res, {
+    ok: false,
+    epoch: null,
+    globalPoolAmount: "0",
+    carryoverAmount: "0",
+    squads: [],
+    items: [],
+  });
 }
 
 export async function fetchSquadMembers(params: {
@@ -134,8 +148,11 @@ export async function fetchSquadMembers(params: {
   walletAddress?: string | null;
   limit?: number;
 }) {
+  if (params.walletAddress && !normalizeEvmWallet(params.walletAddress)) {
+    return { ok: true, epoch: null, items: [] };
+  }
   const res = await fetch(buildRealtimeApiUrl(`/api/squads/members${buildQuery(params)}`));
-  return parseJson(res);
+  return parseJsonOrFallback(res, { ok: false, epoch: null, items: [] });
 }
 
 export async function fetchInternalRewardPublications(token: string) {

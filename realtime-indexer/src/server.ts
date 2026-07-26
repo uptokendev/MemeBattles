@@ -57,6 +57,10 @@ function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function isEvmAddress(value: unknown): boolean {
+  return /^0x[a-f0-9]{40}$/.test(String(value ?? "").trim().toLowerCase());
+}
+
 const PRIVATE_PUBLIC_REASON_CODES = new Set([
   "SELF_TRADING",
   "COMMON_CONTROL_CLUSTER",
@@ -89,6 +93,19 @@ function toPublicWalletRewardSummary(summary: NonNullable<Awaited<ReturnType<typ
     claimedLifetimeAmount: summary.claimedLifetimeAmount,
     lastClaimedAt: summary.lastClaimedAt,
     materializedAt: summary.materializedAt,
+  };
+}
+
+function emptyPublicWalletRewardSummary(walletAddress: string) {
+  return {
+    walletAddress,
+    pendingByProgram: {},
+    claimableByProgram: {},
+    claimedByProgram: {},
+    totalClaimableAmount: "0",
+    claimedLifetimeAmount: "0",
+    lastClaimedAt: null,
+    materializedAt: null,
   };
 }
 
@@ -172,7 +189,14 @@ async function requirePublishedResource(
   resourceType: "airdrop_winners" | "recruiter_leaderboard" | "squad_leaderboard",
   resourceKey = "default",
 ): Promise<boolean> {
-  const state = await getRewardPublicationState(resourceType, resourceKey);
+  let state: Awaited<ReturnType<typeof getRewardPublicationState>>;
+  try {
+    state = await getRewardPublicationState(resourceType, resourceKey);
+  } catch (err) {
+    console.warn("Reward publication state unavailable", { resourceType, resourceKey, err });
+    res.status(404).json({ error: "Not found" });
+    return false;
+  }
   if (!state.isPublished) {
     res.status(404).json({ error: "Not found" });
     return false;
@@ -1371,11 +1395,11 @@ app.get("/internal/rewards/ops/admin-actions", wrap(async (req, res) => {
 
 app.get("/api/rewards/me", wrap(async (req, res) => {
   const address = String(req.query.address || "").trim().toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    return res.status(400).json({ error: "Invalid address" });
+  if (!isEvmAddress(address)) {
+    return res.json(emptyPublicWalletRewardSummary(String(req.query.address || "").trim()));
   }
   const summary = await getWalletRewardSummary(address);
-  if (!summary) return res.status(404).json({ error: "Wallet reward summary not found" });
+  if (!summary) return res.json(emptyPublicWalletRewardSummary(address));
   res.json(toPublicWalletRewardSummary(summary));
 }));
 
@@ -1383,8 +1407,8 @@ app.get("/api/rewards/me/history", wrap(async (req, res) => {
   const address = String(req.query.address || "").trim().toLowerCase();
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    return res.status(400).json({ error: "Invalid address" });
+  if (!isEvmAddress(address)) {
+    return res.json({ items: [] });
   }
   const items = await listWalletRewardHistory(address, { limit, program: program as any });
   res.json({ items: items.map(toPublicWalletHistoryItem) });
@@ -1395,8 +1419,8 @@ app.get("/api/rewards/me/claims", wrap(async (req, res) => {
   const epochId = req.query.epochId != null && String(req.query.epochId).trim() !== "" ? Number(req.query.epochId) : null;
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    return res.status(400).json({ error: "Invalid address" });
+  if (!isEvmAddress(address)) {
+    return res.json({ items: [], claims: [] });
   }
   if (epochId != null && !Number.isFinite(epochId)) {
     return res.status(400).json({ error: "Invalid epochId" });
@@ -1413,8 +1437,8 @@ app.get("/api/rewards/me/eligibility", wrap(async (req, res) => {
   const address = String(req.query.address || "").trim().toLowerCase();
   const limit = Math.min(Number(req.query.limit || 50), 200);
   const program = req.query.program != null && String(req.query.program).trim() !== "" ? String(req.query.program).trim() : null;
-  if (!/^0x[a-f0-9]{40}$/.test(address)) {
-    return res.status(400).json({ error: "Invalid address" });
+  if (!isEvmAddress(address)) {
+    return res.json({ items: [] });
   }
   if (program != null && !(ELIGIBILITY_PROGRAMS as readonly string[]).includes(program)) {
     return res.status(400).json({ error: "Invalid eligibility program" });
@@ -1445,7 +1469,19 @@ app.get("/api/squads", wrap(async (req, res) => {
   if (epochId != null && !Number.isFinite(epochId)) {
     return res.status(400).json({ error: "Invalid epochId" });
   }
-  const preview = await getSquadAllocationPreview(epochId ?? null);
+  const preview = await getSquadAllocationPreview(epochId ?? null).catch((err) => {
+    console.warn("Squad allocation preview unavailable", { epochId, err });
+    return null;
+  });
+  if (!preview) {
+    return res.json({
+      ok: true,
+      epoch: null,
+      globalPoolAmount: "0",
+      carryoverAmount: "0",
+      squads: [],
+    });
+  }
   res.json({
     ok: true,
     epoch: preview.epoch,
@@ -1464,7 +1500,16 @@ app.get("/api/squads/members", wrap(async (req, res) => {
   if (epochId != null && !Number.isFinite(epochId)) {
     return res.status(400).json({ error: "Invalid epochId" });
   }
-  const preview = await getSquadAllocationPreview(epochId ?? null);
+  if (walletAddress && !isEvmAddress(walletAddress)) {
+    return res.json({ ok: true, epoch: null, items: [] });
+  }
+  const preview = await getSquadAllocationPreview(epochId ?? null).catch((err) => {
+    console.warn("Squad member preview unavailable", { epochId, recruiterCode, walletAddress, err });
+    return null;
+  });
+  if (!preview) {
+    return res.json({ ok: true, epoch: null, items: [] });
+  }
   const items = preview.members
     .filter((member) => !recruiterCode || String(member.recruiterCode ?? "").toLowerCase() === recruiterCode)
     .filter((member) => !walletAddress || member.walletAddress === walletAddress)
