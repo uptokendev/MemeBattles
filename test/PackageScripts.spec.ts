@@ -19,6 +19,19 @@ describe("package scripts", function () {
     expect(pkg.scripts["deploy:verify"]).to.eq("hardhat run scripts/deploy-and-verify.ts");
     expect(pkg.scripts["deploy:verify:localhost"]).to.eq("hardhat run scripts/deploy-and-verify.ts --network localhost");
     expect(pkg.scripts["deploy:verify:bsc-testnet"]).to.eq("hardhat run scripts/deploy-and-verify.ts --network bscTestnet");
+    expect(pkg.scripts["deploy:treasury-v2-minimal"]).to.eq("hardhat run scripts/deploy-minimal-treasury-router-v2.ts");
+    expect(pkg.scripts["deploy:treasury-v2-minimal:bsc-testnet"]).to.eq(
+      "hardhat run scripts/deploy-minimal-treasury-router-v2.ts --network bscTestnet",
+    );
+    expect(pkg.scripts["deploy:scheduled-test-factory:bsc-testnet"]).to.eq(
+      "hardhat run scripts/deploy-scheduled-test-factory.ts --network bscTestnet",
+    );
+    expect(pkg.scripts["activate:scheduled-test-factory"]).to.eq(
+      "hardhat run scripts/activate-scheduled-test-factory.ts",
+    );
+    expect(pkg.scripts["activate:scheduled-test-factory:bsc-testnet"]).to.eq(
+      "hardhat run scripts/activate-scheduled-test-factory.ts --network bscTestnet",
+    );
     expect(pkg.scripts["verify:deployment"]).to.eq("hardhat run scripts/verify-deployment.ts");
     expect(pkg.scripts["verify:deployment:localhost"]).to.eq("hardhat run scripts/verify-deployment.ts --network localhost");
     expect(pkg.scripts["verify:deployment:bsc-testnet"]).to.eq("hardhat run scripts/verify-deployment.ts --network bscTestnet");
