@@ -174,7 +174,7 @@ export default function PushDraftLive() {
         auth: deployAuth,
         campaignAddress: created.campaignAddress,
         tokenAddress: created.tokenAddress,
-        deployTxHash: String((created.receipt as any)?.hash || ""),
+        deployTxHash: String((created as any)?.hash || ""),
       });
 
       toast.success(`${selectedTier} campaign is live.`);
