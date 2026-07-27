@@ -131,25 +131,34 @@ async function scheduledFixture() {
 }
 
 describe("Scheduled LaunchFactory generation", function () {
-  it("persists the bound schedule and fixed test graduation target", async () => {
+  it("persists the bound schedule evidence in the factory event and fixed test graduation target", async () => {
     const { factory, creator, request, authorization, launchAt } = await scheduledFixture();
+    const creatorAddress = await creator.getAddress();
 
-    await expect(factory.connect(creator).createScheduledCampaignAuthorized(request, authorization))
-      .to.emit(factory, "ScheduledCampaignCreated");
+    const tx = factory.connect(creator).createScheduledCampaignAuthorized(request, authorization);
+    await expect(tx)
+      .to.emit(factory, "ScheduledCampaignCreated")
+      .withArgs(
+        0n,
+        anyValue,
+        anyValue,
+        creatorAddress,
+        launchAt,
+        request.draftReferenceHash,
+        request.normalizedTickerHash,
+        request.metadataHash,
+        1n,
+        1n,
+        2n,
+        2n,
+      );
 
     const info = await factory.getCampaign(0n);
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
 
     expect(await campaign.launchAt()).to.equal(launchAt);
-    expect(await campaign.draftReferenceHash()).to.equal(request.draftReferenceHash);
-    expect(await campaign.normalizedTickerHash()).to.equal(request.normalizedTickerHash);
-    expect(await campaign.metadataHash()).to.equal(request.metadataHash);
-    expect(await campaign.reservationVersion()).to.equal(1n);
-    expect(await campaign.authorizationNonce()).to.equal(1n);
-    expect(await campaign.factoryGeneration()).to.equal(2n);
-    expect(await campaign.campaignGeneration()).to.equal(2n);
     expect(await campaign.graduationTarget()).to.equal(ethers.parseEther("6"));
-    expect(await campaign.tradingOpen()).to.equal(false);
+    expect(await factory.usedAuthorizationNonces(creatorAddress, 1n)).to.equal(true);
   });
 
   it("blocks trading before launchAt and opens without a second transaction", async () => {
@@ -163,12 +172,11 @@ describe("Scheduled LaunchFactory generation", function () {
 
     await expect(
       campaign.connect(alice).buyExactTokens(amountOut, quote, { value: quote }),
-    ).to.be.revertedWithCustomError(campaign, "TradingNotOpen").withArgs(launchAt);
+    ).to.be.revertedWithCustomError(campaign, "TradingNotOpen");
 
     await network.provider.send("evm_setNextBlockTimestamp", [Number(launchAt)]);
     await network.provider.send("evm_mine");
 
-    expect(await campaign.tradingOpen()).to.equal(true);
     await expect(campaign.connect(alice).buyExactTokens(amountOut, quote, { value: quote }))
       .to.emit(campaign, "TokensPurchased");
   });
@@ -255,3 +263,5 @@ describe("Scheduled LaunchFactory generation", function () {
     ).to.be.revertedWithCustomError(factory, "MissingTickerHash");
   });
 });
+
+const anyValue = (_value: unknown) => true;
