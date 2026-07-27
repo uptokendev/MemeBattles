@@ -16,6 +16,24 @@ function loadEthers() {
 const ethers = loadEthers();
 
 export const CREATE_AUTH_TYPES = ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"];
+export const SCHEDULED_CREATE_AUTH_TYPES = [
+  "string",
+  "uint256",
+  "address",
+  "address",
+  "bytes32",
+  "uint64",
+  "bytes32",
+  "bytes32",
+  "bytes32",
+  "uint64",
+  "uint256",
+  "uint32",
+  "uint32",
+  "uint8",
+  "uint8",
+  "uint64",
+];
 export const TRADE_AUTH_TYPES = ["string", "uint256", "address", "address", "uint8", "uint8", "uint256", "uint256", "uint64"];
 export const REQUEST_HASH_TYPES = ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"];
 
@@ -76,6 +94,54 @@ export function buildCreateAuthorizationDigest({
 
 export async function signCreateAuthorization(options) {
   const digest = buildCreateAuthorizationDigest(options);
+  return options.signer.signMessage(ethers.getBytes(digest));
+}
+
+export function buildScheduledCreateAuthorizationDigest({
+  chainId,
+  factoryAddress,
+  factory = factoryAddress,
+  creator,
+  request,
+  requestHash = hashCampaignRequest(request?.campaign || request),
+  launchAt,
+  draftReferenceHash,
+  normalizedTickerHash,
+  metadataHash,
+  reservationVersion,
+  authorizationNonce,
+  factoryGeneration = 2,
+  campaignGeneration = 2,
+  tradeRouteProfileId,
+  tradeRouteProfile = tradeRouteProfileId,
+  finalizeRouteProfileId,
+  finalizeRouteProfile = finalizeRouteProfileId,
+  deadline,
+}) {
+  return ethers.keccak256(
+    coder.encode(SCHEDULED_CREATE_AUTH_TYPES, [
+      "MWZ_CREATE_SCHEDULED_V2_AUTH",
+      toBigInt(chainId, "chainId"),
+      ethers.getAddress(factory),
+      ethers.getAddress(creator),
+      requestHash,
+      toBigInt(launchAt, "launchAt"),
+      draftReferenceHash,
+      normalizedTickerHash,
+      metadataHash,
+      toBigInt(reservationVersion, "reservationVersion"),
+      toBigInt(authorizationNonce, "authorizationNonce"),
+      Number(factoryGeneration),
+      Number(campaignGeneration),
+      Number(tradeRouteProfile),
+      Number(finalizeRouteProfile),
+      toBigInt(deadline, "deadline"),
+    ]),
+  );
+}
+
+export async function signScheduledCreateAuthorization(options) {
+  const digest = buildScheduledCreateAuthorizationDigest(options);
   return options.signer.signMessage(ethers.getBytes(digest));
 }
 
