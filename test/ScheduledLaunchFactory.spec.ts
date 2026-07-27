@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { ethers, network } from "hardhat";
 import { deployCoreFixture } from "./fixtures/core";
 
@@ -263,5 +264,3 @@ describe("Scheduled LaunchFactory generation", function () {
     ).to.be.revertedWithCustomError(factory, "MissingTickerHash");
   });
 });
-
-const anyValue = (_value: unknown) => true;
