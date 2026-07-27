@@ -74,6 +74,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         uint8 finalizeRouteProfile;
     }
 
+    /// @dev Reservation evidence is verified and stored by LaunchFactory. The campaign only needs launchAt to enforce trading.
     struct ScheduleParams {
         uint64 launchAt;
         bytes32 draftReferenceHash;
@@ -102,8 +103,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 private constant WAD = 1e18;
     uint256 private constant MAX_BPS = 10_000;
     uint256 private constant GRADUATION_PRICE_TOLERANCE_BPS = 50;
-    uint256 public constant MAX_SCHEDULE_WINDOW = 30 days;
-    uint32 public constant CURRENT_CAMPAIGN_GENERATION = 2;
     uint8 private constant ROUTE_KIND_TRADE = 0;
     uint8 private constant ROUTE_KIND_FINALIZE = 1;
     uint8 private constant ROUTE_PROFILE_STANDARD_LINKED = 0;
@@ -158,15 +157,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     uint256 public launchProtectionBlocksPending;
     uint256 public launchProtectionMaxBuyWei;
     uint256 public launchProtectionMaxWalletWei;
-
     uint64 public launchAt;
-    bytes32 public draftReferenceHash;
-    bytes32 public normalizedTickerHash;
-    bytes32 public metadataHash;
-    uint64 public reservationVersion;
-    uint256 public authorizationNonce;
-    uint32 public factoryGeneration;
-    uint32 public campaignGeneration;
 
     modifier onlyFactory() {
         if (msg.sender != factory) revert OnlyFactory();
@@ -188,17 +179,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     event NativeClaimed(address indexed beneficiary, uint256 amount);
     event CampaignPauseStateUpdated(bool paused, bool buyPaused, bool sellPaused, bool graduationPaused);
     event RequireAuthorizedTradingUpdated(bool required);
-    event LaunchScheduleConfigured(
-        uint64 indexed launchAt,
-        bytes32 indexed normalizedTickerHash,
-        bytes32 indexed draftReferenceHash,
-        bytes32 metadataHash,
-        uint64 reservationVersion,
-        uint256 authorizationNonce,
-        uint32 factoryGeneration,
-        uint32 campaignGeneration
-    );
-    event LaunchProtectionActivated(uint256 startBlock, uint256 endBlock);
     event CampaignFinalized(
         address indexed caller,
         address indexed pair,
@@ -264,9 +244,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error NotFinalized();
     error RescueRecipientZero();
     error ExcessNativeUnavailable();
-    error LaunchAtTooFar();
-    error InvalidGeneration();
-    error TradingNotOpen(uint64 launchAt);
+    error TradingNotOpen();
 
     bool private _initialized;
 
@@ -275,24 +253,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function initialize(InitParams memory params) external {
-        ScheduleParams memory schedule = ScheduleParams({
-            launchAt: uint64(block.timestamp),
-            draftReferenceHash: bytes32(0),
-            normalizedTickerHash: bytes32(0),
-            metadataHash: bytes32(0),
-            reservationVersion: 0,
-            authorizationNonce: 0,
-            factoryGeneration: 1,
-            campaignGeneration: 1
-        });
-        _initialize(params, schedule);
+        _initialize(params, uint64(block.timestamp));
     }
 
     function initializeScheduled(InitParams memory params, ScheduleParams memory schedule) external {
-        _initialize(params, schedule);
+        _initialize(params, schedule.launchAt);
     }
 
-    function _initialize(InitParams memory params, ScheduleParams memory schedule) internal {
+    function _initialize(InitParams memory params, uint64 scheduledLaunchAt) internal {
         if (_initialized) revert AlreadyInitialized();
         _initialized = true;
 
@@ -311,13 +279,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (bytes(params.logoURI).length == 0) revert LogoUriRequired();
         if (!_isValidRouteProfile(params.tradeRouteProfile)) revert InvalidTradeRouteProfile();
         if (!_isValidRouteProfile(params.finalizeRouteProfile)) revert InvalidFinalizeRouteProfile();
-        if (schedule.factoryGeneration == 0 || schedule.campaignGeneration == 0) revert InvalidGeneration();
-
-        uint64 effectiveLaunchAt = schedule.launchAt;
-        if (effectiveLaunchAt == 0 || uint256(effectiveLaunchAt) < block.timestamp) {
-            effectiveLaunchAt = uint64(block.timestamp);
-        }
-        if (uint256(effectiveLaunchAt) > block.timestamp + MAX_SCHEDULE_WINDOW) revert LaunchAtTooFar();
 
         _transferOwnership(params.creator);
 
@@ -340,15 +301,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         creatorBuyLockUntil = params.creatorBuyLockUntil;
         creatorBuyCapWei = params.creatorBuyCapWei;
         requireAuthorizedTrading = params.requireAuthorizedTrading;
-
-        launchAt = effectiveLaunchAt;
-        draftReferenceHash = schedule.draftReferenceHash;
-        normalizedTickerHash = schedule.normalizedTickerHash;
-        metadataHash = schedule.metadataHash;
-        reservationVersion = schedule.reservationVersion;
-        authorizationNonce = schedule.authorizationNonce;
-        factoryGeneration = schedule.factoryGeneration;
-        campaignGeneration = schedule.campaignGeneration;
+        launchAt = scheduledLaunchAt == 0 || uint256(scheduledLaunchAt) < block.timestamp
+            ? uint64(block.timestamp)
+            : scheduledLaunchAt;
 
         _loadLaunchProtection(params.factory);
 
@@ -361,24 +316,9 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         token = new LaunchToken(params.name, params.symbol, params.totalSupply, address(this));
         tokenInterface = IERC20(address(token));
         token.mint(address(this), params.totalSupply);
-
-        emit LaunchScheduleConfigured(
-            effectiveLaunchAt,
-            schedule.normalizedTickerHash,
-            schedule.draftReferenceHash,
-            schedule.metadataHash,
-            schedule.reservationVersion,
-            schedule.authorizationNonce,
-            schedule.factoryGeneration,
-            schedule.campaignGeneration
-        );
     }
 
     receive() external payable {}
-
-    function tradingOpen() public view returns (bool) {
-        return block.timestamp >= launchAt;
-    }
 
     function setPauseState(bool paused_, bool buyPaused_, bool sellPaused_, bool graduationPaused_) external onlyFactory {
         paused = paused_;
@@ -681,7 +621,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requireTradingOpen() internal view {
-        if (!tradingOpen()) revert TradingNotOpen(launchAt);
+        if (block.timestamp < launchAt) revert TradingNotOpen();
     }
 
     function _assertWalletCanTrade(address wallet) internal view {
@@ -690,11 +630,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _requireDirectTradeAllowed() internal view {
-        if (requireAuthorizedTrading || _launchProtectionPendingOrActive()) revert AuthorizedTradingRequired();
-    }
-
-    function _launchProtectionPendingOrActive() internal view returns (bool) {
-        return launchProtectionBlocksPending != 0 || _launchProtectionActive();
+        if (requireAuthorizedTrading || launchProtectionBlocksPending != 0 || _launchProtectionActive()) revert AuthorizedTradingRequired();
     }
 
     function _launchProtectionActive() internal view returns (bool) {
@@ -707,7 +643,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         if (blocks_ == 0) return;
         launchProtectionBlocksPending = 0;
         launchProtectionEndBlock = block.number + blocks_;
-        emit LaunchProtectionActivated(block.number, launchProtectionEndBlock);
     }
 
     function _loadLaunchProtection(address source) private {
@@ -716,7 +651,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
             if (blocks_ == 0) return;
             launchProtectionMaxBuyWei = maxBuyWei;
             launchProtectionMaxWalletWei = maxWalletWei;
-            if (tradingOpen()) {
+            if (block.timestamp >= launchAt) {
                 launchProtectionEndBlock = block.number + blocks_;
             } else {
                 launchProtectionBlocksPending = blocks_;
