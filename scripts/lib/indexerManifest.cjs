@@ -34,6 +34,7 @@ const NATIVE_TREASURY_VAULT_EVENTS = [
 const EVENT_SIGNATURES = {
   LaunchFactory: [
     "CampaignCreated(uint256,address,address,address,string,string,string,string)",
+    "ScheduledCampaignCreated(uint256,address,address,address,uint64,bytes32,bytes32,bytes32,uint64,uint256,uint32,uint32)",
     "FeeRecipientUpdated(address)",
     "RouterUpdated(address)",
     "GraduationOracleUpdated(address)",
@@ -46,6 +47,8 @@ const EVENT_SIGNATURES = {
     "CreatePauseUpdated(bool)",
     "RegistriesUpdated(address,address)",
     "RequireAuthorizedTradingUpdated(bool)",
+    "RequireRouteAuthorizationUpdated(bool)",
+    "SecurityDefaultsLockedEnabled()",
     "CampaignPauseUpdated(address,bool,bool,bool,bool)",
     "CampaignGraduated(address,address,address,address)",
   ],
