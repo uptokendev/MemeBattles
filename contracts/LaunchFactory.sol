@@ -52,6 +52,14 @@ contract LaunchFactory is Ownable {
     error CreatorNotEligible();
     error RiskNotEligible();
     error UnknownCampaign();
+    error ScheduledAuthorizationRequired();
+    error InvalidLaunchAt();
+    error LaunchAtTooFar();
+    error MissingDraftReference();
+    error MissingTickerHash();
+    error MissingMetadataHash();
+    error InvalidReservationVersion();
+    error InvalidAuthorizationNonce();
 
     struct LaunchConfig {
         uint256 totalSupply;
@@ -87,6 +95,16 @@ contract LaunchFactory is Ownable {
         uint256 graduationTarget;
     }
 
+    struct ScheduledCampaignRequest {
+        CampaignRequest campaign;
+        uint64 launchAt;
+        bytes32 draftReferenceHash;
+        bytes32 normalizedTickerHash;
+        bytes32 metadataHash;
+        uint64 reservationVersion;
+        uint256 authorizationNonce;
+    }
+
     struct RouteAuthorization {
         uint8 tradeRouteProfile;
         uint8 finalizeRouteProfile;
@@ -98,6 +116,9 @@ contract LaunchFactory is Ownable {
     uint8 public constant ROUTE_PROFILE_STANDARD_LINKED = 0;
     uint8 public constant ROUTE_PROFILE_STANDARD_UNLINKED = 1;
     uint8 public constant ROUTE_PROFILE_OG_LINKED = 2;
+    uint32 public constant FACTORY_GENERATION = 2;
+    uint32 public constant CAMPAIGN_GENERATION = 2;
+    uint256 public constant MAX_SCHEDULE_WINDOW = 30 days;
 
     LaunchConfig public config;
     address public feeRecipient;
@@ -136,6 +157,7 @@ contract LaunchFactory is Ownable {
     CampaignInfo[] private _campaigns;
     mapping(address => bool) public isCampaign;
     mapping(bytes32 => bool) public usedCreateRouteAuthorizations;
+    mapping(address => mapping(uint256 => bool)) public usedAuthorizationNonces;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -146,6 +168,20 @@ contract LaunchFactory is Ownable {
         string symbol,
         string logoURI,
         string metadataURI
+    );
+    event ScheduledCampaignCreated(
+        uint256 indexed id,
+        address indexed campaign,
+        address indexed token,
+        address creator,
+        uint64 launchAt,
+        bytes32 draftReferenceHash,
+        bytes32 normalizedTickerHash,
+        bytes32 metadataHash,
+        uint64 reservationVersion,
+        uint256 authorizationNonce,
+        uint32 factoryGeneration,
+        uint32 campaignGeneration
     );
     event ConfigUpdated(LaunchConfig newConfig);
     event FeeRecipientUpdated(address indexed newRecipient);
@@ -222,7 +258,7 @@ contract LaunchFactory is Ownable {
 
     function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
         if (requireRouteAuthorization) revert RouteAuthorizationRequired();
-        return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile);
+        return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile, _immediateSchedule(msg.sender));
     }
 
     function createCampaignAuthorized(CampaignRequest calldata req, RouteAuthorization calldata routeAuth)
@@ -230,13 +266,50 @@ contract LaunchFactory is Ownable {
         returns (address campaignAddr, address tokenAddr)
     {
         _verifyRouteAuthorization(msg.sender, req, routeAuth);
-        return _createCampaign(req, routeAuth.tradeRouteProfile, routeAuth.finalizeRouteProfile);
+        return _createCampaign(req, routeAuth.tradeRouteProfile, routeAuth.finalizeRouteProfile, _immediateSchedule(msg.sender));
+    }
+
+    function createScheduledCampaignAuthorized(ScheduledCampaignRequest calldata req, RouteAuthorization calldata routeAuth)
+        external
+        returns (address campaignAddr, address tokenAddr)
+    {
+        _validateScheduledRequest(req);
+        _verifyScheduledRouteAuthorization(msg.sender, req, routeAuth);
+        if (usedAuthorizationNonces[msg.sender][req.authorizationNonce]) revert RouteAuthorizationReplayed();
+        usedAuthorizationNonces[msg.sender][req.authorizationNonce] = true;
+
+        LaunchCampaign.ScheduleParams memory schedule = LaunchCampaign.ScheduleParams({
+            launchAt: req.launchAt,
+            draftReferenceHash: req.draftReferenceHash,
+            normalizedTickerHash: req.normalizedTickerHash,
+            metadataHash: req.metadataHash,
+            reservationVersion: req.reservationVersion,
+            authorizationNonce: req.authorizationNonce,
+            factoryGeneration: FACTORY_GENERATION,
+            campaignGeneration: CAMPAIGN_GENERATION
+        });
+
+        return _createCampaign(req.campaign, routeAuth.tradeRouteProfile, routeAuth.finalizeRouteProfile, schedule);
+    }
+
+    function _immediateSchedule(address creator) internal view returns (LaunchCampaign.ScheduleParams memory schedule) {
+        schedule = LaunchCampaign.ScheduleParams({
+            launchAt: uint64(block.timestamp),
+            draftReferenceHash: bytes32(0),
+            normalizedTickerHash: keccak256(abi.encodePacked(creator, _campaigns.length, block.chainid)),
+            metadataHash: bytes32(0),
+            reservationVersion: 0,
+            authorizationNonce: 0,
+            factoryGeneration: FACTORY_GENERATION,
+            campaignGeneration: CAMPAIGN_GENERATION
+        });
     }
 
     function _createCampaign(
         CampaignRequest calldata req,
         uint8 campaignTradeRouteProfile,
-        uint8 campaignFinalizeRouteProfile
+        uint8 campaignFinalizeRouteProfile,
+        LaunchCampaign.ScheduleParams memory schedule
     ) internal returns (address campaignAddr, address tokenAddr) {
         if (!live) revert NotLive();
         if (globalPaused) revert Paused();
@@ -246,11 +319,12 @@ contract LaunchFactory is Ownable {
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
         address lockedLpReceiver = address(permanentLpLocker);
 
-        (uint256 creatorBuyLockUntil, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
+        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
         if (campaignGraduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+        uint256 creatorBuyLockUntil = uint256(schedule.launchAt) + creatorBuyLockDuration;
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
             name: req.name,
@@ -285,7 +359,7 @@ contract LaunchFactory is Ownable {
         });
 
         address clone = Clones.clone(campaignImplementation);
-        LaunchCampaign(payable(clone)).initialize(params);
+        LaunchCampaign(payable(clone)).initializeScheduled(params, schedule);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
         isCampaign[campaignAddr] = true;
@@ -311,7 +385,22 @@ contract LaunchFactory is Ownable {
             })
         );
 
-        emit CampaignCreated(_campaigns.length - 1, campaignAddr, tokenAddr, msg.sender, req.name, req.symbol, req.logoURI, metadataURI);
+        uint256 id = _campaigns.length - 1;
+        emit CampaignCreated(id, campaignAddr, tokenAddr, msg.sender, req.name, req.symbol, req.logoURI, metadataURI);
+        emit ScheduledCampaignCreated(
+            id,
+            campaignAddr,
+            tokenAddr,
+            msg.sender,
+            schedule.launchAt,
+            schedule.draftReferenceHash,
+            schedule.normalizedTickerHash,
+            schedule.metadataHash,
+            schedule.reservationVersion,
+            schedule.authorizationNonce,
+            schedule.factoryGeneration,
+            schedule.campaignGeneration
+        );
     }
 
     function notifyCampaignGraduated(address campaignCreator, address lpToken) external {
@@ -440,11 +529,11 @@ contract LaunchFactory is Ownable {
         return _campaigns.length;
     }
 
-    function _enforceCreatorEligibility(address creator) internal view returns (uint256 lockUntil, uint256 buyCapWei, uint256 maxClusterWallets) {
+    function _enforceCreatorEligibility(address creator) internal view returns (uint256 lockDuration, uint256 buyCapWei, uint256 maxClusterWallets) {
         if (address(creatorRegistry) == address(0)) return (0, 0, 0);
         if (!creatorRegistry.canLaunch(creator)) revert CreatorNotEligible();
         CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
-        return (block.timestamp + rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
+        return (rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
     }
 
     function _enforceRiskLaunch(address creator, uint256 maxClusterWallets) internal view {
@@ -474,6 +563,52 @@ contract LaunchFactory is Ownable {
         if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
         if (usedCreateRouteAuthorizations[digest]) revert RouteAuthorizationReplayed();
         usedCreateRouteAuthorizations[digest] = true;
+    }
+
+    function _verifyScheduledRouteAuthorization(
+        address creator,
+        ScheduledCampaignRequest calldata req,
+        RouteAuthorization calldata routeAuth
+    ) internal {
+        address authority = routeAuthority;
+        if (authority == address(0)) revert RouteAuthorityZero();
+        if (routeAuth.deadline < block.timestamp) revert RouteAuthorizationExpired();
+        if (!_isValidRouteProfile(routeAuth.tradeRouteProfile) || !_isValidRouteProfile(routeAuth.finalizeRouteProfile)) revert InvalidRouteProfile();
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(
+                abi.encode(
+                    "MWZ_CREATE_SCHEDULED_V2_AUTH",
+                    block.chainid,
+                    address(this),
+                    creator,
+                    _hashCampaignRequest(req.campaign),
+                    req.launchAt,
+                    req.draftReferenceHash,
+                    req.normalizedTickerHash,
+                    req.metadataHash,
+                    req.reservationVersion,
+                    req.authorizationNonce,
+                    FACTORY_GENERATION,
+                    CAMPAIGN_GENERATION,
+                    routeAuth.tradeRouteProfile,
+                    routeAuth.finalizeRouteProfile,
+                    routeAuth.deadline
+                )
+            )
+        );
+        if (digest.recover(routeAuth.signature) != authority) revert InvalidRouteAuthorization();
+        if (usedCreateRouteAuthorizations[digest]) revert RouteAuthorizationReplayed();
+        usedCreateRouteAuthorizations[digest] = true;
+    }
+
+    function _validateScheduledRequest(ScheduledCampaignRequest calldata req) internal view {
+        if (req.launchAt < block.timestamp) revert InvalidLaunchAt();
+        if (uint256(req.launchAt) > block.timestamp + MAX_SCHEDULE_WINDOW) revert LaunchAtTooFar();
+        if (req.draftReferenceHash == bytes32(0)) revert MissingDraftReference();
+        if (req.normalizedTickerHash == bytes32(0)) revert MissingTickerHash();
+        if (req.metadataHash == bytes32(0)) revert MissingMetadataHash();
+        if (req.reservationVersion == 0) revert InvalidReservationVersion();
+        if (req.authorizationNonce == 0) revert InvalidAuthorizationNonce();
     }
 
     function _hashCampaignRequest(CampaignRequest calldata req) internal pure returns (bytes32) {
