@@ -176,6 +176,13 @@ async function dispatchDashboardRecruiters(pathname, req, res) {
   return true;
 }
 
+async function dispatchDashboardSubmissionNotes(pathname, req, res) {
+  if (pathname !== "/api/dashboard/submission-notes") return false;
+  const { dashboardSubmissionNotes } = await import("../api/dashboard/submissionNotes.js");
+  await dashboardSubmissionNotes(req, res);
+  return true;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -219,6 +226,7 @@ export function createRailwayProxyMiddleware(options = {}) {
 
     if (await dispatchDashboardPromotors(pathname, req, res)) return;
     if (await dispatchDashboardRecruiters(pathname, req, res)) return;
+    if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
     const isDevIP = isDevAllowedIP(req);
