@@ -1,0 +1,225 @@
+import fs from "fs";
+import path from "path";
+import { ethers, network } from "hardhat";
+import { assertCode, resolveContracts } from "./verify-deployment";
+
+const TESTNET_CHAIN_ID = 97n;
+const MAINNET_CHAIN_ID = 56n;
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+
+function rawEnv(name: string): string {
+  return String(process.env[name] ?? "").trim();
+}
+
+function requireAddress(label: string, value: string): string {
+  if (!ADDRESS_RE.test(value || "")) throw new Error(`${label}: missing or invalid address: ${value || "<empty>"}`);
+  const address = ethers.getAddress(value);
+  if (address === ethers.ZeroAddress) throw new Error(`${label}: zero address is not allowed.`);
+  return address;
+}
+
+function loadBaseDeployment() {
+  const file = process.env.DEPLOYMENT_FILE
+    ? path.resolve(process.env.DEPLOYMENT_FILE)
+    : path.join(__dirname, "..", "deployments", `${network.name}.json`);
+  if (!fs.existsSync(file)) throw new Error(`Base deployment file not found: ${file}`);
+  return { file, deployment: JSON.parse(fs.readFileSync(file, "utf8")) };
+}
+
+function writeJson(file: string, data: unknown) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+function parseMonthlyCap(baseDeployment: any): bigint {
+  const configured = rawEnv("MONTHLY_LEAGUE_CAP_USD");
+  if (configured) {
+    const value = ethers.parseUnits(configured, 18);
+    if (value <= 0n) throw new Error("MONTHLY_LEAGUE_CAP_USD must be positive when provided.");
+    return value;
+  }
+  return BigInt(baseDeployment.monthlyLeagueCapUsd ?? baseDeployment.routing?.monthlyLeagueCapUsd ?? 0);
+}
+
+async function main() {
+  const net = await ethers.provider.getNetwork();
+  if (net.chainId === MAINNET_CHAIN_ID) {
+    throw new Error("Refusing minimal test TreasuryRouterV2 migration on BSC mainnet (chain 56).");
+  }
+  if (net.chainId !== TESTNET_CHAIN_ID) {
+    throw new Error(`This migration is restricted to BSC Testnet chain 97; connected chain is ${net.chainId.toString()}.`);
+  }
+
+  const { file: baseFile, deployment: baseDeployment } = loadBaseDeployment();
+  const contracts = resolveContracts(baseDeployment);
+  const [deployer] = await ethers.getSigners();
+  const deployerAddress = await deployer.getAddress();
+  const deploymentBlock = await ethers.provider.getBlockNumber();
+
+  if (baseDeployment.treasuryRouterVersion === "v2" || contracts.TreasuryRouterV2) {
+    throw new Error("Base deployment already declares TreasuryRouterV2. Use that V2 deployment instead of creating another one.");
+  }
+
+  const treasurySafe = requireAddress("Treasury Safe", baseDeployment.treasurySafe);
+  const weeklyLeagueVault = requireAddress(
+    "Existing weekly league vault",
+    contracts.WeeklyLeagueVault || contracts.TreasuryVaultV2,
+  );
+  const recruiterRewardsVault = requireAddress("Existing RecruiterRewardsVault", contracts.RecruiterRewardsVault);
+  const protocolRevenueVault = requireAddress("Existing ProtocolRevenueVault", contracts.ProtocolRevenueVault);
+  const graduationOracle = requireAddress("Existing GraduationOracle", contracts.GraduationOracle);
+  const legacyTreasuryRouter = requireAddress("Legacy TreasuryRouter", contracts.TreasuryRouter);
+  const legacyCommunityRewardsVault = requireAddress("Legacy CommunityRewardsVault", contracts.CommunityRewardsVault);
+
+  await assertCode("Existing weekly league vault", weeklyLeagueVault);
+  await assertCode("Existing RecruiterRewardsVault", recruiterRewardsVault);
+  await assertCode("Existing ProtocolRevenueVault", protocolRevenueVault);
+  await assertCode("Existing GraduationOracle", graduationOracle);
+  await assertCode("Legacy TreasuryRouter", legacyTreasuryRouter);
+  await assertCode("Legacy CommunityRewardsVault", legacyCommunityRewardsVault);
+
+  const rootPosterRaw = rawEnv("LEAGUE_ROOT_POSTER") || String(baseDeployment.leagueRootPoster ?? ethers.ZeroAddress);
+  const rootPoster = ADDRESS_RE.test(rootPosterRaw) ? ethers.getAddress(rootPosterRaw) : ethers.ZeroAddress;
+  const upgradeDelaySeconds = Number(baseDeployment.upgradeDelaySeconds ?? 2 * 24 * 60 * 60);
+  if (!Number.isInteger(upgradeDelaySeconds) || upgradeDelaySeconds < 60 * 60) {
+    throw new Error(`Invalid upgrade delay ${upgradeDelaySeconds}; TreasuryRouterV2 requires at least 3600 seconds.`);
+  }
+  const monthlyCapUsd = parseMonthlyCap(baseDeployment);
+
+  console.log(`[treasury-v2-minimal] base deployment: ${baseFile}`);
+  console.log(`[treasury-v2-minimal] chainId=${net.chainId.toString()} network=${network.name}`);
+  console.log(`[treasury-v2-minimal] deployer=${deployerAddress}`);
+  console.log(`[treasury-v2-minimal] treasurySafe=${treasurySafe}`);
+  console.log(`[treasury-v2-minimal] reusing weekly=${weeklyLeagueVault}`);
+  console.log(`[treasury-v2-minimal] reusing recruiter=${recruiterRewardsVault}`);
+  console.log(`[treasury-v2-minimal] reusing protocol=${protocolRevenueVault}`);
+  console.log(`[treasury-v2-minimal] preserving legacy router=${legacyTreasuryRouter}`);
+  console.log(`[treasury-v2-minimal] preserving legacy community vault=${legacyCommunityRewardsVault}`);
+
+  const Charity = await ethers.getContractFactory("CharityTreasury");
+  const charity = await Charity.deploy(treasurySafe);
+  await charity.waitForDeployment();
+  const charityTreasury = await charity.getAddress();
+
+  const Monthly = await ethers.getContractFactory("MonthlyLeagueTreasury");
+  const monthly = await Monthly.deploy(treasurySafe, rootPoster, graduationOracle, charityTreasury, monthlyCapUsd);
+  await monthly.waitForDeployment();
+  const monthlyLeagueTreasury = await monthly.getAddress();
+
+  const RouterV2 = await ethers.getContractFactory("TreasuryRouterV2");
+  const routerV2 = await RouterV2.deploy(treasurySafe, weeklyLeagueVault, monthlyLeagueTreasury, upgradeDelaySeconds);
+  await routerV2.waitForDeployment();
+  const treasuryRouterV2 = await routerV2.getAddress();
+
+  // CommunityRewardsVault permits exactly one router. A dedicated V2 instance preserves V1 support for legacy factories.
+  const Community = await ethers.getContractFactory("CommunityRewardsVault");
+  const communityV2 = await Community.deploy(treasurySafe, treasuryRouterV2);
+  await communityV2.waitForDeployment();
+  const communityRewardsVaultV2 = await communityV2.getAddress();
+
+  const postDeployActions: string[] = [];
+  const canAdminConfigure = treasurySafe.toLowerCase() === deployerAddress.toLowerCase();
+  if (canAdminConfigure) {
+    await (await routerV2.setRecruiterRewardsVault(recruiterRewardsVault)).wait();
+    await (await routerV2.setCommunityRewardsVault(communityRewardsVaultV2)).wait();
+    await (await routerV2.setProtocolRevenueVault(protocolRevenueVault)).wait();
+  } else {
+    postDeployActions.push(`TreasuryRouterV2.setRecruiterRewardsVault(${recruiterRewardsVault})`);
+    postDeployActions.push(`TreasuryRouterV2.setCommunityRewardsVault(${communityRewardsVaultV2})`);
+    postDeployActions.push(`TreasuryRouterV2.setProtocolRevenueVault(${protocolRevenueVault})`);
+  }
+
+  const outFile = rawEnv("TREASURY_V2_OUTPUT_FILE")
+    ? path.resolve(rawEnv("TREASURY_V2_OUTPUT_FILE"))
+    : path.join(__dirname, "..", "deployments", `${network.name}.treasury-v2-staged.json`);
+
+  const nextDeployment = {
+    ...baseDeployment,
+    network: network.name,
+    chainId: Number(net.chainId),
+    treasuryRouterVersion: "v2",
+    weeklyLeagueVault,
+    monthlyLeagueTreasury,
+    monthlyLeagueTreasuryDeployed: true,
+    monthlyLeagueCapUsd: monthlyCapUsd.toString(),
+    charityTreasury,
+    charityTreasuryDeployed: true,
+    weeklyLeagueBps: 3000,
+    monthlyLeagueBps: 7000,
+    canAdminConfigure,
+    contracts: {
+      ...(baseDeployment.contracts || {}),
+      LegacyTreasuryRouter: legacyTreasuryRouter,
+      LegacyCommunityRewardsVault: legacyCommunityRewardsVault,
+      TreasuryRouter: treasuryRouterV2,
+      TreasuryRouterV2: treasuryRouterV2,
+      WeeklyLeagueVault: weeklyLeagueVault,
+      MonthlyLeagueTreasury: monthlyLeagueTreasury,
+      CharityTreasury: charityTreasury,
+      CommunityRewardsVault: communityRewardsVaultV2,
+      CommunityRewardsVaultV2: communityRewardsVaultV2,
+      RecruiterRewardsVault: recruiterRewardsVault,
+      ProtocolRevenueVault: protocolRevenueVault,
+    },
+    routing: {
+      ...(baseDeployment.routing || {}),
+      activeLeagueVault: weeklyLeagueVault,
+      weeklyLeagueVault,
+      monthlyLeagueTreasury,
+      monthlyLeagueCapUsd: monthlyCapUsd.toString(),
+      charityTreasury,
+      weeklyLeagueBps: 3000,
+      monthlyLeagueBps: 7000,
+      recruiterRewardsVault,
+      communityRewardsVault: communityRewardsVaultV2,
+      protocolRevenueVault,
+      factoryFeeRecipient: treasuryRouterV2,
+      permanentLpLockerAuthorized: false,
+      unifiedRouterModeActive: true,
+    },
+    treasuryV2Migration: {
+      stagedAt: new Date().toISOString(),
+      deploymentBlock,
+      baseDeployment: baseFile,
+      deployer: deployerAddress,
+      treasurySafe,
+      legacyTreasuryRouter,
+      legacyCommunityRewardsVault,
+      reusedContracts: {
+        weeklyLeagueVault,
+        recruiterRewardsVault,
+        protocolRevenueVault,
+        graduationOracle,
+      },
+      deployedContracts: {
+        TreasuryRouterV2: treasuryRouterV2,
+        MonthlyLeagueTreasury: monthlyLeagueTreasury,
+        CharityTreasury: charityTreasury,
+        CommunityRewardsVaultV2: communityRewardsVaultV2,
+      },
+      readyForFactoryDeployment: postDeployActions.length === 0,
+    },
+    legacyPostDeployActions: baseDeployment.postDeployActions ?? [],
+    postDeployActions,
+  };
+
+  writeJson(outFile, nextDeployment);
+
+  console.log(`\n[treasury-v2-minimal] TreasuryRouterV2=${treasuryRouterV2}`);
+  console.log(`[treasury-v2-minimal] MonthlyLeagueTreasury=${monthlyLeagueTreasury}`);
+  console.log(`[treasury-v2-minimal] CharityTreasury=${charityTreasury}`);
+  console.log(`[treasury-v2-minimal] CommunityRewardsVaultV2=${communityRewardsVaultV2}`);
+  console.log(`[treasury-v2-minimal] staged deployment=${outFile}`);
+
+  if (postDeployActions.length) {
+    console.log("\n[treasury-v2-minimal] required Safe actions before factory deployment:");
+    for (const action of postDeployActions) console.log(`- ${action}`);
+  } else {
+    console.log("[treasury-v2-minimal] V2 reward routing configured; staged deployment is ready for factory deployment.");
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
