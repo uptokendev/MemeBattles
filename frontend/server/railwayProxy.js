@@ -145,6 +145,37 @@ async function dispatchDashboardPromotors(pathname, req, res) {
   return true;
 }
 
+async function dispatchDashboardRecruiters(pathname, req, res) {
+  if (!/^\/api\/dashboard\/recruiters(?:\/|$)/.test(pathname)) return false;
+
+  const {
+    dashboardRecruiters,
+    dashboardRecruiterMember,
+  } = await import("../api/dashboard/recruiters.js");
+
+  const memberMatch = pathname.match(/^\/api\/dashboard\/recruiters\/([1-9][0-9]*)\/members$/);
+  if (memberMatch) {
+    req.params = { ...(req.params || {}), id: memberMatch[1] };
+    await dashboardRecruiterMember(req, res);
+    return true;
+  }
+
+  const itemMatch = pathname.match(/^\/api\/dashboard\/recruiters\/([1-9][0-9]*)$/);
+  if (itemMatch) {
+    req.params = { ...(req.params || {}), id: itemMatch[1] };
+    await dashboardRecruiters(req, res);
+    return true;
+  }
+
+  if (pathname === "/api/dashboard/recruiters") {
+    await dashboardRecruiters(req, res);
+    return true;
+  }
+
+  res.status(404).json({ ok: false, error: "Unknown dashboard recruiter route." });
+  return true;
+}
+
 function shouldProxyToRailway(path) {
   const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
@@ -187,6 +218,7 @@ export function createRailwayProxyMiddleware(options = {}) {
     const pathname = proxyPathname(path);
 
     if (await dispatchDashboardPromotors(pathname, req, res)) return;
+    if (await dispatchDashboardRecruiters(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
     const isDevIP = isDevAllowedIP(req);
