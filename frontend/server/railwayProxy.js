@@ -106,15 +106,50 @@ function proxyPathname(path) {
 export function shouldHandleLocally(path) {
   const pathname = proxyPathname(path);
 
-  // These routes are owned by the frontend API gateway. In particular, the
-  // token indexer does not have the Solana-aware nonce storage used by drafts.
   return (
+    /^\/api\/dashboard\/promotors(?:\/|$)/.test(pathname) ||
     /\/upload(?:$|\/)/.test(pathname) ||
     pathname === "/api/auth/nonce" ||
     /^\/api\/drafts(?:\/|$)/.test(pathname) ||
     pathname === "/api/campaigns" ||
     pathname === "/api/featured"
   );
+}
+
+async function dispatchDashboardPromotors(pathname, req, res) {
+  if (!/^\/api\/dashboard\/promotors(?:\/|$)/.test(pathname)) return false;
+
+  const {
+    dashboardPromotors,
+    dashboardPromotorRefresh,
+    dashboardPromotorsRefreshAll,
+  } = await import("../api/dashboard/promotors.js");
+
+  const refreshAllMatch = pathname === "/api/dashboard/promotors/refresh-all";
+  const itemMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)$/i);
+  const refreshMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)\/refresh$/i);
+
+  if (refreshAllMatch) {
+    await dashboardPromotorsRefreshAll(req, res);
+    return true;
+  }
+  if (refreshMatch) {
+    req.params = { ...(req.params || {}), id: refreshMatch[1] };
+    await dashboardPromotorRefresh(req, res);
+    return true;
+  }
+  if (itemMatch) {
+    req.params = { ...(req.params || {}), id: itemMatch[1] };
+    await dashboardPromotors(req, res);
+    return true;
+  }
+  if (pathname === "/api/dashboard/promotors") {
+    await dashboardPromotors(req, res);
+    return true;
+  }
+
+  res.status(404).json({ ok: false, error: "Unknown dashboard promoter route." });
+  return true;
 }
 
 function shouldProxyToRailway(path) {
@@ -150,9 +185,11 @@ export function createRailwayProxyMiddleware(options = {}) {
   const { prefixApiWhenMissing = false, serviceName = "api" } = options;
 
   return async function railwayProxyMiddleware(req, res, next) {
-    if (!railwayProxyEnabled()) return next();
-
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
+    const pathname = proxyPathname(path);
+
+    if (await dispatchDashboardPromotors(pathname, req, res)) return;
+    if (!railwayProxyEnabled()) return next();
     if (shouldHandleLocally(path)) return next();
 
     const isDevIP = isDevAllowedIP(req);
