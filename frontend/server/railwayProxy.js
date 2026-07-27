@@ -1,5 +1,4 @@
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
-
 const EXACT_RAILWAY_PATHS = new Set([]);
 
 const DEV_ALLOWED_IPS = new Set(
@@ -13,7 +12,7 @@ function isDevAllowedIP(req) {
   if (DEV_ALLOWED_IPS.size === 0) return false;
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   const ip = forwarded || req.ip || req.socket?.remoteAddress || "";
-  const clean = ip.replace(/^::ffff:/, ""); // handle IPv4-mapped IPv6
+  const clean = ip.replace(/^::ffff:/, "");
   return DEV_ALLOWED_IPS.has(ip) || DEV_ALLOWED_IPS.has(clean);
 }
 
@@ -51,10 +50,6 @@ const RAILWAY_PATH_PREFIXES = [
   "/api/status",
   "/api/token/",
   "/api/token-metadata",
-  // "/api/upload" is intentionally NOT proxied here (see shouldProxyToRailway) because
-  // multipart/form-data bodies cannot be correctly forwarded by the current JSON-body
-  // reconstruction logic. Uploads are always handled by a process that has the raw
-  // request stream + Supabase credentials mounted directly.
   "/api/votes",
   "/api/vote_counts",
   "/internal/",
@@ -92,59 +87,70 @@ function normalizeProxyPath(req, { prefixApiWhenMissing = false } = {}) {
   let path = raw;
 
   try {
-    path = new URL(raw).pathname + new URL(raw).search;
+    const parsed = new URL(raw);
+    path = parsed.pathname + parsed.search;
   } catch {
-    // raw is already a relative URL/path.
+    // The request already contains a relative path.
   }
 
   path = path.replace(/^\/\.netlify\/functions\/api(?=\/|$)/, "") || "/";
-
   if (prefixApiWhenMissing && !path.startsWith("/api") && !path.startsWith("/internal")) {
     path = `/api${path.startsWith("/") ? path : `/${path}`}`;
   }
-
   return path;
 }
 
-function shouldProxyToRailway(path) {
-  let pathname = path;
+function proxyPathname(path) {
   try {
-    pathname = new URL(path, "http://localhost").pathname;
+    return new URL(path, "http://localhost").pathname;
   } catch {
-    pathname = String(path || "").split("?")[0] || "/";
+    return String(path || "").split("?")[0] || "/";
+  }
+}
+
+async function dispatchDashboardPromotors(pathname, req, res) {
+  if (!/^\/api\/dashboard\/promotors(?:\/|$)/.test(pathname)) return false;
+
+  const {
+    dashboardPromotors,
+    dashboardPromotorRefresh,
+    dashboardPromotorsRefreshAll,
+  } = await import("../api/dashboard/promotors.js");
+
+  if (pathname === "/api/dashboard/promotors/refresh-all") {
+    await dashboardPromotorsRefreshAll(req, res);
+    return true;
   }
 
+  const refreshMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)\/refresh$/i);
+  if (refreshMatch) {
+    req.params = { ...(req.params || {}), id: refreshMatch[1] };
+    await dashboardPromotorRefresh(req, res);
+    return true;
+  }
+
+  const itemMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)$/i);
+  if (itemMatch) {
+    req.params = { ...(req.params || {}), id: itemMatch[1] };
+    await dashboardPromotors(req, res);
+    return true;
+  }
+
+  if (pathname === "/api/dashboard/promotors") {
+    await dashboardPromotors(req, res);
+    return true;
+  }
+
+  res.status(404).json({ ok: false, error: "Unknown dashboard promoter route." });
+  return true;
+}
+
+function shouldProxyToRailway(path) {
+  const pathname = proxyPathname(path);
   if (EXACT_RAILWAY_PATHS.has(pathname)) return true;
-
-  // /api/upload uses multipart/form-data + formidable. The current proxy
-  // implementation rewrites bodies as JSON (from req.body) and cannot forward
-  // the original upload stream. Always let the locally-mounted upload handler
-  // (which has direct access to Supabase keys + formidable) serve it.
   if (/\/upload(?:$|\/|\?)/.test(pathname)) return false;
-
-  // === Critical bypasses for the "frontend gateway" service (memewarzonefrontend-production) ===
-  // This service owns the local handlers for drafts/Prepare, campaigns feed, auth nonces used by
-  // draft create/promotion etc., and Command Center / War Room state.
-  // Its internal RAILWAY_API_PROXY (when enabled) forwards many /api/* to the token indexer
-  // (memebattles-production). The indexer does NOT implement campaigns lists, draft routes,
-  // or the Solana-aware nonce (isSolanaChain + base58 normalize in server/http.js).
-  //
-  // These early returns force the request to local handlers on THIS service (the one with the
-  // DB tables for campaign_drafts + the updated normalize for chain 101 + base58 Phantom keys).
-  // BNB draft flows worked before because EVM paths (lowercased 0x + chain 56) were already
-  // present and accepted even in older versions of the local handlers.
-  //
-  // Solana draft flow (signSolanaDraftAction → its fetchNonce with raw base58 + chain 101,
-  // then createCampaignDraft POST with walletType:"solana", then promotion signs) exercises
-  // the new paths. Ticker checks (live in Create useEffect), bare /api/drafts, /api/drafts/:id,
-  // and /api/campaigns all need to reach the local code, not the indexer.
   if (pathname === "/api/auth/nonce" || pathname.startsWith("/api/auth/nonce?")) return false;
   if (/^\/api\/drafts(\/|$|\?)/.test(pathname)) return false;
-
-  // Campaigns and featured are the "frontend related" discovery feeds (Command Center, grids,
-  // War Room, homepage trending etc.). They must be served by the local api/campaigns.js handler
-  // (rich stats + DB) on this gateway, not proxied to the token indexer (which returns 404 for them
-  // by design — see apiBase.ts comments and RAILWAY_API_GATEWAY_DEPLOY.md).
   if (pathname === "/api/campaigns" || pathname.startsWith("/api/campaigns?")) return false;
   if (pathname === "/api/featured" || pathname.startsWith("/api/featured?")) return false;
 
@@ -156,12 +162,7 @@ function shouldProxyToRailway(path) {
 
 function copyRequestHeaders(req, hasBody) {
   const headers = {};
-  const passthrough = [
-    "authorization",
-    "content-type",
-    "x-diagnostics-token",
-    "x-rank-events-token",
-  ];
+  const passthrough = ["authorization", "content-type", "x-diagnostics-token", "x-rank-events-token"];
 
   for (const name of passthrough) {
     const value = req.headers?.[name];
@@ -170,10 +171,7 @@ function copyRequestHeaders(req, hasBody) {
     headers[name] = Array.isArray(value) ? value.join(",") : String(value);
   }
 
-  if (hasBody && !headers["content-type"]) {
-    headers["content-type"] = "application/json";
-  }
-
+  if (hasBody && !headers["content-type"]) headers["content-type"] = "application/json";
   return headers;
 }
 
@@ -182,18 +180,16 @@ function responseLabel(serviceName, path) {
 }
 
 export function createRailwayProxyMiddleware(options = {}) {
-  const {
-    prefixApiWhenMissing = false,
-    serviceName = "api",
-  } = options;
+  const { prefixApiWhenMissing = false, serviceName = "api" } = options;
 
   return async function railwayProxyMiddleware(req, res, next) {
+    const path = normalizeProxyPath(req, { prefixApiWhenMissing });
+    const pathname = proxyPathname(path);
+
+    if (await dispatchDashboardPromotors(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
 
-    const path = normalizeProxyPath(req, { prefixApiWhenMissing });
     const isDevIP = isDevAllowedIP(req);
-
-    // For dev IPs, proxy EVERYTHING (full access to any route on the dev branch)
     if (!isDevIP && !shouldProxyToRailway(path)) return next();
 
     const base = railwayBaseUrl();
@@ -228,12 +224,9 @@ export function createRailwayProxyMiddleware(options = {}) {
 
       const text = await upstream.text();
       res.statusCode = upstream.status;
-
-      const contentType = upstream.headers.get("content-type") || "application/json; charset=utf-8";
-      res.setHeader("content-type", contentType);
+      res.setHeader("content-type", upstream.headers.get("content-type") || "application/json; charset=utf-8");
       res.setHeader("x-mwz-api-upstream", "railway");
       res.setHeader("x-mwz-api-upstream-path", path);
-
       res.end(text);
     } catch (err) {
       if (!railwayProxyStrict()) {
