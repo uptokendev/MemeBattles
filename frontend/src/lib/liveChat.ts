@@ -31,17 +31,22 @@ export type LiveChatUnmute = {
 };
 
 const URL_REGEX = /\bhttps?:\/\/\S+|\bwww\.\S+/gi;
-// ASCII C0 controls (\x00 through \x1F) plus DEL (\x7F). Use explicit hex to avoid
-// the range silently being interpreted as printable space-to-hyphen if the source
-// is reflowed or copy-pasted through tools that strip control characters.
-const CONTROL_REGEX = /[\x00-\x1F\x7F]/g;
+
+function stripControlCharacters(input: string): string {
+  let output = "";
+  for (const char of input) {
+    const code = char.charCodeAt(0);
+    output += code <= 31 || code === 127 ? " " : char;
+  }
+  return output;
+}
 
 export const MAX_CHAT_LENGTH = 200;
 export const MIN_CHAT_INTERVAL_MS = 2000;
 
 export function sanitizeChatText(input: string): string {
   // strip control chars, strip URLs, collapse whitespace, hard cap
-  const noControl = input.replace(CONTROL_REGEX, " ");
+  const noControl = stripControlCharacters(input);
   const noUrl = noControl.replace(URL_REGEX, "");
   const collapsed = noUrl.replace(/\s+/g, " ").trim();
   return collapsed.slice(0, MAX_CHAT_LENGTH);
