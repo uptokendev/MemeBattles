@@ -260,6 +260,10 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _initialize(params, schedule.launchAt);
     }
 
+    function initializeScheduled(InitParams memory params, uint64 scheduledLaunchAt) external {
+        _initialize(params, scheduledLaunchAt);
+    }
+
     function _initialize(InitParams memory params, uint64 scheduledLaunchAt) internal {
         if (_initialized) revert AlreadyInitialized();
         _initialized = true;
