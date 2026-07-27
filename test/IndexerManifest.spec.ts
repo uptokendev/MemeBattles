@@ -98,6 +98,15 @@ describe("indexer manifest export", function () {
     expect(manifest.events.LaunchFactory["CampaignCreated(uint256,address,address,address,string,string,string,string)"]).to.eq(
       eventTopic("CampaignCreated(uint256,address,address,address,string,string,string,string)")
     );
+    expect(
+      manifest.events.LaunchFactory[
+        "ScheduledCampaignCreated(uint256,address,address,address,uint64,bytes32,bytes32,bytes32,uint64,uint256,uint32,uint32)"
+      ],
+    ).to.eq(
+      eventTopic(
+        "ScheduledCampaignCreated(uint256,address,address,address,uint64,bytes32,bytes32,bytes32,uint64,uint256,uint32,uint32)",
+      ),
+    );
     expect(manifest.events.LaunchCampaign["CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)"]).to.eq(
       eventTopic("CampaignFinalized(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)")
     );
@@ -113,6 +122,11 @@ describe("indexer manifest export", function () {
       }
     }
 
+    expect(manifest.events.LaunchFactory).to.have.property(
+      "ScheduledCampaignCreated(uint256,address,address,address,uint64,bytes32,bytes32,bytes32,uint64,uint256,uint32,uint32)",
+    );
+    expect(manifest.events.LaunchFactory).to.have.property("RequireRouteAuthorizationUpdated(bool)");
+    expect(manifest.events.LaunchFactory).to.have.property("SecurityDefaultsLockedEnabled()");
     expect(manifest.events.TreasuryRouter).to.have.property(
       "RouteExecuted(uint8,uint8,uint256,uint256,uint256,uint256,uint256,uint256)"
     );
