@@ -4,12 +4,33 @@ artifacts
 coverage
 coverage.json
 dist
+
+# Environment files - local only
 .env
 .env.*
 **/.env
 **/.env.*
-!**/.env.example
+
+# Sanitized templates are allowed
+!**/.env*.example
+
+# Private keys, certificates, credentials and local secret files
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.mnemonic
+secrets.*
+credentials.*
+**/secrets.*
+**/credentials.*
+
+# Local deployment configuration
 deployments/*.env
+deployments/*.frontend.env
+config/*.local
+config/*.secret
 
 # Local Netlify folder
 .netlify
