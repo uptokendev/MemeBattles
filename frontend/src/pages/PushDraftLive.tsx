@@ -1,101 +1,63 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Rocket, ShieldCheck } from "lucide-react";
+import { Clock3, Rocket, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { LaunchpadSafetyStatus } from "@/components/launchpad/LaunchpadSafetyStatus";
+import { Input } from "@/components/ui/input";
+import { GraduationTierSelector } from "@/components/launchpad/GraduationTierSelector";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSolanaWallet } from "@/contexts/SolanaWalletContext";
-import { fetchCampaignDraft, markDraftDeployed, type PrepareDraftBundle } from "@/lib/draftApi";
+import { fetchCampaignDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import { signDraftAction } from "@/lib/draftAuth";
+import { apiFetch } from "@/lib/apiBase";
 import { getChainLabel, isSolanaChainId } from "@/lib/chainConfig";
+import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel } from "@/lib/graduationTiers";
 import { useLaunchpad } from "@/lib/launchpadClient";
-import { fetchLaunchpadCreateEligibility, type LaunchpadPreflight } from "@/lib/recruiterApi";
 import { resolveImageUri } from "@/lib/media";
+import { deployScheduledDraftCampaignV2 } from "@/lib/scheduledLaunchClientV2";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
     .trim()
-    .toLowerCase()
+    .toLowerCase(),
 );
 
 function canPushLive(status?: string) {
-  return status === "promotion_published" || status === "ready_to_launch" || status === "scheduled";
+  return status === "promotion_published" || status === "ready_to_launch";
 }
 
-function formatDateTime(value?: unknown) {
-  if (!value) return "None";
-  const date = new Date(String(value));
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : "None";
+function sameWallet(a?: string | null, b?: string | null) {
+  return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 }
 
-function shortWallet(value?: string | null) {
-  const raw = String(value || "").trim();
-  if (!raw) return "Not connected";
-  return `${raw.slice(0, 5)}...${raw.slice(-4)}`;
+function toLocalInputValue(date: Date) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function sameWallet(a?: string | null, b?: string | null, solana = false) {
-  const left = String(a || "").trim();
-  const right = String(b || "").trim();
-  if (!left || !right) return false;
-  return solana ? left === right : left.toLowerCase() === right.toLowerCase();
-}
-
-function SafetyRow({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-success/10 py-2 last:border-b-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="max-w-[62%] truncate text-right text-success/85">{value}</span>
-    </div>
-  );
-}
-
-function CreatorSafetyPanel({ loading, preflight, error }: { loading: boolean; preflight: LaunchpadPreflight | null; error: string | null }) {
-  const creator = preflight?.creator as any;
-  const rules = preflight?.rules as any;
-  const cluster = preflight?.cluster as any;
-
-  return (
-    <div className="mwz-card p-4 text-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Creator safety</div>
-          <div className="mt-1 text-base font-semibold text-success">
-            {loading ? "Checking launch eligibility..." : preflight?.allowed ? "Eligible to launch" : "Launch blocked"}
-          </div>
-        </div>
-        <div className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${preflight?.allowed ? "border-success/40 text-success" : "border-orange-400/50 text-orange-300"}`}>
-          {preflight?.schemaReady === false ? "Schema pending" : preflight?.allowed ? "Clear" : "Review"}
-        </div>
-      </div>
-
-      {error ? <p className="mb-3 text-orange-300">{error}</p> : null}
-
-      <div className="space-y-0">
-        <SafetyRow label="Tier" value={String(creator?.tier || preflight?.tier || "New")} />
-        <SafetyRow label="Live bonding coins" value={`${Number(creator?.liveBondingCount || 0)} / ${Number(rules?.maxLiveBonding || 3)}`} />
-        <SafetyRow label="Cooldown ends" value={formatDateTime(creator?.cooldownEndsAt)} />
-        <SafetyRow label="Creator buy lock ends" value={formatDateTime(creator?.creatorBuyLockEndsAt)} />
-        <SafetyRow label="Creator buy cap" value={`${Number(creator?.creatorBuyCapBnb || rules?.creatorBuyCapBnb || 0)} BNB`} />
-        <SafetyRow label="Cluster wallets" value={`${Number(creator?.clusterWallets || cluster?.wallets || 0)} / ${Number(rules?.maxClusterWallets || 3)}`} />
-        <SafetyRow label="Manual review" value={creator?.manualReviewRequired ? "Required" : "Not required"} />
-      </div>
-
-      {preflight?.reasons?.length ? (
-        <div className="mt-4 rounded-lg border border-orange-400/40 bg-orange-950/20 p-3 text-orange-200">
-          {preflight.reasons.map((reason) => <div key={reason}>- {reason}</div>)}
-        </div>
-      ) : null}
-
-      {preflight?.warnings?.length ? (
-        <div className="mt-4 rounded-lg border border-success/20 bg-black/40 p-3 text-success/75">
-          {preflight.warnings.map((warning) => <div key={warning}>- {warning}</div>)}
-        </div>
-      ) : null}
-    </div>
-  );
+async function markDraftDeployment(input: {
+  draftId: string;
+  auth: any;
+  campaignAddress: string;
+  tokenAddress?: string;
+  deployTxHash?: string;
+  scheduledLaunchAt?: number;
+}) {
+  const res = await apiFetch(`/api/drafts/${encodeURIComponent(input.draftId)}/deploy`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      auth: input.auth,
+      campaignAddress: input.campaignAddress,
+      tokenAddress: input.tokenAddress || null,
+      deployTxHash: input.deployTxHash || null,
+      scheduledLaunchAt: input.scheduledLaunchAt || null,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+  return json;
 }
 
 export default function PushDraftLive() {
@@ -104,13 +66,13 @@ export default function PushDraftLive() {
   const wallet = useWallet();
   const solanaWallet = useSolanaWallet();
   const launchpad = useLaunchpad();
-  const { createCampaign, fetchCampaigns } = launchpad;
+
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [pushing, setPushing] = useState(false);
-  const [preflight, setPreflight] = useState<LaunchpadPreflight | null>(null);
-  const [preflightLoading, setPreflightLoading] = useState(false);
-  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState<"now" | "scheduled">("now");
+  const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
+  const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
 
   const viewerWallet = wallet.account || solanaWallet.solanaAccount || null;
 
@@ -132,93 +94,68 @@ export default function PushDraftLive() {
 
   const draft = bundle?.draft;
   const draftIsSolana = isSolanaChainId(Number(draft?.chainId));
-  const ownerWallet = draftIsSolana ? solanaWallet.solanaAccount : wallet.account;
-  const ownerConnected = sameWallet(draft?.creatorWallet, ownerWallet, draftIsSolana);
-  const safetyStatus = useMemo(() => launchpad.getSafetyStatus(), [launchpad]);
+  const ownerConnected = sameWallet(draft?.creatorWallet, wallet.account);
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
   const chainLabel = draft ? getChainLabel(Number(draft.chainId)) : "Unknown";
+  const selectedTier = graduationTierLabel(graduationTargetWei);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!draft || draftIsSolana) {
-      setPreflight(null);
-      setPreflightError(draftIsSolana ? "Solana on-chain Push Live is waiting on the Solana launch program and transaction builder." : null);
-      setPreflightLoading(false);
-      return;
-    }
-
-    if (!wallet.account) {
-      setPreflight(null);
-      setPreflightError(null);
-      setPreflightLoading(false);
-      return;
-    }
-
-    setPreflightLoading(true);
-    setPreflightError(null);
-
-    fetchLaunchpadCreateEligibility(wallet.account, wallet.chainId)
-      .then((result) => {
-        if (!cancelled) setPreflight(result);
-      })
-      .catch((err: any) => {
-        if (!cancelled) {
-          setPreflight(null);
-          setPreflightError(err?.message || "Could not check creator launch eligibility.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setPreflightLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [draft, draftIsSolana, wallet.account, wallet.chainId]);
-
-  const pushLive = async () => {
+  const deploy = async () => {
     if (!draft) return;
+    if (!DRAFT_PUSH_LIVE_ENABLED) return toast.error("Push Live is locked until the platform launch switch is enabled.");
+    if (draftIsSolana) return toast.error("Solana live deployment remains gated until the Solana launch program is connected.");
+    if (!wallet.account || !wallet.signer) return toast.error("Connect the draft owner wallet first.");
+    if (!ownerConnected) return toast.error("Only the draft owner wallet can deploy this draft.");
+    if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
+    if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
+    if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
+    if (!launchpad.factoryAddress) return toast.error("LaunchFactory is not configured for this network.");
 
-    if (draftIsSolana) {
-      toast.error("Solana Push Live needs the Solana launch program, IDL, and transaction builder before it can deploy on-chain.");
-      return;
-    }
+    const deployAuth = await signDraftAction({
+      signer: wallet.signer,
+      walletAddress: wallet.account,
+      chainId: draft.chainId,
+      action: "deploy_draft",
+      draftId: draft.id,
+    });
 
-    if (!DRAFT_PUSH_LIVE_ENABLED) {
-      toast.error("Push Live is locked until the platform launch switch is enabled.");
-      return;
-    }
-
-    if (!wallet.account || !wallet.signer) {
-      toast.error("Connect the draft owner wallet first.");
-      return;
-    }
-
-    if (!ownerConnected) {
-      toast.error("Only the draft owner wallet can push this draft live.");
-      return;
-    }
-
-    if (preflight && !preflight.allowed) {
-      toast.error(preflight.reasons?.[0] || "Creator is not eligible to launch yet.");
-      return;
-    }
-
-    if (!canPushLive(draft.status)) {
-      toast.error("Publish the promotion page before pushing this draft live.");
-      return;
-    }
-
-    if (!logoURI) {
-      toast.error("Draft needs a saved logo URL before it can go live.");
-      return;
-    }
-
-    setPushing(true);
-
+    setSubmitting(true);
     try {
-      await createCampaign({
+      if (mode === "scheduled") {
+        const launchAt = Math.floor(new Date(launchAtInput).getTime() / 1000);
+        const now = Math.floor(Date.now() / 1000);
+        if (!Number.isInteger(launchAt) || launchAt < now + 5 * 60) {
+          throw new Error("Choose a launch time at least five minutes in the future.");
+        }
+        if (launchAt > now + 30 * 24 * 60 * 60) {
+          throw new Error("Scheduled launches cannot be more than 30 days away.");
+        }
+
+        const created = await deployScheduledDraftCampaignV2({
+          signer: wallet.signer,
+          auth: deployAuth,
+          chainId: draft.chainId,
+          factoryAddress: launchpad.factoryAddress,
+          draftId: draft.id,
+          launchAt,
+          graduationTargetWei,
+        });
+        if (!created.campaignAddress) throw new Error("Scheduled campaign was deployed but its address could not be read from the receipt.");
+
+        await markDraftDeployment({
+          draftId: draft.id,
+          auth: deployAuth,
+          campaignAddress: created.campaignAddress,
+          tokenAddress: created.tokenAddress,
+          deployTxHash: created.txHash,
+          scheduledLaunchAt: launchAt,
+        });
+
+        toast.success(`${selectedTier} campaign deployed. Trading opens automatically at the countdown.`);
+        navigate(`/prepare/${draft.slug}`);
+        return;
+      }
+
+      const created = await launchpad.createCampaign({
         name: draft.name,
         symbol: draft.ticker.toUpperCase(),
         logoURI,
@@ -227,72 +164,29 @@ export default function PushDraftLive() {
         extraLink: draft.otherUrl || "",
         basePriceWei: 0n,
         priceSlopeWei: 0n,
-        graduationTargetWei: 0n,
+        graduationTargetWei,
         lpReceiver: "",
       });
 
-      const creator = wallet.account.toLowerCase();
-      const symbol = draft.ticker.toUpperCase();
-      let campaignAddress = "";
-      let tokenAddress = "";
-
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        const campaigns = (await fetchCampaigns()) || [];
-        const matches = campaigns.filter((campaign) =>
-          String(campaign.creator || "").toLowerCase() === creator &&
-          String(campaign.symbol || "").toUpperCase() === symbol
-        );
-
-        matches.sort((a, b) => {
-          const at = Number(a.createdAt || 0);
-          const bt = Number(b.createdAt || 0);
-          if (bt !== at) return bt - at;
-          return Number(b.id || 0) - Number(a.id || 0);
-        });
-
-        if (matches[0]?.campaign) {
-          campaignAddress = String(matches[0].campaign);
-          tokenAddress = String(matches[0].token || matches[0].tokenAddress || "");
-          break;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 900));
-      }
-
-      if (!campaignAddress) {
-        toast.success("Campaign created. Draft deploy marker will need a manual refresh once indexing catches up.");
-        navigate("/profile?tab=drafts");
-        return;
-      }
-
-      const auth = await signDraftAction({
-        signer: wallet.signer,
-        walletAddress: wallet.account,
-        chainId: draft.chainId,
-        action: "deploy_draft",
+      if (!created.campaignAddress) throw new Error("Campaign was deployed but its address could not be read from the receipt.");
+      await markDraftDeployment({
         draftId: draft.id,
+        auth: deployAuth,
+        campaignAddress: created.campaignAddress,
+        tokenAddress: created.tokenAddress,
+        deployTxHash: String((created.receipt as any)?.hash || ""),
       });
 
-      await markDraftDeployed(draft.id, {
-        auth,
-        campaignAddress,
-        tokenAddress: tokenAddress || null,
-        deployTxHash: null,
-      });
-
-      toast.success("Draft pushed live and linked to the campaign.");
-      navigate(`/token/${tokenAddress || campaignAddress}`);
+      toast.success(`${selectedTier} campaign is live.`);
+      navigate(`/token/${created.tokenAddress || created.campaignAddress}`);
     } catch (err: any) {
-      toast.error(err?.shortMessage || err?.reason || err?.message || "Failed to push draft live.");
+      toast.error(err?.shortMessage || err?.reason || err?.message || "Draft deployment failed.");
     } finally {
-      setPushing(false);
+      setSubmitting(false);
     }
   };
 
-  if (loading) {
-    return <div className="mx-auto max-w-4xl py-20 text-center font-retro text-muted-foreground">Loading draft...</div>;
-  }
-
+  if (loading) return <div className="mx-auto max-w-4xl py-20 text-center font-retro text-muted-foreground">Loading draft...</div>;
   if (!draft || !bundle) {
     return (
       <div className="mx-auto max-w-4xl py-20 text-center">
@@ -302,7 +196,7 @@ export default function PushDraftLive() {
     );
   }
 
-  const pushBlocked = draftIsSolana || pushing || !DRAFT_PUSH_LIVE_ENABLED || !canPushLive(draft.status) || Boolean(preflight && !preflight.allowed);
+  const blocked = submitting || !DRAFT_PUSH_LIVE_ENABLED || draftIsSolana || !canPushLive(draft.status);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -310,11 +204,9 @@ export default function PushDraftLive() {
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-orange-400">Prepare Mode</div>
-            <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">Push Draft Live</h1>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              {draftIsSolana
-                ? "This Solana draft is ready for promotion and protocol review. On-chain Push Live unlocks after the Solana program, IDL, and transaction builder are deployed."
-                : "This converts the published promotion draft into a normal live on-chain BNB campaign, then marks the draft as deployed. Initial buys are disabled by design."}
+            <h1 className="mwz-section-title mt-1 text-3xl text-success md:text-4xl">Deploy Draft</h1>
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              Choose the graduation tier and deploy immediately, or pay gas now and arm a countdown that blocks trading until launch time.
             </p>
           </div>
           <Button asChild variant="outline" className="mwz-button h-10 font-retro text-xs">
@@ -322,74 +214,66 @@ export default function PushDraftLive() {
           </Button>
         </div>
 
-        {!DRAFT_PUSH_LIVE_ENABLED && !draftIsSolana ? (
-          <div className="mwz-card mb-6 border-orange-400/50 bg-black/60 p-4 text-sm leading-6 text-orange-300">
-            Push Live is currently locked. The deploy flow will unlock when the platform launch switch is enabled.
-          </div>
-        ) : null}
-
-        {draftIsSolana ? (
-          <div className="mwz-card mb-6 border-sky-400/40 bg-sky-950/15 p-4 text-sm leading-6 text-sky-200">
-            Solana wallet: {shortWallet(solanaWallet.solanaAccount)}. Draft owner: {shortWallet(draft.creatorWallet)}. This lane supports signed Prepare Mode now; live Solana deployment remains blocked until the Anchor program is connected.
-          </div>
-        ) : null}
-
-        <div className="grid gap-6 lg:grid-cols-[240px_1fr_360px]">
+        <div className="mb-5 grid gap-4 md:grid-cols-[140px_1fr]">
           <div className="mwz-card overflow-hidden border-success/35 bg-black/70">
-            <div className="relative aspect-square border-b border-success/25 bg-black">
-              <img src={logoURI || "/placeholder.svg"} alt={draft.name} className="h-full w-full object-cover" />
-              <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black/75 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-success">
-                <ShieldCheck className="h-3 w-3" /> {chainLabel}
-              </div>
-            </div>
-            <div className="p-3 text-success">
-              <div className="mwz-section-title truncate text-lg">{draft.name}</div>
-              <div className="mt-1 text-sm text-success/70">${draft.ticker}</div>
-              <div className="mt-3 text-xs text-muted-foreground">Status: {draft.status.replace(/_/g, " ")}</div>
-              <div className="mt-1 text-xs text-muted-foreground">Owner: {shortWallet(draft.creatorWallet)}</div>
-            </div>
+            <img src={logoURI || "/placeholder.svg"} alt={draft.name} className="aspect-square h-full w-full object-cover" />
           </div>
-
-          <div className="space-y-4">
-            <div className="mwz-card p-4">
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Mission</div>
-              <p className="mt-2 text-sm leading-6 text-success/75">
-                {bundle.promotion.missionStatement || draft.description || "No mission statement saved yet."}
-              </p>
+          <div className="mwz-card p-4">
+            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 text-success" /> {chainLabel} · ${draft.ticker} · {draft.status.replace(/_/g, " ")}
             </div>
-
-            {draftIsSolana ? (
-              <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
-                Solana Push Live will require a generated transaction from the Solana adapter, the deployed program ID, token mint/vault accounts, and backend indexing. This screen now blocks safely instead of sending creators into the BNB deploy path.
-              </div>
-            ) : (
-              <CreatorSafetyPanel loading={preflightLoading} preflight={preflight} error={preflightError} />
-            )}
-
-            <div className="mwz-card p-4 text-sm leading-6 text-muted-foreground">
-              {draftIsSolana
-                ? "Use this page in demos to show the Solana draft is staged and correctly gated before protocol launch."
-                : "Push Live deploys the campaign without an initial buy. Trading opens through the normal secured trade flow after deployment."}
-            </div>
-
-            {!canPushLive(draft.status) ? (
-              <div className="mwz-card border-orange-400/40 p-4 text-sm text-orange-300">
-                Publish the promotion page before pushing this draft live.
-              </div>
-            ) : null}
-
-            <Button
-              onClick={pushLive}
-              disabled={pushBlocked}
-              className="mwz-button mwz-button-orange h-12 w-full justify-center font-retro"
-            >
-              <Rocket className="mr-2 h-4 w-4" />
-              {pushing ? "Pushing Live..." : draftIsSolana ? "Solana Protocol Pending" : DRAFT_PUSH_LIVE_ENABLED ? "Push Live Campaign" : "Push Live Locked"}
-            </Button>
+            <h2 className="mt-3 font-retro text-2xl text-foreground">{draft.name}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{bundle.promotion.missionStatement || draft.description || "No mission statement saved yet."}</p>
           </div>
-
-          <LaunchpadSafetyStatus status={safetyStatus} />
         </div>
+
+        <GraduationTierSelector
+          chainId={Number(draft.chainId)}
+          value={graduationTargetWei}
+          onChange={setGraduationTargetWei}
+          disabled={submitting}
+        />
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setMode("now")}
+            className={`mwz-card p-4 text-left ${mode === "now" ? "border-success/60 bg-success/10" : "border-border"}`}
+          >
+            <div className="flex items-center gap-2 font-retro text-lg text-foreground"><Rocket className="h-4 w-4" /> Deploy now</div>
+            <p className="mt-2 text-sm text-muted-foreground">Pay gas, deploy the campaign, and open trading immediately.</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("scheduled")}
+            className={`mwz-card p-4 text-left ${mode === "scheduled" ? "border-orange-400/60 bg-orange-500/10" : "border-border"}`}
+          >
+            <div className="flex items-center gap-2 font-retro text-lg text-foreground"><Clock3 className="h-4 w-4" /> Deploy with countdown</div>
+            <p className="mt-2 text-sm text-muted-foreground">Pay gas now. The contract exists immediately, but trading remains blocked until the selected time.</p>
+          </button>
+        </div>
+
+        {mode === "scheduled" ? (
+          <div className="mwz-card mt-4 p-4">
+            <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Trading opens at</label>
+            <Input
+              type="datetime-local"
+              value={launchAtInput}
+              onChange={(event) => setLaunchAtInput(event.target.value)}
+              min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
+              max={toLocalInputValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))}
+              className="mt-2 max-w-md"
+              disabled={submitting}
+            />
+          </div>
+        ) : null}
+
+        {!ownerConnected && !draftIsSolana ? <p className="mt-4 text-sm text-orange-300">Connect the draft owner wallet before deployment.</p> : null}
+        {!DRAFT_PUSH_LIVE_ENABLED ? <p className="mt-4 text-sm text-orange-300">Draft deployment is currently disabled by the launch switch.</p> : null}
+
+        <Button onClick={deploy} disabled={blocked} className="mwz-button mwz-button-orange mt-5 h-12 w-full justify-center font-retro">
+          {submitting ? "Confirming Deployment..." : mode === "scheduled" ? `Deploy ${selectedTier} Countdown Campaign` : `Deploy ${selectedTier} Campaign Now`}
+        </Button>
       </div>
     </div>
   );
