@@ -106,15 +106,59 @@ function proxyPathname(path) {
 export function shouldHandleLocally(path) {
   const pathname = proxyPathname(path);
 
-  // These routes are owned by the frontend API gateway. In particular, the
-  // token indexer does not have the Solana-aware nonce storage used by drafts.
   return (
+    /^\/api\/dashboard\/promotors(?:\/|$)/.test(pathname) ||
+    pathname === "/api/dashboard/submission-notes" ||
     /\/upload(?:$|\/)/.test(pathname) ||
     pathname === "/api/auth/nonce" ||
     /^\/api\/drafts(?:\/|$)/.test(pathname) ||
     pathname === "/api/campaigns" ||
     pathname === "/api/featured"
   );
+}
+
+async function dispatchDashboardPromotors(pathname, req, res) {
+  if (!/^\/api\/dashboard\/promotors(?:\/|$)/.test(pathname)) return false;
+
+  const {
+    dashboardPromotors,
+    dashboardPromotorRefresh,
+    dashboardPromotorsRefreshAll,
+  } = await import("../api/dashboard/promotors.js");
+
+  if (pathname === "/api/dashboard/promotors/refresh-all") {
+    await dashboardPromotorsRefreshAll(req, res);
+    return true;
+  }
+
+  const refreshMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)\/refresh$/i);
+  if (refreshMatch) {
+    req.params = { ...(req.params || {}), id: refreshMatch[1] };
+    await dashboardPromotorRefresh(req, res);
+    return true;
+  }
+
+  const itemMatch = pathname.match(/^\/api\/dashboard\/promotors\/([0-9a-f-]+)$/i);
+  if (itemMatch) {
+    req.params = { ...(req.params || {}), id: itemMatch[1] };
+    await dashboardPromotors(req, res);
+    return true;
+  }
+
+  if (pathname === "/api/dashboard/promotors") {
+    await dashboardPromotors(req, res);
+    return true;
+  }
+
+  res.status(404).json({ ok: false, error: "Unknown dashboard promoter route." });
+  return true;
+}
+
+async function dispatchDashboardSubmissionNotes(pathname, req, res) {
+  if (pathname !== "/api/dashboard/submission-notes") return false;
+  const { dashboardSubmissionNotes } = await import("../api/dashboard/submissionNotes.js");
+  await dashboardSubmissionNotes(req, res);
+  return true;
 }
 
 function shouldProxyToRailway(path) {
@@ -146,13 +190,6 @@ function responseLabel(serviceName, path) {
   return `[railway-proxy:${serviceName}] ${path}`;
 }
 
-async function dispatchDashboardSubmissionNotes(pathname, req, res) {
-  if (pathname !== "/api/dashboard/submission-notes") return false;
-  const { dashboardSubmissionNotes } = await import("../api/dashboard/submissionNotes.js");
-  await dashboardSubmissionNotes(req, res);
-  return true;
-}
-
 export function createRailwayProxyMiddleware(options = {}) {
   const { prefixApiWhenMissing = false, serviceName = "api" } = options;
 
@@ -160,6 +197,7 @@ export function createRailwayProxyMiddleware(options = {}) {
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
     const pathname = proxyPathname(path);
 
+    if (await dispatchDashboardPromotors(pathname, req, res)) return;
     if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
     if (!railwayProxyEnabled()) return next();
     if (shouldHandleLocally(path)) return next();
