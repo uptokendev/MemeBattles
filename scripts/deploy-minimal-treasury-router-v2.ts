@@ -68,6 +68,7 @@ async function main() {
   const recruiterRewardsVault = requireAddress("Existing RecruiterRewardsVault", contracts.RecruiterRewardsVault);
   const protocolRevenueVault = requireAddress("Existing ProtocolRevenueVault", contracts.ProtocolRevenueVault);
   const graduationOracle = requireAddress("Existing GraduationOracle", contracts.GraduationOracle);
+  const oldPermanentLpLocker = requireAddress("Existing PermanentLpLocker", contracts.PermanentLpLocker);
   const legacyTreasuryRouter = requireAddress("Legacy TreasuryRouter", contracts.TreasuryRouter);
   const legacyCommunityRewardsVault = requireAddress("Legacy CommunityRewardsVault", contracts.CommunityRewardsVault);
 
@@ -75,6 +76,7 @@ async function main() {
   await assertCode("Existing RecruiterRewardsVault", recruiterRewardsVault);
   await assertCode("Existing ProtocolRevenueVault", protocolRevenueVault);
   await assertCode("Existing GraduationOracle", graduationOracle);
+  await assertCode("Existing PermanentLpLocker", oldPermanentLpLocker);
   await assertCode("Legacy TreasuryRouter", legacyTreasuryRouter);
   await assertCode("Legacy CommunityRewardsVault", legacyCommunityRewardsVault);
 
@@ -93,6 +95,7 @@ async function main() {
   console.log(`[treasury-v2-minimal] reusing weekly=${weeklyLeagueVault}`);
   console.log(`[treasury-v2-minimal] reusing recruiter=${recruiterRewardsVault}`);
   console.log(`[treasury-v2-minimal] reusing protocol=${protocolRevenueVault}`);
+  console.log(`[treasury-v2-minimal] preserving legacy locker=${oldPermanentLpLocker}`);
   console.log(`[treasury-v2-minimal] preserving legacy router=${legacyTreasuryRouter}`);
   console.log(`[treasury-v2-minimal] preserving legacy community vault=${legacyCommunityRewardsVault}`);
 
@@ -123,10 +126,14 @@ async function main() {
     await (await routerV2.setRecruiterRewardsVault(recruiterRewardsVault)).wait();
     await (await routerV2.setCommunityRewardsVault(communityRewardsVaultV2)).wait();
     await (await routerV2.setProtocolRevenueVault(protocolRevenueVault)).wait();
+    await (await routerV2.setAuthorizedLpLocker(oldPermanentLpLocker, true)).wait();
+    await (await routerV2.setPrimaryLpLocker(oldPermanentLpLocker)).wait();
   } else {
     postDeployActions.push(`TreasuryRouterV2.setRecruiterRewardsVault(${recruiterRewardsVault})`);
     postDeployActions.push(`TreasuryRouterV2.setCommunityRewardsVault(${communityRewardsVaultV2})`);
     postDeployActions.push(`TreasuryRouterV2.setProtocolRevenueVault(${protocolRevenueVault})`);
+    postDeployActions.push(`TreasuryRouterV2.setAuthorizedLpLocker(${oldPermanentLpLocker}, true)`);
+    postDeployActions.push(`TreasuryRouterV2.setPrimaryLpLocker(${oldPermanentLpLocker})`);
   }
 
   const outFile = rawEnv("TREASURY_V2_OUTPUT_FILE")
@@ -160,6 +167,7 @@ async function main() {
       CommunityRewardsVaultV2: communityRewardsVaultV2,
       RecruiterRewardsVault: recruiterRewardsVault,
       ProtocolRevenueVault: protocolRevenueVault,
+      PermanentLpLocker: oldPermanentLpLocker,
     },
     routing: {
       ...(baseDeployment.routing || {}),
@@ -174,7 +182,8 @@ async function main() {
       communityRewardsVault: communityRewardsVaultV2,
       protocolRevenueVault,
       factoryFeeRecipient: treasuryRouterV2,
-      permanentLpLockerAuthorized: false,
+      permanentLpLocker: oldPermanentLpLocker,
+      permanentLpLockerAuthorized: canAdminConfigure,
       unifiedRouterModeActive: true,
     },
     treasuryV2Migration: {
@@ -190,6 +199,7 @@ async function main() {
         recruiterRewardsVault,
         protocolRevenueVault,
         graduationOracle,
+        oldPermanentLpLocker,
       },
       deployedContracts: {
         TreasuryRouterV2: treasuryRouterV2,
