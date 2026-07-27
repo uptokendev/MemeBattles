@@ -32,8 +32,6 @@ const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
 const POST_CREATE_SESSION_ACTION: DraftAuthAction = "create_draft";
 const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
 const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
-const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
-const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
 const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
   "read_draft",
   "save_promotion",
@@ -59,7 +57,6 @@ function buildConnectedWalletDraftAuth(input: {
     signature: "",
   };
 }
-
 
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
@@ -136,35 +133,6 @@ export function clearCachedDraftOwnerSession(input: { walletAddress: string; cha
   }
 
   OWNER_SESSION_IN_FLIGHT.delete(ownerSessionInFlightKey(normalized));
-}
-
-function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const key = ownerSessionCacheKey(input);
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as { auth?: DraftActionAuth; cachedAt?: number; expiresAt?: string | null };
-    const auth = parsed?.auth;
-    if (!auth) return null;
-
-    const now = Date.now();
-    const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
-    const cachedAt = Number(parsed.cachedAt || 0);
-
-    if (auth.action !== OWNER_SESSION_ACTION && auth.action !== POST_CREATE_SESSION_ACTION) return null;
-    if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
-    if (Number(auth.chainId) !== Number(input.chainId)) return null;
-    if (auth.action === OWNER_SESSION_ACTION && String(auth.draftId || "") !== input.draftId) return null;
-    if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
-    if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
-
-    return auth;
-  } catch {
-    return null;
-  }
 }
 
 function cacheOwnerSession(input: {
@@ -284,38 +252,6 @@ export async function signDraftAction(input: {
       chainId,
       draftId,
     });
-  }
-
-  if (false && shouldUseOwnerSession && draftId) {
-    const cacheInput = { walletAddress, chainId, draftId };
-
-    if (!input.forceNewOwnerSession) {
-      const cached = readCachedOwnerSession(cacheInput);
-      if (cached) return cached;
-
-      const inFlightKey = ownerSessionInFlightKey(cacheInput);
-      const inFlight = OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
-      if (inFlight) return inFlight;
-    } else {
-      clearCachedDraftOwnerSession(cacheInput);
-    }
-
-    const promise = createSignedDraftAction({
-      signer: input.signer,
-      walletAddress,
-      chainId,
-      action: input.action,
-      draftId,
-      shouldUseOwnerSession,
-    });
-
-    OWNER_SESSION_IN_FLIGHT.set(ownerSessionInFlightKey(cacheInput), promise);
-
-    try {
-      return await promise;
-    } finally {
-      OWNER_SESSION_IN_FLIGHT.delete(ownerSessionInFlightKey(cacheInput));
-    }
   }
 
   return createSignedDraftAction({
