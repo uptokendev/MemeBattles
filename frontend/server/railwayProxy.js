@@ -146,13 +146,22 @@ function responseLabel(serviceName, path) {
   return `[railway-proxy:${serviceName}] ${path}`;
 }
 
+async function dispatchDashboardSubmissionNotes(pathname, req, res) {
+  if (pathname !== "/api/dashboard/submission-notes") return false;
+  const { dashboardSubmissionNotes } = await import("../api/dashboard/submissionNotes.js");
+  await dashboardSubmissionNotes(req, res);
+  return true;
+}
+
 export function createRailwayProxyMiddleware(options = {}) {
   const { prefixApiWhenMissing = false, serviceName = "api" } = options;
 
   return async function railwayProxyMiddleware(req, res, next) {
-    if (!railwayProxyEnabled()) return next();
-
     const path = normalizeProxyPath(req, { prefixApiWhenMissing });
+    const pathname = proxyPathname(path);
+
+    if (await dispatchDashboardSubmissionNotes(pathname, req, res)) return;
+    if (!railwayProxyEnabled()) return next();
     if (shouldHandleLocally(path)) return next();
 
     const isDevIP = isDevAllowedIP(req);
