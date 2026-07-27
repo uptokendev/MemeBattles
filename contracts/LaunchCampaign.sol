@@ -46,9 +46,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         string name;
         string symbol;
         string logoURI;
-        string xAccount;
-        string website;
-        string extraLink;
         uint256 totalSupply;
         uint256 curveBps;
         uint256 liquidityTokenBps;
@@ -65,7 +62,6 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         address feeRecipient;
         address creator;
         address factory;
-        address creatorRegistry;
         address riskRegistry;
         uint256 creatorBuyLockUntil;
         uint256 creatorBuyCapWei;
@@ -245,6 +241,11 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     error RescueRecipientZero();
     error ExcessNativeUnavailable();
     error TradingNotOpen();
+    error ZeroAmount();
+    error SoldOut();
+    error ExceedsSold();
+    error Slippage();
+    error InsufficientValue();
 
     bool private _initialized;
 
@@ -256,11 +257,7 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
         _initialize(params, uint64(block.timestamp));
     }
 
-    function initializeScheduled(InitParams memory params, ScheduleParams memory schedule) external {
-        _initialize(params, schedule.launchAt);
-    }
-
-    function initializeScheduled(InitParams memory params, uint64 scheduledLaunchAt) external {
+function initializeScheduled(InitParams memory params, uint64 scheduledLaunchAt) external {
         _initialize(params, scheduledLaunchAt);
     }
 
@@ -338,8 +335,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function quoteBuyExactTokens(uint256 amountOut) public view returns (uint256) {
-        require(amountOut > 0, "zero amount");
-        require(sold + amountOut <= curveSupply, "sold out");
+        if (amountOut == 0) revert ZeroAmount();
+        if (sold + amountOut > curveSupply) revert SoldOut();
         uint256 cost = _quoteBuyNoFee(amountOut);
         return cost + _fee(cost);
     }
@@ -368,8 +365,8 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function quoteSellExactTokens(uint256 amountIn) public view returns (uint256) {
-        require(amountIn > 0, "zero amount");
-        require(amountIn <= sold, "exceeds sold");
+        if (amountIn == 0) revert ZeroAmount();
+        if (amountIn > sold) revert ExceedsSold();
         uint256 payout = _quoteSellNoFee(amountIn);
         uint256 fee = _fee(payout);
         return payout - fee;
@@ -520,14 +517,14 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _buyExactTokens(address buyer, uint256 amountOut, uint256 maxCost, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 cost) {
-        require(!launched, "campaign launched");
-        require(amountOut > 0, "zero amount");
-        require(sold + amountOut <= curveSupply, "sold out");
+        if (launched) revert Finalized();
+        if (amountOut == 0) revert ZeroAmount();
+        if (sold + amountOut > curveSupply) revert SoldOut();
         uint256 costNoFee = _quoteBuyNoFee(amountOut);
         uint256 fee = _fee(costNoFee);
         uint256 total = costNoFee + fee;
-        require(total <= maxCost, "slippage");
-        require(msg.value >= total, "insufficient value");
+        if (total > maxCost) revert Slippage();
+        if (msg.value < total) revert InsufficientValue();
         _beforeBuy(buyer, costNoFee);
         _recordBuy(buyer, amountOut, costNoFee);
         if (fee > 0) {
@@ -541,11 +538,11 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _buyExactBnb(address buyer, uint256 minTokensOut, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 tokensOut, uint256 totalSpent) {
-        require(!launched, "campaign launched");
+        if (launched) revert Finalized();
         (tokensOut, totalSpent, ) = quoteBuyExactBnb(msg.value);
-        require(tokensOut > 0, "zero amount");
-        require(tokensOut >= minTokensOut, "slippage");
-        require(sold + tokensOut <= curveSupply, "sold out");
+        if (tokensOut == 0) revert ZeroAmount();
+        if (tokensOut < minTokensOut) revert Slippage();
+        if (sold + tokensOut > curveSupply) revert SoldOut();
         uint256 costNoFee = _quoteBuyNoFee(tokensOut);
         uint256 fee = _fee(costNoFee);
         uint256 total = costNoFee + fee;
@@ -563,15 +560,15 @@ contract LaunchCampaign is ReentrancyGuard, Ownable {
     }
 
     function _sellExactTokens(address seller, uint256 amountIn, uint256 minPayout, bool useAuthorizedRoute, uint8 routeProfile) internal returns (uint256 payout) {
-        require(!launched, "campaign launched");
+        if (launched) revert Finalized();
         _beforeSell(seller);
-        require(amountIn > 0, "zero amount");
-        require(amountIn <= sold, "exceeds sold");
+        if (amountIn == 0) revert ZeroAmount();
+        if (amountIn > sold) revert ExceedsSold();
         uint256 gross = _quoteSellNoFee(amountIn);
         if (gross > netRaisedWei) revert Insolvent();
         uint256 fee = _fee(gross);
         payout = gross - fee;
-        require(payout >= minPayout, "slippage");
+        if (payout < minPayout) revert Slippage();
         sold -= amountIn;
         netRaisedWei -= gross;
         tokenInterface.safeTransferFrom(seller, address(this), amountIn);

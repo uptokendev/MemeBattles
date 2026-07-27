@@ -9,7 +9,7 @@ describe("package scripts", function () {
     expect(pkg.scripts.compile).to.eq("hardhat compile");
     expect(pkg.scripts.test).to.eq("hardhat test");
     expect(pkg.scripts.coverage).to.eq("hardhat coverage");
-    expect(pkg.scripts.gas).to.eq("REPORT_GAS=true hardhat test");
+    expect(pkg.scripts.gas).to.eq("cross-env REPORT_GAS=true hardhat test");
     expect(pkg.scripts.size).to.eq("hardhat run scripts/check-contract-size.ts");
   });
 

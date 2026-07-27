@@ -127,8 +127,8 @@ describe("LaunchCampaign closeout integration", function () {
     const value = ethers.parseEther("0.005");
     const quote = await campaign.quoteBuyExactBnb(value);
 
-    await expect(campaign.connect(alice).buyExactBnb(quote.tokensOut + 1n, { value })).to.be.revertedWith("slippage");
-    await expect(campaign.connect(alice).buyExactBnb(0n, { value: 0n })).to.be.revertedWith("zero amount");
+    await expect(campaign.connect(alice).buyExactBnb(quote.tokensOut + 1n, { value })).to.be.revertedWithCustomError(campaign, "Slippage");
+    await expect(campaign.connect(alice).buyExactBnb(0n, { value: 0n })).to.be.revertedWithCustomError(campaign, "ZeroAmount");
   });
 
   it("factory pause controls are owner-only and campaign pause blocks buys", async () => {

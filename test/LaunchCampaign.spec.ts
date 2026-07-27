@@ -64,9 +64,6 @@ const directInitParams = async (values: {
   name: values.name ?? "T",
   symbol: values.symbol ?? "T",
   logoURI: "ipfs://logo",
-  xAccount: "",
-  website: "",
-  extraLink: "",
   totalSupply: ethers.parseEther("1000"),
   curveBps: 5000,
   liquidityTokenBps: 4000,
@@ -83,7 +80,6 @@ const directInitParams = async (values: {
   feeRecipient: values.feeRecipient ?? values.owner,
   creator: values.creator,
   factory: values.creator,
-  creatorRegistry: ethers.ZeroAddress,
   riskRegistry: ethers.ZeroAddress,
   creatorBuyLockUntil: 0n,
   creatorBuyCapWei: 0n,
@@ -189,12 +185,12 @@ describe("LaunchCampaign", function () {
   it("quoteBuyExactTokens / quoteSellExactTokens guard rails", async () => {
     const { campaign } = await loadFixture(createCampaignFixture);
 
-    await expect(campaign.quoteBuyExactTokens(0n)).to.be.revertedWith("zero amount");
-    await expect(campaign.quoteSellExactTokens(0n)).to.be.revertedWith("zero amount");
-    await expect(campaign.quoteSellExactTokens(1n)).to.be.revertedWith("exceeds sold");
+    await expect(campaign.quoteBuyExactTokens(0n)).to.be.revertedWithCustomError(campaign, "ZeroAmount");
+    await expect(campaign.quoteSellExactTokens(0n)).to.be.revertedWithCustomError(campaign, "ZeroAmount");
+    await expect(campaign.quoteSellExactTokens(1n)).to.be.revertedWithCustomError(campaign, "ExceedsSold");
 
     const curveSupply = await campaign.curveSupply();
-    await expect(campaign.quoteBuyExactTokens(curveSupply + 1n)).to.be.revertedWith("sold out");
+    await expect(campaign.quoteBuyExactTokens(curveSupply + 1n)).to.be.revertedWithCustomError(campaign, "SoldOut");
   });
 
   it("currentPrice matches formula", async () => {
@@ -245,8 +241,8 @@ describe("LaunchCampaign", function () {
     const amountOut = ethers.parseEther("1");
     const total = await campaign.quoteBuyExactTokens(amountOut);
 
-    await expect(campaign.connect(alice).buyExactTokens(amountOut, total - 1n, { value: total })).to.be.revertedWith("slippage");
-    await expect(campaign.connect(alice).buyExactTokens(amountOut, total, { value: total - 1n })).to.be.revertedWith("insufficient value");
+    await expect(campaign.connect(alice).buyExactTokens(amountOut, total - 1n, { value: total })).to.be.revertedWithCustomError(campaign, "Slippage");
+    await expect(campaign.connect(alice).buyExactTokens(amountOut, total, { value: total - 1n })).to.be.revertedWithCustomError(campaign, "InsufficientValue");
   });
 
   it("sellExactTokens: transfers tokens back, pays out, updates sold & counters, emits, takes fee", async () => {
@@ -295,7 +291,7 @@ describe("LaunchCampaign", function () {
     await token.connect(alice).approve(await campaign.getAddress(), amountIn);
 
     const minPayout = (await campaign.quoteSellExactTokens(amountIn)) + 1n;
-    await expect(campaign.connect(alice).sellExactTokens(amountIn, minPayout)).to.be.revertedWith("slippage");
+    await expect(campaign.connect(alice).sellExactTokens(amountIn, minPayout)).to.be.revertedWithCustomError(campaign, "Slippage");
   });
 
   it("buyExactTokens enforces curveSupply cap (no oversell)", async () => {
@@ -303,14 +299,14 @@ describe("LaunchCampaign", function () {
 
     const curveSupply = await campaign.curveSupply();
     const maxCost = (await campaign.quoteBuyExactTokens(curveSupply)) + ethers.parseEther("100");
-    await expect(campaign.connect(alice).buyExactTokens(curveSupply + 1n, maxCost, { value: maxCost })).to.be.revertedWith("sold out");
+    await expect(campaign.connect(alice).buyExactTokens(curveSupply + 1n, maxCost, { value: maxCost })).to.be.revertedWithCustomError(campaign, "SoldOut");
   });
 
   it("buyExactTokens / sellExactTokens reject zero amounts (consistent with quote)", async () => {
     const { campaign, alice } = await loadFixture(createCampaignFixture);
 
-    await expect(campaign.connect(alice).buyExactTokens(0n, 0n, { value: 0n })).to.be.revertedWith("zero amount");
-    await expect(campaign.connect(alice).sellExactTokens(0n, 0n)).to.be.revertedWith("zero amount");
+    await expect(campaign.connect(alice).buyExactTokens(0n, 0n, { value: 0n })).to.be.revertedWithCustomError(campaign, "ZeroAmount");
+    await expect(campaign.connect(alice).sellExactTokens(0n, 0n)).to.be.revertedWithCustomError(campaign, "ZeroAmount");
   });
 
   it("fee receivers cannot DOS: feeRecipient revert escrows; leagueReceiver router forward failure doesn't revert", async () => {
@@ -593,8 +589,8 @@ describe("LaunchCampaign", function () {
     const totalBuy = await campaign.quoteBuyExactTokens(curveSupply);
     await campaign.connect(alice).buyExactTokens(curveSupply, totalBuy, { value: totalBuy });
 
-    await expect(campaign.connect(alice).buyExactTokens(1n, 0n, { value: 0n })).to.be.revertedWith("campaign launched");
-    await expect(campaign.connect(alice).sellExactTokens(1n, 0n)).to.be.revertedWith("campaign launched");
+    await expect(campaign.connect(alice).buyExactTokens(1n, 0n, { value: 0n })).to.be.revertedWithCustomError(campaign, "Finalized");
+    await expect(campaign.connect(alice).sellExactTokens(1n, 0n)).to.be.revertedWithCustomError(campaign, "Finalized");
 
     await token.connect(alice).transfer(await bob.getAddress(), ethers.parseEther("1"));
     expect(await token.balanceOf(await bob.getAddress())).to.eq(ethers.parseEther("1"));

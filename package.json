@@ -70,7 +70,7 @@
     "testnet:topaz-graduation": "hardhat run scripts/test-topaz-graduation-flow.ts --network bscTestnet",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
-    "gas": "REPORT_GAS=true hardhat test",
+    "gas": "cross-env REPORT_GAS=true hardhat test",
     "size": "hardhat run scripts/check-contract-size.ts",
     "test:full": "node scripts/full-test-suite.cjs local",
     "test:full:local": "node scripts/full-test-suite.cjs local",
@@ -86,12 +86,13 @@
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.5",
     "hardhat": "^2.22.10",
     "hardhat-gas-reporter": "^1.0.10",
     "solidity-coverage": "^0.8.5",
-    "typescript": "^5.4.5",
     "ts-node": "^10.9.2",
-    "dotenv": "^16.4.5"
+    "typescript": "^5.4.5"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.2"

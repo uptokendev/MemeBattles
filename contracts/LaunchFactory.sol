@@ -330,9 +330,6 @@ contract LaunchFactory is Ownable {
             name: req.name,
             symbol: req.symbol,
             logoURI: req.logoURI,
-            xAccount: req.xAccount,
-            website: req.website,
-            extraLink: req.extraLink,
             totalSupply: config.totalSupply,
             curveBps: config.curveBps,
             liquidityTokenBps: config.liquidityTokenBps,
@@ -349,7 +346,6 @@ contract LaunchFactory is Ownable {
             feeRecipient: feeRecipient,
             creator: msg.sender,
             factory: address(this),
-            creatorRegistry: address(creatorRegistry),
             riskRegistry: address(riskRegistry),
             creatorBuyLockUntil: creatorBuyLockUntil,
             creatorBuyCapWei: creatorBuyCapWei,
@@ -359,7 +355,7 @@ contract LaunchFactory is Ownable {
         });
 
         address clone = Clones.clone(campaignImplementation);
-        LaunchCampaign(payable(clone)).initializeScheduled(params, schedule);
+        LaunchCampaign(payable(clone)).initializeScheduled(params, schedule.launchAt);
         campaignAddr = clone;
         tokenAddr = address(LaunchCampaign(payable(clone)).token());
         isCampaign[campaignAddr] = true;

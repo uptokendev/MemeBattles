@@ -101,7 +101,7 @@ describe("LaunchCampaign quote edge behavior", function () {
     expect(quote.tokensOut).to.eq(0n);
     expect(quote.totalCostWei).to.eq(0n);
     expect(quote.feeWei).to.eq(0n);
-    await expect(campaign.quoteBuyExactTokens(1n)).to.be.revertedWith("sold out");
+    await expect(campaign.quoteBuyExactTokens(1n)).to.be.revertedWithCustomError(campaign, "SoldOut");
   });
 
   it("quoteBuyExactBnb returns zero after all curve tokens are sold and finalized", async () => {
