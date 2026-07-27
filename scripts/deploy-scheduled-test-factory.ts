@@ -1,10 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { ethers, network } from "hardhat";
-import { assertCode, pickAddress, resolveContracts } from "./verify-deployment";
-
-const { writeFrontendEnv } = require("./lib/frontendEnv.cjs");
-const { writeIndexerManifest } = require("./lib/indexerManifest.cjs");
+import { assertCode, resolveContracts } from "./verify-deployment";
 
 const TESTNET_CHAIN_ID = 97n;
 const MAINNET_CHAIN_ID = 56n;
@@ -17,13 +14,21 @@ function rawEnv(name: string): string {
 
 function requireAddress(label: string, value: string): string {
   if (!ADDRESS_RE.test(value || "")) throw new Error(`${label}: missing or invalid address: ${value || "<empty>"}`);
-  return ethers.getAddress(value);
+  const address = ethers.getAddress(value);
+  if (address === ethers.ZeroAddress) throw new Error(`${label}: zero address is not allowed.`);
+  return address;
+}
+
+function assertAddressEq(label: string, actual: string, expected: string) {
+  if (actual.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
 }
 
 function loadBaseDeployment() {
   const file = process.env.DEPLOYMENT_FILE
     ? path.resolve(process.env.DEPLOYMENT_FILE)
-    : path.join(__dirname, "..", "deployments", `${network.name}.json`);
+    : path.join(__dirname, "..", "deployments", `${network.name}.treasury-v2-staged.json`);
   if (!fs.existsSync(file)) throw new Error(`Base deployment file not found: ${file}`);
   return { file, deployment: JSON.parse(fs.readFileSync(file, "utf8")) };
 }
@@ -33,11 +38,11 @@ function writeJson(file: string, data: unknown) {
   fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 }
 
-async function signerOwns(contractAddress: string): Promise<boolean> {
+async function signerMatchesGetter(contractAddress: string, getter: "owner" | "admin"): Promise<boolean> {
   const [signer] = await ethers.getSigners();
-  const ownable = new ethers.Contract(contractAddress, ["function owner() view returns (address)"], signer);
+  const contract = new ethers.Contract(contractAddress, [`function ${getter}() view returns (address)`], signer);
   try {
-    return String(await ownable.owner()).toLowerCase() === (await signer.getAddress()).toLowerCase();
+    return String(await contract[getter]()).toLowerCase() === (await signer.getAddress()).toLowerCase();
   } catch {
     return false;
   }
@@ -58,6 +63,10 @@ async function main() {
   const deployerAddress = await deployer.getAddress();
   const deploymentBlock = await ethers.provider.getBlockNumber();
 
+  if (baseDeployment.treasuryRouterVersion !== "v2") {
+    throw new Error("Scheduled test factory requires a TreasuryRouterV2 staged deployment. Run deploy:treasury-v2-minimal:bsc-testnet first.");
+  }
+
   const oldFactory = requireAddress("Base LaunchFactory", contracts.LaunchFactory);
   const oldLocker = requireAddress("Base PermanentLpLocker", contracts.PermanentLpLocker);
   const launchRouter = requireAddress(
@@ -68,10 +77,18 @@ async function main() {
       baseDeployment.topazRouterAdapter ||
       baseDeployment.topazRouter,
   );
-  const treasuryRouter = requireAddress("TreasuryRouterV2", contracts.TreasuryRouterV2 || contracts.TreasuryRouter);
+  const treasuryRouter = requireAddress("TreasuryRouterV2", contracts.TreasuryRouterV2);
   const graduationOracle = requireAddress("GraduationOracle", contracts.GraduationOracle);
   const creatorRegistry = requireAddress("CreatorRegistry", contracts.CreatorRegistry);
   const riskRegistry = requireAddress("RiskRegistry", contracts.RiskRegistry);
+  const weeklyLeagueVault = requireAddress(
+    "WeeklyLeagueVault",
+    contracts.WeeklyLeagueVault || contracts.TreasuryVaultV2,
+  );
+  const monthlyLeagueTreasury = requireAddress("MonthlyLeagueTreasury", contracts.MonthlyLeagueTreasury);
+  const recruiterRewardsVault = requireAddress("RecruiterRewardsVault", contracts.RecruiterRewardsVault);
+  const communityRewardsVault = requireAddress("CommunityRewardsVault", contracts.CommunityRewardsVault);
+  const protocolRevenueVault = requireAddress("ProtocolRevenueVault", contracts.ProtocolRevenueVault);
   const routeAuthority = requireAddress(
     "Route authority",
     rawEnv("ROUTE_AUTHORITY_ADDRESS") || baseDeployment.routing?.factoryRouteAuthority || baseDeployment.routeAuthority || "",
@@ -84,11 +101,46 @@ async function main() {
   await assertCode("GraduationOracle", graduationOracle);
   await assertCode("CreatorRegistry", creatorRegistry);
   await assertCode("RiskRegistry", riskRegistry);
+  await assertCode("WeeklyLeagueVault", weeklyLeagueVault);
+  await assertCode("MonthlyLeagueTreasury", monthlyLeagueTreasury);
+  await assertCode("RecruiterRewardsVault", recruiterRewardsVault);
+  await assertCode("CommunityRewardsVault", communityRewardsVault);
+  await assertCode("ProtocolRevenueVault", protocolRevenueVault);
+
+  const treasury = new ethers.Contract(
+    treasuryRouter,
+    [
+      "function admin() view returns (address)",
+      "function weeklyLeagueVault() view returns (address)",
+      "function monthlyLeagueTreasury() view returns (address)",
+      "function recruiterRewardsVault() view returns (address)",
+      "function communityRewardsVault() view returns (address)",
+      "function protocolRevenueVault() view returns (address)",
+      "function forwardingPaused() view returns (bool)",
+      "function authorizedLpLocker(address) view returns (bool)",
+      "function permanentLpLocker() view returns (address)",
+      "function setAuthorizedLpLocker(address,bool)",
+      "function setPrimaryLpLocker(address)",
+    ],
+    deployer,
+  );
+
+  assertAddressEq("TreasuryRouterV2.weeklyLeagueVault", await treasury.weeklyLeagueVault(), weeklyLeagueVault);
+  assertAddressEq("TreasuryRouterV2.monthlyLeagueTreasury", await treasury.monthlyLeagueTreasury(), monthlyLeagueTreasury);
+  assertAddressEq("TreasuryRouterV2.recruiterRewardsVault", await treasury.recruiterRewardsVault(), recruiterRewardsVault);
+  assertAddressEq("TreasuryRouterV2.communityRewardsVault", await treasury.communityRewardsVault(), communityRewardsVault);
+  assertAddressEq("TreasuryRouterV2.protocolRevenueVault", await treasury.protocolRevenueVault(), protocolRevenueVault);
+  if (await treasury.forwardingPaused()) throw new Error("TreasuryRouterV2 forwarding is paused.");
+  if (!(await treasury.authorizedLpLocker(oldLocker))) {
+    throw new Error(`TreasuryRouterV2 has not authorized the legacy locker ${oldLocker}. Complete the staged Safe actions first.`);
+  }
+  assertAddressEq("TreasuryRouterV2.permanentLpLocker", await treasury.permanentLpLocker(), oldLocker);
 
   console.log(`[scheduled-test-factory] base deployment: ${baseFile}`);
   console.log(`[scheduled-test-factory] chainId=${net.chainId.toString()} network=${network.name}`);
   console.log(`[scheduled-test-factory] deployer=${deployerAddress}`);
-  console.log(`[scheduled-test-factory] fixed graduation target=$6 USD`);
+  console.log("[scheduled-test-factory] TreasuryRouterV2 wiring verified");
+  console.log("[scheduled-test-factory] fixed graduation target=$6 USD");
 
   const Campaign = await ethers.getContractFactory("LaunchCampaign");
   const campaignImplementation = await Campaign.deploy();
@@ -101,8 +153,8 @@ async function main() {
   await factory.waitForDeployment();
   const newFactory = await factory.getAddress();
   const newLocker = await factory.permanentLpLocker();
-  console.log(`[scheduled-test-factory] LaunchFactory=${newFactory}`);
-  console.log(`[scheduled-test-factory] PermanentLpLocker=${newLocker}`);
+  console.log(`[scheduled-test-factory] staged LaunchFactory=${newFactory}`);
+  console.log(`[scheduled-test-factory] staged PermanentLpLocker=${newLocker}`);
 
   const currentConfig = await factory.config();
   await (
@@ -129,80 +181,77 @@ async function main() {
 
   const protocolFeeBps = BigInt(baseDeployment.protocolFeeBps ?? 200);
   await (await factory.setProtocolFee(protocolFeeBps)).wait();
+  await (await factory.lockSecurityDefaults()).wait();
 
   const postDeployActions: string[] = [];
-
-  if (await signerOwns(creatorRegistry)) {
-    const registry = new ethers.Contract(
-      creatorRegistry,
-      ["function setLaunchRecorder(address,bool)", "function launchRecorders(address) view returns (bool)"],
-      deployer,
-    );
-    if (!(await registry.launchRecorders(newFactory))) {
-      await (await registry.setLaunchRecorder(newFactory, true)).wait();
-    }
-  } else {
-    postDeployActions.push(`CreatorRegistry.setLaunchRecorder(${newFactory}, true)`);
-  }
-
-  const treasury = new ethers.Contract(
-    treasuryRouter,
-    [
-      "function authorizedLpLocker(address) view returns (bool)",
-      "function setAuthorizedLpLocker(address,bool)",
-      "function permanentLpLocker() view returns (address)",
-      "function setPrimaryLpLocker(address)",
-    ],
+  const registry = new ethers.Contract(
+    creatorRegistry,
+    ["function setLaunchRecorder(address,bool)", "function launchRecorder(address) view returns (bool)"],
     deployer,
   );
-
-  if (await signerOwns(treasuryRouter)) {
-    if (!(await treasury.authorizedLpLocker(oldLocker))) {
-      await (await treasury.setAuthorizedLpLocker(oldLocker, true)).wait();
+  if (!(await registry.launchRecorder(newFactory))) {
+    if (await signerMatchesGetter(creatorRegistry, "owner")) {
+      await (await registry.setLaunchRecorder(newFactory, true)).wait();
+    } else {
+      postDeployActions.push(`CreatorRegistry.setLaunchRecorder(${newFactory}, true)`);
     }
-    if (!(await treasury.authorizedLpLocker(newLocker))) {
-      await (await treasury.setAuthorizedLpLocker(newLocker, true)).wait();
-    }
-    if (String(await treasury.permanentLpLocker()).toLowerCase() !== newLocker.toLowerCase()) {
-      await (await treasury.setPrimaryLpLocker(newLocker)).wait();
-    }
-  } else {
-    postDeployActions.push(`TreasuryRouterV2.setAuthorizedLpLocker(${oldLocker}, true)`);
-    postDeployActions.push(`TreasuryRouterV2.setAuthorizedLpLocker(${newLocker}, true)`);
-    postDeployActions.push(`TreasuryRouterV2.setPrimaryLpLocker(${newLocker})`);
   }
 
-  await (await factory.lockSecurityDefaults()).wait();
-  await (await factory.enableLive()).wait();
+  const signerIsTreasuryAdmin = await signerMatchesGetter(treasuryRouter, "admin");
+  if (!(await treasury.authorizedLpLocker(newLocker))) {
+    if (signerIsTreasuryAdmin) {
+      await (await treasury.setAuthorizedLpLocker(newLocker, true)).wait();
+    } else {
+      postDeployActions.push(`TreasuryRouterV2.setAuthorizedLpLocker(${newLocker}, true)`);
+    }
+  }
+  if (String(await treasury.permanentLpLocker()).toLowerCase() !== newLocker.toLowerCase()) {
+    if (signerIsTreasuryAdmin) {
+      await (await treasury.setPrimaryLpLocker(newLocker)).wait();
+    } else {
+      postDeployActions.push(`TreasuryRouterV2.setPrimaryLpLocker(${newLocker})`);
+    }
+  }
+
+  const launchRecorderEnabled = Boolean(await registry.launchRecorder(newFactory));
+  const newLockerAuthorized = Boolean(await treasury.authorizedLpLocker(newLocker));
+  const newLockerPrimary = String(await treasury.permanentLpLocker()).toLowerCase() === newLocker.toLowerCase();
+  const activationReady = launchRecorderEnabled && newLockerAuthorized && newLockerPrimary;
 
   const generation = rawEnv("FACTORY_ONLY_GENERATION") || "bnb-testnet-scheduled-v2";
   const priorFactories = Array.isArray(baseDeployment.factoryRegistry?.factories)
     ? baseDeployment.factoryRegistry.factories.map((entry: any) => ({
         ...entry,
-        creationEnabled: false,
+        creationEnabled: String(entry.address || "").toLowerCase() === oldFactory.toLowerCase(),
         tradingEnabled: entry.tradingEnabled !== false,
         supportEnabled: entry.supportEnabled !== false,
       }))
     : [];
-  if (!priorFactories.some((entry: any) => String(entry.address || "").toLowerCase() === oldFactory.toLowerCase())) {
+
+  let oldGeneration = baseDeployment.factoryRegistry?.activeGeneration || "previous";
+  const oldEntry = priorFactories.find((entry: any) => String(entry.address || "").toLowerCase() === oldFactory.toLowerCase());
+  if (oldEntry) {
+    oldGeneration = oldEntry.generation || oldGeneration;
+  } else {
     priorFactories.push({
-      generation: baseDeployment.factoryRegistry?.activeGeneration || "previous",
+      generation: oldGeneration,
       address: oldFactory,
       deploymentBlock: baseDeployment.deploymentBlock ?? null,
-      creationEnabled: false,
+      creationEnabled: true,
       tradingEnabled: true,
       supportEnabled: true,
       routeAuthority: baseDeployment.routing?.factoryRouteAuthority || null,
-      treasuryRouter,
+      treasuryRouter: baseDeployment.contracts?.LegacyTreasuryRouter || baseDeployment.treasuryV2Migration?.legacyTreasuryRouter || null,
       permanentLpLocker: oldLocker,
-      notes: "previous test factory retained for legacy campaign support",
+      notes: "previous test factory retained as the active creation factory until staged activation",
     });
   }
+
   priorFactories.push({
     generation,
     address: newFactory,
     deploymentBlock,
-    creationEnabled: true,
+    creationEnabled: false,
     tradingEnabled: true,
     supportEnabled: true,
     routeAuthority,
@@ -212,67 +261,67 @@ async function main() {
     factoryGeneration: 2,
     campaignGeneration: 2,
     graduationTargetUsd: TEST_GRADUATION_TARGET_USD.toString(),
-    notes: "BSC Testnet scheduled-launch factory with fixed $6 graduation threshold",
+    notes: "staged BSC Testnet scheduled-launch factory; activation verification required",
   });
 
   const nextDeployment = {
     ...baseDeployment,
     network: network.name,
     chainId: Number(net.chainId),
-    deploymentBlock,
-    deployer: deployerAddress,
     factoryReplacement: {
-      replacedAt: new Date().toISOString(),
+      stagedAt: new Date().toISOString(),
+      activationRequired: true,
       baseDeployment: baseFile,
       oldFactory,
       oldPermanentLpLocker: oldLocker,
+      newFactory,
+      newPermanentLpLocker: newLocker,
+      newCampaignImplementation: campaignImplementationAddress,
       purpose: "scheduled-launch end-to-end graduation testing",
     },
-    contracts: {
-      ...(baseDeployment.contracts || {}),
+    stagedContracts: {
       LaunchCampaignImplementation: campaignImplementationAddress,
       LaunchFactory: newFactory,
       PermanentLpLocker: newLocker,
     },
     routing: {
       ...(baseDeployment.routing || {}),
-      factoryFeeRecipient: treasuryRouter,
-      factoryRouteAuthority: routeAuthority,
-      campaignImplementation: campaignImplementationAddress,
-      graduationOracle,
-      topazRouter: launchRouter,
-      permanentLpLocker: newLocker,
-      permanentLpLockerAuthorized: postDeployActions.length === 0,
+      stagedFactoryFeeRecipient: treasuryRouter,
+      stagedFactoryRouteAuthority: routeAuthority,
+      stagedCampaignImplementation: campaignImplementationAddress,
+      stagedPermanentLpLocker: newLocker,
+      stagedPermanentLpLockerAuthorized: newLockerAuthorized,
     },
-    graduationTargetUsd: TEST_GRADUATION_TARGET_USD.toString(),
-    factoryGeneration: 2,
-    campaignGeneration: 2,
+    stagedGraduationTargetUsd: TEST_GRADUATION_TARGET_USD.toString(),
+    stagedFactoryGeneration: 2,
+    stagedCampaignGeneration: 2,
     factoryRegistry: {
-      activeFactory: newFactory,
-      activeGeneration: generation,
+      activeFactory: oldFactory,
+      activeGeneration: oldGeneration,
+      stagedFactory: newFactory,
+      stagedGeneration: generation,
       factories: priorFactories,
     },
+    activationRequired: true,
+    activationReady,
     postDeployActions,
   };
 
-  const outBase = path.join(__dirname, "..", "deployments", `${network.name}.scheduled-test-factory.json`);
-  const outFrontend = path.join(__dirname, "..", "deployments", `${network.name}.scheduled-test-factory.frontend.env`);
-  const outManifest = path.join(__dirname, "..", "deployments", `${network.name}.scheduled-test-factory.indexer-manifest.json`);
-  writeJson(outBase, nextDeployment);
-  writeFrontendEnv(nextDeployment, outFrontend, outBase);
-  writeIndexerManifest(nextDeployment, outManifest, outBase);
+  const outFile = rawEnv("SCHEDULED_FACTORY_STAGED_OUTPUT_FILE")
+    ? path.resolve(rawEnv("SCHEDULED_FACTORY_STAGED_OUTPUT_FILE"))
+    : path.join(__dirname, "..", "deployments", `${network.name}.scheduled-test-factory.staged.json`);
+  writeJson(outFile, nextDeployment);
 
-  console.log(`\n[scheduled-test-factory] deployment=${outBase}`);
-  console.log(`[scheduled-test-factory] frontend=${outFrontend}`);
-  console.log(`[scheduled-test-factory] indexer=${outManifest}`);
-  console.log(`[scheduled-test-factory] FACTORY_ADDRESS_97=${newFactory}`);
-  console.log(`[scheduled-test-factory] FACTORY_START_BLOCK_97=${deploymentBlock}`);
-  console.log(`[scheduled-test-factory] VITE_FACTORY_ADDRESS_97=${newFactory}`);
-  console.log(`[scheduled-test-factory] VITE_PERMANENT_LP_LOCKER_ADDRESS_97=${newLocker}`);
+  console.log(`\n[scheduled-test-factory] staged deployment=${outFile}`);
+  console.log(`[scheduled-test-factory] STAGED_FACTORY_ADDRESS_97=${newFactory}`);
+  console.log(`[scheduled-test-factory] STAGED_FACTORY_START_BLOCK_97=${deploymentBlock}`);
+  console.log("[scheduled-test-factory] factory remains disabled until activate:scheduled-test-factory:bsc-testnet passes");
 
   if (postDeployActions.length) {
-    console.log("\n[scheduled-test-factory] required Safe/admin actions before full testing:");
+    console.log("\n[scheduled-test-factory] required Safe/admin actions before activation:");
     for (const action of postDeployActions) console.log(`- ${action}`);
+  } else {
+    console.log("[scheduled-test-factory] on-chain permissions are ready; run the activation script after reviewing the staged manifest.");
   }
 }
 
