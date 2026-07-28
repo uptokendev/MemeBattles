@@ -1,63 +1,112 @@
-# Solana Phase 4 Authorized Create Foundation
+# Solana Phase 4 Detached Authorized Create Foundation
 
-Status date: 2026-07-23
-Branch: agent/solana-phase0-source-of-truth
+Status date: 2026-07-28
+Branch: `agent/solana-v2-phase0-refresh`
+PR: #67
 
-## What This Slice Adds
+## What this slice adds
 
-This slice starts Phase 4 by adding the on-chain foundation for authorized Solana campaign creation, hardening the frontend adapter so stale Solana transaction code cannot accidentally become live, adding the backend authorization contract shape for Solana create, and adding a frontend client path that can request authorization previews without sending live transactions. It does not enable public Solana create, buy, sell, or graduation flows.
+This slice replaces the historical route-authority transaction co-signing concept with detached Ed25519 authorization and moves the valid Solana foundation onto the current `devpostgrad` integration base.
 
-Updated files:
+It does not enable public Solana create, buy, sell or graduation flows.
 
 | Path | Purpose |
 | --- | --- |
-| `programs/memewarzone_solana/src/lib.rs` | Wires the `create_campaign` instruction into the Anchor program and extends shared launchpad errors. |
-| `programs/memewarzone_solana/src/authorized_create.rs` | Adds Campaign and CreateAuthorization PDAs, create args, route-signer authorization checks, creator/risk/generation launch checks, replay-resistant nonce PDA shape, and tests. |
-| `frontend/src/lib/launchpad/adapters/solanaLaunchpadAdapter.ts` | Keeps Solana in protocol_pending unless explicit Phase 4 live-transaction and authorized-create-client env gates are set; requests backend authorization previews, then deliberately stops before transaction signing. |
-| `frontend/src/lib/solanaCreateAuthorization.ts` | Adds a typed frontend client for Solana create authorization preview requests. |
-| `frontend/api/dev-fix/solana-launchpad.js` | Adds Solana create preflight and create-authorization response builders with canonical metadata hash, route profile hash, campaign ID, nonce, deadline, generation ID, program ID, and route signer identity. |
-| `frontend/api/dev-fix/route-auth.js` | Delegates `/api/routing/status` and `/api/routing/create-authorization` to the Solana backend contract when `chainId=101`, leaving the BNB route-authority path unchanged. |
+| `programs/memewarzone_solana/src/lib.rs` | Wires `create_campaign` into the Anchor program and supplies global, generation, creator, risk and cluster state. |
+| `programs/memewarzone_solana/src/authorized_create.rs` | Adds campaign/create-authorization PDAs, detached Ed25519 verification, timer/ticker/reservation/target/profile binding, replay protection and Rust tests. |
+| `docs/solana/create-authorization-v1.md` | Defines the exact binary payload, transaction order and remaining gates. |
+| `.github/workflows/solana-anchor-ci.yml` | Builds the Anchor program and runs Rust invariant tests in GitHub Actions. |
 
-## Implemented Phase 4 Requirements
+The old prototype frontend adapter, frontend authorization helper and `dev-fix` Solana transaction backend were not ported because they manually encode protocol layouts and no longer match the corrected authorization design.
+
+## Authorization model
+
+Railway signs a domain-separated payload only. Railway does not sign the creator transaction.
+
+The creator submits one transaction containing:
+
+```text
+instruction N-1: native Ed25519 verification instruction
+instruction N:   MemeWarzone create_campaign instruction
+```
+
+`create_campaign` reads the Instructions sysvar and requires:
+
+- a top-level call to the MemeWarzone program;
+- the Ed25519 instruction immediately before the current instruction;
+- exactly one self-contained signature;
+- the public key configured as `GlobalConfig.route_signer`;
+- byte-for-byte equality with the on-chain reconstructed payload;
+- a fresh creator+nonce PDA.
+
+The transaction fails atomically if the signature is invalid, the payload differs, the deadline is expired or the nonce PDA already exists.
+
+## Signed and stored launch bindings
+
+The payload binds:
+
+- program and declared cluster;
+- generation ID, config PDA, manifest and DEX adapter;
+- creator, current risk cluster, tier lock duration and creator buy cap;
+- campaign, mint and metadata;
+- ticker hash;
+- reservation ID hash and reservation version;
+- immediate or scheduled launch time;
+- graduation target;
+- separate trade and finalize route profiles;
+- treasury, DEX and oracle profiles;
+- nonce and deadline.
+
+The accepted campaign account stores the immutable launch time, graduation target, ticker/reservation binding, route profiles and creator lock/cap resolution.
+
+## Timer rules in this slice
+
+- `launch_at = 0` means immediate launch and resolves to the current Solana Clock timestamp.
+- A scheduled launch must be at least five minutes in the future.
+- A scheduled launch may be no more than 30 days in the future.
+- Future trading instructions must reject buys and sells before `campaign.launch_at`.
+
+## Graduation-tier boundary
+
+This slice accepts the exact production tiers:
+
+- 15,000 USD;
+- 30,000 USD;
+- 50,000 USD.
+
+The 6 USD devnet target is intentionally rejected until `GenerationConfig` owns an explicit cluster kind and graduation-tier mask. A frontend or backend environment variable is not sufficient protection for the test tier.
+
+## Implemented requirements
 
 | Requirement | Status | Notes |
 | --- | --- | --- |
-| Program-owned economics | Started | `create_campaign` accepts metadata, route profile, mint, deadline, nonce, and campaign identity only. It stores the active GenerationConfig identity and does not accept creator-controlled economics. |
-| Authorized create route | Started | The program requires a route authority signer matching `GlobalConfig.route_signer`. The backend now returns the canonical route authorization payload shape for `chainId=101`; backend-side transaction signing remains gated. |
-| Replay protection | Started | `CreateAuthorization` is initialized with seeds `[create-auth, creator, nonce]`, so the same creator/nonce cannot be reused. Backend authorization returns a fresh 32-byte nonce for each accepted request. |
-| Deadline enforcement | Started | Expired create authorization deadlines are rejected before state is written. Backend authorization returns `deadline` and `validUntil`. |
-| Active generation check | Started | Creation requires the selected generation to be support-enabled, active for creation, and equal to `GlobalConfig.active_generation_id`. Backend authorization includes the configured active generation ID. |
-| Creator eligibility | Started | Creation rejects restricted/manual-review creators, live bonding count at tier limit, and active cooldowns. Successful create increments live bonding count and total launches. |
-| Wallet and cluster risk | Started | Creation rejects restricted wallets, manual-review wallets, empty/mismatched clusters, and restricted clusters. |
-| Campaign state | Started | Campaign stores creator, mint, generation ID/config, metadata hash, route profile hash, created timestamp, volume counters, net raised, creator-bought counter, and graduation flag. |
-| Frontend gating | Started | Solana adapter now remains protocol_pending even when a program ID is configured, until `VITE_ENABLE_SOLANA_LAUNCHPAD_TRANSACTIONS` and `VITE_SOLANA_AUTHORIZED_CREATE_CLIENT_READY` are explicitly true. |
-| Backend gating | Started | Solana create authorization remains blocked unless `SOLANA_AUTHORIZED_CREATE_BACKEND_READY=true`, program ID, route signer, and generation ID are configured. |
-| Frontend authorization preview | Started | The adapter can request a Solana create authorization preview through `/api/routing/create-authorization`, attaches the preview to the thrown pending error, and still prevents live transaction signing. |
+| Fresh integration base | Implemented | Branch is based directly on the current `devpostgrad`, not merged from the divergent historical PR. |
+| Detached route authorization | Implemented | Ed25519 precompile plus Instructions-sysvar verification; no Railway transaction co-signer. |
+| Replay protection | Implemented | `CreateAuthorization` uses `[create-auth, creator, nonce]`. |
+| Deadline enforcement | Implemented | Expired authorizations are rejected before state is written. |
+| Active generation check | Implemented | Generation must be supported, active for creation and match the global active generation. |
+| Creator eligibility | Implemented | Restriction, manual review, live-count limit and cooldown checks. |
+| Wallet and cluster risk | Implemented | Restricted or mismatched wallet/cluster profiles fail creation. |
+| Timer binding | Implemented | Immediate and scheduled launch values are signed and stored. |
+| Ticker reservation binding | Implemented on-chain shape | Ticker hash plus reservation ID/version are signed and stored; canonical database endpoint remains pending. |
+| Graduation target binding | Implemented for production tiers | Devnet-only 6 USD policy remains pending in generation config. |
+| Route-profile binding | Implemented | Trade/finalize, treasury, DEX and oracle profiles are independently bound. |
+| GitHub Actions build/test | Implemented | Anchor build and Rust invariant suite run in the Solana-only workflow. |
 
-## Backend Contract Shape
+## Still pending before merge or deployment
 
-`POST /api/routing/create-authorization` with `chainId: 101` returns Solana-specific data once the backend gate is enabled:
+- generation-owned curve and fee economics;
+- explicit generation cluster kind and graduation-tier mask;
+- devnet-only 6 USD tier;
+- mint creation and mint-authority guarantees;
+- program-owned token and SOL vault initialization;
+- canonical ticker-reservation tables and authorization endpoint;
+- generated IDL and versioned deployment manifest;
+- TypeScript client built from the IDL and manifest;
+- local-validator and devnet integration tests;
+- buy, sell, graduation and reward-vault instructions;
+- indexer, reconciliation and admin controls.
 
-- `campaignId` / `campaignIdHex`
-- `metadataHash` / `metadataHashHex`
-- `routeProfileHash` / `routeProfileHashHex`
-- `nonce` / `nonceHex`
-- `deadline` and `validUntil`
-- `generationId` / `generationIdHex`
-- `programId`
-- `routeSigner`
-- `routeAuthorizationMode: route_signer_transaction_signature`
+## Gate status
 
-Until the gate is enabled, the endpoint returns `SOLANA_PROTOCOL_PENDING` with the same preflight envelope so the frontend can display a clear locked state.
-
-## Still Pending In Phase 4
-
-- Backend/admin job to sync CreatorProfile, RiskProfile, ClusterProfile, GlobalConfig, and GenerationConfig PDAs from canonical data.
-- Frontend Solana transaction builder that submits metadata-only create requests through the new Campaign/CreateAuthorization account shape.
-- Route-signer transaction path or Ed25519 instruction/sysvar verification for detached route authorization signatures.
-- Real vault/mint account wiring for the future bonding curve slice.
-- Integration tests proving unauthorized create and replayed nonce fail at the transaction level.
-
-## Gate Status
-
-Solana create remains protocol_pending. This slice adds the guarded program state path, frontend safety gate, backend authorization contract, and frontend authorization-preview client that later backend and frontend work can use after the launchpad is ready for devnet proof.
+The Solana launchpad remains `protocol_pending`. This slice is a secure foundation, not a public-launch switch.

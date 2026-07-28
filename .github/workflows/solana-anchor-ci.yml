@@ -9,8 +9,13 @@ on:
       - Cargo.toml
       - Cargo.lock
       - programs/memewarzone_solana/**
+      - docs/solana/**
+      - config/solana-launchpad.placeholder.json
       - .github/workflows/solana-anchor-ci.yml
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   ANCHOR_VERSION: 0.30.1
@@ -21,7 +26,7 @@ env:
 
 jobs:
   anchor-build:
-    name: Anchor build and tests
+    name: Anchor build, IDL and tests
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -65,8 +70,11 @@ jobs:
       - name: Remove local lockfiles
         run: rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
 
-      - name: Build Solana program
-        run: anchor build --no-idl
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Build Solana program and IDL
+        run: anchor build
 
       - name: Diagnose edition-2024 dependency resolution
         if: failure()
@@ -85,5 +93,20 @@ jobs:
           cargo +stable tree --target all -i zerocopy@0.8.55 || true
           cargo +stable tree --target all -i borsh@1.8.0 || true
 
+      - name: Verify generated artifacts
+        run: |
+          test -s target/deploy/memewarzone_solana.so
+          test -s target/idl/memewarzone_solana.json
+
       - name: Test Solana program invariants
         run: cargo test -p memewarzone_solana --lib
+
+      - name: Upload Solana build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: memewarzone-solana-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            target/deploy/memewarzone_solana.so
+            target/idl/memewarzone_solana.json
