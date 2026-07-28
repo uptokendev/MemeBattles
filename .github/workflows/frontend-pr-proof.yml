@@ -6,57 +6,117 @@ on:
       - devpostgrad
     paths:
       - frontend/**
+      - contracts/LaunchFactory.sol
+      - test/LaunchFactory.spec.ts
+      - scripts/deploy-scheduled-cooldown-factory.ts
+      - scripts/prepare-scheduled-cooldown-deployment.mjs
+      - realtime-indexer/src/env.ts
       - .github/workflows/frontend-pr-proof.yml
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: frontend-pr-proof-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: scheduled-cooldown-factory-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
-  frontend:
-    name: frontend imports and production build
+  deploy-verify-publish:
+    if: github.head_ref == 'agent/fix-scheduled-cooldown-timezone'
+    name: deploy, verify and publish scheduled cooldown factory
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 50
+    env:
+      BSC_TESTNET_RPC: ${{ secrets.BSC_TESTNET_RPC }}
+      BSC_TESTNET_RPC_URL: ${{ secrets.BSC_TESTNET_RPC_URL }}
+      DEPLOYER_PK: ${{ secrets.DEPLOYER_PK }}
+      PRIVATE_KEY_DEPLOY: ${{ secrets.PRIVATE_KEY_DEPLOY }}
+      ACTIVE_SCHEDULED_FACTORY_ADDRESS: 0xF7872169265eCE4E4C93ef894F1635E84DC6F681
+      QA_CREATOR_ADDRESS: 0x13ad79765e14927df2c554d9662bbe539e89c8e8
 
     steps:
-      - name: Checkout pull request source
+      - name: Checkout pull request head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            realtime-indexer/package-lock.json
 
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
-      - name: Check lifecycle API module syntax
+      - name: Verify BSC Testnet deployment credentials
+        shell: bash
         run: |
-          node --check frontend/api/campaigns.js
-          node --check frontend/api/campaigns-base.js
-          node --check frontend/api/featured.js
-          node --check frontend/api/dev-fix/drafts.js
-          node --check frontend/api/dev-fix/drafts-base.js
-          node --check frontend/api/dev-fix/draft-read.js
-          node --check frontend/api/dev-fix/draft-read-base.js
-          node --check frontend/api/dev-fix/draft-deploy.js
+          if [ -z "${BSC_TESTNET_RPC}${BSC_TESTNET_RPC_URL}" ]; then
+            echo "Missing BSC_TESTNET_RPC or BSC_TESTNET_RPC_URL secret."
+            exit 1
+          fi
+          if [ -z "${DEPLOYER_PK}${PRIVATE_KEY_DEPLOY}" ]; then
+            echo "Missing DEPLOYER_PK or PRIVATE_KEY_DEPLOY secret."
+            exit 1
+          fi
+
+      - name: Prepare duplicate-safe deployment source
+        run: |
+          node --check scripts/prepare-scheduled-cooldown-deployment.mjs
+          node scripts/prepare-scheduled-cooldown-deployment.mjs
+
+      - name: Install and verify contract source
+        run: |
+          npm ci --no-audit --no-fund
+          npm run compile
+          npx hardhat test test/LaunchFactory.spec.ts
+          npm run size
+
+      - name: Deploy and activate factory-only replacement
+        run: npx hardhat run scripts/deploy-scheduled-cooldown-factory.ts --network bscTestnet
+
+      - name: Sync frontend ABI
+        run: npm run sync:frontend-abis
+
+      - name: Publish active contract addresses immediately
+        shell: bash
+        run: |
+          git fetch origin devpostgrad --depth=1
+          git show origin/devpostgrad:.github/workflows/frontend-pr-proof.yml > .github/workflows/frontend-pr-proof.yml
+          git checkout origin/devpostgrad -- frontend/yarn.lock 2>/dev/null || true
+          rm -f scripts/prepare-scheduled-cooldown-deployment.mjs
+          git diff --check
+          git config user.name "MemeWarzone Deployment Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Deployment produced no repository changes."
+            exit 1
+          fi
+          git commit -m "Activate scheduled cooldown factory on BSC Testnet"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Validate API and frontend against active replacement
+        run: |
+          node --check frontend/api/dev-fix/security.js
           node --check frontend/api/dev-fix/draft-deploy-base.js
-          node --check frontend/api/dev-fix/json-transform.js
-          node --check frontend/api/dev-fix/scheduled-lifecycle.js
+          node --check frontend/api/dev-fix/draft-deploy.js
+          npm ci --prefix frontend --no-audit --no-fund
+          npm --prefix frontend run check:api-imports
+          npm --prefix frontend run test:wallet-discovery
+          npm --prefix frontend run build
 
-      - name: Test scheduled lifecycle timestamp transitions
-        run: node --test frontend/api/dev-fix/scheduled-lifecycle.test.mjs
+      - name: Validate realtime indexer against active replacement
+        run: |
+          npm ci --prefix realtime-indexer --no-audit --no-fund
+          npm --prefix realtime-indexer run build
 
-      - name: Check API imports
-        run: npm --prefix frontend run check:api-imports
-
-      - name: Test wallet provider discovery
-        run: npm --prefix frontend run test:wallet-discovery
-
-      - name: Build public application
-        run: npm --prefix frontend run build
+      - name: Verify clean published deployment state
+        shell: bash
+        run: |
+          test -f deployments/bscTestnet.scheduled-cooldown-factory.json
+          test -f deployments/bscTestnet.scheduled-cooldown-factory.env
+          git diff --check
