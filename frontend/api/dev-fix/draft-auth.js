@@ -9,6 +9,7 @@ const ACTIONS = new Set([
   "publish_promotion",
   "archive_draft",
   "deploy_draft",
+  "manage_ticker_reservation",
   "follow_draft",
   "comment_draft",
   "arm_draft_notifications",
@@ -22,6 +23,7 @@ const OWNER_SESSION_ACTIONS = new Set([
   "publish_promotion",
   "archive_draft",
   "deploy_draft",
+  "manage_ticker_reservation",
 ]);
 const OWNER_SESSION_TTL_MS = 10 * 60 * 1000;
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
