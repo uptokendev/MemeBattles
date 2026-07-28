@@ -35,24 +35,22 @@ export default function Prepare() {
   }, [slug, wallet.account]);
 
   const draft = bundle?.draft as CampaignDraftLifecycle | undefined;
+  const storedScheduledLaunchAt = timestampSeconds(draft?.scheduledLaunchAt);
 
   useEffect(() => {
     let cancelled = false;
     setOnChainLaunchAt(null);
-    if (!draft?.campaignAddress || !draft.chainId) return;
+    if (!storedScheduledLaunchAt || !draft?.campaignAddress || !draft.chainId) return;
     void readCampaignLaunchAt(Number(draft.chainId), draft.campaignAddress).then((value) => {
       if (!cancelled) setOnChainLaunchAt(value);
     });
     return () => {
       cancelled = true;
     };
-  }, [draft?.campaignAddress, draft?.chainId]);
+  }, [draft?.campaignAddress, draft?.chainId, storedScheduledLaunchAt]);
 
-  const launchAt = onChainLaunchAt || timestampSeconds(draft?.scheduledLaunchAt || draft?.tradingLaunchAt);
-  const isScheduledLifecycle = Boolean(
-    draft?.campaignAddress &&
-      (timestampSeconds(draft?.scheduledLaunchAt) || onChainLaunchAt),
-  );
+  const isScheduledLifecycle = Boolean(draft?.campaignAddress && storedScheduledLaunchAt);
+  const launchAt = isScheduledLifecycle ? onChainLaunchAt || storedScheduledLaunchAt : null;
 
   useEffect(() => {
     if (!launchAt) return;
