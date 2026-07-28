@@ -11,5 +11,6 @@ import "./styles/tactical-command-ui.css";
 import "./styles/page-density-fixes.css";
 import "./styles/card-cleanup.css";
 import "./styles/prepare-title-fix.css";
+import "./styles/prepare-auth-ux.css";
 
 createRoot(document.getElementById("root")!).render(<App />);
