@@ -1,0 +1,40 @@
+[package]
+name = "memewarzone_solana"
+version = "0.1.0"
+description = "MemeWarzone Solana launchpad program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "memewarzone_solana"
+
+[features]
+default = []
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { workspace = true }
+blake3 = { workspace = true }
+borsh = { workspace = true }
+proc-macro-crate = { workspace = true }
+indexmap = { workspace = true }
+hashbrown = { workspace = true }
+ahash = { workspace = true }
+ppv-lite86 = { workspace = true }
+unicode-segmentation = { workspace = true }
+zeroize = { workspace = true }
+zeroize_derive = { workspace = true }
+toml = { workspace = true }
+toml_datetime = { workspace = true }
+toml_edit = { workspace = true }
+crypto-common = { workspace = true }
+
+[build-dependencies]
+cc = { workspace = true }
+jobserver = { workspace = true }
+rayon = { workspace = true }
+rayon-core = { workspace = true }

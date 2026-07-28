@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "protocol_pending",
+  "chain": "solana",
+  "cluster": "devnet",
+  "programId": "11111111111111111111111111111111",
+  "programIdEnv": "SOLANA_LAUNCHPAD_PROGRAM_ID",
+  "frontendProgramIdEnv": "VITE_SOLANA_LAUNCHPAD_PROGRAM_ID",
+  "rpcUrlEnv": "SOLANA_RPC_URL",
+  "frontendRpcUrlEnv": "VITE_SOLANA_RPC",
+  "generationId": "solana-genesis-devnet",
+  "configPda": null,
+  "startSlot": null,
+  "indexerCursor": {
+    "startSlot": null,
+    "lastProcessedSlot": null,
+    "status": "not_started"
+  },
+  "dexAdapter": "meteora_damm_v2",
+  "dexAdapters": {
+    "primary": "meteora_damm_v2",
+    "fallback": "raydium_cpmm",
+    "postGraduationQuotes": "jupiter"
+  },
+  "activeCreation": false,
+  "supportEnabled": false,
+  "routeAuthorizationRequired": true,
+  "authorizedTradingRequired": true,
+  "securityDefaultsLocked": false,
+  "generationManifestHash": null,
+  "proofGates": {
+    "anchorProgramBuilt": false,
+    "idlCommitted": false,
+    "localValidatorDeployPassed": false,
+    "authorityPauseTestsPassed": false,
+    "generationRegistryReady": false,
+    "creatorRiskPdasReady": false,
+    "authorizedCreateReady": false,
+    "bondingBuySellReady": false,
+    "netRaisedGraduationReady": false,
+    "meteoraGraduationReady": false,
+    "permanentLockReady": false,
+    "monthlyCapAndCharityReady": false,
+    "rewardsClaimsReady": false,
+    "indexerReady": false,
+    "operatorDashboardReady": false,
+    "devnetAcceptanceAccepted": false,
+    "securityDefaultsLockedOnChain": false
+  },
+  "notes": [
+    "This file is a placeholder manifest shape only; it must not be treated as launch-ready configuration.",
+    "Only one Solana generation may have activeCreation=true at a time.",
+    "Supported generations must remain visible, tradable, and graduatable even after creation moves to a newer generation.",
+    "Direct SOL transfers must never count toward graduation; graduation uses netRaisedLamports."
+  ]
+}
