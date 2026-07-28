@@ -7,7 +7,7 @@ Workflow: `.github/workflows/solana-anchor-ci.yml`
 
 GitHub Actions is the source of truth for the Solana program build. Local WSL builds remain useful for development, but toolchain differences on a developer machine must not redefine the accepted program or IDL.
 
-The lane is isolated to Solana program, manifest and documentation paths so BNB/Topaz work remains independently testable.
+The lane is path-filtered to the Anchor workspace, Solana program crate and workflow. BNB/Topaz implementation remains independently testable and is not rebuilt because a Solana-only document changes.
 
 ## Pinned toolchains
 
@@ -16,11 +16,12 @@ Anchor CLI:        0.30.1
 Solana CLI:        1.18.26
 SBF/test Rust:     1.79.0
 IDL Rust nightly:  nightly-2024-05-09
+proc-macro2:       1.0.86
 Node.js:           24
 Runner:             ubuntu-latest
 ```
 
-Anchor 0.30.1 supports an explicit `RUSTUP_TOOLCHAIN` override for IDL generation. The workflow therefore separates the stable SBF build from the nightly IDL build instead of forcing one Rust toolchain to perform both jobs.
+Anchor 0.30.1 supports an explicit `RUSTUP_TOOLCHAIN` override for IDL generation. The workflow therefore separates the stable SBF build from the nightly IDL build instead of forcing one Rust toolchain to perform both jobs. `proc-macro2` is pinned to the API generation expected by Anchor 0.30 IDL generation.
 
 ## Workflow gates
 
@@ -29,11 +30,19 @@ The workflow runs these stages:
 ```bash
 rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
 anchor build --no-idl
-RUSTUP_TOOLCHAIN=nightly-2024-05-09 anchor idl build
+
+cd programs/memewarzone_solana
+mkdir -p ../../target/idl
+RUSTUP_TOOLCHAIN=nightly-2024-05-09 anchor idl build \
+  --out ../../target/idl/memewarzone_solana.json
+cd ../..
+
 test -s target/deploy/memewarzone_solana.so
 test -s target/idl/memewarzone_solana.json
 cargo test -p memewarzone_solana --lib
 ```
+
+`anchor idl build` must run from the program crate. In Anchor 0.30.1 the command writes the JSON IDL to stdout when `--out` is omitted, so the workflow always specifies the exact workspace-level artifact path.
 
 A successful run uploads a 14-day artifact containing:
 
@@ -59,7 +68,13 @@ rustup default 1.79.0
 
 rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
 anchor build --no-idl
-RUSTUP_TOOLCHAIN=nightly-2024-05-09 anchor idl build
+
+cd programs/memewarzone_solana
+mkdir -p ../../target/idl
+RUSTUP_TOOLCHAIN=nightly-2024-05-09 anchor idl build \
+  --out ../../target/idl/memewarzone_solana.json
+cd ../..
+
 cargo test -p memewarzone_solana --lib
 ```
 

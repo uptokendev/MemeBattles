@@ -14,10 +14,10 @@ Plan source: revised MemeWarzone Solana Mainnet Combined Build Plan Version 2.1
 | Anchor workspace | A pinned Anchor 0.30.1 / Solana 1.18.26 / Rust 1.79 workspace is present on the refreshed branch. | GitHub Actions is the build source of truth. |
 | Global and generation state | Global authorities, granular pauses, one-way security lock and one-active-generation support registry exist. | Foundation implemented; generation-owned economics and cluster/tier policy remain pending. |
 | Creator and risk state | CreatorProfile, RiskProfile and ClusterProfile foundations enforce tier, cooldown, live-count and restriction checks. | Foundation implemented; canonical sync jobs and admin controls remain pending. |
-| Authorized create | Detached Ed25519 payload verification through the Instructions sysvar replaces Railway transaction co-signing. | Compiles and passes Rust invariants; backend endpoint, IDL client and transaction tests remain pending. |
+| Authorized create | Detached Ed25519 payload verification through the Instructions sysvar replaces Railway transaction co-signing. | Compiles and passes Rust invariants; backend endpoint, generated-IDL client and transaction tests remain pending. |
 | Timer/ticker/tier binding | Campaign create binds ticker hash, reservation ID/version, launch time, graduation target and profile IDs. | On-chain shape implemented. Canonical reservation database and generation tier mask remain pending. |
 | Campaign state | Campaign stores generation, creator, mint, metadata, timer, target, profile bindings, creator lock/cap and net-raised counters. | Mint/vault initialization and bonding instructions remain pending. |
-| IDL and deployment manifest | CI is being upgraded to generate and publish the IDL and `.so` artifacts. | No frontend transaction client may go live until the generated IDL and versioned deployment manifest are accepted. |
+| IDL and deployment manifest | GitHub Actions builds the program, generates and verifies the IDL, runs Rust invariants and retains the `.so` plus IDL as a 14-day artifact. | The artifact is build evidence only. No frontend transaction client may go live until a versioned deployment manifest and accepted deployment are paired with it. |
 | Indexer/read models | No production Solana event indexer or generation-aware cursor is live. | Protocol reads remain pending. |
 | Admin/dashboard | No production Solana authority, generation, DEX, treasury or seal operator dashboard is live. | Public launch controls remain disabled. |
 | BNB/Topaz work | BNB and Topaz implementation continues independently. | The refreshed Solana diff does not replace BNB contracts, Topaz routing or shared production files with historical versions. |
@@ -53,7 +53,7 @@ Solana create, buy, sell, graduation and reward claims remain disabled until all
 
 | Capability | Solana target | Current status |
 | --- | --- | --- |
-| Create | Detached route-authorized create through the active GenerationConfig; creator signs the transaction, Railway signs only the payload. | Foundation implemented; backend/IDL/mint/vault path pending. |
+| Create | Detached route-authorized create through the active GenerationConfig; creator signs the transaction, Railway signs only the payload. | Foundation implemented; backend/generated-IDL client/mint/vault path pending. |
 | Prepare Mode timer | Immediate launch or immutable scheduled launch; no trading before `launch_at`. | Create-time binding implemented; buy/sell enforcement pending. |
 | Ticker reservation | Canonical database reservation plus authorization-bound ticker hash and reservation version. | On-chain binding implemented; database/API pending. |
 | Graduation tier | Generation-owned exact tier allowlist, including devnet-only 6 USD and approved production tiers. | Production tier checks exist; generation cluster/tier mask pending. |
@@ -91,7 +91,7 @@ Solana create, buy, sell, graduation and reward claims remain disabled until all
 - [x] Detached Ed25519 create authorization implemented.
 - [x] Timer, ticker reservation, target and profile bindings added to create payload/state.
 - [x] Existing Anchor build and Rust invariant lane green on the corrected authorization commit.
-- [ ] IDL-generating artifact lane green.
+- [x] IDL-generating artifact lane green.
 - [ ] Generation cluster/tier policy and economics implemented.
 - [ ] Mint/vault initialization implemented.
 - [ ] Canonical reservation/backend/client path implemented.
