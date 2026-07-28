@@ -1,0 +1,73 @@
+name: frontend pull request proof
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - frontend/**
+      - .github/workflows/frontend-pr-proof.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-pr-proof-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: frontend imports and production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout pull request source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Check lifecycle API module syntax
+        run: |
+          node --check frontend/api/campaigns.js
+          node --check frontend/api/campaigns-base.js
+          node --check frontend/api/dev-fix/drafts.js
+          node --check frontend/api/dev-fix/drafts-base.js
+          node --check frontend/api/dev-fix/draft-read.js
+          node --check frontend/api/dev-fix/draft-read-base.js
+          node --check frontend/api/dev-fix/draft-deploy.js
+          node --check frontend/api/dev-fix/draft-deploy-base.js
+          node --check frontend/api/dev-fix/json-transform.js
+          node --check frontend/api/dev-fix/scheduled-lifecycle.js
+
+      - name: Check API imports
+        run: npm --prefix frontend run check:api-imports
+
+      - name: Check post-grad API preservation
+        run: npm --prefix frontend run check:postgrad-api-preservation
+
+      - name: Check post-grad independent API ownership
+        run: npm --prefix frontend run check:postgrad-independent-api
+
+      - name: Check post-grad routing readiness
+        run: npm --prefix frontend run check:postgrad-routing
+
+      - name: Check post-grad economics readiness
+        run: npm --prefix frontend run check:postgrad-economics
+
+      - name: Check local hybrid gateway
+        run: npm --prefix frontend run check:localdev-gateway
+
+      - name: Test wallet provider discovery
+        run: npm --prefix frontend run test:wallet-discovery
+
+      - name: Build public application
+        run: npm --prefix frontend run build
