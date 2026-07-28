@@ -34,5 +34,26 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch origin agent/scheduled-launch-lifecycle
           git merge --no-edit origin/agent/scheduled-launch-lifecycle
-          git diff --check HEAD^ HEAD
+
+      - name: Trigger canonical reservation integration
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('.github/workflows/ticker-reservation-integration-once.yml')
+          source = path.read_text(encoding='utf-8')
+          marker = '# integration-trigger-2026-07-28-v2'
+          if marker not in source:
+              source = source.rstrip() + '\n\n' + marker + '\n'
+              path.write_text(source, encoding='utf-8')
+
+      - name: Commit refreshed integration trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .github/workflows/ticker-reservation-integration-once.yml
+          if ! git diff --cached --quiet; then
+            git commit -m 'Trigger canonical ticker reservation integration'
+          fi
+          git diff --check
           git push origin HEAD:agent/solana-v2-ticker-reservations
