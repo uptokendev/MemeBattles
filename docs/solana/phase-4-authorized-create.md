@@ -6,25 +6,41 @@ Draft PR: #67
 
 ## Current authorization version
 
-Detached create authorization V3 supersedes V2 for every future backend, deployment and generated-IDL client implementation.
+Detached create authorization V4 supersedes V3 for every future backend, deployment and generated-IDL client implementation.
 
 ```text
-CREATE_AUTH_DOMAIN = MEMEWARZONE_SOLANA_CREATE_V3
-schema_version = 3
+CREATE_AUTH_DOMAIN = MEMEWARZONE_SOLANA_CREATE_V4
+schema_version = 4
+signed_message_mode = SHA256(canonical_payload)
 ```
 
-V1 and V2 remain in the repository as historical design evidence. The canonical V3 byte layout is documented in `docs/solana/create-authorization-v3.md`.
+V1, V2 and V3 remain in the repository as historical design evidence. The canonical V4 format is documented in `docs/solana/create-authorization-v4.md`.
 
 This slice does not enable public Solana create, buy, sell or graduation.
 
+## Why V4 replaced V3
+
+V3 bound the correct fields but carried the complete canonical payload inside the native Ed25519 instruction. Combined with the create instruction, account metas and transaction signature, that design could exceed Solana's 1,232-byte transaction limit.
+
+V4 preserves every binding while signing only a compact 32-byte SHA-256 digest:
+
+```text
+canonical_payload = encode_all_bound_fields_in_V4_order()
+authorization_digest = SHA256(canonical_payload)
+route_signature = Ed25519.sign(route_signer, authorization_digest)
+```
+
+The program independently reconstructs and hashes the complete payload before comparing it to the digest verified by the native Ed25519 instruction.
+
 ## Transaction model
 
-Railway signs the exact authorization payload only. Railway never signs the creator transaction and never pays campaign rent.
+Railway signs the authorization digest only. Railway never signs the creator transaction and never pays campaign rent.
 
 The creator submits one transaction containing:
 
 ```text
-instruction N-1: native Ed25519 verification instruction
+optional compute-budget instructions
+instruction N-1: native Ed25519 verification of the 32-byte V4 digest
 instruction N:   MemeWarzone create_campaign instruction
 ```
 
@@ -34,7 +50,7 @@ instruction N:   MemeWarzone create_campaign instruction
 - the Ed25519 instruction immediately before the current instruction;
 - exactly one self-contained signature;
 - the configured `GlobalConfig.route_signer`;
-- byte-for-byte equality with the on-chain reconstructed V3 payload;
+- byte-for-byte equality with the on-chain reconstructed V4 digest;
 - a fresh creator+nonce PDA;
 - a non-expired deadline.
 
@@ -53,11 +69,11 @@ The creator request contains only campaign-specific identity and selection value
 - a graduation target allowed by the active generation;
 - nonce and deadline.
 
-The creator no longer supplies mint identity, curve, supply, fee, DEX, treasury, oracle or route-profile values.
+The creator does not supply mint identity, curve, supply, fee, DEX, treasury, oracle or route-profile values.
 
 ## Deterministic campaign assets
 
-The V3 transaction derives and initializes:
+The V4 transaction derives and initializes:
 
 ```text
 Campaign PDA:    ["campaign", campaign_id]
@@ -66,11 +82,11 @@ Token vault PDA: ["token-vault", campaign_id]
 SOL vault PDA:   ["sol-vault", campaign_id]
 ```
 
-The V3 payload binds each derived address and the canonical classic SPL Token program ID. Alternate campaign, mint, token-vault, SOL-vault or token-program accounts invalidate the authorization or fail Anchor constraints.
+The V4 canonical payload binds each derived address and the canonical classic SPL Token program ID. Alternate campaign, mint, token-vault, SOL-vault or token-program accounts invalidate the authorization or fail Anchor constraints.
 
 ## Generation-owned authorization bindings
 
-The V3 payload binds the complete active `GenerationConfig`, including:
+The V4 payload binds the complete active `GenerationConfig`, including:
 
 - generation ID, program, self config PDA and start slot;
 - cluster kind and target mask;
@@ -85,7 +101,7 @@ The V3 payload binds the complete active `GenerationConfig`, including:
 - manifest hash;
 - locked authorization defaults.
 
-Changing any generation or asset identity changes the required signature.
+Changing any generation, creator policy, reservation field or asset identity changes the required digest.
 
 ## Atomic asset initialization
 
@@ -106,7 +122,7 @@ No token allocation or initial buy is transferred to the creator during creation
 
 ## Campaign snapshot
 
-A successful create copies the immutable generation and asset policy into the Campaign account. The campaign retains its original:
+A successful create copies immutable generation and asset policy into the Campaign account. The campaign retains its original:
 
 - generation and manifest identity;
 - cluster and target policy;
@@ -135,30 +151,42 @@ Later generation cutovers cannot rewrite existing campaign economics or assets.
 - Approved production targets are 15,000 USD, 30,000 USD and 50,000 USD.
 - Create rejects targets absent from the selected generation's mask.
 
-## Implemented checks
+## Accepted local-validator coverage
 
-- Detached Ed25519 route authorization V3.
-- Instructions-sysvar ordering and top-level invocation checks.
-- Creator+nonce replay protection.
-- Deadline enforcement.
-- Program/self-key/active/supported generation validation.
-- Creator tier, cooldown and live-campaign checks.
-- Wallet and cluster risk restrictions.
-- Timer, ticker, reservation and target binding.
-- Generation economics/profile binding and campaign snapshot.
-- Deterministic asset-PDA and token-program binding.
-- Full-supply token-compartment invariants.
-- Atomic mint-authority revocation source checks.
-- Pinned SBF build, generated-IDL and Rust-invariant CI lane.
+Solana Local Validator Acceptance #26 passed on 2026-07-28 and proved:
+
+- Direct Create;
+- Draft Deploy Now;
+- Countdown Create;
+- transaction size at or below 1,232 bytes;
+- exact mint supply and decimals;
+- no freeze authority;
+- permanent mint-authority revocation;
+- Campaign-PDA token-vault custody;
+- program ownership of the SOL vault;
+- unchanged `net_raised_lamports` after unsolicited SOL transfer;
+- wrong signer rejection;
+- modified signed field rejection;
+- expired authorization rejection;
+- non-adjacent Ed25519 rejection;
+- alternate mint rejection;
+- noncanonical token-program rejection;
+- creator-plus-nonce replay rejection.
+
+```text
+Accepted branch head: be5d696ead6dc5070f26175710abda858c7aed10
+Workflow run ID:      30384574030
+Artifact SHA-256:     a7e81eb39f088e8b42517d3ff9b3667e06113b24b79a94b8ae15ac79e009b94e
+```
 
 ## Remaining before production create
 
-- Local-validator transaction tests that inspect real mint, token-vault and SOL-vault accounts.
-- Validator proof that alternate accounts and replayed/modified authorizations fail.
+- Canonical ticker-reservation tables and lifecycle service.
+- Railway V4 authorization endpoint using the reviewed serializer.
+- Generated-IDL TypeScript client and accepted deployment manifest.
 - Devnet Direct Create, Deploy Now and Countdown acceptance.
-- Canonical ticker-reservation tables and Railway V3 authorization endpoint.
-- TypeScript client generated from the accepted IDL and deployment manifest.
 - Authorized buy/sell, graduation and reward-vault instructions.
 - Indexer, reconciliation and operator controls.
+- Production program ID, authorities, multisig ceremony and locked defaults.
 
-Solana remains `protocol_pending`.
+Local-validator acceptance closes the local create-transaction proof gate only. Solana remains `protocol_pending`.
