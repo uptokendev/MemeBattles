@@ -20,9 +20,8 @@ pub const GRADUATION_TIER_6_USD_MASK: u8 = 1 << 0;
 pub const GRADUATION_TIER_15K_USD_MASK: u8 = 1 << 1;
 pub const GRADUATION_TIER_30K_USD_MASK: u8 = 1 << 2;
 pub const GRADUATION_TIER_50K_USD_MASK: u8 = 1 << 3;
-pub const GRADUATION_TIER_PRODUCTION_MASK: u8 = GRADUATION_TIER_15K_USD_MASK
-    | GRADUATION_TIER_30K_USD_MASK
-    | GRADUATION_TIER_50K_USD_MASK;
+pub const GRADUATION_TIER_PRODUCTION_MASK: u8 =
+    GRADUATION_TIER_15K_USD_MASK | GRADUATION_TIER_30K_USD_MASK | GRADUATION_TIER_50K_USD_MASK;
 pub const GRADUATION_TIER_ALL_MASK: u8 =
     GRADUATION_TIER_6_USD_MASK | GRADUATION_TIER_PRODUCTION_MASK;
 
@@ -243,10 +242,10 @@ pub mod memewarzone_solana {
     }
 
     pub fn create_campaign(
-        ctx: Context<CreateCampaign>,
+        mut ctx: Context<CreateCampaign>,
         args: CreateCampaignArgs,
     ) -> Result<()> {
-        authorized_create::create_campaign_handler(ctx, args)
+        authorized_create::create_campaign_handler(&mut ctx, args)
     }
 
     pub fn sync_creator_profile(
@@ -1317,13 +1316,10 @@ mod tests {
     fn support_update_rejects_second_active_generation() {
         let current_active = [1; 32];
         let second_generation = [2; 32];
-        assert!(resolve_generation_support_update(
-            current_active,
-            second_generation,
-            true,
-            true
-        )
-        .is_err());
+        assert!(
+            resolve_generation_support_update(current_active, second_generation, true, true)
+                .is_err()
+        );
     }
 
     #[test]

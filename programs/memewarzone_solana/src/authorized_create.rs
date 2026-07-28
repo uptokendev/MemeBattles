@@ -254,7 +254,7 @@ pub struct CampaignCreated {
 }
 
 pub fn create_campaign_handler(
-    ctx: Context<CreateCampaign>,
+    ctx: &mut Context<CreateCampaign>,
     args: CreateCampaignArgs,
 ) -> Result<()> {
     let clock = Clock::get()?;
