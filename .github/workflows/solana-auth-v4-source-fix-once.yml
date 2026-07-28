@@ -53,25 +53,27 @@ jobs:
               raise SystemExit('Expected exactly one V3 schema constant')
           source = source.replace(old_version, new_version, 1)
 
-          old_verification = '''    verify_detached_create_authorization(
-              &ctx.accounts.instructions.to_account_info(),
-              route_signer,
-              &authorization_message,
-          )?;
-
-          let authorization_hash = hash(&authorization_message).to_bytes();
-          '''
-          new_verification = '''    // The canonical payload remains fully bound, but only its compact SHA-256
-          // digest is carried by the Ed25519 instruction so the create transaction
-          // stays below Solana's transaction-size limit.
-          let authorization_hash = hash(&authorization_message).to_bytes();
-
-          verify_detached_create_authorization(
-              &ctx.accounts.instructions.to_account_info(),
-              route_signer,
-              &authorization_hash,
-          )?;
-          '''
+          old_verification = '\n'.join([
+              '    verify_detached_create_authorization(',
+              '        &ctx.accounts.instructions.to_account_info(),',
+              '        route_signer,',
+              '        &authorization_message,',
+              '    )?;',
+              '',
+              '    let authorization_hash = hash(&authorization_message).to_bytes();',
+          ])
+          new_verification = '\n'.join([
+              '    // The canonical payload remains fully bound, but only its compact SHA-256',
+              '    // digest is carried by the Ed25519 instruction so the create transaction',
+              "    // stays below Solana's transaction-size limit.",
+              '    let authorization_hash = hash(&authorization_message).to_bytes();',
+              '',
+              '    verify_detached_create_authorization(',
+              '        &ctx.accounts.instructions.to_account_info(),',
+              '        route_signer,',
+              '        &authorization_hash,',
+              '    )?;',
+          ])
           if source.count(old_verification) != 1:
               raise SystemExit('Expected exactly one V3 verification block')
           source = source.replace(old_verification, new_verification, 1)
