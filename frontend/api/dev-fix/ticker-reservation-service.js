@@ -60,7 +60,19 @@ export function sha256Hex(value) {
   return createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
 }
 
+function canonicalSolanaCluster(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["mainnet", "mainnet-beta", "solana-mainnet", "solana-mainnet-beta"].includes(normalized)) {
+    return "solana-mainnet-beta";
+  }
+  if (["devnet", "solana-devnet"].includes(normalized)) return "solana-devnet";
+  if (["testnet", "solana-testnet"].includes(normalized)) return "solana-testnet";
+  if (["localnet", "localhost", "solana-localnet"].includes(normalized)) return "solana-localnet";
+  return normalized;
+}
+
 export function canonicalClusterForChain(chainId, explicitCluster = "") {
+  const numericChainId = Number(chainId);
   const explicit = String(explicitCluster || "").trim().toLowerCase();
   if (explicit) {
     if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(explicit)) {
@@ -69,17 +81,19 @@ export function canonicalClusterForChain(chainId, explicitCluster = "") {
         httpStatus: 400,
       });
     }
-    return explicit;
+    return numericChainId === 101 || numericChainId === 102
+      ? canonicalSolanaCluster(explicit)
+      : explicit;
   }
 
-  const numericChainId = Number(chainId);
   if (numericChainId === 56) return "bsc-mainnet";
   if (numericChainId === 97) return "bsc-testnet";
   if (numericChainId === 101) {
-    return String(process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta")
-      .trim()
-      .toLowerCase();
+    return canonicalSolanaCluster(
+      process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta",
+    );
   }
+  if (numericChainId === 102) return "solana-devnet";
   return `chain-${numericChainId}`;
 }
 
@@ -179,23 +193,32 @@ async function recordEvent(db, {
 
 export async function refreshExpiredTickerReservations(db, {
   chainId = null,
+  cluster = null,
   normalizedTicker = null,
   draftId = null,
 } = {}) {
   const ticker = normalizedTicker ? normalizeTicker(normalizedTicker) : null;
-  const params = [chainId == null ? null : Number(chainId), ticker || null, draftId || null, EXPIRABLE_STATUSES];
+  const reservationCluster = cluster ? canonicalClusterForChain(chainId, cluster) : null;
+  const params = [
+    chainId == null ? null : Number(chainId),
+    reservationCluster,
+    ticker || null,
+    draftId || null,
+    EXPIRABLE_STATUSES,
+  ];
 
   const released = await db.query(
     `with candidates as materialized (
        select id, status
          from public.ticker_reservations
-        where status = any($4::text[])
+        where status = any($5::text[])
           and expires_at is not null
           and expires_at <= now()
           and (grace_end_at is null or grace_end_at <= now())
           and ($1::integer is null or chain_id = $1)
-          and ($2::text is null or normalized_ticker = $2)
-          and ($3::uuid is null or draft_id = $3)
+          and ($2::text is null or cluster = $2)
+          and ($3::text is null or normalized_ticker = $3)
+          and ($4::uuid is null or draft_id = $4)
         for update
      ), changed as (
        update public.ticker_reservations r
@@ -221,14 +244,15 @@ export async function refreshExpiredTickerReservations(db, {
     `with candidates as materialized (
        select id, status
          from public.ticker_reservations
-        where status = any($4::text[])
+        where status = any($5::text[])
           and status <> 'EXPIRED_GRACE'
           and expires_at is not null
           and expires_at <= now()
           and grace_end_at > now()
           and ($1::integer is null or chain_id = $1)
-          and ($2::text is null or normalized_ticker = $2)
-          and ($3::uuid is null or draft_id = $3)
+          and ($2::text is null or cluster = $2)
+          and ($3::text is null or normalized_ticker = $3)
+          and ($4::uuid is null or draft_id = $4)
         for update
      ), changed as (
        update public.ticker_reservations r
@@ -283,7 +307,12 @@ export async function loadTickerReservationsByDraftIds(db, draftIds) {
   return new Map(result.rows.map((row) => [String(row.draft_id), mapTickerReservationRow(row)]));
 }
 
-export async function getTickerAvailability(db, { chainId, ticker, excludeDraftId = null }) {
+export async function getTickerAvailability(db, {
+  chainId,
+  cluster = "",
+  ticker,
+  excludeDraftId = null,
+}) {
   const numericChainId = Number(chainId);
   const normalizedTicker = normalizeTicker(ticker);
   if (!Number.isFinite(numericChainId) || numericChainId <= 0) {
@@ -299,22 +328,29 @@ export async function getTickerAvailability(db, { chainId, ticker, excludeDraftI
     });
   }
 
-  await refreshExpiredTickerReservations(db, { chainId: numericChainId, normalizedTicker });
+  const reservationCluster = canonicalClusterForChain(numericChainId, cluster);
+  await refreshExpiredTickerReservations(db, {
+    chainId: numericChainId,
+    cluster: reservationCluster,
+    normalizedTicker,
+  });
   const result = await db.query(
     `select *
        from public.ticker_reservations
       where chain_id = $1
-        and normalized_ticker = $2
+        and cluster = $2
+        and normalized_ticker = $3
         and status not in ('DRAFT_UNRESERVED', 'RELEASED')
-        and ($3::uuid is null or draft_id is distinct from $3::uuid)
+        and ($4::uuid is null or draft_id is distinct from $4::uuid)
       order by created_at asc
       limit 1`,
-    [numericChainId, normalizedTicker, excludeDraftId || null],
+    [numericChainId, reservationCluster, normalizedTicker, excludeDraftId || null],
   );
   const reservation = mapTickerReservationRow(result.rows[0]);
   return {
     ticker: normalizedTicker,
     chainId: numericChainId,
+    cluster: reservationCluster,
     available: !reservation,
     reservation,
   };
@@ -344,6 +380,7 @@ export async function createTickerReservation(db, {
 }) {
   const numericChainId = Number(chainId);
   const normalizedTicker = normalizeTicker(ticker);
+  const reservationCluster = canonicalClusterForChain(numericChainId, cluster);
   if (!draftId || !creatorWallet || !normalizedTicker || !Number.isFinite(numericChainId) || numericChainId <= 0) {
     throw new TickerReservationError("Draft, creator, chain, and ticker are required.", {
       code: "INVALID_RESERVATION_REQUEST",
@@ -353,13 +390,13 @@ export async function createTickerReservation(db, {
 
   const existing = await loadTickerReservationByDraft(db, draftId, { forUpdate: true });
   if (existing) {
-    if (existing.chainId === numericChainId && existing.normalizedTicker === normalizedTicker) return existing;
+    if (existing.chainId === numericChainId && existing.cluster === reservationCluster && existing.normalizedTicker === normalizedTicker) return existing;
     throw new TickerReservationError("Draft already owns a different active ticker reservation.", {
       code: "DRAFT_RESERVATION_CONFLICT",
     });
   }
 
-  const availability = await getTickerAvailability(db, { chainId: numericChainId, ticker: normalizedTicker });
+  const availability = await getTickerAvailability(db, { chainId: numericChainId, cluster: reservationCluster, ticker: normalizedTicker });
   if (!availability.available) {
     throw new TickerReservationError("Ticker already reserved by an active draft or live campaign.", {
       code: "TICKER_UNAVAILABLE",
@@ -381,7 +418,7 @@ export async function createTickerReservation(db, {
         draftId,
         creatorWallet,
         numericChainId,
-        canonicalClusterForChain(numericChainId, cluster),
+        reservationCluster,
         String(ticker || normalizedTicker).trim().slice(0, 32),
         normalizedTicker,
         sha256Hex(normalizedTicker),
@@ -401,7 +438,7 @@ export async function createTickerReservation(db, {
       actorType,
       actorWallet: creatorWallet,
       reason: published ? "Public Prepare Mode ticker reserved." : "Private draft ticker reserved.",
-      metadata: { draftId: String(draftId), chainId: numericChainId, ticker: normalizedTicker },
+      metadata: { draftId: String(draftId), chainId: numericChainId, cluster: reservationCluster, ticker: normalizedTicker },
     });
     return reservation;
   } catch (error) {

@@ -676,6 +676,7 @@ function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null 
 export type CreateDraftInput = {
   auth?: DraftActionAuth;
   chainId: number;
+  cluster?: string;
   creatorWallet: string;
   name: string;
   ticker: string;
@@ -708,14 +709,19 @@ export type SavePromotionInput = {
 export type TickerAvailability = {
   ticker: string;
   chainId?: number;
+  cluster?: string;
   available: boolean;
   reason: string;
   source: "validation" | "draft" | "campaign" | "available" | string;
   reservation?: Pick<TickerReservation, "status" | "expiresAt" | "graceEndAt" | "renewalCount" | "scheduledLaunchAt" | "reservationVersion"> | null;
 };
 
-export async function checkTickerAvailability(input: { ticker: string; chainId?: number }): Promise<TickerAvailability> {
-  const res = await apiFetch(`/api/drafts/ticker-availability${query({ ticker: input.ticker, chainId: input.chainId })}`, { cache: "no-store" });
+export async function checkTickerAvailability(input: { ticker: string; chainId?: number; cluster?: string }): Promise<TickerAvailability> {
+  const res = await apiFetch(`/api/drafts/ticker-availability${query({
+    ticker: input.ticker,
+    chainId: input.chainId,
+    cluster: input.cluster,
+  })}`, { cache: "no-store" });
   return parseJson(res) as Promise<TickerAvailability>;
 }
 

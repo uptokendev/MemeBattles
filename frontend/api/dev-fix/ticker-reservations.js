@@ -106,11 +106,16 @@ async function reclaimReservation(db, draft) {
     return existing;
   }
 
+  const previous = await loadTickerReservationByDraft(db, draft.id, {
+    forUpdate: true,
+    includeReleased: true,
+  });
   const published = draft.visibility === "public" || PUBLISHED_DRAFT_STATUSES.has(draft.status);
   return createTickerReservation(db, {
     draftId: draft.id,
     creatorWallet: draft.creatorWallet,
     chainId: draft.chainId,
+    cluster: previous?.cluster || "",
     ticker: draft.ticker,
     published,
   });

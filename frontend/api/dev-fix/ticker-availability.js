@@ -84,6 +84,7 @@ export async function tickerAvailability(req, res) {
   const q = getQuery(req);
   const ticker = normalizeTicker(q.ticker || q.symbol);
   const chainId = Number(q.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);
+  const cluster = String(q.cluster || "").trim();
 
   if (!ticker) {
     return json(res, 200, {
@@ -102,11 +103,12 @@ export async function tickerAvailability(req, res) {
   if (!pool) return json(res, 503, { error: "Ticker availability requires DATABASE_URL." });
 
   try {
-    const result = await getTickerAvailability(pool, { chainId, ticker });
+    const result = await getTickerAvailability(pool, { chainId, cluster, ticker });
     if (result.available) {
       return json(res, 200, {
         ticker,
         chainId,
+        cluster: result.cluster,
         available: true,
         reason: "Ticker available.",
         source: "canonical_reservations",
@@ -116,6 +118,7 @@ export async function tickerAvailability(req, res) {
     return json(res, 200, {
       ticker,
       chainId,
+      cluster: result.cluster,
       available: false,
       reason: blockedReason(result.reservation?.status),
       source: "canonical_reservations",
