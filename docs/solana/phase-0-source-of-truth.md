@@ -1,79 +1,100 @@
-# Solana Launchpad Phase 0 Source Of Truth
+# Solana Launchpad Source of Truth
 
-Status date: 2026-07-22
-Base branch: devpostgrad
-Plan source: 01-Solana-Implementation-Plan-For-MemeWarzone-Launchpad.docx
+Status date: 2026-07-28
+Base branch: `devpostgrad`
+Implementation branch: `agent/solana-v2-phase0-refresh`
+Draft PR: #67
+Plan source: revised MemeWarzone Solana Mainnet Combined Build Plan Version 2.1
 
-## Current Repo Status
+## Current repository status
 
-| Area | Current state | Phase 0 decision |
+| Area | Current state | Readiness decision |
 | --- | --- | --- |
-| Solana wallet UX | Solana wallet detection/connect and signed draft flow exist in the frontend. | Keep wallet connect live for drafts only. |
-| Solana launch adapter | Frontend adapter scaffold exists and can derive placeholder PDAs/instruction payloads when a program ID is configured. | Treat as scaffold only until real Anchor program, IDL, indexer, dashboard, and devnet proof exist. |
-| Solana program | No Anchor workspace or production IDL is present on devpostgrad. | On-chain create, buy, sell, graduation, and claim remain protocol_pending. |
-| Solana indexer/read models | No Solana program event indexer or generation-aware cursor is present. | Public reads may show saved/indexed drafts only; no protocol-ready wording. |
-| Solana admin/dashboard | No Solana generation, authority, indexer, DEX, treasury, or monthly seal operator dashboard exists. | Admin launch controls remain not available. |
-| BNB/Topaz work | Active Topaz/treasury/generation work is ongoing in draft PRs against devpostgrad. | This slice avoids BNB contracts and shared Topaz files. |
+| Solana wallet UX | Wallet detection/connect and signed-draft UX already exist in the shared frontend. | Preserve draft UX. Do not expose protocol-ready wording or live launch transactions yet. |
+| Anchor workspace | A pinned Anchor 0.30.1 / Solana 1.18.26 / Rust 1.79 workspace is present on the refreshed branch. | GitHub Actions is the build source of truth. |
+| Global and generation state | Global authorities, granular pauses, one-way security lock and one-active-generation support registry exist. | Foundation implemented; generation-owned economics and cluster/tier policy remain pending. |
+| Creator and risk state | CreatorProfile, RiskProfile and ClusterProfile foundations enforce tier, cooldown, live-count and restriction checks. | Foundation implemented; canonical sync jobs and admin controls remain pending. |
+| Authorized create | Detached Ed25519 payload verification through the Instructions sysvar replaces Railway transaction co-signing. | Compiles and passes Rust invariants; backend endpoint, IDL client and transaction tests remain pending. |
+| Timer/ticker/tier binding | Campaign create binds ticker hash, reservation ID/version, launch time, graduation target and profile IDs. | On-chain shape implemented. Canonical reservation database and generation tier mask remain pending. |
+| Campaign state | Campaign stores generation, creator, mint, metadata, timer, target, profile bindings, creator lock/cap and net-raised counters. | Mint/vault initialization and bonding instructions remain pending. |
+| IDL and deployment manifest | CI is being upgraded to generate and publish the IDL and `.so` artifacts. | No frontend transaction client may go live until the generated IDL and versioned deployment manifest are accepted. |
+| Indexer/read models | No production Solana event indexer or generation-aware cursor is live. | Protocol reads remain pending. |
+| Admin/dashboard | No production Solana authority, generation, DEX, treasury or seal operator dashboard is live. | Public launch controls remain disabled. |
+| BNB/Topaz work | BNB and Topaz implementation continues independently. | The refreshed Solana diff does not replace BNB contracts, Topaz routing or shared production files with historical versions. |
 
-## Non-Negotiable Launch Gates
+## Branch and merge decision
 
-Solana create, buy, sell, graduation, and reward claims must remain disabled until all of these are true:
+Historical PR #55 is retained as evidence only. It was built from a stale, heavily divergent base and contained prototype frontend/backend transaction code that no longer matched the corrected authorization design.
 
-1. Real Anchor program is implemented, built, deployed, and has a committed generated IDL.
-2. Solana generation registry exists and supports exactly one active creation generation while preserving every supported generation for trading/graduation.
-3. Route authorization is enforced for create and trade by default, with security defaults lockable and not weakenable after lock.
-4. Creator, wallet, and cluster risk PDAs enforce tier limits, cooldowns, live campaign caps, creator buy lock/cap, restricted wallets, and manual review.
-5. Graduation uses netRaisedLamports and excludes direct SOL transfers.
-6. Dynamic USD graduation uses fresh SOL/USD oracle data and rejects stale/invalid prices.
-7. Meteora DAMM v2 graduation, permanent principal lock, fee harvest, and creator/protocol fee split pass acceptance; Raydium CPMM remains adapter-compatible fallback.
-8. Jupiter is used only after graduation and cannot bypass pre-graduation bonding controls.
-9. Treasury routing, monthly cap, charity overflow, rewards, claims, recruiter/squad/community/creator/protocol vaults, and audit logs exist program-side.
-10. Solana indexer covers every supported generation from configured start slots and reconciles program accounts, vault balances, DEX locks, monthly seals, and rewards roots.
-11. Operator dashboard exposes Solana generation health, authority/multisig status, indexer cursors, DEX/locker status, monthly seal state, and multisig-safe admin payloads.
-12. Devnet acceptance campaign documents authorized and unauthorized flows, graduation, liquidity lock, fee harvest, rewards, monthly seal, charity overflow, generation coexistence, values, invariants, deviations, and manual interventions.
-13. Final audit/simulation/monitoring gate has no unresolved Critical/High/Medium findings, accepted lower findings are documented, and security defaults are locked before enabling creation.
+The current implementation is a clean port of the validated Solana-only foundation onto the latest observed `devpostgrad` merge base. Unsafe prototype client files were not ported.
 
-## BNB To Solana Parity Matrix
+## Non-negotiable launch gates
 
-| Capability | BNB target behavior | Solana parity target | Phase 0 status |
-| --- | --- | --- | --- |
-| Create | Route-authorized create through active factory/generation; creator supplies metadata only. | Route-authorized create through active GenerationConfig PDA; creator supplies metadata only. | Pending program/IDL. |
-| Buy | Authorized pre-graduation bonding buy with slippage/max cost, risk checks, launch protection, pause flags. | Authorized bonding buy instruction with replay protection, route profile, wallet/cluster/creator checks, max buy/wallet, pause flags. | Pending program/IDL. |
-| Sell | Authorized bonding sell with solvency based on net raised and pause/global safety model. | Authorized sell instruction with netRaisedLamports solvency and no direct SOL transfer accounting. | Pending program/IDL. |
-| Graduation | Dynamic USD threshold, Topaz DEX graduation, principal lock, burns, fee harvest. | Dynamic USD threshold, Meteora DAMM v2 primary graduation, permanent principal lock, burns, fee harvest. | Pending program/DEX adapter. |
-| DEX fallback | Topaz/BNB route is primary in current BNB plan. | Meteora primary; Raydium CPMM fallback through SolanaDexAdapter boundary. | Interface not implemented. |
-| Post-grad swap UX | Swap UX is separate from bonding curve after graduation. | Jupiter quote/swap UX only after DEX pool exists. | Pending post-grad routing. |
-| LP lock | PermanentLpLocker prevents principal withdrawal/rescue/migration. | Program-owned permanent lock proves principal cannot be withdrawn, approved out, migrated, or rescued. | Pending program/DEX integration. |
-| Fee harvest | Harvest fees without reducing principal, split creator/protocol. | Harvest Meteora/Raydium-compatible fees without reducing principal, split creator/protocol, retry failed payouts. | Pending program/DEX integration. |
-| Generations | One active creation generation, all supported generations visible/tradable/graduatable. | Same invariant via solana_program_generations and GenerationConfig PDA. | Schema/model pending. |
-| Treasury | Weekly/monthly split and monthly cap/overflow behavior. | Program-side treasury router, weekly/monthly vaults, $1.5M cap, charity overflow. | Pending program/backend. |
-| Rewards/claims | Separate reward ledgers and claim paths with replay protection. | SOL-native vault PDAs, replay-safe claims, batch/proof/reconciliation, no BNB/SOL accounting mix. | Pending program/backend. |
-| Security/admin | Creator tiers, risk registry, route signer, pauser/admin controls, audit logs. | CreatorProfile/RiskProfile/ClusterProfile PDAs, admin authorities, lock_security_defaults, dashboard payloads, audit logs. | Pending program/admin. |
-| Indexer | Generation-aware campaign/event reads and reconciliation. | Per-generation Solana indexer from startSlot with account/vault/DEX/monthly/rewards reconciliation. | Pending indexer. |
-| Launch gates | BNB readiness depends on contracts, Topaz, env, tests, and acceptance. | Solana readiness requires program, IDL, generation registry, security PDAs, DEX, rewards, indexer, dashboard, monthly cap, charity overflow, and devnet acceptance. | Protocol pending. |
+Solana create, buy, sell, graduation and reward claims remain disabled until all of these are true:
 
-## Solana Account Model Draft
+1. The Anchor program is implemented, built, deployed and paired with an accepted generated IDL and versioned deployment manifest.
+2. Exactly one generation is active for creation while every supported historical generation remains tradable and graduatable.
+3. GenerationConfig owns cluster kind, allowed graduation tiers, curve economics, fees, supply, decimals, route profiles, treasury profiles, DEX profile and oracle policy.
+4. The 6 USD tier is accepted only by a devnet generation. Mainnet-beta generations reject it on-chain.
+5. Detached authorization is enforced for create and authorized pre-graduation trade actions with domain separation, deadlines and replay protection.
+6. Creator, wallet and cluster risk PDAs enforce tier limits, cooldowns, live campaign caps, creator buy lock/cap, restrictions and manual review.
+7. Mint creation, mint authority, token vault and SOL vault ownership are guaranteed by the program.
+8. Graduation uses `net_raised_lamports`; direct transfers to the SOL vault never advance the threshold.
+9. Dynamic USD graduation uses fresh SOL/USD oracle data and rejects stale or invalid prices.
+10. Meteora DAMM v2 graduation, permanent principal lock, fee harvest and creator/protocol fee split pass acceptance; Raydium CPMM remains a compatible fallback adapter.
+11. Jupiter is used only after graduation and cannot bypass pre-graduation bonding controls.
+12. Treasury routing, weekly/monthly allocation, monthly cap, charity overflow, rewards and replay-safe claims exist program-side.
+13. A generation-aware Solana indexer covers every supported generation from configured start slots and reconciles accounts, vaults, DEX locks, seals and rewards.
+14. The operator dashboard exposes generation health, authorities, indexer cursors, DEX/locker state, monthly seals and multisig-safe admin payloads.
+15. Devnet acceptance documents authorized and unauthorized flows, timer behavior, ticker reservation, graduation, liquidity lock, fee harvest, rewards, monthly seal, overflow, generation coexistence and manual interventions.
+16. Final audit, simulation and monitoring gates have no unresolved Critical, High or Medium findings; accepted lower findings are documented; security defaults are locked before creation is enabled.
 
-| Account | Purpose | Required fields |
+## BNB-to-Solana parity matrix
+
+| Capability | Solana target | Current status |
 | --- | --- | --- |
-| GlobalConfig PDA | Chain-wide authorities and locked security defaults. | admin, pauser, tierAdmin, riskAdmin, routeSigner, rewardOperator, treasuryOperator, generationOperator, pause flags, route authorization required, authorized trading required, securityDefaultsLocked. |
-| GenerationConfig PDA | One deployable launchpad generation configuration. | generationId, programId, configPda, startSlot, activeCreation, supportEnabled, dexAdapter, economics, route defaults, treasury config, oracle config, manifestHash. |
-| Campaign PDA | Campaign state tied to original generation. | generationId, configPda, creator, mint, vaults, route profile, sold, netRaisedLamports, buy/sell volumes, buyer count, creator bought amount, graduation data, DEX state. |
-| CreatorProfile PDA | Creator trust/tier limits and lifecycle counters. | tier, trustScore, liveBondingCount, lastLaunchTimestamp, totalLaunches, successfulGraduations, restricted, manualReviewRequired. |
-| RiskProfile PDA | Wallet-level risk controls. | wallet, riskLevel, restricted, clusterId. |
-| ClusterProfile PDA | Wallet-cluster risk controls. | clusterId, size, riskLevel, restricted. |
-| Vault PDAs | Program-owned accounting and claims. | campaign SOL vault, token vault, weekly league vault, monthly treasury vault, charity treasury, recruiter, squad, community/airdrop, creator, protocol. |
-| TreasuryRouter PDA | League/reward split and routing configuration. | weeklyBps, monthlyBps, charityTreasury, route states, failed payout retry state. |
-| MonthlySeal PDA | One sealed monthly cap state. | monthId, oraclePrice, capUsd, capLamports, playerPool, overflow, charityTransfer, sealedAt, tx hash/reference. |
-| DexState PDA | Graduation/lock/fee-harvest proof. | adapter, pool address, position/lock address, locked principal, initialDexPrice, fee totals, harvest cursor, graduation tx. |
+| Create | Detached route-authorized create through the active GenerationConfig; creator signs the transaction, Railway signs only the payload. | Foundation implemented; backend/IDL/mint/vault path pending. |
+| Prepare Mode timer | Immediate launch or immutable scheduled launch; no trading before `launch_at`. | Create-time binding implemented; buy/sell enforcement pending. |
+| Ticker reservation | Canonical database reservation plus authorization-bound ticker hash and reservation version. | On-chain binding implemented; database/API pending. |
+| Graduation tier | Generation-owned exact tier allowlist, including devnet-only 6 USD and approved production tiers. | Production tier checks exist; generation cluster/tier mask pending. |
+| Buy | Authorized bonding buy with slippage, max cost, route profile, timer and risk checks. | Pending. |
+| Sell | Authorized bonding sell with net-raised solvency and risk checks. | Pending. |
+| Graduation | Fresh-oracle USD threshold, Meteora DAMM v2 primary adapter, permanent principal lock and fee harvest. | Pending. |
+| DEX fallback | Raydium CPMM behind the same adapter boundary. | Interface constant only. |
+| Post-graduation swap | Jupiter quote/swap UX only after the DEX pool exists. | Pending. |
+| Treasury and rewards | Program-owned SOL vaults, weekly/monthly routing, monthly cap, charity overflow and replay-safe claims. | Pending. |
+| Indexer and reconciliation | Per-generation cursoring with account, vault, DEX, seal and reward reconciliation. | Pending. |
+| Security/admin | Split authorities, multisig operations, locked defaults and complete audit trail. | On-chain authority foundation implemented; operational dashboard pending. |
 
-## Phase 0 Sign-Off Checklist
+## Account model
 
-- [x] Current Solana repo status recorded.
-- [x] BNB-to-Solana parity matrix created.
-- [x] Solana account model drafted before Anchor implementation.
-- [x] Solana deployment/environment placeholder shape added.
-- [x] Frontend Solana direct launch remains protocol_pending in the observed Create flow.
-- [ ] Product/architecture sign-off received for this matrix.
+| Account | Purpose |
+| --- | --- |
+| GlobalConfig PDA | Authorities, granular pause flags, active generation ID and locked security defaults. |
+| GenerationConfig PDA | One immutable generation identity plus support/creation state; economics and cluster/tier policy are the next extension. |
+| Campaign PDA | Generation-bound campaign state, timer, ticker/reservation, target, routes, balances, creator restrictions and graduation state. |
+| CreateAuthorization PDA | Creator+nonce replay record, route signer, deadline, used timestamp and accepted payload hash. |
+| CreatorProfile PDA | Creator tier, trust, launch counters, cooldown, buy lock/cap and restrictions. |
+| RiskProfile PDA | Wallet-level risk, restriction, cluster and manual-review state. |
+| ClusterProfile PDA | Cluster size, risk and restriction state. |
+| Vault PDAs | Campaign token/SOL, weekly league, monthly treasury, charity, recruiter, squad, community, creator and protocol balances. |
+| TreasuryRouter PDA | Routing basis points, cap/overflow destinations and failed-payout retry state. |
+| MonthlySeal PDA | Month, oracle price, cap, pool, overflow, charity transfer and sealing evidence. |
+| DexState PDA | Adapter, pool, lock/position, principal, initial price, harvested fees and graduation evidence. |
 
-Phase 1 may start only after the unchecked sign-off item is complete.
+## Current sign-off checklist
+
+- [x] Current Solana repository status recorded.
+- [x] Historical PR #55 classified as evidence rather than merge target.
+- [x] Fresh branch created from current `devpostgrad`.
+- [x] Valid Solana-only foundation ported without historical BNB/shared-file replacement.
+- [x] Detached Ed25519 create authorization implemented.
+- [x] Timer, ticker reservation, target and profile bindings added to create payload/state.
+- [x] Existing Anchor build and Rust invariant lane green on the corrected authorization commit.
+- [ ] IDL-generating artifact lane green.
+- [ ] Generation cluster/tier policy and economics implemented.
+- [ ] Mint/vault initialization implemented.
+- [ ] Canonical reservation/backend/client path implemented.
+- [ ] Local-validator and devnet acceptance completed.
+
+The public Solana protocol remains `protocol_pending` until the launch gates above are closed.
