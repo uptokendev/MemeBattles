@@ -7,6 +7,7 @@ on:
     paths:
       - frontend/api/dev-fix/draft-deploy.js
       - frontend/api/dev-fix/solana-create-authorization-v4.js
+      - frontend/api/dev-fix/solana-create-authorization-v4.test.mjs
       - frontend/api/dev-fix/solana-v4-primitives.js
       - frontend/api/dev-fix/solana-v4-primitives.test.mjs
       - frontend/src/lib/solanaCreateAuthorizationV4.ts
@@ -57,6 +58,9 @@ jobs:
 
       - name: Test dependency-free Railway primitives
         run: node --test frontend/api/dev-fix/solana-v4-primitives.test.mjs
+
+      - name: Test fail-closed Railway endpoint gates
+        run: node --test frontend/api/dev-fix/solana-create-authorization-v4.test.mjs
 
       - name: Prove validator serializer and PDA conformance
         run: npm --prefix tests/solana run test:railway
