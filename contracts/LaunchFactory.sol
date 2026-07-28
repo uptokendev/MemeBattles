@@ -27,6 +27,7 @@ contract LaunchFactory is Ownable {
     error FeeTooHigh();
     error FeeTooLowForLeague();
     error ParamTooHigh();
+    error UnsupportedGraduationTarget();
     error OutOfBounds();
     error Offset();
     error SupplyZero();
@@ -138,7 +139,10 @@ contract LaunchFactory is Ownable {
     uint256 public launchProtectionMaxWalletWei;
 
     uint256 public constant LEAGUE_FEE_BPS = 75;
+    uint256 public constant TEST_GRADUATION_USD_THRESHOLD = 6 ether;
+    uint256 public constant FAST_GRADUATION_USD_THRESHOLD = 15_000 ether;
     uint256 public constant DEFAULT_GRADUATION_USD_THRESHOLD = 30_000 ether;
+    uint256 public constant DEEP_GRADUATION_USD_THRESHOLD = 50_000 ether;
     uint256 public constant MAX_TOTAL_SUPPLY = 1_000_000_000 ether;
     uint256 public constant MAX_BASE_PRICE = 1_000 ether;
     uint256 public constant MAX_PRICE_SLOPE = 1e36;
@@ -256,6 +260,21 @@ contract LaunchFactory is Ownable {
 
     receive() external payable {}
 
+    function isGraduationTargetAllowedForChain(uint256 chainId, uint256 target) public pure returns (bool) {
+        if (
+            target == FAST_GRADUATION_USD_THRESHOLD ||
+            target == DEFAULT_GRADUATION_USD_THRESHOLD ||
+            target == DEEP_GRADUATION_USD_THRESHOLD
+        ) return true;
+        return chainId == 97 && target == TEST_GRADUATION_USD_THRESHOLD;
+    }
+
+    function isGraduationTargetAllowed(uint256 target) public view returns (bool) {
+        uint256 chainId = block.chainid;
+        if (chainId == 31337) chainId = 97;
+        return isGraduationTargetAllowedForChain(chainId, target);
+    }
+
     function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
         if (requireRouteAuthorization) revert RouteAuthorizationRequired();
         return _createCampaign(req, tradeRouteProfile, finalizeRouteProfile, _immediateSchedule(msg.sender));
@@ -324,6 +343,9 @@ contract LaunchFactory is Ownable {
 
         uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
         if (campaignGraduationTarget > MAX_GRADUATION_TARGET) revert ParamTooHigh();
+        if (req.graduationTarget != 0 && !isGraduationTargetAllowed(campaignGraduationTarget)) {
+            revert UnsupportedGraduationTarget();
+        }
         uint256 creatorBuyLockUntil = uint256(schedule.launchAt) + creatorBuyLockDuration;
 
         LaunchCampaign.InitParams memory params = LaunchCampaign.InitParams({
