@@ -55,7 +55,7 @@ source = replaceExactly(
 source = replaceExactly(
   source,
   `  try {\n    window.sessionStorage.removeItem(ownerSessionCacheKey(input));\n  } catch {`,
-  `  try {\n    window.sessionStorage.removeItem(ownerSessionCacheKey(input));\n    window.sessionStorage.removeItem(\n      \`${LEGACY_OWNER_SESSION_CACHE_PREFIX}\${Number(input.chainId)}:\${normalizeWallet(input.walletAddress)}:\${input.draftId}\`,\n    );\n  } catch {`,
+  `  try {\n    window.sessionStorage.removeItem(ownerSessionCacheKey(input));\n    window.sessionStorage.removeItem(\n      \`\${LEGACY_OWNER_SESSION_CACHE_PREFIX}\${Number(input.chainId)}:\${normalizeWallet(input.walletAddress)}:\${input.draftId}\`,\n    );\n  } catch {`,
   "clear legacy owner session cache",
 );
 
