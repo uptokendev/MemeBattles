@@ -35,16 +35,15 @@ jobs:
           path = Path('programs/memewarzone_solana/src/authorized_create.rs')
           source = path.read_text(encoding='utf-8')
 
-          if 'MEMEWARZONE_SOLANA_CREATE_V4' in source:
+          if 'MEMEWARZONE_SOLANA_CREATE_V4' in source and 'MEMEWARZONE_SOLANA_CREATE_V3' not in source:
               print('Authorization source is already on V4; no patch required.')
               raise SystemExit(0)
 
-          if source.count('MEMEWARZONE_SOLANA_CREATE_V3') != 1:
-              raise SystemExit('Expected exactly one V3 authorization domain')
+          if 'MEMEWARZONE_SOLANA_CREATE_V3' not in source:
+              raise SystemExit('V3 authorization domain was not found')
           source = source.replace(
               'MEMEWARZONE_SOLANA_CREATE_V3',
               'MEMEWARZONE_SOLANA_CREATE_V4',
-              1,
           )
 
           old_version = 'pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 3;'
@@ -78,13 +77,10 @@ jobs:
               raise SystemExit('Expected exactly one V3 verification block')
           source = source.replace(old_verification, new_verification, 1)
 
-          old_assertion = 'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 3);'
-          if old_assertion in source:
-              source = source.replace(
-                  old_assertion,
-                  'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 4);',
-                  1,
-              )
+          source = source.replace(
+              'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 3);',
+              'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 4);',
+          )
 
           path.write_text(source, encoding='utf-8')
 
