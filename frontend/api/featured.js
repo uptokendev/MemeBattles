@@ -1,5 +1,6 @@
 import { pool } from "../server/db.js";
 import { badMethod, getQuery, json } from "../server/http.js";
+import { reconcileScheduledDraftLifecycle } from "./dev-fix/scheduled-lifecycle.js";
 
 const SORT_MAP = {
   activity: "last_activity_at",
@@ -18,6 +19,26 @@ function safeEmptyFeatured(res, error) {
   });
 }
 
+const LIFECYCLE_SELECT = `
+       dl.draft_created_at AS "draftCreatedAt",
+       dl.contract_deployed_at AS "contractDeployedAt",
+       dl.scheduled_launch_at AS "scheduledLaunchAt",
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "tradingLaunchAt",`;
+
+const LIFECYCLE_JOIN = `
+      LEFT JOIN LATERAL (
+        SELECT
+          d.created_at AS draft_created_at,
+          d.deployed_at AS contract_deployed_at,
+          d.scheduled_launch_at
+        FROM campaign_drafts d
+        WHERE d.chain_id = c.chain_id
+          AND d.campaign_address IS NOT NULL
+          AND lower(d.campaign_address) = lower(c.campaign_address)
+        ORDER BY d.updated_at DESC
+        LIMIT 1
+      ) dl ON true`;
+
 async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
   const orderByExpr = sortCol === "last_activity_at" ? "ca.last_activity_at" : `va.${sortCol}`;
   const { rows } = await pool.query(
@@ -29,7 +50,8 @@ async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
        c.name AS "name",
        c.symbol AS "symbol",
        c.logo_uri AS "logoUri",
-       c.created_at_chain AS "createdAtChain",
+${LIFECYCLE_SELECT}
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
        ts.marketcap_bnb AS "marketcapBnb",
        COALESCE(va.votes_1h, 0) AS "votes1h",
@@ -44,6 +66,7 @@ async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
      INNER JOIN campaigns c
        ON c.chain_id = va.chain_id
       AND c.campaign_address = va.campaign_address
+${LIFECYCLE_JOIN}
      LEFT JOIN token_stats ts
        ON ts.chain_id = c.chain_id
       AND ts.campaign_address = c.campaign_address
@@ -54,10 +77,11 @@ async function readFeaturedFromVotes({ chainId, sortCol, limit }) {
        AND c.campaign_address IS NOT NULL
        AND c.graduated_at_chain IS NULL
        AND COALESCE(c.is_active, true) = true
+       AND (dl.scheduled_launch_at IS NULL OR dl.scheduled_launch_at <= now())
      ORDER BY ${orderByExpr} DESC NULLS LAST,
        COALESCE(va.votes_24h, 0) DESC,
        COALESCE(va.votes_all_time, 0) DESC,
-       c.created_at_chain DESC NULLS LAST
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) DESC NULLS LAST
      LIMIT $2`,
     [chainId, limit],
   );
@@ -74,7 +98,8 @@ async function readFeaturedFromCampaigns({ chainId, limit }) {
        c.name AS "name",
        c.symbol AS "symbol",
        c.logo_uri AS "logoUri",
-       c.created_at_chain AS "createdAtChain",
+${LIFECYCLE_SELECT}
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "createdAtChain",
        c.graduated_at_chain AS "graduatedAtChain",
        ts.marketcap_bnb AS "marketcapBnb",
        0::int AS "votes1h",
@@ -83,9 +108,10 @@ async function readFeaturedFromCampaigns({ chainId, limit }) {
        0::int AS "votesAllTime",
        0::numeric AS "trendingScore",
        null::timestamptz AS "lastVoteAt",
-       c.created_at_chain AS "lastActivityAt",
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) AS "lastActivityAt",
        'campaign_fallback'::text AS "featuredSource"
      FROM campaigns c
+${LIFECYCLE_JOIN}
      LEFT JOIN token_stats ts
        ON ts.chain_id = c.chain_id
       AND ts.campaign_address = c.campaign_address
@@ -93,9 +119,10 @@ async function readFeaturedFromCampaigns({ chainId, limit }) {
        AND c.campaign_address IS NOT NULL
        AND c.graduated_at_chain IS NULL
        AND COALESCE(c.is_active, true) = true
+       AND (dl.scheduled_launch_at IS NULL OR dl.scheduled_launch_at <= now())
      ORDER BY
        COALESCE(ts.marketcap_bnb, 0) DESC,
-       c.created_at_chain DESC NULLS LAST,
+       COALESCE(dl.scheduled_launch_at, c.created_at_chain) DESC NULLS LAST,
        c.campaign_address ASC
      LIMIT $2`,
     [chainId, limit],
@@ -114,6 +141,8 @@ export default async function handler(req, res) {
     const limit = Math.max(1, Math.min(50, Number(q.limit ?? 10)));
 
     if (!Number.isFinite(chainId)) return json(res, 400, { error: "Invalid chainId" });
+
+    await reconcileScheduledDraftLifecycle(pool);
 
     let items = [];
     let warning = null;
