@@ -45,6 +45,10 @@ jobs:
           const path = 'scripts/apply-scheduled-draft-deploy-fix.mjs';
           let source = fs.readFileSync(path, 'utf8');
           source = source.replace(
+            '${JUST_CREATED_DRAFT_CACHE_PREFIX}',
+            '$\\{JUST_CREATED_DRAFT_CACHE_PREFIX}',
+          );
+          source = source.replace(
             /  return `Launch \$\{new Intl\.DateTimeFormat\(undefined, \{([\s\S]*?)\}\)\.format\(new Date\(seconds \* 1000\)\)\}`;/,
             '  return "Launch " + new Intl.DateTimeFormat(undefined, {$1}).format(new Date(seconds * 1000));',
           );
