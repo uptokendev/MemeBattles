@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { json, readJson } from "../../server/http.js";
 import { draftDeploy as baseDraftDeploy } from "./draft-deploy-base.js";
+import { solanaCreateAuthorizationV4 } from "./solana-create-authorization-v4.js";
 
 import { runJsonTransform } from "./json-transform.js";
 import {
@@ -25,11 +26,47 @@ function configuredScheduledFactory(chainId) {
   return id === 97 ? BSC_TESTNET_SCHEDULED_FACTORY : "";
 }
 
+function isUnsignedDecimal(value, { allowZero = true } = {}) {
+  const raw = String(value ?? "").trim();
+  if (!/^\d+$/.test(raw)) return false;
+  if (!allowZero && /^0+$/.test(raw)) return false;
+  try {
+    const parsed = BigInt(raw);
+    return parsed >= 0n && (allowZero || parsed > 0n);
+  } catch {
+    return false;
+  }
+}
+
 export async function draftDeploy(req, res) {
   if (req.method === "POST") {
     const body = await readJson(req);
     req.body = body;
-    if (body?.operation === "authorize_scheduled") {
+    const operation = String(body?.operation || "").trim().toLowerCase();
+
+    if (operation === "authorize_solana_v4") {
+      if (!String(process.env.SOLANA_GENERATION_MANIFEST_HASH || "").trim()) {
+        return json(res, 503, {
+          error: "SOLANA_GENERATION_MANIFEST_HASH is not configured.",
+          code: "SOLANA_CREATE_CONFIGURATION_INCOMPLETE",
+        });
+      }
+      if (!isUnsignedDecimal(body?.graduationTargetUsdMicros, { allowZero: false })) {
+        return json(res, 400, {
+          error: "graduationTargetUsdMicros must be a positive unsigned integer.",
+          code: "SOLANA_GRADUATION_TARGET_INVALID",
+        });
+      }
+      if (body?.launchAt != null && String(body.launchAt).trim() !== "" && !isUnsignedDecimal(body.launchAt)) {
+        return json(res, 400, {
+          error: "launchAt must be zero or an unsigned Unix timestamp.",
+          code: "SOLANA_LAUNCH_TIME_INVALID",
+        });
+      }
+      return solanaCreateAuthorizationV4(req, res);
+    }
+
+    if (operation === "authorize_scheduled") {
       const chainId = Number(body.chainId || body.auth?.chainId || 0);
       const expected = configuredScheduledFactory(chainId);
       const supplied = String(body.factoryAddress || "").trim();

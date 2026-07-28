@@ -1,0 +1,120 @@
+name: Solana Anchor CI
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - programs/memewarzone_solana/**
+      - scripts/check-solana-v4-idl.mjs
+      - frontend/src/lib/solanaCreateAuthorizationV4.ts
+      - .github/workflows/solana-anchor-ci.yml
+  workflow_dispatch:
+
+concurrency:
+  group: solana-anchor-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  IDL_RUST_TOOLCHAIN: nightly-2024-05-09
+  CARGO_NET_RETRY: 10
+
+jobs:
+  anchor-build:
+    name: Anchor build, IDL and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          anchor --version
+          solana --version
+          rustc --version
+          rustup run "$IDL_RUST_TOOLCHAIN" rustc --version
+          cargo --version
+
+      - name: Remove local lockfiles
+        run: rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+
+      - name: Build Solana program
+        shell: bash
+        run: anchor build --no-idl 2>&1 | tail -n 120
+
+      - name: Generate Anchor IDL
+        shell: bash
+        working-directory: programs/memewarzone_solana
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.IDL_RUST_TOOLCHAIN }}
+        run: |
+          mkdir -p ../../target/idl
+          anchor idl build \
+            --out ../../target/idl/memewarzone_solana.json \
+            2>&1 | tail -n 220
+
+      - name: Verify generated artifacts
+        shell: bash
+        run: |
+          test -s target/deploy/memewarzone_solana.so
+          test -s target/idl/memewarzone_solana.json
+
+      - name: Verify V4 generated IDL client boundary
+        run: |
+          node scripts/check-solana-v4-idl.mjs \
+            target/idl/memewarzone_solana.json \
+            target/idl/memewarzone_solana.v4.binding.json
+          test -s target/idl/memewarzone_solana.v4.binding.json
+
+      - name: Test Solana program invariants
+        run: cargo test -p memewarzone_solana --lib
+
+      - name: Upload Solana build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: memewarzone-solana-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            target/deploy/memewarzone_solana.so
+            target/idl/memewarzone_solana.json
+            target/idl/memewarzone_solana.v4.binding.json

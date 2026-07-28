@@ -1,0 +1,79 @@
+name: Solana Railway V4 CI
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - frontend/api/dev-fix/draft-deploy.js
+      - frontend/api/dev-fix/solana-create-authorization-v4.js
+      - frontend/api/dev-fix/solana-create-authorization-v4.test.mjs
+      - frontend/api/dev-fix/solana-v4-primitives.js
+      - frontend/api/dev-fix/solana-v4-primitives.test.mjs
+      - frontend/src/lib/solanaCreateAuthorizationV4.ts
+      - frontend/src/lib/solanaCreateCampaignV4Plan.ts
+      - frontend/scripts/check-solana-v4-client.mjs
+      - scripts/check-solana-v4-idl.mjs
+      - tests/solana/authorization-v4.cjs
+      - tests/solana/railway-v4-conformance.cjs
+      - tests/solana/package.json
+      - frontend/package.json
+      - frontend/package-lock.json
+      - .github/workflows/solana-railway-v4-ci.yml
+  workflow_dispatch:
+
+concurrency:
+  group: solana-railway-v4-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  railway-v4:
+    name: Railway signer, serializer and frontend boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend --no-audit --no-fund
+
+      - name: Install Solana conformance dependencies
+        run: npm install --prefix tests/solana --no-audit --no-fund
+
+      - name: Verify Railway source syntax
+        run: |
+          node --check frontend/api/dev-fix/solana-v4-primitives.js
+          node --check frontend/api/dev-fix/solana-create-authorization-v4.js
+          node --check frontend/api/dev-fix/draft-deploy.js
+          node --check scripts/check-solana-v4-idl.mjs
+          node --check frontend/scripts/check-solana-v4-client.mjs
+
+      - name: Test dependency-free Railway primitives
+        run: node --test frontend/api/dev-fix/solana-v4-primitives.test.mjs
+
+      - name: Test fail-closed Railway endpoint gates
+        run: node --test frontend/api/dev-fix/solana-create-authorization-v4.test.mjs
+
+      - name: Prove validator serializer and PDA conformance
+        run: npm --prefix tests/solana run test:railway
+
+      - name: Validate generated-IDL client TypeScript
+        working-directory: frontend
+        run: node scripts/check-solana-v4-client.mjs
+
+      - name: Build production frontend
+        run: npm --prefix frontend run build
+
+      - name: Verify repository diff
+        run: git diff --check

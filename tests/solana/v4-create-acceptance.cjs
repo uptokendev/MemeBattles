@@ -1,0 +1,831 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const path = require("node:path");
+
+const anchor = require("@coral-xyz/anchor");
+const {
+  ComputeBudgetProgram,
+  Ed25519Program,
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
+  SystemProgram,
+  Transaction,
+} = require("@solana/web3.js");
+const {
+  TOKEN_PROGRAM_ID,
+  getAccount,
+  getMint,
+} = require("@solana/spl-token");
+
+const {
+  CREATE_AUTH_SCHEMA_VERSION,
+  buildCreateAuthorizationPayload,
+  createAuthorizationDigest,
+} = require("./authorization-v4.cjs");
+
+const {
+  AnchorProvider,
+  BN,
+  Program,
+  setProvider,
+} = anchor;
+
+const MAX_TRANSACTION_BYTES = 1_232;
+const GRADUATION_TARGET_6_USD_MICROS = 6_000_000n;
+const TOKEN_TOTAL_SUPPLY = 1_000_000_000_000n;
+const TOKEN_DECIMALS = 6;
+const CURVE_SUPPLY_BPS = 8_000;
+const LIQUIDITY_SUPPLY_BPS = 1_000;
+const CREATOR_BUY_LOCK_SECONDS = 86_400;
+const CREATOR_BUY_CAP_BPS = 1_000;
+
+function hash32(label) {
+  return crypto.createHash("sha256").update(label, "utf8").digest();
+}
+
+function fixed32(value) {
+  const buffer = Buffer.from(value);
+  assert.equal(buffer.length, 32, "fixed32 values must contain 32 bytes");
+  return Array.from(buffer);
+}
+
+function buffer32(value) {
+  const buffer = Buffer.from(value);
+  assert.equal(buffer.length, 32, "account field must contain 32 bytes");
+  return buffer;
+}
+
+function bigintValue(value) {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") return BigInt(value);
+  return BigInt(value.toString());
+}
+
+function assertBigIntEqual(actual, expected, label) {
+  assert.equal(bigintValue(actual), BigInt(expected), label);
+}
+
+function assertPublicKeyEqual(actual, expected, label) {
+  assert.ok(new PublicKey(actual).equals(new PublicKey(expected)), label);
+}
+
+function assertBytesEqual(actual, expected, label) {
+  assert.deepEqual(buffer32(actual), buffer32(expected), label);
+}
+
+function derivePda(programId, ...seeds) {
+  return PublicKey.findProgramAddressSync(
+    seeds.map((seed) => Buffer.from(seed)),
+    programId,
+  )[0];
+}
+
+async function chainUnixTimestamp(connection) {
+  const slot = await connection.getSlot("confirmed");
+  const blockTime = await connection.getBlockTime(slot);
+  return blockTime ?? Math.floor(Date.now() / 1_000);
+}
+
+async function expectFailure(action, label) {
+  let failure = null;
+  try {
+    await action();
+  } catch (error) {
+    failure = error;
+  }
+  assert.ok(failure, `${label} unexpectedly succeeded`);
+  return failure;
+}
+
+describe("MemeWarzone Solana authorization V4 local-validator acceptance", function () {
+  this.timeout(1_000_000);
+
+  const provider = AnchorProvider.env();
+  setProvider(provider);
+
+  const idlPath = path.resolve(
+    __dirname,
+    "../../target/idl/memewarzone_solana.json",
+  );
+  // eslint-disable-next-line global-require, import/no-dynamic-require
+  const idl = require(idlPath);
+  const program = new Program(idl, provider);
+  const connection = provider.connection;
+  const admin = provider.wallet.publicKey;
+  const routeSigner = Keypair.generate();
+
+  const globalConfig = derivePda(program.programId, "global");
+  const generationId = hash32("memewarzone-local-validator-generation-v4");
+  const generationConfig = derivePda(
+    program.programId,
+    "generation",
+    generationId,
+  );
+  const riskClusterId = hash32("memewarzone-local-validator-risk-cluster");
+  const clusterProfile = derivePda(
+    program.programId,
+    "cluster",
+    riskClusterId,
+  );
+  const declaredClusterHash = hash32("solana-local-validator-devnet-policy");
+
+  let directScenario;
+
+  function campaignAccounts(creator, args, overrides = {}) {
+    const campaignId = Buffer.from(args.campaignId);
+    const nonce = Buffer.from(args.nonce);
+    const defaults = {
+      campaign: derivePda(program.programId, "campaign", campaignId),
+      mint: derivePda(program.programId, "campaign-mint", campaignId),
+      tokenVault: derivePda(program.programId, "token-vault", campaignId),
+      solVault: derivePda(program.programId, "sol-vault", campaignId),
+      createAuthorization: derivePda(
+        program.programId,
+        "create-auth",
+        creator.publicKey.toBuffer(),
+        nonce,
+      ),
+      tokenProgram: TOKEN_PROGRAM_ID,
+    };
+    return { ...defaults, ...overrides };
+  }
+
+  function createArgs(label, now, options = {}) {
+    const launchAt = options.launchAt ?? 0;
+    const deadline = options.deadline ?? now + 3_600;
+    return {
+      campaignId: fixed32(hash32(`campaign:${label}`)),
+      metadataHash: fixed32(hash32(`metadata:${label}`)),
+      clusterHash: fixed32(declaredClusterHash),
+      tickerHash: fixed32(hash32(`ticker:${label}`)),
+      reservationIdHash: fixed32(hash32(`reservation:${label}`)),
+      reservationVersion: new BN(options.reservationVersion ?? 1),
+      launchAt: new BN(launchAt),
+      graduationTargetUsdMicros: new BN(
+        GRADUATION_TARGET_6_USD_MICROS.toString(),
+      ),
+      deadline: new BN(deadline),
+      nonce: fixed32(options.nonce ?? hash32(`nonce:${label}`)),
+    };
+  }
+
+  async function fundCreator(creator) {
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: admin,
+        toPubkey: creator.publicKey,
+        lamports: 3 * LAMPORTS_PER_SOL,
+      }),
+    );
+    await provider.sendAndConfirm(transaction, []);
+  }
+
+  async function setupCreator(label) {
+    const creator = Keypair.generate();
+    await fundCreator(creator);
+
+    const creatorProfile = derivePda(
+      program.programId,
+      "creator",
+      creator.publicKey.toBuffer(),
+    );
+    const riskProfile = derivePda(
+      program.programId,
+      "risk",
+      creator.publicKey.toBuffer(),
+    );
+
+    await program.methods
+      .syncCreatorProfile({
+        wallet: creator.publicKey,
+        tier: 1,
+        trustScore: 7_000,
+        liveBondingCount: 0,
+        lastLaunchTimestamp: new BN(0),
+        totalLaunches: new BN(0),
+        successfulGraduations: new BN(0),
+        restricted: false,
+        manualReviewRequired: false,
+        creatorBuyCapBps: CREATOR_BUY_CAP_BPS,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        creatorProfile,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    await program.methods
+      .syncRiskProfile({
+        wallet: creator.publicKey,
+        riskLevel: 1,
+        restricted: false,
+        clusterId: fixed32(riskClusterId),
+        manualReviewRequired: false,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        riskProfile,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    return {
+      label,
+      creator,
+      creatorProfile,
+      riskProfile,
+    };
+  }
+
+  async function buildAuthorizationInput({
+    creatorState,
+    signedArgs,
+    accounts,
+  }) {
+    const generation = await program.account.generationConfig.fetch(
+      generationConfig,
+    );
+    const profile = await program.account.creatorProfile.fetch(
+      creatorState.creatorProfile,
+    );
+    const risk = await program.account.riskProfile.fetch(
+      creatorState.riskProfile,
+    );
+
+    return {
+      programId: program.programId,
+      generationConfigKey: generationConfig,
+      generation,
+      creator: creatorState.creator.publicKey,
+      riskClusterId: risk.clusterId,
+      creatorBuyLockSeconds: profile.creatorBuyLockSeconds,
+      creatorBuyCapBps: profile.creatorBuyCapBps,
+      campaign: accounts.campaign,
+      mint: accounts.mint,
+      tokenVault: accounts.tokenVault,
+      solVault: accounts.solVault,
+      tokenProgram: accounts.tokenProgram,
+      args: signedArgs,
+    };
+  }
+
+  async function sendAuthorizedCreate({
+    creatorState,
+    instructionArgs,
+    signedArgs = instructionArgs,
+    accountOverrides = {},
+    signingKey = routeSigner,
+    separateEd25519FromCreate = false,
+  }) {
+    const accounts = campaignAccounts(
+      creatorState.creator,
+      instructionArgs,
+      accountOverrides,
+    );
+    const authorizationInput = await buildAuthorizationInput({
+      creatorState,
+      signedArgs,
+      accounts,
+    });
+    const canonicalPayload = buildCreateAuthorizationPayload(
+      authorizationInput,
+    );
+    const digest = createAuthorizationDigest(authorizationInput);
+    assert.equal(digest.length, 32, "V4 route authorization must sign 32 bytes");
+
+    const ed25519Instruction =
+      Ed25519Program.createInstructionWithPrivateKey({
+        privateKey: signingKey.secretKey,
+        message: digest,
+      });
+
+    const createInstruction = await program.methods
+      .createCampaign(instructionArgs)
+      .accountsStrict({
+        creator: creatorState.creator.publicKey,
+        globalConfig,
+        generationConfig,
+        creatorProfile: creatorState.creatorProfile,
+        riskProfile: creatorState.riskProfile,
+        clusterProfile,
+        campaign: accounts.campaign,
+        mint: accounts.mint,
+        tokenVault: accounts.tokenVault,
+        solVault: accounts.solVault,
+        createAuthorization: accounts.createAuthorization,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        tokenProgram: accounts.tokenProgram,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const transaction = new Transaction().add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+      ed25519Instruction,
+    );
+
+    if (separateEd25519FromCreate) {
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey: creatorState.creator.publicKey,
+          toPubkey: admin,
+          lamports: 1,
+        }),
+      );
+    }
+
+    transaction.add(createInstruction);
+
+    const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+    transaction.feePayer = creatorState.creator.publicKey;
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+    transaction.sign(creatorState.creator);
+
+    const rawTransaction = transaction.serialize();
+    assert.ok(
+      rawTransaction.length <= MAX_TRANSACTION_BYTES,
+      `create transaction is ${rawTransaction.length} bytes; maximum is ${MAX_TRANSACTION_BYTES}`,
+    );
+
+    const signature = await connection.sendRawTransaction(rawTransaction, {
+      preflightCommitment: "confirmed",
+      skipPreflight: false,
+    });
+    const confirmation = await connection.confirmTransaction(
+      {
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      },
+      "confirmed",
+    );
+    if (confirmation.value.err) {
+      throw new Error(
+        `create transaction ${signature} failed: ${JSON.stringify(
+          confirmation.value.err,
+        )}`,
+      );
+    }
+
+    return {
+      accounts,
+      canonicalPayloadLength: canonicalPayload.length,
+      digest,
+      rawTransactionLength: rawTransaction.length,
+      signature,
+    };
+  }
+
+  async function verifySuccessfulCreate({
+    creatorState,
+    args,
+    result,
+    expectedScheduledLaunch,
+  }) {
+    const campaign = await program.account.campaign.fetch(
+      result.accounts.campaign,
+    );
+    const authorization = await program.account.createAuthorization.fetch(
+      result.accounts.createAuthorization,
+    );
+    const solVaultState = await program.account.campaignSolVault.fetch(
+      result.accounts.solVault,
+    );
+    const mint = await getMint(
+      connection,
+      result.accounts.mint,
+      "confirmed",
+      TOKEN_PROGRAM_ID,
+    );
+    const tokenVault = await getAccount(
+      connection,
+      result.accounts.tokenVault,
+      "confirmed",
+      TOKEN_PROGRAM_ID,
+    );
+    const solVaultInfo = await connection.getAccountInfo(
+      result.accounts.solVault,
+      "confirmed",
+    );
+
+    assert.ok(result.canonicalPayloadLength > 500);
+    assert.equal(result.digest.length, 32);
+    assert.ok(result.rawTransactionLength <= MAX_TRANSACTION_BYTES);
+
+    assertPublicKeyEqual(campaign.creator, creatorState.creator.publicKey);
+    assertPublicKeyEqual(campaign.mint, result.accounts.mint);
+    assertPublicKeyEqual(campaign.tokenVault, result.accounts.tokenVault);
+    assertPublicKeyEqual(campaign.solVault, result.accounts.solVault);
+    assertPublicKeyEqual(campaign.generationConfig, generationConfig);
+    assertBytesEqual(campaign.campaignId, args.campaignId);
+    assertBytesEqual(campaign.tickerHash, args.tickerHash);
+    assertBytesEqual(campaign.reservationIdHash, args.reservationIdHash);
+    assertBigIntEqual(campaign.reservationVersion, 1n);
+    assertBigIntEqual(
+      campaign.graduationTargetUsdMicros,
+      GRADUATION_TARGET_6_USD_MICROS,
+    );
+    assertBigIntEqual(campaign.tokenTotalSupply, TOKEN_TOTAL_SUPPLY);
+    assert.equal(campaign.tokenDecimals, TOKEN_DECIMALS);
+    assert.equal(campaign.assetInitializationVersion, 1);
+    assert.equal(campaign.mintAuthorityRevoked, true);
+    assert.equal(campaign.graduated, false);
+    assertBigIntEqual(campaign.soldTokens, 0n);
+    assertBigIntEqual(campaign.netRaisedLamports, 0n);
+    assertBigIntEqual(campaign.totalBuyVolumeLamports, 0n);
+    assertBigIntEqual(campaign.totalSellVolumeLamports, 0n);
+    assertBigIntEqual(campaign.creatorBoughtTokens, 0n);
+
+    const expectedCurve =
+      (TOKEN_TOTAL_SUPPLY * BigInt(CURVE_SUPPLY_BPS)) / 10_000n;
+    const expectedLiquidity =
+      (TOKEN_TOTAL_SUPPLY * BigInt(LIQUIDITY_SUPPLY_BPS)) / 10_000n;
+    const expectedReserve =
+      TOKEN_TOTAL_SUPPLY - expectedCurve - expectedLiquidity;
+    assertBigIntEqual(campaign.curveTokenSupply, expectedCurve);
+    assertBigIntEqual(campaign.liquidityTokenSupply, expectedLiquidity);
+    assertBigIntEqual(campaign.reserveTokenSupply, expectedReserve);
+
+    if (expectedScheduledLaunch === null) {
+      assertBigIntEqual(campaign.launchAt, campaign.createdAt);
+    } else {
+      assertBigIntEqual(campaign.launchAt, BigInt(expectedScheduledLaunch));
+    }
+    assertBigIntEqual(
+      campaign.creatorBuyLockUntil,
+      bigintValue(campaign.launchAt) + BigInt(CREATOR_BUY_LOCK_SECONDS),
+    );
+
+    assert.equal(mint.supply, TOKEN_TOTAL_SUPPLY);
+    assert.equal(mint.decimals, TOKEN_DECIMALS);
+    assert.equal(mint.mintAuthority, null);
+    assert.equal(mint.freezeAuthority, null);
+
+    assert.equal(tokenVault.amount, TOKEN_TOTAL_SUPPLY);
+    assertPublicKeyEqual(tokenVault.mint, result.accounts.mint);
+    assertPublicKeyEqual(tokenVault.owner, result.accounts.campaign);
+
+    assert.ok(solVaultInfo, "SOL vault account must exist");
+    assertPublicKeyEqual(solVaultInfo.owner, program.programId);
+    assertPublicKeyEqual(solVaultState.campaign, result.accounts.campaign);
+    assertBytesEqual(solVaultState.generationId, generationId);
+
+    assert.equal(authorization.schemaVersion, CREATE_AUTH_SCHEMA_VERSION);
+    assertPublicKeyEqual(authorization.creator, creatorState.creator.publicKey);
+    assertPublicKeyEqual(authorization.routeSigner, routeSigner.publicKey);
+    assertBytesEqual(authorization.nonce, args.nonce);
+    assertBytesEqual(authorization.messageHash, result.digest);
+  }
+
+  async function assertCampaignMissing(campaign) {
+    const accountInfo = await connection.getAccountInfo(campaign, "confirmed");
+    assert.equal(accountInfo, null, `failed campaign ${campaign} must not exist`);
+  }
+
+  before(async function () {
+    assert.equal(CREATE_AUTH_SCHEMA_VERSION, 4);
+
+    await program.methods
+      .initializeGlobalConfig({
+        admin,
+        pauser: admin,
+        tierAdmin: admin,
+        riskAdmin: admin,
+        routeSigner: routeSigner.publicKey,
+        rewardOperator: admin,
+        treasuryOperator: admin,
+        generationOperator: admin,
+      })
+      .accountsStrict({
+        admin,
+        globalConfig,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    await program.methods
+      .lockSecurityDefaults()
+      .accountsStrict({
+        globalConfig,
+        admin,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    await program.methods
+      .setPauseFlags({
+        paused: false,
+        createPaused: false,
+        buyPaused: true,
+        sellPaused: true,
+        graduationPaused: true,
+        claimsPaused: true,
+      })
+      .accountsStrict({
+        globalConfig,
+        authority: admin,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    await program.methods
+      .initializeGenerationConfig({
+        generationId: fixed32(generationId),
+        clusterKind: 1,
+        allowedGraduationTierMask: 1,
+        economicsVersion: 1,
+        curveKind: 1,
+        tokenTotalSupply: new BN(TOKEN_TOTAL_SUPPLY.toString()),
+        tokenDecimals: TOKEN_DECIMALS,
+        curveSupplyBps: CURVE_SUPPLY_BPS,
+        liquidityTokenBps: LIQUIDITY_SUPPLY_BPS,
+        basePriceLamports: new BN(1_000),
+        priceSlopeLamports: new BN(10),
+        buyFeeBps: 200,
+        sellFeeBps: 200,
+        finalizeFeeBps: 200,
+        creatorPostFinalizeBps: 2_000,
+        liquidityPostFinalizeBps: 8_000,
+        dexAdapter: 1,
+        tradeRouteProfile: fixed32(hash32("trade-route-profile-v1")),
+        finalizeRouteProfile: fixed32(hash32("finalize-route-profile-v1")),
+        treasuryProfile: fixed32(hash32("treasury-profile-v1")),
+        dexProfile: fixed32(hash32("dex-profile-v1")),
+        oracleProfile: fixed32(hash32("oracle-profile-v1")),
+        activeCreation: true,
+        supportEnabled: true,
+        manifestHash: fixed32(hash32("generation-manifest-v1")),
+        routeAuthorizationRequired: true,
+        authorizedTradingRequired: true,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        generationConfig,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+
+    await program.methods
+      .syncClusterProfile({
+        clusterId: fixed32(riskClusterId),
+        size: 2,
+        riskLevel: 1,
+        restricted: false,
+      })
+      .accountsStrict({
+        authority: admin,
+        globalConfig,
+        clusterProfile,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
+  });
+
+  it("executes Direct Create and proves program-controlled asset state", async function () {
+    const creatorState = await setupCreator("direct-create");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("direct-create", now);
+    const result = await sendAuthorizedCreate({
+      creatorState,
+      instructionArgs: args,
+    });
+
+    await verifySuccessfulCreate({
+      creatorState,
+      args,
+      result,
+      expectedScheduledLaunch: null,
+    });
+
+    // Preserve the successful create fixture independently from the
+    // unsolicited-transfer assertion so replay testing remains focused.
+    directScenario = { creatorState, args, result };
+
+    const balanceBefore = await connection.getBalance(
+      result.accounts.solVault,
+      "confirmed",
+    );
+    const transfer = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: creatorState.creator.publicKey,
+        toPubkey: result.accounts.solVault,
+        lamports: 50_000_000,
+      }),
+    );
+    await provider.sendAndConfirm(
+      transfer,
+      [creatorState.creator],
+      { commitment: "confirmed", preflightCommitment: "confirmed" },
+    );
+    const balanceAfter = await connection.getBalance(
+      result.accounts.solVault,
+      "confirmed",
+    );
+    assert.ok(balanceAfter > balanceBefore, "raw SOL-vault balance must increase");
+
+    const campaignAfterTransfer = await program.account.campaign.fetch(
+      result.accounts.campaign,
+    );
+    assertBigIntEqual(
+      campaignAfterTransfer.netRaisedLamports,
+      0n,
+      "unsolicited SOL must not alter net-raised accounting",
+    );
+  });
+
+  it("executes the Draft Deploy Now path with the same one-signature create model", async function () {
+    const creatorState = await setupCreator("draft-deploy-now");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("draft-deploy-now", now);
+    const result = await sendAuthorizedCreate({
+      creatorState,
+      instructionArgs: args,
+    });
+
+    await verifySuccessfulCreate({
+      creatorState,
+      args,
+      result,
+      expectedScheduledLaunch: null,
+    });
+  });
+
+  it("executes Countdown Create and stores the immutable future launch time", async function () {
+    const creatorState = await setupCreator("countdown-create");
+    const now = await chainUnixTimestamp(connection);
+    const launchAt = now + 600;
+    const args = createArgs("countdown-create", now, { launchAt });
+    const result = await sendAuthorizedCreate({
+      creatorState,
+      instructionArgs: args,
+    });
+
+    await verifySuccessfulCreate({
+      creatorState,
+      args,
+      result,
+      expectedScheduledLaunch: launchAt,
+    });
+  });
+
+  it("rejects an authorization signed by the wrong route signer", async function () {
+    const creatorState = await setupCreator("wrong-route-signer");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("wrong-route-signer", now);
+    const accounts = campaignAccounts(creatorState.creator, args);
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs: args,
+          signingKey: Keypair.generate(),
+        }),
+      "wrong route signer",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("rejects any campaign field modified after the digest was signed", async function () {
+    const creatorState = await setupCreator("modified-payload");
+    const now = await chainUnixTimestamp(connection);
+    const signedArgs = createArgs("modified-payload", now);
+    const instructionArgs = {
+      ...signedArgs,
+      tickerHash: fixed32(hash32("ticker:modified-after-signing")),
+    };
+    const accounts = campaignAccounts(creatorState.creator, instructionArgs);
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs,
+          signedArgs,
+        }),
+      "modified signed campaign payload",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("rejects expired create authorizations", async function () {
+    const creatorState = await setupCreator("expired-authorization");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("expired-authorization", now, {
+      deadline: now - 1,
+    });
+    const accounts = campaignAccounts(creatorState.creator, args);
+
+    await expectFailure(
+      () => sendAuthorizedCreate({ creatorState, instructionArgs: args }),
+      "expired authorization",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("requires the Ed25519 verification instruction immediately before create", async function () {
+    const creatorState = await setupCreator("non-adjacent-ed25519");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("non-adjacent-ed25519", now);
+    const accounts = campaignAccounts(creatorState.creator, args);
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs: args,
+          separateEd25519FromCreate: true,
+        }),
+      "non-adjacent Ed25519 instruction",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("rejects an alternate mint even when that address is digest-bound", async function () {
+    const creatorState = await setupCreator("alternate-mint");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("alternate-mint", now);
+    const alternateMint = Keypair.generate().publicKey;
+    const accounts = campaignAccounts(creatorState.creator, args, {
+      mint: alternateMint,
+    });
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs: args,
+          accountOverrides: { mint: alternateMint },
+        }),
+      "alternate mint PDA",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("rejects a noncanonical token program even when it is digest-bound", async function () {
+    const creatorState = await setupCreator("wrong-token-program");
+    const now = await chainUnixTimestamp(connection);
+    const args = createArgs("wrong-token-program", now);
+    const accounts = campaignAccounts(creatorState.creator, args, {
+      tokenProgram: SystemProgram.programId,
+    });
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs: args,
+          accountOverrides: { tokenProgram: SystemProgram.programId },
+        }),
+      "noncanonical token program",
+    );
+    await assertCampaignMissing(accounts.campaign);
+  });
+
+  it("rejects replay of a consumed creator-and-nonce authorization PDA", async function () {
+    assert.ok(directScenario, "Direct Create scenario must run before replay test");
+    const { creatorState, args: originalArgs } = directScenario;
+    const now = await chainUnixTimestamp(connection);
+    const replayArgs = createArgs("replayed-authorization", now, {
+      nonce: Buffer.from(originalArgs.nonce),
+    });
+    const replayAccounts = campaignAccounts(creatorState.creator, replayArgs);
+
+    await expectFailure(
+      () =>
+        sendAuthorizedCreate({
+          creatorState,
+          instructionArgs: replayArgs,
+        }),
+      "replayed creator-and-nonce authorization",
+    );
+    await assertCampaignMissing(replayAccounts.campaign);
+  });
+});
