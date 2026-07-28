@@ -1,0 +1,130 @@
+name: Diagnose scheduled factory once
+
+on:
+  push:
+    branches:
+      - agent/fix-scheduled-draft-card-deploy
+    paths:
+      - .github/workflows/diagnose-scheduled-create-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read scheduled factory and creator state
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { ethers } = require('ethers');
+
+          const factoryAddress = '0xF7872169265eCE4E4C93ef894F1635E84DC6F681';
+          const legacyFactoryAddress = '0x8Aa70e9b6BDB1bb3B15425af24693B3B14fE5Ce6';
+          const creator = '0x13ad79765e14927df2c554d9662bbe539e89c8e8';
+          const urls = [
+            'https://data-seed-prebsc-1-s1.bnbchain.org:8545',
+            'https://bsc-testnet-dataseed.bnbchain.org',
+            'https://bsc-testnet-rpc.publicnode.com',
+          ];
+
+          const factoryAbi = [
+            'function live() view returns (bool)',
+            'function globalPaused() view returns (bool)',
+            'function createPaused() view returns (bool)',
+            'function routeAuthority() view returns (address)',
+            'function creatorRegistry() view returns (address)',
+            'function riskRegistry() view returns (address)',
+            'function campaignImplementation() view returns (address)',
+            'function permanentLpLocker() view returns (address)',
+            'function campaignsCount() view returns (uint256)',
+            'function FACTORY_GENERATION() view returns (uint32)',
+            'function CAMPAIGN_GENERATION() view returns (uint32)',
+            'function isGraduationTargetAllowed(uint256) view returns (bool)',
+          ];
+          const registryAbi = [
+            'function canLaunch(address) view returns (bool)',
+            'function getCreatorProfile(address) view returns (uint8 tier,uint256 trustScore,uint256 liveBondingCount,uint256 lastLaunchTimestamp,bool restricted,bool manualReviewRequired)',
+            'function getCreatorRules(address) view returns (uint256 maxLiveBonding,uint256 cooldownSeconds,uint256 creatorBuyLockSeconds,uint256 creatorBuyCapWei,uint256 maxClusterWallets)',
+          ];
+
+          async function connect() {
+            for (const url of urls) {
+              try {
+                const provider = new ethers.JsonRpcProvider(url, 97, { staticNetwork: true });
+                const block = await provider.getBlockNumber();
+                console.log('RPC', url, 'block', block);
+                return provider;
+              } catch (error) {
+                console.warn('RPC failed', url, error.shortMessage || error.message);
+              }
+            }
+            throw new Error('No BSC testnet RPC available');
+          }
+
+          async function inspectFactory(provider, address, label) {
+            const code = await provider.getCode(address);
+            console.log('\n' + label, address, 'codeBytes', Math.max(0, (code.length - 2) / 2));
+            if (code === '0x') return;
+            const factory = new ethers.Contract(address, factoryAbi, provider);
+            for (const field of ['live','globalPaused','createPaused','routeAuthority','creatorRegistry','riskRegistry','campaignImplementation','permanentLpLocker','campaignsCount','FACTORY_GENERATION','CAMPAIGN_GENERATION']) {
+              try { console.log(label + '.' + field, String(await factory[field]())); }
+              catch (error) { console.log(label + '.' + field, 'UNAVAILABLE', error.shortMessage || error.message); }
+            }
+            try { console.log(label + '.allows6Usd', await factory.isGraduationTargetAllowed(ethers.parseEther('6'))); }
+            catch (error) { console.log(label + '.allows6Usd', 'UNAVAILABLE', error.shortMessage || error.message); }
+            return factory;
+          }
+
+          (async () => {
+            const provider = await connect();
+            const factory = await inspectFactory(provider, factoryAddress, 'scheduled');
+            await inspectFactory(provider, legacyFactoryAddress, 'legacy');
+            if (factory) {
+              const registryAddress = await factory.creatorRegistry();
+              const registry = new ethers.Contract(registryAddress, registryAbi, provider);
+              const canLaunch = await registry.canLaunch(creator);
+              const profile = await registry.getCreatorProfile(creator);
+              const rules = await registry.getCreatorRules(creator);
+              const now = Math.floor(Date.now() / 1000);
+              const cooldownEnds = Number(profile.lastLaunchTimestamp) + Number(rules.cooldownSeconds);
+              console.log('\ncreator.canLaunch', canLaunch);
+              console.log('creator.profile', {
+                tier: Number(profile.tier),
+                trustScore: profile.trustScore.toString(),
+                liveBondingCount: profile.liveBondingCount.toString(),
+                lastLaunchTimestamp: profile.lastLaunchTimestamp.toString(),
+                restricted: profile.restricted,
+                manualReviewRequired: profile.manualReviewRequired,
+              });
+              console.log('creator.rules', {
+                maxLiveBonding: rules.maxLiveBonding.toString(),
+                cooldownSeconds: rules.cooldownSeconds.toString(),
+                creatorBuyLockSeconds: rules.creatorBuyLockSeconds.toString(),
+                creatorBuyCapWei: rules.creatorBuyCapWei.toString(),
+                maxClusterWallets: rules.maxClusterWallets.toString(),
+              });
+              console.log('creator.cooldownEnds', cooldownEnds, new Date(cooldownEnds * 1000).toISOString());
+              console.log('creator.cooldownRemainingSeconds', Math.max(0, cooldownEnds - now));
+            }
+
+            for (const errorName of [
+              'CreatorNotEligible()', 'InvalidRouteAuthorization()', 'RouteAuthorizationExpired()',
+              'RouteAuthorizationReplayed()', 'InvalidLaunchAt()', 'LaunchAtTooFar()', 'NotLive()',
+              'Paused()', 'CreatePaused()', 'RiskNotEligible()', 'UnsupportedGraduationTarget()'
+            ]) {
+              console.log('selector', errorName, ethers.id(errorName).slice(0, 10));
+            }
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
