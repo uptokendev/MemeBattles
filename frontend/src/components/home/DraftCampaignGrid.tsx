@@ -3,14 +3,13 @@ import { Link } from "react-router-dom";
 import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
-import { ScheduledLaunchCountdown } from "@/components/prepare/ScheduledLaunchCountdown";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
   type DraftPopularity,
 } from "@/lib/draftApi";
 import { resolveImageUri } from "@/lib/media";
-import type { CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
+import { timestampSeconds, type CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
 import { cn } from "@/lib/utils";
 import type { HomeQuery } from "./CampaignGrid";
 
@@ -20,7 +19,7 @@ type DraftCampaignVM = {
   popularity: DraftPopularity | null;
 };
 
-const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled", "deployed"]);
+const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
 
 function shortAddr(value?: string | null) {
   const address = String(value || "");
@@ -37,11 +36,36 @@ function ageLabel(value?: string | null) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function readiness(status: string, deployed: boolean) {
-  if (status === "deployed") return "Launched · Prepare live";
-  if (status === "scheduled") return deployed ? "Deployed · trading timed" : "Scheduled";
+function readiness(status: string) {
+  if (status === "scheduled") return "Scheduled";
   if (status === "ready_to_launch") return "Ready to launch";
   return "Promotion live";
+}
+
+function scheduledLaunchSeconds(draft: CampaignDraftLifecycle) {
+  return timestampSeconds(draft.scheduledLaunchAt);
+}
+
+function isFutureScheduledDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
+  const launchAt = scheduledLaunchSeconds(draft);
+  return Boolean(
+    String(draft.status) === "scheduled" &&
+      draft.campaignAddress &&
+      launchAt &&
+      launchAt > Math.floor(nowMs / 1000),
+  );
+}
+
+function formatLaunchDate(value?: string | number | null) {
+  const seconds = timestampSeconds(value);
+  if (!seconds) return "Launch time unavailable";
+  return "Launch " + new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(seconds * 1000));
 }
 
 function matchesSearch(item: DraftCampaignVM, search?: string) {
@@ -58,23 +82,31 @@ function matchesSearch(item: DraftCampaignVM, search?: string) {
     .some((value) => String(value).toLowerCase().includes(q));
 }
 
-function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefined) {
+function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefined, nowMs: number) {
   const created = (item: DraftCampaignVM) => String(item.draft.draftCreatedAt || item.draft.createdAt || "");
-  if (sort === "created_asc") return items.slice().sort((a, b) => created(a).localeCompare(created(b)));
-  if (sort === "created_desc") return items.slice().sort((a, b) => created(b).localeCompare(created(a)));
-  return items.slice().sort((a, b) => {
-    const score = Number(b.popularity?.rankingScore || 0) - Number(a.popularity?.rankingScore || 0);
-    return score || created(b).localeCompare(created(a));
+  const active = items.filter((item) => {
+    if (String(item.draft.status) !== "scheduled") return String(item.draft.status) !== "deployed";
+    return isFutureScheduledDraft(item.draft, nowMs);
   });
+
+  if (sort === "progress_desc") {
+    return active
+      .filter((item) => isFutureScheduledDraft(item.draft, nowMs))
+      .sort((a, b) => {
+        const launchDiff = Number(scheduledLaunchSeconds(a.draft) || Number.MAX_SAFE_INTEGER)
+          - Number(scheduledLaunchSeconds(b.draft) || Number.MAX_SAFE_INTEGER);
+        return launchDiff || created(b).localeCompare(created(a));
+      });
+  }
+
+  if (sort === "created_asc") return active.slice().sort((a, b) => created(a).localeCompare(created(b)));
+  return active.slice().sort((a, b) => created(b).localeCompare(created(a)));
 }
 
-function isDiscoverableDraft(draft: CampaignDraftLifecycle) {
+function isDiscoverableDraft(draft: CampaignDraftLifecycle, nowMs = Date.now()) {
   const status = String(draft.status);
   if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
-
-  const isTimedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
-  if (status === "scheduled" || status === "deployed") return isTimedOnChain;
-
+  if (status === "scheduled") return isFutureScheduledDraft(draft, nowMs);
   return !draft.campaignAddress;
 }
 
@@ -84,6 +116,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     const refresh = (event: Event) => {
@@ -97,6 +130,12 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
   }, [chainId]);
 
   useEffect(() => {
+    if (!items.some((item) => String(item.draft.status) === "scheduled")) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [items]);
+
+  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -107,7 +146,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
         const candidates = drafts
           .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
-          .filter(isDiscoverableDraft)
+          .filter((draft) => isDiscoverableDraft(draft, Date.now()))
           .slice(0, 24);
 
         const hydrated = await Promise.all(
@@ -148,8 +187,8 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
   }, [chainId, refreshNonce]);
 
   const visible = useMemo(
-    () => sortDrafts(items.filter((item) => matchesSearch(item, query.search)), query.sort),
-    [items, query.search, query.sort],
+    () => sortDrafts(items.filter((item) => matchesSearch(item, query.search)), query.sort, nowMs),
+    [items, query.search, query.sort, nowMs],
   );
 
   const gridClass = "flex flex-wrap items-start justify-start gap-3 sm:gap-4";
@@ -178,8 +217,8 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
             const heat = popularity?.heatLabel || "Cold";
             const follows = Number(popularity?.follows || 0);
             const popularityPct = Number(popularity?.popularityPercentage || 0);
-            const timedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
-            const lifecycleLabel = String(draft.status) === "deployed" ? "Launched · Prepare" : "Scheduled on-chain";
+            const scheduled = isFutureScheduledDraft(draft, nowMs);
+            const launchDate = scheduled ? formatLaunchDate(draft.scheduledLaunchAt) : "";
 
             return (
               <article key={draft.id} className={cn("mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30", cardClass)}>
@@ -189,12 +228,17 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                     <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
                     <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
                       <ShieldCheck className="h-3 w-3" />
-                      {timedOnChain ? lifecycleLabel : "Prepare Mode"}
+                      {scheduled ? "Scheduled" : "Prepare Mode"}
                     </div>
                     <div className="absolute right-2 top-2 inline-flex items-center gap-1 border border-orange-400/50 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-orange-300">
                       <Flame className="h-3 w-3" />
                       {heat}
                     </div>
+                    {scheduled ? (
+                      <div className="absolute inset-x-0 bottom-0 z-30 border-t border-orange-400/35 bg-black/85 px-3 py-2 text-center text-[10px] uppercase tracking-[0.12em] text-orange-200 backdrop-blur-sm">
+                        {launchDate}
+                      </div>
+                    ) : null}
                   </div>
                 </Link>
 
@@ -218,20 +262,10 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                     </div>
                     <div className="text-right">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">Readiness</div>
-                      <div className="max-w-[112px] text-success">{readiness(String(draft.status), Boolean(draft.campaignAddress))}</div>
+                      <div className="max-w-[112px] text-success">{readiness(String(draft.status))}</div>
                     </div>
                   </div>
 
-                  {timedOnChain ? (
-                    <ScheduledLaunchCountdown
-                      launchAt={draft.scheduledLaunchAt}
-                      chainId={draft.chainId}
-                      campaignAddress={draft.campaignAddress}
-                      contractDeployed={Boolean(draft.campaignAddress)}
-                      variant="compact"
-                      className="mt-3"
-                    />
-                  ) : null}
 
                   <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-success/70">{mission}</p>
 

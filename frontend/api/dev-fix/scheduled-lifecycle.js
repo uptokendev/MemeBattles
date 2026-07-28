@@ -130,15 +130,20 @@ export async function enrichDraftItems(pool, items) {
   return items.map((item) => augmentDraftLifecycle(item, rows.get(String(item?.id || "")) || null));
 }
 
-export async function listPublicCampaignLifecycleDrafts(pool, { chainId = null, limit = 200 } = {}) {
+export async function listPublicCampaignLifecycleDrafts(
+  pool,
+  { chainId = null, limit = 200, includeLaunched = true } = {},
+) {
   if (!pool) return [];
-  const params = [PUBLIC_LIFECYCLE_STATUSES];
+  const statuses = includeLaunched ? PUBLIC_LIFECYCLE_STATUSES : ["scheduled"];
+  const params = [statuses];
   const where = [
     "visibility = 'public'",
     "campaign_address is not null",
     "scheduled_launch_at is not null",
     "status = any($1::text[])",
   ];
+  if (!includeLaunched) where.push("scheduled_launch_at > now()");
   if (chainId) {
     params.push(Number(chainId));
     where.push(`chain_id = $${params.length}`);
