@@ -27,8 +27,8 @@ pub const CAMPAIGN_MINT_SEED: &[u8] = b"campaign-mint";
 pub const TOKEN_VAULT_SEED: &[u8] = b"token-vault";
 pub const SOL_VAULT_SEED: &[u8] = b"sol-vault";
 
-pub const CREATE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_CREATE_V3";
-pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 3;
+pub const CREATE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_CREATE_V4";
+pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 4;
 pub const ASSET_INITIALIZATION_VERSION: u16 = 1;
 
 pub const MIN_SCHEDULE_SECONDS: i64 = 300;
@@ -314,13 +314,16 @@ pub fn create_campaign_handler(
         &args,
     );
 
+    // The canonical payload remains fully bound, but only its compact SHA-256
+    // digest is carried by the Ed25519 instruction so the create transaction
+    // stays below Solana's transaction-size limit.
+    let authorization_hash = hash(&authorization_message).to_bytes();
+
     verify_detached_create_authorization(
         &ctx.accounts.instructions.to_account_info(),
         route_signer,
-        &authorization_message,
+        &authorization_hash,
     )?;
-
-    let authorization_hash = hash(&authorization_message).to_bytes();
 
     {
         let generation = &ctx.accounts.generation_config;
@@ -1125,8 +1128,8 @@ mod tests {
     fn create_v3_removes_creator_supplied_mint() {
         let args = test_create_args(200);
         assert_eq!(args.campaign_id, [1; 32]);
-        assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 3);
-        assert_eq!(CREATE_AUTH_DOMAIN, b"MEMEWARZONE_SOLANA_CREATE_V3");
+        assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 4);
+        assert_eq!(CREATE_AUTH_DOMAIN, b"MEMEWARZONE_SOLANA_CREATE_V4");
     }
 
     #[test]
