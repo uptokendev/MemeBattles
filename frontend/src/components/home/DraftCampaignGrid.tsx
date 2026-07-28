@@ -20,7 +20,7 @@ type DraftCampaignVM = {
   popularity: DraftPopularity | null;
 };
 
-const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
+const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled", "deployed"]);
 
 function shortAddr(value?: string | null) {
   const address = String(value || "");
@@ -38,7 +38,8 @@ function ageLabel(value?: string | null) {
 }
 
 function readiness(status: string, deployed: boolean) {
-  if (status === "scheduled") return deployed ? "Deployed · trading locked" : "Scheduled";
+  if (status === "deployed") return "Launched · Prepare live";
+  if (status === "scheduled") return deployed ? "Deployed · trading timed" : "Scheduled";
   if (status === "ready_to_launch") return "Ready to launch";
   return "Promotion live";
 }
@@ -65,6 +66,16 @@ function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefine
     const score = Number(b.popularity?.rankingScore || 0) - Number(a.popularity?.rankingScore || 0);
     return score || created(b).localeCompare(created(a));
   });
+}
+
+function isDiscoverableDraft(draft: CampaignDraftLifecycle) {
+  const status = String(draft.status);
+  if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
+
+  const isTimedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
+  if (status === "scheduled" || status === "deployed") return isTimedOnChain;
+
+  return !draft.campaignAddress;
 }
 
 export function DraftCampaignGrid({ className, query }: { className?: string; query: HomeQuery & { tab?: string } }) {
@@ -96,8 +107,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
         const candidates = drafts
           .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
-          .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
-          .filter((draft) => String(draft.status) === "scheduled" || !draft.campaignAddress)
+          .filter(isDiscoverableDraft)
           .slice(0, 24);
 
         const hydrated = await Promise.all(
@@ -159,7 +169,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
         <div className="py-10 text-center text-sm text-muted-foreground">{error}</div>
       ) : !visible.length ? (
         <div className="py-10 text-center text-sm text-muted-foreground">
-          No public draft campaigns yet. Published Prepare Pages and scheduled on-chain launches appear here before trading opens.
+          No public draft campaigns yet. Published Prepare Pages and timed on-chain launches appear here.
         </div>
       ) : (
         <div className={gridClass}>
@@ -168,7 +178,8 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
             const heat = popularity?.heatLabel || "Cold";
             const follows = Number(popularity?.follows || 0);
             const popularityPct = Number(popularity?.popularityPercentage || 0);
-            const scheduled = String(draft.status) === "scheduled" && Boolean(draft.scheduledLaunchAt);
+            const timedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
+            const lifecycleLabel = String(draft.status) === "deployed" ? "Launched · Prepare" : "Scheduled on-chain";
 
             return (
               <article key={draft.id} className={cn("mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30", cardClass)}>
@@ -178,7 +189,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                     <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
                     <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
                       <ShieldCheck className="h-3 w-3" />
-                      {scheduled ? "Scheduled on-chain" : "Prepare Mode"}
+                      {timedOnChain ? lifecycleLabel : "Prepare Mode"}
                     </div>
                     <div className="absolute right-2 top-2 inline-flex items-center gap-1 border border-orange-400/50 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-orange-300">
                       <Flame className="h-3 w-3" />
@@ -211,7 +222,7 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                     </div>
                   </div>
 
-                  {scheduled ? (
+                  {timedOnChain ? (
                     <ScheduledLaunchCountdown
                       launchAt={draft.scheduledLaunchAt}
                       chainId={draft.chainId}

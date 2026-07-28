@@ -13,24 +13,18 @@ export async function getLifecyclePool() {
   }
 }
 
-export async function reconcileScheduledDraftLifecycle(pool) {
-  if (!pool) return 0;
-  try {
-    const result = await pool.query(`
-      update public.campaign_drafts
-         set status = 'deployed',
-             updated_at = now()
-       where status = 'scheduled'
-         and campaign_address is not null
-         and scheduled_launch_at is not null
-         and scheduled_launch_at <= now()
-      returning id
-    `);
-    return Number(result.rowCount || 0);
-  } catch (error) {
-    console.warn("[scheduled-lifecycle] reconciliation skipped", error?.message || error);
-    return 0;
-  }
+/**
+ * Scheduled lifecycle transitions are intentionally not performed from read
+ * handlers. A browser GET must never mutate a draft just because its local or
+ * server clock has reached launchAt. Railway/indexer reconciliation owns the
+ * authoritative scheduled -> deployed transition after chain state is
+ * confirmed.
+ *
+ * The compatibility export remains so older imports cannot accidentally bring
+ * the previous read-time mutation back while this branch is being deployed.
+ */
+export async function reconcileScheduledDraftLifecycle(_pool) {
+  return 0;
 }
 
 function normalizeTicker(value) {
@@ -65,11 +59,7 @@ export function augmentDraftLifecycle(draft, row = null) {
   if (!draft) return draft;
   const timestamps = canonicalDraftTimestamps(draft, row);
   const campaignAddress = row?.campaign_address ?? draft.campaignAddress ?? null;
-  const launchMs = timestamps.scheduledLaunchAt ? Date.parse(timestamps.scheduledLaunchAt) : NaN;
-  const rawStatus = String(row?.status ?? draft.status ?? "draft");
-  const status = rawStatus === "scheduled" && campaignAddress && Number.isFinite(launchMs) && launchMs <= Date.now()
-    ? "deployed"
-    : rawStatus;
+  const status = String(row?.status ?? draft.status ?? "draft");
 
   return {
     ...draft,
@@ -142,11 +132,11 @@ export async function enrichDraftItems(pool, items) {
 
 export async function listPublicCampaignLifecycleDrafts(pool, { chainId = null, limit = 200 } = {}) {
   if (!pool) return [];
-  await reconcileScheduledDraftLifecycle(pool);
   const params = [PUBLIC_LIFECYCLE_STATUSES];
   const where = [
     "visibility = 'public'",
     "campaign_address is not null",
+    "scheduled_launch_at is not null",
     "status = any($1::text[])",
   ];
   if (chainId) {

@@ -27,6 +27,18 @@ async function enrichPayload(payload, pool) {
   return payload;
 }
 
+function mergeDraftItems(primary, lifecycle) {
+  const byId = new Map();
+  for (const item of [...(primary || []), ...(lifecycle || [])]) {
+    const id = String(item?.id || "");
+    if (!id) continue;
+    byId.set(id, { ...(byId.get(id) || {}), ...item });
+  }
+  return Array.from(byId.values()).sort((a, b) =>
+    String(b.draftCreatedAt || b.createdAt || "").localeCompare(String(a.draftCreatedAt || a.createdAt || "")),
+  );
+}
+
 async function runLifecycleWrapped(handler, req, res) {
   const pool = await getLifecyclePool();
   await reconcileScheduledDraftLifecycle(pool);
@@ -46,7 +58,23 @@ export async function drafts(req, res) {
     return json(res, 200, { items });
   }
 
-  return runLifecycleWrapped(base.drafts, req, res);
+  const pool = await getLifecyclePool();
+  await reconcileScheduledDraftLifecycle(pool);
+
+  return runJsonTransform(base.drafts, req, res, async (payload) => {
+    const enriched = await enrichPayload(payload, pool);
+    const isPublicList = req.method === "GET" && !String(query.owner || "").trim();
+    if (!isPublicList || !Array.isArray(enriched?.items) || !pool) return enriched;
+
+    const chainId = query.chainId ? Number(query.chainId) : null;
+    const limit = Math.max(1, Math.min(500, Number(query.limit || 50) || 50));
+    const lifecycleItems = await listPublicCampaignLifecycleDrafts(pool, { chainId, limit });
+
+    return {
+      ...enriched,
+      items: mergeDraftItems(enriched.items, lifecycleItems).slice(0, limit),
+    };
+  });
 }
 
 export async function draftById(req, res) {
