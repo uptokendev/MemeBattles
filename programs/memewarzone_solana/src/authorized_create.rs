@@ -267,7 +267,6 @@ pub fn create_campaign_handler(
     let token_program_key = ctx.accounts.token_program.key();
     let creator_key = ctx.accounts.creator.key();
     let route_signer = ctx.accounts.global_config.route_signer;
-    msg!("MW_CREATE_STAGE_01_START");
 
     require_create_enabled(&ctx.accounts.global_config)?;
     validate_campaign_generation(
@@ -286,7 +285,6 @@ pub fn create_campaign_handler(
         &ctx.accounts.risk_profile,
         &ctx.accounts.cluster_profile,
     )?;
-    msg!("MW_CREATE_STAGE_02_VALIDATED");
 
     let creator_buy_lock_seconds = ctx.accounts.creator_profile.creator_buy_lock_seconds;
     let creator_buy_cap_bps = ctx.accounts.creator_profile.creator_buy_cap_bps;
@@ -299,7 +297,6 @@ pub fn create_campaign_handler(
         ctx.accounts.generation_config.curve_supply_bps,
         ctx.accounts.generation_config.liquidity_token_bps,
     )?;
-    msg!("MW_CREATE_STAGE_03_ALLOCATED");
 
     let authorization_message = build_create_authorization_message(
         crate::id(),
@@ -316,20 +313,17 @@ pub fn create_campaign_handler(
         token_program_key,
         &args,
     );
-    msg!("MW_CREATE_STAGE_04_MESSAGE_BUILT");
 
     // The canonical payload remains fully bound, but only its compact SHA-256
     // digest is carried by the Ed25519 instruction so the create transaction
     // stays below Solana's transaction-size limit.
     let authorization_hash = hash(&authorization_message).to_bytes();
-    msg!("MW_CREATE_STAGE_05_HASHED");
 
     verify_detached_create_authorization(
         &ctx.accounts.instructions.to_account_info(),
         route_signer,
         &authorization_hash,
     )?;
-    msg!("MW_CREATE_STAGE_06_AUTHORIZED");
 
     {
         let generation = &ctx.accounts.generation_config;
@@ -389,7 +383,6 @@ pub fn create_campaign_handler(
         campaign.token_vault_bump = ctx.bumps.token_vault;
         campaign.sol_vault_bump = ctx.bumps.sol_vault;
     }
-    msg!("MW_CREATE_STAGE_07_CAMPAIGN_STATE");
 
     {
         let sol_vault = &mut ctx.accounts.sol_vault;
@@ -398,7 +391,6 @@ pub fn create_campaign_handler(
         sol_vault.created_at = now;
         sol_vault.bump = ctx.bumps.sol_vault;
     }
-    msg!("MW_CREATE_STAGE_08_SOL_VAULT_STATE");
 
     let campaign_bump_seed = [ctx.bumps.campaign];
     let campaign_signer_seeds: &[&[u8]] = &[
@@ -407,7 +399,6 @@ pub fn create_campaign_handler(
         &campaign_bump_seed,
     ];
     let campaign_signer = &[campaign_signer_seeds];
-    msg!("MW_CREATE_STAGE_09_BEFORE_MINT");
 
     token::mint_to(
         CpiContext::new_with_signer(
@@ -421,7 +412,6 @@ pub fn create_campaign_handler(
         ),
         ctx.accounts.generation_config.token_total_supply,
     )?;
-    msg!("MW_CREATE_STAGE_10_MINTED");
 
     ctx.accounts.mint.reload()?;
     ctx.accounts.token_vault.reload()?;
