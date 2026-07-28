@@ -12,22 +12,18 @@ use anchor_lang::{
 };
 
 use crate::{
-    ClusterProfile, CreatorProfile, GenerationConfig, GlobalConfig, LaunchpadError, RiskProfile,
-    CLUSTER_PROFILE_SEED, CREATOR_PROFILE_SEED, EMPTY_CLUSTER_ID, GENERATION_CONFIG_SEED,
-    GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
+    generation_allows_graduation_target, ClusterProfile, CreatorProfile, GenerationConfig,
+    GlobalConfig, LaunchpadError, RiskProfile, CLUSTER_PROFILE_SEED, CREATOR_PROFILE_SEED,
+    EMPTY_CLUSTER_ID, GENERATION_CONFIG_SEED, GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
 };
 
 pub const CAMPAIGN_SEED: &[u8] = b"campaign";
 pub const CREATE_AUTH_SEED: &[u8] = b"create-auth";
-pub const CREATE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_CREATE_V1";
-pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 1;
+pub const CREATE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_CREATE_V2";
+pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 2;
 
 pub const MIN_SCHEDULE_SECONDS: i64 = 300;
 pub const MAX_SCHEDULE_SECONDS: i64 = 30 * 24 * 60 * 60;
-
-pub const GRADUATION_TARGET_15K_USD_MICROS: u64 = 15_000_000_000;
-pub const GRADUATION_TARGET_30K_USD_MICROS: u64 = 30_000_000_000;
-pub const GRADUATION_TARGET_50K_USD_MICROS: u64 = 50_000_000_000;
 
 const ED25519_HEADER_SIZE: usize = 16;
 const ED25519_SIGNATURE_SIZE: usize = 64;
@@ -94,6 +90,7 @@ pub struct Campaign {
     pub campaign_id: [u8; 32],
     pub generation_id: [u8; 32],
     pub generation_config: Pubkey,
+    pub generation_manifest_hash: [u8; 32],
     pub creator: Pubkey,
     pub mint: Pubkey,
     pub metadata_hash: [u8; 32],
@@ -103,6 +100,21 @@ pub struct Campaign {
     pub reservation_version: u64,
     pub launch_at: i64,
     pub graduation_target_usd_micros: u64,
+    pub cluster_kind: u8,
+    pub economics_version: u16,
+    pub curve_kind: u8,
+    pub token_total_supply: u64,
+    pub token_decimals: u8,
+    pub curve_supply_bps: u16,
+    pub liquidity_token_bps: u16,
+    pub base_price_lamports: u64,
+    pub price_slope_lamports: u64,
+    pub buy_fee_bps: u16,
+    pub sell_fee_bps: u16,
+    pub finalize_fee_bps: u16,
+    pub creator_post_finalize_bps: u16,
+    pub liquidity_post_finalize_bps: u16,
+    pub dex_adapter: u8,
     pub trade_route_profile: [u8; 32],
     pub finalize_route_profile: [u8; 32],
     pub treasury_profile: [u8; 32],
@@ -130,6 +142,7 @@ pub struct CreateAuthorization {
     pub used_at: i64,
     pub route_signer: Pubkey,
     pub message_hash: [u8; 32],
+    pub schema_version: u16,
     pub bump: u8,
 }
 
@@ -145,11 +158,6 @@ pub struct CreateCampaignArgs {
     /// Zero means immediate launch. A non-zero value is an immutable scheduled launch time.
     pub launch_at: i64,
     pub graduation_target_usd_micros: u64,
-    pub trade_route_profile: [u8; 32],
-    pub finalize_route_profile: [u8; 32],
-    pub treasury_profile: [u8; 32],
-    pub dex_profile: [u8; 32],
-    pub oracle_profile: [u8; 32],
     pub deadline: i64,
     pub nonce: [u8; 32],
 }
@@ -160,6 +168,7 @@ pub struct CampaignCreated {
     pub campaign_id: [u8; 32],
     pub generation_id: [u8; 32],
     pub generation_config: Pubkey,
+    pub generation_manifest_hash: [u8; 32],
     pub creator: Pubkey,
     pub mint: Pubkey,
     pub ticker_hash: [u8; 32],
@@ -167,19 +176,28 @@ pub struct CampaignCreated {
     pub reservation_version: u64,
     pub launch_at: i64,
     pub graduation_target_usd_micros: u64,
+    pub cluster_kind: u8,
+    pub economics_version: u16,
+    pub dex_adapter: u8,
     pub route_signer: Pubkey,
     pub authorization_hash: [u8; 32],
     pub created_at: i64,
 }
 
-pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaignArgs) -> Result<()> {
+pub fn create_campaign_handler(
+    ctx: Context<CreateCampaign>,
+    args: CreateCampaignArgs,
+) -> Result<()> {
     let clock = Clock::get()?;
     let now = clock.unix_timestamp;
+    let generation_key = ctx.accounts.generation_config.key();
 
     let global = &ctx.accounts.global_config;
+    let generation = &ctx.accounts.generation_config;
     require_create_enabled(global)?;
+    validate_campaign_generation(global, generation_key, generation)?;
     let launch_at = validate_create_args(&args, now)?;
-    validate_campaign_generation(global, &ctx.accounts.generation_config)?;
+    validate_graduation_target(generation, args.graduation_target_usd_micros)?;
     validate_creator_can_launch(&ctx.accounts.creator_profile, now)?;
     validate_create_risk_profiles(
         ctx.accounts.creator.key(),
@@ -187,18 +205,21 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
         &ctx.accounts.cluster_profile,
     )?;
 
+    let creator_buy_lock_seconds = ctx.accounts.creator_profile.creator_buy_lock_seconds;
+    let creator_buy_cap_bps = ctx.accounts.creator_profile.creator_buy_cap_bps;
+    let risk_cluster_id = ctx.accounts.risk_profile.cluster_id;
     let creator_buy_lock_until = launch_at
-        .checked_add(ctx.accounts.creator_profile.creator_buy_lock_seconds as i64)
+        .checked_add(i64::from(creator_buy_lock_seconds))
         .ok_or(LaunchpadError::MathOverflow)?;
 
     let authorization_message = build_create_authorization_message(
         crate::id(),
-        ctx.accounts.generation_config.key(),
-        &ctx.accounts.generation_config,
+        generation_key,
+        generation,
         ctx.accounts.creator.key(),
-        ctx.accounts.risk_profile.cluster_id,
-        ctx.accounts.creator_profile.creator_buy_lock_seconds,
-        ctx.accounts.creator_profile.creator_buy_cap_bps,
+        risk_cluster_id,
+        creator_buy_lock_seconds,
+        creator_buy_cap_bps,
         &args,
     );
 
@@ -212,8 +233,9 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
 
     let campaign = &mut ctx.accounts.campaign;
     campaign.campaign_id = args.campaign_id;
-    campaign.generation_id = ctx.accounts.generation_config.generation_id;
-    campaign.generation_config = ctx.accounts.generation_config.key();
+    campaign.generation_id = generation.generation_id;
+    campaign.generation_config = generation_key;
+    campaign.generation_manifest_hash = generation.manifest_hash;
     campaign.creator = ctx.accounts.creator.key();
     campaign.mint = args.mint;
     campaign.metadata_hash = args.metadata_hash;
@@ -223,13 +245,28 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
     campaign.reservation_version = args.reservation_version;
     campaign.launch_at = launch_at;
     campaign.graduation_target_usd_micros = args.graduation_target_usd_micros;
-    campaign.trade_route_profile = args.trade_route_profile;
-    campaign.finalize_route_profile = args.finalize_route_profile;
-    campaign.treasury_profile = args.treasury_profile;
-    campaign.dex_profile = args.dex_profile;
-    campaign.oracle_profile = args.oracle_profile;
+    campaign.cluster_kind = generation.cluster_kind;
+    campaign.economics_version = generation.economics_version;
+    campaign.curve_kind = generation.curve_kind;
+    campaign.token_total_supply = generation.token_total_supply;
+    campaign.token_decimals = generation.token_decimals;
+    campaign.curve_supply_bps = generation.curve_supply_bps;
+    campaign.liquidity_token_bps = generation.liquidity_token_bps;
+    campaign.base_price_lamports = generation.base_price_lamports;
+    campaign.price_slope_lamports = generation.price_slope_lamports;
+    campaign.buy_fee_bps = generation.buy_fee_bps;
+    campaign.sell_fee_bps = generation.sell_fee_bps;
+    campaign.finalize_fee_bps = generation.finalize_fee_bps;
+    campaign.creator_post_finalize_bps = generation.creator_post_finalize_bps;
+    campaign.liquidity_post_finalize_bps = generation.liquidity_post_finalize_bps;
+    campaign.dex_adapter = generation.dex_adapter;
+    campaign.trade_route_profile = generation.trade_route_profile;
+    campaign.finalize_route_profile = generation.finalize_route_profile;
+    campaign.treasury_profile = generation.treasury_profile;
+    campaign.dex_profile = generation.dex_profile;
+    campaign.oracle_profile = generation.oracle_profile;
     campaign.creator_buy_lock_until = creator_buy_lock_until;
-    campaign.creator_buy_cap_bps = ctx.accounts.creator_profile.creator_buy_cap_bps;
+    campaign.creator_buy_cap_bps = creator_buy_cap_bps;
     campaign.created_at = now;
     campaign.sold_tokens = 0;
     campaign.net_raised_lamports = 0;
@@ -247,6 +284,7 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
     create_authorization.used_at = now;
     create_authorization.route_signer = global.route_signer;
     create_authorization.message_hash = authorization_hash;
+    create_authorization.schema_version = CREATE_AUTH_SCHEMA_VERSION;
     create_authorization.bump = ctx.bumps.create_authorization;
 
     let creator_profile = &mut ctx.accounts.creator_profile;
@@ -265,6 +303,7 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
         campaign_id: campaign.campaign_id,
         generation_id: campaign.generation_id,
         generation_config: campaign.generation_config,
+        generation_manifest_hash: campaign.generation_manifest_hash,
         creator: campaign.creator,
         mint: campaign.mint,
         ticker_hash: campaign.ticker_hash,
@@ -272,6 +311,9 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
         reservation_version: campaign.reservation_version,
         launch_at: campaign.launch_at,
         graduation_target_usd_micros: campaign.graduation_target_usd_micros,
+        cluster_kind: campaign.cluster_kind,
+        economics_version: campaign.economics_version,
+        dex_adapter: campaign.dex_adapter,
         route_signer: create_authorization.route_signer,
         authorization_hash,
         created_at: campaign.created_at,
@@ -290,15 +332,42 @@ pub fn build_create_authorization_message(
     creator_buy_cap_bps: u16,
     args: &CreateCampaignArgs,
 ) -> Vec<u8> {
-    let mut message = Vec::with_capacity(512);
+    let mut message = Vec::with_capacity(768);
     message.extend_from_slice(CREATE_AUTH_DOMAIN);
     message.extend_from_slice(&CREATE_AUTH_SCHEMA_VERSION.to_le_bytes());
     message.extend_from_slice(program_id.as_ref());
     message.extend_from_slice(args.cluster_hash.as_ref());
+
     message.extend_from_slice(generation.generation_id.as_ref());
     message.extend_from_slice(generation_config_key.as_ref());
-    message.extend_from_slice(generation.manifest_hash.as_ref());
+    message.extend_from_slice(generation.program_id.as_ref());
+    message.extend_from_slice(generation.config_pda.as_ref());
+    message.extend_from_slice(&generation.start_slot.to_le_bytes());
+    message.push(generation.cluster_kind);
+    message.push(generation.allowed_graduation_tier_mask);
+    message.extend_from_slice(&generation.economics_version.to_le_bytes());
+    message.push(generation.curve_kind);
+    message.extend_from_slice(&generation.token_total_supply.to_le_bytes());
+    message.push(generation.token_decimals);
+    message.extend_from_slice(&generation.curve_supply_bps.to_le_bytes());
+    message.extend_from_slice(&generation.liquidity_token_bps.to_le_bytes());
+    message.extend_from_slice(&generation.base_price_lamports.to_le_bytes());
+    message.extend_from_slice(&generation.price_slope_lamports.to_le_bytes());
+    message.extend_from_slice(&generation.buy_fee_bps.to_le_bytes());
+    message.extend_from_slice(&generation.sell_fee_bps.to_le_bytes());
+    message.extend_from_slice(&generation.finalize_fee_bps.to_le_bytes());
+    message.extend_from_slice(&generation.creator_post_finalize_bps.to_le_bytes());
+    message.extend_from_slice(&generation.liquidity_post_finalize_bps.to_le_bytes());
     message.push(generation.dex_adapter);
+    message.extend_from_slice(generation.trade_route_profile.as_ref());
+    message.extend_from_slice(generation.finalize_route_profile.as_ref());
+    message.extend_from_slice(generation.treasury_profile.as_ref());
+    message.extend_from_slice(generation.dex_profile.as_ref());
+    message.extend_from_slice(generation.oracle_profile.as_ref());
+    message.extend_from_slice(generation.manifest_hash.as_ref());
+    message.push(u8::from(generation.route_authorization_required));
+    message.push(u8::from(generation.authorized_trading_required));
+
     message.extend_from_slice(creator.as_ref());
     message.extend_from_slice(risk_cluster_id.as_ref());
     message.extend_from_slice(&creator_buy_lock_seconds.to_le_bytes());
@@ -311,11 +380,6 @@ pub fn build_create_authorization_message(
     message.extend_from_slice(&args.reservation_version.to_le_bytes());
     message.extend_from_slice(&args.launch_at.to_le_bytes());
     message.extend_from_slice(&args.graduation_target_usd_micros.to_le_bytes());
-    message.extend_from_slice(args.trade_route_profile.as_ref());
-    message.extend_from_slice(args.finalize_route_profile.as_ref());
-    message.extend_from_slice(args.treasury_profile.as_ref());
-    message.extend_from_slice(args.dex_profile.as_ref());
-    message.extend_from_slice(args.oracle_profile.as_ref());
     message.extend_from_slice(args.nonce.as_ref());
     message.extend_from_slice(&args.deadline.to_le_bytes());
     message
@@ -333,22 +397,18 @@ pub(crate) fn verify_detached_create_authorization(
         LaunchpadError::InvalidCreateAuthorization
     );
 
-    let current_instruction = load_instruction_at_checked(
-        usize::from(current_index),
-        instructions_account,
-    )
-    .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
+    let current_instruction =
+        load_instruction_at_checked(usize::from(current_index), instructions_account)
+            .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
     require_keys_eq!(
         current_instruction.program_id,
         crate::id(),
         LaunchpadError::InvalidCreateAuthorization
     );
 
-    let verification_instruction = load_instruction_at_checked(
-        usize::from(current_index - 1),
-        instructions_account,
-    )
-    .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
+    let verification_instruction =
+        load_instruction_at_checked(usize::from(current_index - 1), instructions_account)
+            .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
 
     validate_ed25519_instruction(
         &verification_instruction,
@@ -432,14 +492,22 @@ fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
     let end = offset
         .checked_add(2)
         .ok_or(LaunchpadError::MathOverflow)?;
-    require!(end <= data.len(), LaunchpadError::InvalidCreateAuthorization);
+    require!(
+        end <= data.len(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
     Ok(u16::from_le_bytes([data[offset], data[offset + 1]]))
 }
 
 fn checked_slice(data: &[u8], offset: u16, len: usize) -> Result<&[u8]> {
     let start = usize::from(offset);
-    let end = start.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
-    require!(end <= data.len(), LaunchpadError::InvalidCreateAuthorization);
+    let end = start
+        .checked_add(len)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(
+        end <= data.len(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
     Ok(&data[start..end])
 }
 
@@ -476,38 +544,28 @@ pub(crate) fn validate_create_args(args: &CreateCampaignArgs, now: i64) -> Resul
         args.reservation_id_hash != [0; 32],
         LaunchpadError::InvalidCampaign
     );
-    require!(args.reservation_version > 0, LaunchpadError::InvalidCampaign);
     require!(
-        args.trade_route_profile != [0; 32],
-        LaunchpadError::InvalidRouteProfile
-    );
-    require!(
-        args.finalize_route_profile != [0; 32],
-        LaunchpadError::InvalidRouteProfile
-    );
-    require!(
-        args.treasury_profile != [0; 32],
-        LaunchpadError::InvalidRouteProfile
-    );
-    require!(
-        args.dex_profile != [0; 32],
-        LaunchpadError::InvalidRouteProfile
-    );
-    require!(
-        args.oracle_profile != [0; 32],
-        LaunchpadError::InvalidRouteProfile
+        args.reservation_version > 0,
+        LaunchpadError::InvalidCampaign
     );
     require!(args.nonce != [0; 32], LaunchpadError::InvalidNonce);
     require!(
         args.deadline >= now,
         LaunchpadError::CreateAuthorizationExpired
     );
-    require!(
-        is_supported_production_graduation_target(args.graduation_target_usd_micros),
-        LaunchpadError::InvalidCampaign
-    );
 
     resolve_launch_at(args.launch_at, now)
+}
+
+fn validate_graduation_target(
+    generation: &GenerationConfig,
+    target_usd_micros: u64,
+) -> Result<()> {
+    require!(
+        generation_allows_graduation_target(generation, target_usd_micros),
+        LaunchpadError::GraduationTargetNotAllowed
+    );
+    Ok(())
 }
 
 fn resolve_launch_at(requested_launch_at: i64, now: i64) -> Result<i64> {
@@ -533,19 +591,21 @@ fn resolve_launch_at(requested_launch_at: i64, now: i64) -> Result<i64> {
     Ok(requested_launch_at)
 }
 
-fn is_supported_production_graduation_target(target_usd_micros: u64) -> bool {
-    matches!(
-        target_usd_micros,
-        GRADUATION_TARGET_15K_USD_MICROS
-            | GRADUATION_TARGET_30K_USD_MICROS
-            | GRADUATION_TARGET_50K_USD_MICROS
-    )
-}
-
 pub(crate) fn validate_campaign_generation(
     global: &GlobalConfig,
+    generation_key: Pubkey,
     generation: &GenerationConfig,
 ) -> Result<()> {
+    require_keys_eq!(
+        generation.program_id,
+        crate::id(),
+        LaunchpadError::InvalidGenerationProgram
+    );
+    require_keys_eq!(
+        generation.config_pda,
+        generation_key,
+        LaunchpadError::InvalidGeneration
+    );
     require!(
         generation.support_enabled,
         LaunchpadError::CampaignGenerationInactive
@@ -583,7 +643,7 @@ pub(crate) fn validate_creator_can_launch(profile: &CreatorProfile, now: i64) ->
     if profile.last_launch_timestamp > 0 {
         let next_allowed = profile
             .last_launch_timestamp
-            .checked_add(profile.cooldown_seconds as i64)
+            .checked_add(i64::from(profile.cooldown_seconds))
             .ok_or(LaunchpadError::MathOverflow)?;
         require!(now >= next_allowed, LaunchpadError::CreatorCooldownActive);
     }
@@ -625,7 +685,14 @@ pub(crate) fn validate_create_risk_profiles(
 mod tests {
     use super::*;
     use crate::{
-        CREATOR_TIER_1, DEX_ADAPTER_METEORA_DAMM_V2, EMPTY_GENERATION_ID,
+        CLUSTER_KIND_DEVNET, CLUSTER_KIND_MAINNET_BETA, CREATOR_TIER_1,
+        CURVE_KIND_LINEAR_V1, DEX_ADAPTER_METEORA_DAMM_V2, ECONOMICS_VERSION_V1,
+        EMPTY_GENERATION_ID, GRADUATION_TARGET_30K_USD_MICROS,
+        GRADUATION_TARGET_50K_USD_MICROS, GRADUATION_TARGET_6_USD_MICROS,
+        GRADUATION_TIER_6_USD_MASK, GRADUATION_TIER_ALL_MASK,
+        GRADUATION_TIER_PRODUCTION_MASK, LOCKED_BUY_FEE_BPS,
+        LOCKED_CREATOR_POST_FINALIZE_BPS, LOCKED_FINALIZE_FEE_BPS,
+        LOCKED_LIQUIDITY_POST_FINALIZE_BPS, LOCKED_SELL_FEE_BPS,
         TIER_1_MAX_LIVE_BONDING,
     };
 
@@ -654,13 +721,38 @@ mod tests {
         }
     }
 
-    fn test_generation(generation_id: [u8; 32]) -> GenerationConfig {
+    fn test_generation(
+        generation_id: [u8; 32],
+        config_pda: Pubkey,
+        cluster_kind: u8,
+        tier_mask: u8,
+    ) -> GenerationConfig {
         GenerationConfig {
             generation_id,
             program_id: crate::id(),
-            config_pda: Pubkey::new_unique(),
+            config_pda,
             start_slot: 42,
+            cluster_kind,
+            allowed_graduation_tier_mask: tier_mask,
+            economics_version: ECONOMICS_VERSION_V1,
+            curve_kind: CURVE_KIND_LINEAR_V1,
+            token_total_supply: 1_000_000_000_000_000,
+            token_decimals: 6,
+            curve_supply_bps: 8_000,
+            liquidity_token_bps: 1_000,
+            base_price_lamports: 1_000,
+            price_slope_lamports: 10,
+            buy_fee_bps: LOCKED_BUY_FEE_BPS,
+            sell_fee_bps: LOCKED_SELL_FEE_BPS,
+            finalize_fee_bps: LOCKED_FINALIZE_FEE_BPS,
+            creator_post_finalize_bps: LOCKED_CREATOR_POST_FINALIZE_BPS,
+            liquidity_post_finalize_bps: LOCKED_LIQUIDITY_POST_FINALIZE_BPS,
             dex_adapter: DEX_ADAPTER_METEORA_DAMM_V2,
+            trade_route_profile: [1; 32],
+            finalize_route_profile: [2; 32],
+            treasury_profile: [3; 32],
+            dex_profile: [4; 32],
+            oracle_profile: [5; 32],
             active_creation: true,
             support_enabled: true,
             manifest_hash: [9; 32],
@@ -721,11 +813,6 @@ mod tests {
             reservation_version: 7,
             launch_at: 0,
             graduation_target_usd_micros: GRADUATION_TARGET_30K_USD_MICROS,
-            trade_route_profile: [6; 32],
-            finalize_route_profile: [7; 32],
-            treasury_profile: [8; 32],
-            dex_profile: [9; 32],
-            oracle_profile: [10; 32],
             deadline,
             nonce: [11; 32],
         }
@@ -779,10 +866,51 @@ mod tests {
     }
 
     #[test]
-    fn create_args_reject_unapproved_graduation_target() {
-        let mut args = test_create_args(200);
-        args.graduation_target_usd_micros = 6_000_000;
-        assert!(validate_create_args(&args, 100).is_err());
+    fn devnet_generation_accepts_six_dollar_target() {
+        let generation_key = Pubkey::new_unique();
+        let generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
+        assert!(validate_graduation_target(
+            &generation,
+            GRADUATION_TARGET_6_USD_MICROS
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn mainnet_generation_rejects_six_dollar_target() {
+        let generation_key = Pubkey::new_unique();
+        let generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_MAINNET_BETA,
+            GRADUATION_TIER_PRODUCTION_MASK,
+        );
+        assert!(validate_graduation_target(
+            &generation,
+            GRADUATION_TARGET_6_USD_MICROS
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn generation_target_mask_rejects_unselected_production_tier() {
+        let generation_key = Pubkey::new_unique();
+        let generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_6_USD_MASK,
+        );
+        assert!(validate_graduation_target(
+            &generation,
+            GRADUATION_TARGET_30K_USD_MICROS
+        )
+        .is_err());
     }
 
     #[test]
@@ -809,14 +937,23 @@ mod tests {
     }
 
     #[test]
-    fn campaign_generation_requires_active_supported_generation() {
+    fn campaign_generation_requires_active_supported_generation_and_self_key() {
         let generation_id = [8; 32];
+        let generation_key = Pubkey::new_unique();
         let global = test_global(Pubkey::new_unique(), generation_id);
-        let generation = test_generation(generation_id);
-        assert!(validate_campaign_generation(&global, &generation).is_ok());
+        let generation = test_generation(
+            generation_id,
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
+        assert!(validate_campaign_generation(&global, generation_key, &generation).is_ok());
+        assert!(validate_campaign_generation(&global, Pubkey::new_unique(), &generation).is_err());
 
         let inactive_global = test_global(Pubkey::new_unique(), EMPTY_GENERATION_ID);
-        assert!(validate_campaign_generation(&inactive_global, &generation).is_err());
+        assert!(
+            validate_campaign_generation(&inactive_global, generation_key, &generation).is_err()
+        );
     }
 
     #[test]
@@ -857,8 +994,13 @@ mod tests {
     #[test]
     fn authorization_payload_binds_timer_ticker_reservation_and_target() {
         let creator = Pubkey::new_unique();
-        let generation = test_generation([8; 32]);
         let generation_key = Pubkey::new_unique();
+        let generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
         let args = test_create_args(1_000);
         let baseline = build_create_authorization_message(
             crate::id(),
@@ -932,6 +1074,71 @@ mod tests {
                 86_400,
                 1_000,
                 &changed,
+            )
+        );
+    }
+
+    #[test]
+    fn authorization_payload_binds_generation_economics_and_profiles() {
+        let creator = Pubkey::new_unique();
+        let generation_key = Pubkey::new_unique();
+        let generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
+        let args = test_create_args(1_000);
+        let baseline = build_create_authorization_message(
+            crate::id(),
+            generation_key,
+            &generation,
+            creator,
+            [12; 32],
+            86_400,
+            1_000,
+            &args,
+        );
+
+        let mut changed_generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
+        changed_generation.price_slope_lamports += 1;
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &changed_generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &args,
+            )
+        );
+
+        changed_generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
+        changed_generation.treasury_profile = [99; 32];
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &changed_generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &args,
             )
         );
     }
