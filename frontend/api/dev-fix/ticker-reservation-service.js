@@ -436,6 +436,14 @@ export async function promoteTickerReservation(db, {
     });
   }
   if (LOCKED_ONCHAIN_STATUSES.has(reservation.status)) return reservation;
+  if (
+    reservation.status === TICKER_RESERVATION_STATUS.PREPARE_MODE_RESERVED &&
+    reservation.publishedAt &&
+    reservation.expiresAt &&
+    new Date(reservation.expiresAt).getTime() > Date.now()
+  ) {
+    return reservation;
+  }
 
   const terms = reservationTerms({ published: true, now: new Date(publishedAt) });
   const updated = await db.query(
