@@ -6,19 +6,12 @@ use anchor_lang::{
         instruction::Instruction,
         program_option::COption,
         sysvar::instructions::{
-            load_current_index_checked, load_instruction_at_checked,
-            ID as INSTRUCTIONS_SYSVAR_ID,
+            load_current_index_checked, load_instruction_at_checked, ID as INSTRUCTIONS_SYSVAR_ID,
         },
     },
 };
 use anchor_spl::token::{
-    self,
-    spl_token::instruction::AuthorityType,
-    Mint,
-    MintTo,
-    SetAuthority,
-    Token,
-    TokenAccount,
+    self, spl_token::instruction::AuthorityType, Mint, MintTo, SetAuthority, Token, TokenAccount,
 };
 
 use crate::{
@@ -261,7 +254,7 @@ pub struct CampaignCreated {
 }
 
 pub fn create_campaign_handler(
-    mut ctx: Context<CreateCampaign>,
+    ctx: Context<CreateCampaign>,
     args: CreateCampaignArgs,
 ) -> Result<()> {
     let clock = Clock::get()?;
@@ -754,9 +747,7 @@ fn parse_single_ed25519_instruction(data: &[u8]) -> Result<ParsedEd25519Instruct
 }
 
 fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
-    let end = offset
-        .checked_add(2)
-        .ok_or(LaunchpadError::MathOverflow)?;
+    let end = offset.checked_add(2).ok_or(LaunchpadError::MathOverflow)?;
     require!(
         end <= data.len(),
         LaunchpadError::InvalidCreateAuthorization
@@ -766,9 +757,7 @@ fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
 
 fn checked_slice(data: &[u8], offset: u16, len: usize) -> Result<&[u8]> {
     let start = usize::from(offset);
-    let end = start
-        .checked_add(len)
-        .ok_or(LaunchpadError::MathOverflow)?;
+    let end = start.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
     require!(
         end <= data.len(),
         LaunchpadError::InvalidCreateAuthorization
@@ -796,10 +785,7 @@ pub(crate) fn validate_create_args(args: &CreateCampaignArgs, now: i64) -> Resul
         args.cluster_hash != [0; 32],
         LaunchpadError::InvalidCampaign
     );
-    require!(
-        args.ticker_hash != [0; 32],
-        LaunchpadError::InvalidCampaign
-    );
+    require!(args.ticker_hash != [0; 32], LaunchpadError::InvalidCampaign);
     require!(
         args.reservation_id_hash != [0; 32],
         LaunchpadError::InvalidCampaign
@@ -817,10 +803,7 @@ pub(crate) fn validate_create_args(args: &CreateCampaignArgs, now: i64) -> Resul
     resolve_launch_at(args.launch_at, now)
 }
 
-fn validate_graduation_target(
-    generation: &GenerationConfig,
-    target_usd_micros: u64,
-) -> Result<()> {
+fn validate_graduation_target(generation: &GenerationConfig, target_usd_micros: u64) -> Result<()> {
     require!(
         generation_allows_graduation_target(generation, target_usd_micros),
         LaunchpadError::GraduationTargetNotAllowed
@@ -945,14 +928,12 @@ pub(crate) fn validate_create_risk_profiles(
 mod tests {
     use super::*;
     use crate::{
-        CLUSTER_KIND_DEVNET, CLUSTER_KIND_MAINNET_BETA, CREATOR_TIER_1,
-        CURVE_KIND_LINEAR_V1, DEX_ADAPTER_METEORA_DAMM_V2, ECONOMICS_VERSION_V1,
-        EMPTY_GENERATION_ID, GRADUATION_TARGET_30K_USD_MICROS,
-        GRADUATION_TARGET_50K_USD_MICROS, GRADUATION_TARGET_6_USD_MICROS,
-        GRADUATION_TIER_6_USD_MASK, GRADUATION_TIER_ALL_MASK,
-        GRADUATION_TIER_PRODUCTION_MASK, LOCKED_BUY_FEE_BPS,
-        LOCKED_CREATOR_POST_FINALIZE_BPS, LOCKED_FINALIZE_FEE_BPS,
-        LOCKED_LIQUIDITY_POST_FINALIZE_BPS, LOCKED_SELL_FEE_BPS,
+        CLUSTER_KIND_DEVNET, CLUSTER_KIND_MAINNET_BETA, CREATOR_TIER_1, CURVE_KIND_LINEAR_V1,
+        DEX_ADAPTER_METEORA_DAMM_V2, ECONOMICS_VERSION_V1, EMPTY_GENERATION_ID,
+        GRADUATION_TARGET_30K_USD_MICROS, GRADUATION_TARGET_50K_USD_MICROS,
+        GRADUATION_TARGET_6_USD_MICROS, GRADUATION_TIER_6_USD_MASK, GRADUATION_TIER_ALL_MASK,
+        GRADUATION_TIER_PRODUCTION_MASK, LOCKED_BUY_FEE_BPS, LOCKED_CREATOR_POST_FINALIZE_BPS,
+        LOCKED_FINALIZE_FEE_BPS, LOCKED_LIQUIDITY_POST_FINALIZE_BPS, LOCKED_SELL_FEE_BPS,
         TIER_1_MAX_LIVE_BONDING,
     };
 
@@ -1078,22 +1059,14 @@ mod tests {
     }
 
     fn test_asset_addresses(campaign_id: [u8; 32]) -> (Pubkey, Pubkey, Pubkey, Pubkey) {
-        let (campaign, _) = Pubkey::find_program_address(
-            &[CAMPAIGN_SEED, campaign_id.as_ref()],
-            &crate::id(),
-        );
-        let (mint, _) = Pubkey::find_program_address(
-            &[CAMPAIGN_MINT_SEED, campaign_id.as_ref()],
-            &crate::id(),
-        );
-        let (token_vault, _) = Pubkey::find_program_address(
-            &[TOKEN_VAULT_SEED, campaign_id.as_ref()],
-            &crate::id(),
-        );
-        let (sol_vault, _) = Pubkey::find_program_address(
-            &[SOL_VAULT_SEED, campaign_id.as_ref()],
-            &crate::id(),
-        );
+        let (campaign, _) =
+            Pubkey::find_program_address(&[CAMPAIGN_SEED, campaign_id.as_ref()], &crate::id());
+        let (mint, _) =
+            Pubkey::find_program_address(&[CAMPAIGN_MINT_SEED, campaign_id.as_ref()], &crate::id());
+        let (token_vault, _) =
+            Pubkey::find_program_address(&[TOKEN_VAULT_SEED, campaign_id.as_ref()], &crate::id());
+        let (sol_vault, _) =
+            Pubkey::find_program_address(&[SOL_VAULT_SEED, campaign_id.as_ref()], &crate::id());
         (campaign, mint, token_vault, sol_vault)
     }
 
@@ -1174,9 +1147,7 @@ mod tests {
         assert_eq!(allocation.liquidity_tokens, 100_000);
         assert_eq!(allocation.reserve_tokens, 100_000);
         assert_eq!(
-            allocation.curve_tokens
-                + allocation.liquidity_tokens
-                + allocation.reserve_tokens,
+            allocation.curve_tokens + allocation.liquidity_tokens + allocation.reserve_tokens,
             1_000_000
         );
     }
@@ -1218,11 +1189,7 @@ mod tests {
             CLUSTER_KIND_DEVNET,
             GRADUATION_TIER_ALL_MASK,
         );
-        assert!(validate_graduation_target(
-            &generation,
-            GRADUATION_TARGET_6_USD_MICROS
-        )
-        .is_ok());
+        assert!(validate_graduation_target(&generation, GRADUATION_TARGET_6_USD_MICROS).is_ok());
     }
 
     #[test]
@@ -1234,11 +1201,7 @@ mod tests {
             CLUSTER_KIND_MAINNET_BETA,
             GRADUATION_TIER_PRODUCTION_MASK,
         );
-        assert!(validate_graduation_target(
-            &generation,
-            GRADUATION_TARGET_6_USD_MICROS
-        )
-        .is_err());
+        assert!(validate_graduation_target(&generation, GRADUATION_TARGET_6_USD_MICROS).is_err());
     }
 
     #[test]
@@ -1250,11 +1213,7 @@ mod tests {
             CLUSTER_KIND_DEVNET,
             GRADUATION_TIER_6_USD_MASK,
         );
-        assert!(validate_graduation_target(
-            &generation,
-            GRADUATION_TARGET_30K_USD_MICROS
-        )
-        .is_err());
+        assert!(validate_graduation_target(&generation, GRADUATION_TARGET_30K_USD_MICROS).is_err());
     }
 
     #[test]
@@ -1312,12 +1271,9 @@ mod tests {
     fn detached_authorization_rejects_wrong_signer() {
         let route_signer = Pubkey::new_unique();
         let instruction = build_test_ed25519_instruction(route_signer, b"payload");
-        assert!(validate_ed25519_instruction(
-            &instruction,
-            Pubkey::new_unique(),
-            b"payload"
-        )
-        .is_err());
+        assert!(
+            validate_ed25519_instruction(&instruction, Pubkey::new_unique(), b"payload").is_err()
+        );
     }
 
     #[test]
@@ -1390,14 +1346,24 @@ mod tests {
         let args = test_create_args(1_000);
         let baseline = build_test_message(generation_key, &generation, creator, &args);
 
-        let mut changed_generation = generation;
+        let mut changed_generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
         changed_generation.price_slope_lamports += 1;
         assert_ne!(
             baseline,
             build_test_message(generation_key, &changed_generation, creator, &args)
         );
 
-        changed_generation = generation;
+        let mut changed_generation = test_generation(
+            [8; 32],
+            generation_key,
+            CLUSTER_KIND_DEVNET,
+            GRADUATION_TIER_ALL_MASK,
+        );
         changed_generation.treasury_profile = [99; 32];
         assert_ne!(
             baseline,
