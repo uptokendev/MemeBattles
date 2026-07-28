@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 
+// The protected PR workflow applies this temporary safety patch before deployment.
 const deploymentPath = "scripts/deploy-scheduled-cooldown-factory.ts";
 let source = fs.readFileSync(deploymentPath, "utf8").replace(/\r\n/g, "\n");
 
