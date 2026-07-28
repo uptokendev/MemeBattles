@@ -177,3 +177,44 @@ jobs:
           if test -s /tmp/solana-test-validator.pid; then
             kill "$(cat /tmp/solana-test-validator.pid)" || true
           fi
+
+  validator-failure-diagnostic:
+    name: Focused validator failure diagnostic
+    if: ${{ always() && needs.local-validator-acceptance.result == 'failure' }}
+    needs: local-validator-acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download validator diagnostics
+        uses: actions/download-artifact@v4
+        with:
+          name: memewarzone-solana-validator-${{ github.sha }}
+          path: /tmp/validator-diagnostics
+
+      - name: Print compact acceptance failure
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/validator-diagnostics')
+          logs = list(root.rglob('solana-validator-acceptance.log'))
+          if not logs:
+              candidates = sorted(root.rglob('*.log'))
+              diagnostic = {
+                  'error': 'acceptance log missing',
+                  'available_logs': [str(path.relative_to(root)) for path in candidates],
+              }
+          else:
+              lines = logs[0].read_text(encoding='utf-8', errors='replace').splitlines()
+              failing = next(
+                  (index for index, line in enumerate(lines) if 'failing' in line.lower()),
+                  -1,
+              )
+              start = max(0, failing - 25) if failing >= 0 else max(0, len(lines) - 140)
+              diagnostic = {
+                  'log': str(logs[0].relative_to(root)),
+                  'line_count': len(lines),
+                  'focused_lines': lines[start:start + 140],
+              }
+
+          print('SOLANA_VALIDATOR_DIAGNOSTIC=' + json.dumps(diagnostic, ensure_ascii=True))
