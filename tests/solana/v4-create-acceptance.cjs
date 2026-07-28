@@ -218,7 +218,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         creatorProfile,
         systemProgram: SystemProgram.programId,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     await program.methods
       .syncRiskProfile({
@@ -234,7 +237,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         riskProfile,
         systemProgram: SystemProgram.programId,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     return {
       label,
@@ -508,7 +514,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         globalConfig,
         systemProgram: SystemProgram.programId,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     await program.methods
       .lockSecurityDefaults()
@@ -516,7 +525,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         globalConfig,
         admin,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     await program.methods
       .setPauseFlags({
@@ -531,7 +543,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         globalConfig,
         authority: admin,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     await program.methods
       .initializeGenerationConfig({
@@ -569,7 +584,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         generationConfig,
         systemProgram: SystemProgram.programId,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
 
     await program.methods
       .syncClusterProfile({
@@ -584,7 +602,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         clusterProfile,
         systemProgram: SystemProgram.programId,
       })
-      .rpc();
+      .rpc({
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
   });
 
   it("executes Direct Create and proves program-controlled asset state", async function () {
