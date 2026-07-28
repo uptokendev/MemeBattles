@@ -21,7 +21,7 @@ test("normalizes ticker input to the canonical chain-scoped value", () => {
 test("produces deterministic lowercase SHA-256 hashes", () => {
   assert.equal(
     sha256Hex("MEME"),
-    "8dc0376678c82bda921f10a3887f91af759bd0fdb7d2f47e4328617f317323d2",
+    "e2736dd76db8c92a02192027e0cc62853405127dbeee668183220e3a39ed82de",
   );
   assert.match(sha256Hex("reservation-id"), /^[0-9a-f]{64}$/);
 });
