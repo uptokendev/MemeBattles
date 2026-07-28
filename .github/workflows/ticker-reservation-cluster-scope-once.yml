@@ -1,0 +1,332 @@
+name: Wire cluster-scoped ticker reservations once
+
+on:
+  push:
+    branches:
+      - agent/solana-v2-ticker-reservations
+    paths:
+      - .github/workflows/ticker-reservation-cluster-scope-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-ticker-reservations
+          fetch-depth: 0
+
+      - name: Patch cluster-scoped reservation source
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          service_path = Path('frontend/api/dev-fix/ticker-reservation-service.js')
+          service = service_path.read_text(encoding='utf-8')
+
+          old_cluster = '''export function canonicalClusterForChain(chainId, explicitCluster = "") {
+            const explicit = String(explicitCluster || "").trim().toLowerCase();
+            if (explicit) {
+              if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(explicit)) {
+                throw new TickerReservationError("Invalid chain cluster.", {
+                  code: "INVALID_RESERVATION_CLUSTER",
+                  httpStatus: 400,
+                });
+              }
+              return explicit;
+            }
+
+            const numericChainId = Number(chainId);
+            if (numericChainId === 56) return "bsc-mainnet";
+            if (numericChainId === 97) return "bsc-testnet";
+            if (numericChainId === 101) {
+              return String(process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta")
+                .trim()
+                .toLowerCase();
+            }
+            return `chain-${numericChainId}`;
+          }'''
+          new_cluster = '''function canonicalSolanaCluster(value) {
+            const normalized = String(value || "").trim().toLowerCase();
+            if (["mainnet", "mainnet-beta", "solana-mainnet", "solana-mainnet-beta"].includes(normalized)) {
+              return "solana-mainnet-beta";
+            }
+            if (["devnet", "solana-devnet"].includes(normalized)) return "solana-devnet";
+            if (["testnet", "solana-testnet"].includes(normalized)) return "solana-testnet";
+            if (["localnet", "localhost", "solana-localnet"].includes(normalized)) return "solana-localnet";
+            return normalized;
+          }
+
+          export function canonicalClusterForChain(chainId, explicitCluster = "") {
+            const numericChainId = Number(chainId);
+            const explicit = String(explicitCluster || "").trim().toLowerCase();
+            if (explicit) {
+              if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(explicit)) {
+                throw new TickerReservationError("Invalid chain cluster.", {
+                  code: "INVALID_RESERVATION_CLUSTER",
+                  httpStatus: 400,
+                });
+              }
+              return numericChainId === 101 || numericChainId === 102
+                ? canonicalSolanaCluster(explicit)
+                : explicit;
+            }
+
+            if (numericChainId === 56) return "bsc-mainnet";
+            if (numericChainId === 97) return "bsc-testnet";
+            if (numericChainId === 101) {
+              return canonicalSolanaCluster(
+                process.env.SOLANA_CLUSTER || process.env.VITE_SOLANA_CLUSTER || "solana-mainnet-beta",
+              );
+            }
+            if (numericChainId === 102) return "solana-devnet";
+            return `chain-${numericChainId}`;
+          }'''
+          service = replace_once(service, old_cluster, new_cluster, 'canonical cluster aliases')
+
+          old_refresh_head = '''export async function refreshExpiredTickerReservations(db, {
+            chainId = null,
+            normalizedTicker = null,
+            draftId = null,
+          } = {}) {
+            const ticker = normalizedTicker ? normalizeTicker(normalizedTicker) : null;
+            const params = [chainId == null ? null : Number(chainId), ticker || null, draftId || null, EXPIRABLE_STATUSES];'''
+          new_refresh_head = '''export async function refreshExpiredTickerReservations(db, {
+            chainId = null,
+            cluster = null,
+            normalizedTicker = null,
+            draftId = null,
+          } = {}) {
+            const ticker = normalizedTicker ? normalizeTicker(normalizedTicker) : null;
+            const reservationCluster = cluster ? canonicalClusterForChain(chainId, cluster) : null;
+            const params = [
+              chainId == null ? null : Number(chainId),
+              reservationCluster,
+              ticker || null,
+              draftId || null,
+              EXPIRABLE_STATUSES,
+            ];'''
+          service = replace_once(service, old_refresh_head, new_refresh_head, 'refresh cluster parameters')
+          service = service.replace('status = any($4::text[])', 'status = any($5::text[])', 2)
+          service = service.replace('and ($2::text is null or normalized_ticker = $2)\n          and ($3::uuid is null or draft_id = $3)', 'and ($2::text is null or cluster = $2)\n          and ($3::text is null or normalized_ticker = $3)\n          and ($4::uuid is null or draft_id = $4)', 2)
+
+          old_availability = '''export async function getTickerAvailability(db, { chainId, ticker, excludeDraftId = null }) {
+            const numericChainId = Number(chainId);
+            const normalizedTicker = normalizeTicker(ticker);'''
+          new_availability = '''export async function getTickerAvailability(db, {
+            chainId,
+            cluster = "",
+            ticker,
+            excludeDraftId = null,
+          }) {
+            const numericChainId = Number(chainId);
+            const normalizedTicker = normalizeTicker(ticker);'''
+          service = replace_once(service, old_availability, new_availability, 'availability signature')
+          service = replace_once(
+              service,
+              '''  await refreshExpiredTickerReservations(db, { chainId: numericChainId, normalizedTicker });
+              const result = await db.query(
+                `select *
+                   from public.ticker_reservations
+                  where chain_id = $1
+                    and normalized_ticker = $2
+                    and status not in ('DRAFT_UNRESERVED', 'RELEASED')
+                    and ($3::uuid is null or draft_id is distinct from $3::uuid)
+                  order by created_at asc
+                  limit 1`,
+                [numericChainId, normalizedTicker, excludeDraftId || null],
+              );
+              const reservation = mapTickerReservationRow(result.rows[0]);
+              return {
+                ticker: normalizedTicker,
+                chainId: numericChainId,
+                available: !reservation,
+                reservation,
+              };''',
+              '''  const reservationCluster = canonicalClusterForChain(numericChainId, cluster);
+              await refreshExpiredTickerReservations(db, {
+                chainId: numericChainId,
+                cluster: reservationCluster,
+                normalizedTicker,
+              });
+              const result = await db.query(
+                `select *
+                   from public.ticker_reservations
+                  where chain_id = $1
+                    and cluster = $2
+                    and normalized_ticker = $3
+                    and status not in ('DRAFT_UNRESERVED', 'RELEASED')
+                    and ($4::uuid is null or draft_id is distinct from $4::uuid)
+                  order by created_at asc
+                  limit 1`,
+                [numericChainId, reservationCluster, normalizedTicker, excludeDraftId || null],
+              );
+              const reservation = mapTickerReservationRow(result.rows[0]);
+              return {
+                ticker: normalizedTicker,
+                chainId: numericChainId,
+                cluster: reservationCluster,
+                available: !reservation,
+                reservation,
+              };''',
+              'availability cluster query',
+          )
+
+          service = replace_once(
+              service,
+              '''  const numericChainId = Number(chainId);
+              const normalizedTicker = normalizeTicker(ticker);
+              if (!draftId || !creatorWallet || !normalizedTicker || !Number.isFinite(numericChainId) || numericChainId <= 0) {''',
+              '''  const numericChainId = Number(chainId);
+              const normalizedTicker = normalizeTicker(ticker);
+              const reservationCluster = canonicalClusterForChain(numericChainId, cluster);
+              if (!draftId || !creatorWallet || !normalizedTicker || !Number.isFinite(numericChainId) || numericChainId <= 0) {''',
+              'create cluster resolution',
+          )
+          service = replace_once(
+              service,
+              '    if (existing.chainId === numericChainId && existing.normalizedTicker === normalizedTicker) return existing;\n',
+              '    if (existing.chainId === numericChainId && existing.cluster === reservationCluster && existing.normalizedTicker === normalizedTicker) return existing;\n',
+              'existing cluster identity',
+          )
+          service = replace_once(
+              service,
+              '  const availability = await getTickerAvailability(db, { chainId: numericChainId, ticker: normalizedTicker });\n',
+              '  const availability = await getTickerAvailability(db, { chainId: numericChainId, cluster: reservationCluster, ticker: normalizedTicker });\n',
+              'create availability cluster',
+          )
+          service = replace_once(
+              service,
+              '        canonicalClusterForChain(numericChainId, cluster),\n',
+              '        reservationCluster,\n',
+              'insert reservation cluster',
+          )
+          service = replace_once(
+              service,
+              '      metadata: { draftId: String(draftId), chainId: numericChainId, ticker: normalizedTicker },\n',
+              '      metadata: { draftId: String(draftId), chainId: numericChainId, cluster: reservationCluster, ticker: normalizedTicker },\n',
+              'event cluster metadata',
+          )
+          service_path.write_text(service, encoding='utf-8')
+
+          availability_path = Path('frontend/api/dev-fix/ticker-availability.js')
+          availability = availability_path.read_text(encoding='utf-8')
+          availability = replace_once(
+              availability,
+              '  const chainId = Number(q.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);\n',
+              '  const chainId = Number(q.chainId || process.env.VITE_TARGET_CHAIN_ID || 97);\n  const cluster = String(q.cluster || "").trim();\n',
+              'availability request cluster',
+          )
+          availability = replace_once(
+              availability,
+              '    const result = await getTickerAvailability(pool, { chainId, ticker });\n',
+              '    const result = await getTickerAvailability(pool, { chainId, cluster, ticker });\n',
+              'availability service cluster',
+          )
+          availability = availability.replace('        chainId,\n        available: true,', '        chainId,\n        cluster: result.cluster,\n        available: true,', 1)
+          availability = availability.replace('      chainId,\n      available: false,', '      chainId,\n      cluster: result.cluster,\n      available: false,', 1)
+          availability_path.write_text(availability, encoding='utf-8')
+
+          management_path = Path('frontend/api/dev-fix/ticker-reservations.js')
+          management = management_path.read_text(encoding='utf-8')
+          management = replace_once(
+              management,
+              '''  const published = draft.visibility === "public" || PUBLISHED_DRAFT_STATUSES.has(draft.status);
+              return createTickerReservation(db, {
+                draftId: draft.id,
+                creatorWallet: draft.creatorWallet,
+                chainId: draft.chainId,
+                ticker: draft.ticker,
+                published,
+              });''',
+              '''  const previous = await loadTickerReservationByDraft(db, draft.id, {
+                forUpdate: true,
+                includeReleased: true,
+              });
+              const published = draft.visibility === "public" || PUBLISHED_DRAFT_STATUSES.has(draft.status);
+              return createTickerReservation(db, {
+                draftId: draft.id,
+                creatorWallet: draft.creatorWallet,
+                chainId: draft.chainId,
+                cluster: previous?.cluster || "",
+                ticker: draft.ticker,
+                published,
+              });''',
+              'reclaim preserves cluster',
+          )
+          management_path.write_text(management, encoding='utf-8')
+
+          api_path = Path('frontend/src/lib/draftApi.ts')
+          api = api_path.read_text(encoding='utf-8')
+          api = replace_once(
+              api,
+              '  chainId: number;\n  creatorWallet: string;\n',
+              '  chainId: number;\n  cluster?: string;\n  creatorWallet: string;\n',
+              'create input cluster',
+          )
+          api = replace_once(
+              api,
+              '  chainId?: number;\n  available: boolean;\n',
+              '  chainId?: number;\n  cluster?: string;\n  available: boolean;\n',
+              'availability response cluster',
+          )
+          api = replace_once(
+              api,
+              '''export async function checkTickerAvailability(input: { ticker: string; chainId?: number }): Promise<TickerAvailability> {
+            const ticker = String(input.ticker || "").trim();
+            const chainId = Number(input.chainId || 97);
+            const res = await apiFetch(`/api/ticker-availability?ticker=${encodeURIComponent(ticker)}&chainId=${encodeURIComponent(String(chainId))}`);''',
+              '''export async function checkTickerAvailability(input: { ticker: string; chainId?: number; cluster?: string }): Promise<TickerAvailability> {
+            const ticker = String(input.ticker || "").trim();
+            const chainId = Number(input.chainId || 97);
+            const clusterQuery = input.cluster ? `&cluster=${encodeURIComponent(input.cluster)}` : "";
+            const res = await apiFetch(`/api/ticker-availability?ticker=${encodeURIComponent(ticker)}&chainId=${encodeURIComponent(String(chainId))}${clusterQuery}`);''',
+              'typed availability cluster',
+          )
+          api_path.write_text(api, encoding='utf-8')
+
+          test_path = Path('frontend/api/dev-fix/ticker-reservation-service.test.mjs')
+          test = test_path.read_text(encoding='utf-8')
+          test = replace_once(
+              test,
+              '  assert.equal(canonicalClusterForChain(101, "solana-devnet"), "solana-devnet");\n',
+              '  assert.equal(canonicalClusterForChain(101, "solana-devnet"), "solana-devnet");\n  assert.equal(canonicalClusterForChain(101, "devnet"), "solana-devnet");\n  assert.equal(canonicalClusterForChain(101, "mainnet-beta"), "solana-mainnet-beta");\n',
+              'cluster alias tests',
+          )
+          test_path.write_text(test, encoding='utf-8')
+
+      - name: Verify patched sources
+        shell: bash
+        run: |
+          node --check frontend/api/dev-fix/ticker-reservation-service.js
+          node --check frontend/api/dev-fix/ticker-availability.js
+          node --check frontend/api/dev-fix/ticker-reservations.js
+          node --test frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git diff --check
+          git diff --stat
+
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            frontend/api/dev-fix/ticker-reservation-service.js \
+            frontend/api/dev-fix/ticker-availability.js \
+            frontend/api/dev-fix/ticker-reservations.js \
+            frontend/src/lib/draftApi.ts \
+            frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git commit -m 'Scope ticker reservations by chain cluster'
+          git push origin HEAD:agent/solana-v2-ticker-reservations
