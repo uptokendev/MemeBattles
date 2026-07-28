@@ -39,6 +39,7 @@ jobs:
         run: |
           node --check frontend/api/campaigns.js
           node --check frontend/api/campaigns-base.js
+          node --check frontend/api/featured.js
           node --check frontend/api/dev-fix/drafts.js
           node --check frontend/api/dev-fix/drafts-base.js
           node --check frontend/api/dev-fix/draft-read.js
