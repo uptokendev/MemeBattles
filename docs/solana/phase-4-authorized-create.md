@@ -1,27 +1,25 @@
-# Solana Phase 4 Detached Authorized Create Foundation
+# Solana Phase 4 Detached Authorized Create
 
 Status date: 2026-07-28
 Branch: `agent/solana-v2-phase0-refresh`
-PR: #67
+Draft PR: #67
 
-## What this slice adds
+## Current authorization version
 
-This slice replaces the historical route-authority transaction co-signing concept with detached Ed25519 authorization and moves the valid Solana foundation onto the current `devpostgrad` integration base.
+Detached create authorization V2 supersedes V1 for future backend and client implementation.
 
-It does not enable public Solana create, buy, sell or graduation flows.
+```text
+CREATE_AUTH_DOMAIN = MEMEWARZONE_SOLANA_CREATE_V2
+schema_version = 2
+```
 
-| Path | Purpose |
-| --- | --- |
-| `programs/memewarzone_solana/src/lib.rs` | Wires `create_campaign` into the Anchor program and supplies global, generation, creator, risk and cluster state. |
-| `programs/memewarzone_solana/src/authorized_create.rs` | Adds campaign/create-authorization PDAs, detached Ed25519 verification, timer/ticker/reservation/target/profile binding, replay protection and Rust tests. |
-| `docs/solana/create-authorization-v1.md` | Defines the exact binary payload, transaction order and remaining gates. |
-| `.github/workflows/solana-anchor-ci.yml` | Builds the Anchor program and runs Rust invariant tests in GitHub Actions. |
+V1 remains in the repository as historical design evidence. The canonical V2 byte layout is documented in `docs/solana/create-authorization-v2.md`.
 
-The old prototype frontend adapter, frontend authorization helper and `dev-fix` Solana transaction backend were not ported because they manually encode protocol layouts and no longer match the corrected authorization design.
+This slice does not enable public Solana create, buy, sell or graduation.
 
-## Authorization model
+## Transaction model
 
-Railway signs a domain-separated payload only. Railway does not sign the creator transaction.
+Railway signs the exact authorization payload only. Railway never signs the creator transaction.
 
 The creator submits one transaction containing:
 
@@ -30,83 +28,102 @@ instruction N-1: native Ed25519 verification instruction
 instruction N:   MemeWarzone create_campaign instruction
 ```
 
-`create_campaign` reads the Instructions sysvar and requires:
+`create_campaign` reads the Instructions sysvar and enforces:
 
 - a top-level call to the MemeWarzone program;
 - the Ed25519 instruction immediately before the current instruction;
 - exactly one self-contained signature;
-- the public key configured as `GlobalConfig.route_signer`;
-- byte-for-byte equality with the on-chain reconstructed payload;
-- a fresh creator+nonce PDA.
+- the configured `GlobalConfig.route_signer`;
+- byte-for-byte equality with the on-chain reconstructed V2 payload;
+- a fresh creator+nonce PDA;
+- a non-expired deadline.
 
-The transaction fails atomically if the signature is invalid, the payload differs, the deadline is expired or the nonce PDA already exists.
+The transaction fails atomically when any condition fails.
 
-## Signed and stored launch bindings
+## Creator-controlled create fields
 
-The payload binds:
+The creator request contains only campaign-specific identity and selection values:
 
-- program and declared cluster;
-- generation ID, config PDA, manifest and DEX adapter;
-- creator, current risk cluster, tier lock duration and creator buy cap;
-- campaign, mint and metadata;
+- campaign ID;
+- mint identity, pending program-owned mint creation in the next slice;
+- metadata hash;
+- declared cluster hash;
 - ticker hash;
 - reservation ID hash and reservation version;
 - immediate or scheduled launch time;
-- graduation target;
-- separate trade and finalize route profiles;
-- treasury, DEX and oracle profiles;
+- a graduation target allowed by the active generation;
 - nonce and deadline.
 
-The accepted campaign account stores the immutable launch time, graduation target, ticker/reservation binding, route profiles and creator lock/cap resolution.
+The creator no longer supplies curve, supply, fee, DEX, treasury, oracle or route-profile values.
 
-## Timer rules in this slice
+## Generation-owned authorization bindings
 
-- `launch_at = 0` means immediate launch and resolves to the current Solana Clock timestamp.
+The V2 payload binds the complete active `GenerationConfig`, including:
+
+- generation ID, program, self config PDA and start slot;
+- cluster kind and target mask;
+- economics and curve versions;
+- total supply and decimals;
+- curve/liquidity allocations;
+- base price and slope;
+- buy, sell and finalize fees;
+- 20/80 post-finalize creator/liquidity split;
+- DEX adapter;
+- trading, finalization, treasury, DEX and oracle profile hashes;
+- manifest hash;
+- locked authorization defaults.
+
+Changing any generation field changes the required signature.
+
+## Campaign snapshot
+
+A successful create copies the immutable generation policy into the Campaign account. The campaign therefore retains its original:
+
+- generation and manifest identity;
+- cluster and target policy;
+- curve and supply economics;
+- fees and post-finalize split;
+- DEX adapter;
+- route, treasury, DEX and oracle profile commitments;
+- timer, ticker reservation and creator lock/cap resolution.
+
+Later generation cutovers cannot rewrite existing campaign economics.
+
+## Timer rules
+
+- `launch_at = 0` resolves to the current Solana Clock timestamp.
 - A scheduled launch must be at least five minutes in the future.
 - A scheduled launch may be no more than 30 days in the future.
-- Future trading instructions must reject buys and sells before `campaign.launch_at`.
+- Future buy and sell instructions must reject trading before `campaign.launch_at`.
 
-## Graduation-tier boundary
+## Graduation-tier rules
 
-This slice accepts the exact production tiers:
+- Devnet generations must include the 6 USD target.
+- Mainnet-beta generations reject the 6 USD target on-chain.
+- Approved production targets are 15,000 USD, 30,000 USD and 50,000 USD.
+- Create rejects targets absent from the selected generation's mask.
 
-- 15,000 USD;
-- 30,000 USD;
-- 50,000 USD.
+## Implemented checks
 
-The 6 USD devnet target is intentionally rejected until `GenerationConfig` owns an explicit cluster kind and graduation-tier mask. A frontend or backend environment variable is not sufficient protection for the test tier.
+- Detached Ed25519 route authorization.
+- Instructions-sysvar ordering and top-level invocation checks.
+- Creator+nonce replay protection.
+- Deadline enforcement.
+- Program/self-key/active/supported generation validation.
+- Creator tier, cooldown and live-campaign checks.
+- Wallet and cluster risk restrictions.
+- Timer, ticker, reservation and target binding.
+- Generation economics/profile binding and campaign snapshot.
+- Rust invariants plus generated-IDL CI.
 
-## Implemented requirements
+## Remaining before production create
 
-| Requirement | Status | Notes |
-| --- | --- | --- |
-| Fresh integration base | Implemented | Branch is based directly on the current `devpostgrad`, not merged from the divergent historical PR. |
-| Detached route authorization | Implemented | Ed25519 precompile plus Instructions-sysvar verification; no Railway transaction co-signer. |
-| Replay protection | Implemented | `CreateAuthorization` uses `[create-auth, creator, nonce]`. |
-| Deadline enforcement | Implemented | Expired authorizations are rejected before state is written. |
-| Active generation check | Implemented | Generation must be supported, active for creation and match the global active generation. |
-| Creator eligibility | Implemented | Restriction, manual review, live-count limit and cooldown checks. |
-| Wallet and cluster risk | Implemented | Restricted or mismatched wallet/cluster profiles fail creation. |
-| Timer binding | Implemented | Immediate and scheduled launch values are signed and stored. |
-| Ticker reservation binding | Implemented on-chain shape | Ticker hash plus reservation ID/version are signed and stored; canonical database endpoint remains pending. |
-| Graduation target binding | Implemented for production tiers | Devnet-only 6 USD policy remains pending in generation config. |
-| Route-profile binding | Implemented | Trade/finalize, treasury, DEX and oracle profiles are independently bound. |
-| GitHub Actions build/test | Implemented | Anchor build and Rust invariant suite run in the Solana-only workflow. |
+- Program-created SPL mint and mint-authority guarantees.
+- Program-owned token and SOL vault initialization.
+- Canonical ticker-reservation tables and Railway authorization endpoint.
+- TypeScript client generated from the accepted IDL and deployment manifest.
+- Transaction-level unauthorized/replay tests on local validator and devnet.
+- Authorized buy/sell, graduation and reward-vault instructions.
+- Indexer, reconciliation and operator controls.
 
-## Still pending before merge or deployment
-
-- generation-owned curve and fee economics;
-- explicit generation cluster kind and graduation-tier mask;
-- devnet-only 6 USD tier;
-- mint creation and mint-authority guarantees;
-- program-owned token and SOL vault initialization;
-- canonical ticker-reservation tables and authorization endpoint;
-- generated IDL and versioned deployment manifest;
-- TypeScript client built from the IDL and manifest;
-- local-validator and devnet integration tests;
-- buy, sell, graduation and reward-vault instructions;
-- indexer, reconciliation and admin controls.
-
-## Gate status
-
-The Solana launchpad remains `protocol_pending`. This slice is a secure foundation, not a public-launch switch.
+Solana remains `protocol_pending`.
