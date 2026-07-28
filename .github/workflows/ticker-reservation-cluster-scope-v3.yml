@@ -53,3 +53,5 @@ jobs:
             frontend/api/dev-fix/ticker-reservation-service.test.mjs
           git commit -m 'Scope ticker reservations by chain cluster'
           git push origin HEAD:agent/solana-v2-ticker-reservations
+
+# trigger: deterministic-cluster-scope-v1
