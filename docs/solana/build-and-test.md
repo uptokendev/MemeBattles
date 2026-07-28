@@ -1,4 +1,4 @@
-# Solana Build, IDL and Test Lane
+# Solana Build, IDL And Test Lane
 
 Status date: 2026-07-28
 Workflow: `.github/workflows/solana-anchor-ci.yml`
@@ -13,6 +13,7 @@ The lane is path-filtered to the Anchor workspace, Solana program crate and work
 
 ```text
 Anchor CLI:        0.30.1
+Anchor Lang/SPL:   0.30.1
 Solana CLI:        1.18.26
 SBF/test Rust:     1.79.0
 IDL Rust nightly:  nightly-2024-05-09
@@ -21,7 +22,21 @@ Node.js:           24
 Runner:             ubuntu-latest
 ```
 
-Anchor 0.30.1 supports an explicit `RUSTUP_TOOLCHAIN` override for IDL generation. The workflow therefore separates the stable SBF build from the nightly IDL build instead of forcing one Rust toolchain to perform both jobs. `proc-macro2` is pinned to the API generation expected by Anchor 0.30 IDL generation.
+Anchor 0.30.1 supports an explicit `RUSTUP_TOOLCHAIN` override for IDL generation. The workflow separates the stable SBF build from the nightly IDL build instead of forcing one Rust toolchain to perform both jobs. `proc-macro2` remains pinned to the API generation expected by Anchor 0.30 IDL generation.
+
+## SPL Token dependency boundary
+
+Phase 6 uses the classic SPL Token program at runtime for the campaign mint and token vault.
+
+The Anchor 0.30 account-constraint derive path also expands through Token-2022 interface and extension modules at compile time. The workspace therefore enables these Anchor SPL crate features:
+
+```text
+token
+token_2022
+token_2022_extensions
+```
+
+That compile-time compatibility does not make Token-2022 an accepted runtime account. The program account type is `Program<Token>`, the V3 authorization binds the canonical classic SPL Token program ID, and alternate token-program accounts fail before asset initialization.
 
 ## Workflow gates
 
@@ -51,7 +66,22 @@ target/deploy/memewarzone_solana.so
 target/idl/memewarzone_solana.json
 ```
 
-The uploaded artifact is build evidence only. It is not permission to deploy and is not a substitute for the versioned deployment manifest, key ceremony, authority verification, devnet acceptance or audit gates.
+The uploaded artifact is build evidence only. It is not permission to deploy and is not a substitute for the versioned deployment manifest, key ceremony, authority verification, local-validator account tests, devnet acceptance or audit gates.
+
+## Phase 6 invariant coverage
+
+The Rust suite now covers the source-level invariants for:
+
+- V3 authorization domain and schema;
+- deterministic Campaign, mint, token-vault and SOL-vault PDAs;
+- binding every asset address and the canonical token program into the signed payload;
+- complete-supply curve/liquidity/reserve accounting;
+- integer rounding dust remaining in reserve;
+- devnet-only 6 USD target policy;
+- generation economics/profile mutation invalidating authorization;
+- timer, ticker, reservation, risk and replay rules.
+
+CPI behavior and resulting account state still require local-validator and devnet transaction tests. Unit tests and generated IDL do not prove mint-authority revocation on a live runtime.
 
 ## Why the SBF and IDL builds are separate
 
@@ -82,7 +112,7 @@ The CI result remains authoritative when local dependency caches or host tooling
 
 ## Formatting gate
 
-The first attempt to add `cargo fmt --check` exposed formatting drift in the imported historical Rust foundation before the workflow reached IDL generation. That does not invalidate the compiled authorization logic, but formatting should be normalized in a dedicated source-only change before making `cargo fmt --check` a required gate.
+The Phase 6 authorization source was normalized with `cargo fmt`. Older imported Rust foundation formatting still needs a dedicated source-only normalization before `cargo fmt --check` becomes a required repository-wide gate.
 
 Do not hide formatting drift by auto-formatting only in the build runner. The committed source must eventually be formatted and then checked without mutation.
 
@@ -93,8 +123,9 @@ When the lane fails:
 1. Identify the first failed stage.
 2. Keep stable SBF failures separate from nightly IDL failures.
 3. Do not weaken authorization, economics or account constraints to satisfy tooling.
-4. Do not update dependencies one by one without an explicit compatibility decision.
-5. Preserve the last green program build while testing an IDL-toolchain change.
+4. Treat an IDL test compile failure as source/test failure, not permission to bypass IDL generation.
+5. Do not update dependencies one by one without an explicit compatibility decision.
+6. Preserve the last green program build while testing a toolchain or IDL change.
 
 ## Readiness boundary
 
@@ -103,7 +134,7 @@ A green workflow proves only that:
 - the current program compiles under the pinned SBF lane;
 - an IDL can be generated under the pinned IDL lane;
 - expected program and IDL files exist;
-- Rust invariant tests pass;
+- Rust source-level invariant tests pass;
 - the artifact can be retained for review.
 
 Solana create, buy, sell, graduation and claims remain `protocol_pending` until all implementation and acceptance gates in the source-of-truth document are closed.
