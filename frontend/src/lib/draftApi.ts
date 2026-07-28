@@ -476,6 +476,67 @@ async function retryPrivateReadWithAuth(
   return parseJson(res) as Promise<PrepareDraftBundle>;
 }
 
+export type TickerReservationStatus =
+  | "DRAFT_UNRESERVED"
+  | "SOFT_RESERVED"
+  | "PREPARE_MODE_RESERVED"
+  | "SCHEDULED_UNARMED"
+  | "ARM_AUTHORIZED"
+  | "ARMING"
+  | "ARMED_ONCHAIN"
+  | "LIVE"
+  | "DEPLOY_FAILED"
+  | "EXPIRED_GRACE"
+  | "RELEASED"
+  | "SCHEDULE_MISSED";
+
+export type TickerReservation = {
+  id: string;
+  draftId: string | null;
+  creatorWallet: string;
+  chainId: number;
+  cluster: string;
+  originalTicker: string;
+  normalizedTicker: string;
+  tickerHash: string;
+  reservationIdHash: string;
+  status: TickerReservationStatus;
+  reservedAt: string | null;
+  publishedAt: string | null;
+  expiresAt: string | null;
+  graceEndAt: string | null;
+  renewalCount: number;
+  scheduledLaunchAt: string | null;
+  armAuthorizedAt: string | null;
+  armingAt: string | null;
+  armedAt: string | null;
+  liveAt: string | null;
+  scheduleMissedAt: string | null;
+  releasedAt: string | null;
+  programId: string | null;
+  generationId: string | null;
+  campaignPda: string | null;
+  mint: string | null;
+  deploymentSignature: string | null;
+  reservationVersion: string;
+  authorizationNonce: string | null;
+  failureReason: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type TickerReservationOperation = "read" | "renew" | "release" | "reclaim";
+
+export type TickerReservationManagementResult = {
+  operation: TickerReservationOperation;
+  draftId: string;
+  ticker: string;
+  chainId: number;
+  reservation: TickerReservation | null;
+  availableActions: Array<"renew" | "release" | "reclaim">;
+};
+
 export type DraftVisibility = "public" | "unlisted" | "private";
 export type DraftStatus = "draft" | "promotion_published" | "ready_to_launch" | "scheduled" | "deployed" | "archived";
 
@@ -501,6 +562,7 @@ export type CampaignDraft = {
   deployedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tickerReservation?: TickerReservation | null;
 };
 
 export type CampaignDraftPromotion = {
@@ -649,6 +711,7 @@ export type TickerAvailability = {
   available: boolean;
   reason: string;
   source: "validation" | "draft" | "campaign" | "available" | string;
+  reservation?: Pick<TickerReservation, "status" | "expiresAt" | "graceEndAt" | "renewalCount" | "scheduledLaunchAt" | "reservationVersion"> | null;
 };
 
 export async function checkTickerAvailability(input: { ticker: string; chainId?: number }): Promise<TickerAvailability> {
@@ -663,7 +726,10 @@ export async function createCampaignDraft(input: CreateDraftInput): Promise<Camp
     body: JSON.stringify(input),
   });
   const json = await parseJson(res);
-  const draft = json.draft as CampaignDraft;
+  const draft = {
+    ...(json.draft as CampaignDraft),
+    tickerReservation: (json.tickerReservation as TickerReservation | null | undefined) ?? json.draft?.tickerReservation ?? null,
+  };
   cacheJustCreatedDraft(draft);
   return draft;
 }
@@ -785,6 +851,50 @@ export async function addDraftComment(
   return json.comment as DraftComment;
 }
 
+export async function manageTickerReservation(input: {
+  draftId: string;
+  walletAddress: string;
+  chainId: number;
+  operation: TickerReservationOperation;
+  auth?: DraftActionAuth | null;
+}): Promise<TickerReservationManagementResult> {
+  const send = async (auth: DraftActionAuth) => {
+    const res = await apiFetch(`/api/drafts/${encodeURIComponent(input.draftId)}/ticker-reservation`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ operation: input.operation, auth }),
+    });
+    const json = await readResponseJson(res);
+    return { res, json };
+  };
+
+  let auth = input.auth || await signDraftActionWithKnownChain({
+    action: "manage_ticker_reservation",
+    draftId: input.draftId,
+    walletAddress: input.walletAddress,
+    chainId: input.chainId,
+    useOwnerSession: true,
+  });
+  let attempt = await send(auth);
+
+  if (attempt.res.status === 401 && shouldRetryWithFreshOwnerSession(attempt.json)) {
+    auth = await signDraftActionWithKnownChain({
+      action: "manage_ticker_reservation",
+      draftId: input.draftId,
+      walletAddress: input.walletAddress,
+      chainId: input.chainId,
+      useOwnerSession: true,
+      forceNewOwnerSession: true,
+    });
+    attempt = await send(auth);
+  }
+
+  if (!attempt.res.ok) {
+    throw new Error(String(attempt.json?.error || attempt.json?.message || `Request failed (${attempt.res.status})`));
+  }
+  return attempt.json as TickerReservationManagementResult;
+}
+
 export async function archiveCampaignDraft(draftId: string, auth: DraftActionAuth): Promise<PrepareDraftBundle> {
   const res = await apiFetch(`/api/drafts/${encodeURIComponent(draftId)}/archive`, {
     method: "POST",
@@ -804,5 +914,8 @@ export async function markDraftDeployed(
     body: JSON.stringify(input),
   });
   const json = await parseJson(res);
-  return json.draft as CampaignDraft;
+  return {
+    ...(json.draft as CampaignDraft),
+    tickerReservation: (json.tickerReservation as TickerReservation | null | undefined) ?? json.draft?.tickerReservation ?? null,
+  };
 }
