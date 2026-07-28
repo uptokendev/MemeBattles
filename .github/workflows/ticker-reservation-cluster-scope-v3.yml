@@ -27,6 +27,43 @@ jobs:
       - name: Validate deterministic patch script
         run: python -m py_compile scripts/apply-ticker-cluster-scope.py
 
+      - name: Narrow canonical blocked-response matcher
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/apply-ticker-cluster-scope.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''    source = replace_once(
+                  source,
+                  '''      ticker,
+                chainId,
+                available: false,''',
+                  '''      ticker,
+                chainId,
+                cluster: result.cluster,
+                available: false,''',
+                  "blocked response cluster",
+              )'''
+          new = '''    source = replace_once(
+                  source,
+                  '''    return json(res, 200, {
+                ticker,
+                chainId,
+                available: false,
+                reason: blockedReason(result.reservation?.status),''',
+                  '''    return json(res, 200, {
+                ticker,
+                chainId,
+                cluster: result.cluster,
+                available: false,
+                reason: blockedReason(result.reservation?.status),''',
+                  "blocked response cluster",
+              )'''
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected one generic blocked-response matcher, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+
       - name: Apply cluster-scoped reservation source
         run: python scripts/apply-ticker-cluster-scope.py
 
