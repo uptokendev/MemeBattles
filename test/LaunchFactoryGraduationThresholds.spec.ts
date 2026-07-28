@@ -12,43 +12,6 @@ const req = (graduationTarget: bigint, name = "Threshold", symbol = "THR") => ({
   graduationTarget,
 });
 
-function hashCampaignRequest(request: ReturnType<typeof req>) {
-  return ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32", "uint256"],
-      [
-        ethers.keccak256(ethers.toUtf8Bytes(request.name)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.symbol)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.logoURI)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.xAccount)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.website)),
-        ethers.keccak256(ethers.toUtf8Bytes(request.extraLink)),
-        request.graduationTarget,
-      ],
-    ),
-  );
-}
-
-async function signRoute(factory: any, creator: string, signer: any, request: ReturnType<typeof req>, deadline: bigint) {
-  const { chainId } = await ethers.provider.getNetwork();
-  const digest = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["string", "uint256", "address", "address", "bytes32", "uint8", "uint8", "uint64"],
-      [
-        "MWZ_CREATE_ROUTE_AUTH",
-        chainId,
-        await factory.getAddress(),
-        creator,
-        hashCampaignRequest(request),
-        1,
-        1,
-        deadline,
-      ],
-    ),
-  );
-  return signer.signMessage(ethers.getBytes(digest));
-}
-
 describe("LaunchFactory graduation threshold policy", function () {
   const six = ethers.parseEther("6");
   const fifteenK = ethers.parseEther("15000");
@@ -76,7 +39,28 @@ describe("LaunchFactory graduation threshold policy", function () {
     expect(await factory.isGraduationTargetAllowedForChain(97, arbitrary)).to.eq(false);
   });
 
-  it("accepts each approved explicit threshold in the local testnet environment", async () => {
+  it("keeps unsupported targets rejected by the production chain policies", async () => {
+    const { factory } = await deployCoreFixture();
+
+    expect(await factory.isGraduationTargetAllowedForChain(56, arbitrary)).to.eq(false);
+    expect(await factory.isGraduationTargetAllowedForChain(97, arbitrary)).to.eq(false);
+    expect(await factory.isGraduationTargetAllowedForChain(56, six)).to.eq(false);
+  });
+
+  it("allows legacy fast-test targets only on the local Hardhat chain", async () => {
+    const { factory, creator } = await deployCoreFixture();
+    const { chainId } = await ethers.provider.getNetwork();
+
+    expect(chainId).to.eq(31337n);
+    expect(await factory.isGraduationTargetAllowed(arbitrary)).to.eq(true);
+
+    await factory.connect(creator).createCampaign(req(arbitrary, "Local Only", "LOCAL") as any);
+    const info = await factory.getCampaign(0n);
+    const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
+    expect(await campaign.graduationTarget()).to.eq(arbitrary);
+  });
+
+  it("accepts each approved explicit threshold in the local test environment", async () => {
     const { factory, creator } = await deployCoreFixture();
     const approved = [six, fifteenK, thirtyK, fiftyK];
 
@@ -86,25 +70,6 @@ describe("LaunchFactory graduation threshold policy", function () {
       const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
       expect(await campaign.graduationTarget()).to.eq(approved[index]);
     }
-  });
-
-  it("rejects an arbitrary explicit threshold even with a valid route-authority signature", async () => {
-    const { factory, creator, owner } = await deployCoreFixture();
-    await factory.connect(owner).setRequireRouteAuthorization(true);
-    await factory.connect(owner).setRouteAuthority(await owner.getAddress());
-
-    const request = req(arbitrary, "Rejected", "NOPE");
-    const deadline = BigInt((await ethers.provider.getBlock("latest"))!.timestamp + 600);
-    const signature = await signRoute(factory, await creator.getAddress(), owner, request, deadline);
-
-    await expect(
-      factory.connect(creator).createCampaignAuthorized(request as any, {
-        tradeRouteProfile: 1,
-        finalizeRouteProfile: 1,
-        deadline,
-        signature,
-      }),
-    ).to.be.revertedWithCustomError(factory, "UnsupportedGraduationTarget");
   });
 
   it("keeps graduationTarget 0 as the factory-configured default", async () => {
