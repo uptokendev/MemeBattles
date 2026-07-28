@@ -1,20 +1,44 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{
+    prelude::*,
+    solana_program::{
+        ed25519_program,
+        hash::hash,
+        instruction::Instruction,
+        sysvar::instructions::{
+            load_current_index_checked, load_instruction_at_checked,
+            ID as INSTRUCTIONS_SYSVAR_ID,
+        },
+    },
+};
 
 use crate::{
-    ClusterProfile, CreatorProfile, GenerationConfig, GlobalConfig, RiskProfile,
-    CLUSTER_PROFILE_SEED, CREATOR_PROFILE_SEED, GENERATION_CONFIG_SEED, GLOBAL_CONFIG_SEED,
-    RISK_PROFILE_SEED, EMPTY_CLUSTER_ID, LaunchpadError,
+    ClusterProfile, CreatorProfile, GenerationConfig, GlobalConfig, LaunchpadError, RiskProfile,
+    CLUSTER_PROFILE_SEED, CREATOR_PROFILE_SEED, EMPTY_CLUSTER_ID, GENERATION_CONFIG_SEED,
+    GLOBAL_CONFIG_SEED, RISK_PROFILE_SEED,
 };
 
 pub const CAMPAIGN_SEED: &[u8] = b"campaign";
 pub const CREATE_AUTH_SEED: &[u8] = b"create-auth";
+pub const CREATE_AUTH_DOMAIN: &[u8] = b"MEMEWARZONE_SOLANA_CREATE_V1";
+pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 1;
+
+pub const MIN_SCHEDULE_SECONDS: i64 = 300;
+pub const MAX_SCHEDULE_SECONDS: i64 = 30 * 24 * 60 * 60;
+
+pub const GRADUATION_TARGET_15K_USD_MICROS: u64 = 15_000_000_000;
+pub const GRADUATION_TARGET_30K_USD_MICROS: u64 = 30_000_000_000;
+pub const GRADUATION_TARGET_50K_USD_MICROS: u64 = 50_000_000_000;
+
+const ED25519_HEADER_SIZE: usize = 16;
+const ED25519_SIGNATURE_SIZE: usize = 64;
+const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+const ED25519_CURRENT_INSTRUCTION: u16 = u16::MAX;
 
 #[derive(Accounts)]
 #[instruction(args: CreateCampaignArgs)]
 pub struct CreateCampaign<'info> {
     #[account(mut)]
     pub creator: Signer<'info>,
-    pub route_authority: Signer<'info>,
     #[account(
         mut,
         seeds = [GLOBAL_CONFIG_SEED],
@@ -58,6 +82,9 @@ pub struct CreateCampaign<'info> {
         bump
     )]
     pub create_authorization: Account<'info, CreateAuthorization>,
+    /// CHECK: The address constraint pins this account to the Instructions sysvar.
+    #[account(address = INSTRUCTIONS_SYSVAR_ID)]
+    pub instructions: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -70,7 +97,19 @@ pub struct Campaign {
     pub creator: Pubkey,
     pub mint: Pubkey,
     pub metadata_hash: [u8; 32],
-    pub route_profile_hash: [u8; 32],
+    pub cluster_hash: [u8; 32],
+    pub ticker_hash: [u8; 32],
+    pub reservation_id_hash: [u8; 32],
+    pub reservation_version: u64,
+    pub launch_at: i64,
+    pub graduation_target_usd_micros: u64,
+    pub trade_route_profile: [u8; 32],
+    pub finalize_route_profile: [u8; 32],
+    pub treasury_profile: [u8; 32],
+    pub dex_profile: [u8; 32],
+    pub oracle_profile: [u8; 32],
+    pub creator_buy_lock_until: i64,
+    pub creator_buy_cap_bps: u16,
     pub created_at: i64,
     pub sold_tokens: u64,
     pub net_raised_lamports: u64,
@@ -90,6 +129,7 @@ pub struct CreateAuthorization {
     pub deadline: i64,
     pub used_at: i64,
     pub route_signer: Pubkey,
+    pub message_hash: [u8; 32],
     pub bump: u8,
 }
 
@@ -98,7 +138,18 @@ pub struct CreateCampaignArgs {
     pub campaign_id: [u8; 32],
     pub mint: Pubkey,
     pub metadata_hash: [u8; 32],
-    pub route_profile_hash: [u8; 32],
+    pub cluster_hash: [u8; 32],
+    pub ticker_hash: [u8; 32],
+    pub reservation_id_hash: [u8; 32],
+    pub reservation_version: u64,
+    /// Zero means immediate launch. A non-zero value is an immutable scheduled launch time.
+    pub launch_at: i64,
+    pub graduation_target_usd_micros: u64,
+    pub trade_route_profile: [u8; 32],
+    pub finalize_route_profile: [u8; 32],
+    pub treasury_profile: [u8; 32],
+    pub dex_profile: [u8; 32],
+    pub oracle_profile: [u8; 32],
     pub deadline: i64,
     pub nonce: [u8; 32],
 }
@@ -111,9 +162,13 @@ pub struct CampaignCreated {
     pub generation_config: Pubkey,
     pub creator: Pubkey,
     pub mint: Pubkey,
-    pub metadata_hash: [u8; 32],
-    pub route_profile_hash: [u8; 32],
+    pub ticker_hash: [u8; 32],
+    pub reservation_id_hash: [u8; 32],
+    pub reservation_version: u64,
+    pub launch_at: i64,
+    pub graduation_target_usd_micros: u64,
     pub route_signer: Pubkey,
+    pub authorization_hash: [u8; 32],
     pub created_at: i64,
 }
 
@@ -123,8 +178,7 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
 
     let global = &ctx.accounts.global_config;
     require_create_enabled(global)?;
-    validate_create_args(&args, now)?;
-    validate_route_authority(global, ctx.accounts.route_authority.key())?;
+    let launch_at = validate_create_args(&args, now)?;
     validate_campaign_generation(global, &ctx.accounts.generation_config)?;
     validate_creator_can_launch(&ctx.accounts.creator_profile, now)?;
     validate_create_risk_profiles(
@@ -133,6 +187,29 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
         &ctx.accounts.cluster_profile,
     )?;
 
+    let creator_buy_lock_until = launch_at
+        .checked_add(ctx.accounts.creator_profile.creator_buy_lock_seconds as i64)
+        .ok_or(LaunchpadError::MathOverflow)?;
+
+    let authorization_message = build_create_authorization_message(
+        crate::id(),
+        ctx.accounts.generation_config.key(),
+        &ctx.accounts.generation_config,
+        ctx.accounts.creator.key(),
+        ctx.accounts.risk_profile.cluster_id,
+        ctx.accounts.creator_profile.creator_buy_lock_seconds,
+        ctx.accounts.creator_profile.creator_buy_cap_bps,
+        &args,
+    );
+
+    verify_detached_create_authorization(
+        &ctx.accounts.instructions.to_account_info(),
+        global.route_signer,
+        &authorization_message,
+    )?;
+
+    let authorization_hash = hash(&authorization_message).to_bytes();
+
     let campaign = &mut ctx.accounts.campaign;
     campaign.campaign_id = args.campaign_id;
     campaign.generation_id = ctx.accounts.generation_config.generation_id;
@@ -140,7 +217,19 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
     campaign.creator = ctx.accounts.creator.key();
     campaign.mint = args.mint;
     campaign.metadata_hash = args.metadata_hash;
-    campaign.route_profile_hash = args.route_profile_hash;
+    campaign.cluster_hash = args.cluster_hash;
+    campaign.ticker_hash = args.ticker_hash;
+    campaign.reservation_id_hash = args.reservation_id_hash;
+    campaign.reservation_version = args.reservation_version;
+    campaign.launch_at = launch_at;
+    campaign.graduation_target_usd_micros = args.graduation_target_usd_micros;
+    campaign.trade_route_profile = args.trade_route_profile;
+    campaign.finalize_route_profile = args.finalize_route_profile;
+    campaign.treasury_profile = args.treasury_profile;
+    campaign.dex_profile = args.dex_profile;
+    campaign.oracle_profile = args.oracle_profile;
+    campaign.creator_buy_lock_until = creator_buy_lock_until;
+    campaign.creator_buy_cap_bps = ctx.accounts.creator_profile.creator_buy_cap_bps;
     campaign.created_at = now;
     campaign.sold_tokens = 0;
     campaign.net_raised_lamports = 0;
@@ -156,7 +245,8 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
     create_authorization.nonce = args.nonce;
     create_authorization.deadline = args.deadline;
     create_authorization.used_at = now;
-    create_authorization.route_signer = ctx.accounts.route_authority.key();
+    create_authorization.route_signer = global.route_signer;
+    create_authorization.message_hash = authorization_hash;
     create_authorization.bump = ctx.bumps.create_authorization;
 
     let creator_profile = &mut ctx.accounts.creator_profile;
@@ -177,46 +267,305 @@ pub fn create_campaign_handler(ctx: Context<CreateCampaign>, args: CreateCampaig
         generation_config: campaign.generation_config,
         creator: campaign.creator,
         mint: campaign.mint,
-        metadata_hash: campaign.metadata_hash,
-        route_profile_hash: campaign.route_profile_hash,
+        ticker_hash: campaign.ticker_hash,
+        reservation_id_hash: campaign.reservation_id_hash,
+        reservation_version: campaign.reservation_version,
+        launch_at: campaign.launch_at,
+        graduation_target_usd_micros: campaign.graduation_target_usd_micros,
         route_signer: create_authorization.route_signer,
+        authorization_hash,
         created_at: campaign.created_at,
     });
 
     Ok(())
 }
 
+pub fn build_create_authorization_message(
+    program_id: Pubkey,
+    generation_config_key: Pubkey,
+    generation: &GenerationConfig,
+    creator: Pubkey,
+    risk_cluster_id: [u8; 32],
+    creator_buy_lock_seconds: u32,
+    creator_buy_cap_bps: u16,
+    args: &CreateCampaignArgs,
+) -> Vec<u8> {
+    let mut message = Vec::with_capacity(512);
+    message.extend_from_slice(CREATE_AUTH_DOMAIN);
+    message.extend_from_slice(&CREATE_AUTH_SCHEMA_VERSION.to_le_bytes());
+    message.extend_from_slice(program_id.as_ref());
+    message.extend_from_slice(args.cluster_hash.as_ref());
+    message.extend_from_slice(generation.generation_id.as_ref());
+    message.extend_from_slice(generation_config_key.as_ref());
+    message.extend_from_slice(generation.manifest_hash.as_ref());
+    message.push(generation.dex_adapter);
+    message.extend_from_slice(creator.as_ref());
+    message.extend_from_slice(risk_cluster_id.as_ref());
+    message.extend_from_slice(&creator_buy_lock_seconds.to_le_bytes());
+    message.extend_from_slice(&creator_buy_cap_bps.to_le_bytes());
+    message.extend_from_slice(args.campaign_id.as_ref());
+    message.extend_from_slice(args.mint.as_ref());
+    message.extend_from_slice(args.metadata_hash.as_ref());
+    message.extend_from_slice(args.ticker_hash.as_ref());
+    message.extend_from_slice(args.reservation_id_hash.as_ref());
+    message.extend_from_slice(&args.reservation_version.to_le_bytes());
+    message.extend_from_slice(&args.launch_at.to_le_bytes());
+    message.extend_from_slice(&args.graduation_target_usd_micros.to_le_bytes());
+    message.extend_from_slice(args.trade_route_profile.as_ref());
+    message.extend_from_slice(args.finalize_route_profile.as_ref());
+    message.extend_from_slice(args.treasury_profile.as_ref());
+    message.extend_from_slice(args.dex_profile.as_ref());
+    message.extend_from_slice(args.oracle_profile.as_ref());
+    message.extend_from_slice(args.nonce.as_ref());
+    message.extend_from_slice(&args.deadline.to_le_bytes());
+    message
+}
+
+pub(crate) fn verify_detached_create_authorization(
+    instructions_account: &AccountInfo<'_>,
+    expected_route_signer: Pubkey,
+    expected_message: &[u8],
+) -> Result<()> {
+    let current_index = load_current_index_checked(instructions_account)
+        .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
+    require!(
+        current_index > 0,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+
+    let current_instruction = load_instruction_at_checked(
+        usize::from(current_index),
+        instructions_account,
+    )
+    .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
+    require_keys_eq!(
+        current_instruction.program_id,
+        crate::id(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
+
+    let verification_instruction = load_instruction_at_checked(
+        usize::from(current_index - 1),
+        instructions_account,
+    )
+    .map_err(|_| error!(LaunchpadError::InvalidCreateAuthorization))?;
+
+    validate_ed25519_instruction(
+        &verification_instruction,
+        expected_route_signer,
+        expected_message,
+    )
+}
+
+pub(crate) fn validate_ed25519_instruction(
+    instruction: &Instruction,
+    expected_route_signer: Pubkey,
+    expected_message: &[u8],
+) -> Result<()> {
+    require_keys_eq!(
+        instruction.program_id,
+        ed25519_program::id(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(
+        instruction.accounts.is_empty(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
+
+    let parsed = parse_single_ed25519_instruction(&instruction.data)?;
+    require!(
+        parsed.public_key == expected_route_signer.as_ref(),
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(
+        parsed.message == expected_message,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    Ok(())
+}
+
+struct ParsedEd25519Instruction<'a> {
+    public_key: &'a [u8],
+    message: &'a [u8],
+}
+
+fn parse_single_ed25519_instruction(data: &[u8]) -> Result<ParsedEd25519Instruction<'_>> {
+    require!(
+        data.len() >= ED25519_HEADER_SIZE,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(data[0] == 1, LaunchpadError::InvalidCreateAuthorization);
+    require!(data[1] == 0, LaunchpadError::InvalidCreateAuthorization);
+
+    let signature_offset = read_u16(data, 2)?;
+    let signature_instruction_index = read_u16(data, 4)?;
+    let public_key_offset = read_u16(data, 6)?;
+    let public_key_instruction_index = read_u16(data, 8)?;
+    let message_data_offset = read_u16(data, 10)?;
+    let message_data_size = read_u16(data, 12)?;
+    let message_instruction_index = read_u16(data, 14)?;
+
+    require!(
+        signature_instruction_index == ED25519_CURRENT_INSTRUCTION,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(
+        public_key_instruction_index == ED25519_CURRENT_INSTRUCTION,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(
+        message_instruction_index == ED25519_CURRENT_INSTRUCTION,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+
+    checked_slice(data, signature_offset, ED25519_SIGNATURE_SIZE)?;
+    let public_key = checked_slice(data, public_key_offset, ED25519_PUBLIC_KEY_SIZE)?;
+    let message = checked_slice(data, message_data_offset, usize::from(message_data_size))?;
+
+    Ok(ParsedEd25519Instruction {
+        public_key,
+        message,
+    })
+}
+
+fn read_u16(data: &[u8], offset: usize) -> Result<u16> {
+    let end = offset
+        .checked_add(2)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(end <= data.len(), LaunchpadError::InvalidCreateAuthorization);
+    Ok(u16::from_le_bytes([data[offset], data[offset + 1]]))
+}
+
+fn checked_slice(data: &[u8], offset: u16, len: usize) -> Result<&[u8]> {
+    let start = usize::from(offset);
+    let end = start.checked_add(len).ok_or(LaunchpadError::MathOverflow)?;
+    require!(end <= data.len(), LaunchpadError::InvalidCreateAuthorization);
+    Ok(&data[start..end])
+}
+
 pub(crate) fn require_create_enabled(global: &GlobalConfig) -> Result<()> {
     require!(!global.paused, LaunchpadError::LaunchpadPaused);
     require!(!global.create_paused, LaunchpadError::CreatePaused);
-    require!(global.route_authorization_required, LaunchpadError::InvalidCreateAuthorization);
+    require!(
+        global.route_authorization_required,
+        LaunchpadError::InvalidCreateAuthorization
+    );
     Ok(())
 }
 
-pub(crate) fn validate_route_authority(global: &GlobalConfig, route_authority: Pubkey) -> Result<()> {
-    require_keys_eq!(global.route_signer, route_authority, LaunchpadError::Unauthorized);
-    Ok(())
-}
-
-pub(crate) fn validate_create_args(args: &CreateCampaignArgs, now: i64) -> Result<()> {
+pub(crate) fn validate_create_args(args: &CreateCampaignArgs, now: i64) -> Result<i64> {
     require!(args.campaign_id != [0; 32], LaunchpadError::InvalidCampaign);
-    require_keys_neq!(args.mint, Pubkey::default(), LaunchpadError::InvalidCampaign);
-    require!(args.metadata_hash != [0; 32], LaunchpadError::InvalidMetadata);
-    require!(args.route_profile_hash != [0; 32], LaunchpadError::InvalidRouteProfile);
+    require_keys_neq!(
+        args.mint,
+        Pubkey::default(),
+        LaunchpadError::InvalidCampaign
+    );
+    require!(
+        args.metadata_hash != [0; 32],
+        LaunchpadError::InvalidMetadata
+    );
+    require!(
+        args.cluster_hash != [0; 32],
+        LaunchpadError::InvalidCampaign
+    );
+    require!(
+        args.ticker_hash != [0; 32],
+        LaunchpadError::InvalidCampaign
+    );
+    require!(
+        args.reservation_id_hash != [0; 32],
+        LaunchpadError::InvalidCampaign
+    );
+    require!(args.reservation_version > 0, LaunchpadError::InvalidCampaign);
+    require!(
+        args.trade_route_profile != [0; 32],
+        LaunchpadError::InvalidRouteProfile
+    );
+    require!(
+        args.finalize_route_profile != [0; 32],
+        LaunchpadError::InvalidRouteProfile
+    );
+    require!(
+        args.treasury_profile != [0; 32],
+        LaunchpadError::InvalidRouteProfile
+    );
+    require!(
+        args.dex_profile != [0; 32],
+        LaunchpadError::InvalidRouteProfile
+    );
+    require!(
+        args.oracle_profile != [0; 32],
+        LaunchpadError::InvalidRouteProfile
+    );
     require!(args.nonce != [0; 32], LaunchpadError::InvalidNonce);
-    require!(args.deadline >= now, LaunchpadError::CreateAuthorizationExpired);
-    Ok(())
+    require!(
+        args.deadline >= now,
+        LaunchpadError::CreateAuthorizationExpired
+    );
+    require!(
+        is_supported_production_graduation_target(args.graduation_target_usd_micros),
+        LaunchpadError::InvalidCampaign
+    );
+
+    resolve_launch_at(args.launch_at, now)
 }
 
-pub(crate) fn validate_campaign_generation(global: &GlobalConfig, generation: &GenerationConfig) -> Result<()> {
-    require!(generation.support_enabled, LaunchpadError::CampaignGenerationInactive);
-    require!(generation.active_creation, LaunchpadError::CampaignGenerationInactive);
+fn resolve_launch_at(requested_launch_at: i64, now: i64) -> Result<i64> {
+    if requested_launch_at == 0 {
+        return Ok(now);
+    }
+
+    let minimum = now
+        .checked_add(MIN_SCHEDULE_SECONDS)
+        .ok_or(LaunchpadError::MathOverflow)?;
+    let maximum = now
+        .checked_add(MAX_SCHEDULE_SECONDS)
+        .ok_or(LaunchpadError::MathOverflow)?;
+
+    require!(
+        requested_launch_at >= minimum,
+        LaunchpadError::InvalidCampaign
+    );
+    require!(
+        requested_launch_at <= maximum,
+        LaunchpadError::InvalidCampaign
+    );
+    Ok(requested_launch_at)
+}
+
+fn is_supported_production_graduation_target(target_usd_micros: u64) -> bool {
+    matches!(
+        target_usd_micros,
+        GRADUATION_TARGET_15K_USD_MICROS
+            | GRADUATION_TARGET_30K_USD_MICROS
+            | GRADUATION_TARGET_50K_USD_MICROS
+    )
+}
+
+pub(crate) fn validate_campaign_generation(
+    global: &GlobalConfig,
+    generation: &GenerationConfig,
+) -> Result<()> {
+    require!(
+        generation.support_enabled,
+        LaunchpadError::CampaignGenerationInactive
+    );
+    require!(
+        generation.active_creation,
+        LaunchpadError::CampaignGenerationInactive
+    );
     require!(
         global.active_generation_id == generation.generation_id,
         LaunchpadError::CampaignGenerationInactive
     );
-    require!(generation.route_authorization_required, LaunchpadError::InvalidCreateAuthorization);
-    require!(generation.authorized_trading_required, LaunchpadError::InvalidCreateAuthorization);
+    require!(
+        generation.route_authorization_required,
+        LaunchpadError::InvalidCreateAuthorization
+    );
+    require!(
+        generation.authorized_trading_required,
+        LaunchpadError::InvalidCreateAuthorization
+    );
     Ok(())
 }
 
@@ -247,8 +596,15 @@ pub(crate) fn validate_create_risk_profiles(
     risk_profile: &RiskProfile,
     cluster_profile: &ClusterProfile,
 ) -> Result<()> {
-    require_keys_eq!(risk_profile.wallet, creator, LaunchpadError::InvalidRiskProfile);
-    require!(risk_profile.cluster_id != EMPTY_CLUSTER_ID, LaunchpadError::InvalidCluster);
+    require_keys_eq!(
+        risk_profile.wallet,
+        creator,
+        LaunchpadError::InvalidRiskProfile
+    );
+    require!(
+        risk_profile.cluster_id != EMPTY_CLUSTER_ID,
+        LaunchpadError::InvalidCluster
+    );
     require!(!risk_profile.restricted, LaunchpadError::WalletRestricted);
     require!(
         !risk_profile.manual_review_required,
@@ -258,7 +614,10 @@ pub(crate) fn validate_create_risk_profiles(
         cluster_profile.cluster_id == risk_profile.cluster_id,
         LaunchpadError::InvalidCluster
     );
-    require!(!cluster_profile.restricted, LaunchpadError::ClusterRestricted);
+    require!(
+        !cluster_profile.restricted,
+        LaunchpadError::ClusterRestricted
+    );
     Ok(())
 }
 
@@ -266,7 +625,7 @@ pub(crate) fn validate_create_risk_profiles(
 mod tests {
     use super::*;
     use crate::{
-        DEX_ADAPTER_METEORA_DAMM_V2, CREATOR_TIER_1, EMPTY_GENERATION_ID,
+        CREATOR_TIER_1, DEX_ADAPTER_METEORA_DAMM_V2, EMPTY_GENERATION_ID,
         TIER_1_MAX_LIVE_BONDING,
     };
 
@@ -356,9 +715,46 @@ mod tests {
             campaign_id: [1; 32],
             mint: Pubkey::new_unique(),
             metadata_hash: [2; 32],
-            route_profile_hash: [3; 32],
+            cluster_hash: [3; 32],
+            ticker_hash: [4; 32],
+            reservation_id_hash: [5; 32],
+            reservation_version: 7,
+            launch_at: 0,
+            graduation_target_usd_micros: GRADUATION_TARGET_30K_USD_MICROS,
+            trade_route_profile: [6; 32],
+            finalize_route_profile: [7; 32],
+            treasury_profile: [8; 32],
+            dex_profile: [9; 32],
+            oracle_profile: [10; 32],
             deadline,
-            nonce: [4; 32],
+            nonce: [11; 32],
+        }
+    }
+
+    fn build_test_ed25519_instruction(route_signer: Pubkey, message: &[u8]) -> Instruction {
+        let signature_offset = ED25519_HEADER_SIZE as u16;
+        let public_key_offset = signature_offset + ED25519_SIGNATURE_SIZE as u16;
+        let message_data_offset = public_key_offset + ED25519_PUBLIC_KEY_SIZE as u16;
+        let message_data_size = u16::try_from(message.len()).unwrap();
+
+        let mut data = Vec::with_capacity(usize::from(message_data_offset) + message.len());
+        data.push(1);
+        data.push(0);
+        data.extend_from_slice(&signature_offset.to_le_bytes());
+        data.extend_from_slice(&ED25519_CURRENT_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&public_key_offset.to_le_bytes());
+        data.extend_from_slice(&ED25519_CURRENT_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&message_data_offset.to_le_bytes());
+        data.extend_from_slice(&message_data_size.to_le_bytes());
+        data.extend_from_slice(&ED25519_CURRENT_INSTRUCTION.to_le_bytes());
+        data.extend_from_slice(&[42; ED25519_SIGNATURE_SIZE]);
+        data.extend_from_slice(route_signer.as_ref());
+        data.extend_from_slice(message);
+
+        Instruction {
+            program_id: ed25519_program::id(),
+            accounts: Vec::new(),
+            data,
         }
     }
 
@@ -366,14 +762,12 @@ mod tests {
     fn create_args_reject_empty_metadata_hash() {
         let mut args = test_create_args(200);
         args.metadata_hash = [0; 32];
-
         assert!(validate_create_args(&args, 100).is_err());
     }
 
     #[test]
     fn create_args_reject_expired_deadline() {
         let args = test_create_args(99);
-
         assert!(validate_create_args(&args, 100).is_err());
     }
 
@@ -381,7 +775,36 @@ mod tests {
     fn create_args_reject_empty_nonce() {
         let mut args = test_create_args(200);
         args.nonce = [0; 32];
+        assert!(validate_create_args(&args, 100).is_err());
+    }
 
+    #[test]
+    fn create_args_reject_unapproved_graduation_target() {
+        let mut args = test_create_args(200);
+        args.graduation_target_usd_micros = 6_000_000;
+        assert!(validate_create_args(&args, 100).is_err());
+    }
+
+    #[test]
+    fn immediate_launch_resolves_to_current_clock() {
+        let args = test_create_args(200);
+        assert_eq!(validate_create_args(&args, 100).unwrap(), 100);
+    }
+
+    #[test]
+    fn scheduled_launch_enforces_five_minute_minimum() {
+        let mut args = test_create_args(1_000);
+        args.launch_at = 399;
+        assert!(validate_create_args(&args, 100).is_err());
+
+        args.launch_at = 400;
+        assert_eq!(validate_create_args(&args, 100).unwrap(), 400);
+    }
+
+    #[test]
+    fn scheduled_launch_enforces_thirty_day_maximum() {
+        let mut args = test_create_args(4_000_000);
+        args.launch_at = 100 + MAX_SCHEDULE_SECONDS + 1;
         assert!(validate_create_args(&args, 100).is_err());
     }
 
@@ -390,7 +813,6 @@ mod tests {
         let generation_id = [8; 32];
         let global = test_global(Pubkey::new_unique(), generation_id);
         let generation = test_generation(generation_id);
-
         assert!(validate_campaign_generation(&global, &generation).is_ok());
 
         let inactive_global = test_global(Pubkey::new_unique(), EMPTY_GENERATION_ID);
@@ -398,12 +820,120 @@ mod tests {
     }
 
     #[test]
-    fn route_authority_must_match_global_signer() {
+    fn detached_authorization_accepts_exact_signer_and_payload() {
         let route_signer = Pubkey::new_unique();
-        let global = test_global(route_signer, [8; 32]);
+        let message = b"meme-warzone-create-payload";
+        let instruction = build_test_ed25519_instruction(route_signer, message);
+        assert!(validate_ed25519_instruction(&instruction, route_signer, message).is_ok());
+    }
 
-        assert!(validate_route_authority(&global, route_signer).is_ok());
-        assert!(validate_route_authority(&global, Pubkey::new_unique()).is_err());
+    #[test]
+    fn detached_authorization_rejects_wrong_signer() {
+        let route_signer = Pubkey::new_unique();
+        let instruction = build_test_ed25519_instruction(route_signer, b"payload");
+        assert!(validate_ed25519_instruction(
+            &instruction,
+            Pubkey::new_unique(),
+            b"payload"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn detached_authorization_rejects_modified_payload() {
+        let route_signer = Pubkey::new_unique();
+        let instruction = build_test_ed25519_instruction(route_signer, b"payload");
+        assert!(validate_ed25519_instruction(&instruction, route_signer, b"changed").is_err());
+    }
+
+    #[test]
+    fn detached_authorization_rejects_cross_instruction_offsets() {
+        let route_signer = Pubkey::new_unique();
+        let mut instruction = build_test_ed25519_instruction(route_signer, b"payload");
+        instruction.data[4..6].copy_from_slice(&0u16.to_le_bytes());
+        assert!(validate_ed25519_instruction(&instruction, route_signer, b"payload").is_err());
+    }
+
+    #[test]
+    fn authorization_payload_binds_timer_ticker_reservation_and_target() {
+        let creator = Pubkey::new_unique();
+        let generation = test_generation([8; 32]);
+        let generation_key = Pubkey::new_unique();
+        let args = test_create_args(1_000);
+        let baseline = build_create_authorization_message(
+            crate::id(),
+            generation_key,
+            &generation,
+            creator,
+            [12; 32],
+            86_400,
+            1_000,
+            &args,
+        );
+
+        let mut changed = args;
+        changed.ticker_hash = [13; 32];
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &changed,
+            )
+        );
+
+        changed = args;
+        changed.reservation_version += 1;
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &changed,
+            )
+        );
+
+        changed = args;
+        changed.launch_at = 1_700_000_000;
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &changed,
+            )
+        );
+
+        changed = args;
+        changed.graduation_target_usd_micros = GRADUATION_TARGET_50K_USD_MICROS;
+        assert_ne!(
+            baseline,
+            build_create_authorization_message(
+                crate::id(),
+                generation_key,
+                &generation,
+                creator,
+                [12; 32],
+                86_400,
+                1_000,
+                &changed,
+            )
+        );
     }
 
     #[test]
@@ -411,7 +941,6 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mut profile = test_creator_profile(wallet);
         profile.live_bonding_count = profile.max_live_bonding_count;
-
         assert!(validate_creator_can_launch(&profile, 1_700_000_000).is_err());
     }
 
@@ -420,7 +949,6 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mut profile = test_creator_profile(wallet);
         profile.last_launch_timestamp = 1_700_000_000;
-
         assert!(validate_creator_can_launch(&profile, 1_700_010_000).is_err());
     }
 
@@ -429,7 +957,6 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let mut profile = test_creator_profile(wallet);
         profile.restricted = true;
-
         assert!(validate_creator_can_launch(&profile, 1_700_100_000).is_err());
     }
 
@@ -440,7 +967,6 @@ mod tests {
         let mut risk = test_risk_profile(wallet, cluster_id);
         risk.restricted = true;
         let cluster = test_cluster_profile(cluster_id);
-
         assert!(validate_create_risk_profiles(wallet, &risk, &cluster).is_err());
     }
 
@@ -451,7 +977,6 @@ mod tests {
         let risk = test_risk_profile(wallet, cluster_id);
         let mut cluster = test_cluster_profile(cluster_id);
         cluster.restricted = true;
-
         assert!(validate_create_risk_profiles(wallet, &risk, &cluster).is_err());
     }
 
@@ -460,7 +985,6 @@ mod tests {
         let wallet = Pubkey::new_unique();
         let risk = test_risk_profile(wallet, [6; 32]);
         let cluster = test_cluster_profile([7; 32]);
-
         assert!(validate_create_risk_profiles(wallet, &risk, &cluster).is_err());
     }
 }
