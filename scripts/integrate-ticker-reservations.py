@@ -67,10 +67,22 @@ def replace_archive_block(script: str) -> str:
     return script[:start] + replacement + script[end:]
 
 
+def print_context(script: str, center: int = 263, radius: int = 14) -> None:
+    lines = script.splitlines()
+    start = max(1, center - radius)
+    end = min(len(lines), center + radius)
+    for number in range(start, end + 1):
+        print(f"INTEGRATION_SCRIPT[{number:04d}] {lines[number - 1]}")
+
+
 def main() -> None:
     script = replace_archive_block(extract_v2_script())
     compile(script, "ticker-reservation-integration", "exec")
-    exec(script, {})
+    try:
+        exec(script, {})
+    except Exception:
+        print_context(script)
+        raise
 
 
 if __name__ == "__main__":
