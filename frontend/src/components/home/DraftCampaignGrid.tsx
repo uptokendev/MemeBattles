@@ -2,72 +2,56 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Flame, Radio, ShieldCheck, Star } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import { resolveImageUri } from "@/lib/media";
 import { useSelectedFeedChainId } from "@/components/common/ChainFeedSwitch";
+import { ScheduledLaunchCountdown } from "@/components/prepare/ScheduledLaunchCountdown";
 import {
   fetchCampaignDraft,
   fetchPublicCampaignDrafts,
-  type CampaignDraft,
   type DraftPopularity,
 } from "@/lib/draftApi";
+import { resolveImageUri } from "@/lib/media";
+import type { CampaignDraftLifecycle } from "@/lib/scheduledLaunchApi";
+import { cn } from "@/lib/utils";
 import type { HomeQuery } from "./CampaignGrid";
 
 type DraftCampaignVM = {
-  draft: CampaignDraft;
+  draft: CampaignDraftLifecycle;
   mission: string;
   popularity: DraftPopularity | null;
 };
 
-const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled"]);
+const PUBLIC_DRAFT_STATUSES = new Set(["promotion_published", "ready_to_launch", "scheduled", "deployed"]);
 
-function shortAddr(addr?: string | null) {
-  if (!addr) return "—";
-  const a = String(addr);
-  return a.length > 10 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
+function shortAddr(value?: string | null) {
+  const address = String(value || "");
+  return address.length > 10 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address || "—";
 }
 
-function readinessLabel(status: string) {
-  if (status === "ready_to_launch") return "Ready to launch";
-  if (status === "scheduled") return "Scheduled";
-  if (status === "promotion_published") return "Promotion live";
-  return "Preparing";
-}
-
-function formatCreatedAt(value?: string | null) {
-  if (!value) return "—";
-
-  const ms = Date.parse(value);
-  if (!Number.isFinite(ms)) return "—";
-
-  const diff = Math.max(0, Date.now() - ms);
-  const minutes = Math.floor(diff / 60000);
-
+function ageLabel(value?: string | null) {
+  const created = value ? Date.parse(value) : NaN;
+  if (!Number.isFinite(created)) return "—";
+  const minutes = Math.max(0, Math.floor((Date.now() - created) / 60000));
   if (minutes < 60) return `${Math.max(1, minutes)}m ago`;
-
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function heatClass(label?: string) {
-  if (label === "On Fire") return "border-orange-400/70 text-orange-300";
-  if (label === "Hot") return "border-orange-400/60 text-orange-400";
-  if (label === "Warming") return "border-orange-400/50 text-orange-300";
-  return "border-orange-400/40 text-orange-300";
+function readiness(status: string, deployed: boolean) {
+  if (status === "deployed") return "Launched · Prepare live";
+  if (status === "scheduled") return deployed ? "Deployed · trading timed" : "Scheduled";
+  if (status === "ready_to_launch") return "Ready to launch";
+  return "Promotion live";
 }
 
 function matchesSearch(item: DraftCampaignVM, search?: string) {
   const q = String(search || "").trim().toLowerCase();
   if (!q) return true;
-
-  const draft = item.draft;
   return [
-    draft.name,
-    draft.ticker,
-    draft.description,
-    draft.creatorWallet,
+    item.draft.name,
+    item.draft.ticker,
+    item.draft.description,
+    item.draft.creatorWallet,
     item.mission,
   ]
     .filter(Boolean)
@@ -75,169 +59,139 @@ function matchesSearch(item: DraftCampaignVM, search?: string) {
 }
 
 function sortDrafts(items: DraftCampaignVM[], sort: HomeQuery["sort"] | undefined) {
-  const byCreatedDesc = (a: DraftCampaignVM, b: DraftCampaignVM) =>
-    String(b.draft.createdAt).localeCompare(String(a.draft.createdAt));
-
-  if (sort === "created_asc") {
-    return items.slice().sort((a, b) => String(a.draft.createdAt).localeCompare(String(b.draft.createdAt)));
-  }
-
-  if (sort === "created_desc") {
-    return items.slice().sort(byCreatedDesc);
-  }
-
+  const created = (item: DraftCampaignVM) => String(item.draft.draftCreatedAt || item.draft.createdAt || "");
+  if (sort === "created_asc") return items.slice().sort((a, b) => created(a).localeCompare(created(b)));
+  if (sort === "created_desc") return items.slice().sort((a, b) => created(b).localeCompare(created(a)));
   return items.slice().sort((a, b) => {
-    const ar = Number(a.popularity?.rankingScore ?? 0);
-    const br = Number(b.popularity?.rankingScore ?? 0);
-
-    if (br !== ar) return br - ar;
-    return byCreatedDesc(a, b);
+    const score = Number(b.popularity?.rankingScore || 0) - Number(a.popularity?.rankingScore || 0);
+    return score || created(b).localeCompare(created(a));
   });
 }
 
+function isDiscoverableDraft(draft: CampaignDraftLifecycle) {
+  const status = String(draft.status);
+  if (!PUBLIC_DRAFT_STATUSES.has(status)) return false;
+
+  const isTimedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
+  if (status === "scheduled" || status === "deployed") return isTimedOnChain;
+
+  return !draft.campaignAddress;
+}
+
 export function DraftCampaignGrid({ className, query }: { className?: string; query: HomeQuery & { tab?: string } }) {
-  const [draftChainId] = useSelectedFeedChainId();
+  const [chainId] = useSelectedFeedChainId();
   const [items, setItems] = useState<DraftCampaignVM[]>([]);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
-    let alive = true;
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const eventChainId = Number(detail.chainId ?? NaN);
+      if (Number.isFinite(eventChainId) && eventChainId !== Number(chainId)) return;
+      setRefreshNonce((value) => value + 1);
+    };
+    window.addEventListener("memebattles:scheduledLaunchReached", refresh as EventListener);
+    return () => window.removeEventListener("memebattles:scheduledLaunchReached", refresh as EventListener);
+  }, [chainId]);
 
-    async function loadDrafts() {
-      setLoading(true);
-      setErr(null);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
 
+    void (async () => {
       try {
-        const drafts = await fetchPublicCampaignDrafts({
-          chainId: draftChainId,
-          limit: 50,
-        });
-
+        const drafts = (await fetchPublicCampaignDrafts({ chainId, limit: 50 })) as CampaignDraftLifecycle[];
         const candidates = drafts
-          .filter((draft) => Number(draft.chainId) === Number(draftChainId))
+          .filter((draft) => Number(draft.chainId) === Number(chainId))
           .filter((draft) => draft.visibility === "public")
-          .filter((draft) => PUBLIC_DRAFT_STATUSES.has(String(draft.status)))
-          .filter((draft) => !draft.campaignAddress && String(draft.status) !== "deployed")
+          .filter(isDiscoverableDraft)
           .slice(0, 24);
 
         const hydrated = await Promise.all(
-          candidates.map(async (draft) => {
+          candidates.map(async (draft): Promise<DraftCampaignVM> => {
             try {
               const bundle = await fetchCampaignDraft(draft.id);
-
+              const hydratedDraft = bundle.draft as CampaignDraftLifecycle;
               return {
-                draft: bundle.draft,
+                draft: hydratedDraft,
                 mission:
                   bundle.promotion?.missionStatement ||
                   bundle.promotion?.creatorNote ||
-                  bundle.draft.description ||
+                  hydratedDraft.description ||
                   "Creator is preparing the campaign before the battlefield opens.",
-                popularity: bundle.popularity ?? null,
+                popularity: bundle.popularity || null,
               };
             } catch {
               return {
                 draft,
-                mission:
-                  draft.description ||
-                  "Creator is preparing the campaign before the battlefield opens.",
+                mission: draft.description || "Creator is preparing the campaign before the battlefield opens.",
                 popularity: null,
               };
             }
-          })
+          }),
         );
 
-        if (alive) setItems(hydrated);
-      } catch (e: any) {
-        if (alive) setErr(e?.message || "Failed to load draft campaigns.");
+        if (!cancelled) setItems(hydrated);
+      } catch (reason: any) {
+        if (!cancelled) setError(reason?.message || "Failed to load draft campaigns.");
       } finally {
-        if (alive) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    }
-
-    loadDrafts();
+    })();
 
     return () => {
-      alive = false;
+      cancelled = true;
     };
-  }, [draftChainId]);
+  }, [chainId, refreshNonce]);
 
-  const visibleItems = useMemo(() => {
-    return sortDrafts(
-      items.filter((item) => matchesSearch(item, query.search)),
-      query.sort
-    );
-  }, [items, query.search, query.sort]);
+  const visible = useMemo(
+    () => sortDrafts(items.filter((item) => matchesSearch(item, query.search)), query.sort),
+    [items, query.search, query.sort],
+  );
 
-  const resultsMeta = `Showing ${visibleItems.length} draft campaigns`;
   const gridClass = "flex flex-wrap items-start justify-start gap-3 sm:gap-4";
-  const cardClass = "w-[calc(50%-0.375rem)] min-w-[0] sm:w-[220px] lg:w-[230px]";
+  const cardClass = "w-[calc(50%-0.375rem)] min-w-0 sm:w-[220px] lg:w-[230px]";
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <div className="text-xs text-muted-foreground">{resultsMeta}</div>
-      </div>
+      <div className="mb-3 text-xs text-muted-foreground">Showing {visible.length} draft campaigns</div>
 
-      {loading && visibleItems.length === 0 ? (
+      {loading && !visible.length ? (
         <div className={gridClass}>
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div
-              key={i}
-              className={cn(
-                "min-h-[322px] animate-pulse border border-success/25 bg-black/60",
-                cardClass,
-              )}
-            />
+          {Array.from({ length: 10 }).map((_, index) => (
+            <div key={index} className={cn("min-h-[322px] animate-pulse border border-success/25 bg-black/60", cardClass)} />
           ))}
         </div>
-      ) : err ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">{err}</div>
-      ) : visibleItems.length === 0 ? (
+      ) : error ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">{error}</div>
+      ) : !visible.length ? (
         <div className="py-10 text-center text-sm text-muted-foreground">
-          No public draft campaigns yet. Published Prepare Pages will appear in this row before trading goes live.
+          No public draft campaigns yet. Published Prepare Pages and timed on-chain launches appear here.
         </div>
       ) : (
         <div className={gridClass}>
-          {visibleItems.map(({ draft, mission, popularity }) => {
-            const heat = popularity?.heatLabel || "Cold";
-            const follows = Number(popularity?.follows ?? 0);
-            const popularityPct = Number(popularity?.popularityPercentage ?? 0);
+          {visible.map(({ draft, mission, popularity }) => {
             const logo = resolveImageUri(draft.logoUrl) || "/placeholder.svg";
+            const heat = popularity?.heatLabel || "Cold";
+            const follows = Number(popularity?.follows || 0);
+            const popularityPct = Number(popularity?.popularityPercentage || 0);
+            const timedOnChain = Boolean(draft.campaignAddress && draft.scheduledLaunchAt);
+            const lifecycleLabel = String(draft.status) === "deployed" ? "Launched · Prepare" : "Scheduled on-chain";
 
             return (
-              <article
-                key={draft.id}
-                className={cn(
-                  "mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30",
-                  cardClass,
-                )}
-              >
+              <article key={draft.id} className={cn("mwz-hud-frame group relative flex min-h-[322px] flex-col overflow-hidden border-success/30", cardClass)}>
                 <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
                   <div className="relative aspect-[16/10] overflow-hidden border-b border-success/25 bg-black/40">
-                    <div className="absolute inset-0 z-10 mwz-stat-grid opacity-25 pointer-events-none" />
-
-                    <img
-                      src={logo}
-                      alt={draft.name}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      draggable={false}
-                      loading="lazy"
-                    />
-
-                    <div className="absolute inset-0 z-20 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
-
-                    <div className="absolute left-2 top-2 z-30 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
+                    <img src={logo} alt={draft.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" draggable={false} loading="lazy" />
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(56,58,58,0.05),transparent_42%,rgba(56,58,58,0.72))]" />
+                    <div className="absolute left-2 top-2 inline-flex items-center gap-1 border border-success/55 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-orange-400">
                       <ShieldCheck className="h-3 w-3" />
-                      Prepare Mode
+                      {timedOnChain ? lifecycleLabel : "Prepare Mode"}
                     </div>
-
-                    <div
-                      className={cn(
-                        "absolute right-2 top-2 z-30 inline-flex items-center gap-1 border bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
-                        heatClass(heat)
-                      )}
-                    >
+                    <div className="absolute right-2 top-2 inline-flex items-center gap-1 border border-orange-400/50 bg-black px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-orange-300">
                       <Flame className="h-3 w-3" />
                       {heat}
                     </div>
@@ -247,68 +201,52 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                 <div className="flex flex-1 flex-col p-3 text-success">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="block">
-                        <div className="mwz-section-title truncate text-lg leading-none hover:text-accent">
-                          {draft.name}
-                        </div>
+                      <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="mwz-section-title block truncate text-lg leading-none hover:text-accent">
+                        {draft.name}
                       </Link>
-
-                      <div className="mt-1 truncate text-sm text-success/70">
-                        {draft.ticker ? `$${draft.ticker}` : ""}
-                      </div>
+                      <div className="mt-1 truncate text-sm text-success/70">{draft.ticker ? `$${draft.ticker}` : ""}</div>
                     </div>
-
                     <div className="shrink-0 text-right text-[10px] uppercase tracking-[0.16em] text-success/50">
-                      {formatCreatedAt(draft.createdAt)}
+                      {ageLabel(draft.draftCreatedAt || draft.createdAt)}
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-3 border-y border-success/20 py-2 text-xs">
                     <div className="min-w-0">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">
-                        Creator
-                      </div>
-                      <div className="truncate text-success/75">
-                        {shortAddr(draft.creatorWallet)}
-                      </div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">Creator</div>
+                      <div className="truncate text-success/75">{shortAddr(draft.creatorWallet)}</div>
                     </div>
-
                     <div className="text-right">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">
-                        Readiness
-                      </div>
-                      <div className="text-success">{readinessLabel(String(draft.status))}</div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">Readiness</div>
+                      <div className="max-w-[112px] text-success">{readiness(String(draft.status), Boolean(draft.campaignAddress))}</div>
                     </div>
                   </div>
 
-                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-success/70">
-                    {mission}
-                  </p>
+                  {timedOnChain ? (
+                    <ScheduledLaunchCountdown
+                      launchAt={draft.scheduledLaunchAt}
+                      chainId={draft.chainId}
+                      campaignAddress={draft.campaignAddress}
+                      contractDeployed={Boolean(draft.campaignAddress)}
+                      variant="compact"
+                      className="mt-3"
+                    />
+                  ) : null}
+
+                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-success/70">{mission}</p>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="border border-success/20 bg-black/40 p-2">
-                      <div className="flex items-center gap-1 text-success/50">
-                        <Star className="h-3 w-3" />
-                        Watchlist
-                      </div>
+                      <div className="flex items-center gap-1 text-success/50"><Star className="h-3 w-3" /> Watchlist</div>
                       <div className="mt-1 text-sm text-success">{follows}</div>
                     </div>
-
                     <div className="border border-success/20 bg-black/40 p-2">
-                      <div className="flex items-center gap-1 text-success/50">
-                        <Radio className="h-3 w-3" />
-                        Popularity
-                      </div>
-                      <div className="mt-1 text-sm text-success">
-                        {Number.isFinite(popularityPct) ? `${popularityPct}%` : "0%"}
-                      </div>
+                      <div className="flex items-center gap-1 text-success/50"><Radio className="h-3 w-3" /> Popularity</div>
+                      <div className="mt-1 text-sm text-success">{Number.isFinite(popularityPct) ? `${popularityPct}%` : "0%"}</div>
                     </div>
                   </div>
 
-                  <Link
-                    to={`/prepare/${encodeURIComponent(draft.slug)}`}
-                    className="mwz-button mwz-button-active mt-auto inline-flex h-9 items-center justify-center px-3 text-[10px] uppercase tracking-[0.16em]"
-                  >
+                  <Link to={`/prepare/${encodeURIComponent(draft.slug)}`} className="mwz-button mwz-button-active mt-3 inline-flex h-9 items-center justify-center px-3 text-[10px] uppercase tracking-[0.16em]">
                     View Promotion Page
                   </Link>
                 </div>

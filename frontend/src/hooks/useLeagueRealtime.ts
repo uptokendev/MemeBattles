@@ -1,233 +1,135 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAblyLeagueChannel } from "./useAblyLeagueChannel";
 
-export type LeaguePatch = {
-  campaignAddress: string; // lowercase
-  lastPriceBnb?: string | null;
-  marketcapBnb?: string | null;
-  vol24hBnb?: string | null;
-  votes24h?: number;
-  votesAllTime?: number;
-  trendingScore?: string | null;
-  raisedTotalBnb?: string | null;
-  lastActivityAt?: number;
-  ts?: number;
-};
+import {
+  useLeagueRealtime as useBaseLeagueRealtime,
+  type LeagueCampaignCreated,
+  type LeaguePatch,
+} from "./useLeagueRealtimeBase";
+import {
+  fetchPublicCampaignLifecycleDrafts,
+  lifecycleByCampaign,
+  readCampaignLaunchAt,
+  timestampSeconds,
+} from "@/lib/scheduledLaunchApi";
 
-export type LeagueCampaignCreated = {
-  campaignAddress: string; // lowercase
-  tokenAddress?: string | null;
-  creatorAddress?: string | null;
-  name?: string | null;
-  symbol?: string | null;
-  createdAtChain?: string | null;
-  blockNumber?: number | null;
-};
-
-type PatchMsg = {
-  type: "campaign_patch";
-  chainId: number;
-  ts: number;
-  items: LeaguePatch[];
-};
-
-type CampaignCreatedMsg = {
-  type: "campaign_created";
-  chainId: number;
-  ts: number;
-  item: LeagueCampaignCreated;
-};
+export type { LeagueCampaignCreated, LeaguePatch } from "./useLeagueRealtimeBase";
 
 type Opts = {
   enabled: boolean;
   chainId: number;
-
-  /**
-   * Called only when realtime is NOT connected.
-   * Use it to trigger a single lightweight REST refresh of Home data.
-   */
   onFallbackRefresh?: () => void;
-
-  /**
-   * Default 25s. Keep it >= 20s to avoid hammering.
-   */
   fallbackMs?: number;
 };
 
 export function useLeagueRealtime(opts: Opts) {
-  const { enabled, chainId, onFallbackRefresh, fallbackMs } = opts;
-
-  const { channel, ready, isConnected } = useAblyLeagueChannel({ enabled, chainId });
-
-  const [patchByCampaign, setPatchByCampaign] = useState<Record<string, LeaguePatch>>({});
-  const [created, setCreated] = useState<LeagueCampaignCreated[]>([]);
-
-  // Buffer updates to avoid render storms. Flush at 500ms (requested).
-  const pendingPatchRef = useRef<Record<string, LeaguePatch>>({});
-  const pendingCreatedRef = useRef<LeagueCampaignCreated[]>([]);
-
-  // --- realtime subscription (campaign_patch) ---
-  useEffect(() => {
-    if (!ready || !channel) return;
-
-    const onPatch = (msg: any) => {
-      const data = (msg?.data ?? null) as PatchMsg | null;
-      if (!data || data.type !== "campaign_patch" || !Array.isArray(data.items)) return;
-
-      const buf = pendingPatchRef.current;
-      for (const it of data.items) {
-        const addr = String(it?.campaignAddress ?? "").toLowerCase();
-        if (!addr) continue;
-        const prev = buf[addr] ?? { campaignAddress: addr };
-        buf[addr] = { ...prev, ...it, campaignAddress: addr, ts: data.ts };
-      }
-    };
-
-    const onCreated = (msg: any) => {
-      const data = (msg?.data ?? null) as CampaignCreatedMsg | null;
-      if (!data || data.type !== "campaign_created" || !data.item) return;
-      const addr = String((data.item as any).campaignAddress ?? "").toLowerCase();
-      if (!addr) return;
-      pendingCreatedRef.current.push({ ...data.item, campaignAddress: addr });
-    };
-
-    channel.subscribe("campaign_patch", onPatch);
-    channel.subscribe("campaign_created", onCreated);
-
-    const flushId = setInterval(() => {
-      // Flush patches
-      const buf = pendingPatchRef.current;
-      const keys = Object.keys(buf);
-      if (keys.length) {
-        setPatchByCampaign((prev) => {
-          const next = { ...prev };
-          for (const k of keys) {
-            const it = buf[k];
-            next[k] = { ...(next[k] ?? { campaignAddress: k }), ...it, campaignAddress: k };
-          }
-          return next;
-        });
-        pendingPatchRef.current = {};
-      }
-
-      // Flush created campaigns
-      const createdBatch = pendingCreatedRef.current;
-      if (createdBatch.length) {
-        setCreated((prev) => {
-          // keep last 50 created announcements (UI consumption only)
-          const next = [...createdBatch, ...prev];
-          return next.slice(0, 50);
-        });
-        pendingCreatedRef.current = [];
-      }
-    }, 500);
-
-    return () => {
-      clearInterval(flushId);
-      try {
-        channel.unsubscribe("campaign_patch", onPatch);
-      } catch {}
-      try {
-        channel.unsubscribe("campaign_created", onCreated);
-      } catch {}
-    };
-  }, [ready, channel]);
-
-  // --- self-heal: fallback refresh when disconnected ---
-  const timerRef = useRef<any>(null);
-  const lastRefreshRef = useRef<number>(0);
+  const base = useBaseLeagueRealtime(opts);
+  const [launchByCampaign, setLaunchByCampaign] = useState<Record<string, number | null>>({});
+  const [resolved, setResolved] = useState(base.created.length === 0);
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  const refreshRef = useRef(opts.onFallbackRefresh);
+  const announcedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const intervalMs = Math.max(20000, Number(fallbackMs ?? 25000));
+    refreshRef.current = opts.onFallbackRefresh;
+  }, [opts.onFallbackRefresh]);
 
-    // stop timer if realtime connected or no callback
-    if (!enabled || isConnected || !onFallbackRefresh) {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+  useEffect(() => {
+    if (!opts.enabled) {
+      setResolved(true);
+      setLaunchByCampaign({});
       return;
     }
 
-    // start (or keep) timer while disconnected
-    if (!timerRef.current) {
-      timerRef.current = setInterval(() => {
-        const now = Date.now();
-        // safety: ensure no accidental tight loop
-        if (now - lastRefreshRef.current < intervalMs - 250) return;
-        lastRefreshRef.current = now;
+    let cancelled = false;
+    setResolved(false);
 
-        try {
-          onFallbackRefresh();
-        } catch {
-          // ignore
-        }
-      }, intervalMs);
-    }
-
-    // trigger an immediate refresh once when we first notice disconnect
-    const now = Date.now();
-    if (now - lastRefreshRef.current > 1000) {
-      lastRefreshRef.current = now;
+    void (async () => {
+      let lifecycle = new Map<string, any>();
       try {
-        onFallbackRefresh();
+        lifecycle = lifecycleByCampaign(
+          await fetchPublicCampaignLifecycleDrafts({ chainId: opts.chainId, limit: 500 }),
+        );
       } catch {
-        // ignore
+        lifecycle = new Map();
       }
-    }
+
+      const entries = new Map<string, number | null>();
+      for (const [address, draft] of lifecycle.entries()) {
+        entries.set(address, timestampSeconds(draft?.scheduledLaunchAt || draft?.tradingLaunchAt));
+      }
+
+      await Promise.all(
+        base.created.map(async (item) => {
+          const address = String(item.campaignAddress || "").toLowerCase();
+          if (!address || entries.has(address)) return;
+          entries.set(address, await readCampaignLaunchAt(opts.chainId, address));
+        }),
+      );
+
+      if (cancelled) return;
+      const current = Math.floor(Date.now() / 1000);
+      for (const [address, launchAt] of entries) {
+        if (launchAt && launchAt <= current) announcedRef.current.add(address);
+      }
+      setNowSec(current);
+      setLaunchByCampaign(Object.fromEntries(entries));
+      setResolved(true);
+    })();
 
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      cancelled = true;
     };
-  }, [enabled, isConnected, onFallbackRefresh, fallbackMs]);
+  }, [base.created, opts.chainId, opts.enabled]);
 
-
-  // --- optimistic local activity/vote nudge on confirmed tx ---
   useEffect(() => {
-    if (!enabled) return;
+    const future = Object.entries(launchByCampaign).filter(([, value]) => value && value > Math.floor(Date.now() / 1000));
+    if (!future.length) return;
 
-    const onUpvote = (e: any) => {
-      const d = e?.detail ?? {};
-      const cid = Number(d.chainId ?? NaN);
-      if (Number.isFinite(cid) && cid !== chainId) return;
-      const addr = String(d.campaignAddress ?? '').toLowerCase();
-      if (!addr) return;
-      const nowSec = Math.floor(Date.now() / 1000);
+    let previous = Math.floor(Date.now() / 1000);
+    const timer = window.setInterval(() => {
+      const current = Math.floor(Date.now() / 1000);
+      let crossed = false;
 
-      setPatchByCampaign((prev) => {
-        const cur = prev[addr] ?? ({ campaignAddress: addr } as LeaguePatch);
-        const v24 = Number(cur.votes24h ?? 0) + 1;
-        const vall = Number(cur.votesAllTime ?? 0) + 1;
-        return {
-          ...prev,
-          [addr]: { ...cur, campaignAddress: addr, votes24h: v24, votesAllTime: vall, lastActivityAt: nowSec },
-        };
+      for (const [address, launchAt] of Object.entries(launchByCampaign)) {
+        if (!launchAt || launchAt > current || launchAt <= previous || announcedRef.current.has(address)) continue;
+        announcedRef.current.add(address);
+        crossed = true;
+        window.dispatchEvent(
+          new CustomEvent("memebattles:scheduledLaunchReached", {
+            detail: { chainId: opts.chainId, campaignAddress: address, launchAt },
+          }),
+        );
+      }
+
+      previous = current;
+      setNowSec(current);
+      if (crossed) refreshRef.current?.();
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [launchByCampaign, opts.chainId]);
+
+  const created = useMemo<LeagueCampaignCreated[]>(() => {
+    if (!resolved && base.created.length) return [];
+    return base.created
+      .filter((item) => {
+        const launchAt = launchByCampaign[String(item.campaignAddress || "").toLowerCase()];
+        return !launchAt || launchAt <= nowSec;
+      })
+      .map((item) => {
+        const launchAt = launchByCampaign[String(item.campaignAddress || "").toLowerCase()];
+        return launchAt
+          ? { ...item, createdAtChain: new Date(launchAt * 1000).toISOString() }
+          : item;
       });
-    };
+  }, [base.created, launchByCampaign, nowSec, resolved]);
 
-    const onTx = (e: any) => {
-      const d = e?.detail ?? {};
-      const cid = Number(d.chainId ?? NaN);
-      if (Number.isFinite(cid) && cid !== chainId) return;
-      const addr = String(d.campaignAddress ?? '').toLowerCase();
-      if (!addr) return;
-      const nowSec = Math.floor(Date.now() / 1000);
-      setPatchByCampaign((prev) => {
-        const cur = prev[addr] ?? ({ campaignAddress: addr } as LeaguePatch);
-        return { ...prev, [addr]: { ...cur, campaignAddress: addr, lastActivityAt: nowSec } };
-      });
-    };
-
-    window.addEventListener('memebattles:upvoteConfirmed', onUpvote as any);
-    window.addEventListener('memebattles:txConfirmed', onTx as any);
-    return () => {
-      window.removeEventListener('memebattles:upvoteConfirmed', onUpvote as any);
-      window.removeEventListener('memebattles:txConfirmed', onTx as any);
-    };
-  }, [enabled, chainId]);
-
-  return useMemo(() => ({ patchByCampaign, created, isConnected }), [patchByCampaign, created, isConnected]);
+  return useMemo(
+    () => ({ ...base, created }),
+    [base, created],
+  ) as {
+    patchByCampaign: Record<string, LeaguePatch>;
+    created: LeagueCampaignCreated[];
+    isConnected: boolean;
+  };
 }
