@@ -47,7 +47,7 @@ jobs:
           availability_start = service.index(
               '  await refreshExpiredTickerReservations(db, { chainId: numericChainId, normalizedTicker });'
           )
-          availability_end = service.index('\n}\n\nfunction reservationTerms', availability_start)
+          availability_end = service.index(chr(10) + '}' + (chr(10) * 2) + 'function reservationTerms', availability_start)
           availability_replacement = chr(10).join([
               '  const reservationCluster = canonicalClusterForChain(numericChainId, cluster);',
               '  await refreshExpiredTickerReservations(db, {',
