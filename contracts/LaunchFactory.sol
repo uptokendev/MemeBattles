@@ -270,9 +270,8 @@ contract LaunchFactory is Ownable {
     }
 
     function isGraduationTargetAllowed(uint256 target) public view returns (bool) {
-        uint256 chainId = block.chainid;
-        if (chainId == 31337) chainId = 97;
-        return isGraduationTargetAllowedForChain(chainId, target);
+        if (block.chainid == 31337) return true;
+        return isGraduationTargetAllowedForChain(block.chainid, target);
     }
 
     function createCampaign(CampaignRequest calldata req) external returns (address campaignAddr, address tokenAddr) {
