@@ -1,0 +1,55 @@
+name: Ticker Reservation Cluster Scope V3
+
+on:
+  push:
+    branches:
+      - agent/solana-v2-ticker-reservations
+    paths:
+      - scripts/apply-ticker-cluster-scope.py
+      - .github/workflows/ticker-reservation-cluster-scope-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-ticker-reservations
+          fetch-depth: 0
+
+      - name: Validate deterministic patch script
+        run: python -m py_compile scripts/apply-ticker-cluster-scope.py
+
+      - name: Apply cluster-scoped reservation source
+        run: python scripts/apply-ticker-cluster-scope.py
+
+      - name: Verify patched sources
+        shell: bash
+        run: |
+          node --check frontend/api/dev-fix/ticker-reservation-service.js
+          node --check frontend/api/dev-fix/ticker-availability.js
+          node --check frontend/api/dev-fix/ticker-reservations.js
+          node --test frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git diff --check
+          git diff --stat
+
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            frontend/api/dev-fix/ticker-reservation-service.js \
+            frontend/api/dev-fix/ticker-availability.js \
+            frontend/api/dev-fix/ticker-reservations.js \
+            frontend/src/lib/draftApi.ts \
+            frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git commit -m 'Scope ticker reservations by chain cluster'
+          git push origin HEAD:agent/solana-v2-ticker-reservations
