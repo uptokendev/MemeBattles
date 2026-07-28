@@ -49,28 +49,28 @@ pub struct CreateCampaign<'info> {
         seeds = [GLOBAL_CONFIG_SEED],
         bump = global_config.bump
     )]
-    pub global_config: Account<'info, GlobalConfig>,
+    pub global_config: Box<Account<'info, GlobalConfig>>,
     #[account(
         seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
         bump = generation_config.bump
     )]
-    pub generation_config: Account<'info, GenerationConfig>,
+    pub generation_config: Box<Account<'info, GenerationConfig>>,
     #[account(
         mut,
         seeds = [CREATOR_PROFILE_SEED, creator.key().as_ref()],
         bump = creator_profile.bump
     )]
-    pub creator_profile: Account<'info, CreatorProfile>,
+    pub creator_profile: Box<Account<'info, CreatorProfile>>,
     #[account(
         seeds = [RISK_PROFILE_SEED, creator.key().as_ref()],
         bump = risk_profile.bump
     )]
-    pub risk_profile: Account<'info, RiskProfile>,
+    pub risk_profile: Box<Account<'info, RiskProfile>>,
     #[account(
         seeds = [CLUSTER_PROFILE_SEED, risk_profile.cluster_id.as_ref()],
         bump = cluster_profile.bump
     )]
-    pub cluster_profile: Account<'info, ClusterProfile>,
+    pub cluster_profile: Box<Account<'info, ClusterProfile>>,
     #[account(
         init,
         payer = creator,
@@ -78,7 +78,7 @@ pub struct CreateCampaign<'info> {
         seeds = [CAMPAIGN_SEED, args.campaign_id.as_ref()],
         bump
     )]
-    pub campaign: Account<'info, Campaign>,
+    pub campaign: Box<Account<'info, Campaign>>,
     #[account(
         init,
         payer = creator,
@@ -87,7 +87,7 @@ pub struct CreateCampaign<'info> {
         mint::decimals = generation_config.token_decimals,
         mint::authority = campaign
     )]
-    pub mint: Account<'info, Mint>,
+    pub mint: Box<Account<'info, Mint>>,
     #[account(
         init,
         payer = creator,
@@ -96,7 +96,7 @@ pub struct CreateCampaign<'info> {
         token::mint = mint,
         token::authority = campaign
     )]
-    pub token_vault: Account<'info, TokenAccount>,
+    pub token_vault: Box<Account<'info, TokenAccount>>,
     #[account(
         init,
         payer = creator,
@@ -104,7 +104,7 @@ pub struct CreateCampaign<'info> {
         seeds = [SOL_VAULT_SEED, args.campaign_id.as_ref()],
         bump
     )]
-    pub sol_vault: Account<'info, CampaignSolVault>,
+    pub sol_vault: Box<Account<'info, CampaignSolVault>>,
     #[account(
         init,
         payer = creator,
@@ -112,7 +112,7 @@ pub struct CreateCampaign<'info> {
         seeds = [CREATE_AUTH_SEED, creator.key().as_ref(), args.nonce.as_ref()],
         bump
     )]
-    pub create_authorization: Account<'info, CreateAuthorization>,
+    pub create_authorization: Box<Account<'info, CreateAuthorization>>,
     /// CHECK: The address constraint pins this account to the Instructions sysvar.
     #[account(address = INSTRUCTIONS_SYSVAR_ID)]
     pub instructions: UncheckedAccount<'info>,
@@ -255,7 +255,7 @@ pub struct CampaignCreated {
 
 pub fn create_campaign_handler(
     ctx: &mut Context<CreateCampaign>,
-    args: CreateCampaignArgs,
+    args: &CreateCampaignArgs,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let now = clock.unix_timestamp;

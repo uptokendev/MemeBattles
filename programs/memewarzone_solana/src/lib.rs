@@ -245,7 +245,7 @@ pub mod memewarzone_solana {
         mut ctx: Context<CreateCampaign>,
         args: CreateCampaignArgs,
     ) -> Result<()> {
-        authorized_create::create_campaign_handler(&mut ctx, args)
+        authorized_create::create_campaign_handler(&mut ctx, &args)
     }
 
     pub fn sync_creator_profile(
