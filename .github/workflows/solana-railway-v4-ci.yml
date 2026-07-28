@@ -11,6 +11,8 @@ on:
       - frontend/api/dev-fix/solana-v4-primitives.js
       - frontend/api/dev-fix/solana-v4-primitives.test.mjs
       - frontend/src/lib/solanaCreateAuthorizationV4.ts
+      - frontend/src/lib/solanaCreateCampaignV4Plan.ts
+      - frontend/scripts/check-solana-v4-client.mjs
       - scripts/check-solana-v4-idl.mjs
       - tests/solana/authorization-v4.cjs
       - tests/solana/railway-v4-conformance.cjs
@@ -55,6 +57,7 @@ jobs:
           node --check frontend/api/dev-fix/solana-create-authorization-v4.js
           node --check frontend/api/dev-fix/draft-deploy.js
           node --check scripts/check-solana-v4-idl.mjs
+          node --check frontend/scripts/check-solana-v4-client.mjs
 
       - name: Test dependency-free Railway primitives
         run: node --test frontend/api/dev-fix/solana-v4-primitives.test.mjs
@@ -64,6 +67,10 @@ jobs:
 
       - name: Prove validator serializer and PDA conformance
         run: npm --prefix tests/solana run test:railway
+
+      - name: Validate generated-IDL client TypeScript
+        working-directory: frontend
+        run: node scripts/check-solana-v4-client.mjs
 
       - name: Build production frontend
         run: npm --prefix frontend run build
