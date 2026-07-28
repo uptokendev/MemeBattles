@@ -1,0 +1,68 @@
+name: Ticker Reservation Cluster Scope Patch
+
+on:
+  pull_request:
+    branches:
+      - agent/scheduled-launch-lifecycle
+      - devpostgrad
+    paths:
+      - .github/workflows/ticker-reservation-cluster-scope-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-ticker-reservations
+          fetch-depth: 0
+
+      - name: Execute reviewed cluster-scoping patch
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/ticker-reservation-cluster-scope-once.yml').read_text(encoding='utf-8')
+          start_marker = '''      - name: Patch cluster-scoped reservation source
+                  shell: python
+                  run: |
+          '''
+          end_marker = '''
+                - name: Verify patched sources
+          '''
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = dedent(workflow[start:end])
+          compile(script, 'ticker-reservation-cluster-scope-once.yml', 'exec')
+          exec(script, {})
+
+      - name: Verify patched sources
+        shell: bash
+        run: |
+          node --check frontend/api/dev-fix/ticker-reservation-service.js
+          node --check frontend/api/dev-fix/ticker-availability.js
+          node --check frontend/api/dev-fix/ticker-reservations.js
+          node --test frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git diff --check
+          git diff --stat
+
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            frontend/api/dev-fix/ticker-reservation-service.js \
+            frontend/api/dev-fix/ticker-availability.js \
+            frontend/api/dev-fix/ticker-reservations.js \
+            frontend/src/lib/draftApi.ts \
+            frontend/api/dev-fix/ticker-reservation-service.test.mjs
+          git commit -m 'Scope ticker reservations by chain cluster'
+          git push origin HEAD:agent/solana-v2-ticker-reservations
