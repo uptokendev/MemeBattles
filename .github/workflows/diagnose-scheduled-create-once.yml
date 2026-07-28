@@ -24,6 +24,7 @@ jobs:
       - name: Read scheduled factory and creator state
         shell: bash
         run: |
+          echo "scheduled factory diagnosis revision 2"
           node <<'NODE'
           const { ethers } = require('ethers');
 
