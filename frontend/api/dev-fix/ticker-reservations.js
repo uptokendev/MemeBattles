@@ -38,7 +38,10 @@ async function getPool() {
 }
 
 function availableActions(reservation, draft) {
-  if (!reservation) {
+  if (
+    !reservation ||
+    [TICKER_RESERVATION_STATUS.DRAFT_UNRESERVED, TICKER_RESERVATION_STATUS.RELEASED].includes(reservation.status)
+  ) {
     return draft.status === "archived" ? [] : ["reclaim"];
   }
 
