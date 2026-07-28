@@ -76,7 +76,7 @@ def replace_auth_end_marker(script: str) -> str:
     marker_end = script.index(marker_end_line, marker_start) + len(marker_end_line)
     replacement = "\n".join(
         [
-            "    auth_end_marker = chr(10).join([",
+            "auth_end_marker = chr(10).join([",
             "        '  return json(res, 200, {',",
             "        '    scheduledRequest,',",
             "        '    authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },',",
