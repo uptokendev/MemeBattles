@@ -7,6 +7,20 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const target = path.resolve(here, "../src/lib/draftApi.ts");
 
+const PATCHED_MARKERS = [
+  'const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v3:";',
+  'const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";',
+  "if (!auth.nonce || !auth.message || !auth.signature) return null;",
+];
+
+function isPatched(source) {
+  return (
+    PATCHED_MARKERS.every((marker) => source.includes(marker)) &&
+    !source.includes("buildConnectedWalletDraftAuth") &&
+    !source.includes("CONNECTED_OWNER_ACTIONS")
+  );
+}
+
 function replaceExactly(source, before, after, label) {
   const matches = source.split(before).length - 1;
   if (matches !== 1) {
@@ -16,6 +30,11 @@ function replaceExactly(source, before, after, label) {
 }
 
 let source = fs.readFileSync(target, "utf8");
+
+if (isPatched(source)) {
+  console.log(`[draft-owner-auth-fix] already patched ${target}`);
+  process.exit(0);
+}
 
 source = replaceExactly(
   source,
@@ -45,14 +64,8 @@ source = replaceExactly(
   "restore signed owner-session flow",
 );
 
-if (source.includes("buildConnectedWalletDraftAuth") || source.includes("CONNECTED_OWNER_ACTIONS")) {
-  throw new Error("Unsigned owner-auth bypass remains after patch.");
-}
-if (!source.includes('const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v3:";')) {
-  throw new Error("Owner session cache was not upgraded to v3.");
-}
-if (!source.includes("if (!auth.nonce || !auth.message || !auth.signature) return null;")) {
-  throw new Error("Signed owner-session cache validation is missing.");
+if (!isPatched(source)) {
+  throw new Error("Draft owner-auth repair did not produce the required signed-session source state.");
 }
 
 fs.writeFileSync(target, source);
