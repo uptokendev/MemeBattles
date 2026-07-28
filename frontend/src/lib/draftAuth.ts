@@ -21,6 +21,7 @@ export type DraftActionAuth = {
   nonce: string;
   message: string;
   signature: string;
+  walletType?: "evm" | "solana";
 };
 
 type NonceResult = {
@@ -29,9 +30,13 @@ type NonceResult = {
 };
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
-const POST_CREATE_SESSION_ACTION: DraftAuthAction = "create_draft";
-const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
-const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:";
+const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v3:";
+const LEGACY_OWNER_SESSION_CACHE_PREFIXES = [
+  "mwz:draft-owner-session:v2:",
+  "mwz:draft-owner-session:",
+];
+const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
+const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
 const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
   "read_draft",
   "save_promotion",
@@ -40,23 +45,6 @@ const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
   "deploy_draft",
 ]);
 const OWNER_SESSION_IN_FLIGHT = new Map<string, Promise<DraftActionAuth>>();
-
-function buildConnectedWalletDraftAuth(input: {
-  action: DraftAuthAction;
-  walletAddress: string;
-  chainId: number;
-  draftId?: string | null;
-}): DraftActionAuth {
-  return {
-    action: input.action,
-    walletAddress: normalizeWallet(input.walletAddress),
-    chainId: Number(input.chainId),
-    draftId: input.draftId || null,
-    nonce: "",
-    message: "",
-    signature: "",
-  };
-}
 
 function normalizeWallet(value: string) {
   return String(value || "").trim().toLowerCase();
@@ -93,7 +81,6 @@ async function fetchNonce(chainId: number, walletAddress: string): Promise<Nonce
   });
 
   const json = await res.json().catch(() => ({}));
-
   if (!res.ok || !json?.nonce) {
     throw new Error(String(json?.error || json?.message || "Could not create wallet auth nonce."));
   }
@@ -108,12 +95,35 @@ function ownerSessionCacheKey(input: { walletAddress: string; chainId: number; d
   return `${OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
 }
 
-function legacyOwnerSessionCacheKey(input: { walletAddress: string; chainId: number; draftId: string }) {
-  return `${LEGACY_OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`;
-}
-
 function ownerSessionInFlightKey(input: { walletAddress: string; chainId: number; draftId: string }) {
   return ownerSessionCacheKey(input);
+}
+
+function readCachedOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }): DraftActionAuth | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(ownerSessionCacheKey(input));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { auth?: DraftActionAuth; cachedAt?: number; expiresAt?: string | null };
+    const auth = parsed?.auth;
+    const now = Date.now();
+    const cachedAt = Number(parsed.cachedAt || 0);
+    const expiresAtMs = parsed.expiresAt ? new Date(parsed.expiresAt).getTime() : 0;
+
+    if (!auth || auth.action !== OWNER_SESSION_ACTION) return null;
+    if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
+    if (Number(auth.chainId) !== Number(input.chainId)) return null;
+    if (String(auth.draftId || "") !== input.draftId) return null;
+    if (!auth.nonce || !auth.message || !auth.signature) return null;
+    if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
+    if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
+
+    return auth;
+  } catch {
+    return null;
+  }
 }
 
 export function clearCachedDraftOwnerSession(input: { walletAddress: string; chainId: number; draftId: string }) {
@@ -127,7 +137,9 @@ export function clearCachedDraftOwnerSession(input: { walletAddress: string; cha
 
   try {
     window.sessionStorage.removeItem(ownerSessionCacheKey(normalized));
-    window.sessionStorage.removeItem(legacyOwnerSessionCacheKey(normalized));
+    for (const prefix of LEGACY_OWNER_SESSION_CACHE_PREFIXES) {
+      window.sessionStorage.removeItem(`${prefix}${normalized.chainId}:${normalized.walletAddress}:${normalized.draftId}`);
+    }
   } catch {
     // Ignore storage failures. The user can still sign again.
   }
@@ -147,27 +159,21 @@ function cacheOwnerSession(input: {
   try {
     window.sessionStorage.setItem(
       ownerSessionCacheKey(input),
-      JSON.stringify({ auth: input.auth, cachedAt: Date.now(), expiresAt: input.expiresAt })
+      JSON.stringify({ auth: input.auth, cachedAt: Date.now(), expiresAt: input.expiresAt }),
     );
   } catch {
-    // Ignore storage failures. The user can still sign per action.
+    // Ignore storage failures. The user can still sign again.
   }
 }
 
-export function cacheDraftOwnerSessionFromCreateAuth(input: {
+export function cacheDraftOwnerSessionFromCreateAuth(_input: {
   auth: DraftActionAuth;
   walletAddress: string;
   chainId: number;
   draftId: string;
 }) {
-  if (!input.auth || input.auth.action !== POST_CREATE_SESSION_ACTION) return;
-  cacheOwnerSession({
-    auth: { ...input.auth, draftId: null },
-    walletAddress: input.walletAddress,
-    chainId: input.chainId,
-    draftId: input.draftId,
-    expiresAt: null,
-  });
+  // A create_draft signature is intentionally not promoted into an owner session.
+  // Draft-scoped access requires a separate draft_owner_session signature.
 }
 
 async function createSignedDraftAction(input: {
@@ -176,32 +182,29 @@ async function createSignedDraftAction(input: {
   chainId: number;
   action: DraftAuthAction;
   draftId: string | null;
-  shouldUseOwnerSession: boolean;
 }): Promise<DraftActionAuth> {
-  const actionToSign = input.shouldUseOwnerSession ? OWNER_SESSION_ACTION : input.action;
   const { nonce, expiresAt } = await fetchNonce(input.chainId, input.walletAddress);
-
   const message = buildDraftAuthMessage({
-    action: actionToSign,
+    action: input.action,
     walletAddress: input.walletAddress,
     chainId: input.chainId,
     nonce,
     draftId: input.draftId,
   });
-
   const signature = await input.signer.signMessage(message);
 
   const auth: DraftActionAuth = {
-    action: actionToSign,
-    walletAddress: input.walletAddress,
+    action: input.action,
+    walletAddress: normalizeWallet(input.walletAddress),
     chainId: input.chainId,
     draftId: input.draftId,
     nonce,
     message,
     signature,
+    walletType: "evm",
   };
 
-  if (input.shouldUseOwnerSession && input.draftId) {
+  if (input.action === OWNER_SESSION_ACTION && input.draftId) {
     cacheOwnerSession({
       auth,
       walletAddress: input.walletAddress,
@@ -237,29 +240,39 @@ export async function signDraftAction(input: {
   }
 
   const draftId = input.draftId || null;
-  const shouldUseOwnerSession = Boolean(
-    draftId && OWNER_SESSION_ACTIONS.has(input.action)
-  );
-
-  // The backend already treats connected owner-wallet draft actions as authorized
-  // without a second wallet signature. Only create_draft should sign.
-  // This removes repeat prompts when entering edit, saving/publishing promotion,
-  // archiving, deploying, or returning from the public prepare page to edit.
-  if (shouldUseOwnerSession && draftId) {
-    return buildConnectedWalletDraftAuth({
-      action: input.action,
+  const useOwnerSession = Boolean(draftId && OWNER_SESSION_ACTIONS.has(input.action));
+  if (!useOwnerSession || !draftId) {
+    return createSignedDraftAction({
+      signer: input.signer,
       walletAddress,
       chainId,
+      action: input.action,
       draftId,
     });
   }
 
-  return createSignedDraftAction({
+  const cacheInput = { walletAddress, chainId, draftId };
+  if (input.forceNewOwnerSession) {
+    clearCachedDraftOwnerSession(cacheInput);
+  } else {
+    const cached = readCachedOwnerSession(cacheInput);
+    if (cached) return cached;
+  }
+
+  const inFlightKey = ownerSessionInFlightKey(cacheInput);
+  const existing = OWNER_SESSION_IN_FLIGHT.get(inFlightKey);
+  if (existing) return existing;
+
+  const signing = createSignedDraftAction({
     signer: input.signer,
     walletAddress,
     chainId,
-    action: input.action,
+    action: OWNER_SESSION_ACTION,
     draftId,
-    shouldUseOwnerSession,
+  }).finally(() => {
+    OWNER_SESSION_IN_FLIGHT.delete(inFlightKey);
   });
+
+  OWNER_SESSION_IN_FLIGHT.set(inFlightKey, signing);
+  return signing;
 }
