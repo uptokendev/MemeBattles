@@ -1,0 +1,179 @@
+name: Solana Local Validator Acceptance
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - Anchor.toml
+      - Cargo.toml
+      - Cargo.lock
+      - programs/memewarzone_solana/**
+      - tests/solana/**
+      - .github/workflows/solana-local-validator-ci.yml
+  workflow_dispatch:
+
+concurrency:
+  group: solana-validator-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.26
+  RUST_TOOLCHAIN: 1.79.0
+  IDL_RUST_TOOLCHAIN: nightly-2024-05-09
+  CARGO_NET_RETRY: 10
+  ANCHOR_PROVIDER_URL: http://127.0.0.1:8899
+
+jobs:
+  local-validator-acceptance:
+    name: V4 create and asset acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust toolchains
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup toolchain install "$IDL_RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Install Solana CLI
+        shell: bash
+        run: |
+          release_dir="$HOME/.local/share/solana/install/releases/v${SOLANA_VERSION}"
+          mkdir -p "$release_dir"
+          curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
+            --output /tmp/solana-release.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          tar -xjf /tmp/solana-release.tar.bz2 -C "$release_dir" --strip-components=1
+          mkdir -p "$HOME/.local/share/solana/install"
+          ln -sfn "$release_dir" "$HOME/.local/share/solana/install/active_release"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor CLI
+        run: npm install --global --silent "@coral-xyz/anchor-cli@${ANCHOR_VERSION}"
+
+      - name: Show pinned toolchain
+        shell: bash
+        run: |
+          anchor --version
+          solana --version
+          rustc --version
+          rustup run "$IDL_RUST_TOOLCHAIN" rustc --version
+          node --version
+          npm --version
+
+      - name: Create ephemeral validator identities
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.config/solana" target/deploy
+          solana-keygen new \
+            --no-bip39-passphrase \
+            --silent \
+            --force \
+            --outfile "$HOME/.config/solana/id.json"
+          solana-keygen new \
+            --no-bip39-passphrase \
+            --silent \
+            --force \
+            --outfile target/deploy/memewarzone_solana-keypair.json
+          echo "ANCHOR_WALLET=$HOME/.config/solana/id.json" >> "$GITHUB_ENV"
+          anchor keys sync
+          anchor keys list
+
+      - name: Build program and generated IDL
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f Cargo.lock programs/memewarzone_solana/Cargo.lock
+          anchor build --no-idl 2>&1 | tee /tmp/solana-validator-build.log | tail -n 160
+          mkdir -p target/idl
+          (
+            cd programs/memewarzone_solana
+            RUSTUP_TOOLCHAIN="$IDL_RUST_TOOLCHAIN" anchor idl build \
+              --out ../../target/idl/memewarzone_solana.json
+          ) 2>&1 | tee /tmp/solana-validator-idl.log | tail -n 240
+          test -s target/deploy/memewarzone_solana.so
+          test -s target/idl/memewarzone_solana.json
+
+      - name: Start local validator
+        shell: bash
+        run: |
+          rm -rf /tmp/memewarzone-solana-ledger
+          solana-test-validator \
+            --reset \
+            --quiet \
+            --ledger /tmp/memewarzone-solana-ledger \
+            > /tmp/solana-test-validator.log 2>&1 &
+          echo $! > /tmp/solana-test-validator.pid
+
+          for attempt in $(seq 1 90); do
+            if solana cluster-version --url "$ANCHOR_PROVIDER_URL" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Local validator did not become ready" >&2
+          tail -n 200 /tmp/solana-test-validator.log >&2
+          exit 1
+
+      - name: Fund deployer and deploy program
+        shell: bash
+        run: |
+          set -o pipefail
+          solana config set \
+            --url "$ANCHOR_PROVIDER_URL" \
+            --keypair "$ANCHOR_WALLET"
+          solana airdrop 100
+          solana balance
+          anchor deploy \
+            --provider.cluster localnet \
+            --provider.wallet "$ANCHOR_WALLET" \
+            2>&1 | tee /tmp/solana-validator-deploy.log | tail -n 200
+
+      - name: Install acceptance-test dependencies
+        run: npm install --prefix tests/solana --no-audit --no-fund
+
+      - name: Run V4 local-validator acceptance
+        shell: bash
+        run: |
+          set -o pipefail
+          ANCHOR_PROVIDER_URL="$ANCHOR_PROVIDER_URL" \
+          ANCHOR_WALLET="$ANCHOR_WALLET" \
+          npm --prefix tests/solana test \
+            2>&1 | tee /tmp/solana-validator-acceptance.log
+
+      - name: Upload validator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memewarzone-solana-validator-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            /tmp/solana-validator-build.log
+            /tmp/solana-validator-idl.log
+            /tmp/solana-test-validator.log
+            /tmp/solana-validator-deploy.log
+            /tmp/solana-validator-acceptance.log
+
+      - name: Stop local validator
+        if: always()
+        shell: bash
+        run: |
+          if test -s /tmp/solana-test-validator.pid; then
+            kill "$(cat /tmp/solana-test-validator.pid)" || true
+          fi
