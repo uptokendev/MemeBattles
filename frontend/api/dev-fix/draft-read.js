@@ -1,4 +1,4 @@
-import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
+import { badMethod, getQuery, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 
 const STATUSES = new Set([
@@ -99,7 +99,6 @@ function popularityFromMetrics(metrics, extras = {}) {
   const reactions = Number(m.reactions || 0);
   const shares = Number(m.shares || 0);
   const signedActions = Number(m.signedActions ?? m.signed_actions ?? 0);
-  // armedCount is the canonical opt-in number — counted from notification subscriptions.
   const armedCount = Number(extras.armedCount ?? 0);
   const rankingScore = follows * 10 + comments * 5 + reactions * 3 + shares * 4 + signedActions * 7 + Math.min(views, 2500) * 0.35;
   const popularityPercentage = Math.max(0, Math.min(100, Math.round((rankingScore / 2200) * 100)));
@@ -145,39 +144,35 @@ export async function signedDraftById(req, res) {
   const draft = mapDraftRow(draftRes.rows[0]);
   if (!draft) return json(res, 404, { error: "Draft not found" });
 
-  // Owner via viewer bypass for private (Solana raw addr support)
-  const q = getQuery(req);
-  const viewer = normalizeAddress(q.viewer || "", draft.chainId);
-  const creatorNorm = normalizeAddress(draft.creatorWallet, draft.chainId);
-  const isOwnerViewer = viewer && viewer === creatorNorm;
-
-  if (draft.visibility === "private") {
-    let auth = null;
-    if (req.method === "POST") {
-      const body = await readJson(req);
-      auth = body.auth || null;
-    }
-
-    if (!auth && !isOwnerViewer) {
+  if (req.method === "POST") {
+    const body = await readJson(req);
+    const auth = body.auth || null;
+    if (!auth) {
       return json(res, 401, {
-        error: "Private draft requires signed owner wallet auth.",
-        code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+        error: "Draft owner access requires signed wallet auth.",
+        code: "DRAFT_OWNER_AUTH_REQUIRED",
         chainId: draft.chainId,
-      });
-    }
-
-    if (auth) {
-      const ok = await requireDraftActionAuth({
-        res,
-        pool,
-        auth,
-        expectedWallet: draft.creatorWallet,
-        chainId: draft.chainId,
-        action: "read_draft",
         draftId,
       });
-      if (!ok) return;
     }
+
+    const ok = await requireDraftActionAuth({
+      res,
+      pool,
+      auth,
+      expectedWallet: draft.creatorWallet,
+      chainId: draft.chainId,
+      action: "read_draft",
+      draftId,
+    });
+    if (!ok) return;
+  } else if (draft.visibility === "private") {
+    return json(res, 401, {
+      error: "Private draft requires signed owner wallet auth.",
+      code: "PRIVATE_DRAFT_AUTH_REQUIRED",
+      chainId: draft.chainId,
+      draftId,
+    });
   }
 
   const promoRes = await pool.query("select * from campaign_draft_promotion where draft_id = $1 limit 1", [draft.id]);
@@ -202,9 +197,8 @@ export async function signedPrepareBySlug(req, res) {
   const draft = mapDraftRow(draftRes.rows[0]);
   if (!draft) return json(res, 404, { error: "Prepare page not found" });
 
-  // Compute viewer early using the draft's chainId (critical for Solana raw base58 matching)
   const q = getQuery(req);
-  const viewer = normalizeAddress(q.viewer || "", draft.chainId);
+  let viewer = normalizeAddress(q.viewer || "", draft.chainId);
 
   if (draft.visibility === "private") {
     let auth = null;
@@ -213,15 +207,7 @@ export async function signedPrepareBySlug(req, res) {
       auth = body.auth || null;
     }
 
-    // Allow owners to view their own private drafts on GET when ?viewer= matches the creator
-    // (raw base58 for Solana, lower for EVM). This avoids spurious 401s in owner flows
-    // (e.g. Command Center -> click private Solana draft) while still requiring signed
-    // read_draft proof for non-owners or when no matching viewer is provided.
-    // Mirrors the "graceful Solana handling" pattern from league cabinet / profile fixes.
-    const creatorNorm = normalizeAddress(draft.creatorWallet, draft.chainId);
-    const isOwnerViewer = viewer && viewer === creatorNorm;
-
-    if (!auth && !isOwnerViewer) {
+    if (!auth) {
       return json(res, 401, {
         error: "Private draft requires signed owner wallet auth.",
         code: "PRIVATE_DRAFT_AUTH_REQUIRED",
@@ -230,18 +216,17 @@ export async function signedPrepareBySlug(req, res) {
       });
     }
 
-    if (auth) {
-      const ok = await requireDraftActionAuth({
-        res,
-        pool,
-        auth,
-        expectedWallet: draft.creatorWallet,
-        chainId: draft.chainId,
-        action: "read_draft",
-        draftId: draft.id,
-      });
-      if (!ok) return;
-    }
+    const ok = await requireDraftActionAuth({
+      res,
+      pool,
+      auth,
+      expectedWallet: draft.creatorWallet,
+      chainId: draft.chainId,
+      action: "read_draft",
+      draftId: draft.id,
+    });
+    if (!ok) return;
+    viewer = normalizeAddress(auth.walletAddress, draft.chainId);
   }
 
   await pool
@@ -255,9 +240,6 @@ export async function signedPrepareBySlug(req, res) {
   const metricsRes = await pool.query("select * from campaign_draft_metrics where draft_id = $1 limit 1", [draft.id]).catch(() => ({ rows: [] }));
   const engagementCounts = await getDraftEngagementCounts(pool, draft);
 
-  // Per-viewer engagement state (viewer already computed above with draft.chainId for Solana correctness).
-  // Lets the frontend hydrate the Prepare page CTAs (Arm / Follow) into their post-click visual
-  // on reload, instead of always showing the orange "do it" state regardless of subscription status.
   let viewerFollowing = false;
   let viewerArmed = false;
   if (viewer) {
