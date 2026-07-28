@@ -1,0 +1,80 @@
+name: Apply scheduled draft and deployment repair
+
+on:
+  push:
+    branches:
+      - agent/fix-scheduled-draft-card-deploy
+    paths:
+      - .github/workflows/apply-scheduled-draft-deploy-fix.yml
+      - scripts/apply-scheduled-draft-deploy-fix.mjs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-scheduled-draft-deploy-fix
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-scheduled-draft-card-deploy
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Repair one-shot script newline and validate
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'scripts/apply-scheduled-draft-deploy-fix.mjs';
+          const source = fs.readFileSync(path, 'utf8');
+          fs.writeFileSync(path, source.replace('} catch {}\\n}', '} catch {}\n}'));
+          NODE
+          node --check scripts/apply-scheduled-draft-deploy-fix.mjs
+
+      - name: Apply source changes
+        run: node scripts/apply-scheduled-draft-deploy-fix.mjs
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Validate APIs and lifecycle tests
+        shell: bash
+        run: |
+          node --check frontend/api/dev-fix/drafts.js
+          node --check frontend/api/dev-fix/draft-deploy.js
+          node --check frontend/api/dev-fix/scheduled-lifecycle.js
+          node --test frontend/api/dev-fix/scheduled-lifecycle.test.mjs
+          npm --prefix frontend run check:api-imports
+          npm --prefix frontend run test:wallet-discovery
+
+      - name: Build public application
+        run: npm --prefix frontend run build
+
+      - name: Validate patch and publish
+        shell: bash
+        run: |
+          git diff --check
+          git config user.name "MemeWarzone Build Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Repair produced no changes."
+            exit 1
+          fi
+          git commit -m "Fix scheduled draft cards, auth reads, and factory binding"
+          git push origin HEAD:agent/fix-scheduled-draft-card-deploy
