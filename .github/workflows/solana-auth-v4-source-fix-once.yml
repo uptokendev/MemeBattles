@@ -1,0 +1,93 @@
+name: Apply one-shot Solana authorization V4 digest migration
+
+on:
+  push:
+    branches:
+      - agent/solana-v2-phase0-refresh
+    paths:
+      - .github/workflows/solana-auth-v4-source-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-source:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-phase0-refresh
+          fetch-depth: 0
+
+      - name: Convert create authorization to a signed SHA-256 digest
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('programs/memewarzone_solana/src/authorized_create.rs')
+          source = path.read_text(encoding='utf-8')
+
+          if source.count('MEMEWARZONE_SOLANA_CREATE_V3') != 1:
+              raise SystemExit('Expected exactly one V3 authorization domain')
+          source = source.replace(
+              'MEMEWARZONE_SOLANA_CREATE_V3',
+              'MEMEWARZONE_SOLANA_CREATE_V4',
+              1,
+          )
+
+          old_version = 'pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 3;'
+          new_version = 'pub const CREATE_AUTH_SCHEMA_VERSION: u16 = 4;'
+          if source.count(old_version) != 1:
+              raise SystemExit('Expected exactly one V3 schema constant')
+          source = source.replace(old_version, new_version, 1)
+
+          old_verification = '''    verify_detached_create_authorization(
+              &ctx.accounts.instructions.to_account_info(),
+              route_signer,
+              &authorization_message,
+          )?;
+
+          let authorization_hash = hash(&authorization_message).to_bytes();
+          '''
+          new_verification = '''    // The canonical payload remains fully bound, but only its compact SHA-256
+          // digest is carried by the Ed25519 instruction so the create transaction
+          // stays below Solana's transaction-size limit.
+          let authorization_hash = hash(&authorization_message).to_bytes();
+
+          verify_detached_create_authorization(
+              &ctx.accounts.instructions.to_account_info(),
+              route_signer,
+              &authorization_hash,
+          )?;
+          '''
+          if source.count(old_verification) != 1:
+              raise SystemExit('Expected exactly one V3 verification block')
+          source = source.replace(old_verification, new_verification, 1)
+
+          old_assertion = 'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 3);'
+          if old_assertion in source:
+              source = source.replace(
+                  old_assertion,
+                  'assert_eq!(CREATE_AUTH_SCHEMA_VERSION, 4);',
+                  1,
+              )
+
+          path.write_text(source, encoding='utf-8')
+
+      - name: Format and verify patch
+        shell: bash
+        run: |
+          cargo fmt --all
+          git diff --check
+          git diff -- programs/memewarzone_solana/src/authorized_create.rs
+
+      - name: Commit authorization V4 source change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add programs/memewarzone_solana/src/authorized_create.rs
+          git commit -m 'Use compact Solana create authorization digest'
+          git push origin HEAD:agent/solana-v2-phase0-refresh
