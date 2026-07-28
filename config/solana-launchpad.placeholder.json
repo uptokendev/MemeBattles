@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "status": "protocol_pending",
   "chain": "solana",
   "cluster": {
@@ -23,7 +23,9 @@
     "idlGeneratesInCi": true,
     "rustInvariantSuitePassesInCi": true,
     "generationPolicyImplemented": true,
-    "detachedCreateAuthorizationVersion": 2,
+    "detachedCreateAuthorizationVersion": 3,
+    "programControlledAssetSourceImplemented": true,
+    "phase6ValidatorProofPresent": false,
     "deploymentEvidencePresent": false
   },
   "generation": {
@@ -66,9 +68,9 @@
     "oracleProfile": null
   },
   "authorization": {
-    "createMode": "detached_ed25519_v2",
-    "domain": "MEMEWARZONE_SOLANA_CREATE_V2",
-    "schemaVersion": 2,
+    "createMode": "detached_ed25519_v3",
+    "domain": "MEMEWARZONE_SOLANA_CREATE_V3",
+    "schemaVersion": 3,
     "routeSigner": null,
     "routeSignerEnv": "SOLANA_ROUTE_SIGNER_PUBLIC_KEY",
     "railwayTransactionCosignerRequired": false,
@@ -77,8 +79,44 @@
     "creatorNoncePdaReplayProtection": true,
     "generationEconomicsBound": true,
     "generationProfilesBound": true,
+    "campaignAssetAddressesBound": true,
+    "classicSplTokenProgramBound": true,
     "routeAuthorizationRequired": true,
     "authorizedTradingRequired": true
+  },
+  "assets": {
+    "assetInitializationVersion": 1,
+    "tokenProgram": "classic_spl_token",
+    "creatorSuppliedMintAllowed": false,
+    "campaignPdaSeeds": [
+      "campaign",
+      "campaign_id"
+    ],
+    "mintPdaSeeds": [
+      "campaign-mint",
+      "campaign_id"
+    ],
+    "tokenVaultPdaSeeds": [
+      "token-vault",
+      "campaign_id"
+    ],
+    "solVaultPdaSeeds": [
+      "sol-vault",
+      "campaign_id"
+    ],
+    "mintDecimalsSource": "generation_config",
+    "mintSupplySource": "generation_config",
+    "initialMintAuthority": "campaign_pda",
+    "freezeAuthority": null,
+    "completeSupplyInitiallyInTokenVault": true,
+    "mintAuthorityRevokedAtomically": true,
+    "tokenCompartmentsRecorded": [
+      "curve_tokens",
+      "liquidity_tokens",
+      "reserve_tokens"
+    ],
+    "rawSolVaultBalanceIsProtocolPrincipal": false,
+    "netRaisedAccountingField": "campaign.net_raised_lamports"
   },
   "launchPolicy": {
     "immediateLaunchSentinel": 0,
@@ -116,7 +154,10 @@
     "generationInitializedOnChain": false,
     "creatorRiskPdasSynced": false,
     "tickerReservationBackendReady": false,
+    "mintAndVaultInitializationSourceReady": true,
     "mintAndVaultInitializationReady": false,
+    "mintAuthorityRevocationTransactionTestPassed": false,
+    "alternateAssetAccountRejectionPassed": false,
     "authorizedCreateTransactionTestsPassed": false,
     "bondingBuySellReady": false,
     "netRaisedGraduationReady": false,
@@ -131,12 +172,13 @@
   },
   "notes": [
     "This file is a placeholder manifest shape only and must never be treated as launch-ready configuration.",
-    "The repository build and IDL evidence is not deployment evidence.",
+    "Repository build, IDL and source evidence is not deployment or validator transaction evidence.",
     "Only one Solana generation may have activeCreation=true at a time.",
     "Supported generations remain visible, tradable and graduatable after creation moves to a newer generation.",
     "The 6 USD target is required for devnet generations and forbidden for mainnet-beta generations.",
-    "Creators cannot supply curve, fee, route, treasury, DEX or oracle policy during campaign creation.",
-    "Direct SOL transfers never count toward graduation; graduation uses netRaisedLamports.",
+    "Creators cannot supply mint, curve, fee, route, treasury, DEX or oracle policy during campaign creation.",
+    "The complete token supply starts in a Campaign-PDA-controlled token vault and mint authority is revoked in the create instruction.",
+    "Direct SOL transfers never count toward graduation or sell solvency; protocol state uses netRaisedLamports.",
     "A frontend program ID or environment flag is not deployment evidence."
   ]
 }
