@@ -95,7 +95,8 @@
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "hardhat": "^2.22.10",
-    "hardhat-gas-reporter": "^10.9.2",
+    "hardhat-gas-reporter": "^1.0.10",
+    "solidity-coverage": "^0.8.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
