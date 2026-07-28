@@ -3,33 +3,10 @@ import { apiFetch, apiUrl } from "@/lib/apiBase";
 import type { DraftActionAuth, DraftAuthAction } from "@/lib/draftAuth";
 
 const OWNER_SESSION_ACTION: DraftAuthAction = "draft_owner_session";
-const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
+const OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v3:";
+const LEGACY_OWNER_SESSION_CACHE_PREFIX = "mwz:draft-owner-session:v2:";
 const OWNER_SESSION_SAFETY_WINDOW_MS = 15 * 1000;
 const OWNER_SESSION_MAX_AGE_MS = 9 * 60 * 1000;
-const CONNECTED_OWNER_ACTIONS = new Set<DraftAuthAction>([
-  "read_draft",
-  "save_promotion",
-  "publish_promotion",
-  "archive_draft",
-  "deploy_draft",
-]);
-
-function buildConnectedWalletDraftAuth(input: {
-  action: DraftAuthAction;
-  walletAddress: string;
-  chainId: number;
-  draftId?: string | null;
-}): DraftActionAuth {
-  return {
-    action: input.action,
-    walletAddress: normalizeWallet(input.walletAddress),
-    chainId: Number(input.chainId),
-    draftId: input.draftId || null,
-    nonce: "",
-    message: "",
-    signature: "",
-  };
-}
 
 async function parseJson(res: Response) {
   const json = await res.json().catch(() => ({}));
@@ -119,6 +96,7 @@ function readCachedOwnerSession(input: { walletAddress: string; chainId: number;
     if (normalizeWallet(auth.walletAddress) !== normalizeWallet(input.walletAddress)) return null;
     if (Number(auth.chainId) !== Number(input.chainId)) return null;
     if (String(auth.draftId || "") !== input.draftId) return null;
+    if (!auth.nonce || !auth.message || !auth.signature) return null;
     if (cachedAt <= 0 || now - cachedAt > OWNER_SESSION_MAX_AGE_MS) return null;
     if (expiresAtMs && expiresAtMs <= now + OWNER_SESSION_SAFETY_WINDOW_MS) return null;
 
@@ -152,6 +130,9 @@ function clearCachedOwnerSession(input: { walletAddress: string; chainId: number
 
   try {
     window.sessionStorage.removeItem(ownerSessionCacheKey(input));
+    window.sessionStorage.removeItem(
+      `${LEGACY_OWNER_SESSION_CACHE_PREFIX}${Number(input.chainId)}:${normalizeWallet(input.walletAddress)}:${input.draftId}`,
+    );
   } catch {
     // Ignore storage failures. The user can still sign again.
   }
@@ -415,17 +396,6 @@ async function signDraftActionWithKnownChain(input: {
 
   const chainId = Number(input.chainId);
   if (!Number.isFinite(chainId) || chainId <= 0) throw new Error("Invalid draft chain id. Refresh and try again.");
-
-  // Match the backend migration behavior: once the creator wallet is connected,
-  // owner-only draft actions do not need another personal_sign prompt.
-  if (input.useOwnerSession || CONNECTED_OWNER_ACTIONS.has(input.action)) {
-    return buildConnectedWalletDraftAuth({
-      action: input.action,
-      draftId: input.draftId,
-      walletAddress,
-      chainId,
-    });
-  }
 
   if (input.useOwnerSession) {
     const cacheInput = { walletAddress, chainId, draftId: input.draftId };
