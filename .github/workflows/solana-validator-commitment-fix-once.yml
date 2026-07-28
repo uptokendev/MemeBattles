@@ -1,0 +1,62 @@
+name: Apply one-shot Solana validator setup commitment fix
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - .github/workflows/solana-validator-commitment-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-phase0-refresh
+          fetch-depth: 0
+
+      - name: Require confirmed commitment for validator setup RPCs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('tests/solana/v4-create-acceptance.cjs')
+          source = path.read_text(encoding='utf-8')
+          old = '      .rpc();'
+          replacement = '''      .rpc({
+                commitment: "confirmed",
+                preflightCommitment: "confirmed",
+              });'''
+          count = source.count(old)
+          if count < 6:
+              raise SystemExit(
+                  f'Expected at least six setup RPC calls, found {count}'
+              )
+          source = source.replace(old, replacement)
+          path.write_text(source, encoding='utf-8')
+
+      - name: Verify test patch
+        shell: bash
+        run: |
+          node --check tests/solana/v4-create-acceptance.cjs
+          git diff --check
+          git diff -- tests/solana/v4-create-acceptance.cjs
+
+      - name: Commit confirmed setup RPCs
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No test changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/solana/v4-create-acceptance.cjs
+          git commit -m 'Confirm Solana validator setup accounts'
+          git push origin HEAD:agent/solana-v2-phase0-refresh
