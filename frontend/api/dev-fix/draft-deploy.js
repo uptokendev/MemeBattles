@@ -26,6 +26,18 @@ function configuredScheduledFactory(chainId) {
   return id === 97 ? BSC_TESTNET_SCHEDULED_FACTORY : "";
 }
 
+function isUnsignedDecimal(value, { allowZero = true } = {}) {
+  const raw = String(value ?? "").trim();
+  if (!/^\d+$/.test(raw)) return false;
+  if (!allowZero && /^0+$/.test(raw)) return false;
+  try {
+    const parsed = BigInt(raw);
+    return parsed >= 0n && (allowZero || parsed > 0n);
+  } catch {
+    return false;
+  }
+}
+
 export async function draftDeploy(req, res) {
   if (req.method === "POST") {
     const body = await readJson(req);
@@ -39,10 +51,16 @@ export async function draftDeploy(req, res) {
           code: "SOLANA_CREATE_CONFIGURATION_INCOMPLETE",
         });
       }
-      if (body?.graduationTargetUsdMicros == null || String(body.graduationTargetUsdMicros).trim() === "") {
+      if (!isUnsignedDecimal(body?.graduationTargetUsdMicros, { allowZero: false })) {
         return json(res, 400, {
-          error: "graduationTargetUsdMicros is required.",
-          code: "SOLANA_GRADUATION_TARGET_REQUIRED",
+          error: "graduationTargetUsdMicros must be a positive unsigned integer.",
+          code: "SOLANA_GRADUATION_TARGET_INVALID",
+        });
+      }
+      if (body?.launchAt != null && String(body.launchAt).trim() !== "" && !isUnsignedDecimal(body.launchAt)) {
+        return json(res, 400, {
+          error: "launchAt must be zero or an unsigned Unix timestamp.",
+          code: "SOLANA_LAUNCH_TIME_INVALID",
         });
       }
       return solanaCreateAuthorizationV4(req, res);
