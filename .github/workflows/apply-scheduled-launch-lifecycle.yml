@@ -1,0 +1,75 @@
+name: Apply scheduled launch lifecycle patch
+
+on:
+  push:
+    branches:
+      - agent/scheduled-launch-lifecycle
+    paths:
+      - .github/workflows/apply-scheduled-launch-lifecycle.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/scheduled-launch-lifecycle
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply lifecycle patch
+        run: node scripts/apply-scheduled-launch-lifecycle.mjs
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Validate and publish patch commit
+        shell: bash
+        run: |
+          set +e
+          validation_status=0
+
+          node --check frontend/api/campaigns.js || validation_status=$?
+          node --check frontend/api/dev-fix/drafts.js || validation_status=$?
+          node --check frontend/api/dev-fix/draft-read.js || validation_status=$?
+          node --check frontend/api/dev-fix/draft-deploy.js || validation_status=$?
+          node --check frontend/api/dev-fix/scheduled-lifecycle.js || validation_status=$?
+
+          npm --prefix frontend run build 2>&1 | tee /tmp/scheduled-lifecycle-build.log
+          build_status=${PIPESTATUS[0]}
+          if [ "$build_status" -ne 0 ]; then
+            validation_status=$build_status
+            cp /tmp/scheduled-lifecycle-build.log scheduled-lifecycle-build.log
+          fi
+
+          git diff --check
+          diff_status=$?
+          if [ "$diff_status" -ne 0 ]; then
+            validation_status=$diff_status
+          fi
+
+          git config user.name "MemeWarzone Build Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend
+          if [ -f scheduled-lifecycle-build.log ]; then
+            git add scheduled-lifecycle-build.log
+          fi
+
+          if git diff --cached --quiet; then
+            echo "Patch produced no tracked changes."
+            exit 1
+          fi
+
+          git commit -m "Implement scheduled launch lifecycle (validation=${validation_status})"
+          git push origin HEAD:agent/scheduled-launch-lifecycle
+          exit "$validation_status"
