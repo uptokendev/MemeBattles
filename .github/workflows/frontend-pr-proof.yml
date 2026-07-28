@@ -88,6 +88,7 @@ jobs:
           git show origin/devpostgrad:.github/workflows/frontend-pr-proof.yml > .github/workflows/frontend-pr-proof.yml
           git checkout origin/devpostgrad -- frontend/yarn.lock 2>/dev/null || true
           rm -f scripts/prepare-scheduled-cooldown-deployment.mjs
+          rm -f frontend/src/__trigger-scheduled-cooldown-deployment.ts
           git diff --check
           git config user.name "MemeWarzone Deployment Agent"
           git config user.email "actions@users.noreply.github.com"
