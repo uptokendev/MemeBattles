@@ -1,7 +1,7 @@
 name: Scheduled cooldown factory deployment gate
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - devpostgrad
     types:
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   deploy-verify-publish:
-    if: github.head_ref == 'agent/fix-scheduled-cooldown-timezone'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/fix-scheduled-cooldown-timezone'
     name: deploy, verify and publish BSC Testnet replacement
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -33,9 +33,10 @@ jobs:
       QA_CREATOR_ADDRESS: 0x13ad79765e14927df2c554d9662bbe539e89c8e8
 
     steps:
-      - name: Checkout pull request head
+      - name: Checkout exact same-repository pull request head
         uses: actions/checkout@v4
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
