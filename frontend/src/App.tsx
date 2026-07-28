@@ -54,6 +54,7 @@ import { LegacyCommandCenterRedirect } from "@/components/command-center/LegacyC
 import { ProfileWalletFallbackRedirect } from "@/components/command-center/ProfileWalletFallbackRedirect";
 import { RewardUnlockFlight } from "@/components/profile/RewardUnlockFlight";
 import { VictoryUnlockModal } from "@/components/profile/VictoryUnlockModal";
+import { DraftOwnerRoute } from "@/components/prepare/DraftOwnerRoute";
 import CommandCenterOverview from "@/pages/command-center/CommandCenterOverview";
 import CommandCenterRecruiter from "@/pages/command-center/CommandCenterRecruiter";
 import CommandCenterSquad from "@/pages/command-center/CommandCenterSquad";
@@ -132,8 +133,8 @@ function AppShellLayout({
           <Route path="/leagues" element={<Navigate to="/league" replace />} />
           {postGradEnabled && postGradFlags.tournament ? <Route path="/tournament/:id" element={<TournamentDetails />} /> : null}
           <Route path="/create" element={<Create />} />
-          <Route path="/drafts/:draftId/promotion" element={<DraftPromotionSetup />} />
-          <Route path="/drafts/:draftId/push-live" element={<PushDraftLive />} />
+          <Route path="/drafts/:draftId/promotion" element={<DraftOwnerRoute><DraftPromotionSetup /></DraftOwnerRoute>} />
+          <Route path="/drafts/:draftId/push-live" element={<DraftOwnerRoute><PushDraftLive /></DraftOwnerRoute>} />
           <Route path="/prepare/:slug" element={<Prepare />} />
           <Route path="/live" element={<Live />} />
           <Route path="/profile" element={<ProfilePage />} />
