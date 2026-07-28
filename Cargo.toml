@@ -6,6 +6,7 @@ resolver = "2"
 
 [workspace.dependencies]
 anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.30.1", default-features = false, features = ["token"] }
 # Keep Anchor 0.30 / Solana 1.18 SBF and IDL builds on pre-edition-2024
 # manifests and on the proc-macro2 API expected by Anchor 0.30.1.
 blake3 = "=1.5.5"
