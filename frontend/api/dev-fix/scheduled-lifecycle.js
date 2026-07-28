@@ -130,18 +130,23 @@ export async function enrichDraftItems(pool, items) {
   return items.map((item) => augmentDraftLifecycle(item, rows.get(String(item?.id || "")) || null));
 }
 
-export async function listPublicCampaignLifecycleDrafts(pool, { chainId = null, limit = 200 } = {}) {
+export async function listPublicCampaignLifecycleDrafts(
+  pool,
+  { chainId = null, limit = 200, includeLaunched = true } = {},
+) {
   if (!pool) return [];
-  const params = [PUBLIC_LIFECYCLE_STATUSES];
+  const statuses = includeLaunched ? PUBLIC_LIFECYCLE_STATUSES : ["scheduled"];
+  const params = [statuses];
   const where = [
     "visibility = 'public'",
     "campaign_address is not null",
     "scheduled_launch_at is not null",
     "status = any($1::text[])",
   ];
+  if (!includeLaunched) where.push("scheduled_launch_at > now()");
   if (chainId) {
     params.push(Number(chainId));
-    where.push(`chain_id = $${params.length}`);
+    where.push(`chain_id = ${params.length}`);
   }
   params.push(Math.max(1, Math.min(500, Number(limit || 200))));
   const result = await pool.query(
@@ -149,7 +154,7 @@ export async function listPublicCampaignLifecycleDrafts(pool, { chainId = null, 
        from public.campaign_drafts
       where ${where.join(" and ")}
       order by coalesce(scheduled_launch_at, deployed_at, created_at) desc
-      limit $${params.length}`,
+      limit ${params.length}`,
     params,
   );
   return result.rows.map(mapLifecycleDraftRow).filter(Boolean);

@@ -559,6 +559,7 @@ export type PrepareDraftBundle = {
 
 const JUST_CREATED_DRAFT_CACHE_PREFIX = "mwz:just-created-draft:";
 const JUST_CREATED_DRAFT_CACHE_TTL_MS = 5 * 60 * 1000;
+const DRAFT_READ_IN_FLIGHT = new Map<string, Promise<PrepareDraftBundle>>();
 
 function emptyPromotion(draftId: string): CampaignDraftPromotion {
   return {
@@ -591,6 +592,13 @@ function cacheJustCreatedDraft(draft: CampaignDraft) {
   } catch {}
 }
 
+function clearJustCreatedDraftCache(draftId: string) {
+  if (typeof window === "undefined" || !draftId) return;
+  try {
+    window.sessionStorage.removeItem(`${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`);
+  } catch {}
+}
+
 function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null {
   if (typeof window === "undefined" || !draftId) return null;
   const key = `${JUST_CREATED_DRAFT_CACHE_PREFIX}${draftId}`;
@@ -598,7 +606,6 @@ function readJustCreatedDraftBundle(draftId: string): PrepareDraftBundle | null 
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
-    window.sessionStorage.removeItem(key);
     const parsed = JSON.parse(raw) as { draft?: CampaignDraft; cachedAt?: number };
     if (!parsed?.draft || parsed.draft.id !== draftId) return null;
     if (!parsed.cachedAt || Date.now() - parsed.cachedAt > JUST_CREATED_DRAFT_CACHE_TTL_MS) return null;
@@ -690,13 +697,28 @@ export async function fetchCampaignDraft(draftId: string, viewer?: string | null
   const justCreatedBundle = readJustCreatedDraftBundle(draftId);
   if (justCreatedBundle) return justCreatedBundle;
 
-  const url = apiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
-  const res = await fetch(url);
-  const json = await res.json().catch(() => ({}));
+  const readKey = `${draftId}:${normalizeWallet(viewer || "") || "public"}`;
+  const existing = DRAFT_READ_IN_FLIGHT.get(readKey);
+  if (existing) return existing;
 
-  if (res.ok) return json as PrepareDraftBundle;
-  if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") return retryPrivateReadWithAuth(url, viewer, json, draftId);
-  throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+  const request = (async () => {
+    const url = apiUrl(`/api/drafts/${encodeURIComponent(draftId)}${query({ viewer })}`);
+    const res = await fetch(url, { cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+
+    if (res.ok) return json as PrepareDraftBundle;
+    if (res.status === 401 && json?.code === "PRIVATE_DRAFT_AUTH_REQUIRED") {
+      return retryPrivateReadWithAuth(url, viewer, json, draftId);
+    }
+    throw new Error(String(json?.error || json?.message || `Request failed (${res.status})`));
+  })();
+
+  DRAFT_READ_IN_FLIGHT.set(readKey, request);
+  try {
+    return await request;
+  } finally {
+    DRAFT_READ_IN_FLIGHT.delete(readKey);
+  }
 }
 
 export async function fetchCampaignDraftWithAuth(draftId: string, auth: DraftActionAuth): Promise<PrepareDraftBundle> {
@@ -714,7 +736,9 @@ export async function saveDraftPromotion(draftId: string, input: SavePromotionIn
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
-  return parseJson(res) as Promise<PrepareDraftBundle>;
+  const bundle = await parseJson(res) as PrepareDraftBundle;
+  clearJustCreatedDraftCache(draftId);
+  return bundle;
 }
 
 export async function fetchPrepareDraft(slug: string, viewer?: string | null): Promise<PrepareDraftBundle> {

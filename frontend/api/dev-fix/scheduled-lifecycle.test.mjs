@@ -31,7 +31,7 @@ test("scheduled drafts preserve draft age while exposing all lifecycle clocks", 
   assert.equal(draft.tradingLaunchAt, scheduledLaunchAt);
 });
 
-test("a due scheduled draft remains discoverable until authoritative chain reconciliation", async () => {
+test("a due scheduled draft preserves its record without remaining in Drafts", async () => {
   const scheduledLaunchAt = new Date(Date.now() - 60_000).toISOString();
   const draft = augmentDraftLifecycle(
     {
@@ -49,6 +49,7 @@ test("a due scheduled draft remains discoverable until authoritative chain recon
   assert.equal(draft.contractDeployedAt, contractDeployedAt);
   assert.equal(draft.tradingLaunchAt, scheduledLaunchAt);
   assert.equal(await reconcileScheduledDraftLifecycle({ query: () => assert.fail("read reconciliation must not write") }), 0);
+  assert.ok(Date.parse(draft.scheduledLaunchAt) <= Date.now());
 });
 
 test("an authoritative deployed row transitions the lifecycle without changing draft creation time", () => {

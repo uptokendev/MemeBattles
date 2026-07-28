@@ -46,6 +46,11 @@ const SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }>
   { value: "created_asc", label: "Created: Old -> New" },
 ];
 
+const DRAFT_SORT_DEFS: Array<{ value: NonNullable<HomeQuery["sort"]>; label: string }> = [
+  { value: "created_desc", label: "New draft" },
+  { value: "progress_desc", label: "Near deployment" },
+];
+
 function numOrUndef(s: string): number | undefined {
   const raw = String(s ?? "").trim();
   if (!raw) return undefined;
@@ -60,7 +65,9 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
   const isDraftRow = query.tab === "drafts";
   const forcedStatus = query.tab === "ending" ? "live" : query.tab === "dex" ? "graduated" : null;
   const statusValue = forcedStatus ?? (query.status ?? "all");
-  const sortValue = query.sort ?? "default";
+  const sortValue = isDraftRow
+    ? query.sort === "progress_desc" ? "progress_desc" : "created_desc"
+    : query.sort ?? "default";
 
   const [mcapMin, setMcapMin] = useState<string>(query.mcapMinUsd != null ? String(query.mcapMinUsd) : "");
   const [mcapMax, setMcapMax] = useState<string>(query.mcapMaxUsd != null ? String(query.mcapMaxUsd) : "");
@@ -96,7 +103,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
       mcapMaxUsd: undefined,
       progressMinPct: undefined,
       progressMaxPct: undefined,
-      sort: "default",
+      sort: isDraftRow ? "created_desc" : "default",
     });
   };
 
@@ -115,7 +122,12 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                 onClick={() => {
                   const nextTab = t.key;
                   const nextStatus = nextTab === "ending" ? "live" : nextTab === "dex" ? "graduated" : "all";
-                  onChange({ ...query, tab: nextTab, status: nextStatus });
+                  const nextSort = nextTab === "drafts"
+                    ? "created_desc"
+                    : query.tab === "drafts" && query.sort === "progress_desc"
+                      ? "default"
+                      : query.sort ?? "default";
+                  onChange({ ...query, tab: nextTab, status: nextStatus, sort: nextSort });
                 }}
               >
                 {t.icon}
@@ -207,7 +219,7 @@ export function DiscoveryControls({ className, query, onChange }: DiscoveryContr
                 <SelectValue placeholder="Sort" />
               </SelectTrigger>
               <SelectContent>
-                {SORT_DEFS.map((s) => (
+                {(isDraftRow ? DRAFT_SORT_DEFS : SORT_DEFS).map((s) => (
                   <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
