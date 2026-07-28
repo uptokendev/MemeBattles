@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   augmentDraftLifecycle,
   canonicalDraftTimestamps,
+  listPublicCampaignLifecycleDrafts,
   reconcileScheduledDraftLifecycle,
 } from "./scheduled-lifecycle.js";
 
@@ -81,4 +82,29 @@ test("immediate campaigns use contract deployment as the trading launch time", (
   assert.equal(timestamps.contractDeployedAt, contractDeployedAt);
   assert.equal(timestamps.scheduledLaunchAt, null);
   assert.equal(timestamps.tradingLaunchAt, contractDeployedAt);
+});
+
+test("public lifecycle query keeps chain and limit parameterized", async () => {
+  let capturedSql = "";
+  let capturedParams = [];
+  const pool = {
+    async query(sql, params) {
+      capturedSql = String(sql);
+      capturedParams = params;
+      return { rows: [] };
+    },
+  };
+
+  const items = await listPublicCampaignLifecycleDrafts(pool, {
+    chainId: 97,
+    limit: 50,
+    includeLaunched: false,
+  });
+
+  assert.deepEqual(items, []);
+  assert.match(capturedSql, /status = any\(\$1::text\[\]\)/);
+  assert.match(capturedSql, /scheduled_launch_at > now\(\)/);
+  assert.match(capturedSql, /chain_id = \$2/);
+  assert.match(capturedSql, /limit \$3/);
+  assert.deepEqual(capturedParams, [["scheduled"], 97, 50]);
 });
