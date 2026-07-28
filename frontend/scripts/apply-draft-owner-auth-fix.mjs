@@ -29,7 +29,9 @@ function replaceExactly(source, before, after, label) {
   return source.replace(before, after);
 }
 
-let source = fs.readFileSync(target, "utf8");
+const original = fs.readFileSync(target, "utf8");
+const hadCrLf = original.includes("\r\n");
+let source = original.replace(/\r\n/g, "\n");
 
 if (isPatched(source)) {
   console.log(`[draft-owner-auth-fix] already patched ${target}`);
@@ -68,5 +70,6 @@ if (!isPatched(source)) {
   throw new Error("Draft owner-auth repair did not produce the required signed-session source state.");
 }
 
-fs.writeFileSync(target, source);
+const output = hadCrLf ? source.replace(/\n/g, "\r\n") : source;
+fs.writeFileSync(target, output);
 console.log(`[draft-owner-auth-fix] patched ${target}`);
