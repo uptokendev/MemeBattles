@@ -86,6 +86,13 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ env.IDL_RUST_TOOLCHAIN }}
         run: anchor idl build 2>&1 | tail -n 220
 
+      - name: Normalize generated IDL
+        shell: bash
+        run: |
+          test -s programs/memewarzone_solana/target/idl/memewarzone_solana.json
+          mkdir -p target/idl
+          cp programs/memewarzone_solana/target/idl/memewarzone_solana.json target/idl/memewarzone_solana.json
+
       - name: Verify generated artifacts
         shell: bash
         run: |
