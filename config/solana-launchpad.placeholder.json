@@ -1,41 +1,98 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "status": "protocol_pending",
   "chain": "solana",
-  "cluster": "devnet",
-  "programId": "11111111111111111111111111111111",
-  "programIdEnv": "SOLANA_LAUNCHPAD_PROGRAM_ID",
-  "frontendProgramIdEnv": "VITE_SOLANA_LAUNCHPAD_PROGRAM_ID",
-  "rpcUrlEnv": "SOLANA_RPC_URL",
-  "frontendRpcUrlEnv": "VITE_SOLANA_RPC",
-  "generationId": "solana-genesis-devnet",
-  "configPda": null,
-  "startSlot": null,
-  "indexerCursor": {
-    "startSlot": null,
-    "lastProcessedSlot": null,
-    "status": "not_started"
+  "cluster": {
+    "kind": "devnet",
+    "clusterHash": null,
+    "rpcUrlEnv": "SOLANA_RPC_URL",
+    "frontendRpcUrlEnv": "VITE_SOLANA_RPC"
   },
-  "dexAdapter": "meteora_damm_v2",
+  "program": {
+    "programId": "11111111111111111111111111111111",
+    "programIdEnv": "SOLANA_LAUNCHPAD_PROGRAM_ID",
+    "frontendProgramIdEnv": "VITE_SOLANA_LAUNCHPAD_PROGRAM_ID",
+    "programBinarySha256": null,
+    "idlSha256": null,
+    "buildCommit": null,
+    "deploymentSignature": null,
+    "deployedSlot": null
+  },
+  "generation": {
+    "generationId": "solana-genesis-devnet",
+    "generationIdHash": null,
+    "configPda": null,
+    "startSlot": null,
+    "manifestHash": null,
+    "activeCreation": false,
+    "supportEnabled": false,
+    "clusterKind": "devnet",
+    "allowedGraduationTargetsUsdMicros": [],
+    "plannedDevnetTargetUsdMicros": 6000000,
+    "plannedProductionTargetsUsdMicros": [
+      15000000000,
+      30000000000,
+      50000000000
+    ],
+    "curveEconomicsHash": null,
+    "feeEconomicsHash": null,
+    "treasuryProfile": null,
+    "dexProfile": null,
+    "oracleProfile": null
+  },
+  "authorization": {
+    "createMode": "detached_ed25519_v1",
+    "domain": "MEMEWARZONE_SOLANA_CREATE_V1",
+    "schemaVersion": 1,
+    "routeSigner": null,
+    "routeSignerEnv": "SOLANA_ROUTE_SIGNER_PUBLIC_KEY",
+    "railwayTransactionCosignerRequired": false,
+    "ed25519InstructionMustImmediatelyPrecedeCreate": true,
+    "instructionsSysvarRequired": true,
+    "creatorNoncePdaReplayProtection": true,
+    "routeAuthorizationRequired": true,
+    "authorizedTradingRequired": true
+  },
+  "launchPolicy": {
+    "immediateLaunchSentinel": 0,
+    "minimumScheduledDelaySeconds": 300,
+    "maximumScheduledDelaySeconds": 2592000,
+    "tickerReservationRequired": true,
+    "tickerReservationVersionRequired": true,
+    "tradingBeforeLaunchRejected": true
+  },
   "dexAdapters": {
     "primary": "meteora_damm_v2",
     "fallback": "raydium_cpmm",
     "postGraduationQuotes": "jupiter"
   },
-  "activeCreation": false,
-  "supportEnabled": false,
-  "routeAuthorizationRequired": true,
-  "authorizedTradingRequired": true,
-  "securityDefaultsLocked": false,
-  "generationManifestHash": null,
+  "indexerCursor": {
+    "startSlot": null,
+    "lastProcessedSlot": null,
+    "status": "not_started"
+  },
+  "security": {
+    "securityDefaultsLocked": false,
+    "globalPause": true,
+    "createPaused": true,
+    "buyPaused": true,
+    "sellPaused": true,
+    "graduationPaused": true,
+    "claimsPaused": true
+  },
   "proofGates": {
     "anchorProgramBuilt": false,
-    "idlCommitted": false,
+    "idlGenerated": false,
+    "versionedManifestAccepted": false,
     "localValidatorDeployPassed": false,
     "authorityPauseTestsPassed": false,
     "generationRegistryReady": false,
+    "generationEconomicsReady": false,
+    "generationClusterTierPolicyReady": false,
     "creatorRiskPdasReady": false,
-    "authorizedCreateReady": false,
+    "detachedAuthorizedCreateReady": false,
+    "tickerReservationBackendReady": false,
+    "mintAndVaultInitializationReady": false,
     "bondingBuySellReady": false,
     "netRaisedGraduationReady": false,
     "meteoraGraduationReady": false,
@@ -48,9 +105,11 @@
     "securityDefaultsLockedOnChain": false
   },
   "notes": [
-    "This file is a placeholder manifest shape only; it must not be treated as launch-ready configuration.",
+    "This file is a placeholder manifest shape only and must never be treated as launch-ready configuration.",
     "Only one Solana generation may have activeCreation=true at a time.",
-    "Supported generations must remain visible, tradable, and graduatable even after creation moves to a newer generation.",
-    "Direct SOL transfers must never count toward graduation; graduation uses netRaisedLamports."
+    "Supported generations remain visible, tradable and graduatable after creation moves to a newer generation.",
+    "The 6 USD target is not accepted until GenerationConfig enforces devnet cluster kind and the tier allowlist on-chain.",
+    "Direct SOL transfers never count toward graduation; graduation uses netRaisedLamports.",
+    "A frontend program ID or environment flag is not deployment evidence."
   ]
 }
