@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "mocha --timeout 1000000 v4-create-acceptance.cjs",
+    "test": "mocha --timeout 1000000 v4-create-acceptance.cjs railway-v4-onchain-decoders.cjs",
     "test:railway": "mocha --timeout 120000 railway-v4-conformance.cjs"
   },
   "dependencies": {
