@@ -1,2 +1,2 @@
-// One-time same-repository deployment gate trigger. Removed before the replacement is published.
+// Synchronize the active default-branch deployment gate. Removed before publishing the replacement.
 export {};
