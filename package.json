@@ -16,6 +16,7 @@
     "deploy:treasury-v2-minimal": "hardhat run scripts/deploy-minimal-treasury-router-v2.ts",
     "deploy:treasury-v2-minimal:bsc-testnet": "hardhat run scripts/deploy-minimal-treasury-router-v2.ts --network bscTestnet",
     "safe:treasury-v2-batch:bsc-testnet": "hardhat run scripts/export-treasury-v2-safe-batch.ts --network bscTestnet",
+    "wire:treasury-v2-admin:bsc-testnet": "cross-env EXECUTE_TREASURY_V2_ADMIN_ACTIONS=true hardhat run scripts/export-treasury-v2-safe-batch.ts --network bscTestnet",
     "deploy:scheduled-test-factory:bsc-testnet": "hardhat run scripts/deploy-scheduled-test-factory.ts --network bscTestnet",
     "activate:scheduled-test-factory": "hardhat run scripts/activate-scheduled-test-factory.ts",
     "activate:scheduled-test-factory:bsc-testnet": "hardhat run scripts/activate-scheduled-test-factory.ts --network bscTestnet",
@@ -94,7 +95,7 @@
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "hardhat": "^2.22.10",
-    "hardhat-gas-reporter": "^1.0.10",
+    "hardhat-gas-reporter": "^10.9.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
