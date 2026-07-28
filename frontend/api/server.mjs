@@ -61,6 +61,7 @@ import {
 import { prepareNotifications } from "./dev-fix/prepare-notifications.js";
 import { signedDraftById, signedPrepareBySlug } from "./dev-fix/draft-read.js";
 import { tickerAvailability } from "./dev-fix/ticker-availability.js";
+import { tickerReservationManagement } from "./dev-fix/ticker-reservations.js";
 import { draftArchive, draftPromotion, drafts } from "./dev-fix/drafts.js";
 import {
   attributionWallet,
@@ -389,6 +390,7 @@ router.all("/drafts", wrap(drafts));
 router.all("/drafts/followed", wrap(followedDrafts));
 router.all("/drafts/ticker-availability", wrap(tickerAvailability));
 router.all("/drafts/:draftId/promotion", wrap(draftPromotion));
+router.all("/drafts/:draftId/ticker-reservation", wrap(tickerReservationManagement));
 router.all("/drafts/:draftId/archive", wrap(draftArchive));
 router.all("/drafts/:draftId/deploy", wrap(draftDeploy));
 router.all("/drafts/:draftId/follow", wrap(signedDraftFollow));

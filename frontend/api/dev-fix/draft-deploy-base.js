@@ -6,6 +6,13 @@ import { evaluateCreatePreflight } from "./security.js";
 import { getRouteDecision } from "./route-decision.js";
 import { logRouteAuthorization } from "./route-auth-log.js";
 import { signScheduledCreateAuthorization } from "./routeAuthorizationSigner.js";
+import {
+  TickerReservationError,
+  authorizeScheduledTickerReservation,
+  isTickerReservationConflict,
+  markTickerReservationDeployed,
+  withTickerReservationTransaction,
+} from "./ticker-reservation-service.js";
 
 const MAX_SCHEDULE_SECONDS = 30 * 24 * 60 * 60;
 const WAD = 10n ** 18n;
@@ -159,51 +166,60 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
     });
   }
 
-  const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);
-  const createdAtSeconds = Math.max(1, Math.floor(new Date(row.created_at || 0).getTime() / 1000));
-  const reservationVersion = createdAtSeconds;
-  const authorizationNonceHex = ethers.keccak256(
-    ethers.toUtf8Bytes(`${chainId}:${draftId}:${launchAt}:${graduationTarget}:${row.updated_at || row.created_at || ""}`),
-  );
-  const authorizationNonce = BigInt(authorizationNonceHex);
-  const draftReferenceHash = hashText(`${chainId}:${draftId}`);
-  const normalizedTickerHash = hashText(campaign.symbol);
-  const metadataHash = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["bytes32", "bytes32", "bytes32", "bytes32"],
-      [hashText(campaign.logoURI), hashText(campaign.xAccount), hashText(campaign.website), hashText(campaign.extraLink)],
-    ),
-  );
-  const deadline = now + 10 * 60;
+const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);
+const normalizedTickerHash = hashText(campaign.symbol);
+const metadataHash = ethers.keccak256(
+  ethers.AbiCoder.defaultAbiCoder().encode(
+    ["bytes32", "bytes32", "bytes32", "bytes32"],
+    [hashText(campaign.logoURI), hashText(campaign.xAccount), hashText(campaign.website), hashText(campaign.extraLink)],
+  ),
+);
+const deadline = now + 10 * 60;
+const validUntil = new Date(deadline * 1000).toISOString();
 
-  const scheduledRequest = {
-    campaign,
+try {
+  const canonical = await authorizeScheduledTickerReservation(pool, {
+    draftId,
+    creatorWallet: walletAddress,
     launchAt,
-    draftReferenceHash,
-    normalizedTickerHash,
-    metadataHash,
-    reservationVersion,
-    authorizationNonce: authorizationNonce.toString(),
-  };
-
-  const signature = await signScheduledCreateAuthorization({
-    signer: routeSigner,
-    chainId,
-    factoryAddress,
-    creator: walletAddress,
-    request: scheduledRequest,
-    launchAt,
-    draftReferenceHash,
-    normalizedTickerHash,
-    metadataHash,
-    reservationVersion,
-    authorizationNonce,
-    tradeRouteProfileId,
-    finalizeRouteProfileId,
-    deadline,
+    buildAuthorization: async (reservation) => {
+      const draftReferenceHash = `0x${reservation.reservationIdHash}`;
+      const reservationVersion = reservation.reservationVersion;
+      const authorizationNonce = BigInt(reservation.authorizationNonce);
+      const scheduledRequest = {
+        campaign,
+        launchAt,
+        draftReferenceHash,
+        normalizedTickerHash,
+        metadataHash,
+        reservationId: reservation.id,
+        reservationIdHash: reservation.reservationIdHash,
+        reservationVersion,
+        authorizationNonce: authorizationNonce.toString(),
+      };
+      const signature = await signScheduledCreateAuthorization({
+        signer: routeSigner,
+        chainId,
+        factoryAddress,
+        creator: walletAddress,
+        request: scheduledRequest,
+        launchAt,
+        draftReferenceHash,
+        normalizedTickerHash,
+        metadataHash,
+        reservationVersion,
+        authorizationNonce,
+        tradeRouteProfileId,
+        finalizeRouteProfileId,
+        deadline,
+      });
+      return {
+        scheduledRequest,
+        authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
+      };
+    },
   });
 
-  const validUntil = new Date(deadline * 1000).toISOString();
   await logRouteAuthorization({
     chainId,
     walletAddress,
@@ -215,14 +231,27 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
     routeAuthority: routeSigner.address,
     authorizationDeadline: deadline,
     validUntil,
-    metadata: { endpoint: `/api/drafts/${draftId}/deploy`, operation: "authorize_scheduled", scheduledRequest, preflight },
+    metadata: {
+      endpoint: `/api/drafts/${draftId}/deploy`,
+      operation: "authorize_scheduled",
+      scheduledRequest: canonical.scheduledRequest,
+      tickerReservation: canonical.reservation,
+      preflight,
+    },
   });
 
   return json(res, 200, {
-    scheduledRequest,
-    authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
+    scheduledRequest: canonical.scheduledRequest,
+    authorization: canonical.authorization,
+    tickerReservation: canonical.reservation,
     preflight,
   });
+} catch (error) {
+  if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+    return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+  }
+  throw error;
+}
 }
 
 export async function draftDeploy(req, res) {
@@ -276,22 +305,44 @@ export async function draftDeploy(req, res) {
 
   if (!campaignAddress) return json(res, 400, { error: "Missing deployed campaign address." });
 
-  const updated = await pool.query(
-    `update campaign_drafts
-        set status = case when $5::bigint is not null then 'scheduled' else 'deployed' end,
-            visibility = 'public',
-            campaign_address = $2,
-            token_address = coalesce($3, token_address),
-            deploy_tx_hash = coalesce($4, deploy_tx_hash),
-            scheduled_launch_at = case when $5::bigint is not null then to_timestamp($5) else null end,
-            deployed_at = coalesce(deployed_at, now()),
-            updated_at = now()
-      where id::text = $1
-      returning *`,
-    [draftId, campaignAddress, tokenAddress || null, deployTxHash, isScheduled ? scheduledLaunchAt : null],
-  );
+let deployed;
+try {
+  deployed = await withTickerReservationTransaction(pool, async (db) => {
+    const updated = await db.query(
+      `update campaign_drafts
+          set status = case when $5::bigint is not null then 'scheduled' else 'deployed' end,
+              visibility = 'public',
+              campaign_address = $2,
+              token_address = coalesce($3, token_address),
+              deploy_tx_hash = coalesce($4, deploy_tx_hash),
+              scheduled_launch_at = case when $5::bigint is not null then to_timestamp($5) else null end,
+              deployed_at = coalesce(deployed_at, now()),
+              updated_at = now()
+        where id::text = $1
+        returning *`,
+      [draftId, campaignAddress, tokenAddress || null, deployTxHash, isScheduled ? scheduledLaunchAt : null],
+    );
+    const draft = mapDraftRow(updated.rows[0]);
+    const tickerReservation = await markTickerReservationDeployed(db, {
+      draftId,
+      creatorWallet: row.creator_wallet,
+      campaignAddress,
+      mint: tokenAddress || null,
+      deploymentSignature: deployTxHash,
+      scheduledLaunchAt: isScheduled ? scheduledLaunchAt : null,
+      programId: String(body.factoryAddress || "").trim() || null,
+      generationId: body.generationId == null ? null : String(body.generationId),
+    });
+    return { draft, tickerReservation };
+  });
+} catch (error) {
+  if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+    return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+  }
+  throw error;
+}
 
-  const draft = mapDraftRow(updated.rows[0]);
+const draft = deployed.draft;
   const target = `/token/${tokenAddress || campaignAddress}`;
   const launchNotification = isScheduled
     ? {
@@ -310,5 +361,5 @@ export async function draftDeploy(req, res) {
   await notifyDraftOwner(pool, draft, launchNotification);
   await notifyDraftSubscribers(pool, draft, launchNotification);
 
-  return json(res, 200, { draft });
+  return json(res, 200, { draft, tickerReservation: deployed.tickerReservation });
 }

@@ -11,17 +11,39 @@ import {
   loadDraftRowById,
   reconcileScheduledDraftLifecycle,
 } from "./scheduled-lifecycle.js";
+import {
+  loadTickerReservationByDraft,
+  loadTickerReservationsByDraftIds,
+} from "./ticker-reservation-service.js";
 
 async function enrichPayload(payload, pool) {
   if (!payload || typeof payload !== "object") return payload;
 
   if (Array.isArray(payload.items)) {
-    return { ...payload, items: await enrichDraftItems(pool, payload.items) };
+    const items = await enrichDraftItems(pool, payload.items);
+    if (!pool) return { ...payload, items };
+    const reservations = await loadTickerReservationsByDraftIds(pool, items.map((item) => item.id));
+    return {
+      ...payload,
+      items: items.map((item) => ({
+        ...item,
+        tickerReservation: reservations.get(String(item.id)) || null,
+      })),
+    };
   }
 
   if (payload.draft?.id) {
     const row = await loadDraftRowById(pool, payload.draft.id);
-    return { ...payload, draft: augmentDraftLifecycle(payload.draft, row) };
+    const tickerReservation = pool
+      ? await loadTickerReservationByDraft(pool, payload.draft.id, { includeReleased: true })
+      : null;
+    return {
+      ...payload,
+      draft: {
+        ...augmentDraftLifecycle(payload.draft, row),
+        tickerReservation,
+      },
+    };
   }
 
   return payload;

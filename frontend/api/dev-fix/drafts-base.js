@@ -2,6 +2,14 @@ import { randomUUID } from "node:crypto";
 import { badMethod, getQuery, isAddress, isSolanaChain, normalizeAddress as normalizeAddressBase, json, readJson } from "../../server/http.js";
 import { requireDraftActionAuth } from "./draft-auth.js";
 import { notifyDraftOwner } from "./prepare-notify.js";
+import {
+  TickerReservationError,
+  createTickerReservation,
+  isTickerReservationConflict,
+  promoteTickerReservation,
+  releaseTickerReservation,
+  withTickerReservationTransaction,
+} from "./ticker-reservation-service.js";
 
 const STATUSES = new Set([
   "draft",
@@ -373,34 +381,57 @@ export async function drafts(req, res) {
   if (!authOk) return;
 
   if (pool) {
-    const limitRes = await pool.query("select count(*)::int as count from campaign_drafts where creator_wallet = $1 and status <> 'archived'", [creatorWallet]);
-    if (Number(limitRes.rows[0]?.count || 0) >= 10) return json(res, 409, { error: "Draft limit reached. Max 10 non-archived drafts per creator." });
+    try {
+      const created = await withTickerReservationTransaction(pool, async (db) => {
+        const limitRes = await db.query("select count(*)::int as count from campaign_drafts where creator_wallet = $1 and status <> 'archived'", [creatorWallet]);
+        if (Number(limitRes.rows[0]?.count || 0) >= 10) {
+          throw new TickerReservationError("Draft limit reached. Max 10 non-archived drafts per creator.", {
+            code: "DRAFT_LIMIT_REACHED",
+            httpStatus: 409,
+          });
+        }
 
-    const dupRes = await pool.query("select id from campaign_drafts where chain_id = $1 and lower(ticker) = lower($2) and status <> 'archived' limit 1", [chainId, ticker]);
-    if (dupRes.rows.length) return json(res, 409, { error: "Ticker already reserved by an active draft or live campaign." });
+        const inserted = await db.query(
+          "insert into campaign_drafts (chain_id, creator_wallet, name, ticker, description, category, logo_url, website_url, x_url, other_url, slug, status, visibility) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12) returning *",
+          [
+            chainId,
+            creatorWallet,
+            name,
+            ticker,
+            cleanText(body.description, 1200) || null,
+            cleanText(body.category, 40) || "meme",
+            cleanUrl(body.logoUrl) || null,
+            cleanUrl(body.websiteUrl) || null,
+            cleanUrl(body.xUrl) || null,
+            cleanUrl(body.otherUrl) || null,
+            makeSlug(name, ticker),
+            visibility,
+          ],
+        );
 
-    const inserted = await pool.query(
-      "insert into campaign_drafts (chain_id, creator_wallet, name, ticker, description, category, logo_url, website_url, x_url, other_url, slug, status, visibility) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12) returning *",
-      [
-        chainId,
-        creatorWallet,
-        name,
-        ticker,
-        cleanText(body.description, 1200) || null,
-        cleanText(body.category, 40) || "meme",
-        cleanUrl(body.logoUrl) || null,
-        cleanUrl(body.websiteUrl) || null,
-        cleanUrl(body.xUrl) || null,
-        cleanUrl(body.otherUrl) || null,
-        makeSlug(name, ticker),
-        visibility,
-      ],
-    );
-
-    const draft = mapDraftRow(inserted.rows[0]);
-    await pool.query("insert into campaign_draft_promotion (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]).catch(() => {});
-    await pool.query("insert into campaign_draft_metrics (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]).catch(() => {});
-    return json(res, 201, { draft });
+        const draft = mapDraftRow(inserted.rows[0]);
+        const tickerReservation = await createTickerReservation(db, {
+          draftId: draft.id,
+          creatorWallet,
+          chainId,
+          cluster: body.cluster || body.networkCluster || "",
+          ticker,
+          published: visibility === "public",
+        });
+        await db.query("insert into campaign_draft_promotion (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
+        await db.query("insert into campaign_draft_metrics (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
+        return { draft, tickerReservation };
+      });
+      return json(res, 201, created);
+    } catch (error) {
+      if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+        return json(res, error.httpStatus || 409, {
+          error: error.message || "Ticker already reserved by an active draft or live campaign.",
+          code: error.code || "TICKER_UNAVAILABLE",
+        });
+      }
+      throw error;
+    }
   }
 
   const store = memoryStore();
@@ -496,12 +527,31 @@ export async function draftPromotion(req, res) {
     });
     if (!ownerOk) return;
 
-    await pool.query(
-      "insert into campaign_draft_promotion (draft_id, mission_statement, roadmap, launch_strategy, telegram_url, discord_url, x_url, website_url, docs, creator_note, banner_url, share_message, published_at, updated_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,now()) on conflict (draft_id) do update set mission_statement = excluded.mission_statement, roadmap = excluded.roadmap, launch_strategy = excluded.launch_strategy, telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, creator_note = excluded.creator_note, banner_url = excluded.banner_url, share_message = excluded.share_message, published_at = coalesce(excluded.published_at, campaign_draft_promotion.published_at), updated_at = now()",
-      [id, promotion.missionStatement, JSON.stringify(promotion.roadmap), promotion.launchStrategy, promotion.telegramUrl, promotion.discordUrl, promotion.xUrl, promotion.websiteUrl, JSON.stringify(promotion.docs), promotion.creatorNote, promotion.bannerUrl, promotion.shareMessage, publish ? now : null],
-    );
     const updateVis = publish ? "public" : (visibility || null);
-    await pool.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, updateVis, publish]);
+    try {
+      await withTickerReservationTransaction(pool, async (db) => {
+        await db.query(
+          "insert into campaign_draft_promotion (draft_id, mission_statement, roadmap, launch_strategy, telegram_url, discord_url, x_url, website_url, docs, creator_note, banner_url, share_message, published_at, updated_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,now()) on conflict (draft_id) do update set mission_statement = excluded.mission_statement, roadmap = excluded.roadmap, launch_strategy = excluded.launch_strategy, telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, creator_note = excluded.creator_note, banner_url = excluded.banner_url, share_message = excluded.share_message, published_at = coalesce(excluded.published_at, campaign_draft_promotion.published_at), updated_at = now()",
+          [id, promotion.missionStatement, JSON.stringify(promotion.roadmap), promotion.launchStrategy, promotion.telegramUrl, promotion.discordUrl, promotion.xUrl, promotion.websiteUrl, JSON.stringify(promotion.docs), promotion.creatorNote, promotion.bannerUrl, promotion.shareMessage, publish ? now : null],
+        );
+        await db.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, updateVis, publish]);
+        if (publish) {
+          await promoteTickerReservation(db, {
+            draftId: id,
+            creatorWallet: before.creator_wallet,
+            chainId: Number(before.chain_id),
+            cluster: body.cluster || body.networkCluster || "",
+            ticker: before.ticker,
+            publishedAt: new Date(now),
+          });
+        }
+      });
+    } catch (error) {
+      if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+        return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+      }
+      throw error;
+    }
     const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
 
     if (publish && before.status !== "promotion_published" && updated?.draft) {
@@ -552,7 +602,21 @@ export async function draftArchive(req, res) {
   });
   if (!ownerOk) return;
 
-  await pool.query("update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1", [id]);
+  try {
+    await withTickerReservationTransaction(pool, async (db) => {
+      await db.query("update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1", [id]);
+      await releaseTickerReservation(db, {
+        draftId: id,
+        creatorWallet: row.creator_wallet,
+        reason: "Draft archived by creator; ticker returned to the chain availability pool.",
+      });
+    });
+  } catch (error) {
+    if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+      return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+    }
+    throw error;
+  }
   const updated = await getDraftBundleById(id, "", { bypassVisibility: true });
   return json(res, 200, updated);
 }

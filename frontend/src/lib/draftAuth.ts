@@ -8,6 +8,7 @@ export type DraftAuthAction =
   | "publish_promotion"
   | "archive_draft"
   | "deploy_draft"
+  | "manage_ticker_reservation"
   | "follow_draft"
   | "comment_draft"
   | "arm_draft_notifications"
@@ -43,6 +44,7 @@ const OWNER_SESSION_ACTIONS = new Set<DraftAuthAction>([
   "publish_promotion",
   "archive_draft",
   "deploy_draft",
+  "manage_ticker_reservation",
 ]);
 const OWNER_SESSION_IN_FLIGHT = new Map<string, Promise<DraftActionAuth>>();
 
