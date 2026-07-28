@@ -1,2 +1,2 @@
-// Temporary same-repository PR workflow trigger. Removed by the deployment job before publish.
+// One-time same-repository deployment gate trigger. Removed before the replacement is published.
 export {};
