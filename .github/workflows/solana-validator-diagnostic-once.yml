@@ -1,0 +1,91 @@
+name: Extract one-shot Solana validator failure trace
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - .github/workflows/solana-validator-diagnostic-once.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  extract-trace:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download failed validator artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: memewarzone-solana-validator-131b8ae5bdd7d3a986121f252ef8d58a27a62039
+          path: /tmp/validator-diagnostics
+          run-id: 30380862234
+          github-token: ${{ github.token }}
+
+      - name: Extract first complete failure
+        shell: python
+        run: |
+          from pathlib import Path
+
+          root = Path('/tmp/validator-diagnostics')
+          log = next(root.rglob('solana-validator-acceptance.log'))
+          lines = log.read_text(encoding='utf-8', errors='replace').splitlines()
+
+          start = next(
+              index
+              for index, line in enumerate(lines)
+              if line.strip().startswith('1) MemeWarzone Solana authorization')
+          )
+          end = next(
+              (
+                  index
+                  for index in range(start + 1, len(lines))
+                  if lines[index].strip().startswith('2) MemeWarzone Solana authorization')
+              ),
+              min(len(lines), start + 90),
+          )
+
+          excerpt = '\n'.join(lines[start:end]).strip()
+          Path('/tmp/solana-validator-trace.md').write_text(
+              '<!-- solana-validator-trace-once -->\n'
+              '### Solana validator first failure trace\n\n'
+              '```text\n'
+              + excerpt
+              + '\n```\n',
+              encoding='utf-8',
+          )
+
+      - name: Publish trace to draft PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- solana-validator-trace-once -->';
+            const body = fs.readFileSync('/tmp/solana-validator-trace.md', 'utf8');
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100,
+            });
+            const previous = comments.find((comment) => comment.body?.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
+              });
+            }
