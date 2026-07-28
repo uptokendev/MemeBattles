@@ -146,7 +146,7 @@ export async function listPublicCampaignLifecycleDrafts(
   if (!includeLaunched) where.push("scheduled_launch_at > now()");
   if (chainId) {
     params.push(Number(chainId));
-    where.push(`chain_id = ${params.length}`);
+    where.push(`chain_id = $${params.length}`);
   }
   params.push(Math.max(1, Math.min(500, Number(limit || 200))));
   const result = await pool.query(
@@ -154,7 +154,7 @@ export async function listPublicCampaignLifecycleDrafts(
        from public.campaign_drafts
       where ${where.join(" and ")}
       order by coalesce(scheduled_launch_at, deployed_at, created_at) desc
-      limit ${params.length}`,
+      limit $${params.length}`,
     params,
   );
   return result.rows.map(mapLifecycleDraftRow).filter(Boolean);
