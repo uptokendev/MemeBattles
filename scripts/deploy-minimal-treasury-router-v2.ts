@@ -11,6 +11,12 @@ function rawEnv(name: string): string {
   return String(process.env[name] ?? "").trim();
 }
 
+function boolEnv(name: string, fallback = false): boolean {
+  const value = rawEnv(name).toLowerCase();
+  if (!value) return fallback;
+  return ["1", "true", "yes", "on"].includes(value);
+}
+
 function requireAddress(label: string, value: string): string {
   if (!ADDRESS_RE.test(value || "")) throw new Error(`${label}: missing or invalid address: ${value || "<empty>"}`);
   const address = ethers.getAddress(value);
@@ -41,6 +47,10 @@ function parseMonthlyCap(baseDeployment: any): bigint {
   return BigInt(baseDeployment.monthlyLeagueCapUsd ?? baseDeployment.routing?.monthlyLeagueCapUsd ?? 0);
 }
 
+async function hasContractCode(address: string): Promise<boolean> {
+  return (await ethers.provider.getCode(address)) !== "0x";
+}
+
 async function main() {
   const net = await ethers.provider.getNetwork();
   if (net.chainId === MAINNET_CHAIN_ID) {
@@ -53,14 +63,42 @@ async function main() {
   const { file: baseFile, deployment: baseDeployment } = loadBaseDeployment();
   const contracts = resolveContracts(baseDeployment);
   const [deployer] = await ethers.getSigners();
-  const deployerAddress = await deployer.getAddress();
+  const deployerAddress = ethers.getAddress(await deployer.getAddress());
   const deploymentBlock = await ethers.provider.getBlockNumber();
 
   if (baseDeployment.treasuryRouterVersion === "v2" || contracts.TreasuryRouterV2) {
-    throw new Error("Base deployment already declares TreasuryRouterV2. Use that V2 deployment instead of creating another one.");
+    throw new Error(
+      "Base deployment already declares TreasuryRouterV2. Use the original legacy deployments/<network>.json as DEPLOYMENT_FILE when replacing a bad staged V2 deployment.",
+    );
   }
 
-  const treasurySafe = requireAddress("Treasury Safe", baseDeployment.treasurySafe);
+  const manifestTreasuryAdmin = requireAddress("Manifest treasury admin", baseDeployment.treasurySafe);
+  const configuredTreasuryAdmin = rawEnv("TREASURY_ADMIN_ADDRESS");
+  const treasuryAdmin = requireAddress(
+    "Treasury admin",
+    configuredTreasuryAdmin || manifestTreasuryAdmin,
+  );
+  const treasuryAdminIsContract = await hasContractCode(treasuryAdmin);
+  const canAdminConfigure = treasuryAdmin.toLowerCase() === deployerAddress.toLowerCase();
+  const allowExternalTreasuryAdmin = boolEnv("ALLOW_EXTERNAL_TREASURY_ADMIN", false);
+
+  if (!canAdminConfigure && !allowExternalTreasuryAdmin) {
+    const adminType = treasuryAdminIsContract ? "contract/Safe" : "EOA wallet";
+    throw new Error(
+      `Treasury admin ${treasuryAdmin} is a different ${adminType} from deployer ${deployerAddress}. ` +
+        "Refusing to deploy another Router V2 that this signer cannot configure. " +
+        "For this testnet deployment set TREASURY_ADMIN_ADDRESS to a wallet controlled by the loaded DEPLOYER_PK. " +
+        "To intentionally use an external Safe/admin, also set ALLOW_EXTERNAL_TREASURY_ADMIN=true.",
+    );
+  }
+
+  if (!canAdminConfigure && !treasuryAdminIsContract) {
+    console.warn(
+      `[treasury-v2-minimal] WARNING: external treasury admin ${treasuryAdmin} is an EOA. ` +
+        "The deployment will require that wallet's private key for all admin wiring.",
+    );
+  }
+
   const weeklyLeagueVault = requireAddress(
     "Existing weekly league vault",
     contracts.WeeklyLeagueVault || contracts.TreasuryVaultV2,
@@ -91,7 +129,10 @@ async function main() {
   console.log(`[treasury-v2-minimal] base deployment: ${baseFile}`);
   console.log(`[treasury-v2-minimal] chainId=${net.chainId.toString()} network=${network.name}`);
   console.log(`[treasury-v2-minimal] deployer=${deployerAddress}`);
-  console.log(`[treasury-v2-minimal] treasurySafe=${treasurySafe}`);
+  console.log(`[treasury-v2-minimal] manifest treasury admin=${manifestTreasuryAdmin}`);
+  console.log(`[treasury-v2-minimal] selected treasury admin=${treasuryAdmin}`);
+  console.log(`[treasury-v2-minimal] treasury admin type=${treasuryAdminIsContract ? "contract/Safe" : "EOA wallet"}`);
+  console.log(`[treasury-v2-minimal] deployer can configure=${canAdminConfigure}`);
   console.log(`[treasury-v2-minimal] reusing weekly=${weeklyLeagueVault}`);
   console.log(`[treasury-v2-minimal] reusing recruiter=${recruiterRewardsVault}`);
   console.log(`[treasury-v2-minimal] reusing protocol=${protocolRevenueVault}`);
@@ -100,28 +141,27 @@ async function main() {
   console.log(`[treasury-v2-minimal] preserving legacy community vault=${legacyCommunityRewardsVault}`);
 
   const Charity = await ethers.getContractFactory("CharityTreasury");
-  const charity = await Charity.deploy(treasurySafe);
+  const charity = await Charity.deploy(treasuryAdmin);
   await charity.waitForDeployment();
   const charityTreasury = await charity.getAddress();
 
   const Monthly = await ethers.getContractFactory("MonthlyLeagueTreasury");
-  const monthly = await Monthly.deploy(treasurySafe, rootPoster, graduationOracle, charityTreasury, monthlyCapUsd);
+  const monthly = await Monthly.deploy(treasuryAdmin, rootPoster, graduationOracle, charityTreasury, monthlyCapUsd);
   await monthly.waitForDeployment();
   const monthlyLeagueTreasury = await monthly.getAddress();
 
   const RouterV2 = await ethers.getContractFactory("TreasuryRouterV2");
-  const routerV2 = await RouterV2.deploy(treasurySafe, weeklyLeagueVault, monthlyLeagueTreasury, upgradeDelaySeconds);
+  const routerV2 = await RouterV2.deploy(treasuryAdmin, weeklyLeagueVault, monthlyLeagueTreasury, upgradeDelaySeconds);
   await routerV2.waitForDeployment();
   const treasuryRouterV2 = await routerV2.getAddress();
 
   // CommunityRewardsVault permits exactly one router. A dedicated V2 instance preserves V1 support for legacy factories.
   const Community = await ethers.getContractFactory("CommunityRewardsVault");
-  const communityV2 = await Community.deploy(treasurySafe, treasuryRouterV2);
+  const communityV2 = await Community.deploy(treasuryAdmin, treasuryRouterV2);
   await communityV2.waitForDeployment();
   const communityRewardsVaultV2 = await communityV2.getAddress();
 
   const postDeployActions: string[] = [];
-  const canAdminConfigure = treasurySafe.toLowerCase() === deployerAddress.toLowerCase();
   if (canAdminConfigure) {
     await (await routerV2.setRecruiterRewardsVault(recruiterRewardsVault)).wait();
     await (await routerV2.setCommunityRewardsVault(communityRewardsVaultV2)).wait();
@@ -144,6 +184,8 @@ async function main() {
     ...baseDeployment,
     network: network.name,
     chainId: Number(net.chainId),
+    treasurySafe: treasuryAdmin,
+    treasuryAdmin,
     treasuryRouterVersion: "v2",
     weeklyLeagueVault,
     monthlyLeagueTreasury,
@@ -191,7 +233,9 @@ async function main() {
       deploymentBlock,
       baseDeployment: baseFile,
       deployer: deployerAddress,
-      treasurySafe,
+      manifestTreasuryAdmin,
+      treasuryAdmin,
+      treasuryAdminType: treasuryAdminIsContract ? "contract" : "eoa",
       legacyTreasuryRouter,
       legacyCommunityRewardsVault,
       reusedContracts: {
@@ -222,10 +266,11 @@ async function main() {
   console.log(`[treasury-v2-minimal] staged deployment=${outFile}`);
 
   if (postDeployActions.length) {
-    console.log("\n[treasury-v2-minimal] required Safe actions before factory deployment:");
+    console.log("\n[treasury-v2-minimal] required external admin actions before factory deployment:");
     for (const action of postDeployActions) console.log(`- ${action}`);
   } else {
-    console.log("[treasury-v2-minimal] V2 reward routing configured; staged deployment is ready for factory deployment.");
+    console.log("[treasury-v2-minimal] V2 reward routing configured and verified by the controlling deployer wallet.");
+    console.log("[treasury-v2-minimal] Staged deployment is ready for scheduled factory deployment.");
   }
 }
 

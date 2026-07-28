@@ -4,6 +4,15 @@ import "../api/load-local-env.mjs";
 
 const SOLANA_CHAIN_ID = 101;
 const DEFAULT_BNB_CHAIN_IDS = [56, 97];
+const argv = new Set(process.argv.slice(2));
+
+function resolveScope() {
+  const raw = String(process.env.CHECK_LAUNCHPAD_SCOPE || "").trim().toLowerCase();
+  const bnbOnly = argv.has("--bnb-only") || raw === "bnb" || raw === "bnb-only";
+  const solanaOnly = argv.has("--solana-only") || raw === "solana" || raw === "solana-only";
+  if (bnbOnly && solanaOnly) throw new Error("Choose only one of --bnb-only or --solana-only.");
+  return bnbOnly ? "bnb" : solanaOnly ? "solana" : "all";
+}
 
 function normalizeUrl(raw) {
   const value = String(raw || "").trim();
@@ -110,170 +119,199 @@ const tokenEnvNames = [
 ];
 const tokenNames = ["CHECK_INTERNAL_TOKEN", "RANK_EVENTS_TOKEN", "VITE_RANK_EVENTS_TOKEN"];
 
+const scope = resolveScope();
+const includeBnb = scope !== "solana";
+const includeSolana = scope !== "bnb";
 const frontend = firstEnv(frontendEnvNames);
 const token = firstEnv(tokenEnvNames);
 const internalToken = firstRawEnv(tokenNames);
 const bnbChainIds = parseChainIds(process.env.CHECK_BNB_CHAIN_IDS || process.env.VITE_ALLOWED_CHAIN_IDS);
 const wallet = firstRawEnv(["CHECK_WALLET_ADDRESS", "WALLET_ADDRESS", "VITE_DEV_WALLET_ADDRESS"]);
 const campaign = firstRawEnv(["CHECK_CAMPAIGN_ADDRESS", "CAMPAIGN_ADDRESS", "VITE_DEV_CAMPAIGN_ADDRESS"]);
-const factory = firstRawEnv(["CHECK_FACTORY_ADDRESS", "VITE_FACTORY_ADDRESS_97", "VITE_FACTORY_ADDRESS"]);
 const solanaWallet = firstRawEnv(["CHECK_SOLANA_WALLET", "SOLANA_WALLET_ADDRESS", "VITE_SOLANA_DEV_WALLET"]);
 const solanaCampaign = firstRawEnv(["CHECK_SOLANA_CAMPAIGN", "SOLANA_CAMPAIGN_ADDRESS", "VITE_SOLANA_DEV_CAMPAIGN"]);
 
+function factoryForChain(chainId) {
+  const chainSpecific = firstRawEnv([
+    `CHECK_FACTORY_ADDRESS_${chainId}`,
+    `VITE_FACTORY_ADDRESS_${chainId}`,
+  ]);
+  if (chainSpecific.value) return chainSpecific;
+
+  const explicitGeneric = firstRawEnv(["CHECK_FACTORY_ADDRESS"]);
+  if (explicitGeneric.value) return explicitGeneric;
+
+  const defaultChainId = Number(process.env.VITE_DEFAULT_CHAIN_ID || 97);
+  if (chainId === defaultChainId) {
+    return firstRawEnv(["VITE_FACTORY_ADDRESS"]);
+  }
+  return { name: "unset", value: "" };
+}
+
 requireConfigured("frontend Railway/API base URL", frontend.value, frontendEnvNames);
-requireConfigured("token/indexer Railway base URL", token.value, tokenEnvNames);
-requireConfigured("internal token", internalToken.value, tokenNames);
+if (includeSolana) {
+  requireConfigured("token/indexer Railway base URL", token.value, tokenEnvNames);
+  requireConfigured("internal token", internalToken.value, tokenNames);
+}
 if (process.exitCode) process.exit(process.exitCode);
 
-const internalHeaders = { authorization: `Bearer ${internalToken.value}` };
+const internalHeaders = includeSolana ? { authorization: `Bearer ${internalToken.value}` } : {};
 const checks = [];
 
 checks.push({ label: "Frontend health", base: frontend, path: "/healthz", allowNonJson: true });
-checks.push({ label: "Token/indexer health", base: token, path: "/healthz", allowNonJson: true });
+if (includeSolana) {
+  checks.push({ label: "Token/indexer health", base: token, path: "/healthz", allowNonJson: true });
+}
 
-for (const chainId of bnbChainIds) {
+if (includeBnb) {
+  for (const chainId of bnbChainIds) {
+    const chainFactory = factoryForChain(chainId);
+    checks.push({
+      label: `BNB campaign feed chain ${chainId}`,
+      base: frontend,
+      path: `/api/campaigns?chainId=${chainId}&limit=3`,
+      inspect: campaignFeedLooksValid,
+    });
+    checks.push({
+      label: `BNB routing status chain ${chainId}${chainFactory.value ? ` via ${chainFactory.name}` : ""}`,
+      base: frontend,
+      path: `/api/routing/status?chainId=${chainId}${chainFactory.value ? `&factoryAddress=${encodeURIComponent(chainFactory.value)}` : ""}${wallet.value ? `&walletAddress=${encodeURIComponent(wallet.value)}` : ""}`,
+      allowedStatuses: [200, 503],
+    });
+  }
+
+  const preferredChainId = bnbChainIds.includes(97) ? 97 : bnbChainIds[0];
+  const preferredFactory = factoryForChain(preferredChainId);
+  if (wallet.value && preferredFactory.value) {
+    checks.push({
+      label: `BNB launch preflight create chain ${preferredChainId}`,
+      base: frontend,
+      method: "POST",
+      path: "/api/launchpad/preflight-create",
+      body: { walletAddress: wallet.value, chainId: preferredChainId, factoryAddress: preferredFactory.value },
+      allowedStatuses: [200, 403, 503],
+    });
+  }
+
+  if (wallet.value && campaign.value) {
+    checks.push({
+      label: `BNB launch preflight buy chain ${preferredChainId}`,
+      base: frontend,
+      method: "POST",
+      path: "/api/launchpad/preflight-buy",
+      body: { walletAddress: wallet.value, chainId: preferredChainId, campaignAddress: campaign.value },
+      allowedStatuses: [200, 403, 503],
+    });
+    checks.push({
+      label: `BNB launch preflight sell chain ${preferredChainId}`,
+      base: frontend,
+      method: "POST",
+      path: "/api/launchpad/preflight-sell",
+      body: { walletAddress: wallet.value, chainId: preferredChainId, campaignAddress: campaign.value },
+      allowedStatuses: [200, 403, 503],
+    });
+  }
+}
+
+if (includeSolana) {
   checks.push({
-    label: `BNB campaign feed chain ${chainId}`,
+    label: "Solana campaign feed",
     base: frontend,
-    path: `/api/campaigns?chainId=${chainId}&limit=3`,
+    path: `/api/campaigns?chainId=${SOLANA_CHAIN_ID}&limit=3`,
     inspect: campaignFeedLooksValid,
   });
   checks.push({
-    label: `BNB routing status chain ${chainId}`,
-    base: frontend,
-    path: `/api/routing/status?chainId=${chainId}${factory.value ? `&factoryAddress=${encodeURIComponent(factory.value)}` : ""}${wallet.value ? `&walletAddress=${encodeURIComponent(wallet.value)}` : ""}`,
-    allowedStatuses: [200, 503],
-  });
-}
-
-if (wallet.value && factory.value) {
-  const chainId = bnbChainIds.includes(97) ? 97 : bnbChainIds[0];
-  checks.push({
-    label: "BNB launch preflight create",
-    base: frontend,
-    method: "POST",
-    path: "/api/launchpad/preflight-create",
-    body: { walletAddress: wallet.value, chainId, factoryAddress: factory.value },
-    allowedStatuses: [200, 403, 503],
-  });
-}
-
-if (wallet.value && campaign.value) {
-  const chainId = bnbChainIds.includes(97) ? 97 : bnbChainIds[0];
-  checks.push({
-    label: "BNB launch preflight buy",
-    base: frontend,
-    method: "POST",
-    path: "/api/launchpad/preflight-buy",
-    body: { walletAddress: wallet.value, chainId, campaignAddress: campaign.value },
-    allowedStatuses: [200, 403, 503],
-  });
-  checks.push({
-    label: "BNB launch preflight sell",
-    base: frontend,
-    method: "POST",
-    path: "/api/launchpad/preflight-sell",
-    body: { walletAddress: wallet.value, chainId, campaignAddress: campaign.value },
-    allowedStatuses: [200, 403, 503],
-  });
-}
-
-checks.push({
-  label: "Solana campaign feed",
-  base: frontend,
-  path: `/api/campaigns?chainId=${SOLANA_CHAIN_ID}&limit=3`,
-  inspect: campaignFeedLooksValid,
-});
-checks.push({
-  label: "Solana ops safety snapshot",
-  base: token,
-  path: "/internal/solana/ops/safety",
-  headers: internalHeaders,
-  inspect: safetyLooksValid,
-});
-checks.push({
-  label: "Solana admin action queue",
-  base: token,
-  path: "/internal/solana/ops/admin-actions?limit=10",
-  headers: internalHeaders,
-  inspect: listLooksValid,
-});
-checks.push({
-  label: "Solana payout intents",
-  base: token,
-  path: "/internal/solana/payout-intents?limit=10",
-  headers: internalHeaders,
-  inspect: listLooksValid,
-});
-checks.push({
-  label: "Solana reward claims",
-  base: token,
-  path: `/internal/rewards/claims?chainId=${SOLANA_CHAIN_ID}&limit=10`,
-  headers: internalHeaders,
-  inspect: claimsLookValid,
-});
-checks.push({
-  label: "Solana recruiter settlements",
-  base: token,
-  path: `/internal/recruiters/claimable-settlements?chainId=${SOLANA_CHAIN_ID}&limit=10`,
-  headers: internalHeaders,
-  inspect: listLooksValid,
-});
-
-if (solanaWallet.value) {
-  checks.push({
-    label: "Solana wallet verification challenge",
+    label: "Solana ops safety snapshot",
     base: token,
-    method: "POST",
-    path: "/api/solana/wallet-verification/challenge",
-    body: { walletAddress: solanaWallet.value },
-    allowedStatuses: [200, 400, 503],
-  });
-}
-
-if (process.env.LAUNCHPAD_DRILL_MUTATE === "1") {
-  checks.push({
-    label: "Create Solana safety-note admin action",
-    base: token,
-    method: "POST",
-    path: "/internal/solana/ops/admin-actions",
+    path: "/internal/solana/ops/safety",
     headers: internalHeaders,
-    body: {
-      actionType: "safety_note",
-      targetKind: "program",
-      requestedBy: "launchpad-drill",
-      reason: "Launchpad drill safety-note probe",
-      requestedFlags: { dryRun: true, source: "check-launchpad-drill" },
-    },
-    inspect: (json) => json?.ok === true && json?.action?.status === "requested",
+    inspect: safetyLooksValid,
   });
-}
-
-if (process.env.LAUNCHPAD_DRILL_MUTATE === "1" && solanaCampaign.value) {
   checks.push({
-    label: "Queue Solana campaign pause admin action",
+    label: "Solana admin action queue",
     base: token,
-    method: "POST",
-    path: "/internal/solana/ops/admin-actions",
+    path: "/internal/solana/ops/admin-actions?limit=10",
     headers: internalHeaders,
-    body: {
-      actionType: "campaign_pause",
-      targetKind: "campaign",
-      targetAddress: solanaCampaign.value,
-      requestedBy: "launchpad-drill",
-      reason: "Launchpad drill campaign-pause probe",
-      requestedFlags: { paused: true, dryRun: true, source: "check-launchpad-drill" },
-    },
-    inspect: (json) => json?.ok === true && json?.action?.status === "requested",
+    inspect: listLooksValid,
   });
+  checks.push({
+    label: "Solana payout intents",
+    base: token,
+    path: "/internal/solana/payout-intents?limit=10",
+    headers: internalHeaders,
+    inspect: listLooksValid,
+  });
+  checks.push({
+    label: "Solana reward claims",
+    base: token,
+    path: `/internal/rewards/claims?chainId=${SOLANA_CHAIN_ID}&limit=10`,
+    headers: internalHeaders,
+    inspect: claimsLookValid,
+  });
+  checks.push({
+    label: "Solana recruiter settlements",
+    base: token,
+    path: `/internal/recruiters/claimable-settlements?chainId=${SOLANA_CHAIN_ID}&limit=10`,
+    headers: internalHeaders,
+    inspect: listLooksValid,
+  });
+
+  if (solanaWallet.value) {
+    checks.push({
+      label: "Solana wallet verification challenge",
+      base: token,
+      method: "POST",
+      path: "/api/solana/wallet-verification/challenge",
+      body: { walletAddress: solanaWallet.value },
+      allowedStatuses: [200, 400, 503],
+    });
+  }
+
+  if (process.env.LAUNCHPAD_DRILL_MUTATE === "1") {
+    checks.push({
+      label: "Create Solana safety-note admin action",
+      base: token,
+      method: "POST",
+      path: "/internal/solana/ops/admin-actions",
+      headers: internalHeaders,
+      body: {
+        actionType: "safety_note",
+        targetKind: "program",
+        requestedBy: "launchpad-drill",
+        reason: "Launchpad drill safety-note probe",
+        requestedFlags: { dryRun: true, source: "check-launchpad-drill" },
+      },
+      inspect: (json) => json?.ok === true && json?.action?.status === "requested",
+    });
+  }
+
+  if (process.env.LAUNCHPAD_DRILL_MUTATE === "1" && solanaCampaign.value) {
+    checks.push({
+      label: "Queue Solana campaign pause admin action",
+      base: token,
+      method: "POST",
+      path: "/internal/solana/ops/admin-actions",
+      headers: internalHeaders,
+      body: {
+        actionType: "campaign_pause",
+        targetKind: "campaign",
+        targetAddress: solanaCampaign.value,
+        requestedBy: "launchpad-drill",
+        reason: "Launchpad drill campaign-pause probe",
+        requestedFlags: { paused: true, dryRun: true, source: "check-launchpad-drill" },
+      },
+      inspect: (json) => json?.ok === true && json?.action?.status === "requested",
+    });
+  }
 }
 
 let failures = 0;
 console.log("Launchpad drill smoke test");
+console.log(`scope:    ${scope}`);
 console.log(`frontend: ${frontend.value} (${frontend.name})`);
-console.log(`token:    ${token.value} (${token.name})`);
-console.log(`bnb:      ${bnbChainIds.join(", ")}`);
-console.log(`solana:   ${SOLANA_CHAIN_ID}`);
+if (includeSolana) console.log(`token:    ${token.value} (${token.name})`);
+if (includeBnb) console.log(`bnb:      ${bnbChainIds.join(", ")}`);
+if (includeSolana) console.log(`solana:   ${SOLANA_CHAIN_ID}`);
 console.log(`mutate:   ${process.env.LAUNCHPAD_DRILL_MUTATE === "1" ? "enabled" : "disabled"}`);
 console.log("");
 
@@ -289,8 +327,8 @@ for (const item of checks) {
 }
 
 if (failures > 0) {
-  console.error(`\n${failures} launchpad drill check(s) failed.`);
+  console.error(`\n${failures} launchpad drill check(s) failed for scope ${scope}.`);
   process.exit(1);
 }
 
-console.log("\nLaunchpad drill checks are green.");
+console.log(`\nLaunchpad drill checks are green for scope ${scope}.`);

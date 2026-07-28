@@ -47,6 +47,49 @@ function writeJson(file: string, data: unknown) {
   fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForLive(factory: any, receiptBlock?: number): Promise<void> {
+  if (receiptBlock != null) {
+    try {
+      const liveAtReceipt = Boolean(await factory.live({ blockTag: receiptBlock }));
+      console.log(`[activate-scheduled-factory] LaunchFactory.live at receipt block ${receiptBlock}: ${liveAtReceipt}`);
+      if (liveAtReceipt) return;
+    } catch (error: any) {
+      console.warn(
+        `[activate-scheduled-factory] block-tag live verification unavailable: ${error?.shortMessage || error?.message || error}`,
+      );
+    }
+  }
+
+  for (let attempt = 1; attempt <= 20; attempt += 1) {
+    const live = Boolean(await factory.live());
+    console.log(`[activate-scheduled-factory] LaunchFactory.live verification ${attempt}/20: ${live}`);
+    if (live) return;
+    await sleep(1_500);
+  }
+
+  throw new Error(
+    "LaunchFactory.live remained false after a confirmed enableLive transaction. Check the transaction receipt and RPC endpoint before retrying.",
+  );
+}
+
+async function findLiveEnabledBlock(factory: any, lowerBound: number): Promise<number | null> {
+  const currentBlock = await ethers.provider.getBlockNumber();
+  const fromBlock = Math.max(0, Math.min(lowerBound, currentBlock));
+  try {
+    const events = await factory.queryFilter(factory.filters.LiveEnabled(), fromBlock, currentBlock);
+    if (events.length > 0) return Number(events[events.length - 1].blockNumber);
+  } catch (error: any) {
+    console.warn(
+      `[activate-scheduled-factory] LiveEnabled event lookup unavailable: ${error?.shortMessage || error?.message || error}`,
+    );
+  }
+  return null;
+}
+
 async function main() {
   const net = await ethers.provider.getNetwork();
   if (net.chainId === MAINNET_CHAIN_ID) {
@@ -63,7 +106,6 @@ async function main() {
 
   const [deployer] = await ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
-  const activationBlock = await ethers.provider.getBlockNumber();
 
   const oldFactory = requireAddress("Old LaunchFactory", staged.factoryReplacement?.oldFactory);
   const oldLocker = requireAddress("Old PermanentLpLocker", staged.factoryReplacement?.oldPermanentLpLocker);
@@ -169,11 +211,27 @@ async function main() {
   const topazFactory = requireAddress("PermanentLpLocker.topazFactory", await locker.topazFactory());
   await assertCode("PermanentLpLocker.topazFactory", topazFactory);
 
-  if (!(await factory.live())) {
+  let activationBlock: number;
+  const wasLive = Boolean(await factory.live());
+  if (!wasLive) {
     console.log("[activate-scheduled-factory] enabling staged factory...");
-    await (await factory.enableLive()).wait();
+    const tx = await factory.enableLive();
+    console.log(`[activate-scheduled-factory] submitted LaunchFactory.enableLive: ${tx.hash}`);
+    const receipt = await tx.wait(2);
+    if (!receipt || receipt.status !== 1) throw new Error("LaunchFactory.enableLive transaction failed.");
+    activationBlock = Number(receipt.blockNumber);
+    console.log(`[activate-scheduled-factory] confirmed LaunchFactory.enableLive at block ${activationBlock}`);
+    await waitForLive(factory, activationBlock);
+  } else {
+    console.log("[activate-scheduled-factory] staged factory is already live; resuming manifest finalization.");
+    await waitForLive(factory);
+    const lowerBound = Number(staged.factoryReplacement?.deploymentBlock ?? staged.deploymentBlock ?? 0);
+    activationBlock =
+      (await findLiveEnabledBlock(factory, lowerBound)) ??
+      Number(staged.factoryReplacement?.activationBlock ?? staged.activationBlock ?? (await ethers.provider.getBlockNumber()));
+    console.log(`[activate-scheduled-factory] recovered activation block=${activationBlock}`);
   }
-  assertTrue("LaunchFactory.live", await factory.live());
+  assertTrue("LaunchFactory.live", Boolean(await factory.live()));
 
   const generation = staged.factoryRegistry?.stagedGeneration || "bnb-testnet-scheduled-v2";
   const factories = Array.isArray(staged.factoryRegistry?.factories)
@@ -249,6 +307,7 @@ async function main() {
   console.log(`[activate-scheduled-factory] frontend=${outFrontend}`);
   console.log(`[activate-scheduled-factory] indexer=${outManifest}`);
   console.log(`[activate-scheduled-factory] FACTORY_ADDRESS_97=${newFactory}`);
+  console.log(`[activate-scheduled-factory] FACTORY_START_BLOCK_97=${nextDeployment.deploymentBlock}`);
   console.log(`[activate-scheduled-factory] VITE_FACTORY_ADDRESS_97=${newFactory}`);
   console.log(`[activate-scheduled-factory] VITE_PERMANENT_LP_LOCKER_ADDRESS_97=${newLocker}`);
 }
