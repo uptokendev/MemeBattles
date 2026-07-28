@@ -13,6 +13,34 @@ pub const EMPTY_CLUSTER_ID: [u8; 32] = [0; 32];
 pub const DEX_ADAPTER_METEORA_DAMM_V2: u8 = 1;
 pub const DEX_ADAPTER_RAYDIUM_CPMM: u8 = 2;
 
+pub const CLUSTER_KIND_DEVNET: u8 = 1;
+pub const CLUSTER_KIND_MAINNET_BETA: u8 = 2;
+
+pub const GRADUATION_TIER_6_USD_MASK: u8 = 1 << 0;
+pub const GRADUATION_TIER_15K_USD_MASK: u8 = 1 << 1;
+pub const GRADUATION_TIER_30K_USD_MASK: u8 = 1 << 2;
+pub const GRADUATION_TIER_50K_USD_MASK: u8 = 1 << 3;
+pub const GRADUATION_TIER_PRODUCTION_MASK: u8 = GRADUATION_TIER_15K_USD_MASK
+    | GRADUATION_TIER_30K_USD_MASK
+    | GRADUATION_TIER_50K_USD_MASK;
+pub const GRADUATION_TIER_ALL_MASK: u8 =
+    GRADUATION_TIER_6_USD_MASK | GRADUATION_TIER_PRODUCTION_MASK;
+
+pub const GRADUATION_TARGET_6_USD_MICROS: u64 = 6_000_000;
+pub const GRADUATION_TARGET_15K_USD_MICROS: u64 = 15_000_000_000;
+pub const GRADUATION_TARGET_30K_USD_MICROS: u64 = 30_000_000_000;
+pub const GRADUATION_TARGET_50K_USD_MICROS: u64 = 50_000_000_000;
+
+pub const ECONOMICS_VERSION_V1: u16 = 1;
+pub const CURVE_KIND_LINEAR_V1: u8 = 1;
+pub const MAX_TOKEN_DECIMALS: u8 = 9;
+pub const BPS_DENOMINATOR: u16 = 10_000;
+pub const LOCKED_BUY_FEE_BPS: u16 = 200;
+pub const LOCKED_SELL_FEE_BPS: u16 = 200;
+pub const LOCKED_FINALIZE_FEE_BPS: u16 = 200;
+pub const LOCKED_CREATOR_POST_FINALIZE_BPS: u16 = 2_000;
+pub const LOCKED_LIQUIDITY_POST_FINALIZE_BPS: u16 = 8_000;
+
 pub const CREATOR_TIER_1: u8 = 1;
 pub const CREATOR_TIER_2: u8 = 2;
 pub const CREATOR_TIER_3: u8 = 3;
@@ -98,7 +126,10 @@ pub mod memewarzone_solana {
     pub fn lock_security_defaults(ctx: Context<LockSecurityDefaults>) -> Result<()> {
         let global = &mut ctx.accounts.global_config;
         require_admin(global, ctx.accounts.admin.key())?;
-        require!(!global.security_defaults_locked, LaunchpadError::SecurityDefaultsAlreadyLocked);
+        require!(
+            !global.security_defaults_locked,
+            LaunchpadError::SecurityDefaultsAlreadyLocked
+        );
 
         global.route_authorization_required = true;
         global.authorized_trading_required = true;
@@ -116,35 +147,69 @@ pub mod memewarzone_solana {
         ctx: Context<InitializeGenerationConfig>,
         settings: GenerationSettings,
     ) -> Result<()> {
+        let clock = Clock::get()?;
+        let generation_config_key = ctx.accounts.generation_config.key();
         let global = &mut ctx.accounts.global_config;
         require_generation_authority(global, ctx.accounts.authority.key())?;
         validate_generation_settings(global, &settings)?;
 
         if settings.active_creation {
-            require!(is_empty_generation_id(global.active_generation_id), LaunchpadError::ActiveCreationGenerationExists);
+            require!(
+                is_empty_generation_id(global.active_generation_id),
+                LaunchpadError::ActiveCreationGenerationExists
+            );
             global.active_generation_id = settings.generation_id;
         }
 
         let generation = &mut ctx.accounts.generation_config;
         generation.generation_id = settings.generation_id;
-        generation.program_id = settings.program_id;
-        generation.config_pda = settings.config_pda;
-        generation.start_slot = settings.start_slot;
+        generation.program_id = crate::id();
+        generation.config_pda = generation_config_key;
+        generation.start_slot = clock.slot;
+        generation.cluster_kind = settings.cluster_kind;
+        generation.allowed_graduation_tier_mask = settings.allowed_graduation_tier_mask;
+        generation.economics_version = settings.economics_version;
+        generation.curve_kind = settings.curve_kind;
+        generation.token_total_supply = settings.token_total_supply;
+        generation.token_decimals = settings.token_decimals;
+        generation.curve_supply_bps = settings.curve_supply_bps;
+        generation.liquidity_token_bps = settings.liquidity_token_bps;
+        generation.base_price_lamports = settings.base_price_lamports;
+        generation.price_slope_lamports = settings.price_slope_lamports;
+        generation.buy_fee_bps = settings.buy_fee_bps;
+        generation.sell_fee_bps = settings.sell_fee_bps;
+        generation.finalize_fee_bps = settings.finalize_fee_bps;
+        generation.creator_post_finalize_bps = settings.creator_post_finalize_bps;
+        generation.liquidity_post_finalize_bps = settings.liquidity_post_finalize_bps;
         generation.dex_adapter = settings.dex_adapter;
+        generation.trade_route_profile = settings.trade_route_profile;
+        generation.finalize_route_profile = settings.finalize_route_profile;
+        generation.treasury_profile = settings.treasury_profile;
+        generation.dex_profile = settings.dex_profile;
+        generation.oracle_profile = settings.oracle_profile;
         generation.active_creation = settings.active_creation;
         generation.support_enabled = settings.support_enabled;
         generation.manifest_hash = settings.manifest_hash;
         generation.route_authorization_required = true;
         generation.authorized_trading_required = true;
         generation.bump = ctx.bumps.generation_config;
-        global.generation_count = global.generation_count.checked_add(1).ok_or(LaunchpadError::MathOverflow)?;
+
+        global.generation_count = global
+            .generation_count
+            .checked_add(1)
+            .ok_or(LaunchpadError::MathOverflow)?;
 
         emit!(GenerationConfigInitialized {
             generation_id: generation.generation_id,
             program_id: generation.program_id,
             config_pda: generation.config_pda,
             start_slot: generation.start_slot,
+            cluster_kind: generation.cluster_kind,
+            allowed_graduation_tier_mask: generation.allowed_graduation_tier_mask,
+            economics_version: generation.economics_version,
+            curve_kind: generation.curve_kind,
             dex_adapter: generation.dex_adapter,
+            manifest_hash: generation.manifest_hash,
             active_creation: generation.active_creation,
             support_enabled: generation.support_enabled,
         });
@@ -274,7 +339,13 @@ pub mod memewarzone_solana {
 pub struct InitializeGlobalConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
-    #[account(init, payer = admin, space = 8 + GlobalConfig::INIT_SPACE, seeds = [GLOBAL_CONFIG_SEED], bump)]
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + GlobalConfig::INIT_SPACE,
+        seeds = [GLOBAL_CONFIG_SEED],
+        bump
+    )]
     pub global_config: Account<'info, GlobalConfig>,
     pub system_program: Program<'info, System>,
 }
@@ -316,7 +387,11 @@ pub struct SetGenerationSupport<'info> {
     pub authority: Signer<'info>,
     #[account(mut, seeds = [GLOBAL_CONFIG_SEED], bump = global_config.bump)]
     pub global_config: Account<'info, GlobalConfig>,
-    #[account(mut, seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()], bump = generation_config.bump)]
+    #[account(
+        mut,
+        seeds = [GENERATION_CONFIG_SEED, generation_config.generation_id.as_ref()],
+        bump = generation_config.bump
+    )]
     pub generation_config: Account<'info, GenerationConfig>,
 }
 
@@ -406,7 +481,27 @@ pub struct GenerationConfig {
     pub program_id: Pubkey,
     pub config_pda: Pubkey,
     pub start_slot: u64,
+    pub cluster_kind: u8,
+    pub allowed_graduation_tier_mask: u8,
+    pub economics_version: u16,
+    pub curve_kind: u8,
+    pub token_total_supply: u64,
+    pub token_decimals: u8,
+    pub curve_supply_bps: u16,
+    pub liquidity_token_bps: u16,
+    pub base_price_lamports: u64,
+    pub price_slope_lamports: u64,
+    pub buy_fee_bps: u16,
+    pub sell_fee_bps: u16,
+    pub finalize_fee_bps: u16,
+    pub creator_post_finalize_bps: u16,
+    pub liquidity_post_finalize_bps: u16,
     pub dex_adapter: u8,
+    pub trade_route_profile: [u8; 32],
+    pub finalize_route_profile: [u8; 32],
+    pub treasury_profile: [u8; 32],
+    pub dex_profile: [u8; 32],
+    pub oracle_profile: [u8; 32],
     pub active_creation: bool,
     pub support_enabled: bool,
     pub manifest_hash: [u8; 32],
@@ -480,10 +575,27 @@ pub struct PauseFlags {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy)]
 pub struct GenerationSettings {
     pub generation_id: [u8; 32],
-    pub program_id: Pubkey,
-    pub config_pda: Pubkey,
-    pub start_slot: u64,
+    pub cluster_kind: u8,
+    pub allowed_graduation_tier_mask: u8,
+    pub economics_version: u16,
+    pub curve_kind: u8,
+    pub token_total_supply: u64,
+    pub token_decimals: u8,
+    pub curve_supply_bps: u16,
+    pub liquidity_token_bps: u16,
+    pub base_price_lamports: u64,
+    pub price_slope_lamports: u64,
+    pub buy_fee_bps: u16,
+    pub sell_fee_bps: u16,
+    pub finalize_fee_bps: u16,
+    pub creator_post_finalize_bps: u16,
+    pub liquidity_post_finalize_bps: u16,
     pub dex_adapter: u8,
+    pub trade_route_profile: [u8; 32],
+    pub finalize_route_profile: [u8; 32],
+    pub treasury_profile: [u8; 32],
+    pub dex_profile: [u8; 32],
+    pub oracle_profile: [u8; 32],
     pub active_creation: bool,
     pub support_enabled: bool,
     pub manifest_hash: [u8; 32],
@@ -560,7 +672,12 @@ pub struct GenerationConfigInitialized {
     pub program_id: Pubkey,
     pub config_pda: Pubkey,
     pub start_slot: u64,
+    pub cluster_kind: u8,
+    pub allowed_graduation_tier_mask: u8,
+    pub economics_version: u16,
+    pub curve_kind: u8,
     pub dex_adapter: u8,
+    pub manifest_hash: [u8; 32],
     pub active_creation: bool,
     pub support_enabled: bool,
 }
@@ -599,14 +716,46 @@ pub struct ClusterProfileSynced {
 }
 
 fn validate_authorities(authorities: &GlobalAuthorities) -> Result<()> {
-    require_keys_neq!(authorities.admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.pauser, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.tier_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.risk_admin, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.route_signer, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.reward_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.treasury_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
-    require_keys_neq!(authorities.generation_operator, Pubkey::default(), LaunchpadError::InvalidAuthority);
+    require_keys_neq!(
+        authorities.admin,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.pauser,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.tier_admin,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.risk_admin,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.route_signer,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.reward_operator,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.treasury_operator,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
+    require_keys_neq!(
+        authorities.generation_operator,
+        Pubkey::default(),
+        LaunchpadError::InvalidAuthority
+    );
     Ok(())
 }
 
@@ -643,24 +792,186 @@ fn require_risk_authority(global: &GlobalConfig, authority: Pubkey) -> Result<()
     err!(LaunchpadError::Unauthorized)
 }
 
-fn validate_generation_settings(global: &GlobalConfig, settings: &GenerationSettings) -> Result<()> {
-    require!(settings.generation_id != EMPTY_GENERATION_ID, LaunchpadError::InvalidGeneration);
-    require_keys_eq!(settings.program_id, crate::id(), LaunchpadError::InvalidGenerationProgram);
-    require!(is_supported_dex_adapter(settings.dex_adapter), LaunchpadError::InvalidDexAdapter);
-    require!(settings.support_enabled || !settings.active_creation, LaunchpadError::ActiveGenerationMustBeSupported);
-    require!(settings.route_authorization_required, LaunchpadError::SecurityDefaultsCannotBeWeakened);
-    require!(settings.authorized_trading_required, LaunchpadError::SecurityDefaultsCannotBeWeakened);
+fn validate_generation_settings(
+    global: &GlobalConfig,
+    settings: &GenerationSettings,
+) -> Result<()> {
+    require!(
+        settings.generation_id != EMPTY_GENERATION_ID,
+        LaunchpadError::InvalidGeneration
+    );
+    require!(
+        settings.manifest_hash != [0; 32],
+        LaunchpadError::InvalidGenerationManifest
+    );
+    validate_generation_cluster_and_tiers(
+        settings.cluster_kind,
+        settings.allowed_graduation_tier_mask,
+    )?;
+    validate_generation_economics(settings)?;
+    require!(
+        is_supported_dex_adapter(settings.dex_adapter),
+        LaunchpadError::InvalidDexAdapter
+    );
+    validate_generation_profiles(settings)?;
+    require!(
+        settings.support_enabled || !settings.active_creation,
+        LaunchpadError::ActiveGenerationMustBeSupported
+    );
+    require!(
+        settings.route_authorization_required,
+        LaunchpadError::SecurityDefaultsCannotBeWeakened
+    );
+    require!(
+        settings.authorized_trading_required,
+        LaunchpadError::SecurityDefaultsCannotBeWeakened
+    );
     if global.security_defaults_locked {
-        require!(global.route_authorization_required, LaunchpadError::SecurityDefaultsCannotBeWeakened);
-        require!(global.authorized_trading_required, LaunchpadError::SecurityDefaultsCannotBeWeakened);
+        require!(
+            global.route_authorization_required,
+            LaunchpadError::SecurityDefaultsCannotBeWeakened
+        );
+        require!(
+            global.authorized_trading_required,
+            LaunchpadError::SecurityDefaultsCannotBeWeakened
+        );
     }
     Ok(())
 }
 
+fn validate_generation_cluster_and_tiers(cluster_kind: u8, tier_mask: u8) -> Result<()> {
+    require!(
+        cluster_kind == CLUSTER_KIND_DEVNET || cluster_kind == CLUSTER_KIND_MAINNET_BETA,
+        LaunchpadError::InvalidGenerationCluster
+    );
+    require!(tier_mask != 0, LaunchpadError::InvalidGraduationTierMask);
+    require!(
+        tier_mask & !GRADUATION_TIER_ALL_MASK == 0,
+        LaunchpadError::InvalidGraduationTierMask
+    );
+
+    if cluster_kind == CLUSTER_KIND_DEVNET {
+        require!(
+            tier_mask & GRADUATION_TIER_6_USD_MASK != 0,
+            LaunchpadError::InvalidGraduationTierMask
+        );
+    } else {
+        require!(
+            tier_mask & GRADUATION_TIER_6_USD_MASK == 0,
+            LaunchpadError::InvalidGraduationTierMask
+        );
+        require!(
+            tier_mask & GRADUATION_TIER_PRODUCTION_MASK != 0,
+            LaunchpadError::InvalidGraduationTierMask
+        );
+    }
+    Ok(())
+}
+
+fn validate_generation_economics(settings: &GenerationSettings) -> Result<()> {
+    require!(
+        settings.economics_version == ECONOMICS_VERSION_V1,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.curve_kind == CURVE_KIND_LINEAR_V1,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.token_total_supply > 0,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.token_decimals <= MAX_TOKEN_DECIMALS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.curve_supply_bps > 0 && settings.curve_supply_bps < BPS_DENOMINATOR,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.liquidity_token_bps > 0,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    let token_allocation_bps = u32::from(settings.curve_supply_bps)
+        .checked_add(u32::from(settings.liquidity_token_bps))
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(
+        token_allocation_bps <= u32::from(BPS_DENOMINATOR),
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.base_price_lamports > 0 && settings.price_slope_lamports > 0,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.buy_fee_bps == LOCKED_BUY_FEE_BPS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.sell_fee_bps == LOCKED_SELL_FEE_BPS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.finalize_fee_bps == LOCKED_FINALIZE_FEE_BPS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.creator_post_finalize_bps == LOCKED_CREATOR_POST_FINALIZE_BPS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    require!(
+        settings.liquidity_post_finalize_bps == LOCKED_LIQUIDITY_POST_FINALIZE_BPS,
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    let post_finalize_bps = u32::from(settings.creator_post_finalize_bps)
+        .checked_add(u32::from(settings.liquidity_post_finalize_bps))
+        .ok_or(LaunchpadError::MathOverflow)?;
+    require!(
+        post_finalize_bps == u32::from(BPS_DENOMINATOR),
+        LaunchpadError::InvalidGenerationEconomics
+    );
+    Ok(())
+}
+
+fn validate_generation_profiles(settings: &GenerationSettings) -> Result<()> {
+    require!(
+        settings.trade_route_profile != [0; 32],
+        LaunchpadError::InvalidGenerationProfile
+    );
+    require!(
+        settings.finalize_route_profile != [0; 32],
+        LaunchpadError::InvalidGenerationProfile
+    );
+    require!(
+        settings.treasury_profile != [0; 32],
+        LaunchpadError::InvalidGenerationProfile
+    );
+    require!(
+        settings.dex_profile != [0; 32],
+        LaunchpadError::InvalidGenerationProfile
+    );
+    require!(
+        settings.oracle_profile != [0; 32],
+        LaunchpadError::InvalidGenerationProfile
+    );
+    Ok(())
+}
+
 fn validate_creator_profile_update(update: &CreatorProfileUpdate) -> Result<()> {
-    require_keys_neq!(update.wallet, Pubkey::default(), LaunchpadError::InvalidCreatorProfile);
-    require!(update.trust_score <= TRUST_SCORE_MAX, LaunchpadError::InvalidCreatorProfile);
-    require!(update.creator_buy_cap_bps <= CREATOR_BUY_CAP_BPS_MAX, LaunchpadError::CreatorBuyCapTooHigh);
+    require_keys_neq!(
+        update.wallet,
+        Pubkey::default(),
+        LaunchpadError::InvalidCreatorProfile
+    );
+    require!(
+        update.trust_score <= TRUST_SCORE_MAX,
+        LaunchpadError::InvalidCreatorProfile
+    );
+    require!(
+        update.creator_buy_cap_bps <= CREATOR_BUY_CAP_BPS_MAX,
+        LaunchpadError::CreatorBuyCapTooHigh
+    );
 
     let limits = tier_limits(update.tier)?;
     require!(
@@ -671,20 +982,30 @@ fn validate_creator_profile_update(update: &CreatorProfileUpdate) -> Result<()> 
 }
 
 fn validate_risk_profile_update(update: &RiskProfileUpdate) -> Result<()> {
-    require_keys_neq!(update.wallet, Pubkey::default(), LaunchpadError::InvalidRiskProfile);
+    require_keys_neq!(
+        update.wallet,
+        Pubkey::default(),
+        LaunchpadError::InvalidRiskProfile
+    );
     validate_risk_level(update.risk_level)?;
     Ok(())
 }
 
 fn validate_cluster_profile_update(update: &ClusterProfileUpdate) -> Result<()> {
-    require!(update.cluster_id != EMPTY_CLUSTER_ID, LaunchpadError::InvalidCluster);
+    require!(
+        update.cluster_id != EMPTY_CLUSTER_ID,
+        LaunchpadError::InvalidCluster
+    );
     require!(update.size > 0, LaunchpadError::InvalidCluster);
     validate_risk_level(update.risk_level)?;
     Ok(())
 }
 
 fn validate_risk_level(risk_level: u8) -> Result<()> {
-    require!(risk_level >= RISK_LEVEL_MIN && risk_level <= RISK_LEVEL_MAX, LaunchpadError::InvalidRiskLevel);
+    require!(
+        risk_level >= RISK_LEVEL_MIN && risk_level <= RISK_LEVEL_MAX,
+        LaunchpadError::InvalidRiskLevel
+    );
     Ok(())
 }
 
@@ -715,7 +1036,10 @@ fn resolve_generation_support_update(
     support_enabled: bool,
     active_creation: bool,
 ) -> Result<[u8; 32]> {
-    require!(support_enabled || !active_creation, LaunchpadError::ActiveGenerationMustBeSupported);
+    require!(
+        support_enabled || !active_creation,
+        LaunchpadError::ActiveGenerationMustBeSupported
+    );
 
     if active_creation {
         require!(
@@ -738,6 +1062,25 @@ fn is_supported_dex_adapter(dex_adapter: u8) -> bool {
 
 fn is_empty_generation_id(generation_id: [u8; 32]) -> bool {
     generation_id == EMPTY_GENERATION_ID
+}
+
+pub(crate) fn graduation_tier_bit(target_usd_micros: u64) -> Option<u8> {
+    match target_usd_micros {
+        GRADUATION_TARGET_6_USD_MICROS => Some(GRADUATION_TIER_6_USD_MASK),
+        GRADUATION_TARGET_15K_USD_MICROS => Some(GRADUATION_TIER_15K_USD_MASK),
+        GRADUATION_TARGET_30K_USD_MICROS => Some(GRADUATION_TIER_30K_USD_MASK),
+        GRADUATION_TARGET_50K_USD_MICROS => Some(GRADUATION_TIER_50K_USD_MASK),
+        _ => None,
+    }
+}
+
+pub(crate) fn generation_allows_graduation_target(
+    generation: &GenerationConfig,
+    target_usd_micros: u64,
+) -> bool {
+    graduation_tier_bit(target_usd_micros)
+        .map(|bit| generation.allowed_graduation_tier_mask & bit != 0)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -772,15 +1115,68 @@ mod tests {
     fn test_generation_settings() -> GenerationSettings {
         GenerationSettings {
             generation_id: [7; 32],
-            program_id: crate::id(),
-            config_pda: Pubkey::new_unique(),
-            start_slot: 42,
+            cluster_kind: CLUSTER_KIND_DEVNET,
+            allowed_graduation_tier_mask: GRADUATION_TIER_ALL_MASK,
+            economics_version: ECONOMICS_VERSION_V1,
+            curve_kind: CURVE_KIND_LINEAR_V1,
+            token_total_supply: 1_000_000_000_000_000,
+            token_decimals: 6,
+            curve_supply_bps: 8_000,
+            liquidity_token_bps: 1_000,
+            base_price_lamports: 1_000,
+            price_slope_lamports: 10,
+            buy_fee_bps: LOCKED_BUY_FEE_BPS,
+            sell_fee_bps: LOCKED_SELL_FEE_BPS,
+            finalize_fee_bps: LOCKED_FINALIZE_FEE_BPS,
+            creator_post_finalize_bps: LOCKED_CREATOR_POST_FINALIZE_BPS,
+            liquidity_post_finalize_bps: LOCKED_LIQUIDITY_POST_FINALIZE_BPS,
             dex_adapter: DEX_ADAPTER_METEORA_DAMM_V2,
+            trade_route_profile: [1; 32],
+            finalize_route_profile: [2; 32],
+            treasury_profile: [3; 32],
+            dex_profile: [4; 32],
+            oracle_profile: [5; 32],
             active_creation: false,
             support_enabled: true,
             manifest_hash: [9; 32],
             route_authorization_required: true,
             authorized_trading_required: true,
+        }
+    }
+
+    fn test_generation_config(settings: &GenerationSettings) -> GenerationConfig {
+        GenerationConfig {
+            generation_id: settings.generation_id,
+            program_id: crate::id(),
+            config_pda: Pubkey::new_unique(),
+            start_slot: 42,
+            cluster_kind: settings.cluster_kind,
+            allowed_graduation_tier_mask: settings.allowed_graduation_tier_mask,
+            economics_version: settings.economics_version,
+            curve_kind: settings.curve_kind,
+            token_total_supply: settings.token_total_supply,
+            token_decimals: settings.token_decimals,
+            curve_supply_bps: settings.curve_supply_bps,
+            liquidity_token_bps: settings.liquidity_token_bps,
+            base_price_lamports: settings.base_price_lamports,
+            price_slope_lamports: settings.price_slope_lamports,
+            buy_fee_bps: settings.buy_fee_bps,
+            sell_fee_bps: settings.sell_fee_bps,
+            finalize_fee_bps: settings.finalize_fee_bps,
+            creator_post_finalize_bps: settings.creator_post_finalize_bps,
+            liquidity_post_finalize_bps: settings.liquidity_post_finalize_bps,
+            dex_adapter: settings.dex_adapter,
+            trade_route_profile: settings.trade_route_profile,
+            finalize_route_profile: settings.finalize_route_profile,
+            treasury_profile: settings.treasury_profile,
+            dex_profile: settings.dex_profile,
+            oracle_profile: settings.oracle_profile,
+            active_creation: settings.active_creation,
+            support_enabled: settings.support_enabled,
+            manifest_hash: settings.manifest_hash,
+            route_authorization_required: true,
+            authorized_trading_required: true,
+            bump: 254,
         }
     }
 
@@ -844,18 +1240,97 @@ mod tests {
     }
 
     #[test]
+    fn devnet_generation_requires_six_dollar_tier() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.allowed_graduation_tier_mask = GRADUATION_TIER_PRODUCTION_MASK;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn mainnet_generation_rejects_six_dollar_tier() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.cluster_kind = CLUSTER_KIND_MAINNET_BETA;
+        settings.allowed_graduation_tier_mask = GRADUATION_TIER_ALL_MASK;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn mainnet_generation_accepts_production_tiers() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.cluster_kind = CLUSTER_KIND_MAINNET_BETA;
+        settings.allowed_graduation_tier_mask = GRADUATION_TIER_PRODUCTION_MASK;
+        assert!(validate_generation_settings(&global, &settings).is_ok());
+    }
+
+    #[test]
+    fn generation_settings_reject_unknown_tier_bits() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.allowed_graduation_tier_mask |= 1 << 7;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_economics_reject_fee_drift() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.buy_fee_bps = LOCKED_BUY_FEE_BPS + 1;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_economics_reject_token_allocation_overflow() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.curve_supply_bps = 9_500;
+        settings.liquidity_token_bps = 1_000;
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_settings_reject_zero_profile() {
+        let global = test_global_config();
+        let mut settings = test_generation_settings();
+        settings.oracle_profile = [0; 32];
+        assert!(validate_generation_settings(&global, &settings).is_err());
+    }
+
+    #[test]
+    fn generation_target_resolution_uses_allowlist_mask() {
+        let settings = test_generation_settings();
+        let mut generation = test_generation_config(&settings);
+        generation.allowed_graduation_tier_mask = GRADUATION_TIER_6_USD_MASK;
+        assert!(generation_allows_graduation_target(
+            &generation,
+            GRADUATION_TARGET_6_USD_MICROS
+        ));
+        assert!(!generation_allows_graduation_target(
+            &generation,
+            GRADUATION_TARGET_30K_USD_MICROS
+        ));
+    }
+
+    #[test]
     fn support_update_rejects_second_active_generation() {
         let current_active = [1; 32];
         let second_generation = [2; 32];
-
-        assert!(resolve_generation_support_update(current_active, second_generation, true, true).is_err());
+        assert!(resolve_generation_support_update(
+            current_active,
+            second_generation,
+            true,
+            true
+        )
+        .is_err());
     }
 
     #[test]
     fn support_update_deactivation_clears_current_generation() {
         let generation_id = [1; 32];
-        let next_active = resolve_generation_support_update(generation_id, generation_id, true, false).unwrap();
-
+        let next_active =
+            resolve_generation_support_update(generation_id, generation_id, true, false).unwrap();
         assert_eq!(next_active, EMPTY_GENERATION_ID);
     }
 
@@ -878,21 +1353,18 @@ mod tests {
     #[test]
     fn creator_profile_rejects_invalid_tier() {
         let update = test_creator_update(4, 0);
-
         assert!(validate_creator_profile_update(&update).is_err());
     }
 
     #[test]
     fn creator_profile_rejects_oversized_live_count() {
         let update = test_creator_update(CREATOR_TIER_1, TIER_1_MAX_LIVE_BONDING + 1);
-
         assert!(validate_creator_profile_update(&update).is_err());
     }
 
     #[test]
     fn risk_profile_rejects_invalid_risk_level() {
         let update = test_risk_update(RISK_LEVEL_MAX + 1);
-
         assert!(validate_risk_profile_update(&update).is_err());
     }
 
@@ -900,14 +1372,12 @@ mod tests {
     fn cluster_profile_rejects_empty_cluster() {
         let mut update = test_cluster_update(RISK_LEVEL_MAX, 12);
         update.cluster_id = EMPTY_CLUSTER_ID;
-
         assert!(validate_cluster_profile_update(&update).is_err());
     }
 
     #[test]
     fn cluster_profile_rejects_zero_size() {
         let update = test_cluster_update(RISK_LEVEL_MAX, 0);
-
         assert!(validate_cluster_profile_update(&update).is_err());
     }
 }
@@ -926,6 +1396,16 @@ pub enum LaunchpadError {
     InvalidGeneration,
     #[msg("Generation program ID must match this deployed program.")]
     InvalidGenerationProgram,
+    #[msg("Generation manifest hash is missing or invalid.")]
+    InvalidGenerationManifest,
+    #[msg("Generation cluster kind must be devnet or mainnet-beta.")]
+    InvalidGenerationCluster,
+    #[msg("Generation graduation-tier allowlist is invalid for its cluster.")]
+    InvalidGraduationTierMask,
+    #[msg("Generation curve, supply, or fee economics are invalid.")]
+    InvalidGenerationEconomics,
+    #[msg("Generation route, treasury, DEX, or oracle profile is invalid.")]
+    InvalidGenerationProfile,
     #[msg("Exactly one Solana generation can be active for creation.")]
     ActiveCreationGenerationExists,
     #[msg("An active creation generation must remain support-enabled.")]
@@ -958,6 +1438,8 @@ pub enum LaunchpadError {
     InvalidCampaign,
     #[msg("Campaign metadata hash is invalid.")]
     InvalidMetadata,
+    #[msg("The selected graduation target is not allowed by this generation.")]
+    GraduationTargetNotAllowed,
     #[msg("Route profile hash is invalid.")]
     InvalidRouteProfile,
     #[msg("Create authorization nonce is invalid.")]
