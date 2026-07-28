@@ -67,7 +67,29 @@ def replace_archive_block(script: str) -> str:
     return script[:start] + replacement + script[end:]
 
 
-def print_context(script: str, center: int = 263, radius: int = 14) -> None:
+def replace_auth_end_marker(script: str) -> str:
+    auth_start = script.index("auth_start = deploy.index(")
+    marker_start = script.index("auth_end_marker = dedent('''\\", auth_start)
+    marker_end_line = (
+        "auth_end = deploy.index(auth_end_marker, auth_start) + len(auth_end_marker)"
+    )
+    marker_end = script.index(marker_end_line, marker_start) + len(marker_end_line)
+    replacement = "\n".join(
+        [
+            "auth_end_marker = '\\n'.join([",
+            "    '  return json(res, 200, {',",
+            "    '    scheduledRequest,',",
+            "    '    authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },',",
+            "    '    preflight,',",
+            "    '  });',",
+            "])",
+            marker_end_line,
+        ]
+    )
+    return script[:marker_start] + replacement + script[marker_end:]
+
+
+def print_context(script: str, center: int = 263, radius: int = 16) -> None:
     lines = script.splitlines()
     start = max(1, center - radius)
     end = min(len(lines), center + radius)
@@ -76,7 +98,9 @@ def print_context(script: str, center: int = 263, radius: int = 14) -> None:
 
 
 def main() -> None:
-    script = replace_archive_block(extract_v2_script())
+    script = extract_v2_script()
+    script = replace_archive_block(script)
+    script = replace_auth_end_marker(script)
     compile(script, "ticker-reservation-integration", "exec")
     try:
         exec(script, {})
