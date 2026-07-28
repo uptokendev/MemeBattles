@@ -34,35 +34,34 @@ jobs:
 
           path = Path('scripts/apply-ticker-cluster-scope.py')
           source = path.read_text(encoding='utf-8')
-          old = '''    source = replace_once(
-                  source,
-                  '''      ticker,
-                chainId,
-                available: false,''',
-                  '''      ticker,
-                chainId,
-                cluster: result.cluster,
-                available: false,''',
-                  "blocked response cluster",
-              )'''
-          new = '''    source = replace_once(
-                  source,
-                  '''    return json(res, 200, {
-                ticker,
-                chainId,
-                available: false,
-                reason: blockedReason(result.reservation?.status),''',
-                  '''    return json(res, 200, {
-                ticker,
-                chainId,
-                cluster: result.cluster,
-                available: false,
-                reason: blockedReason(result.reservation?.status),''',
-                  "blocked response cluster",
-              )'''
-          if source.count(old) != 1:
-              raise SystemExit(f'Expected one generic blocked-response matcher, found {source.count(old)}')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          label_position = source.index('"blocked response cluster"')
+          block_start = source.rfind('    source = replace_once(', 0, label_position)
+          block_end = source.index(chr(10) + '    )', label_position) + len(chr(10) + '    )')
+
+          old_pattern = chr(10).join([
+              '    return json(res, 200, {',
+              '      ticker,',
+              '      chainId,',
+              '      available: false,',
+              '      reason: blockedReason(result.reservation?.status),',
+          ])
+          new_pattern = chr(10).join([
+              '    return json(res, 200, {',
+              '      ticker,',
+              '      chainId,',
+              '      cluster: result.cluster,',
+              '      available: false,',
+              '      reason: blockedReason(result.reservation?.status),',
+          ])
+          replacement = chr(10).join([
+              '    source = replace_once(',
+              '        source,',
+              f'        {old_pattern!r},',
+              f'        {new_pattern!r},',
+              '        "blocked response cluster",',
+              '    )',
+          ])
+          path.write_text(source[:block_start] + replacement + source[block_end:], encoding='utf-8')
 
       - name: Apply cluster-scoped reservation source
         run: python scripts/apply-ticker-cluster-scope.py
