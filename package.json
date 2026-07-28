@@ -18,6 +18,7 @@
     "safe:treasury-v2-batch:bsc-testnet": "hardhat run scripts/export-treasury-v2-safe-batch.ts --network bscTestnet",
     "wire:treasury-v2-admin:bsc-testnet": "cross-env EXECUTE_TREASURY_V2_ADMIN_ACTIONS=true hardhat run scripts/export-treasury-v2-safe-batch.ts --network bscTestnet",
     "deploy:scheduled-test-factory:bsc-testnet": "hardhat run scripts/deploy-scheduled-test-factory.ts --network bscTestnet",
+    "recover:scheduled-test-factory:bsc-testnet": "hardhat run scripts/recover-scheduled-test-factory.ts --network bscTestnet",
     "activate:scheduled-test-factory": "hardhat run scripts/activate-scheduled-test-factory.ts",
     "activate:scheduled-test-factory:bsc-testnet": "hardhat run scripts/activate-scheduled-test-factory.ts --network bscTestnet",
     "deploy:with-topaz-manifest": "hardhat run scripts/deploy-with-topaz-manifest.ts",
