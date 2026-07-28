@@ -49,6 +49,14 @@ async function enrichPayload(payload, pool) {
   return payload;
 }
 
+function belongsInDraftSection(item, nowMs = Date.now()) {
+  const status = String(item?.status || "draft");
+  if (status === "deployed") return false;
+  if (status !== "scheduled") return true;
+  const launchMs = item?.scheduledLaunchAt ? Date.parse(String(item.scheduledLaunchAt)) : NaN;
+  return Number.isFinite(launchMs) && launchMs > nowMs;
+}
+
 function mergeDraftItems(primary, lifecycle) {
   const byId = new Map();
   for (const item of [...(primary || []), ...(lifecycle || [])]) {
@@ -76,7 +84,7 @@ export async function drafts(req, res) {
     if (!pool) return json(res, 200, { items: [] });
     const chainId = query.chainId ? Number(query.chainId) : null;
     const limit = Math.max(1, Math.min(500, Number(query.limit || 200) || 200));
-    const items = await listPublicCampaignLifecycleDrafts(pool, { chainId, limit });
+    const items = await listPublicCampaignLifecycleDrafts(pool, { chainId, limit, includeLaunched: true });
     return json(res, 200, { items });
   }
 
@@ -85,16 +93,26 @@ export async function drafts(req, res) {
 
   return runJsonTransform(base.drafts, req, res, async (payload) => {
     const enriched = await enrichPayload(payload, pool);
+    if (!Array.isArray(enriched?.items)) return enriched;
+
+    const nowMs = Date.now();
+    const draftItems = enriched.items.filter((item) => belongsInDraftSection(item, nowMs));
     const isPublicList = req.method === "GET" && !String(query.owner || "").trim();
-    if (!isPublicList || !Array.isArray(enriched?.items) || !pool) return enriched;
+    if (!isPublicList || !pool) return { ...enriched, items: draftItems };
 
     const chainId = query.chainId ? Number(query.chainId) : null;
     const limit = Math.max(1, Math.min(500, Number(query.limit || 50) || 50));
-    const lifecycleItems = await listPublicCampaignLifecycleDrafts(pool, { chainId, limit });
+    const lifecycleItems = await listPublicCampaignLifecycleDrafts(pool, {
+      chainId,
+      limit,
+      includeLaunched: false,
+    });
 
     return {
       ...enriched,
-      items: mergeDraftItems(enriched.items, lifecycleItems).slice(0, limit),
+      items: mergeDraftItems(draftItems, lifecycleItems)
+        .filter((item) => belongsInDraftSection(item, nowMs))
+        .slice(0, limit),
     };
   });
 }

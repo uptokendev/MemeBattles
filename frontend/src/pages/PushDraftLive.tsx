@@ -16,6 +16,7 @@ import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel } from "@/lib/gradua
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
 import { deployScheduledDraftCampaignV2 } from "@/lib/scheduledLaunchClientV2";
+import { getScheduledFactoryAddress } from "@/lib/scheduledFactoryConfig";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
   String(import.meta.env.VITE_DRAFT_PUSH_LIVE_ENABLED || import.meta.env.VITE_ENABLE_DRAFT_PUSH_LIVE || "")
@@ -98,6 +99,10 @@ export default function PushDraftLive() {
   const logoURI = useMemo(() => resolveImageUri(draft?.logoUrl) || draft?.logoUrl || "", [draft?.logoUrl]);
   const chainLabel = draft ? getChainLabel(Number(draft.chainId)) : "Unknown";
   const selectedTier = graduationTierLabel(graduationTargetWei);
+  const scheduledFactoryAddress = useMemo(
+    () => getScheduledFactoryAddress(Number(draft?.chainId || 0), launchpad.factoryAddress),
+    [draft?.chainId, launchpad.factoryAddress],
+  );
 
   const deploy = async () => {
     if (!draft) return;
@@ -108,7 +113,12 @@ export default function PushDraftLive() {
     if (Number(wallet.chainId) !== Number(draft.chainId)) return toast.error(`Switch your wallet to ${chainLabel}.`);
     if (!canPushLive(draft.status)) return toast.error("Publish the promotion page before deployment.");
     if (!logoURI) return toast.error("Draft needs a saved logo URL before deployment.");
-    if (!launchpad.factoryAddress) return toast.error("LaunchFactory is not configured for this network.");
+    if (mode === "scheduled" && !scheduledFactoryAddress) {
+      return toast.error("Scheduled LaunchFactory is not configured for this network.");
+    }
+    if (mode === "now" && !launchpad.factoryAddress) {
+      return toast.error("LaunchFactory is not configured for this network.");
+    }
 
     const deployAuth = await signDraftAction({
       signer: wallet.signer,
@@ -134,7 +144,7 @@ export default function PushDraftLive() {
           signer: wallet.signer,
           auth: deployAuth,
           chainId: draft.chainId,
-          factoryAddress: launchpad.factoryAddress,
+          factoryAddress: scheduledFactoryAddress,
           draftId: draft.id,
           launchAt,
           graduationTargetWei,
