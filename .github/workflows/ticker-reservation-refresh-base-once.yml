@@ -1,0 +1,38 @@
+name: Refresh ticker branch onto scheduled lifecycle
+
+on:
+  pull_request:
+    branches:
+      - agent/scheduled-launch-lifecycle
+    paths:
+      - .github/workflows/ticker-reservation-refresh-base-once.yml
+  push:
+    branches:
+      - agent/solana-v2-ticker-reservations
+    paths:
+      - .github/workflows/ticker-reservation-refresh-base-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ticker reservation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-ticker-reservations
+          fetch-depth: 0
+
+      - name: Merge latest scheduled lifecycle base
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin agent/scheduled-launch-lifecycle
+          git merge --no-edit origin/agent/scheduled-launch-lifecycle
+          git diff --check HEAD^ HEAD
+          git push origin HEAD:agent/solana-v2-ticker-reservations
