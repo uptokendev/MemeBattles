@@ -269,7 +269,7 @@ inserted_drafts as (
     factory_address,
     campaign_address,
     token_address,
-    deploy_txHash,
+    deploy_tx_hash,
     1,
     jsonb_build_object(
       'source', 'campaign_drafts_backfill',
