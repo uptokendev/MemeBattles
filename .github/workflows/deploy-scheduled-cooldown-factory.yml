@@ -1,6 +1,12 @@
 name: Deploy scheduled cooldown factory
 
 on:
+  push:
+    branches:
+      - agent/fix-scheduled-cooldown-timezone
+    paths:
+      - scripts/deploy-scheduled-cooldown-factory.ts
+      - .github/workflows/deploy-scheduled-cooldown-factory.yml
   pull_request:
     branches:
       - devpostgrad
