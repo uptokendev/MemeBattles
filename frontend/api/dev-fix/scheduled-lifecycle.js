@@ -136,6 +136,7 @@ export async function listPublicCampaignLifecycleDrafts(pool, { chainId = null, 
   const where = [
     "visibility = 'public'",
     "campaign_address is not null",
+    "scheduled_launch_at is not null",
     "status = any($1::text[])",
   ];
   if (chainId) {
