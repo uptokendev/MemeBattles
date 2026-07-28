@@ -1,9 +1,10 @@
 name: Ticker Reservation Cluster Scope V3
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/solana-v2-ticker-reservations
+      - agent/scheduled-launch-lifecycle
+      - devpostgrad
     paths:
       - scripts/apply-ticker-cluster-scope.py
       - .github/workflows/ticker-reservation-cluster-scope-v3.yml
@@ -53,5 +54,3 @@ jobs:
             frontend/api/dev-fix/ticker-reservation-service.test.mjs
           git commit -m 'Scope ticker reservations by chain cluster'
           git push origin HEAD:agent/solana-v2-ticker-reservations
-
-# trigger: deterministic-cluster-scope-v1
