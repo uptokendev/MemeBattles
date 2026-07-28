@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { draftDeploy } from "./draft-deploy.js";
 import { solanaCreateAuthorizationV4 } from "./solana-create-authorization-v4.js";
 
 function responseRecorder() {
@@ -72,5 +73,49 @@ test("Direct Create remains blocked until canonical reservation preflight exists
     await solanaCreateAuthorizationV4(request({ mode: "direct_create" }), res);
     assert.equal(res.statusCode, 409);
     assert.equal(res.body.code, "SOLANA_DIRECT_CREATE_NOT_READY");
+  });
+});
+
+test("draft deploy route requires accepted generation-manifest evidence", async () => {
+  await withEnv({ SOLANA_GENERATION_MANIFEST_HASH: null }, async () => {
+    const res = responseRecorder();
+    await draftDeploy(
+      request({
+        operation: "authorize_solana_v4",
+        graduationTargetUsdMicros: "6000000",
+        launchAt: "0",
+      }),
+      res,
+    );
+    assert.equal(res.statusCode, 503);
+    assert.equal(res.body.code, "SOLANA_CREATE_CONFIGURATION_INCOMPLETE");
+  });
+});
+
+test("draft deploy route rejects malformed unsigned Solana economics and time values", async () => {
+  await withEnv({ SOLANA_GENERATION_MANIFEST_HASH: "a".repeat(64) }, async () => {
+    const targetRes = responseRecorder();
+    await draftDeploy(
+      request({
+        operation: "authorize_solana_v4",
+        graduationTargetUsdMicros: "6.00",
+        launchAt: "0",
+      }),
+      targetRes,
+    );
+    assert.equal(targetRes.statusCode, 400);
+    assert.equal(targetRes.body.code, "SOLANA_GRADUATION_TARGET_INVALID");
+
+    const launchRes = responseRecorder();
+    await draftDeploy(
+      request({
+        operation: "authorize_solana_v4",
+        graduationTargetUsdMicros: "6000000",
+        launchAt: "tomorrow",
+      }),
+      launchRes,
+    );
+    assert.equal(launchRes.statusCode, 400);
+    assert.equal(launchRes.body.code, "SOLANA_LAUNCH_TIME_INVALID");
   });
 });
