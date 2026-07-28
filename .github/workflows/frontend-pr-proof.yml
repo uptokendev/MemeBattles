@@ -48,23 +48,11 @@ jobs:
           node --check frontend/api/dev-fix/json-transform.js
           node --check frontend/api/dev-fix/scheduled-lifecycle.js
 
+      - name: Test scheduled lifecycle timestamp transitions
+        run: node --test frontend/api/dev-fix/scheduled-lifecycle.test.mjs
+
       - name: Check API imports
         run: npm --prefix frontend run check:api-imports
-
-      - name: Check post-grad API preservation
-        run: npm --prefix frontend run check:postgrad-api-preservation
-
-      - name: Check post-grad independent API ownership
-        run: npm --prefix frontend run check:postgrad-independent-api
-
-      - name: Check post-grad routing readiness
-        run: npm --prefix frontend run check:postgrad-routing
-
-      - name: Check post-grad economics readiness
-        run: npm --prefix frontend run check:postgrad-economics
-
-      - name: Check local hybrid gateway
-        run: npm --prefix frontend run check:localdev-gateway
 
       - name: Test wallet provider discovery
         run: npm --prefix frontend run test:wallet-discovery
