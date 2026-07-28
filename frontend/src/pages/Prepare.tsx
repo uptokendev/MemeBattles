@@ -5,9 +5,8 @@ import { Rocket } from "lucide-react";
 import PrepareBase from "./PrepareBase";
 import { ScheduledLaunchCountdown } from "@/components/prepare/ScheduledLaunchCountdown";
 import { Button } from "@/components/ui/button";
-import { useWallet } from "@/contexts/WalletContext";
-import { fetchPrepareDraft, type PrepareDraftBundle } from "@/lib/draftApi";
 import {
+  fetchPublicCampaignLifecycleDrafts,
   readCampaignLaunchAt,
   timestampSeconds,
   type CampaignDraftLifecycle,
@@ -15,26 +14,25 @@ import {
 
 export default function Prepare() {
   const { slug = "memewarzone-mwz-demo" } = useParams();
-  const wallet = useWallet();
-  const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
+  const [draft, setDraft] = useState<CampaignDraftLifecycle | null>(null);
   const [onChainLaunchAt, setOnChainLaunchAt] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
-    void fetchPrepareDraft(slug, wallet.account)
-      .then((value) => {
-        if (!cancelled) setBundle(value);
+    void fetchPublicCampaignLifecycleDrafts({ limit: 500 })
+      .then((items) => {
+        if (cancelled) return;
+        setDraft(items.find((item) => String(item.slug) === String(slug)) || null);
       })
       .catch(() => {
-        if (!cancelled) setBundle(null);
+        if (!cancelled) setDraft(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [slug, wallet.account]);
+  }, [slug]);
 
-  const draft = bundle?.draft as CampaignDraftLifecycle | undefined;
   const storedScheduledLaunchAt = timestampSeconds(draft?.scheduledLaunchAt);
 
   useEffect(() => {
