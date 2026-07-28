@@ -1,0 +1,445 @@
+name: Ticker Reservation Integration V2
+
+on:
+  pull_request:
+    branches:
+      - agent/scheduled-launch-lifecycle
+    paths:
+      - .github/workflows/ticker-reservation-integration-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-ticker-reservations
+          fetch-depth: 0
+
+      - name: Patch canonical reservation lifecycle
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return source.replace(old, new, 1)
+
+          service_path = Path('frontend/api/dev-fix/ticker-reservation-service.js')
+          service = service_path.read_text(encoding='utf-8')
+          idempotency_marker = 'reservation.status === TICKER_RESERVATION_STATUS.PREPARE_MODE_RESERVED &&'
+          if idempotency_marker not in service:
+              old = "\n".join([
+                  '  if (LOCKED_ONCHAIN_STATUSES.has(reservation.status)) return reservation;',
+                  '',
+                  '  const terms = reservationTerms({ published: true, now: new Date(publishedAt) });',
+              ])
+              new = "\n".join([
+                  '  if (LOCKED_ONCHAIN_STATUSES.has(reservation.status)) return reservation;',
+                  '  if (',
+                  '    reservation.status === TICKER_RESERVATION_STATUS.PREPARE_MODE_RESERVED &&',
+                  '    reservation.publishedAt &&',
+                  '    reservation.expiresAt &&',
+                  '    new Date(reservation.expiresAt).getTime() > Date.now()',
+                  '  ) {',
+                  '    return reservation;',
+                  '  }',
+                  '',
+                  '  const terms = reservationTerms({ published: true, now: new Date(publishedAt) });',
+              ])
+              service = replace_once(service, old, new, 'published reservation idempotency')
+              service_path.write_text(service, encoding='utf-8')
+
+          drafts_path = Path('frontend/api/dev-fix/drafts-base.js')
+          drafts = drafts_path.read_text(encoding='utf-8')
+          if 'from "./ticker-reservation-service.js";' not in drafts:
+              drafts = replace_once(
+                  drafts,
+                  'import { notifyDraftOwner } from "./prepare-notify.js";\n',
+                  dedent('''\
+                  import { notifyDraftOwner } from "./prepare-notify.js";
+                  import {
+                    TickerReservationError,
+                    createTickerReservation,
+                    isTickerReservationConflict,
+                    promoteTickerReservation,
+                    releaseTickerReservation,
+                    withTickerReservationTransaction,
+                  } from "./ticker-reservation-service.js";
+                  '''),
+                  'draft reservation imports',
+              )
+
+          if 'DRAFT_LIMIT_REACHED' not in drafts:
+              create_start = drafts.index('    const limitRes = await pool.query("select count(*)::int as count from campaign_drafts')
+              create_end_marker = '    return json(res, 201, { draft });'
+              create_end = drafts.index(create_end_marker, create_start) + len(create_end_marker)
+              create_replacement = dedent('''\
+                  try {
+                    const created = await withTickerReservationTransaction(pool, async (db) => {
+                      const limitRes = await db.query("select count(*)::int as count from campaign_drafts where creator_wallet = $1 and status <> 'archived'", [creatorWallet]);
+                      if (Number(limitRes.rows[0]?.count || 0) >= 10) {
+                        throw new TickerReservationError("Draft limit reached. Max 10 non-archived drafts per creator.", {
+                          code: "DRAFT_LIMIT_REACHED",
+                          httpStatus: 409,
+                        });
+                      }
+
+                      const inserted = await db.query(
+                        "insert into campaign_drafts (chain_id, creator_wallet, name, ticker, description, category, logo_url, website_url, x_url, other_url, slug, status, visibility) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12) returning *",
+                        [
+                          chainId,
+                          creatorWallet,
+                          name,
+                          ticker,
+                          cleanText(body.description, 1200) || null,
+                          cleanText(body.category, 40) || "meme",
+                          cleanUrl(body.logoUrl) || null,
+                          cleanUrl(body.websiteUrl) || null,
+                          cleanUrl(body.xUrl) || null,
+                          cleanUrl(body.otherUrl) || null,
+                          makeSlug(name, ticker),
+                          visibility,
+                        ],
+                      );
+
+                      const draft = mapDraftRow(inserted.rows[0]);
+                      const tickerReservation = await createTickerReservation(db, {
+                        draftId: draft.id,
+                        creatorWallet,
+                        chainId,
+                        cluster: body.cluster || body.networkCluster || "",
+                        ticker,
+                        published: visibility === "public",
+                      });
+                      await db.query("insert into campaign_draft_promotion (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
+                      await db.query("insert into campaign_draft_metrics (draft_id) values ($1) on conflict (draft_id) do nothing", [draft.id]);
+                      return { draft, tickerReservation };
+                    });
+                    return json(res, 201, created);
+                  } catch (error) {
+                    if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+                      return json(res, error.httpStatus || 409, {
+                        error: error.message || "Ticker already reserved by an active draft or live campaign.",
+                        code: error.code || "TICKER_UNAVAILABLE",
+                      });
+                    }
+                    throw error;
+                  }''')
+              create_replacement = '\n'.join('    ' + line if line else '' for line in create_replacement.splitlines())
+              drafts = drafts[:create_start] + create_replacement + drafts[create_end:]
+
+          if 'Prepare Mode published; ticker reservation extended' not in drafts:
+              promotion_start = drafts.index('    await pool.query(\n      "insert into campaign_draft_promotion')
+              promotion_end_marker = '    const updated = await getDraftBundleById(id, "", { bypassVisibility: true });'
+              promotion_end = drafts.index(promotion_end_marker, promotion_start) + len(promotion_end_marker)
+              promotion_replacement = dedent('''\
+                  const updateVis = publish ? "public" : (visibility || null);
+                  try {
+                    await withTickerReservationTransaction(pool, async (db) => {
+                      await db.query(
+                        "insert into campaign_draft_promotion (draft_id, mission_statement, roadmap, launch_strategy, telegram_url, discord_url, x_url, website_url, docs, creator_note, banner_url, share_message, published_at, updated_at) values ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,now()) on conflict (draft_id) do update set mission_statement = excluded.mission_statement, roadmap = excluded.roadmap, launch_strategy = excluded.launch_strategy, telegram_url = excluded.telegram_url, discord_url = excluded.discord_url, x_url = excluded.x_url, website_url = excluded.website_url, docs = excluded.docs, creator_note = excluded.creator_note, banner_url = excluded.banner_url, share_message = excluded.share_message, published_at = coalesce(excluded.published_at, campaign_draft_promotion.published_at), updated_at = now()",
+                        [id, promotion.missionStatement, JSON.stringify(promotion.roadmap), promotion.launchStrategy, promotion.telegramUrl, promotion.discordUrl, promotion.xUrl, promotion.websiteUrl, JSON.stringify(promotion.docs), promotion.creatorNote, promotion.bannerUrl, promotion.shareMessage, publish ? now : null],
+                      );
+                      await db.query("update campaign_drafts set visibility = coalesce($2, visibility), status = case when $3 then 'promotion_published' else status end, updated_at = now() where id = $1", [id, updateVis, publish]);
+                      if (publish) {
+                        await promoteTickerReservation(db, {
+                          draftId: id,
+                          creatorWallet: before.creator_wallet,
+                          chainId: Number(before.chain_id),
+                          cluster: body.cluster || body.networkCluster || "",
+                          ticker: before.ticker,
+                          publishedAt: new Date(now),
+                        });
+                      }
+                    });
+                  } catch (error) {
+                    if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+                      return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+                    }
+                    throw error;
+                  }
+                  const updated = await getDraftBundleById(id, "", { bypassVisibility: true });''')
+              promotion_replacement = '\n'.join('    ' + line if line else '' for line in promotion_replacement.splitlines())
+              drafts = drafts[:promotion_start] + promotion_replacement + drafts[promotion_end:]
+
+          archive_marker = 'Draft archived by creator; ticker returned to the chain availability pool.'
+          if archive_marker not in drafts:
+              old = dedent('''\
+                await pool.query("update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1", [id]);
+                const updated = await getDraftBundleById(id, "", { bypassVisibility: true });''')
+              new = dedent('''\
+                try {
+                  await withTickerReservationTransaction(pool, async (db) => {
+                    await db.query("update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1", [id]);
+                    await releaseTickerReservation(db, {
+                      draftId: id,
+                      creatorWallet: row.creator_wallet,
+                      reason: "Draft archived by creator; ticker returned to the chain availability pool.",
+                    });
+                  });
+                } catch (error) {
+                  if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+                    return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+                  }
+                  throw error;
+                }
+                const updated = await getDraftBundleById(id, "", { bypassVisibility: true });''')
+              drafts = replace_once(drafts, old, new, 'archive reservation release')
+
+          drafts_path.write_text(drafts, encoding='utf-8')
+
+          wrapper_path = Path('frontend/api/dev-fix/drafts.js')
+          wrapper = wrapper_path.read_text(encoding='utf-8')
+          if 'loadTickerReservationsByDraftIds' not in wrapper:
+              wrapper = replace_once(
+                  wrapper,
+                  '} from "./scheduled-lifecycle.js";\n',
+                  dedent('''\
+                  } from "./scheduled-lifecycle.js";
+                  import {
+                    loadTickerReservationByDraft,
+                    loadTickerReservationsByDraftIds,
+                  } from "./ticker-reservation-service.js";
+                  '''),
+                  'draft wrapper imports',
+              )
+              payload_start = wrapper.index('async function enrichPayload(payload, pool) {')
+              payload_end = wrapper.index('\n}\n\nfunction mergeDraftItems', payload_start) + 2
+              payload_replacement = dedent('''\
+              async function enrichPayload(payload, pool) {
+                if (!payload || typeof payload !== "object") return payload;
+
+                if (Array.isArray(payload.items)) {
+                  const items = await enrichDraftItems(pool, payload.items);
+                  if (!pool) return { ...payload, items };
+                  const reservations = await loadTickerReservationsByDraftIds(pool, items.map((item) => item.id));
+                  return {
+                    ...payload,
+                    items: items.map((item) => ({
+                      ...item,
+                      tickerReservation: reservations.get(String(item.id)) || null,
+                    })),
+                  };
+                }
+
+                if (payload.draft?.id) {
+                  const row = await loadDraftRowById(pool, payload.draft.id);
+                  const tickerReservation = pool
+                    ? await loadTickerReservationByDraft(pool, payload.draft.id, { includeReleased: true })
+                    : null;
+                  return {
+                    ...payload,
+                    draft: {
+                      ...augmentDraftLifecycle(payload.draft, row),
+                      tickerReservation,
+                    },
+                  };
+                }
+
+                return payload;
+              }''')
+              wrapper = wrapper[:payload_start] + payload_replacement + wrapper[payload_end:]
+              wrapper_path.write_text(wrapper, encoding='utf-8')
+
+          deploy_path = Path('frontend/api/dev-fix/draft-deploy-base.js')
+          deploy = deploy_path.read_text(encoding='utf-8')
+          if 'authorizeScheduledTickerReservation' not in deploy:
+              deploy = replace_once(
+                  deploy,
+                  'import { signScheduledCreateAuthorization } from "./routeAuthorizationSigner.js";\n',
+                  dedent('''\
+                  import { signScheduledCreateAuthorization } from "./routeAuthorizationSigner.js";
+                  import {
+                    TickerReservationError,
+                    authorizeScheduledTickerReservation,
+                    isTickerReservationConflict,
+                    markTickerReservationDeployed,
+                    withTickerReservationTransaction,
+                  } from "./ticker-reservation-service.js";
+                  '''),
+                  'deploy reservation imports',
+              )
+
+              auth_start = deploy.index('  const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);')
+              auth_end_marker = dedent('''\
+                return json(res, 200, {
+                  scheduledRequest,
+                  authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
+                  preflight,
+                });''')
+              auth_end = deploy.index(auth_end_marker, auth_start) + len(auth_end_marker)
+              auth_replacement = dedent('''\
+                const { tradeRouteProfileId, finalizeRouteProfileId, decision } = await getRouteDecision(walletAddress);
+                const normalizedTickerHash = hashText(campaign.symbol);
+                const metadataHash = ethers.keccak256(
+                  ethers.AbiCoder.defaultAbiCoder().encode(
+                    ["bytes32", "bytes32", "bytes32", "bytes32"],
+                    [hashText(campaign.logoURI), hashText(campaign.xAccount), hashText(campaign.website), hashText(campaign.extraLink)],
+                  ),
+                );
+                const deadline = now + 10 * 60;
+                const validUntil = new Date(deadline * 1000).toISOString();
+
+                try {
+                  const canonical = await authorizeScheduledTickerReservation(pool, {
+                    draftId,
+                    creatorWallet: walletAddress,
+                    launchAt,
+                    buildAuthorization: async (reservation) => {
+                      const draftReferenceHash = `0x${reservation.reservationIdHash}`;
+                      const reservationVersion = reservation.reservationVersion;
+                      const authorizationNonce = BigInt(reservation.authorizationNonce);
+                      const scheduledRequest = {
+                        campaign,
+                        launchAt,
+                        draftReferenceHash,
+                        normalizedTickerHash,
+                        metadataHash,
+                        reservationId: reservation.id,
+                        reservationIdHash: reservation.reservationIdHash,
+                        reservationVersion,
+                        authorizationNonce: authorizationNonce.toString(),
+                      };
+                      const signature = await signScheduledCreateAuthorization({
+                        signer: routeSigner,
+                        chainId,
+                        factoryAddress,
+                        creator: walletAddress,
+                        request: scheduledRequest,
+                        launchAt,
+                        draftReferenceHash,
+                        normalizedTickerHash,
+                        metadataHash,
+                        reservationVersion,
+                        authorizationNonce,
+                        tradeRouteProfileId,
+                        finalizeRouteProfileId,
+                        deadline,
+                      });
+                      return {
+                        scheduledRequest,
+                        authorization: { tradeRouteProfileId, finalizeRouteProfileId, validUntil, signature },
+                      };
+                    },
+                  });
+
+                  await logRouteAuthorization({
+                    chainId,
+                    walletAddress,
+                    routeKind: "scheduled_create",
+                    routeProfileId: tradeRouteProfileId,
+                    finalizeRouteProfileId,
+                    factoryAddress,
+                    decision,
+                    routeAuthority: routeSigner.address,
+                    authorizationDeadline: deadline,
+                    validUntil,
+                    metadata: {
+                      endpoint: `/api/drafts/${draftId}/deploy`,
+                      operation: "authorize_scheduled",
+                      scheduledRequest: canonical.scheduledRequest,
+                      tickerReservation: canonical.reservation,
+                      preflight,
+                    },
+                  });
+
+                  return json(res, 200, {
+                    scheduledRequest: canonical.scheduledRequest,
+                    authorization: canonical.authorization,
+                    tickerReservation: canonical.reservation,
+                    preflight,
+                  });
+                } catch (error) {
+                  if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+                    return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+                  }
+                  throw error;
+                }''')
+              deploy = deploy[:auth_start] + auth_replacement + deploy[auth_end:]
+
+              confirm_start = deploy.index('  const updated = await pool.query(\n    `update campaign_drafts')
+              confirm_end_marker = '  const draft = mapDraftRow(updated.rows[0]);'
+              confirm_end = deploy.index(confirm_end_marker, confirm_start) + len(confirm_end_marker)
+              confirm_replacement = dedent('''\
+                let deployed;
+                try {
+                  deployed = await withTickerReservationTransaction(pool, async (db) => {
+                    const updated = await db.query(
+                      `update campaign_drafts
+                          set status = case when $5::bigint is not null then 'scheduled' else 'deployed' end,
+                              visibility = 'public',
+                              campaign_address = $2,
+                              token_address = coalesce($3, token_address),
+                              deploy_tx_hash = coalesce($4, deploy_tx_hash),
+                              scheduled_launch_at = case when $5::bigint is not null then to_timestamp($5) else null end,
+                              deployed_at = coalesce(deployed_at, now()),
+                              updated_at = now()
+                        where id::text = $1
+                        returning *`,
+                      [draftId, campaignAddress, tokenAddress || null, deployTxHash, isScheduled ? scheduledLaunchAt : null],
+                    );
+                    const draft = mapDraftRow(updated.rows[0]);
+                    const tickerReservation = await markTickerReservationDeployed(db, {
+                      draftId,
+                      creatorWallet: row.creator_wallet,
+                      campaignAddress,
+                      mint: tokenAddress || null,
+                      deploymentSignature: deployTxHash,
+                      scheduledLaunchAt: isScheduled ? scheduledLaunchAt : null,
+                      programId: String(body.factoryAddress || "").trim() || null,
+                      generationId: body.generationId == null ? null : String(body.generationId),
+                    });
+                    return { draft, tickerReservation };
+                  });
+                } catch (error) {
+                  if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
+                    return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
+                  }
+                  throw error;
+                }
+
+                const draft = deployed.draft;''')
+              deploy = deploy[:confirm_start] + confirm_replacement + deploy[confirm_end:]
+              deploy = replace_once(
+                  deploy,
+                  '  return json(res, 200, { draft });\n',
+                  '  return json(res, 200, { draft, tickerReservation: deployed.tickerReservation });\n',
+                  'deployment response reservation',
+              )
+              deploy_path.write_text(deploy, encoding='utf-8')
+
+      - name: Verify integration source
+        shell: bash
+        run: |
+          node --check frontend/api/dev-fix/ticker-reservation-service.js
+          node --check frontend/api/dev-fix/ticker-availability.js
+          node --check frontend/api/dev-fix/drafts-base.js
+          node --check frontend/api/dev-fix/drafts.js
+          node --check frontend/api/dev-fix/draft-deploy-base.js
+          git diff --check
+          git diff --stat
+
+      - name: Commit integration source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            frontend/api/dev-fix/ticker-reservation-service.js \
+            frontend/api/dev-fix/drafts-base.js \
+            frontend/api/dev-fix/drafts.js \
+            frontend/api/dev-fix/draft-deploy-base.js
+          if ! git diff --cached --quiet; then
+            git commit -m 'Wire canonical ticker reservation lifecycle'
+            git push origin HEAD:agent/solana-v2-ticker-reservations
+          fi
