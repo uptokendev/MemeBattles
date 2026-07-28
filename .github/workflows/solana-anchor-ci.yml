@@ -9,6 +9,8 @@ on:
       - Cargo.toml
       - Cargo.lock
       - programs/memewarzone_solana/**
+      - scripts/check-solana-v4-idl.mjs
+      - frontend/src/lib/solanaCreateAuthorizationV4.ts
       - .github/workflows/solana-anchor-ci.yml
   workflow_dispatch:
 
@@ -96,6 +98,13 @@ jobs:
           test -s target/deploy/memewarzone_solana.so
           test -s target/idl/memewarzone_solana.json
 
+      - name: Verify V4 generated IDL client boundary
+        run: |
+          node scripts/check-solana-v4-idl.mjs \
+            target/idl/memewarzone_solana.json \
+            target/idl/memewarzone_solana.v4.binding.json
+          test -s target/idl/memewarzone_solana.v4.binding.json
+
       - name: Test Solana program invariants
         run: cargo test -p memewarzone_solana --lib
 
@@ -108,3 +117,4 @@ jobs:
           path: |
             target/deploy/memewarzone_solana.so
             target/idl/memewarzone_solana.json
+            target/idl/memewarzone_solana.v4.binding.json
