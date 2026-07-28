@@ -25,6 +25,7 @@
     "check:featured-feed": "node scripts/check-featured-feed.mjs",
     "check:security-schema": "node --import ./api/load-local-env.mjs scripts/check-security-schema.mjs",
     "check:security-api": "node scripts/check-security-api-smoke.mjs",
+    "test:draft-auth": "node --test api/dev-fix/draft-auth.test.mjs",
     "worker:contract-sync": "node --import ./api/load-local-env.mjs scripts/run-contract-sync-worker.mjs",
     "check:weekly-airdrop": "node --check scripts/weekly-airdrop/config.mjs && node --check scripts/weekly-airdrop/candidates.mjs && node --check scripts/weekly-airdrop/materialize.mjs && node --check scripts/weekly-airdrop/chain.mjs && node --check scripts/weekly-airdrop/run-weekly-airdrop.mjs",
     "airdrop:weekly": "node --import ./api/load-local-env.mjs scripts/weekly-airdrop/run-weekly-airdrop.mjs",
