@@ -1,0 +1,23 @@
+/* Prepare Mode owner-action feedback and visibility selection. */
+.mwz-button[aria-pressed="true"] {
+  border-color: rgb(251 146 60 / 0.95) !important;
+  background: linear-gradient(180deg, rgb(249 115 22 / 0.38), rgb(194 65 12 / 0.24)) !important;
+  color: rgb(255 247 237) !important;
+  box-shadow:
+    0 0 0 2px rgb(249 115 22 / 0.28),
+    0 0 22px rgb(249 115 22 / 0.25) !important;
+  transform: translateY(-1px);
+}
+
+.mwz-button[aria-pressed="true"]::before {
+  content: "✓ ";
+  font-weight: 800;
+}
+
+.mwz-button[aria-pressed="false"] {
+  opacity: 0.72;
+}
+
+.mwz-button[aria-pressed="false"]:hover {
+  opacity: 1;
+}
