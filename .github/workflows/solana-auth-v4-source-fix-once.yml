@@ -1,6 +1,12 @@
 name: Apply one-shot Solana authorization V4 digest migration
 
 on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - .github/workflows/solana-auth-v4-source-fix-once.yml
+      - programs/memewarzone_solana/src/authorized_create.rs
   push:
     branches:
       - agent/solana-v2-phase0-refresh
@@ -28,6 +34,10 @@ jobs:
 
           path = Path('programs/memewarzone_solana/src/authorized_create.rs')
           source = path.read_text(encoding='utf-8')
+
+          if 'MEMEWARZONE_SOLANA_CREATE_V4' in source:
+              print('Authorization source is already on V4; no patch required.')
+              raise SystemExit(0)
 
           if source.count('MEMEWARZONE_SOLANA_CREATE_V3') != 1:
               raise SystemExit('Expected exactly one V3 authorization domain')
@@ -86,6 +96,10 @@ jobs:
       - name: Commit authorization V4 source change
         shell: bash
         run: |
+          if git diff --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add programs/memewarzone_solana/src/authorized_create.rs
