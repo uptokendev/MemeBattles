@@ -14,10 +14,11 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
-idl-build = ["anchor-lang/idl-build"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }
 blake3 = { workspace = true }
 borsh = { workspace = true }
 proc-macro2 = { workspace = true }
