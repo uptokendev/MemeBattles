@@ -1,0 +1,97 @@
+name: Apply one-shot Solana validator confirmation fix
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - .github/workflows/solana-validator-confirmation-fix-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    if: github.repository == 'uptokendev/MemeBattles'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/solana-v2-phase0-refresh
+          fetch-depth: 0
+
+      - name: Confirm unsolicited SOL transfer before asserting state
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('tests/solana/v4-create-acceptance.cjs')
+          source = path.read_text(encoding='utf-8')
+
+          verification = '''    await verifySuccessfulCreate({
+                creatorState,
+                args,
+                result,
+                expectedScheduledLaunch: null,
+              });
+
+              const balanceBefore = await connection.getBalance('''
+          replacement = '''    await verifySuccessfulCreate({
+                creatorState,
+                args,
+                result,
+                expectedScheduledLaunch: null,
+              });
+
+              // Preserve the successful create fixture independently from the
+              // unsolicited-transfer assertion so replay testing remains focused.
+              directScenario = { creatorState, args, result };
+
+              const balanceBefore = await connection.getBalance('''
+          if source.count(verification) != 1:
+              raise SystemExit(
+                  f'Expected one Direct Create verification block, found {source.count(verification)}'
+              )
+          source = source.replace(verification, replacement, 1)
+
+          old_send = '    await connection.sendTransaction(transfer, [creatorState.creator]);'
+          new_send = '''    await provider.sendAndConfirm(
+                transfer,
+                [creatorState.creator],
+                { commitment: "confirmed", preflightCommitment: "confirmed" },
+              );'''
+          if source.count(old_send) != 1:
+              raise SystemExit(
+                  f'Expected one unconfirmed transfer send, found {source.count(old_send)}'
+              )
+          source = source.replace(old_send, new_send, 1)
+
+          trailing_fixture = '\n\n    directScenario = { creatorState, args, result };\n'
+          if source.count(trailing_fixture) != 1:
+              raise SystemExit(
+                  f'Expected one trailing replay fixture assignment, found {source.count(trailing_fixture)}'
+              )
+          source = source.replace(trailing_fixture, '\n', 1)
+
+          path.write_text(source, encoding='utf-8')
+
+      - name: Verify test patch
+        shell: bash
+        run: |
+          node --check tests/solana/v4-create-acceptance.cjs
+          git diff --check
+          git diff -- tests/solana/v4-create-acceptance.cjs
+
+      - name: Commit test confirmation fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No test changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/solana/v4-create-acceptance.cjs
+          git commit -m 'Confirm Solana validator transfer before assertions'
+          git push origin HEAD:agent/solana-v2-phase0-refresh
