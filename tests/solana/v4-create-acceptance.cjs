@@ -603,6 +603,10 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
       expectedScheduledLaunch: null,
     });
 
+    // Preserve the successful create fixture independently from the
+    // unsolicited-transfer assertion so replay testing remains focused.
+    directScenario = { creatorState, args, result };
+
     const balanceBefore = await connection.getBalance(
       result.accounts.solVault,
       "confirmed",
@@ -614,7 +618,11 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
         lamports: 50_000_000,
       }),
     );
-    await connection.sendTransaction(transfer, [creatorState.creator]);
+    await provider.sendAndConfirm(
+      transfer,
+      [creatorState.creator],
+      { commitment: "confirmed", preflightCommitment: "confirmed" },
+    );
     const balanceAfter = await connection.getBalance(
       result.accounts.solVault,
       "confirmed",
@@ -629,8 +637,6 @@ describe("MemeWarzone Solana authorization V4 local-validator acceptance", funct
       0n,
       "unsolicited SOL must not alter net-raised accounting",
     );
-
-    directScenario = { creatorState, args, result };
   });
 
   it("executes the Draft Deploy Now path with the same one-signature create model", async function () {
