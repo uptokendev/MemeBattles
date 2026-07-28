@@ -27,43 +27,43 @@ def replace_archive_block(script: str) -> str:
     start = script.index(start_marker)
     end = script.index(end_marker, start)
 
-    replacement = dedent(
-        """\
-        archive_marker = 'Draft archived by creator; ticker returned to the chain availability pool.'
-        if archive_marker not in drafts:
-            archive_start = drafts.index(
-                '  await pool.query("update campaign_drafts set status = \'archived\', archived_at = now(), updated_at = now() where id::text = $1", [id]);'
-            )
-            archive_end_marker = (
-                '  const updated = await getDraftBundleById(id, "", { bypassVisibility: true });'
-            )
-            archive_end = drafts.index(archive_end_marker, archive_start) + len(
-                archive_end_marker
-            )
-            archive_replacement = dedent('''\
-            try {
-              await withTickerReservationTransaction(pool, async (db) => {
-                await db.query("update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1", [id]);
-                await releaseTickerReservation(db, {
-                  draftId: id,
-                  creatorWallet: row.creator_wallet,
-                  reason: "Draft archived by creator; ticker returned to the chain availability pool.",
-                });
-              });
-            } catch (error) {
-              if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {
-                return json(res, error.httpStatus || 409, { error: error.message, code: error.code });
-              }
-              throw error;
-            }
-            const updated = await getDraftBundleById(id, "", { bypassVisibility: true });''')
-            archive_replacement = '\n'.join(
-                '  ' + line if line else ''
-                for line in archive_replacement.splitlines()
-            )
-            drafts = drafts[:archive_start] + archive_replacement + drafts[archive_end:]
-        """
-    )
+    replacement_lines = [
+        "archive_marker = 'Draft archived by creator; ticker returned to the chain availability pool.'",
+        "if archive_marker not in drafts:",
+        "    archive_start = drafts.index(",
+        "        '  await pool.query(\"update campaign_drafts set status = \\\'archived\\\', archived_at = now(), updated_at = now() where id::text = $1\", [id]);'",
+        "    )",
+        "    archive_end_marker = (",
+        "        '  const updated = await getDraftBundleById(id, \"\", { bypassVisibility: true });'",
+        "    )",
+        "    archive_end = drafts.index(archive_end_marker, archive_start) + len(",
+        "        archive_end_marker",
+        "    )",
+        "    archive_replacement = dedent('''\\",
+        "    try {",
+        "      await withTickerReservationTransaction(pool, async (db) => {",
+        "        await db.query(\"update campaign_drafts set status = 'archived', archived_at = now(), updated_at = now() where id::text = $1\", [id]);",
+        "        await releaseTickerReservation(db, {",
+        "          draftId: id,",
+        "          creatorWallet: row.creator_wallet,",
+        "          reason: \"Draft archived by creator; ticker returned to the chain availability pool.\",",
+        "        });",
+        "      });",
+        "    } catch (error) {",
+        "      if (error instanceof TickerReservationError || isTickerReservationConflict(error)) {",
+        "        return json(res, error.httpStatus || 409, { error: error.message, code: error.code });",
+        "      }",
+        "      throw error;",
+        "    }",
+        "    const updated = await getDraftBundleById(id, \"\", { bypassVisibility: true });''')",
+        "    archive_replacement = '\\n'.join(",
+        "        '  ' + line if line else ''",
+        "        for line in archive_replacement.splitlines()",
+        "    )",
+        "    drafts = drafts[:archive_start] + archive_replacement + drafts[archive_end:]",
+        "",
+    ]
+    replacement = "\n".join(replacement_lines)
     return script[:start] + replacement + script[end:]
 
 
