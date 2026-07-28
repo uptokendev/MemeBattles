@@ -157,7 +157,7 @@ async function authorizeScheduledLaunch({ body, row, pool, draftId, res }) {
     graduationTarget,
   };
 
-  const preflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress });
+  const preflight = await evaluateCreatePreflight({ walletAddress, chainId, factoryAddress, launchAt });
   if (!preflight.allowed) {
     return json(res, 403, {
       error: preflight.reasons?.[0] || "Creator is not eligible to launch.",

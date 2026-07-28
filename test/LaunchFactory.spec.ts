@@ -57,6 +57,42 @@ async function signCreateRoute(
   return signer.signMessage(ethers.getBytes(digest));
 }
 
+async function signScheduledCreateRoute(
+  factory: any,
+  creator: string,
+  signer: any,
+  req: any,
+  tradeProfile: number,
+  finalizeProfile: number,
+  deadline: bigint,
+) {
+  const chainId = (await ethers.provider.getNetwork()).chainId;
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "uint256", "address", "address", "bytes32", "uint64", "bytes32", "bytes32", "bytes32", "uint64", "uint256", "uint32", "uint32", "uint8", "uint8", "uint64"],
+      [
+        "MWZ_CREATE_SCHEDULED_V2_AUTH",
+        chainId,
+        await factory.getAddress(),
+        creator,
+        hashCreateRouteRequest(req.campaign),
+        req.launchAt,
+        req.draftReferenceHash,
+        req.normalizedTickerHash,
+        req.metadataHash,
+        req.reservationVersion,
+        req.authorizationNonce,
+        2,
+        2,
+        tradeProfile,
+        finalizeProfile,
+        deadline,
+      ],
+    ),
+  );
+  return signer.signMessage(ethers.getBytes(digest));
+}
+
 async function latestTimestamp() {
   const block = await ethers.provider.getBlock("latest");
   return BigInt(block!.timestamp);
@@ -347,6 +383,94 @@ describe("LaunchFactory", function () {
     const campaign = await ethers.getContractAt("LaunchCampaign", info.campaign);
     expect(await campaign.tradeRouteProfile()).to.eq(2n);
     expect(await campaign.finalizeRouteProfile()).to.eq(2n);
+  });
+
+  it("scheduled launch reserves a future creator slot after cooldown while gas is paid now", async () => {
+    const { factory, owner, creator } = await deployCoreFixture();
+    const CreatorRegistry = await ethers.getContractFactory("CreatorRegistry");
+    const registry = await CreatorRegistry.deploy();
+    await registry.waitForDeployment();
+    await registry.connect(owner).setLaunchRecorder(await factory.getAddress(), true);
+    await factory.connect(owner).setRegistries(await registry.getAddress(), ethers.ZeroAddress);
+    await factory.connect(owner).setRouteAuthority(await owner.getAddress());
+
+    await factory.connect(creator).createCampaign(baseReq({ name: "First", symbol: "FST" }) as any);
+    const profile = await registry.getCreatorProfile(await creator.getAddress());
+    const rules = await registry.getCreatorRules(await creator.getAddress());
+    const earliest = BigInt(profile.lastLaunchTimestamp) + BigInt(rules.cooldownSeconds);
+    const tooEarlyLaunchAt = earliest - 1n;
+
+    const earlyEligibility = await factory.creatorLaunchEligibilityAt(await creator.getAddress(), tooEarlyLaunchAt);
+    expect(earlyEligibility.allowed).to.eq(false);
+    expect(earlyEligibility.earliestLaunchTimestamp).to.eq(earliest);
+
+    const earlyRequest = {
+      campaign: baseReq({ name: "Too Early", symbol: "EARLY" }),
+      launchAt: tooEarlyLaunchAt,
+      draftReferenceHash: ethers.keccak256(ethers.toUtf8Bytes("draft:early")),
+      normalizedTickerHash: ethers.keccak256(ethers.toUtf8Bytes("EARLY")),
+      metadataHash: ethers.keccak256(ethers.toUtf8Bytes("metadata:early")),
+      reservationVersion: 1n,
+      authorizationNonce: 101n,
+    };
+    const earlyDeadline = (await latestTimestamp()) + 600n;
+    const earlySignature = await signScheduledCreateRoute(
+      factory,
+      await creator.getAddress(),
+      owner,
+      earlyRequest,
+      1,
+      1,
+      earlyDeadline,
+    );
+    await expect(
+      factory.connect(creator).createScheduledCampaignAuthorized(earlyRequest as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline: earlyDeadline,
+        signature: earlySignature,
+      }),
+    ).to.be.revertedWithCustomError(factory, "CreatorNotEligible");
+
+    const launchAt = earliest + 60n * 60n;
+    const scheduledRequest = {
+      campaign: baseReq({ name: "Future Slot", symbol: "FUT" }),
+      launchAt,
+      draftReferenceHash: ethers.keccak256(ethers.toUtf8Bytes("draft:future")),
+      normalizedTickerHash: ethers.keccak256(ethers.toUtf8Bytes("FUT")),
+      metadataHash: ethers.keccak256(ethers.toUtf8Bytes("metadata:future")),
+      reservationVersion: 1n,
+      authorizationNonce: 102n,
+    };
+    const deadline = (await latestTimestamp()) + 600n;
+    const signature = await signScheduledCreateRoute(
+      factory,
+      await creator.getAddress(),
+      owner,
+      scheduledRequest,
+      1,
+      1,
+      deadline,
+    );
+
+    await expect(
+      factory.connect(creator).createScheduledCampaignAuthorized(scheduledRequest as any, {
+        tradeRouteProfile: 1,
+        finalizeRouteProfile: 1,
+        deadline,
+        signature,
+      }),
+    ).to.emit(factory, "ScheduledCreatorLaunchReserved");
+
+    expect(await factory.reservedScheduledLiveCount(await creator.getAddress())).to.eq(1n);
+    expect((await registry.getCreatorProfile(await creator.getAddress())).liveBondingCount).to.eq(1n);
+    const scheduledInfo = await factory.getCampaign(1n);
+    const scheduledCampaign = await ethers.getContractAt("LaunchCampaign", scheduledInfo.campaign);
+    expect(await scheduledCampaign.launchAt()).to.eq(launchAt);
+
+    const nextEligibility = await factory.creatorLaunchEligibilityAt(await creator.getAddress(), launchAt + 60n * 60n);
+    expect(nextEligibility.allowed).to.eq(false);
+    expect(nextEligibility.earliestLaunchTimestamp).to.eq(launchAt + BigInt(rules.cooldownSeconds));
   });
 
   it("createCampaignAuthorized rejects missing authority, expired signatures, invalid profiles, bad signers, wrong chain, and replay", async () => {
