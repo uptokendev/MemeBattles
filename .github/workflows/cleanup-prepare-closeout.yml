@@ -1,0 +1,30 @@
+name: Clean prepare closeout branch
+
+on:
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - .github/workflows/cleanup-prepare-closeout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-prepare-closeout
+          fetch-depth: 0
+      - name: Restore lockfile and remove cleanup workflow
+        run: |
+          git checkout origin/devpostgrad -- frontend/yarn.lock
+          rm .github/workflows/cleanup-prepare-closeout.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove platform-specific lockfile change"
+          git push origin HEAD:agent/fix-prepare-closeout
