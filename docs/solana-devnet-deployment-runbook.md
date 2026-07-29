@@ -1,41 +1,44 @@
 # MemeWarzone Solana Devnet Deployment Runbook
 
-Status: operator-controlled deployment preparation
-Target branch: `devpostgrad`
+Status: operator-controlled deployment preparation  
+Target branch: `devpostgrad`  
 Network: Solana devnet
 
 ## Purpose
 
-This runbook converts the accepted local-validator program into a controlled devnet deployment without putting deployer or upgrade-authority secrets in the repository, frontend, Netlify or ordinary GitHub Actions logs.
+This runbook converts the accepted local-validator program into a controlled devnet deployment without putting deployer, program, upgrade-authority or Railway route-signer secrets in the repository, frontend, Netlify or ordinary GitHub Actions logs.
 
-The deployment is not considered complete until the program binary, IDL, program address, deployment transaction, slot, ProgramData account, upgrade authority and initialized protocol accounts have been recorded and independently verified.
+The deployment is not complete until the program binary, IDL, program address, deployment transaction, slot, ProgramData account, upgrade authority, initialized protocol accounts and canonical generation manifest have been recorded and independently verified.
 
-## What GitHub Actions should do
+## Automation boundary
 
 GitHub Actions remains the source of truth for:
 
-1. pinned Anchor/Solana/Rust builds;
+1. pinned Anchor, Solana and Rust builds;
 2. generated IDL and V4 client binding;
 3. local-validator acceptance;
 4. static devnet readiness checks;
-5. deployment-artifact hashing and manifest validation.
+5. canonical generation-manifest validation;
+6. deployment-artifact hashing and manifest preparation;
+7. syntax checks for the operator bootstrap and verifier.
 
-GitHub Actions must not generate or commit the permanent program keypair. The first devnet deployment should be performed from the operator's WSL environment with a dedicated funded devnet deployer and the permanent program keypair stored outside the repository.
+GitHub Actions must not generate or commit the permanent program keypair, deployer keypair, upgrade authority or Railway route signer. The first devnet deployment and initialization are performed from the operator's WSL environment.
 
 ## Manual prerequisites
 
-Inside WSL/Ubuntu, install and use:
+Inside WSL/Ubuntu, use:
 
 - Anchor CLI `0.30.1`;
 - Solana CLI `1.18.26`;
 - Rust `1.79.0` for SBF builds;
-- Rust `nightly-2024-05-09` for IDL generation.
+- Rust `nightly-2024-05-09` for IDL generation;
+- Node.js compatible with the accepted test package.
 
-Use a dedicated devnet deployer wallet. Do not reuse a browser wallet, treasury wallet, Owners Safe signer or production mainnet authority.
+Use a dedicated devnet deployer. Do not reuse a browser wallet, treasury wallet, Owners Safe signer or production mainnet authority.
 
 ## Step 1 — create the permanent devnet program identity
 
-Run this outside the repository or in a protected local secrets directory:
+Run outside the repository or in a protected local secrets directory:
 
 ```bash
 mkdir -p "$HOME/.config/memewarzone/solana-devnet"
@@ -47,16 +50,14 @@ solana-keygen pubkey "$HOME/.config/memewarzone/solana-devnet/memewarzone_solana
 
 Record the public key. Never commit the JSON keypair.
 
-Copy the keypair into `target/deploy/memewarzone_solana-keypair.json` only for the duration of the local build/deploy session, then remove that working copy after the deployment evidence has been captured.
+Copy the keypair into `target/deploy/memewarzone_solana-keypair.json` only during the local build/deploy session, then remove the working copy after evidence has been captured.
 
-## Step 2 — synchronize the program ID
+## Step 2 — synchronize the public program ID
 
-Replace the placeholder program ID in both locations:
+Replace the placeholder in both locations:
 
 - `programs/memewarzone_solana/src/lib.rs` in `declare_id!`;
 - `Anchor.toml` under `[programs.devnet]`.
-
-The localnet ID may remain ephemeral for validator CI. The devnet ID must equal the permanent devnet program keypair public key.
 
 Run:
 
@@ -64,9 +65,9 @@ Run:
 node scripts/solana/check-devnet-readiness.mjs
 ```
 
-This must fail while the placeholder is active or the two program IDs disagree.
+This fails while the placeholder is active, when the IDs disagree, when the canonical devnet generation manifest is unsafe or when required operator tooling is missing.
 
-## Step 3 — build the authoritative artifacts
+## Step 3 — build authoritative artifacts
 
 ```bash
 rustup default 1.79.0
@@ -82,11 +83,13 @@ node scripts/check-solana-v4-idl.mjs \
   target/idl/memewarzone_solana.json \
   target/idl/memewarzone_solana.v4.binding.json
 cargo test -p memewarzone_solana --lib
+npm install --prefix tests/solana --no-audit --no-fund
+npm --prefix tests/solana run devnet:check
 ```
 
 Do not deploy artifacts from an uncommitted source tree. The deployment manifest must point to the exact source commit that produced the binary.
 
-## Step 4 — prepare the pre-deployment manifest
+## Step 4 — prepare the deployment manifest
 
 ```bash
 node scripts/solana/prepare-devnet-deployment.mjs \
@@ -95,15 +98,42 @@ node scripts/solana/prepare-devnet-deployment.mjs \
   --commit <GIT_COMMIT_SHA>
 ```
 
-The generated file is:
+This creates:
 
 ```text
 deployments/solana-devnet.prepared.json
 ```
 
-It records the program, IDL and V4 binding SHA-256 hashes. It deliberately leaves deployment and initialization evidence empty.
+It records SHA-256 values for:
 
-## Step 5 — fund the devnet deployer
+- program binary;
+- generated IDL;
+- V4 binding;
+- canonical generation manifest;
+- program source;
+- `Anchor.toml`.
+
+Deployment and initialization evidence remains empty until it is proven on-chain.
+
+## Step 5 — prepare dedicated identities
+
+The following identities are distinct concepts even when one devnet operator temporarily controls several roles:
+
+- deployer and initial admin;
+- pauser;
+- tier admin;
+- risk admin;
+- reward operator;
+- treasury operator;
+- generation operator;
+- Railway route signer;
+- upgrade authority.
+
+Generate the Railway route signer outside the repository. Store its private bytes only in the approved Railway secret store. Record only its public key for initialization.
+
+The route signer is permanently bound in GlobalConfig. The backend later derives its public key from `SOLANA_ROUTE_SIGNER_SECRET_KEY` and refuses authorization when it differs from `SOLANA_ROUTE_SIGNER_PUBLIC_KEY` or the on-chain GlobalConfig value.
+
+## Step 6 — fund and configure the devnet deployer
 
 ```bash
 solana config set \
@@ -113,9 +143,9 @@ solana address
 solana balance
 ```
 
-Use the Solana devnet faucet or approved team funding process. Confirm the wallet contains enough devnet SOL for deployment and account initialization.
+Use the Solana devnet faucet or approved team funding process. Confirm enough devnet SOL exists for deployment and account initialization.
 
-## Step 6 — deploy
+## Step 7 — deploy
 
 ```bash
 export ANCHOR_WALLET="$HOME/.config/memewarzone/solana-devnet/deployer.json"
@@ -124,9 +154,7 @@ anchor deploy \
   --provider.wallet "$ANCHOR_WALLET"
 ```
 
-Capture the deployment signature from the output.
-
-Then inspect the deployed program:
+Capture the deployment signature, then inspect:
 
 ```bash
 solana program show <PROGRAM_ID> --url https://api.devnet.solana.com
@@ -139,26 +167,71 @@ Record:
 - upgrade authority;
 - last deployed slot;
 - binary length;
-- deployment transaction signature;
+- deployment signature;
 - source commit;
 - artifact hashes;
 - toolchain versions.
 
-## Step 7 — initialize protocol state
+## Step 8 — export initialization variables
 
-The initialization sequence must remain:
+At minimum:
 
-1. `initializeGlobalConfig`;
-2. `lockSecurityDefaults`;
-3. `setPauseFlags`;
-4. `initializeGenerationConfig`;
-5. `syncClusterProfile`;
-6. creator and wallet risk profiles only when required for acceptance accounts.
+```bash
+export SOLANA_RPC_URL="https://api.devnet.solana.com"
+export SOLANA_LAUNCHPAD_PROGRAM_ID="<PROGRAM_ID>"
+export SOLANA_OPERATOR_KEYPAIR="$HOME/.config/memewarzone/solana-devnet/deployer.json"
+export SOLANA_ROUTE_SIGNER_PUBLIC_KEY="<ROUTE_SIGNER_PUBLIC_KEY>"
+```
 
-The initial safe pause posture is:
+Optional authority overrides default to the operator public key for the first controlled devnet acceptance:
+
+```bash
+export SOLANA_ADMIN_PUBLIC_KEY="<ADMIN_PUBLIC_KEY>"
+export SOLANA_PAUSER_PUBLIC_KEY="<PAUSER_PUBLIC_KEY>"
+export SOLANA_TIER_ADMIN_PUBLIC_KEY="<TIER_ADMIN_PUBLIC_KEY>"
+export SOLANA_RISK_ADMIN_PUBLIC_KEY="<RISK_ADMIN_PUBLIC_KEY>"
+export SOLANA_REWARD_OPERATOR_PUBLIC_KEY="<REWARD_OPERATOR_PUBLIC_KEY>"
+export SOLANA_TREASURY_OPERATOR_PUBLIC_KEY="<TREASURY_OPERATOR_PUBLIC_KEY>"
+export SOLANA_GENERATION_OPERATOR_PUBLIC_KEY="<GENERATION_OPERATOR_PUBLIC_KEY>"
+```
+
+The operator keypair must equal the initial admin for this bootstrap tool. It never accepts or reads the Railway route-signer secret.
+
+## Step 9 — initialize protocol state idempotently
+
+Run:
+
+```bash
+npm --prefix tests/solana run devnet:bootstrap
+```
+
+The command uses:
+
+```text
+config/solana/devnet-generation-v1.json
+```
+
+as the canonical source for generation economics, route profiles, DEX profile, oracle profile, risk-cluster seed and initial pause flags.
+
+It performs only missing or mismatched bootstrap actions:
+
+1. initialize GlobalConfig when absent;
+2. lock security defaults when not yet locked;
+3. apply the canonical safe pause flags;
+4. initialize the canonical GenerationConfig when absent;
+5. initialize or synchronize the acceptance ClusterProfile;
+6. fetch all accounts again and verify every authority, hash, economic field, self-binding and pause flag.
+
+It writes:
+
+```text
+deployments/solana-devnet.protocol-state.json
+```
+
+The initial safe posture is:
 
 - global pause: off;
-- create pause: off only during controlled acceptance;
+- create pause: off for controlled acceptance;
 - buy pause: on;
 - sell pause: on;
 - graduation pause: on;
@@ -169,58 +242,81 @@ The initial safe pause posture is:
 
 Do not enable bonding simply because create acceptance passes.
 
-## Step 8 — configure Railway, disabled first
+## Step 10 — independently verify protocol state
 
-Set Railway with the verified devnet values, but keep issuance disabled until the on-chain account verification succeeds:
+Run the read-only verification mode:
+
+```bash
+npm --prefix tests/solana run devnet:verify
+```
+
+Verification fails when:
+
+- an account is missing;
+- any authority differs;
+- the Railway route signer differs;
+- security defaults are unlocked;
+- pause flags differ;
+- generation economics differ;
+- generation program or PDA self-binding differs;
+- the canonical generation-manifest hash differs;
+- cluster state differs.
+
+## Step 11 — configure Railway disabled first
+
+Use the exact environment names consumed by the current V4 backend:
 
 ```text
 SOLANA_CLUSTER=devnet
 SOLANA_RPC_URL=<APPROVED_DEVNET_RPC>
-SOLANA_PROGRAM_ID=<PROGRAM_ID>
+SOLANA_LAUNCHPAD_PROGRAM_ID=<PROGRAM_ID>
 SOLANA_ROUTE_SIGNER_PUBLIC_KEY=<ROUTE_SIGNER_PUBLIC_KEY>
-SOLANA_ROUTE_SIGNER_SECRET=<RAILWAY_SECRET_ONLY>
+SOLANA_ROUTE_SIGNER_SECRET_KEY=<RAILWAY_SECRET_ONLY>
 SOLANA_CREATE_AUTH_ENABLED=false
 SOLANA_CREATE_AUTH_SCHEMA_VERSION=4
-SOLANA_IDL_SHA256=<IDL_HASH>
-SOLANA_PROGRAM_SHA256=<PROGRAM_HASH>
-SOLANA_GENERATION_MANIFEST_SHA256=<MANIFEST_HASH>
+SOLANA_LAUNCHPAD_IDL_SHA256=<IDL_HASH>
+SOLANA_LAUNCHPAD_PROGRAM_SHA256=<PROGRAM_HASH>
+SOLANA_GENERATION_MANIFEST_HASH=<CANONICAL_GENERATION_MANIFEST_HASH>
+SOLANA_CLUSTER_HASH_HEX=<APPROVED_CLUSTER_HASH>
 ```
 
-Never place the route signer secret in Netlify, Vite variables, frontend files, deployment manifests, GitHub variables or repository secrets used by pull-request workflows.
+Never place `SOLANA_ROUTE_SIGNER_SECRET_KEY` in Netlify, Vite variables, frontend files, deployment manifests, GitHub variables or pull-request workflow secrets.
 
-## Step 9 — required acceptance before enabling Railway
+## Step 12 — acceptance before enabling Railway
 
 Verify on devnet:
 
-1. the deployed program is executable and owned by the BPF upgradeable loader;
-2. the ProgramData upgrade authority is the intended devnet authority;
+1. deployed program is executable and owned by the BPF upgradeable loader;
+2. ProgramData upgrade authority is the intended devnet authority;
 3. GlobalConfig is owned by the deployed program;
-4. route signer and operator authorities match the approved addresses;
-5. security defaults are locked;
-6. initial pause flags match the safe posture;
-7. GenerationConfig is self-bound to the deployed program and its own PDA;
-8. generation economics and manifest hash match the signed deployment evidence;
-9. a controlled Draft Deploy Now transaction succeeds;
-10. Countdown Create succeeds and remains non-tradable before `launch_at`;
-11. Direct Create remains blocked until canonical reservation creation is implemented;
-12. all negative V4 authorization cases still fail.
+4. all operator authorities match approved addresses;
+5. route signer matches Railway public configuration;
+6. security defaults are locked;
+7. pause flags match the canonical manifest;
+8. GenerationConfig is self-bound to the deployed program and its own PDA;
+9. generation economics and manifest hash match deployment evidence;
+10. controlled Draft Deploy Now succeeds;
+11. Countdown Create succeeds and remains non-tradable before `launch_at`;
+12. Direct Create remains blocked until canonical reservation creation is implemented;
+13. all negative V4 authorization cases still fail.
 
-Only after this evidence is recorded may `SOLANA_CREATE_AUTH_ENABLED` be changed to `true`.
+Only then may `SOLANA_CREATE_AUTH_ENABLED` change to `true`.
 
 ## Stop conditions
 
 Stop immediately when:
 
 - program IDs disagree;
-- the placeholder program ID is present;
-- the deployer or program keypair appears in git status;
-- the built binary hash differs from the prepared manifest;
-- the upgrade authority is unexpected;
-- GlobalConfig or GenerationConfig is owned by another program;
-- route signer configuration differs between chain and Railway;
+- placeholder program ID remains present;
+- deployer, program, upgrade-authority or route-signer key material appears in git status;
+- binary or IDL hash differs from the prepared manifest;
+- canonical generation-manifest hash differs;
+- upgrade authority is unexpected;
+- GlobalConfig, GenerationConfig or ClusterProfile is owned by another program;
+- route signer differs between chain and Railway;
 - security defaults are unlocked;
-- trading or graduation is unpaused before those instructions are implemented and accepted.
+- trading, graduation or claims are unpaused before implementation and acceptance.
 
 ## Next dependency after devnet create acceptance
 
-Once the deployment and initialization evidence is complete, recalculate the checklist. The likely next implementation is the wallet transaction builder plus devnet Draft Deploy Now and Countdown acceptance, because that validates the real backend-to-wallet-to-program boundary before bonding logic is added.
+Recalculate the build order after deployment and initialization evidence is complete. The likely highest-value implementation is the wallet transaction builder plus real devnet Draft Deploy Now and Countdown Create acceptance because it validates the complete backend-to-wallet-to-program boundary before bonding logic is introduced.
