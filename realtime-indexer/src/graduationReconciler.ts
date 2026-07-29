@@ -17,7 +17,7 @@ type Candidate = {
 };
 
 const LOOP_SYMBOL = Symbol.for("memewarzone.wtrGraduationReconcilerStarted");
-const globalState = globalThis as typeof globalThis & { [LOOP_SYMBOL]?: boolean };
+const globalState = globalThis as any;
 
 function parseRpcList(value: string): string[] {
   return String(value || "")
