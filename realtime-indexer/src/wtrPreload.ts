@@ -1,6 +1,7 @@
 import express from "express";
 import { startGraduationReconcilerLoop } from "./graduationReconciler.js";
 import { registerMarketContinuityRoutes } from "./marketApi.js";
+import { startTopazPoolIndexerLoop } from "./topazPoolIndexer.js";
 
 const WTR_ROUTES_SYMBOL = Symbol.for("memewarzone.wtrMarketRoutesRegistered");
 const originalListen = express.application.listen as unknown as (
@@ -17,3 +18,4 @@ express.application.listen = function wtrPatchedListen(this: any, ...args: any[]
 } as any;
 
 startGraduationReconcilerLoop();
+startTopazPoolIndexerLoop();
