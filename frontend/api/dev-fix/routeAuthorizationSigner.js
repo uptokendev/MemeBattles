@@ -110,7 +110,7 @@ export function buildScheduledCreateAuthorizationDigest({
   metadataHash,
   reservationVersion,
   authorizationNonce,
-  factoryGeneration = 2,
+  factoryGeneration = 3,
   campaignGeneration = 2,
   tradeRouteProfileId,
   tradeRouteProfile = tradeRouteProfileId,
