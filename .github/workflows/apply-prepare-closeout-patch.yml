@@ -34,7 +34,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Escape source template placeholders
+      - name: Normalize temporary patch literals
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -43,6 +43,14 @@ jobs:
           source = source.replace(
             'const root = process.cwd();',
             'const root = process.cwd();\nconst JUST_CREATED_DRAFT_CACHE_PREFIX = "${JUST_CREATED_DRAFT_CACHE_PREFIX}";\nconst draftId = "${draftId}";',
+          );
+          const cardLine = fs.readFileSync('frontend/src/components/home/DraftCampaignGrid.tsx', 'utf8')
+            .split('\n')
+            .find((line) => line.includes('<div className="truncate text-success/75">{shortAddr(draft.creatorWallet)}</div>'));
+          if (!cardLine) throw new Error('Draft card creator line not found');
+          source = source.replace(
+            /  `\s*<div className="truncate text-success\/75">\{shortAddr\(draft\.creatorWallet\)\}<\/div>`,/,
+            '  `' + cardLine + '`,',
           );
           fs.writeFileSync(file, source);
           NODE
