@@ -8,13 +8,14 @@ on:
       - "contracts/**"
       - "test/**"
       - "frontend/**"
+      - "realtime-indexer/**"
       - "scripts/**"
       - "package.json"
       - ".github/workflows/creator-arm-cooldown-ci.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   contracts:
@@ -24,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run compile
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -49,7 +50,57 @@ jobs:
         working-directory: frontend
       - run: node --check api/dev-fix/draft-deploy.js
         working-directory: frontend
+      - run: node --check api/dev-fix/routeAuthorizationSigner.js
+        working-directory: frontend
       - run: npm run build
         working-directory: frontend
       - run: npm run lint
         working-directory: frontend
+
+  realtime-indexer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: realtime-indexer/package-lock.json
+      - run: npm ci
+        working-directory: realtime-indexer
+      - run: npm run build
+        working-directory: realtime-indexer
+
+  sync-generated-launch-factory-abi:
+    needs: contracts
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/fix-creator-arm-cooldown'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-creator-arm-cooldown
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run compile
+      - run: npm run sync:frontend-abis
+      - name: Commit synchronized ABI when required
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend/src/abi/LaunchFactory.json; then
+            echo "LaunchFactory ABI is already synchronized."
+            exit 0
+          fi
+          git config user.name "MemeWarzone CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add frontend/src/abi/LaunchFactory.json
+          git commit -m "Sync corrected LaunchFactory ABI"
+          git push origin HEAD:agent/fix-creator-arm-cooldown
