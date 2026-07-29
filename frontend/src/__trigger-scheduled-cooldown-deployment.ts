@@ -1,2 +1,2 @@
-// Trigger the already-installed visible deployment workflow. Removed automatically after publishing the replacement.
+// Execute the byte-matched devpostgrad deployment workflow. Removed automatically after publishing the replacement.
 export {};
