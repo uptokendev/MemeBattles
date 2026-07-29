@@ -1,0 +1,52 @@
+name: Apply scheduled cooldown clarity
+
+on:
+  push:
+    branches:
+      - agent/clarify-scheduled-cooldown
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/clarify-scheduled-cooldown
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply targeted patch
+        run: node scripts/apply-scheduled-cooldown-clarity.mjs
+
+      - name: Check changed source syntax
+        run: node --check frontend/src/lib/scheduledLaunchClientV2.ts || true
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Verify diff
+        run: git diff --check
+
+      - name: Commit final source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Clarify scheduled creator cooldown timing"
+          git push origin HEAD:agent/clarify-scheduled-cooldown
