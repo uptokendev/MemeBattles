@@ -85,7 +85,7 @@ jobs:
           mkdir -p .github/validation
           cat > .github/validation/wtr-frontend-validation.txt <<EOF
           WTR frontend validation ${result}
-          validation_revision=unified_chart_topaz_trading_v3
+          validation_revision=unified_chart_topaz_trading_v5
           validated_source_sha=${GITHUB_SHA}
           node=20
           patch_status=${{ steps.patch.outputs.patch_status }}
