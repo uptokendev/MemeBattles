@@ -7,6 +7,7 @@ const SCHEDULED_FACTORY_ABI = [
   "function globalPaused() view returns (bool)",
   "function createPaused() view returns (bool)",
   "function creatorRegistry() view returns (address)",
+  "function creatorLaunchEligibilityAt(address creator,uint256 launchTimestamp) view returns (bool allowed,uint256 earliestLaunchTimestamp,uint256 currentLiveCount,uint256 maxLiveBonding)",
   "function createScheduledCampaignAuthorized(((string name,string symbol,string logoURI,string xAccount,string website,string extraLink,uint256 graduationTarget) campaign,uint64 launchAt,bytes32 draftReferenceHash,bytes32 normalizedTickerHash,bytes32 metadataHash,uint64 reservationVersion,uint256 authorizationNonce) req,(uint8 tradeRouteProfile,uint8 finalizeRouteProfile,uint64 deadline,bytes signature) routeAuth) returns (address campaignAddr,address tokenAddr)",
   "event CampaignCreated(uint256 indexed id,address indexed campaign,address indexed token,address creator,string name,string symbol,string logoURI,string metadataURI)",
   "error NotLive()",
@@ -116,10 +117,63 @@ function formatRemaining(seconds: number) {
   return hours > 0 ? hours + "h " + minutes + "m" : minutes + "m";
 }
 
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+  } catch {
+    return "local time";
+  }
+}
+
+function formatLocalTimestamp(seconds: number) {
+  return `${new Date(seconds * 1000).toLocaleString()} (${browserTimeZone()})`;
+}
+
+export type ScheduledCreatorLaunchEligibility = {
+  allowed: boolean;
+  earliestLaunchAt: number;
+  currentLiveCount: number;
+  maxLiveBonding: number;
+};
+
+export async function readScheduledCreatorLaunchEligibility(input: {
+  signer: JsonRpcSigner;
+  chainId: number;
+  factoryAddress: string;
+  launchAt: number;
+}): Promise<ScheduledCreatorLaunchEligibility> {
+  const provider = input.signer.provider;
+  if (!provider) throw new Error("Wallet provider is unavailable.");
+  const network = await provider.getNetwork();
+  if (Number(network.chainId) !== Number(input.chainId)) {
+    throw new Error("Wallet network changed. Switch back to the draft chain and try again.");
+  }
+  const code = await provider.getCode(input.factoryAddress);
+  if (!code || code === "0x") throw new Error("The configured scheduled factory has no contract code.");
+
+  const factory = new Contract(input.factoryAddress, SCHEDULED_FACTORY_ABI, provider) as any;
+  try {
+    const result = await factory.creatorLaunchEligibilityAt(await input.signer.getAddress(), input.launchAt);
+    return {
+      allowed: Boolean(result.allowed ?? result[0]),
+      earliestLaunchAt: Number(result.earliestLaunchTimestamp ?? result[1] ?? 0),
+      currentLiveCount: Number(result.currentLiveCount ?? result[2] ?? 0),
+      maxLiveBonding: Number(result.maxLiveBonding ?? result[3] ?? 0),
+    };
+  } catch (error: any) {
+    const text = String(error?.shortMessage || error?.message || error || "");
+    if (text.toLowerCase().includes("could not decode") || text.toLowerCase().includes("no data present")) {
+      throw new Error("The active scheduled factory does not support future cooldown reservations yet. Refresh after the scheduled-factory upgrade is deployed.");
+    }
+    throw error;
+  }
+}
+
 async function assertScheduledFactoryReady(input: {
   signer: JsonRpcSigner;
   chainId: number;
   factoryAddress: string;
+  launchAt: number;
 }) {
   const provider = input.signer.provider;
   if (!provider) throw new Error("Wallet provider is unavailable.");
@@ -141,31 +195,31 @@ async function assertScheduledFactoryReady(input: {
   if (createPaused) throw new Error("New campaign creation is currently paused.");
 
   const creator = await input.signer.getAddress();
-  const registryAddress = String(await factory.creatorRegistry());
-  if (ethers.isAddress(registryAddress) && registryAddress !== ethers.ZeroAddress) {
-    const registry = new Contract(registryAddress, CREATOR_REGISTRY_ABI, provider) as any;
-    const canLaunch = Boolean(await registry.canLaunch(creator));
-    if (!canLaunch) {
+  const eligibility = await readScheduledCreatorLaunchEligibility(input);
+  if (!eligibility.allowed) {
+    const registryAddress = String(await factory.creatorRegistry());
+    if (ethers.isAddress(registryAddress) && registryAddress !== ethers.ZeroAddress) {
+      const registry = new Contract(registryAddress, CREATOR_REGISTRY_ABI, provider) as any;
       const [profile, rules] = await Promise.all([
         registry.getCreatorProfile(creator),
         registry.getCreatorRules(creator),
       ]);
       if (profile.restricted) throw new Error("This creator wallet is restricted by the on-chain CreatorRegistry.");
       if (profile.manualReviewRequired) throw new Error("This creator wallet requires manual review before another launch.");
-      if (BigInt(profile.liveBondingCount) >= BigInt(rules.maxLiveBonding)) {
-        throw new Error("This creator wallet has reached its on-chain live campaign limit.");
+      if (eligibility.currentLiveCount >= eligibility.maxLiveBonding || BigInt(profile.liveBondingCount) >= BigInt(rules.maxLiveBonding)) {
+        throw new Error("This creator wallet has reached its combined live and scheduled campaign limit.");
       }
-      const cooldownEnds = Number(profile.lastLaunchTimestamp) + Number(rules.cooldownSeconds);
-      const now = Math.floor(Date.now() / 1000);
-      if (cooldownEnds > now) {
-        throw new Error(
-          "Creator launch cooldown is active until " +
-            new Date(cooldownEnds * 1000).toLocaleString() +
-            " (" + formatRemaining(cooldownEnds - now) + " remaining).",
-        );
-      }
-      throw new Error("This creator wallet is not eligible for another on-chain launch yet.");
     }
+
+    if (eligibility.earliestLaunchAt > input.launchAt) {
+      const remaining = Math.max(0, eligibility.earliestLaunchAt - Math.floor(Date.now() / 1000));
+      throw new Error(
+        "Selected launch time is before the creator launch slot opens at " +
+          formatLocalTimestamp(eligibility.earliestLaunchAt) +
+          ". Choose that time or later (" + formatRemaining(remaining) + " from now).",
+      );
+    }
+    throw new Error("This creator wallet is not eligible for the selected scheduled launch.");
   }
 
   return factory;

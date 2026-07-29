@@ -162,6 +162,9 @@ contract LaunchFactory is Ownable {
     mapping(address => bool) public isCampaign;
     mapping(bytes32 => bool) public usedCreateRouteAuthorizations;
     mapping(address => mapping(uint256 => bool)) public usedAuthorizationNonces;
+    mapping(address => uint256) public reservedScheduledLiveCount;
+    mapping(address => uint256) public lastScheduledLaunchTimestamp;
+    mapping(address => bool) public campaignUsesScheduledLaunchSlot;
 
     event CampaignCreated(
         uint256 indexed id,
@@ -204,6 +207,13 @@ contract LaunchFactory is Ownable {
     event SecurityDefaultsLockedEnabled();
     event CampaignPauseUpdated(address indexed campaign, bool paused, bool buysPaused, bool sellsPaused, bool graduationPaused);
     event CampaignGraduated(address indexed campaign, address indexed creator, address indexed lpToken, address locker);
+    event ScheduledCreatorLaunchReserved(
+        address indexed creator,
+        address indexed campaign,
+        uint256 launchAt,
+        uint256 reservedLiveCount
+    );
+    event ScheduledCreatorLaunchReleased(address indexed creator, address indexed campaign, uint256 reservedLiveCount);
 
     modifier whenMutable() {
         if (_campaigns.length != 0) revert FactoryLocked();
@@ -337,7 +347,7 @@ contract LaunchFactory is Ownable {
         if (bytes(req.logoURI).length == 0) revert LogoEmpty();
         address lockedLpReceiver = address(permanentLpLocker);
 
-        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender);
+        (uint256 creatorBuyLockDuration, uint256 creatorBuyCapWei, uint256 maxClusterWallets) = _enforceCreatorEligibility(msg.sender, uint256(schedule.launchAt));
         _enforceRiskLaunch(msg.sender, maxClusterWallets);
 
         uint256 campaignGraduationTarget = req.graduationTarget == 0 ? config.graduationTarget : req.graduationTarget;
@@ -383,7 +393,19 @@ contract LaunchFactory is Ownable {
         string memory metadataURI = "";
 
         if (address(creatorRegistry) != address(0)) {
-            creatorRegistry.recordLaunch(msg.sender);
+            if (schedule.reservationVersion != 0) {
+                reservedScheduledLiveCount[msg.sender] += 1;
+                lastScheduledLaunchTimestamp[msg.sender] = uint256(schedule.launchAt);
+                campaignUsesScheduledLaunchSlot[campaignAddr] = true;
+                emit ScheduledCreatorLaunchReserved(
+                    msg.sender,
+                    campaignAddr,
+                    uint256(schedule.launchAt),
+                    reservedScheduledLiveCount[msg.sender]
+                );
+            } else {
+                creatorRegistry.recordLaunch(msg.sender);
+            }
         }
 
         _campaigns.push(
@@ -436,7 +458,17 @@ contract LaunchFactory is Ownable {
                 lockedLpAmount
             );
         }
-        if (address(creatorRegistry) != address(0)) {
+        if (campaignUsesScheduledLaunchSlot[msg.sender]) {
+            campaignUsesScheduledLaunchSlot[msg.sender] = false;
+            if (reservedScheduledLiveCount[campaignCreator] > 0) {
+                reservedScheduledLiveCount[campaignCreator] -= 1;
+            }
+            emit ScheduledCreatorLaunchReleased(
+                campaignCreator,
+                msg.sender,
+                reservedScheduledLiveCount[campaignCreator]
+            );
+        } else if (address(creatorRegistry) != address(0)) {
             creatorRegistry.recordGraduation(campaignCreator);
         }
         emit CampaignGraduated(msg.sender, campaignCreator, lpToken, address(permanentLpLocker));
@@ -542,13 +574,58 @@ contract LaunchFactory is Ownable {
         LaunchCampaign(payable(campaign)).setRequireAuthorizedTrading(required);
     }
 
+    function creatorLaunchEligibilityAt(address creator, uint256 launchTimestamp)
+        public
+        view
+        returns (bool allowed, uint256 earliestLaunchTimestamp, uint256 currentLiveCount, uint256 maxLiveBonding)
+    {
+        earliestLaunchTimestamp = block.timestamp;
+        currentLiveCount = reservedScheduledLiveCount[creator];
+
+        if (address(creatorRegistry) == address(0)) {
+            return (launchTimestamp >= earliestLaunchTimestamp, earliestLaunchTimestamp, currentLiveCount, type(uint256).max);
+        }
+
+        CreatorRegistry.CreatorProfile memory profile = creatorRegistry.getCreatorProfile(creator);
+        CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
+        currentLiveCount += profile.liveBondingCount;
+        maxLiveBonding = rules.maxLiveBonding;
+
+        if (profile.lastLaunchTimestamp != 0) {
+            uint256 registryEarliest = profile.lastLaunchTimestamp + rules.cooldownSeconds;
+            if (registryEarliest > earliestLaunchTimestamp) earliestLaunchTimestamp = registryEarliest;
+        }
+
+        uint256 reservedLaunchTimestamp = lastScheduledLaunchTimestamp[creator];
+        if (reservedLaunchTimestamp != 0) {
+            uint256 scheduledEarliest = reservedLaunchTimestamp + rules.cooldownSeconds;
+            if (scheduledEarliest > earliestLaunchTimestamp) earliestLaunchTimestamp = scheduledEarliest;
+        }
+
+        allowed =
+            !profile.restricted &&
+            !profile.manualReviewRequired &&
+            currentLiveCount < maxLiveBonding &&
+            launchTimestamp >= earliestLaunchTimestamp;
+    }
+
+    function canCreatorLaunchAt(address creator, uint256 launchTimestamp) external view returns (bool) {
+        (bool allowed,,,) = creatorLaunchEligibilityAt(creator, launchTimestamp);
+        return allowed;
+    }
+
     function campaignsCount() external view returns (uint256) {
         return _campaigns.length;
     }
 
-    function _enforceCreatorEligibility(address creator) internal view returns (uint256 lockDuration, uint256 buyCapWei, uint256 maxClusterWallets) {
+    function _enforceCreatorEligibility(address creator, uint256 launchTimestamp)
+        internal
+        view
+        returns (uint256 lockDuration, uint256 buyCapWei, uint256 maxClusterWallets)
+    {
         if (address(creatorRegistry) == address(0)) return (0, 0, 0);
-        if (!creatorRegistry.canLaunch(creator)) revert CreatorNotEligible();
+        (bool allowed,,,) = creatorLaunchEligibilityAt(creator, launchTimestamp);
+        if (!allowed) revert CreatorNotEligible();
         CreatorRegistry.CreatorRules memory rules = creatorRegistry.getCreatorRules(creator);
         return (rules.creatorBuyLockSeconds, rules.creatorBuyCapWei, rules.maxClusterWallets);
     }

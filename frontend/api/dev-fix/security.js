@@ -234,15 +234,22 @@ async function readCluster(clusterId) {
   }
 }
 
-function buildCreateEligibility({ creator, walletRisk, cluster }) {
+function buildCreateEligibility({ creator, walletRisk, cluster, launchAt = null }) {
   const rules = TIER_RULES[creator.tier] || TIER_RULES.New;
   const reasons = [];
   const warnings = [];
+  const numericLaunchAt = Number(launchAt || 0);
+  const evaluationAtMs = Number.isFinite(numericLaunchAt) && numericLaunchAt > 0
+    ? (numericLaunchAt > 1e12 ? numericLaunchAt : numericLaunchAt * 1000)
+    : Date.now();
+  const cooldownEndsMs = creator.cooldownEndsAt ? new Date(creator.cooldownEndsAt).getTime() : NaN;
 
   if (creator.restricted) reasons.push("Creator is restricted.");
   if (creator.manualReviewRequired) reasons.push("Creator requires manual review.");
   if (creator.liveBondingCount >= rules.maxLiveBonding) reasons.push(`Creator has reached ${rules.maxLiveBonding} live bonding tokens for ${creator.tier}.`);
-  if (isFuture(creator.cooldownEndsAt)) reasons.push("Creator launch cooldown is still active.");
+  if (Number.isFinite(cooldownEndsMs) && cooldownEndsMs > evaluationAtMs) {
+    reasons.push(`Creator launch cooldown remains active at the selected launch time (${new Date(cooldownEndsMs).toISOString()}).`);
+  }
   if (walletRisk?.restricted) reasons.push("Creator wallet is restricted.");
   if (cluster?.restricted) reasons.push("Creator wallet cluster is restricted.");
   if (cluster?.wallets > rules.maxClusterWallets) reasons.push(`Creator cluster has ${cluster.wallets} wallets; ${creator.tier} limit is ${rules.maxClusterWallets}.`);
@@ -258,6 +265,7 @@ function buildCreateEligibility({ creator, walletRisk, cluster }) {
     creator,
     walletRisk,
     cluster,
+    evaluationAt: new Date(evaluationAtMs).toISOString(),
   };
 }
 
@@ -440,7 +448,7 @@ async function securityContractSyncJobs(req, res) {
   }
 }
 
-export async function evaluateCreatePreflight({ walletAddress }) {
+export async function evaluateCreatePreflight({ walletAddress, launchAt = null }) {
   const wallet = normalizeWallet(walletAddress);
   if (!wallet) return { allowed: false, reasons: ["Invalid or missing wallet address."], warnings: [], schemaReady: true };
 
@@ -449,7 +457,7 @@ export async function evaluateCreatePreflight({ walletAddress }) {
   const clusterId = creatorResult.profile?.clusterId || riskResult.risk?.clusterId || null;
   const clusterResult = await readCluster(clusterId);
   const creator = { ...creatorResult.profile, clusterWallets: clusterResult.cluster?.wallets || 0 };
-  const eligibility = buildCreateEligibility({ creator, walletRisk: riskResult.risk, cluster: clusterResult.cluster });
+  const eligibility = buildCreateEligibility({ creator, walletRisk: riskResult.risk, cluster: clusterResult.cluster, launchAt });
 
   return {
     ...eligibility,
@@ -478,7 +486,7 @@ export async function launchpadPreflightCreate(req, res) {
   if (!methodAllowed(req, res, ["POST"])) return;
   const body = await readJson(req);
   const walletAddress = normalizeWallet(body.walletAddress || body.creatorWallet || body.creator);
-  const preflight = await evaluateCreatePreflight({ walletAddress });
+  const preflight = await evaluateCreatePreflight({ walletAddress, launchAt: body.launchAt || body.scheduledLaunchAt || null });
   return json(res, preflight.allowed ? 200 : 403, { preflight });
 }
 
@@ -514,7 +522,8 @@ export async function securityCreatorProfile(req, res) {
 export async function securityCreatorLaunchEligibility(req, res) {
   if (!methodAllowed(req, res, ["GET"])) return;
   const walletAddress = normalizeWallet(req.params?.wallet || getQuery(req).walletAddress);
-  const preflight = await evaluateCreatePreflight({ walletAddress });
+  const query = getQuery(req);
+  const preflight = await evaluateCreatePreflight({ walletAddress, launchAt: query.launchAt || null });
   return json(res, preflight.allowed ? 200 : 403, { preflight });
 }
 

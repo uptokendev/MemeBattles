@@ -15,7 +15,11 @@ import { getChainLabel, isSolanaChainId } from "@/lib/chainConfig";
 import { DEFAULT_GRADUATION_TARGET_WEI, graduationTierLabel } from "@/lib/graduationTiers";
 import { useLaunchpad } from "@/lib/launchpadClient";
 import { resolveImageUri } from "@/lib/media";
-import { deployScheduledDraftCampaignV2 } from "@/lib/scheduledLaunchClientV2";
+import {
+  deployScheduledDraftCampaignV2,
+  readScheduledCreatorLaunchEligibility,
+  type ScheduledCreatorLaunchEligibility,
+} from "@/lib/scheduledLaunchClientV2";
 import { getScheduledFactoryAddress } from "@/lib/scheduledFactoryConfig";
 
 const DRAFT_PUSH_LIVE_ENABLED = ["1", "true", "yes", "on"].includes(
@@ -35,6 +39,33 @@ function sameWallet(a?: string | null, b?: string | null) {
 function toLocalInputValue(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Local browser time";
+  } catch {
+    return "Local browser time";
+  }
+}
+
+function timeZoneOffset(date: Date) {
+  const totalMinutes = -date.getTimezoneOffset();
+  const sign = totalMinutes >= 0 ? "+" : "-";
+  const absolute = Math.abs(totalMinutes);
+  const hours = String(Math.floor(absolute / 60)).padStart(2, "0");
+  const minutes = String(absolute % 60).padStart(2, "0");
+  return `UTC${sign}${hours}:${minutes}`;
+}
+
+function formatLocalLaunch(seconds: number) {
+  return new Date(seconds * 1000).toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 async function markDraftDeployment(input: {
@@ -71,6 +102,8 @@ export default function PushDraftLive() {
   const [bundle, setBundle] = useState<PrepareDraftBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [scheduledEligibility, setScheduledEligibility] = useState<ScheduledCreatorLaunchEligibility | null>(null);
+  const [scheduledEligibilityError, setScheduledEligibilityError] = useState<string | null>(null);
   const [mode, setMode] = useState<"now" | "scheduled">("now");
   const [graduationTargetWei, setGraduationTargetWei] = useState(DEFAULT_GRADUATION_TARGET_WEI);
   const [launchAtInput, setLaunchAtInput] = useState(() => toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)));
@@ -103,6 +136,45 @@ export default function PushDraftLive() {
     () => getScheduledFactoryAddress(Number(draft?.chainId || 0), launchpad.factoryAddress),
     [draft?.chainId, launchpad.factoryAddress],
   );
+  const creatorTimeZone = useMemo(() => browserTimeZone(), []);
+  const selectedLaunchDate = useMemo(() => new Date(launchAtInput), [launchAtInput]);
+  const selectedLaunchValid = Number.isFinite(selectedLaunchDate.getTime());
+
+  useEffect(() => {
+    if (mode !== "scheduled" || !draft || !wallet.signer || !wallet.account || !scheduledFactoryAddress || !selectedLaunchValid) {
+      setScheduledEligibility(null);
+      setScheduledEligibilityError(null);
+      return;
+    }
+
+    const launchAt = Math.floor(selectedLaunchDate.getTime() / 1000);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      readScheduledCreatorLaunchEligibility({
+        signer: wallet.signer!,
+        chainId: Number(draft.chainId),
+        factoryAddress: scheduledFactoryAddress,
+        launchAt,
+      })
+        .then((result) => {
+          if (!cancelled) {
+            setScheduledEligibility(result);
+            setScheduledEligibilityError(null);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setScheduledEligibility(null);
+            setScheduledEligibilityError(String(error?.message || error || "Could not check scheduled launch eligibility."));
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mode, draft, wallet.signer, wallet.account, scheduledFactoryAddress, selectedLaunchDate, selectedLaunchValid]);
 
   const deploy = async () => {
     if (!draft) return;
@@ -120,16 +192,9 @@ export default function PushDraftLive() {
       return toast.error("LaunchFactory is not configured for this network.");
     }
 
-    const deployAuth = await signDraftAction({
-      signer: wallet.signer,
-      walletAddress: wallet.account,
-      chainId: draft.chainId,
-      action: "deploy_draft",
-      draftId: draft.id,
-    });
-
     setSubmitting(true);
     try {
+      let scheduledLaunchAt: number | null = null;
       if (mode === "scheduled") {
         const launchAt = Math.floor(new Date(launchAtInput).getTime() / 1000);
         const now = Math.floor(Date.now() / 1000);
@@ -140,13 +205,39 @@ export default function PushDraftLive() {
           throw new Error("Scheduled launches cannot be more than 30 days away.");
         }
 
+        const eligibility = await readScheduledCreatorLaunchEligibility({
+          signer: wallet.signer,
+          chainId: Number(draft.chainId),
+          factoryAddress: scheduledFactoryAddress,
+          launchAt,
+        });
+        setScheduledEligibility(eligibility);
+        if (!eligibility.allowed) {
+          throw new Error(
+            eligibility.earliestLaunchAt > launchAt
+              ? `Choose ${formatLocalLaunch(eligibility.earliestLaunchAt)} or later in ${creatorTimeZone}.`
+              : "This creator wallet is not eligible for the selected scheduled launch.",
+          );
+        }
+        scheduledLaunchAt = launchAt;
+      }
+
+      const deployAuth = await signDraftAction({
+        signer: wallet.signer,
+        walletAddress: wallet.account,
+        chainId: draft.chainId,
+        action: "deploy_draft",
+        draftId: draft.id,
+      });
+
+      if (mode === "scheduled" && scheduledLaunchAt) {
         const created = await deployScheduledDraftCampaignV2({
           signer: wallet.signer,
           auth: deployAuth,
           chainId: draft.chainId,
           factoryAddress: scheduledFactoryAddress,
           draftId: draft.id,
-          launchAt,
+          launchAt: scheduledLaunchAt,
           graduationTargetWei,
         });
         if (!created.campaignAddress) throw new Error("Scheduled campaign was deployed but its address could not be read from the receipt.");
@@ -157,10 +248,10 @@ export default function PushDraftLive() {
           campaignAddress: created.campaignAddress,
           tokenAddress: created.tokenAddress,
           deployTxHash: created.txHash,
-          scheduledLaunchAt: launchAt,
+          scheduledLaunchAt,
         });
 
-        toast.success(`${selectedTier} campaign deployed. Trading opens automatically at the countdown.`);
+        toast.success(`${selectedTier} campaign deployed. Gas is paid now; trading opens at the selected time.`);
         navigate(`/prepare/${draft.slug}`);
         return;
       }
@@ -206,7 +297,7 @@ export default function PushDraftLive() {
     );
   }
 
-  const blocked = submitting || !DRAFT_PUSH_LIVE_ENABLED || draftIsSolana || !canPushLive(draft.status);
+  const blocked = submitting || !DRAFT_PUSH_LIVE_ENABLED || draftIsSolana || !canPushLive(draft.status) || (mode === "scheduled" && scheduledEligibility?.allowed === false);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -265,16 +356,42 @@ export default function PushDraftLive() {
 
         {mode === "scheduled" ? (
           <div className="mwz-card mt-4 p-4">
-            <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Trading opens at</label>
+            <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              Trading opens at ({creatorTimeZone})
+            </label>
             <Input
               type="datetime-local"
               value={launchAtInput}
-              onChange={(event) => setLaunchAtInput(event.target.value)}
+              onChange={(event) => {
+                setLaunchAtInput(event.target.value);
+                setScheduledEligibility(null);
+                setScheduledEligibilityError(null);
+              }}
               min={toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000))}
               max={toLocalInputValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))}
               className="mt-2 max-w-md"
               disabled={submitting}
             />
+            {selectedLaunchValid ? (
+              <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                <p>
+                  Creator timezone: <span className="text-foreground">{creatorTimeZone} ({timeZoneOffset(selectedLaunchDate)})</span>
+                </p>
+                <p>
+                  On-chain UTC time: <span className="text-foreground">{selectedLaunchDate.toISOString().replace("T", " ").slice(0, 16)} UTC</span>
+                </p>
+              </div>
+            ) : null}
+            {scheduledEligibility?.allowed ? (
+              <p className="mt-3 text-sm text-green-300">
+                Eligible at this launch time. You will sign and pay gas now; the deployed contract blocks trading until the selected time.
+              </p>
+            ) : scheduledEligibility && scheduledEligibility.earliestLaunchAt ? (
+              <p className="mt-3 text-sm text-orange-300">
+                Earliest allowed launch: {formatLocalLaunch(scheduledEligibility.earliestLaunchAt)} ({creatorTimeZone}).
+              </p>
+            ) : null}
+            {scheduledEligibilityError ? <p className="mt-3 text-sm text-orange-300">{scheduledEligibilityError}</p> : null}
           </div>
         ) : null}
 

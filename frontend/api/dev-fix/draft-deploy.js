@@ -10,10 +10,11 @@ import {
   loadDraftRowById,
 } from "./scheduled-lifecycle.js";
 
-const BSC_TESTNET_SCHEDULED_FACTORY = "0xF7872169265eCE4E4C93ef894F1635E84DC6F681";
+const BSC_TESTNET_SCHEDULED_FACTORY = "0xe0FbBa4533513110Cec7e78aa3e48EC45301B5E6";
 
 function configuredScheduledFactory(chainId) {
   const id = Number(chainId);
+  if (id === 97) return BSC_TESTNET_SCHEDULED_FACTORY;
   const configured = String(
     process.env[`SCHEDULED_FACTORY_ADDRESS_${id}`] ||
       process.env[`SCHEDULED_LAUNCH_FACTORY_ADDRESS_${id}`] ||
@@ -22,8 +23,7 @@ function configuredScheduledFactory(chainId) {
       process.env.SCHEDULED_LAUNCH_FACTORY_ADDRESS ||
       "",
   ).trim();
-  if (ethers.isAddress(configured)) return ethers.getAddress(configured);
-  return id === 97 ? BSC_TESTNET_SCHEDULED_FACTORY : "";
+  return ethers.isAddress(configured) ? ethers.getAddress(configured) : "";
 }
 
 function isUnsignedDecimal(value, { allowZero = true } = {}) {
