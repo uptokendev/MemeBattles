@@ -1,5 +1,6 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { pool } from "./db.js";
+import { ENV } from "./env.js";
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -19,7 +20,7 @@ function asNumber(value: unknown, fallback: number): number {
 }
 
 function marketApiEnabled(): boolean {
-  return String(process.env.ENABLE_UNIFIED_MARKET_API || "0").trim() === "1";
+  return ENV.ENABLE_UNIFIED_MARKET_API;
 }
 
 function enabledOnly(_req: Request, res: Response, next: NextFunction) {
@@ -31,6 +32,16 @@ function enabledOnly(_req: Request, res: Response, next: NextFunction) {
     });
   }
   next();
+}
+
+function sendServerError(res: Response, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "Unknown market API error");
+  console.error("[wtr] market API error", message);
+  return res.status(500).json({
+    ok: false,
+    code: "MARKET_API_ERROR",
+    error: "Market data is temporarily unavailable.",
+  });
 }
 
 async function readMarketState(chainId: number, campaign: string) {
@@ -89,13 +100,17 @@ async function readMarketState(chainId: number, campaign: string) {
 
   const topazActive = row.market_stage === "TOPAZ_ACTIVE";
   const bondingActive = row.market_stage === "BONDING" && Boolean(row.bonding_active);
+  const topazRouteReady =
+    topazActive &&
+    Boolean(row.pool_verified) &&
+    Boolean(row.pool_support_enabled) &&
+    Boolean(row.pool_indexing_enabled);
+  const quotesEnabled =
+    Boolean(row.support_enabled) &&
+    (bondingActive || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES));
   const tradingEnabled =
     Boolean(row.support_enabled) &&
-    (bondingActive ||
-      (topazActive &&
-        Boolean(row.pool_verified) &&
-        Boolean(row.pool_support_enabled) &&
-        Boolean(row.pool_indexing_enabled)));
+    (bondingActive || (topazRouteReady && ENV.ENABLE_TOPAZ_QUOTES && ENV.ENABLE_TOPAZ_TRADING));
 
   const lagSeconds = row.last_sync_at
     ? Math.max(0, Math.floor((Date.now() - new Date(row.last_sync_at).getTime()) / 1000))
@@ -132,6 +147,7 @@ async function readMarketState(chainId: number, campaign: string) {
     poolVerified: Boolean(row.pool_verified),
     supportEnabled: Boolean(row.support_enabled),
     bondingActive: Boolean(row.bonding_active),
+    quotesEnabled,
     tradingEnabled,
     indexingStatus: {
       enabled: Boolean(row.indexing_enabled) && Boolean(row.campaign_indexing_enabled),
@@ -152,7 +168,7 @@ async function readMarketState(chainId: number, campaign: string) {
 }
 
 export function registerMarketContinuityRoutes(app: Express) {
-  app.get("/api/token/:campaign/market-state", enabledOnly, async (req, res, next) => {
+  app.get("/api/token/:campaign/market-state", enabledOnly, async (req, res) => {
     try {
       const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
@@ -164,11 +180,11 @@ export function registerMarketContinuityRoutes(app: Express) {
       if (!state) return res.status(404).json({ error: "Market state not found" });
       return res.json(state);
     } catch (error) {
-      next(error);
+      return sendServerError(res, error);
     }
   });
 
-  app.get("/api/token/:campaign/trade-route", enabledOnly, async (req, res, next) => {
+  app.get("/api/token/:campaign/trade-route", enabledOnly, async (req, res) => {
     try {
       const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
@@ -191,16 +207,17 @@ export function registerMarketContinuityRoutes(app: Express) {
         stable: state.stable,
         feeBps: state.feeBps,
         verified: state.poolVerified,
+        quotesEnabled: state.quotesEnabled,
         tradingEnabled: state.tradingEnabled,
         verifiedAt: state.lastVerifiedAt,
         lastError: state.lastError,
       });
     } catch (error) {
-      next(error);
+      return sendServerError(res, error);
     }
   });
 
-  app.get("/api/token/:campaign/market-trades", enabledOnly, async (req, res, next) => {
+  app.get("/api/token/:campaign/market-trades", enabledOnly, async (req, res) => {
     try {
       const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
@@ -247,11 +264,11 @@ export function registerMarketContinuityRoutes(app: Express) {
         nextCursor: last ? `${last.blockNumber}:${last.logIndex}` : null,
       });
     } catch (error) {
-      next(error);
+      return sendServerError(res, error);
     }
   });
 
-  app.get("/api/token/:campaign/market-candles", enabledOnly, async (req, res, next) => {
+  app.get("/api/token/:campaign/market-candles", enabledOnly, async (req, res) => {
     try {
       const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
@@ -298,11 +315,11 @@ export function registerMarketContinuityRoutes(app: Express) {
         marketStage: state?.marketStage ?? "BONDING",
       });
     } catch (error) {
-      next(error);
+      return sendServerError(res, error);
     }
   });
 
-  app.get("/api/token/:campaign/market-summary", enabledOnly, async (req, res, next) => {
+  app.get("/api/token/:campaign/market-summary", enabledOnly, async (req, res) => {
     try {
       const campaign = normalizeAddress(req.params.campaign);
       const chainId = asNumber(req.query.chainId, 97);
@@ -321,11 +338,12 @@ export function registerMarketContinuityRoutes(app: Express) {
         ...(result.rows[0] || {}),
         marketStage: state?.marketStage ?? result.rows[0]?.market_stage ?? "BONDING",
         poolVerified: state?.poolVerified ?? false,
+        quotesEnabled: state?.quotesEnabled ?? false,
         tradingEnabled: state?.tradingEnabled ?? false,
         dataLagSeconds: state?.indexingStatus.dataLagSeconds ?? result.rows[0]?.data_lag_seconds ?? null,
       });
     } catch (error) {
-      next(error);
+      return sendServerError(res, error);
     }
   });
 }
