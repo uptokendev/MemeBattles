@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - agent/fix-prepare-closeout
+  pull_request:
+    branches:
+      - devpostgrad
+    paths:
+      - scripts/apply-prepare-closeout-patch.mjs
+      - .github/workflows/apply-prepare-closeout-patch.yml
 
 permissions:
   contents: write
