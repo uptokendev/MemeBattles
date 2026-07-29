@@ -30,7 +30,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Apply Token Details continuity patch
+      - name: Apply or verify Token Details continuity patch
         id: patch
         continue-on-error: true
         shell: bash
@@ -38,8 +38,13 @@ jobs:
           set +e
           mkdir -p .github/validation
           : > /tmp/wtr-frontend.log
-          node frontend/scripts/apply-wtr-token-details.mjs >> /tmp/wtr-frontend.log 2>&1
-          patch_status=$?
+          if grep -q 'useUnifiedMarket' frontend/src/pages/TokenDetails.tsx; then
+            echo "Token Details continuity patch already applied." >> /tmp/wtr-frontend.log
+            patch_status=0
+          else
+            node frontend/scripts/apply-wtr-token-details.mjs >> /tmp/wtr-frontend.log 2>&1
+            patch_status=$?
+          fi
           install_status=99
           build_status=99
 
@@ -80,7 +85,7 @@ jobs:
           mkdir -p .github/validation
           cat > .github/validation/wtr-frontend-validation.txt <<EOF
           WTR frontend validation ${result}
-          validation_revision=unified_chart_topaz_trading_v2
+          validation_revision=unified_chart_topaz_trading_v3
           validated_source_sha=${GITHUB_SHA}
           node=20
           patch_status=${{ steps.patch.outputs.patch_status }}
@@ -95,7 +100,7 @@ jobs:
           else
             git rm -f .github/validation/wtr-frontend-validation-failure.log 2>/dev/null || true
           fi
-          git commit -m "feat(wtr): connect Token Details to unified Topaz market"
+          git commit -m "ci(wtr): record frontend validation result"
           git push origin HEAD:agent/war-trade-room-continuity-foundation
 
       - name: Fail workflow when validation failed
