@@ -1,2 +1,2 @@
-// Invoke the protected default-branch deployment gate. Removed before publishing the replacement.
+// Run the visible devpostgrad deployment gate. Removed automatically after publishing the replacement.
 export {};
