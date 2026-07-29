@@ -258,7 +258,13 @@ export function DraftCampaignGrid({ className, query }: { className?: string; qu
                   <div className="mt-3 flex items-center justify-between gap-3 border-y border-success/20 py-2 text-xs">
                     <div className="min-w-0">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">Creator</div>
-                      <div className="truncate text-success/75">{shortAddr(draft.creatorWallet)}</div>
+                       <Link
+                         to={`/profile/${encodeURIComponent(draft.creatorWallet)}`}
+                         className="block truncate text-success/75 hover:text-orange-300"
+                         title={draft.creatorWallet}
+                       >
+                         {shortAddr(draft.creatorWallet)}
+                       </Link>
                     </div>
                     <div className="text-right">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-success/45">Readiness</div>

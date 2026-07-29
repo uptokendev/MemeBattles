@@ -758,8 +758,16 @@ const heroTagline = draft.description || "The launchpad that turns every drop in
 
           <p className="relative z-20 mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground md:text-2xl">
             {heroTagline}{" "}
-
           </p>
+
+          <Link
+            to={`/profile/${encodeURIComponent(draft.creatorWallet)}`}
+            className="relative z-20 mt-4 inline-flex items-center gap-2 border border-orange-400/35 bg-black/55 px-4 py-2 text-xs uppercase tracking-[0.16em] text-orange-200 transition-colors hover:border-orange-300 hover:text-orange-100"
+            title={draft.creatorWallet}
+          >
+            <Users className="h-4 w-4" />
+            Creator · {creatorLabel(bundle)}
+          </Link>
 
           <div className="relative z-20 mt-6 flex flex-wrap justify-center gap-3">
             <Button
