@@ -37,8 +37,8 @@ const CAMPAIGN_EVENT_VARIANTS: CampaignEventVariant[] = [
   CAMPAIGN_CREATED_EVENT_LEGACY,
 ].map((eventAbi) => {
   const iface = new ethers.Interface([eventAbi]);
-  const fragment = iface.fragments.find((item) => item.type === "event");
-  if (!fragment || fragment.type !== "event") throw new Error(`Invalid CampaignCreated event ABI: ${eventAbi}`);
+  const fragment = iface.getEvent("CampaignCreated");
+  if (!fragment) throw new Error(`Invalid CampaignCreated event ABI: ${eventAbi}`);
   return { iface, topicHash: fragment.topicHash };
 });
 
